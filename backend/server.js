@@ -1,8 +1,12 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const http = require('http');
+const { Server } = require('socket.io')
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -75,7 +79,34 @@ app.get('/api/invite/:lobbyId', (req, res) => {
     res.json({ inviteLink });
 });
 
-app.listen(3000, () => {
+
+// ######################### GESTIONE WEBSOCKET ##########################################
+io.on('connection', (socket) => {
+    console.log(`L'utente con id: ${socket.id} si è connesso`);
+
+
+    // Quando un utente entra in una lobby
+    socket.on('joinLobby', (lobbyId) => {
+        socket.join(lobbyId);
+        console.log(`L'utente con id: ${socket.id} si è unito alla lobby: ${lobbyId}`);
+
+    });
+
+    // Quando l'host seleziona un gioco
+    socket.on('startGame', (data) => {
+        const { lobbyId, gameId } = data;
+        // Invia a tutti i client nella lobby (tranne il mittente)
+        socket.to(lobbyId).emit('gameSelected', { gameId });
+        console.log(`Gioco ${gameId} selezionato nella lobby ${lobbyId}`);
+    });
+
+    socket.on('disconnect', () => {
+        console.log(`Il client con id: ${socket.id} si è disconnesso`);
+    })
+
+})
+
+server.listen(3000, () => {
     console.log('Server listening on port 3000');
 });
 
