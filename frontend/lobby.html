@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles/lobby.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <title>Game Lobby</title>
+</head>
+
+<body>
+    <main>
+        <div class="header">
+            <p id="lobby-id"></p>
+        </div>
+
+        <div class="main-content">
+            <div class="left-side-box">
+                <ul class="players-ul">
+                    <li>
+                        <div class="player-entry-1">
+                            <p class="player-entry-text">You are: </p>
+                            <div class="avatar-circle">
+                                <div class="avatar-color">
+                                    <!-- Il colore verrà impostato con JavaScript -->
+                                </div>
+
+                            </div>
+                            <p id="host-title"></p>
+                        </div>
+                    </li>
+                    <!-- Altri giocatori verranno aggiunti qui dinamicamente -->
+                </ul>
+                <!-- Qui verrà aggiunto il pulsante per invitare altri giocatori -->
+            </div>
+
+            <div class="right-side-box">
+                <div class="game-box">
+                    <figure>
+                        <img class="game-image" src="imgs/quiz.png" alt="quiz game">
+                    </figure>
+                    <p class="game-name">Quiz game</p>
+                </div>
+
+                <div class="game-box">
+                    <figure>
+                        <img class="game-image" src="imgs/drawing.png" alt="drawing game">
+                    </figure>
+                    <p class="game-name">Drawing game</p>
+                </div>
+
+                <div class="game-box">
+                    <figure>
+                        <img class="game-image" src="imgs/coming-soon.png" alt="coming soon">
+                    </figure>
+                    <p class="game-name">Coming soon</p>
+                </div>
+            </div>
+        </div>
+
+    </main>
+    <script src="lobby.js" defer></script>
+</body>
+
+</html>

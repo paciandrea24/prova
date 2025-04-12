@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="styles/index.css" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter&family=Work+Sans&family=Space+Grotesk&family=DM+Sans&display=swap"
+        rel="stylesheet">
+
+    <title>Prova</title>
+</head>
+
+<body>
+    <main>
+        <div class="first-box">
+            <p class="label">Choose a color</p>
+            <div class="form-box">
+                <form action="/create-lobby" method="POST" id="colorForm" name="color">
+                    <div class="avatar-box">
+                        <div class="avatar-circle">
+                            <div class="avatar-color">
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <input type="hidden" id="hiddenInputForColorSelection" name="color">
+
+                    <button type="submit" class="submit-button">Create lobby</button>
+                </form>
+            </div>
+        </div>
+    </main>
+    <script src="index.js" defer></script>
+</body>
+
+</html>
