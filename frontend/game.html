@@ -4,10 +4,109 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="./styles/game.css">
     <title>Document</title>
 </head>
 
 <body>
+    <div class="header">
+        <div class="timer-box">
+            <div class="timer-box-content">
+                <img src="./imgs/timer.png" alt="timer" class="timer-icon">
+                <div class="timer-text-box">
+                    <p class="timer-text">12s</p>
+                </div>
+            </div>
+
+
+        </div>
+
+        <div class="hint-box">
+            <div class="hint-word">
+                <p class="hint">_ _ _ _ _ </p>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="main-content">
+        <div class="standing-box">
+            <ul class="players-ul">
+                <li>
+                    <div class="player-entry-1">
+                        <p class="player-entry-text">1.</p>
+                        <div class="avatar-circle">
+                            <div class="avatar-color">
+                                <!-- Il colore verrà impostato con JavaScript -->
+                            </div>
+
+                        </div>
+                        <div class="score-box">
+                            <p>2424 pts.</p>
+                        </div>
+                    </div>
+                </li>
+                <li>
+                    <div class="player-entry-2">
+                        <p class="player-entry-text">2.</p>
+                        <div class="avatar-circle">
+                            <div class="avatar-color">
+                                <!-- Il colore verrà impostato con JavaScript -->
+                            </div>
+
+                        </div>
+                        <div class="score-box">
+                            <p>242 pts.</p>
+                        </div>
+                    </div>
+                </li>
+                <li>
+                    <div class="player-entry-1">
+                        <p class="player-entry-text">3.</p>
+                        <div class="avatar-circle">
+                            <div class="avatar-color">
+                                <!-- Il colore verrà impostato con JavaScript -->
+                            </div>
+
+                        </div>
+                        <div class="score-box">
+                            <p>24 pts.</p>
+                        </div>
+                    </div>
+                </li>
+                <li>
+                    <div class="player-entry-2">
+                        <p class="player-entry-text">4.</p>
+                        <div class="avatar-circle">
+                            <div class="avatar-color">
+                                <!-- Il colore verrà impostato con JavaScript -->
+                            </div>
+
+                        </div>
+                        <div class="score-box">
+                            <p>2 pts.</p>
+                        </div>
+                    </div>
+                </li>
+            </ul>
+        </div>
+
+        <div class="canvas-box">
+
+        </div>
+
+        <div class="chat-box">
+            <div class="messages-box">
+
+            </div>
+
+            <div class="form-box">
+                <form action="" id="chat-form">
+                    <input type="text" placeholder="Guess the word..." autocomplete="off" id="chat-input">
+                </form>
+            </div>
+        </div>
+    </div>
     <script src="game.js"></script>
 </body>
 

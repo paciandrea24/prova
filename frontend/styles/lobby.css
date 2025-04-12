@@ -34,14 +34,33 @@ main {
     height: 80px;
 }
 
+.link-copied-box {
+    width: 100px;
+    height: 40px;
+    margin-top: 10px;
+    margin-left: 20px;
+    margin-right: 0px;
+    margin-bottom: 0px;
+    background-color: #FFFFDF;
+    border: 1px solid black;
+    border-radius: 8px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
 #invite-btn {
-    height: 50%;
-    margin: 10px 0;
     background-color: #59B159;
     color: white;
     border: none;
     border-radius: 4px;
     cursor: pointer;
+    width: 100px;
+    height: 40px;
+    margin-top: 10px;
+    margin-left: 20px;
+    margin-right: 0px;
+    margin-bottom: 0px;
 }
 
 #invite-btn:hover {

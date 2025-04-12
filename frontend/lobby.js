@@ -145,8 +145,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Utilizziamo il prompt per mostrare il link di invito
             navigator.clipboard.writeText(data.inviteLink);
-            alert("Link copiato");
-        } catch (error) {
+            const linkCopiedBox = document.createElement('div');
+            const headerBox = document.querySelector('.header')
+            linkCopiedBox.setAttribute('class', 'link-copied-box');
+            linkCopiedBox.textContent = 'Link copied!';
+            headerBox.appendChild(linkCopiedBox);
+            setTimeout(function () { linkCopiedBox.style.display = "none" }, 3000);
+
+/*             alert("Link copiato");
+ */        } catch (error) {
             console.error('Error generating invite link:', error);
             alert('Error generating invite link');
         }
