@@ -476,11 +476,65 @@ body {
 }
 
 /* Miglioramento stili per la griglia di colori */
-.color-grid {
+/* Updates for the player standings */
+.players-ul {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+.player-entry-1, .player-entry-2 {
     display: flex;
-    flex-wrap: wrap;
-    grid-template-columns: repeat(4, 1fr);
+    align-items: center;
+    padding: 8px 10px;
+    border-radius: 4px;
+    margin-bottom: 5px;
+}
+
+.player-entry-1 {
+    background-color: #f5f5f5;
+}
+
+.player-entry-2 {
+    background-color: #e8f4f8;
+}
+
+.current-player {
+    font-weight: bold;
+    border-left: 3px solid #4CAF50;
+}
+
+.avatar-circle {
+    margin-right: 15px;
+}
+
+.avatar-color {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 2px solid #ddd;
+}
+
+.score-box {
+    margin-left: auto;  /* This pushes the score to the right */
+    font-weight: bold;
+}
+
+.score-box p {
+    margin: 0;
+}
+
+.artist-icon {
+    margin-left: 5px;
+}
+
+/* Updated color grid for artist controls - 2x8 layout */
+.color-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(2, 1fr);
     gap: 8px;
+    width: 100%;
 }
 
 .color-button {
@@ -560,4 +614,68 @@ body {
 .message.info {
     background-color: #e3f2fd;
     color: #1565c0;
+}
+
+
+/* Miglioramento del canvas-box */
+.canvas-box {
+    width: 50%;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    padding: 15px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden; /* Impedisce agli elementi di uscire */
+}
+
+/* Assicuriamoci che il canvas si adatti correttamente */
+.canvas-box canvas {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+/* Modifica dei controlli dell'artista per adattarsi meglio */
+.artist-controls {
+    width: 100%;
+    padding: 15px;
+    background-color: #f5f5f5;
+    border-radius: 8px;
+    margin-top: 15px;
+    box-sizing: border-box; /* Assicura che padding sia incluso nella larghezza */
+}
+
+/* Miglioramento della visualizzazione dell'indizio */
+.hint-word {
+    background-color: #e8f4f8;
+    border-radius: 5px;
+    padding: 10px;
+    display: inline-block;
+    min-width: 200px;
+}
+
+.hint-word.artist-view {
+    background-color: #e8f8e8; /* Colore diverso quando è l'artista */
+    border: 2px dashed #4CAF50;
+}
+
+.hint {
+    font-size: 22px;
+    font-weight: bold;
+    margin: 0;
+    letter-spacing: 3px;
+}
+
+.hint.artist-view {
+    letter-spacing: normal; /* Rimuove lo spazio tra le lettere per l'artista */
+    color: #2e7d32; /* Colore diverso quando è l'artista */
+}
+
+/* Rimozione del color block duplicato nella standing-box */
+.player-color-block {
+    display: none; /* Nascondiamo il blocco colore rettangolare */
 }

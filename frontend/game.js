@@ -245,9 +245,21 @@ document.addEventListener('DOMContentLoaded', () => {
         // Aggiorna il timer
         timerText.textContent = `${state.timer}s`;
 
-        // Aggiorna l'indizio
-        if (state.hint) {
+        // Aggiorna l'indizio e verifica se sono l'artista di questo turno
+        const wasArtist = amIArtist; // Salva lo stato precedente
+        amIArtist = state.currentTurn === playerColor;
+
+        // Gestisci l'indizio in base al ruolo (artista o indovinatore)
+        if (state.word && amIArtist) {
+            // Se sono l'artista, mostra la parola completa
+            hintText.textContent = state.word;
+            hintText.classList.add('artist-view');
+            document.querySelector('.hint-word').classList.add('artist-view');
+        } else if (state.hint) {
+            // Altrimenti mostra l'indizio parziale
             hintText.textContent = state.hint;
+            hintText.classList.remove('artist-view');
+            document.querySelector('.hint-word').classList.remove('artist-view');
         }
 
         // Aggiorna le informazioni sul round
@@ -259,14 +271,10 @@ document.addEventListener('DOMContentLoaded', () => {
             totalRoundsText.textContent = state.totalRounds;
         }
 
-        // Verifica se sono l'artista di questo turno
-        const wasArtist = amIArtist; // Salva lo stato precedente
-        amIArtist = state.currentTurn === playerColor;
-
         // Se sono appena diventato l'artista
         if (!wasArtist && amIArtist) {
             // Mostra notifica
-            artistNotification.innerHTML = '<h3>Sei l\'artista di questo turno!</h3>';
+            artistNotification.innerHTML = '<h3>È il tuo turno di disegnare!</h3>';
             artistNotification.style.display = 'block';
 
             setTimeout(() => {
@@ -346,8 +354,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.fillStyle = 'white';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                // Aggiungi un messaggio
-                addMessage(`Stai disegnando: ${word}`, 'system');
+                // Aggiorna l'indizio per mostrare la parola all'artista
+                hintText.textContent = word;
+                hintText.classList.add('artist-view');
+                document.querySelector('.hint-word').classList.add('artist-view');
+
+                // NON aggiungere più il messaggio in chat
+                // addMessage(`Stai disegnando: ${word}`, 'system');
             });
 
             wordList.appendChild(wordButton);
@@ -362,6 +375,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Funzione per aggiungere messaggi alla chat
     function addMessage(message, type) {
+        // Ignora i messaggi di benvenuto predefiniti
+        if (message.includes('Welcome to the Drawing Game!') ||
+            message.includes('Wait for your turn to draw') ||
+            message.includes('è l\'artista di questo turno')) {
+            return;
+        }
+
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type || 'chat'}`;
 
@@ -416,11 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const playerEntry = document.createElement('div');
             playerEntry.className = index % 2 === 0 ? 'player-entry-1' : 'player-entry-2';
 
-            // Sostituisci il numero con un blocco colorato
-            const colorBlock = document.createElement('div');
-            colorBlock.className = 'player-color-block';
-            colorBlock.style.backgroundColor = color;
-
+            // Manteniamo solo il cerchio colorato (avatar) e rimuoviamo il color-block rettangolare
             const avatarCircle = document.createElement('div');
             avatarCircle.className = 'avatar-circle';
 
@@ -447,11 +463,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 scoreText.appendChild(artistIcon);
             }
 
-            // Assembla gli elementi
+            // Assembla gli elementi - SENZA il color-block rettangolare
             avatarCircle.appendChild(avatarColor);
             scoreBox.appendChild(scoreText);
 
-            playerEntry.appendChild(colorBlock);
             playerEntry.appendChild(avatarCircle);
             playerEntry.appendChild(scoreBox);
 
@@ -601,6 +616,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Mostra un messaggio di benvenuto
-    addMessage(`Welcome to the Drawing Game! You are playing as: ${playerColor}`, 'system');
-    addMessage('Wait for your turn to draw or guess the words!', 'system');
+    const welcomeMessage = document.createElement('div');
+    welcomeMessage.className = 'message system';
+    welcomeMessage.innerHTML = `
+        <div style="text-align: center; padding: 10px;">
+            <h3 style="margin: 0 0 5px 0;">Benvenuto nel Gioco del Disegno</h3>
+            <div style="margin-top: 8px;">
+                <span class="message-color-block" style="background-color: ${playerColor}"></span>
+                <span>Sei pronto a disegnare e indovinare?</span>
+            </div>
+        </div>
+    `;
+    messagesBox.appendChild(welcomeMessage);
 });
