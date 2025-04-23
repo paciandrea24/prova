@@ -233,3 +233,331 @@ body {
         height: 300px;
     }
 }
+
+.player-color-block {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    margin-right: 10px;
+    border: 1px solid #ccc;
+}
+
+/* Stili per il selettore di spessore */
+.line-width-container {
+    margin-bottom: 15px;
+}
+
+.control-label {
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.line-width-buttons {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.line-width-button {
+    width: 40px;
+    height: 40px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #f5f5f5;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.line-width-button:hover {
+    background-color: #e0e0e0;
+}
+
+.line-width-button.active {
+    background-color: #d0d0d0;
+    border: 2px solid #4CAF50;
+}
+
+.line-width-circle {
+    background-color: #333;
+    border-radius: 50%;
+}
+
+/* Stili per la griglia di colori */
+.color-container {
+    margin-bottom: 15px;
+}
+
+.color-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 5px;
+}
+
+.color-button {
+    width: 25px;
+    height: 25px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.color-button:hover {
+    transform: scale(1.1);
+}
+
+.color-button.active {
+    border: 2px solid #333;
+    transform: scale(1.1);
+}
+
+/* Stili per la selezione della parola */
+.word-selection {
+    background-color: #f0f8ff;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+.word-list {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.word-option {
+    padding: 8px 15px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.word-option:hover {
+    background-color: #45a049;
+}
+
+/* Modifica lo stile dei controlli dell'artista */
+.artist-controls {
+    padding: 15px;
+    background-color: #f5f5f5;
+    border-radius: 8px;
+    margin-top: 15px;
+}
+
+.control-button {
+    padding: 10px 15px;
+    background-color: #ff5722;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    width: 100%;
+    margin-top: 10px;
+}
+
+.control-button:hover {
+    background-color: #e64a19;
+}
+
+/* Stile per il blocco di colore nei messaggi */
+.message-color-block {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    margin-right: 5px;
+    vertical-align: middle;
+    border: 1px solid #ccc;
+}
+
+/* Layout migliorato per i controlli dell'artista */
+.artist-controls {
+    padding: 15px;
+    background-color: #f5f5f5;
+    border-radius: 8px;
+    margin-top: 15px;
+}
+
+.controls-layout {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+}
+
+.controls-group {
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+}
+
+.control-section {
+    margin-bottom: 15px;
+    display: flex;
+    justify-content: space-evenly;
+    
+}
+
+.clear-section {
+    margin-top: 15px;
+}
+
+.control-button {
+    padding: 8px 15px;
+    background-color: #ff5722;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    width: auto;
+}
+
+.control-button:hover {
+    background-color: #e64a19;
+}
+
+/* Nuovo stile per il modal di selezione parole */
+.word-selection-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.word-selection-content {
+    background-color: white;
+    padding: 30px;
+    border-radius: 10px;
+    max-width: 500px;
+    width: 80%;
+    text-align: center;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.word-selection-content h3 {
+    margin-top: 0;
+    color: #333;
+    margin-bottom: 20px;
+}
+
+.word-list {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.word-option {
+    padding: 12px 20px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 18px;
+    transition: transform 0.2s, background-color 0.2s;
+}
+
+.word-option:hover {
+    background-color: #45a049;
+    transform: scale(1.05);
+}
+
+/* Miglioramento stili per la griglia di colori */
+.color-grid {
+    display: flex;
+    flex-wrap: wrap;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+
+.color-button {
+    width: 30px;
+    height: 30px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.color-button:hover {
+    transform: scale(1.1);
+}
+
+.color-button.active {
+    border: 3px solid #333;
+    transform: scale(1.1);
+}
+
+/* Miglioramento stili per i pulsanti dello spessore */
+.line-width-buttons {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 15px;
+}
+
+.line-width-button {
+    width: 40px;
+    height: 40px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #f5f5f5;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: background-color 0.2s;
+}
+
+.line-width-button:hover {
+    background-color: #e0e0e0;
+}
+
+.line-width-button.active {
+    background-color: #d0d0d0;
+    border: 2px solid #4CAF50;
+}
+
+/* Migliora aspetto dei messaggi della chat */
+.message {
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    line-height: 1.4;
+}
+
+.message.chat {
+    background-color: #f5f5f5;
+}
+
+.message.system {
+    background-color: #e8f4f8;
+    color: #0277bd;
+}
+
+.message.success {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+}
+
+.message.error {
+    background-color: #ffebee;
+    color: #c62828;
+}
+
+.message.info {
+    background-color: #e3f2fd;
+    color: #1565c0;
+}

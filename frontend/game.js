@@ -307,18 +307,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // Funzione per mostrare la selezione della parola
     function showWordSelection(words) {
         // Rimuovi eventuali selezioni di parole precedenti
-        const existingWordSelection = document.querySelector('.word-selection');
+        const existingWordSelection = document.querySelector('.word-selection-modal');
         if (existingWordSelection) {
             existingWordSelection.remove();
         }
 
-        // Crea il box per la selezione delle parole
-        const wordSelectionBox = document.createElement('div');
-        wordSelectionBox.className = 'word-selection';
+        // Crea il modal per la selezione delle parole
+        const wordSelectionModal = document.createElement('div');
+        wordSelectionModal.className = 'word-selection-modal';
+
+        const modalContent = document.createElement('div');
+        modalContent.className = 'word-selection-content';
 
         const wordTitle = document.createElement('h3');
         wordTitle.textContent = 'Scegli una parola da disegnare:';
-        wordSelectionBox.appendChild(wordTitle);
+        modalContent.appendChild(wordTitle);
 
         const wordList = document.createElement('div');
         wordList.className = 'word-list';
@@ -336,8 +339,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     word
                 });
 
-                // Rimuovi il box di selezione
-                wordSelectionBox.remove();
+                // Rimuovi il modal
+                wordSelectionModal.remove();
 
                 // Pulisci il canvas
                 ctx.fillStyle = 'white';
@@ -350,17 +353,41 @@ document.addEventListener('DOMContentLoaded', () => {
             wordList.appendChild(wordButton);
         });
 
-        wordSelectionBox.appendChild(wordList);
+        modalContent.appendChild(wordList);
+        wordSelectionModal.appendChild(modalContent);
 
-        // Aggiungi il box alla canvas box
-        canvasBox.appendChild(wordSelectionBox);
+        // Aggiungi il modal al body
+        document.body.appendChild(wordSelectionModal);
     }
 
     // Funzione per aggiungere messaggi alla chat
     function addMessage(message, type) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type || 'chat'}`;
-        messageDiv.textContent = message;
+
+        // Se è un messaggio di chat con formato "colore: testo"
+        if (type === 'chat' && message.includes(':')) {
+            const parts = message.split(':');
+            const colorName = parts[0].trim();
+            const messageText = parts.slice(1).join(':').trim();
+
+            // Crea un elemento per il colore
+            const colorBlock = document.createElement('span');
+            colorBlock.className = 'message-color-block';
+            colorBlock.style.backgroundColor = colorName;
+
+            // Crea un elemento per il testo
+            const textSpan = document.createElement('span');
+            textSpan.textContent = `: ${messageText}`;
+
+            // Aggiungi entrambi al messaggio
+            messageDiv.appendChild(colorBlock);
+            messageDiv.appendChild(textSpan);
+        } else {
+            // Per altri tipi di messaggi, mostra il testo normale
+            messageDiv.textContent = message;
+        }
+
         messagesBox.appendChild(messageDiv);
 
         // Scorri in basso per vedere gli ultimi messaggi
@@ -389,9 +416,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const playerEntry = document.createElement('div');
             playerEntry.className = index % 2 === 0 ? 'player-entry-1' : 'player-entry-2';
 
-            const positionText = document.createElement('p');
-            positionText.className = 'player-entry-text';
-            positionText.textContent = `${index + 1}.`;
+            // Sostituisci il numero con un blocco colorato
+            const colorBlock = document.createElement('div');
+            colorBlock.className = 'player-color-block';
+            colorBlock.style.backgroundColor = color;
 
             const avatarCircle = document.createElement('div');
             avatarCircle.className = 'avatar-circle';
@@ -423,7 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
             avatarCircle.appendChild(avatarColor);
             scoreBox.appendChild(scoreText);
 
-            playerEntry.appendChild(positionText);
+            playerEntry.appendChild(colorBlock);
             playerEntry.appendChild(avatarCircle);
             playerEntry.appendChild(scoreBox);
 
@@ -438,6 +466,101 @@ document.addEventListener('DOMContentLoaded', () => {
         const controlsBox = document.createElement('div');
         controlsBox.className = 'artist-controls';
 
+        // Creare il contenitore per la selezione dello spessore
+        const lineWidthContainer = document.createElement('div');
+        lineWidthContainer.className = 'control-section';
+
+        // Aggiungi titolo per lo spessore
+        const lineWidthTitle = document.createElement('p');
+        //lineWidthTitle.textContent = 'Spessore:';
+        lineWidthTitle.className = 'control-label';
+        lineWidthContainer.appendChild(lineWidthTitle);
+
+        // Aggiungi i 3 pulsanti per lo spessore
+        const lineWidths = [2, 5, 10];
+        const lineWidthButtons = document.createElement('div');
+        lineWidthButtons.className = 'line-width-buttons';
+
+        lineWidths.forEach(width => {
+            const button = document.createElement('button');
+            button.className = 'line-width-button';
+            if (width === currentLineWidth) {
+                button.classList.add('active');
+            }
+            button.dataset.width = width;
+
+            // Creare un cerchio per rappresentare lo spessore
+            const circle = document.createElement('div');
+            circle.className = 'line-width-circle';
+            circle.style.width = `${width * 2}px`;
+            circle.style.height = `${width * 2}px`;
+
+            button.appendChild(circle);
+
+            button.addEventListener('click', () => {
+                currentLineWidth = width;
+                // Rimuovi la classe active da tutti i pulsanti
+                document.querySelectorAll('.line-width-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                // Aggiungi la classe active al pulsante selezionato
+                button.classList.add('active');
+            });
+
+            lineWidthButtons.appendChild(button);
+        });
+
+        lineWidthContainer.appendChild(lineWidthButtons);
+
+        // Creare il selettore di colori con 16 colori predefiniti
+        const colorContainer = document.createElement('div');
+        colorContainer.className = 'control-section';
+
+        // Aggiungi titolo per i colori
+        const colorTitle = document.createElement('p');
+        //colorTitle.textContent = 'Colori:';
+        colorTitle.className = 'control-label';
+        colorContainer.appendChild(colorTitle);
+
+        // Lista di 16 colori predefiniti
+        const colors = [
+            '#000000', '#FFFFFF', '#FF0000', '#00FF00',
+            '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF',
+            '#FFA500', '#800080', '#008000', '#800000',
+            '#808080', '#A52A2A', '#FFC0CB', '#FFD700'
+        ];
+
+        const colorGrid = document.createElement('div');
+        colorGrid.className = 'color-grid';
+
+        colors.forEach(color => {
+            const colorButton = document.createElement('button');
+            colorButton.className = 'color-button';
+            colorButton.style.backgroundColor = color;
+
+            if (color === currentColor) {
+                colorButton.classList.add('active');
+            }
+
+            colorButton.addEventListener('click', () => {
+                currentColor = color;
+                // Rimuovi la classe active da tutti i pulsanti
+                document.querySelectorAll('.color-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                // Aggiungi la classe active al pulsante selezionato
+                colorButton.classList.add('active');
+            });
+
+            colorGrid.appendChild(colorButton);
+        });
+
+        colorContainer.appendChild(colorGrid);
+
+        // Contenitore per il pulsante di pulizia
+        const clearContainer = document.createElement('div');
+        clearContainer.className = 'control-section clear-section';
+
         // Pulsante per pulire la lavagna
         const clearButton = document.createElement('button');
         clearButton.textContent = 'Pulisci Lavagna';
@@ -451,45 +574,30 @@ document.addEventListener('DOMContentLoaded', () => {
             socket.emit('clearCanvas', { lobbyId });
         });
 
-        // Selettore di spessore linea
-        const lineWidthLabel = document.createElement('label');
-        lineWidthLabel.textContent = 'Spessore:';
+        clearContainer.appendChild(clearButton);
 
-        const lineWidthSelect = document.createElement('select');
-        [1, 3, 5, 8, 12].forEach(width => {
-            const option = document.createElement('option');
-            option.value = width;
-            option.textContent = width;
-            lineWidthSelect.appendChild(option);
-        });
+        // Crea un layout flessibile per i controlli
+        const controlsLayout = document.createElement('div');
+        controlsLayout.className = 'controls-layout';
 
-        // Imposta il valore predefinito
-        lineWidthSelect.value = currentLineWidth;
+        // Primo gruppo: spessore e pulizia
+        const leftGroup = document.createElement('div');
+        leftGroup.className = 'controls-group';
+        leftGroup.appendChild(lineWidthContainer);
+        leftGroup.appendChild(clearContainer);
 
-        lineWidthSelect.addEventListener('change', (e) => {
-            currentLineWidth = parseInt(e.target.value);
-        });
+        // Secondo gruppo: colori
+        const rightGroup = document.createElement('div');
+        rightGroup.className = 'controls-group';
+        rightGroup.appendChild(colorContainer);
 
-        // Selettore di colore
-        const colorLabel = document.createElement('label');
-        colorLabel.textContent = 'Colore:';
+        controlsLayout.appendChild(leftGroup);
+        controlsLayout.appendChild(rightGroup);
 
-        const colorPicker = document.createElement('input');
-        colorPicker.type = 'color';
-        colorPicker.value = currentColor;
-        colorPicker.addEventListener('change', (e) => {
-            currentColor = e.target.value;
-        });
+        controlsBox.appendChild(controlsLayout);
 
-        // Aggiungi tutti i controlli al box
-        controlsBox.appendChild(colorLabel);
-        controlsBox.appendChild(colorPicker);
-        controlsBox.appendChild(lineWidthLabel);
-        controlsBox.appendChild(lineWidthSelect);
-        controlsBox.appendChild(clearButton);
-
-        // Aggiungi i controlli sopra il canvas
-        canvasBox.insertBefore(controlsBox, canvas);
+        // Aggiungi i controlli sotto il canvas
+        canvasBox.appendChild(controlsBox);
     }
 
     // Mostra un messaggio di benvenuto
