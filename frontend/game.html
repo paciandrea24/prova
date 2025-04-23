@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="./styles/game.css">
-    <title>Document</title>
+    <title>Drawing Game</title>
 </head>
 
 <body>
@@ -14,99 +14,75 @@
             <div class="timer-box-content">
                 <img src="./imgs/timer.png" alt="timer" class="timer-icon">
                 <div class="timer-text-box">
-                    <p class="timer-text">12s</p>
+                    <p class="timer-text">60s</p>
                 </div>
             </div>
-
-
         </div>
 
         <div class="hint-box">
             <div class="hint-word">
-                <p class="hint">_ _ _ _ _ </p>
+                <p class="hint">Waiting for the game to start...</p>
             </div>
+        </div>
+
+        <div class="game-info">
+            <p class="round-info">Round: <span id="current-round">1</span>/<span id="total-rounds">3</span></p>
         </div>
     </div>
 
-
     <div class="main-content">
         <div class="standing-box">
+            <h3>Classifica</h3>
             <ul class="players-ul">
-                <li>
-                    <div class="player-entry-1">
-                        <p class="player-entry-text">1.</p>
-                        <div class="avatar-circle">
-                            <div class="avatar-color">
-                                <!-- Il colore verrà impostato con JavaScript -->
-                            </div>
-
-                        </div>
-                        <div class="score-box">
-                            <p>2424 pts.</p>
-                        </div>
-                    </div>
-                </li>
-                <li>
-                    <div class="player-entry-2">
-                        <p class="player-entry-text">2.</p>
-                        <div class="avatar-circle">
-                            <div class="avatar-color">
-                                <!-- Il colore verrà impostato con JavaScript -->
-                            </div>
-
-                        </div>
-                        <div class="score-box">
-                            <p>242 pts.</p>
-                        </div>
-                    </div>
-                </li>
-                <li>
-                    <div class="player-entry-1">
-                        <p class="player-entry-text">3.</p>
-                        <div class="avatar-circle">
-                            <div class="avatar-color">
-                                <!-- Il colore verrà impostato con JavaScript -->
-                            </div>
-
-                        </div>
-                        <div class="score-box">
-                            <p>24 pts.</p>
-                        </div>
-                    </div>
-                </li>
-                <li>
-                    <div class="player-entry-2">
-                        <p class="player-entry-text">4.</p>
-                        <div class="avatar-circle">
-                            <div class="avatar-color">
-                                <!-- Il colore verrà impostato con JavaScript -->
-                            </div>
-
-                        </div>
-                        <div class="score-box">
-                            <p>2 pts.</p>
-                        </div>
-                    </div>
-                </li>
+                <!-- Players will be dynamically added here -->
             </ul>
         </div>
 
         <div class="canvas-box">
-
+            <!-- Canvas will be created by JavaScript -->
+            <div id="artist-notification"></div>
         </div>
 
         <div class="chat-box">
             <div class="messages-box">
-
+                <!-- Messages will be added here -->
             </div>
 
             <div class="form-box">
                 <form action="" id="chat-form">
                     <input type="text" placeholder="Guess the word..." autocomplete="off" id="chat-input">
+                    <button type="submit">Invia</button>
                 </form>
             </div>
         </div>
     </div>
+
+    <!-- Modal per il termine del gioco -->
+    <div id="game-end-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>Game Over!</h2>
+            <div id="final-standings">
+                <!-- Final standings will be added here -->
+            </div>
+            <button id="back-to-lobby">Torna alla Lobby</button>
+        </div>
+    </div>
+
+    <!-- Modal per la fine del round -->
+    <div id="round-end-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>Round Over!</h2>
+            <p>The word was: <strong id="revealed-word"></strong></p>
+            <div id="round-standings">
+                <!-- Round standings will be added here -->
+            </div>
+            <p>Preparing next round...</p>
+        </div>
+    </div>
+
+    <!-- Socket.io script -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- Game logic script -->
     <script src="game.js"></script>
 </body>
 

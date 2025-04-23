@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Recupero parametri dall'URL
+    // Recupera i parametri dalla URL
     const urlParams = new URLSearchParams(window.location.search);
     const lobbyId = urlParams.get('lobby');
     const playerColor = urlParams.get('color');
@@ -10,786 +10,489 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    // Inizializzazione socket
-    const socket = io();
-    socket.emit('joinLobby', lobbyId);
-    socket.emit('joinGame', { lobbyId, gameId, playerColor });
-
-    // Setup elementi DOM
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const canvasBox = document.querySelector('.canvas-box');
+    // Riferimenti agli elementi del DOM
     const timerText = document.querySelector('.timer-text');
     const hintText = document.querySelector('.hint');
+    const currentRoundText = document.getElementById('current-round');
+    const totalRoundsText = document.getElementById('total-rounds');
+    const messagesBox = document.querySelector('.messages-box');
     const chatForm = document.getElementById('chat-form');
     const chatInput = document.getElementById('chat-input');
-    const messagesBox = document.querySelector('.messages-box');
-    const playersList = document.querySelector('.players-ul');
+    const canvasBox = document.querySelector('.canvas-box');
+    const standingBox = document.querySelector('.players-ul');
+    const artistNotification = document.getElementById('artist-notification');
+    const gameEndModal = document.getElementById('game-end-modal');
+    const roundEndModal = document.getElementById('round-end-modal');
+    const revealedWordElement = document.getElementById('revealed-word');
+    const backToLobbyBtn = document.getElementById('back-to-lobby');
 
-    // Setup canvas
-    canvas.width = 780;
-    canvas.height = 530;
-    canvas.style.backgroundColor = 'white';
+    // Crea il canvas per il disegno
+    const canvas = document.createElement('canvas');
+    canvas.width = 600;
+    canvas.height = 400;
     canvasBox.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
 
+    // Inizializza il canvas con sfondo bianco
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Inizializza le variabili per il disegno
     let isDrawing = false;
     let lastX = 0;
     let lastY = 0;
-    let currentColor = 'black';
+    let currentColor = playerColor;
     let currentLineWidth = 5;
-    let canDraw = false; // Permesso di disegnare (solo per l'artista)
-    let gameState = {
-        currentTurn: null,
-        currentWord: null,
-        wordOptions: [],
-        timer: 60,
-        players: [],
-        scores: {},
-        correctGuesses: []
-    };
+    let amIArtist = false;
 
-    // ==================== CANVAS DRAWING FUNCTIONS ====================
+    // Connessione Socket.io
+    const socket = io();
+
+    // Unisciti alla lobby
+    socket.emit('joinLobby', lobbyId);
+
+    // Unisciti al gioco
+    socket.emit('joinGame', { lobbyId, gameId, playerColor });
+
+    // Richiedi lo stato attuale del gioco
+    socket.emit('requestGameState', { lobbyId });
+
+    // Gestione degli eventi di disegno
     function startDrawing(e) {
-        if (!canDraw) return;
+        if (!amIArtist) return;  // Solo l'artista può disegnare
+
         isDrawing = true;
-        [lastX, lastY] = [e.offsetX, e.offsetY];
+        [lastX, lastY] = getMousePos(canvas, e);
     }
 
     function draw(e) {
-        if (!isDrawing || !canDraw) return;
-        ctx.beginPath();
-        ctx.moveTo(lastX, lastY);
-        ctx.lineTo(e.offsetX, e.offsetY);
-        ctx.stroke();
+        if (!isDrawing || !amIArtist) return;  // Solo l'artista può disegnare
 
-        // Emettere l'evento di disegno al server
+        const [x, y] = getMousePos(canvas, e);
+
+        // Disegna localmente
+        drawLine(ctx, lastX, lastY, x, y, currentColor, currentLineWidth);
+
+        // Invia il disegno agli altri giocatori
         socket.emit('draw', {
             lobbyId,
             from: { x: lastX, y: lastY },
-            to: { x: e.offsetX, y: e.offsetY },
+            to: { x, y },
             color: currentColor,
             lineWidth: currentLineWidth
         });
 
-        [lastX, lastY] = [e.offsetX, e.offsetY];
+        [lastX, lastY] = [x, y];
     }
 
     function stopDrawing() {
         isDrawing = false;
     }
 
-    function setupCanvas() {
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
-        ctx.lineWidth = currentLineWidth;
-        ctx.strokeStyle = currentColor;
-
-        canvas.addEventListener('mousedown', startDrawing);
-        canvas.addEventListener('mousemove', draw);
-        canvas.addEventListener('mouseup', stopDrawing);
-        canvas.addEventListener('mouseout', stopDrawing);
+    // Funzione helper per ottenere la posizione del mouse rispetto al canvas
+    function getMousePos(canvas, evt) {
+        const rect = canvas.getBoundingClientRect();
+        return [
+            (evt.clientX - rect.left) / (rect.right - rect.left) * canvas.width,
+            (evt.clientY - rect.top) / (rect.bottom - rect.top) * canvas.height
+        ];
     }
 
-    // ==================== CHAT FUNCTIONS ====================
-    function addMessage(message, type = 'normal') {
-        const messageElement = document.createElement('div');
-        messageElement.className = `message ${type}`;
-        messageElement.textContent = message;
-        messagesBox.appendChild(messageElement);
-        messagesBox.scrollTop = messagesBox.scrollHeight;
+    // Funzione per disegnare una linea
+    function drawLine(context, x1, y1, x2, y2, color, width) {
+        context.beginPath();
+        context.moveTo(x1, y1);
+        context.lineTo(x2, y2);
+        context.strokeStyle = color;
+        context.lineWidth = width;
+        context.lineCap = 'round';
+        context.stroke();
     }
 
-    chatForm.addEventListener('submit', (e) => {
+    // Aggiunta di eventi al canvas
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseout', stopDrawing);
+
+    // Touch events for mobile
+    canvas.addEventListener('touchstart', (e) => {
         e.preventDefault();
-        const guess = chatInput.value.trim();
-        if (guess) {
-            socket.emit('guess', { lobbyId, playerColor, guess });
-            chatInput.value = '';
-        }
+        startDrawing(e.touches[0]);
     });
+    canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        draw(e.touches[0]);
+    });
+    canvas.addEventListener('touchend', stopDrawing);
 
-    // ==================== WORD SELECTION FUNCTIONS ====================
-    function createWordSelectionUI(words) {
-        // Pulisci canvas e crea UI per la selezione della parola
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#FFFFF0';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        const wordBoxHeight = 100;
-        const spacing = 30;
-        const y = canvas.height / 2 - wordBoxHeight / 2;
-
-        words.forEach((word, index) => {
-            const boxWidth = 200;
-            const x = canvas.width / 2 - ((words.length * boxWidth) + ((words.length - 1) * spacing)) / 2 + index * (boxWidth + spacing);
-
-            // Disegna il box
-            ctx.fillStyle = '#FFFFDF';
-            ctx.strokeStyle = '#B8B8B8';
-            ctx.lineWidth = 2;
-            ctx.fillRect(x, y, boxWidth, wordBoxHeight);
-            ctx.strokeRect(x, y, boxWidth, wordBoxHeight);
-
-            // Disegna il testo
-            ctx.fillStyle = 'black';
-            ctx.font = '24px Inter';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(word, x + boxWidth / 2, y + wordBoxHeight / 2);
-
-            // Aggiungi event listener per il click
-            canvas.addEventListener('click', function wordSelectHandler(e) {
-                const clickX = e.offsetX;
-                const clickY = e.offsetY;
-
-                if (clickX >= x && clickX <= x + boxWidth && clickY >= y && clickY <= y + wordBoxHeight) {
-                    socket.emit('wordSelected', { lobbyId, word });
-                    canvas.removeEventListener('click', wordSelectHandler);
-                }
-            });
-        });
-    }
-
-    // ==================== UPDATE FUNCTIONS ====================
-    function updatePlayerList(players, scores) {
-        playersList.innerHTML = '';
-
-        players.forEach((player, index) => {
-            const playerScore = scores[player] || 0;
-            const li = document.createElement('li');
-
-            const playerEntry = document.createElement('div');
-            playerEntry.className = index % 2 === 0 ? 'player-entry-1' : 'player-entry-2';
-
-            // Posizione
-            const position = document.createElement('p');
-            position.className = 'player-entry-text';
-            position.textContent = `${index + 1}.`;
-
-            // Avatar
-            const avatarCircle = document.createElement('div');
-            avatarCircle.className = 'avatar-circle';
-
-            const avatarColor = document.createElement('div');
-            avatarColor.className = 'avatar-color';
-            avatarColor.style.backgroundColor = player;
-
-            // Se è l'artista corrente, aggiungi un indicatore
-            if (player === gameState.currentTurn) {
-                avatarCircle.style.border = '2px solid gold';
-            }
-
-            // Se ha indovinato correttamente, aggiungi un indicatore
-            if (gameState.correctGuesses.includes(player)) {
-                const checkmark = document.createElement('span');
-                checkmark.textContent = '✓';
-                checkmark.style.color = 'green';
-                checkmark.style.fontSize = '16px';
-                checkmark.style.marginLeft = '5px';
-                playerEntry.appendChild(checkmark);
-            }
-
-            // Score
-            const scoreBox = document.createElement('div');
-            scoreBox.className = 'score-box';
-            const scoreText = document.createElement('p');
-            scoreText.textContent = `${playerScore} pts.`;
-
-            // Assembla tutto
-            avatarCircle.appendChild(avatarColor);
-            scoreBox.appendChild(scoreText);
-
-            playerEntry.appendChild(position);
-            playerEntry.appendChild(avatarCircle);
-            playerEntry.appendChild(scoreBox);
-
-            li.appendChild(playerEntry);
-            playersList.appendChild(li);
-        });
-    }
-
-    function updateTimer(time) {
-        timerText.textContent = `${time}s`;
-        if (time <= 10) {
-            timerText.style.color = 'red';
-        } else {
-            timerText.style.color = 'black';
-        }
-    }
-
-    function updateHint(hint) {
-        hintText.textContent = hint;
-    }
-
-    // ==================== SOCKET EVENT HANDLERS ====================
+    // Gestione degli eventi socket
     socket.on('gameState', (state) => {
-        gameState = state;
-
-        // Aggiorna UI in base allo stato del gioco
-        updatePlayerList(state.players, state.scores);
-        updateTimer(state.timer);
-
-        // Se sei l'artista corrente, permetti di disegnare
-        canDraw = playerColor === state.currentTurn;
-
-        // Aggiorna UI per l'artista
-        if (canDraw && state.wordOptions && state.wordOptions.length > 0) {
-            createWordSelectionUI(state.wordOptions);
-        }
-
-        // Aggiorna hint
-        if (state.hint) {
-            updateHint(state.hint);
-        }
+        // Aggiorna lo stato del gioco nella UI
+        updateGameState(state);
     });
 
     socket.on('drawLine', (data) => {
-        // Se non sei l'artista, disegna ciò che ricevi
-        if (playerColor !== gameState.currentTurn) {
-            ctx.beginPath();
-            ctx.moveTo(data.from.x, data.from.y);
-            ctx.lineTo(data.to.x, data.to.y);
-            ctx.strokeStyle = data.color;
-            ctx.lineWidth = data.lineWidth;
-            ctx.stroke();
-        }
+        // Disegna le linee ricevute dagli altri giocatori
+        drawLine(
+            ctx,
+            data.from.x,
+            data.from.y,
+            data.to.x,
+            data.to.y,
+            data.color,
+            data.lineWidth
+        );
     });
 
     socket.on('clearCanvas', () => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Pulisci il canvas
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
     });
 
     socket.on('message', (data) => {
+        // Aggiungi messaggi alla chat
         addMessage(data.message, data.type);
     });
 
     socket.on('roundEnd', (data) => {
-        // Mostra la parola corretta e informazioni sul round
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#FFFFF0';
+        // Mostra la parola e i punteggi alla fine del round
+        revealedWordElement.textContent = data.word;
+
+        // Mostra il modal di fine round
+        roundEndModal.style.display = 'flex';
+
+        // Nasconde il modal dopo 5 secondi (come nella logica del server)
+        setTimeout(() => {
+            roundEndModal.style.display = 'none';
+        }, 4500);
+
+        // Pulisci il canvas
+        ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        ctx.fillStyle = 'black';
-        ctx.font = '36px Inter';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(`La parola era: ${data.word}`, canvas.width / 2, canvas.height / 2 - 50);
-
-        // Aggiorna i punteggi
-        updatePlayerList(gameState.players, data.newScores);
-
-        addMessage(`Round terminato! La parola era: ${data.word}`, 'system');
     });
 
     socket.on('gameEnd', (data) => {
-        // Mostra classifica finale
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#FFFFF0';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // Mostra i punteggi finali del gioco
+        const finalStandings = document.getElementById('final-standings');
+        finalStandings.innerHTML = '';
 
-        ctx.fillStyle = 'black';
-        ctx.font = '36px Inter';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillText('Game Over!', canvas.width / 2, 50);
+        // Crea un array di [color, score] e ordinalo per punteggio decrescente
+        const sortedPlayers = Object.entries(data.finalScores)
+            .sort((a, b) => b[1] - a[1]);
 
-        // Mostra la classifica
-        ctx.font = '24px Inter';
-        const sortedPlayers = [...data.players].sort((a, b) => data.finalScores[b] - data.finalScores[a]);
-
+        // Crea la classifica finale
         sortedPlayers.forEach((player, index) => {
-            const y = 120 + index * 40;
-            ctx.textAlign = 'left';
-            ctx.fillText(`${index + 1}. ${player}`, canvas.width / 4, y);
-            ctx.textAlign = 'right';
-            ctx.fillText(`${data.finalScores[player]} pts`, canvas.width * 3 / 4, y);
+            const playerEntry = document.createElement('div');
+            playerEntry.className = 'final-player-entry';
+
+            const colorDiv = document.createElement('div');
+            colorDiv.className = 'avatar-color';
+            colorDiv.style.backgroundColor = player[0];
+            colorDiv.style.width = '20px';
+            colorDiv.style.height = '20px';
+            colorDiv.style.display = 'inline-block';
+            colorDiv.style.marginRight = '10px';
+            colorDiv.style.borderRadius = '50%';
+
+            const position = document.createElement('span');
+            position.textContent = `${index + 1}. `;
+
+            const score = document.createElement('span');
+            score.textContent = ` - ${player[1]} points`;
+
+            // Evidenzia il giocatore corrente
+            if (player[0] === playerColor) {
+                playerEntry.style.fontWeight = 'bold';
+            }
+
+            playerEntry.appendChild(position);
+            playerEntry.appendChild(colorDiv);
+            playerEntry.appendChild(score);
+            finalStandings.appendChild(playerEntry);
         });
 
-        // Aggiungi un messaggio per tornare alla lobby
-        ctx.font = '20px Inter';
-        ctx.textAlign = 'center';
-        ctx.fillText('Returning to lobby in 10 seconds...', canvas.width / 2, canvas.height - 50);
-
-        // Ritorna alla lobby dopo 10 secondi
-        setTimeout(() => {
-            window.location.href = `/lobby.html?lobby=${lobbyId}&color=${playerColor}`;
-        }, 10000);
+        // Mostra il modal di fine gioco
+        gameEndModal.style.display = 'flex';
     });
 
-    // ==================== PALETTE AND TOOLS ====================
-    function createDrawingTools() {
-        if (!canDraw) return; // Solo l'artista ha gli strumenti di disegno
+    // Evento per tornare alla lobby
+    backToLobbyBtn.addEventListener('click', () => {
+        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${playerColor}`;
+    });
 
-        const toolbox = document.createElement('div');
-        toolbox.className = 'drawing-tools';
-        toolbox.style.position = 'absolute';
-        toolbox.style.top = '10px';
-        toolbox.style.left = '10px';
-        toolbox.style.display = 'flex';
-        toolbox.style.flexDirection = 'column';
-        toolbox.style.gap = '10px';
+    // Gestione del form di chat per indovinare
+    chatForm.addEventListener('submit', (e) => {
+        e.preventDefault();
 
-        // Colori
-        const colors = ['black', 'red', 'blue', 'green', 'yellow', 'purple', 'brown'];
-        const palette = document.createElement('div');
-        palette.style.display = 'flex';
-        palette.style.gap = '5px';
+        const guess = chatInput.value.trim();
+        if (!guess) return;
 
-        colors.forEach(color => {
-            const colorBtn = document.createElement('div');
-            colorBtn.style.width = '20px';
-            colorBtn.style.height = '20px';
-            colorBtn.style.backgroundColor = color;
-            colorBtn.style.border = '1px solid #333';
-            colorBtn.style.cursor = 'pointer';
-
-            colorBtn.addEventListener('click', () => {
-                currentColor = color;
-                ctx.strokeStyle = color;
-            });
-
-            palette.appendChild(colorBtn);
-        });
-
-        // Spessore linea
-        const lineWidths = [2, 5, 10, 15];
-        const lineWidthTools = document.createElement('div');
-        lineWidthTools.style.display = 'flex';
-        lineWidthTools.style.gap = '5px';
-
-        lineWidths.forEach(width => {
-            const lineBtn = document.createElement('div');
-            lineBtn.style.width = `${width * 2}px`;
-            lineBtn.style.height = '20px';
-            lineBtn.style.backgroundColor = 'black';
-            lineBtn.style.border = '1px solid #333';
-            lineBtn.style.cursor = 'pointer';
-
-            lineBtn.addEventListener('click', () => {
-                currentLineWidth = width;
-                ctx.lineWidth = width;
-            });
-
-            lineWidthTools.appendChild(lineBtn);
-        });
-
-        // Cancella tutto
-        const clearBtn = document.createElement('button');
-        clearBtn.textContent = 'Clear';
-        clearBtn.style.padding = '5px';
-        clearBtn.style.cursor = 'pointer';
-
-        clearBtn.addEventListener('click', () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            socket.emit('clearCanvas', { lobbyId });
-        });
-
-        toolbox.appendChild(palette);
-        toolbox.appendChild(lineWidthTools);
-        toolbox.appendChild(clearBtn);
-        canvasBox.appendChild(toolbox);
-    }
-
-    // Inizializza il canvas
-    setupCanvas();
-
-    // Aggiorna lo stato iniziale
-    socket.emit('requestGameState', { lobbyId });
-}); document.addEventListener('DOMContentLoaded', () => {
-    // Recupero parametri dall'URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const lobbyId = urlParams.get('lobby');
-    const playerColor = urlParams.get('color');
-    const gameId = urlParams.get('game');
-
-    if (!lobbyId || !playerColor || !gameId) {
-        window.location.href = '/';
-        return;
-    }
-
-    // Inizializzazione socket
-    const socket = io();
-    socket.emit('joinLobby', lobbyId);
-    socket.emit('joinGame', { lobbyId, gameId, playerColor });
-
-    // Setup elementi DOM
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const canvasBox = document.querySelector('.canvas-box');
-    const timerText = document.querySelector('.timer-text');
-    const hintText = document.querySelector('.hint');
-    const chatForm = document.getElementById('chat-form');
-    const chatInput = document.getElementById('chat-input');
-    const messagesBox = document.querySelector('.messages-box');
-    const playersList = document.querySelector('.players-ul');
-
-    // Setup canvas
-    canvas.width = 780;
-    canvas.height = 530;
-    canvas.style.backgroundColor = 'white';
-    canvasBox.appendChild(canvas);
-
-    let isDrawing = false;
-    let lastX = 0;
-    let lastY = 0;
-    let currentColor = 'black';
-    let currentLineWidth = 5;
-    let canDraw = false; // Permesso di disegnare (solo per l'artista)
-    let gameState = {
-        currentTurn: null,
-        currentWord: null,
-        wordOptions: [],
-        timer: 60,
-        players: [],
-        scores: {},
-        correctGuesses: []
-    };
-
-    // ==================== CANVAS DRAWING FUNCTIONS ====================
-    function startDrawing(e) {
-        if (!canDraw) return;
-        isDrawing = true;
-        [lastX, lastY] = [e.offsetX, e.offsetY];
-    }
-
-    function draw(e) {
-        if (!isDrawing || !canDraw) return;
-        ctx.beginPath();
-        ctx.moveTo(lastX, lastY);
-        ctx.lineTo(e.offsetX, e.offsetY);
-        ctx.stroke();
-
-        // Emettere l'evento di disegno al server
-        socket.emit('draw', {
+        // Invia il tentativo di indovinello
+        socket.emit('guess', {
             lobbyId,
-            from: { x: lastX, y: lastY },
-            to: { x: e.offsetX, y: e.offsetY },
-            color: currentColor,
-            lineWidth: currentLineWidth
+            playerColor,
+            guess
         });
 
-        [lastX, lastY] = [e.offsetX, e.offsetY];
+        // Pulisci l'input
+        chatInput.value = '';
+    });
+
+    // Funzione per aggiornare lo stato del gioco nella UI
+    function updateGameState(state) {
+        // Aggiorna il timer
+        timerText.textContent = `${state.timer}s`;
+
+        // Aggiorna l'indizio
+        if (state.hint) {
+            hintText.textContent = state.hint;
+        }
+
+        // Aggiorna le informazioni sul round
+        if (state.round) {
+            currentRoundText.textContent = state.round;
+        }
+
+        if (state.totalRounds) {
+            totalRoundsText.textContent = state.totalRounds;
+        }
+
+        // Verifica se sono l'artista di questo turno
+        const wasArtist = amIArtist; // Salva lo stato precedente
+        amIArtist = state.currentTurn === playerColor;
+
+        // Se sono appena diventato l'artista
+        if (!wasArtist && amIArtist) {
+            // Mostra notifica
+            artistNotification.innerHTML = '<h3>Sei l\'artista di questo turno!</h3>';
+            artistNotification.style.display = 'block';
+
+            setTimeout(() => {
+                artistNotification.style.display = 'none';
+            }, 3000);
+        }
+
+        // Aggiorna la UI per l'artista o per chi deve indovinare
+        updateUIForRole(amIArtist);
+
+        // Se sono l'artista e ci sono opzioni di parole disponibili, mostrare la selezione
+        if (amIArtist && state.wordOptions && state.wordOptions.length > 0) {
+            showWordSelection(state.wordOptions);
+        }
+
+        // Aggiorna la classifica
+        updateStandings(state.players, state.scores, state.currentTurn);
     }
 
-    function stopDrawing() {
-        isDrawing = false;
+    // Aggiorna UI in base al ruolo (artista o indovinatore)
+    function updateUIForRole(isArtist) {
+        // Aggiorna placeholder dell'input di chat
+        chatInput.placeholder = isArtist ? "Non puoi indovinare mentre disegni..." : "Indovina la parola...";
+
+        // Disabilita l'input se sei l'artista
+        chatInput.disabled = isArtist;
+
+        // Mostra/nascondi controlli artista
+        const artistControls = document.querySelector('.artist-controls');
+        if (artistControls) {
+            artistControls.style.display = isArtist ? 'flex' : 'none';
+        } else if (isArtist) {
+            // Se non esistono ancora i controlli dell'artista, creali
+            addArtistControls();
+        }
     }
 
-    function setupCanvas() {
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
-        ctx.lineWidth = currentLineWidth;
-        ctx.strokeStyle = currentColor;
+    // Funzione per mostrare la selezione della parola
+    function showWordSelection(words) {
+        // Rimuovi eventuali selezioni di parole precedenti
+        const existingWordSelection = document.querySelector('.word-selection');
+        if (existingWordSelection) {
+            existingWordSelection.remove();
+        }
 
-        canvas.addEventListener('mousedown', startDrawing);
-        canvas.addEventListener('mousemove', draw);
-        canvas.addEventListener('mouseup', stopDrawing);
-        canvas.addEventListener('mouseout', stopDrawing);
+        // Crea il box per la selezione delle parole
+        const wordSelectionBox = document.createElement('div');
+        wordSelectionBox.className = 'word-selection';
+
+        const wordTitle = document.createElement('h3');
+        wordTitle.textContent = 'Scegli una parola da disegnare:';
+        wordSelectionBox.appendChild(wordTitle);
+
+        const wordList = document.createElement('div');
+        wordList.className = 'word-list';
+
+        // Per ogni parola, crea un bottone
+        words.forEach(word => {
+            const wordButton = document.createElement('button');
+            wordButton.textContent = word;
+            wordButton.className = 'word-option';
+
+            wordButton.addEventListener('click', () => {
+                // Invia la parola selezionata
+                socket.emit('wordSelected', {
+                    lobbyId,
+                    word
+                });
+
+                // Rimuovi il box di selezione
+                wordSelectionBox.remove();
+
+                // Pulisci il canvas
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Aggiungi un messaggio
+                addMessage(`Stai disegnando: ${word}`, 'system');
+            });
+
+            wordList.appendChild(wordButton);
+        });
+
+        wordSelectionBox.appendChild(wordList);
+
+        // Aggiungi il box alla canvas box
+        canvasBox.appendChild(wordSelectionBox);
     }
 
-    // ==================== CHAT FUNCTIONS ====================
-    function addMessage(message, type = 'normal') {
-        const messageElement = document.createElement('div');
-        messageElement.className = `message ${type}`;
-        messageElement.textContent = message;
-        messagesBox.appendChild(messageElement);
+    // Funzione per aggiungere messaggi alla chat
+    function addMessage(message, type) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${type || 'chat'}`;
+        messageDiv.textContent = message;
+        messagesBox.appendChild(messageDiv);
+
+        // Scorri in basso per vedere gli ultimi messaggi
         messagesBox.scrollTop = messagesBox.scrollHeight;
     }
 
-    chatForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const guess = chatInput.value.trim();
-        if (guess) {
-            socket.emit('guess', { lobbyId, playerColor, guess });
-            chatInput.value = '';
-        }
-    });
+    // Funzione per aggiornare la classifica
+    function updateStandings(players, scores, currentArtist) {
+        if (!players || !scores) return;
 
-    // ==================== WORD SELECTION FUNCTIONS ====================
-    function createWordSelectionUI(words) {
-        // Pulisci canvas e crea UI per la selezione della parola
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#FFFFF0';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // Pulisci la lista della classifica
+        standingBox.innerHTML = '';
 
-        const wordBoxHeight = 100;
-        const spacing = 30;
-        const y = canvas.height / 2 - wordBoxHeight / 2;
+        // Crea un array di [color, score] e ordinalo per punteggio decrescente
+        const sortedPlayers = players
+            .map(color => [color, scores[color] || 0])
+            .sort((a, b) => b[1] - a[1]);
 
-        words.forEach((word, index) => {
-            const boxWidth = 200;
-            const x = canvas.width / 2 - ((words.length * boxWidth) + ((words.length - 1) * spacing)) / 2 + index * (boxWidth + spacing);
+        // Aggiungi i giocatori alla classifica
+        sortedPlayers.forEach((player, index) => {
+            const color = player[0];
+            const score = player[1];
 
-            // Disegna il box
-            ctx.fillStyle = '#FFFFDF';
-            ctx.strokeStyle = '#B8B8B8';
-            ctx.lineWidth = 2;
-            ctx.fillRect(x, y, boxWidth, wordBoxHeight);
-            ctx.strokeRect(x, y, boxWidth, wordBoxHeight);
-
-            // Disegna il testo
-            ctx.fillStyle = 'black';
-            ctx.font = '24px Inter';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(word, x + boxWidth / 2, y + wordBoxHeight / 2);
-
-            // Aggiungi event listener per il click
-            canvas.addEventListener('click', function wordSelectHandler(e) {
-                const clickX = e.offsetX;
-                const clickY = e.offsetY;
-
-                if (clickX >= x && clickX <= x + boxWidth && clickY >= y && clickY <= y + wordBoxHeight) {
-                    socket.emit('wordSelected', { lobbyId, word });
-                    canvas.removeEventListener('click', wordSelectHandler);
-                }
-            });
-        });
-    }
-
-    // ==================== UPDATE FUNCTIONS ====================
-    function updatePlayerList(players, scores) {
-        playersList.innerHTML = '';
-
-        players.forEach((player, index) => {
-            const playerScore = scores[player] || 0;
             const li = document.createElement('li');
 
             const playerEntry = document.createElement('div');
             playerEntry.className = index % 2 === 0 ? 'player-entry-1' : 'player-entry-2';
 
-            // Posizione
-            const position = document.createElement('p');
-            position.className = 'player-entry-text';
-            position.textContent = `${index + 1}.`;
+            const positionText = document.createElement('p');
+            positionText.className = 'player-entry-text';
+            positionText.textContent = `${index + 1}.`;
 
-            // Avatar
             const avatarCircle = document.createElement('div');
             avatarCircle.className = 'avatar-circle';
 
             const avatarColor = document.createElement('div');
             avatarColor.className = 'avatar-color';
-            avatarColor.style.backgroundColor = player;
+            avatarColor.style.backgroundColor = color;
 
-            // Se è l'artista corrente, aggiungi un indicatore
-            if (player === gameState.currentTurn) {
-                avatarCircle.style.border = '2px solid gold';
-            }
-
-            // Se ha indovinato correttamente, aggiungi un indicatore
-            if (gameState.correctGuesses.includes(player)) {
-                const checkmark = document.createElement('span');
-                checkmark.textContent = '✓';
-                checkmark.style.color = 'green';
-                checkmark.style.fontSize = '16px';
-                checkmark.style.marginLeft = '5px';
-                playerEntry.appendChild(checkmark);
-            }
-
-            // Score
             const scoreBox = document.createElement('div');
             scoreBox.className = 'score-box';
-            const scoreText = document.createElement('p');
-            scoreText.textContent = `${playerScore} pts.`;
 
-            // Assembla tutto
+            const scoreText = document.createElement('p');
+            scoreText.textContent = `${score} pts.`;
+
+            // Evidenzia il giocatore corrente
+            if (color === playerColor) {
+                playerEntry.classList.add('current-player');
+            }
+
+            // Evidenzia l'artista corrente
+            if (color === currentArtist) {
+                const artistIcon = document.createElement('span');
+                artistIcon.textContent = ' ✏️';
+                artistIcon.className = 'artist-icon';
+                scoreText.appendChild(artistIcon);
+            }
+
+            // Assembla gli elementi
             avatarCircle.appendChild(avatarColor);
             scoreBox.appendChild(scoreText);
 
-            playerEntry.appendChild(position);
+            playerEntry.appendChild(positionText);
             playerEntry.appendChild(avatarCircle);
             playerEntry.appendChild(scoreBox);
 
             li.appendChild(playerEntry);
-            playersList.appendChild(li);
+            standingBox.appendChild(li);
         });
     }
 
-    function updateTimer(time) {
-        timerText.textContent = `${time}s`;
-        if (time <= 10) {
-            timerText.style.color = 'red';
-        } else {
-            timerText.style.color = 'black';
-        }
-    }
+    // Aggiungi pulsanti e controlli per l'artista
+    function addArtistControls() {
+        // Crea un box per i controlli dell'artista
+        const controlsBox = document.createElement('div');
+        controlsBox.className = 'artist-controls';
 
-    function updateHint(hint) {
-        hintText.textContent = hint;
-    }
+        // Pulsante per pulire la lavagna
+        const clearButton = document.createElement('button');
+        clearButton.textContent = 'Pulisci Lavagna';
+        clearButton.className = 'control-button';
+        clearButton.addEventListener('click', () => {
+            // Pulisci localmente
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // ==================== SOCKET EVENT HANDLERS ====================
-    socket.on('gameState', (state) => {
-        gameState = state;
-
-        // Aggiorna UI in base allo stato del gioco
-        updatePlayerList(state.players, state.scores);
-        updateTimer(state.timer);
-
-        // Se sei l'artista corrente, permetti di disegnare
-        canDraw = playerColor === state.currentTurn;
-
-        // Aggiorna UI per l'artista
-        if (canDraw && state.wordOptions && state.wordOptions.length > 0) {
-            createWordSelectionUI(state.wordOptions);
-        }
-
-        // Aggiorna hint
-        if (state.hint) {
-            updateHint(state.hint);
-        }
-    });
-
-    socket.on('drawLine', (data) => {
-        // Se non sei l'artista, disegna ciò che ricevi
-        if (playerColor !== gameState.currentTurn) {
-            ctx.beginPath();
-            ctx.moveTo(data.from.x, data.from.y);
-            ctx.lineTo(data.to.x, data.to.y);
-            ctx.strokeStyle = data.color;
-            ctx.lineWidth = data.lineWidth;
-            ctx.stroke();
-        }
-    });
-
-    socket.on('clearCanvas', () => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-    });
-
-    socket.on('message', (data) => {
-        addMessage(data.message, data.type);
-    });
-
-    socket.on('roundEnd', (data) => {
-        // Mostra la parola corretta e informazioni sul round
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#FFFFF0';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        ctx.fillStyle = 'black';
-        ctx.font = '36px Inter';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(`La parola era: ${data.word}`, canvas.width / 2, canvas.height / 2 - 50);
-
-        // Aggiorna i punteggi
-        updatePlayerList(gameState.players, data.newScores);
-
-        addMessage(`Round terminato! La parola era: ${data.word}`, 'system');
-    });
-
-    socket.on('gameEnd', (data) => {
-        // Mostra classifica finale
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#FFFFF0';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        ctx.fillStyle = 'black';
-        ctx.font = '36px Inter';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillText('Game Over!', canvas.width / 2, 50);
-
-        // Mostra la classifica
-        ctx.font = '24px Inter';
-        const sortedPlayers = [...data.players].sort((a, b) => data.finalScores[b] - data.finalScores[a]);
-
-        sortedPlayers.forEach((player, index) => {
-            const y = 120 + index * 40;
-            ctx.textAlign = 'left';
-            ctx.fillText(`${index + 1}. ${player}`, canvas.width / 4, y);
-            ctx.textAlign = 'right';
-            ctx.fillText(`${data.finalScores[player]} pts`, canvas.width * 3 / 4, y);
-        });
-
-        // Aggiungi un messaggio per tornare alla lobby
-        ctx.font = '20px Inter';
-        ctx.textAlign = 'center';
-        ctx.fillText('Returning to lobby in 10 seconds...', canvas.width / 2, canvas.height - 50);
-
-        // Ritorna alla lobby dopo 10 secondi
-        setTimeout(() => {
-            window.location.href = `/lobby.html?lobby=${lobbyId}&color=${playerColor}`;
-        }, 10000);
-    });
-
-    // ==================== PALETTE AND TOOLS ====================
-    function createDrawingTools() {
-        if (!canDraw) return; // Solo l'artista ha gli strumenti di disegno
-
-        const toolbox = document.createElement('div');
-        toolbox.className = 'drawing-tools';
-        toolbox.style.position = 'absolute';
-        toolbox.style.top = '10px';
-        toolbox.style.left = '10px';
-        toolbox.style.display = 'flex';
-        toolbox.style.flexDirection = 'column';
-        toolbox.style.gap = '10px';
-
-        // Colori
-        const colors = ['black', 'red', 'blue', 'green', 'yellow', 'purple', 'brown'];
-        const palette = document.createElement('div');
-        palette.style.display = 'flex';
-        palette.style.gap = '5px';
-
-        colors.forEach(color => {
-            const colorBtn = document.createElement('div');
-            colorBtn.style.width = '20px';
-            colorBtn.style.height = '20px';
-            colorBtn.style.backgroundColor = color;
-            colorBtn.style.border = '1px solid #333';
-            colorBtn.style.cursor = 'pointer';
-
-            colorBtn.addEventListener('click', () => {
-                currentColor = color;
-                ctx.strokeStyle = color;
-            });
-
-            palette.appendChild(colorBtn);
-        });
-
-        // Spessore linea
-        const lineWidths = [2, 5, 10, 15];
-        const lineWidthTools = document.createElement('div');
-        lineWidthTools.style.display = 'flex';
-        lineWidthTools.style.gap = '5px';
-
-        lineWidths.forEach(width => {
-            const lineBtn = document.createElement('div');
-            lineBtn.style.width = `${width * 2}px`;
-            lineBtn.style.height = '20px';
-            lineBtn.style.backgroundColor = 'black';
-            lineBtn.style.border = '1px solid #333';
-            lineBtn.style.cursor = 'pointer';
-
-            lineBtn.addEventListener('click', () => {
-                currentLineWidth = width;
-                ctx.lineWidth = width;
-            });
-
-            lineWidthTools.appendChild(lineBtn);
-        });
-
-        // Cancella tutto
-        const clearBtn = document.createElement('button');
-        clearBtn.textContent = 'Clear';
-        clearBtn.style.padding = '5px';
-        clearBtn.style.cursor = 'pointer';
-
-        clearBtn.addEventListener('click', () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Invia l'evento a tutti
             socket.emit('clearCanvas', { lobbyId });
         });
 
-        toolbox.appendChild(palette);
-        toolbox.appendChild(lineWidthTools);
-        toolbox.appendChild(clearBtn);
-        canvasBox.appendChild(toolbox);
+        // Selettore di spessore linea
+        const lineWidthLabel = document.createElement('label');
+        lineWidthLabel.textContent = 'Spessore:';
+
+        const lineWidthSelect = document.createElement('select');
+        [1, 3, 5, 8, 12].forEach(width => {
+            const option = document.createElement('option');
+            option.value = width;
+            option.textContent = width;
+            lineWidthSelect.appendChild(option);
+        });
+
+        // Imposta il valore predefinito
+        lineWidthSelect.value = currentLineWidth;
+
+        lineWidthSelect.addEventListener('change', (e) => {
+            currentLineWidth = parseInt(e.target.value);
+        });
+
+        // Selettore di colore
+        const colorLabel = document.createElement('label');
+        colorLabel.textContent = 'Colore:';
+
+        const colorPicker = document.createElement('input');
+        colorPicker.type = 'color';
+        colorPicker.value = currentColor;
+        colorPicker.addEventListener('change', (e) => {
+            currentColor = e.target.value;
+        });
+
+        // Aggiungi tutti i controlli al box
+        controlsBox.appendChild(colorLabel);
+        controlsBox.appendChild(colorPicker);
+        controlsBox.appendChild(lineWidthLabel);
+        controlsBox.appendChild(lineWidthSelect);
+        controlsBox.appendChild(clearButton);
+
+        // Aggiungi i controlli sopra il canvas
+        canvasBox.insertBefore(controlsBox, canvas);
     }
 
-    // Inizializza il canvas
-    setupCanvas();
-
-    // Aggiorna lo stato iniziale
-    socket.emit('requestGameState', { lobbyId });
+    // Mostra un messaggio di benvenuto
+    addMessage(`Welcome to the Drawing Game! You are playing as: ${playerColor}`, 'system');
+    addMessage('Wait for your turn to draw or guess the words!', 'system');
 });
