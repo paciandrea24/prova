@@ -250,13 +250,20 @@ document.addEventListener('DOMContentLoaded', () => {
         amIArtist = state.currentTurn === playerColor;
 
         // Gestisci l'indizio in base al ruolo (artista o indovinatore)
-        if (state.word && amIArtist) {
+        if (amIArtist) {
             // Se sono l'artista, mostra la parola completa
-            hintText.textContent = state.word;
-            hintText.classList.add('artist-view');
-            document.querySelector('.hint-word').classList.add('artist-view');
+            // Usa state.currentWord se disponibile, altrimenti controlla se ci sono wordOptions
+            if (state.currentWord) {
+                hintText.textContent = state.currentWord;
+                hintText.classList.add('artist-view');
+                document.querySelector('.hint-word').classList.add('artist-view');
+            } else {
+                hintText.textContent = "In attesa di scegliere una parola...";
+                hintText.classList.add('artist-view');
+                document.querySelector('.hint-word').classList.add('artist-view');
+            }
         } else if (state.hint) {
-            // Altrimenti mostra l'indizio parziale
+            // Altrimenti mostra l'indizio parziale che si aggiorna progressivamente
             hintText.textContent = state.hint;
             hintText.classList.remove('artist-view');
             document.querySelector('.hint-word').classList.remove('artist-view');

@@ -126,8 +126,9 @@ io.on('connection', (socket) => {
         if (!game || game.currentWord) return; // Ignora se il gioco non esiste o la parola è già stata selezionata
 
         game.currentWord = word;
-        game.hint = generateHint(word);
+        game.hint = generateInitialHint(word); // Inizialmente mostra solo underscore
         game.isActive = true;
+        game.revealedIndices = new Set(); // Resetta le lettere rivelate
 
         // Invia l'hint a tutti i giocatori
         io.to(lobbyId).emit('gameState', {
@@ -138,13 +139,24 @@ io.on('connection', (socket) => {
             hint: game.hint,
             correctGuesses: game.correctGuesses,
             round: game.currentRound,
-            totalRounds: game.totalRounds
+            totalRounds: game.totalRounds,
+            currentWord: word  // Aggiungi la parola corrente qui
         });
 
         // Pulisci la lavagna
         io.to(lobbyId).emit('clearCanvas');
 
-        // Inizia il timer
+        // Imposta un intervallo per rivelare gradualmente le lettere (ogni 7 secondi)
+        if (game.hintInterval) {
+            clearInterval(game.hintInterval);
+        }
+
+        // Rivela una nuova lettera ogni 7 secondi
+        game.hintInterval = setInterval(() => {
+            updateHint(lobbyId);
+        }, 7000);
+
+        // Inizia il timer del gioco
         game.timerInterval = setInterval(() => {
             game.timer--;
 
@@ -157,7 +169,8 @@ io.on('connection', (socket) => {
                 hint: game.hint,
                 correctGuesses: game.correctGuesses,
                 round: game.currentRound,
-                totalRounds: game.totalRounds
+                totalRounds: game.totalRounds,
+                currentWord: word  // Aggiungi la parola corrente anche qui
             });
 
             // Se il timer arriva a 0 o tutti hanno indovinato, termina il turno
@@ -262,7 +275,8 @@ io.on('connection', (socket) => {
             hint: game.hint,
             correctGuesses: game.correctGuesses,
             round: game.currentRound,
-            totalRounds: game.totalRounds
+            totalRounds: game.totalRounds,
+            currentWord: game.currentWord  // Aggiungi la parola corrente qui
         });
     });
 
@@ -283,45 +297,50 @@ io.on('connection', (socket) => {
 // ##################### GESTIONE DEL GIOCO DI DISEGNO #####################
 
 // Database delle parole divise per difficoltà
-const words = {
-    easy: [
-        'casa', 'cane', 'gatto', 'sole', 'luna', 'mare', 'libro', 'porta', 'albero', 'fiore',
-        'palla', 'telefono', 'tavolo', 'cielo', 'scuola',
-        'lampada', 'biscotto', 'rana', 'sedia', 'nuvola',
-        'piuma', 'arancia', 'maglione', 'chiave', 'zaino',
-        'cuscino', 'matita', 'forchetta', 'occhiali', 'scarpa'
-    ],
-    medium: [
-        'computer', 'montagna', 'castello', 'finestra', 'elefante',
-        'aereo', 'treno', 'pianoforte', 'chitarra', 'fragola',
-        'spiaggia', 'ombrello', 'bottiglia',
-        'bicicletta', 'pallone', 'specchio', 'tappeto', 'caramella',
-        'naso', 'muro', 'caffè', 'dente', 'serpente'
-    ],
-    hard: [
-        'astronauta', 'termometro', 'piramide', 'vulcano', 'dinosauro',
-        'aquilone', 'mongolfiera', 'sottomarino', 'satellite', 'arcobaleno',
-        'labirinto', 'paracadute',
-        'drago', 'robot', 'pirata', 'scoiattolo', 'orologio',
-        'barattolo', 'ponte', 'quaderno', 'stivale', 'fiume', 'cornice'
-    ]
-};
+const words = [
+    // Parole che erano in "easy"
+    'casa', 'cane', 'gatto', 'sole', 'luna', 'mare', 'libro', 'porta', 'albero', 'fiore',
+    'palla', 'telefono', 'tavolo', 'cielo', 'scuola',
+    'lampada', 'biscotto', 'rana', 'sedia', 'nuvola',
+    'piuma', 'arancia', 'maglione', 'chiave', 'zaino',
+    'cuscino', 'matita', 'forchetta', 'occhiali', 'scarpa',
+
+    // Parole che erano in "medium"
+    'computer', 'montagna', 'castello', 'finestra', 'elefante',
+    'aereo', 'treno', 'pianoforte', 'chitarra', 'fragola',
+    'spiaggia', 'ombrello', 'bottiglia',
+    'bicicletta', 'pallone', 'specchio', 'tappeto', 'caramella',
+    'naso', 'muro', 'caffè', 'dente', 'serpente',
+
+    // Parole che erano in "hard"
+    'astronauta', 'termometro', 'piramide', 'vulcano', 'dinosauro',
+    'aquilone', 'mongolfiera', 'sottomarino', 'satellite', 'arcobaleno',
+    'labirinto', 'paracadute',
+    'drago', 'robot', 'pirata', 'scoiattolo', 'orologio',
+    'barattolo', 'ponte', 'quaderno', 'stivale', 'fiume', 'cornice',
+
+    // Puoi aggiungere altre parole qui
+    'farfalla', 'ristorante', 'orchestra', 'cappello', 'spazzolino',
+    'autobus', 'giraffa', 'coccodrillo', 'ambulanza', 'galleria',
+    'castello', 'temporale', 'cipolla', 'guanto', 'bandiera',
+    'passaporto', 'cavallo', 'mappa', 'chitarra', 'uovo',
+    'semaforo', 'lampadina', 'lente', 'yogurt', 'cornetto'
+];
 
 
 // Gestione dei giochi in corso
 const activeGames = new Map();
 
 // Funzione per generare 3 parole casuali
-function getRandomWords(difficulty = 'medium') {
-    const wordList = words[difficulty];
+function getRandomWords() {
     const result = [];
     const usedIndices = new Set();
 
     while (result.length < 3) {
-        const index = Math.floor(Math.random() * wordList.length);
+        const index = Math.floor(Math.random() * words.length);
         if (!usedIndices.has(index)) {
             usedIndices.add(index);
-            result.push(wordList[index]);
+            result.push(words[index]);
         }
     }
 
@@ -370,12 +389,72 @@ function initializeGame(lobbyId, players, numRounds = 3) {
         timer: 60,
         isActive: false,
         correctGuesses: [],
-        timerInterval: null
+        timerInterval: null,
+        hintInterval: null,       // Nuovo: intervallo per aggiornare l'indizio
+        revealedIndices: new Set() // Nuovo: tiene traccia delle lettere rivelate
     };
 
     activeGames.set(lobbyId, game);
     return game;
 }
+
+// Funzione per generare un hint iniziale (solo underscore)
+function generateInitialHint(word) {
+    return Array(word.length).fill('_').join(' ');
+}
+
+// Funzione per aggiornare l'indizio rivelando una nuova lettera casuale
+function updateHint(lobbyId) {
+    const game = activeGames.get(lobbyId);
+    if (!game || !game.currentWord || !game.isActive) return;
+
+    // Converti la parola in array di caratteri
+    const chars = game.currentWord.split('');
+
+    // Se abbiamo già rivelato tutte le lettere, ferma l'intervallo
+    if (game.revealedIndices.size >= chars.length) {
+        if (game.hintInterval) {
+            clearInterval(game.hintInterval);
+            game.hintInterval = null;
+        }
+        return;
+    }
+
+    // Scegli una posizione casuale da rivelare (che non è già stata rivelata)
+    let randomIndex;
+    do {
+        randomIndex = Math.floor(Math.random() * chars.length);
+    } while (game.revealedIndices.has(randomIndex));
+
+    // Aggiungi l'indice all'insieme delle lettere rivelate
+    game.revealedIndices.add(randomIndex);
+
+    // Crea l'indizio aggiornato
+    const updatedHint = chars.map((char, index) => {
+        if (game.revealedIndices.has(index)) {
+            return char;
+        }
+        return '_';
+    }).join(' ');
+
+    // Aggiorna l'indizio nel gioco
+    game.hint = updatedHint;
+
+    // Invia l'indizio aggiornato a tutti i giocatori
+    io.to(lobbyId).emit('gameState', {
+        players: game.players,
+        scores: game.scores,
+        currentTurn: game.currentTurn,
+        timer: game.timer,
+        hint: game.hint,
+        correctGuesses: game.correctGuesses,
+        round: game.currentRound,
+        totalRounds: game.totalRounds,
+        currentWord: game.currentWord  // Aggiungi la parola corrente qui
+    });
+}
+
+
 
 // Funzione per iniziare un nuovo turno
 function startNewTurn(lobbyId) {
@@ -401,7 +480,8 @@ function startNewTurn(lobbyId) {
         hint: game.hint,
         correctGuesses: game.correctGuesses,
         round: game.currentRound,
-        totalRounds: game.totalRounds
+        totalRounds: game.totalRounds,
+        currentWord: game.currentWord  // Aggiungi la parola corrente qui
     });
 
     // Invia le opzioni di parole solo all'artista
@@ -414,7 +494,8 @@ function startNewTurn(lobbyId) {
         hint: game.hint,
         correctGuesses: game.correctGuesses,
         round: game.currentRound,
-        totalRounds: game.totalRounds
+        totalRounds: game.totalRounds,
+        currentWord: game.currentWord  // Aggiungi la parola corrente qui
     });
 
     // Invia un messaggio a tutti
@@ -433,6 +514,12 @@ function endTurn(lobbyId) {
     if (game.timerInterval) {
         clearInterval(game.timerInterval);
         game.timerInterval = null;
+    }
+
+    // Ferma l'intervallo degli indizi
+    if (game.hintInterval) {
+        clearInterval(game.hintInterval);
+        game.hintInterval = null;
     }
 
     // Notifica a tutti che il turno è finito
