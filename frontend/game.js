@@ -481,13 +481,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const controlsBox = document.createElement('div');
         controlsBox.className = 'artist-controls';
 
-        // Creare il contenitore per la selezione dello spessore
+        // Crea il layout principale dei controlli
+        const controlsLayout = document.createElement('div');
+        controlsLayout.className = 'controls-layout';
+
+        // 1. SEZIONE SPESSORE LINEA
         const lineWidthContainer = document.createElement('div');
         lineWidthContainer.className = 'control-section';
 
         // Aggiungi titolo per lo spessore
         const lineWidthTitle = document.createElement('p');
-        //lineWidthTitle.textContent = 'Spessore:';
+        lineWidthTitle.textContent = 'Spessore:';
         lineWidthTitle.className = 'control-label';
         lineWidthContainer.appendChild(lineWidthTitle);
 
@@ -527,22 +531,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
         lineWidthContainer.appendChild(lineWidthButtons);
 
-        // Creare il selettore di colori con 16 colori predefiniti
+        // 2. SEZIONE COLORI - struttura 2x8 esplicita
         const colorContainer = document.createElement('div');
-        colorContainer.className = 'control-section';
+        colorContainer.className = 'control-section color-section';
 
         // Aggiungi titolo per i colori
         const colorTitle = document.createElement('p');
-        //colorTitle.textContent = 'Colori:';
+        colorTitle.textContent = 'Colori:';
         colorTitle.className = 'control-label';
         colorContainer.appendChild(colorTitle);
 
         // Lista di 16 colori predefiniti
         const colors = [
-            '#000000', '#FFFFFF', '#FF0000', '#00FF00',
-            '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF',
-            '#FFA500', '#800080', '#008000', '#800000',
-            '#808080', '#A52A2A', '#FFC0CB', '#FFD700'
+            // Prima riga (8 colori)
+            '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF',
+            // Seconda riga (8 colori)
+            '#FFA500', '#800080', '#008000', '#800000', '#808080', '#A52A2A', '#FFC0CB', '#FFD700'
         ];
 
         const colorGrid = document.createElement('div');
@@ -572,9 +576,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         colorContainer.appendChild(colorGrid);
 
-        // Contenitore per il pulsante di pulizia
+        // 3. SEZIONE PULISCI LAVAGNA
         const clearContainer = document.createElement('div');
-        clearContainer.className = 'control-section clear-section';
+        clearContainer.className = 'clear-section';
 
         // Pulsante per pulire la lavagna
         const clearButton = document.createElement('button');
@@ -591,23 +595,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         clearContainer.appendChild(clearButton);
 
-        // Crea un layout flessibile per i controlli
-        const controlsLayout = document.createElement('div');
-        controlsLayout.className = 'controls-layout';
-
-        // Primo gruppo: spessore e pulizia
-        const leftGroup = document.createElement('div');
-        leftGroup.className = 'controls-group';
-        leftGroup.appendChild(lineWidthContainer);
-        leftGroup.appendChild(clearContainer);
-
-        // Secondo gruppo: colori
-        const rightGroup = document.createElement('div');
-        rightGroup.className = 'controls-group';
-        rightGroup.appendChild(colorContainer);
-
-        controlsLayout.appendChild(leftGroup);
-        controlsLayout.appendChild(rightGroup);
+        // Assembla i controlli nel layout
+        controlsLayout.appendChild(lineWidthContainer);
+        controlsLayout.appendChild(colorContainer);
+        controlsLayout.appendChild(clearContainer);
 
         controlsBox.appendChild(controlsLayout);
 

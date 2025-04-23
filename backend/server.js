@@ -284,10 +284,29 @@ io.on('connection', (socket) => {
 
 // Database delle parole divise per difficoltà
 const words = {
-    easy: ['casa', 'cane', 'gatto', 'sole', 'luna', 'mare', 'libro', 'porta', 'albero', 'fiore', 'palla', 'telefono', 'tavolo', 'cielo', 'scuola'],
-    medium: ['computer', 'montagna', 'castello', 'finestra', 'telefono', 'elefante', 'aereo', 'treno', 'pianoforte', 'chitarra', 'fragola', 'spiaggia', 'ombrello', 'bottiglia'],
-    hard: ['astronauta', 'termometro', 'piramide', 'vulcano', 'dinosauro', 'aquilone', 'mongolfiera', 'sottomarino', 'satellite', 'arcobaleno', 'labirinto', 'paracadute']
+    easy: [
+        'casa', 'cane', 'gatto', 'sole', 'luna', 'mare', 'libro', 'porta', 'albero', 'fiore',
+        'palla', 'telefono', 'tavolo', 'cielo', 'scuola',
+        'lampada', 'biscotto', 'rana', 'sedia', 'nuvola',
+        'piuma', 'arancia', 'maglione', 'chiave', 'zaino',
+        'cuscino', 'matita', 'forchetta', 'occhiali', 'scarpa'
+    ],
+    medium: [
+        'computer', 'montagna', 'castello', 'finestra', 'elefante',
+        'aereo', 'treno', 'pianoforte', 'chitarra', 'fragola',
+        'spiaggia', 'ombrello', 'bottiglia',
+        'bicicletta', 'pallone', 'specchio', 'tappeto', 'caramella',
+        'naso', 'muro', 'caffè', 'dente', 'serpente'
+    ],
+    hard: [
+        'astronauta', 'termometro', 'piramide', 'vulcano', 'dinosauro',
+        'aquilone', 'mongolfiera', 'sottomarino', 'satellite', 'arcobaleno',
+        'labirinto', 'paracadute',
+        'drago', 'robot', 'pirata', 'scoiattolo', 'orologio',
+        'barattolo', 'ponte', 'quaderno', 'stivale', 'fiume', 'cornice'
+    ]
 };
+
 
 // Gestione dei giochi in corso
 const activeGames = new Map();
