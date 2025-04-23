@@ -219,14 +219,11 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Invia il messaggio di tentativo a tutti
-        io.to(lobbyId).emit('message', {
-            message: `${playerColor}: ${guess}`,
-            type: 'chat'
-        });
-
         // Controlla se il tentativo è corretto (ignorando maiuscole/minuscole)
-        if (guess.toLowerCase() === game.currentWord.toLowerCase()) {
+        const isCorrectGuess = guess.toLowerCase() === game.currentWord.toLowerCase();
+
+        // Se la risposta è corretta
+        if (isCorrectGuess) {
             // Aggiungi giocatore alla lista di chi ha indovinato
             game.correctGuesses.push(playerColor);
 
@@ -234,7 +231,13 @@ io.on('connection', (socket) => {
             game.scores[playerColor] += 100; // 100 punti per chi indovina
             game.scores[game.currentTurn] += 20; // 20 punti per l'artista
 
-            // Invia un messaggio che un giocatore ha indovinato
+            // Invia un messaggio privato solo al giocatore che ha indovinato
+            socket.emit('message', {
+                message: `${playerColor}: ${guess}`,
+                type: 'chat'
+            });
+
+            // Invia un messaggio a tutti che un giocatore ha indovinato, senza mostrare la parola
             io.to(lobbyId).emit('message', {
                 message: `${playerColor} ha indovinato la parola!`,
                 type: 'success'
@@ -256,6 +259,12 @@ io.on('connection', (socket) => {
             if (game.correctGuesses.length === game.players.length - 1) {
                 endTurn(lobbyId);
             }
+        } else {
+            // Se la risposta è sbagliata, invia il messaggio a tutti
+            io.to(lobbyId).emit('message', {
+                message: `${playerColor}: ${guess}`,
+                type: 'chat'
+            });
         }
     });
 
