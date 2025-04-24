@@ -5,8 +5,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const hiddenInputForColorSelection = document.querySelector('#hiddenInputForColorSelection');
 
     // Imposta un colore predefinito all'inizio
-    selectedAvatarColor.style.backgroundColor = '#59B159';
-    hiddenInputForColorSelection.value = '#59B159';
+    selectedAvatarColor.style.backgroundColor = '#DC143C';
+    hiddenInputForColorSelection.value = 'DC143C';
 
     // Controlla se stiamo entrando in una lobby esistente
     const urlParams = new URLSearchParams(window.location.search);
@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
         submitButton.textContent = 'Join lobby';
     }
 
-    const availableColors = ['#59B159', 'red', 'blue', 'black', 'yellow', 'pink'];
+    const availableColors = ['#DC143C', '#4169E1', '#50C878', '#FFD700', '#9966CC', '#36454F'];
 
     selectedAvatarColor.addEventListener("click", e => {
         e.preventDefault();

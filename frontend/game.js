@@ -317,6 +317,25 @@ document.addEventListener('DOMContentLoaded', () => {
             // Se non esistono ancora i controlli dell'artista, creali
             addArtistControls();
         }
+
+        if (isArtist) {
+            // Se l'utente è l'artista, imposta il cursore a pennello
+            canvas.classList.add('artist-cursor');
+        } else {
+            // Altrimenti, rimuovi la classe del cursore
+            canvas.classList.remove('artist-cursor');
+        }
+
+        // Verifica che questi event listener siano stati aggiunti dopo la creazione del canvas
+        canvas.addEventListener('mouseenter', () => {
+            if (amIArtist) {
+                canvas.classList.add('artist-active');
+            }
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            canvas.classList.remove('artist-active');
+        });
     }
 
     // Funzione per mostrare la selezione della parola
@@ -492,15 +511,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const controlsLayout = document.createElement('div');
         controlsLayout.className = 'controls-layout';
 
-        // 1. SEZIONE SPESSORE LINEA
-        const lineWidthContainer = document.createElement('div');
-        lineWidthContainer.className = 'control-section';
-
-        // Aggiungi titolo per lo spessore
-        const lineWidthTitle = document.createElement('p');
-        lineWidthTitle.textContent = 'Spessore:';
-        lineWidthTitle.className = 'control-label';
-        lineWidthContainer.appendChild(lineWidthTitle);
+        // 1. SEZIONE STRUMENTI: Spessore linea e Cancella
+        const toolsContainer = document.createElement('div');
+        toolsContainer.className = 'tools-container';
 
         // Aggiungi i 3 pulsanti per lo spessore
         const lineWidths = [2, 5, 10];
@@ -509,7 +522,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         lineWidths.forEach(width => {
             const button = document.createElement('button');
-            button.className = 'line-width-button';
+            button.className = 'tool-button';
             if (width === currentLineWidth) {
                 button.classList.add('active');
             }
@@ -526,7 +539,7 @@ document.addEventListener('DOMContentLoaded', () => {
             button.addEventListener('click', () => {
                 currentLineWidth = width;
                 // Rimuovi la classe active da tutti i pulsanti
-                document.querySelectorAll('.line-width-button').forEach(btn => {
+                document.querySelectorAll('.tool-button').forEach(btn => {
                     btn.classList.remove('active');
                 });
                 // Aggiungi la classe active al pulsante selezionato
@@ -536,17 +549,33 @@ document.addEventListener('DOMContentLoaded', () => {
             lineWidthButtons.appendChild(button);
         });
 
-        lineWidthContainer.appendChild(lineWidthButtons);
+        // Pulsante per pulire la lavagna
+        const clearButton = document.createElement('button');
+        clearButton.className = 'tool-button clear-button';
+        clearButton.title = 'Pulisci Lavagna';
 
-        // 2. SEZIONE COLORI - struttura 2x8 esplicita
+        // Icona "X" per la cancellazione
+        const clearIcon = document.createElement('span');
+        clearIcon.textContent = '×';
+        clearIcon.className = 'clear-icon';
+
+        clearButton.appendChild(clearIcon);
+
+        clearButton.addEventListener('click', () => {
+            // Pulisci localmente
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Invia l'evento a tutti
+            socket.emit('clearCanvas', { lobbyId });
+        });
+
+        toolsContainer.appendChild(lineWidthButtons);
+        toolsContainer.appendChild(clearButton);
+
+        // 2. SEZIONE COLORI - palette minimalista
         const colorContainer = document.createElement('div');
-        colorContainer.className = 'control-section color-section';
-
-        // Aggiungi titolo per i colori
-        const colorTitle = document.createElement('p');
-        colorTitle.textContent = 'Colori:';
-        colorTitle.className = 'control-label';
-        colorContainer.appendChild(colorTitle);
+        colorContainer.className = 'color-container';
 
         // Lista di 16 colori predefiniti
         const colors = [
@@ -556,8 +585,8 @@ document.addEventListener('DOMContentLoaded', () => {
             '#FFA500', '#800080', '#008000', '#800000', '#808080', '#A52A2A', '#FFC0CB', '#FFD700'
         ];
 
-        const colorGrid = document.createElement('div');
-        colorGrid.className = 'color-grid';
+        const colorPalette = document.createElement('div');
+        colorPalette.className = 'color-palette';
 
         colors.forEach(color => {
             const colorButton = document.createElement('button');
@@ -578,34 +607,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 colorButton.classList.add('active');
             });
 
-            colorGrid.appendChild(colorButton);
+            colorPalette.appendChild(colorButton);
         });
 
-        colorContainer.appendChild(colorGrid);
-
-        // 3. SEZIONE PULISCI LAVAGNA
-        const clearContainer = document.createElement('div');
-        clearContainer.className = 'clear-section';
-
-        // Pulsante per pulire la lavagna
-        const clearButton = document.createElement('button');
-        clearButton.textContent = 'Pulisci Lavagna';
-        clearButton.className = 'control-button';
-        clearButton.addEventListener('click', () => {
-            // Pulisci localmente
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Invia l'evento a tutti
-            socket.emit('clearCanvas', { lobbyId });
-        });
-
-        clearContainer.appendChild(clearButton);
+        colorContainer.appendChild(colorPalette);
 
         // Assembla i controlli nel layout
-        controlsLayout.appendChild(lineWidthContainer);
+        controlsLayout.appendChild(toolsContainer);
         controlsLayout.appendChild(colorContainer);
-        controlsLayout.appendChild(clearContainer);
 
         controlsBox.appendChild(controlsLayout);
 

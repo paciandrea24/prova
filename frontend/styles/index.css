@@ -104,13 +104,13 @@ form {
     width: 50px;
     height: 50px;
     border-radius: 50%;
-    background-color: #59B159;
+    background-color: #DC143C;
 
 }
 
 .avatar-color:hover {
     cursor: pointer;
-    border: 16px solid #59B159;
+    border: 16px solid #DC143C;
     transition: 0.3s ease;
 }
 
