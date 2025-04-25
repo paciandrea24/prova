@@ -1,4 +1,23 @@
 document.addEventListener('DOMContentLoaded', () => {
+
+    // Aggiungi questo all'inizio del file dopo document.addEventListener('DOMContentLoaded', ...)
+    // per impostare lo stile del cursore in base allo strumento
+    function updateCursorStyle() {
+        if (!amIArtist) {
+            canvas.classList.remove('artist-cursor', 'eraser-cursor', 'fill-cursor');
+            return;
+        }
+
+        canvas.classList.remove('artist-cursor', 'eraser-cursor', 'fill-cursor');
+
+        if (fillMode) {
+            canvas.classList.add('fill-cursor');
+        } else if (currentTool === 'eraser') {
+            canvas.classList.add('eraser-cursor');
+        } else {
+            canvas.classList.add('artist-cursor');
+        }
+    }
     // Recupera i parametri dalla URL
     const urlParams = new URLSearchParams(window.location.search);
     const lobbyId = urlParams.get('lobby');
@@ -37,14 +56,17 @@ document.addEventListener('DOMContentLoaded', () => {
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Inizializza le variabili per il disegno
+    // Inizializza le variabili per il disegno (aggiorna nella sezione iniziale del file game.js)
     let isDrawing = false;
     let lastX = 0;
     let lastY = 0;
-    let currentColor = playerColor;
+    let currentColor = '#000000';
+    let lastUsedColor = null; // Per memorizzare l'ultimo colore usato prima di passare alla gomma
     let currentLineWidth = 5;
+    let currentTool = 'pen'; // Nuovo: 'pen', 'eraser', o 'fill'
     let amIArtist = false;
     let fillMode = false; // Flag per indicare se siamo in modalità riempimento
+
 
     // Connessione Socket.io
     const socket = io();
@@ -58,7 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Richiedi lo stato attuale del gioco
     socket.emit('requestGameState', { lobbyId });
 
-    // Gestione degli eventi di disegno
+    // Aggiorna la funzione startDrawing per gestire i diversi strumenti
     function startDrawing(e) {
         if (!amIArtist) return;  // Solo l'artista può disegnare
 
@@ -75,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
+    // Aggiorna la funzione draw per gestire la gomma
     function draw(e) {
         if (!isDrawing || !amIArtist) return;  // Solo l'artista può disegnare
 
@@ -633,7 +656,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const controlsLayout = document.createElement('div');
         controlsLayout.className = 'controls-layout';
 
-        // 1. SEZIONE STRUMENTI: Spessore linea, Riempi e Cancella
+        // 1. SEZIONE STRUMENTI: Spessore linea, Gomma, Riempi e Cancella
         const toolsContainer = document.createElement('div');
         toolsContainer.className = 'tools-container';
 
@@ -645,10 +668,11 @@ document.addEventListener('DOMContentLoaded', () => {
         lineWidths.forEach(width => {
             const button = document.createElement('button');
             button.className = 'tool-button';
-            if (width === currentLineWidth) {
+            if (width === currentLineWidth && currentTool === 'pen') {
                 button.classList.add('active');
             }
             button.dataset.width = width;
+            button.dataset.tool = 'pen';
 
             // Creare un cerchio per rappresentare lo spessore
             const circle = document.createElement('div');
@@ -661,6 +685,11 @@ document.addEventListener('DOMContentLoaded', () => {
             button.addEventListener('click', () => {
                 fillMode = false; // Disattiva la modalità riempimento
                 currentLineWidth = width;
+                currentTool = 'pen'; // Imposta lo strumento su penna
+                // Salva il colore corrente per quando si passa dalla gomma alla penna
+                if (lastUsedColor) {
+                    currentColor = lastUsedColor;
+                }
                 // Rimuovi la classe active da tutti i pulsanti
                 document.querySelectorAll('.tool-button').forEach(btn => {
                     btn.classList.remove('active');
@@ -672,10 +701,53 @@ document.addEventListener('DOMContentLoaded', () => {
             lineWidthButtons.appendChild(button);
         });
 
+        // Aggiungi i 3 pulsanti per la gomma
+        const eraserButtons = document.createElement('div');
+        eraserButtons.className = 'eraser-width-buttons';
+
+        const eraserWidths = [10, 20, 30];
+        eraserWidths.forEach(width => {
+            const button = document.createElement('button');
+            button.className = 'tool-button eraser-button';
+            if (width === currentLineWidth && currentTool === 'eraser') {
+                button.classList.add('active');
+            }
+            button.dataset.width = width;
+            button.dataset.tool = 'eraser';
+
+            // Creare un cerchio per rappresentare lo spessore della gomma
+            const circle = document.createElement('div');
+            circle.className = 'eraser-width-circle';
+            circle.style.width = `${width}px`;
+            circle.style.height = `${width}px`;
+
+            button.appendChild(circle);
+
+            button.addEventListener('click', () => {
+                fillMode = false; // Disattiva la modalità riempimento
+                currentLineWidth = width;
+                currentTool = 'eraser'; // Imposta lo strumento su gomma
+                lastUsedColor = currentColor; // Salva il colore corrente
+                currentColor = 'white'; // Imposta il colore su bianco per "cancellare"
+
+                // Rimuovi la classe active da tutti i pulsanti
+                document.querySelectorAll('.tool-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                // Aggiungi la classe active al pulsante selezionato
+                button.classList.add('active');
+            });
+
+            eraserButtons.appendChild(button);
+        });
+
         // NUOVO: Pulsante per lo strumento riempi (secchiello)
         const fillButton = document.createElement('button');
         fillButton.className = 'tool-button fill-button';
         fillButton.title = 'Strumento Riempi';
+        if (fillMode) {
+            fillButton.classList.add('active');
+        }
 
         // Icona per il secchiello di vernice
         const fillIcon = document.createElement('span');
@@ -687,6 +759,11 @@ document.addEventListener('DOMContentLoaded', () => {
         fillButton.addEventListener('click', () => {
             // Attiva la modalità riempimento
             fillMode = true;
+            currentTool = 'fill';
+            // Se venivamo dalla gomma, ripristina il colore precedente
+            if (lastUsedColor && currentColor === 'white') {
+                currentColor = lastUsedColor;
+            }
             // Rimuovi la classe active da tutti i pulsanti
             document.querySelectorAll('.tool-button').forEach(btn => {
                 btn.classList.remove('active');
@@ -716,8 +793,37 @@ document.addEventListener('DOMContentLoaded', () => {
             socket.emit('clearCanvas', { lobbyId });
         });
 
-        toolsContainer.appendChild(lineWidthButtons);
-        toolsContainer.appendChild(fillButton); // Aggiungiamo il nuovo pulsante fill
+        // Crea un div per raggruppare penna e gomma
+        const drawingTools = document.createElement('div');
+        drawingTools.className = 'drawing-tools';
+
+        // Etichetta per la penna
+        const penLabel = document.createElement('div');
+        penLabel.className = 'tool-label';
+        penLabel.textContent = 'Penna';
+
+        // Etichetta per la gomma
+        const eraserLabel = document.createElement('div');
+        eraserLabel.className = 'tool-label';
+        eraserLabel.textContent = 'Gomma';
+
+        // Aggiungi etichette e pulsanti al div degli strumenti di disegno
+        const penContainer = document.createElement('div');
+        penContainer.className = 'tool-container';
+        penContainer.appendChild(penLabel);
+        penContainer.appendChild(lineWidthButtons);
+
+        const eraserContainer = document.createElement('div');
+        eraserContainer.className = 'tool-container';
+        eraserContainer.appendChild(eraserLabel);
+        eraserContainer.appendChild(eraserButtons);
+
+        drawingTools.appendChild(penContainer);
+        drawingTools.appendChild(eraserContainer);
+
+        // Aggiungi il div degli strumenti di disegno al container degli strumenti
+        toolsContainer.appendChild(drawingTools);
+        toolsContainer.appendChild(fillButton);
         toolsContainer.appendChild(clearButton);
 
         // 2. SEZIONE COLORI - palette minimalista (resto del codice invariato)
@@ -740,13 +846,29 @@ document.addEventListener('DOMContentLoaded', () => {
             colorButton.className = 'color-button';
             colorButton.style.backgroundColor = color;
 
-            if (color === currentColor) {
+            if (color === currentColor && currentTool !== 'eraser') {
                 colorButton.classList.add('active');
             }
 
             colorButton.addEventListener('click', () => {
                 currentColor = color;
-                // Rimuovi la classe active da tutti i pulsanti
+                lastUsedColor = color;
+
+                // Se siamo in modalità gomma, passa alla penna
+                if (currentTool === 'eraser') {
+                    currentTool = 'pen';
+                    // Rimuovi l'active da tutti i pulsanti della gomma
+                    document.querySelectorAll('.eraser-button').forEach(btn => {
+                        btn.classList.remove('active');
+                    });
+                    // Attiva il pulsante penna con lo spessore corrente
+                    const penButtons = document.querySelectorAll('.tool-button:not(.eraser-button):not(.fill-button):not(.clear-button)');
+                    if (penButtons.length > 0) {
+                        penButtons[1].classList.add('active'); // Attiva il pulsante medio per default
+                    }
+                }
+
+                // Rimuovi la classe active da tutti i pulsanti colore
                 document.querySelectorAll('.color-button').forEach(btn => {
                     btn.classList.remove('active');
                 });
