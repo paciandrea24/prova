@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentColor = playerColor;
     let currentLineWidth = 5;
     let amIArtist = false;
+    let fillMode = false; // Flag per indicare se siamo in modalità riempimento
 
     // Connessione Socket.io
     const socket = io();
@@ -61,9 +62,18 @@ document.addEventListener('DOMContentLoaded', () => {
     function startDrawing(e) {
         if (!amIArtist) return;  // Solo l'artista può disegnare
 
+        // Se siamo in modalità riempimento, esegui il riempimento invece di disegnare
+        if (fillMode) {
+            const [x, y] = getMousePos(canvas, e);
+            floodFill(x, y, currentColor);
+            return;
+        }
+
         isDrawing = true;
         [lastX, lastY] = getMousePos(canvas, e);
     }
+
+
 
     function draw(e) {
         if (!isDrawing || !amIArtist) return;  // Solo l'artista può disegnare
@@ -88,6 +98,118 @@ document.addEventListener('DOMContentLoaded', () => {
     function stopDrawing() {
         isDrawing = false;
     }
+
+    function floodFill(startX, startY, fillColor) {
+        // Arrotondiamo le coordinate per lavorare con i pixel
+        startX = Math.floor(startX);
+        startY = Math.floor(startY);
+
+        // Otteniamo i dati dell'immagine dal canvas
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+
+        // Otteniamo il colore del pixel di partenza
+        const targetColor = getPixelColor(imageData, startX, startY);
+
+        // Convertiamo fillColor (formato hex) in un array RGBA
+        const fillColorRgb = hexToRgb(fillColor);
+        const fillColorArray = [fillColorRgb.r, fillColorRgb.g, fillColorRgb.b, 255]; // Alpha sempre a 255
+
+        // Se il colore di riempimento è uguale al colore target, non fare nulla
+        if (colorMatch(targetColor, fillColorArray)) {
+            return;
+        }
+
+        // Utilizziamo un algoritmo di riempimento con pila (simile a BFS)
+        const stack = [[startX, startY]];
+        const visited = new Set(); // Per tracciare i pixel già visitati
+        const key = (x, y) => `${x},${y}`;
+
+        while (stack.length) {
+            const [x, y] = stack.pop();
+
+            // Se questo pixel è già stato visitato, salta
+            if (visited.has(key(x, y))) continue;
+
+            // Segna questo pixel come visitato
+            visited.add(key(x, y));
+
+            // Ottieni il colore di questo pixel
+            const pixelColor = getPixelColor(imageData, x, y);
+
+            // Se questo pixel non corrisponde al colore target, salta
+            if (!colorMatch(pixelColor, targetColor)) continue;
+
+            // Colora questo pixel
+            setPixelColor(imageData, x, y, fillColorArray);
+
+            // Aggiungi i pixel adiacenti allo stack (4-connessi: alto, basso, sinistra, destra)
+            if (x > 0) stack.push([x - 1, y]);                 // sinistra
+            if (x < canvas.width - 1) stack.push([x + 1, y]);  // destra
+            if (y > 0) stack.push([x, y - 1]);                 // alto
+            if (y < canvas.height - 1) stack.push([x, y + 1]); // basso
+        }
+
+        // Aggiorna il canvas con i nuovi dati dell'immagine
+        ctx.putImageData(imageData, 0, 0);
+
+        // Invia l'evento di riempimento a tutti gli altri giocatori
+        socket.emit('fillArea', {
+            lobbyId,
+            startX,
+            startY,
+            color: fillColor
+        });
+    }
+
+    // Funzione helper per ottenere il colore di un pixel
+    function getPixelColor(imageData, x, y) {
+        const index = (y * imageData.width + x) * 4;
+        return [
+            imageData.data[index],     // R
+            imageData.data[index + 1], // G
+            imageData.data[index + 2], // B
+            imageData.data[index + 3]  // A
+        ];
+    }
+
+    // Funzione helper per impostare il colore di un pixel
+    function setPixelColor(imageData, x, y, color) {
+        const index = (y * imageData.width + x) * 4;
+        imageData.data[index] = color[0];     // R
+        imageData.data[index + 1] = color[1]; // G
+        imageData.data[index + 2] = color[2]; // B
+        imageData.data[index + 3] = color[3]; // A
+    }
+
+    // Funzione helper per verificare se due colori sono uguali (con una tolleranza)
+    function colorMatch(color1, color2, tolerance = 10) {
+        return Math.abs(color1[0] - color2[0]) <= tolerance &&
+            Math.abs(color1[1] - color2[1]) <= tolerance &&
+            Math.abs(color1[2] - color2[2]) <= tolerance &&
+            Math.abs(color1[3] - color2[3]) <= tolerance;
+    }
+
+    // Funzione per convertire un colore hex in RGB
+    function hexToRgb(hex) {
+        // Rimuovi il prefisso # se presente
+        hex = hex.replace(/^#/, '');
+
+        // Analizza il valore hex
+        let bigint = parseInt(hex, 16);
+        return {
+            r: (bigint >> 16) & 255,
+            g: (bigint >> 8) & 255,
+            b: bigint & 255
+        };
+    }
+
+    // Aggiungiamo la gestione dell'evento fillArea da socket.io
+    socket.on('fillArea', (data) => {
+        if (!amIArtist) {  // Solo i non-artisti ricevono l'evento
+            floodFill(data.startX, data.startY, data.color);
+        }
+    });
 
     // Funzione helper per ottenere la posizione del mouse rispetto al canvas
     function getMousePos(canvas, evt) {
@@ -511,15 +633,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const controlsLayout = document.createElement('div');
         controlsLayout.className = 'controls-layout';
 
-        // 1. SEZIONE STRUMENTI: Spessore linea e Cancella
+        // 1. SEZIONE STRUMENTI: Spessore linea, Riempi e Cancella
         const toolsContainer = document.createElement('div');
         toolsContainer.className = 'tools-container';
 
         // Aggiungi i 3 pulsanti per lo spessore
-        const lineWidths = [2, 5, 10];
         const lineWidthButtons = document.createElement('div');
         lineWidthButtons.className = 'line-width-buttons';
 
+        const lineWidths = [2, 5, 10];
         lineWidths.forEach(width => {
             const button = document.createElement('button');
             button.className = 'tool-button';
@@ -537,6 +659,7 @@ document.addEventListener('DOMContentLoaded', () => {
             button.appendChild(circle);
 
             button.addEventListener('click', () => {
+                fillMode = false; // Disattiva la modalità riempimento
                 currentLineWidth = width;
                 // Rimuovi la classe active da tutti i pulsanti
                 document.querySelectorAll('.tool-button').forEach(btn => {
@@ -547,6 +670,29 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             lineWidthButtons.appendChild(button);
+        });
+
+        // NUOVO: Pulsante per lo strumento riempi (secchiello)
+        const fillButton = document.createElement('button');
+        fillButton.className = 'tool-button fill-button';
+        fillButton.title = 'Strumento Riempi';
+
+        // Icona per il secchiello di vernice
+        const fillIcon = document.createElement('span');
+        fillIcon.innerHTML = '🪣'; // Emoji secchiello
+        fillIcon.className = 'fill-icon';
+
+        fillButton.appendChild(fillIcon);
+
+        fillButton.addEventListener('click', () => {
+            // Attiva la modalità riempimento
+            fillMode = true;
+            // Rimuovi la classe active da tutti i pulsanti
+            document.querySelectorAll('.tool-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            // Aggiungi la classe active al pulsante di riempimento
+            fillButton.classList.add('active');
         });
 
         // Pulsante per pulire la lavagna
@@ -571,9 +717,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         toolsContainer.appendChild(lineWidthButtons);
+        toolsContainer.appendChild(fillButton); // Aggiungiamo il nuovo pulsante fill
         toolsContainer.appendChild(clearButton);
 
-        // 2. SEZIONE COLORI - palette minimalista
+        // 2. SEZIONE COLORI - palette minimalista (resto del codice invariato)
         const colorContainer = document.createElement('div');
         colorContainer.className = 'color-container';
 

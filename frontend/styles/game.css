@@ -570,4 +570,32 @@ body {
     cursor: url('../imgs/paintbrush.png')5 20, auto;
 }
 
-/* FINE STILI MINIMALISTI PER I CONTROLLI DELL'ARTISTA */
+/* Aggiungi questi stili al file frontend/styles/game.css */
+
+/* Stile per il pulsante di riempimento */
+.fill-button {
+    position: relative;
+    background-color: white;
+    color: #333;
+}
+
+.fill-icon {
+    font-size: 20px;
+    line-height: 1;
+}
+
+/* Personalizzazione del cursore quando è in modalità riempimento */
+.artist-cursor.fill-mode {
+    cursor: url('../imgs/paint-bucket.png') 5 20, pointer;
+}
+
+/* Effetto hover specifico per il pulsante di riempimento */
+.fill-button:hover {
+    background-color: #e8f4f8;
+}
+
+/* Effetto attivo per il pulsante di riempimento */
+.fill-button.active {
+    border: 2px solid #1565c0;
+    box-shadow: 0 0 5px rgba(21, 101, 192, 0.3);
+}

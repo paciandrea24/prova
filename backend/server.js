@@ -289,6 +289,14 @@ io.on('connection', (socket) => {
         });
     });
 
+    // Quando un giocatore usa lo strumento riempi
+    socket.on('fillArea', (data) => {
+        const { lobbyId, startX, startY, color } = data;
+
+        // Inoltra l'evento di riempimento a tutti gli altri nella stanza
+        socket.to(lobbyId).emit('fillArea', { startX, startY, color });
+    });
+
     // Quando l'host seleziona un gioco
     socket.on('startGame', (data) => {
         const { lobbyId, gameId } = data;
