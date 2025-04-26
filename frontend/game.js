@@ -574,6 +574,31 @@ document.addEventListener('DOMContentLoaded', () => {
             // Aggiungi entrambi al messaggio
             messageDiv.appendChild(colorBlock);
             messageDiv.appendChild(textSpan);
+        }
+        // Nuovo caso: messaggio di tipo "success" con colore RGB
+        else if (type === 'success' && message.includes('rgb(')) {
+            // Estrai il colore RGB dal messaggio
+            const rgbMatch = message.match(/rgb\([^)]+\)/);
+            if (rgbMatch) {
+                const rgbColor = rgbMatch[0];
+                const restOfMessage = message.replace(rgbColor, '').trim();
+
+                // Crea un elemento per il colore
+                const colorBlock = document.createElement('span');
+                colorBlock.className = 'message-color-block';
+                colorBlock.style.backgroundColor = rgbColor;
+
+                // Crea un elemento per il testo
+                const textSpan = document.createElement('span');
+                textSpan.textContent = ` ${restOfMessage}`;
+
+                // Aggiungi entrambi al messaggio
+                messageDiv.appendChild(colorBlock);
+                messageDiv.appendChild(textSpan);
+            } else {
+                // Fallback se non troviamo un colore RGB
+                messageDiv.textContent = message;
+            }
         } else {
             // Per altri tipi di messaggi, mostra il testo normale
             messageDiv.textContent = message;
