@@ -599,31 +599,3 @@ body {
     }
 }
 
-/* @media (max-width: 767px) {
-    .controls-layout {
-        flex-direction: column;
-    }
-    
-    .tools-container, .color-container {
-        width: 100%;
-    }
-    
-    .color-palette {
-        grid-template-columns: repeat(4, 1fr);
-        grid-template-rows: repeat(4, 1fr);
-    }
-} */
-
-/* @media (min-width: 768px) {
-     .controls-layout {
-        flex-direction: row;
-    } 
-    
-     .tools-container {
-        width: 50%;
-    }
-    
-    .color-container {
-        width: 50%;
-    } 
-} */
