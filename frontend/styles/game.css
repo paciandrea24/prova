@@ -599,3 +599,35 @@ body {
     }
 }
 
+/* Stili per la riga di pulsanti undo/redo */
+.history-row {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 5px;
+}
+
+.undo-button, .redo-button {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: white;
+    border: 1px solid #e0e0e0;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: all 0.2s ease;
+}
+
+.undo-button:hover, .redo-button:hover {
+    background-color: #f5f5f5;
+    transform: scale(1.05);
+}
+
+.undo-button:disabled, .redo-button:disabled {
+    cursor: not-allowed;
+}
+
+.undo-icon, .redo-icon {
+    font-size: 20px;
+}

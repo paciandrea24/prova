@@ -66,6 +66,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentTool = 'pen'; // Nuovo: 'pen', 'eraser', o 'fill'
     let amIArtist = false;
     let fillMode = false; // Flag per indicare se siamo in modalità riempimento
+    let drawingHistory = [];
+    let redoHistory = [];
+    const MAX_HISTORY_LENGTH = 20;
 
 
     // Connessione Socket.io
@@ -118,7 +121,11 @@ document.addEventListener('DOMContentLoaded', () => {
         [lastX, lastY] = [x, y];
     }
 
+    // Aggiungi alla funzione stopDrawing() per salvare lo stato quando si smette di disegnare
     function stopDrawing() {
+        if (isDrawing && amIArtist) {
+            saveCanvasState();
+        }
         isDrawing = false;
     }
 
@@ -183,6 +190,11 @@ document.addEventListener('DOMContentLoaded', () => {
             startY,
             color: fillColor
         });
+
+        // Alla fine della funzione, aggiungi:
+        if (amIArtist) {
+            saveCanvasState();
+        }
     }
 
     // Funzione helper per ottenere il colore di un pixel
@@ -294,6 +306,17 @@ document.addEventListener('DOMContentLoaded', () => {
         // Pulisci il canvas
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+    });
+
+    socket.on('canvasState', (data) => {
+        if (!amIArtist) { // Solo i non-artisti ricevono gli aggiornamenti di stato
+            const img = new Image();
+            img.src = data.dataURL;
+            img.onload = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+            };
+        }
     });
 
     socket.on('message', (data) => {
@@ -432,6 +455,11 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => {
                 artistNotification.style.display = 'none';
             }, 3000);
+
+            // Inizializza la cronologia quando diventi l'artista
+            drawingHistory = [];
+            redoHistory = [];
+            saveCanvasState(); // Salva lo stato iniziale (canvas bianco)
         }
 
         // Aggiorna la UI per l'artista o per chi deve indovinare
@@ -610,6 +638,91 @@ document.addEventListener('DOMContentLoaded', () => {
         messagesBox.scrollTop = messagesBox.scrollHeight;
     }
 
+    // Funzione per salvare lo stato attuale del canvas nella cronologia
+    function saveCanvasState() {
+        // Limita la dimensione della cronologia
+        if (drawingHistory.length >= MAX_HISTORY_LENGTH) {
+            drawingHistory.shift(); // Rimuovi lo stato più vecchio
+        }
+
+        // Salva lo stato attuale
+        drawingHistory.push(canvas.toDataURL());
+
+        // Pulisci la cronologia redo quando si fa una nuova azione
+        redoHistory = [];
+
+        // Aggiorna la UI dei pulsanti
+        updateUndoRedoButtons();
+    }
+
+    // Funzione per eseguire l'undo
+    function undoDrawing() {
+        if (drawingHistory.length <= 1) return; // Mantieni almeno uno stato
+
+        // Sposta lo stato attuale nella cronologia redo
+        redoHistory.push(drawingHistory.pop());
+
+        // Carica lo stato precedente
+        const img = new Image();
+        img.src = drawingHistory[drawingHistory.length - 1];
+        img.onload = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+
+            // Invia l'aggiornamento agli altri giocatori
+            socket.emit('canvasState', {
+                lobbyId,
+                dataURL: img.src
+            });
+
+            // Aggiorna la UI dei pulsanti
+            updateUndoRedoButtons();
+        };
+    }
+
+    // Funzione per eseguire il redo
+    function redoDrawing() {
+        if (redoHistory.length === 0) return;
+
+        // Ottieni lo stato più recente dalla cronologia redo
+        const redoState = redoHistory.pop();
+
+        // Aggiungilo alla cronologia principale
+        drawingHistory.push(redoState);
+
+        // Carica lo stato
+        const img = new Image();
+        img.src = redoState;
+        img.onload = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+
+            // Invia l'aggiornamento agli altri giocatori
+            socket.emit('canvasState', {
+                lobbyId,
+                dataURL: img.src
+            });
+
+            // Aggiorna la UI dei pulsanti
+            updateUndoRedoButtons();
+        };
+    }
+
+    // Funzione per aggiornare lo stato dei pulsanti undo/redo
+    function updateUndoRedoButtons() {
+        const undoButton = document.querySelector('.undo-button');
+        const redoButton = document.querySelector('.redo-button');
+
+        if (undoButton && redoButton) {
+            undoButton.disabled = drawingHistory.length <= 1;
+            redoButton.disabled = redoHistory.length === 0;
+
+            // Aggiorna anche l'aspetto visivo
+            undoButton.style.opacity = drawingHistory.length <= 1 ? "0.5" : "1";
+            redoButton.style.opacity = redoHistory.length === 0 ? "0.5" : "1";
+        }
+    }
+
     // Funzione per aggiornare la classifica
     function updateStandings(players, scores, currentArtist) {
         if (!players || !scores) return;
@@ -768,6 +881,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const bottomRow = document.createElement('div');
         bottomRow.className = 'tools-row bottom-row';
 
+        // Terza riga: pulsanti undo e redo
+        const historyRow = document.createElement('div');
+        historyRow.className = 'tools-row history-row';
+
         // Aggiungi i 3 pulsanti per la gomma
         const eraserButtons = document.createElement('div');
         eraserButtons.className = 'eraser-width-buttons';
@@ -813,6 +930,59 @@ document.addEventListener('DOMContentLoaded', () => {
         clearButton.className = 'tool-button clear-button';
         clearButton.title = 'Pulisci Lavagna';
 
+        // Pulsante Undo
+        const undoButton = document.createElement('button');
+        undoButton.className = 'tool-button undo-button';
+        undoButton.title = 'Annulla ultima azione';
+        undoButton.disabled = true;
+        undoButton.style.opacity = "0.5";
+
+        // Icona per Undo
+        const undoIcon = document.createElement('span');
+        undoIcon.innerHTML = '↩️';
+        undoIcon.className = 'undo-icon';
+
+        undoButton.appendChild(undoIcon);
+
+        undoButton.addEventListener('click', () => {
+            if (amIArtist) {
+                undoDrawing();
+            }
+        });
+
+        // Pulsante Redo
+        const redoButton = document.createElement('button');
+        redoButton.className = 'tool-button redo-button';
+        redoButton.title = 'Ripeti azione';
+        redoButton.disabled = true;
+        redoButton.style.opacity = "0.5";
+
+        // Icona per Redo
+        const redoIcon = document.createElement('span');
+        redoIcon.innerHTML = '↪️';
+        redoIcon.className = 'redo-icon';
+
+        redoButton.appendChild(redoIcon);
+
+        redoButton.addEventListener('click', () => {
+            if (amIArtist) {
+                redoDrawing();
+            }
+        });
+
+        // Aggiungi i pulsanti alla riga
+        historyRow.appendChild(undoButton);
+        historyRow.appendChild(redoButton);
+
+        // Aggiungi la nuova riga al container degli strumenti
+        toolsContainer.appendChild(historyRow);
+
+        // Salva lo stato iniziale del canvas una volta che l'artista inizia il turno
+        if (amIArtist) {
+            // Salva lo stato iniziale (canvas bianco)
+            saveCanvasState();
+        }
+
         // Icona "X" per la cancellazione
         const clearIcon = document.createElement('span');
         clearIcon.textContent = '×';
@@ -824,6 +994,10 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             socket.emit('clearCanvas', { lobbyId });
+
+            if (amIArtist) {
+                saveCanvasState();
+            }
         });
 
         // Aggiungi pulsanti gomma e cancella alla seconda riga
