@@ -3,10 +3,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedAvatarColor = document.querySelector('.avatar-color');
     const form = document.querySelector('#colorForm');
     const hiddenInputForColorSelection = document.querySelector('#hiddenInputForColorSelection');
+    const submitButton = document.querySelector('.submit-button');
 
-    // Imposta un colore predefinito all'inizio
-    selectedAvatarColor.style.backgroundColor = '#DC143C';
-    hiddenInputForColorSelection.value = 'DC143C';
+    // Inizializza con cerchio vuoto e nessun colore selezionato
+    selectedAvatarColor.style.backgroundColor = 'transparent';
+    selectedAvatarColor.style.border = '2px dashed #ccc';
+    hiddenInputForColorSelection.value = '';
+
+    // Modifica il testo del pulsante e disabilitalo
+    submitButton.textContent = 'Choose a color first';
+    submitButton.disabled = true;
+    submitButton.style.opacity = '0.6';
+    submitButton.style.cursor = 'not-allowed';
 
     // Controlla se stiamo entrando in una lobby esistente
     const urlParams = new URLSearchParams(window.location.search);
@@ -20,9 +28,8 @@ document.addEventListener('DOMContentLoaded', () => {
         joinMessage.style.marginBottom = '10px';
         firstBox.insertBefore(joinMessage, firstBox.firstChild);
 
-        // Modifica il testo del pulsante
-        const submitButton = document.querySelector('.submit-button');
-        submitButton.textContent = 'Join lobby';
+        // Modifica il testo del pulsante (ma rimane disabilitato finché non si sceglie un colore)
+        submitButton.textContent = 'Choose a color to join';
     }
 
     const availableColors = ['#DC143C', '#4169E1', '#50C878', '#FFD700', '#9966CC', '#36454F'];
@@ -79,9 +86,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
 
                 selectedAvatarColor.style.backgroundColor = e.target.style.backgroundColor;
+                selectedAvatarColor.style.border = 'none'; // Rimuovi il bordo tratteggiato
                 hiddenInputForColorSelection.value = e.target.style.backgroundColor;
                 console.log('Ho selezionato il colore: ' + hiddenInputForColorSelection.value);
                 changeColorBox.remove();
+
+                // Abilita il pulsante submit
+                if (joinLobbyId) {
+                    submitButton.textContent = 'Join lobby';
+                } else {
+                    submitButton.textContent = 'Create lobby';
+                }
+                submitButton.disabled = false;
+                submitButton.style.opacity = '1';
+                submitButton.style.cursor = 'pointer';
 
                 // aggiorna il colore dell'hover del colore selezionato
                 selectedAvatarColor.addEventListener('mouseenter', e => {
@@ -114,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (response.ok) {
                     const data = await response.json();
-                    window.location.href = `/lobby.html?lobby=${joinLobbyId}&color=${color}`;
+                    window.location.href = `/lobby.html?lobby=${joinLobbyId}&color=${encodeURIComponent(color)}`;
                 } else {
                     throw new Error('Server error');
                 }
