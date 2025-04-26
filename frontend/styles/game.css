@@ -435,47 +435,12 @@ body {
 
 /* INIZIO STILI MINIMALISTI PER I CONTROLLI DELL'ARTISTA */
 
-/* Bottoni per lo spessore */
-.line-width-buttons {
-    display: flex;
-    gap: 8px;
-}
 
-.tool-button {
-    width: 40px;
-    height: 40px;
-    border: 1px solid #e0e0e0;
-    border-radius: 50%;
-    background-color: white;
-    cursor: pointer;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    transition: all 0.2s ease;
-    padding: 0;
-}
-
-.tool-button:hover {
-    background-color: #f5f5f5;
-    transform: scale(1.05);
-}
-
-.tool-button.active {
-    border: 2px solid #4CAF50;
-    box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
-}
-
-.line-width-circle {
-    background-color: #333;
-    border-radius: 50%;
-}
-
-/* Pulsante pulisci */
+/* Stili per il pulsante cancella */
 .clear-button {
     background-color: white;
     color: #ff5722;
     font-weight: bold;
-    margin-left: 8px;
 }
 
 .clear-icon {
@@ -483,23 +448,24 @@ body {
     line-height: 1;
 }
 
-/* Container dei colori */
+/* Container per i colori a destra */
 .color-container {
-    width: 100%;
+    width: 65%;
     padding: 10px;
 }
 
+/* Griglia di colori 8x2 */
 .color-palette {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
     grid-template-rows: repeat(2, 1fr);
-    gap: 6px;
+    gap: 8px;
     width: 100%;
 }
 
 .color-button {
-    width: 40px;;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     border: 1px solid #e0e0e0;
     border-radius: 50%;
     cursor: pointer;
@@ -534,24 +500,21 @@ body {
 /* Stile di base per il canvas quando l'utente è l'artista */
 
 
-/* Stile attivo quando il mouse è sopra il canvas e l'utente è l'artista */
-.artist-cursor.artist-active {
+/* Stili cursore */
+.artist-cursor {
     cursor: url('../imgs/paintbrush.png') 5 20, auto;
 }
 
-/* Stile di base per il canvas quando l'utente è l'artista */
-.artist-cursor {
-    cursor: url('../imgs/paintbrush.png')5 20, auto;
+.eraser-cursor {
+    cursor: url('../imgs/eraser32.png') 5 20, auto;
 }
 
-/* Aggiungi questi stili al file frontend/styles/game.css */
+.fill-cursor {
+    cursor: url('../imgs/paint-bucket.png') 5 20, auto;
+}
 
 /* Stile per il pulsante di riempimento */
-.fill-button {
-    position: relative;
-    background-color: white;
-    color: #333;
-}
+
 
 .fill-icon {
     font-size: 20px;
@@ -569,10 +532,7 @@ body {
 }
 
 /* Effetto attivo per il pulsante di riempimento */
-.fill-button.active {
-    border: 2px solid #1565c0;
-    box-shadow: 0 0 5px rgba(21, 101, 192, 0.3);
-}
+
 
 
 /* Aggiungere al file frontend/styles/game.css */
@@ -598,25 +558,34 @@ body {
 }
 
 /* Stili per i pulsanti della gomma */
-.eraser-width-buttons {
+/* .eraser-width-buttons {
     display: flex;
     gap: 8px;
 }
 
-.eraser-button {
-    background-color: #f5f5f5;
-}
 
 .eraser-width-circle {
     background-color: #f0f0f0;
     border: 1px solid #ccc;
     border-radius: 50%;
+} */
+
+/* Stili per i pulsanti della gomma */
+.eraser-button {
+    background-color: #f5f5f5;
+}
+
+.eraser-img {
+    display: block;
+    max-width: 80%;
+    max-height: 80%;
 }
 
 .eraser-button.active {
     border: 2px solid #ff5722;
     box-shadow: 0 0 5px rgba(255, 87, 34, 0.3);
 }
+
 
 /* Cursore personalizzato per la gomma */
 .eraser-cursor {
@@ -636,47 +605,102 @@ body {
     cursor: url('../imgs/paint-bucket.png') 5 20, auto;
 }
 
-/* Aggiorna il layout dei controlli dell'artista per accomodare tutti gli strumenti */
+/* Layout principale */
 .artist-controls {
     width: 100%;
-    height: auto; /* Altezza adattiva */
-    min-height: 150px;
     background-color: #f9f9f9;
     border-radius: 8px;
-    margin-top: 15px;
-    box-sizing: border-box;
-    padding: 12px;
+    margin-top: 25px;
+    padding: 5px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 .controls-layout {
-    width: 100%;
-    height: 100%;
+    display: flex;
+    justify-content: space-evenly;
+    gap: 15px;
+}
+
+/* Container per gli strumenti a sinistra */
+.tools-container {
+    width: 35%;
     display: flex;
     flex-direction: column;
     gap: 15px;
 }
 
-.tools-container {
+/* Righe di strumenti */
+.tools-row {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    padding: 10px;
-    flex-wrap: wrap;
-    gap: 15px;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Stile per i gruppi di pulsanti */
+.line-width-buttons, .eraser-width-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+/* Stile base per i pulsanti degli strumenti */
+.tool-button {
+    width: 40px;
+    height: 40px;
+    border: 1px solid #e0e0e0;
+    border-radius: 50%;
+    background-color: white;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: all 0.2s ease;
+    padding: 0;
+}
+
+.tool-button:hover {
+    background-color: #f5f5f5;
+    transform: scale(1.05);
+}
+
+.tool-button.active {
+    border: 2px solid #4CAF50;
+    box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+}
+
+/* Stili specifici per cerchi di spessore penna */
+.line-width-circle {
+    background-color: #333;
+    border-radius: 50%;
+}
+
+/* Stili per il pulsante fill */
+.fill-button {
+    background-color: white;
+    color: #333;
+}
+
+.fill-icon {
+    font-size: 20px;
+    line-height: 1;
+}
+
+.fill-button.active {
+    border: 2px solid #1565c0;
+    box-shadow: 0 0 5px rgba(21, 101, 192, 0.3);
 }
 
 /* Responsive design per i controlli dell'artista */
-@media (min-width: 768px) {
+@media (max-width: 767px) {
     .controls-layout {
-        flex-direction: row;
+        flex-direction: column;
     }
     
-    .tools-container {
-        width: 50%;
+    .tools-container, .color-container {
+        width: 100%;
     }
     
-    .color-container {
-        width: 50%;
+    .color-palette {
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(4, 1fr);
     }
 }

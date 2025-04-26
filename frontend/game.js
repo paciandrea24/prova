@@ -652,15 +652,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const controlsBox = document.createElement('div');
         controlsBox.className = 'artist-controls';
 
-        // Crea il layout principale dei controlli
+        // Layout principale dei controlli - usiamo flex per disporre strumenti e colori
         const controlsLayout = document.createElement('div');
         controlsLayout.className = 'controls-layout';
 
-        // 1. SEZIONE STRUMENTI: Spessore linea, Gomma, Riempi e Cancella
+        // 1. SEZIONE STRUMENTI a sinistra
         const toolsContainer = document.createElement('div');
         toolsContainer.className = 'tools-container';
 
-        // Aggiungi i 3 pulsanti per lo spessore
+        // 2. SEZIONE COLORI a destra
+        const colorContainer = document.createElement('div');
+        colorContainer.className = 'color-container';
+
+        // Prima riga: pulsanti penna e fill
+        const topRow = document.createElement('div');
+        topRow.className = 'tools-row top-row';
+
+        // Aggiungi i 3 pulsanti per lo spessore della penna
         const lineWidthButtons = document.createElement('div');
         lineWidthButtons.className = 'line-width-buttons';
 
@@ -683,65 +691,23 @@ document.addEventListener('DOMContentLoaded', () => {
             button.appendChild(circle);
 
             button.addEventListener('click', () => {
-                fillMode = false; // Disattiva la modalità riempimento
+                fillMode = false;
                 currentLineWidth = width;
-                currentTool = 'pen'; // Imposta lo strumento su penna
-                // Salva il colore corrente per quando si passa dalla gomma alla penna
+                currentTool = 'pen';
                 if (lastUsedColor) {
                     currentColor = lastUsedColor;
                 }
-                // Rimuovi la classe active da tutti i pulsanti
                 document.querySelectorAll('.tool-button').forEach(btn => {
                     btn.classList.remove('active');
                 });
-                // Aggiungi la classe active al pulsante selezionato
                 button.classList.add('active');
+                updateCursorStyle();
             });
 
             lineWidthButtons.appendChild(button);
         });
 
-        // Aggiungi i 3 pulsanti per la gomma
-        const eraserButtons = document.createElement('div');
-        eraserButtons.className = 'eraser-width-buttons';
-
-        const eraserWidths = [10, 20, 30];
-        eraserWidths.forEach(width => {
-            const button = document.createElement('button');
-            button.className = 'tool-button eraser-button';
-            if (width === currentLineWidth && currentTool === 'eraser') {
-                button.classList.add('active');
-            }
-            button.dataset.width = width;
-            button.dataset.tool = 'eraser';
-
-            // Creare un cerchio per rappresentare lo spessore della gomma
-            const circle = document.createElement('div');
-            circle.className = 'eraser-width-circle';
-            circle.style.width = `${width}px`;
-            circle.style.height = `${width}px`;
-
-            button.appendChild(circle);
-
-            button.addEventListener('click', () => {
-                fillMode = false; // Disattiva la modalità riempimento
-                currentLineWidth = width;
-                currentTool = 'eraser'; // Imposta lo strumento su gomma
-                lastUsedColor = currentColor; // Salva il colore corrente
-                currentColor = 'white'; // Imposta il colore su bianco per "cancellare"
-
-                // Rimuovi la classe active da tutti i pulsanti
-                document.querySelectorAll('.tool-button').forEach(btn => {
-                    btn.classList.remove('active');
-                });
-                // Aggiungi la classe active al pulsante selezionato
-                button.classList.add('active');
-            });
-
-            eraserButtons.appendChild(button);
-        });
-
-        // NUOVO: Pulsante per lo strumento riempi (secchiello)
+        // Pulsante per lo strumento riempi (secchiello)
         const fillButton = document.createElement('button');
         fillButton.className = 'tool-button fill-button';
         fillButton.title = 'Strumento Riempi';
@@ -751,25 +717,70 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Icona per il secchiello di vernice
         const fillIcon = document.createElement('span');
-        fillIcon.innerHTML = '🪣'; // Emoji secchiello
+        fillIcon.innerHTML = '🪣';
         fillIcon.className = 'fill-icon';
 
         fillButton.appendChild(fillIcon);
 
         fillButton.addEventListener('click', () => {
-            // Attiva la modalità riempimento
             fillMode = true;
             currentTool = 'fill';
-            // Se venivamo dalla gomma, ripristina il colore precedente
             if (lastUsedColor && currentColor === 'white') {
                 currentColor = lastUsedColor;
             }
-            // Rimuovi la classe active da tutti i pulsanti
             document.querySelectorAll('.tool-button').forEach(btn => {
                 btn.classList.remove('active');
             });
-            // Aggiungi la classe active al pulsante di riempimento
             fillButton.classList.add('active');
+            updateCursorStyle();
+        });
+
+        // Aggiungi pulsanti penna e fill alla prima riga
+        topRow.appendChild(lineWidthButtons);
+        topRow.appendChild(fillButton);
+
+        // Seconda riga: pulsanti gomma e cancella tutto
+        const bottomRow = document.createElement('div');
+        bottomRow.className = 'tools-row bottom-row';
+
+        // Aggiungi i 3 pulsanti per la gomma
+        const eraserButtons = document.createElement('div');
+        eraserButtons.className = 'eraser-width-buttons';
+
+        const eraserWidths = [2, 5, 10];
+        eraserWidths.forEach(width => {
+            const button = document.createElement('button');
+            button.className = 'tool-button eraser-button';
+            if (width === currentLineWidth && currentTool === 'eraser') {
+                button.classList.add('active');
+            }
+            button.dataset.width = width;
+            button.dataset.tool = 'eraser';
+
+            // Immagine della gomma
+            const eraserImg = document.createElement('img');
+            eraserImg.src = `../imgs/eraser-${width}.png`; // Assicurati che queste immagini esistano
+            eraserImg.className = 'eraser-img';
+            eraserImg.alt = `Gomma ${width}px`;
+            eraserImg.style.width = `${width * 2.6 + 2}px`; // Dimensiona in base alla larghezza
+            eraserImg.style.height = 'auto';
+
+            button.appendChild(eraserImg);
+
+            button.addEventListener('click', () => {
+                fillMode = false;
+                currentLineWidth = width;
+                currentTool = 'eraser';
+                lastUsedColor = currentColor;
+                currentColor = 'white';
+                document.querySelectorAll('.tool-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                button.classList.add('active');
+                updateCursorStyle();
+            });
+
+            eraserButtons.appendChild(button);
         });
 
         // Pulsante per pulire la lavagna
@@ -785,50 +796,22 @@ document.addEventListener('DOMContentLoaded', () => {
         clearButton.appendChild(clearIcon);
 
         clearButton.addEventListener('click', () => {
-            // Pulisci localmente
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Invia l'evento a tutti
             socket.emit('clearCanvas', { lobbyId });
         });
 
-        // Crea un div per raggruppare penna e gomma
-        const drawingTools = document.createElement('div');
-        drawingTools.className = 'drawing-tools';
+        // Aggiungi pulsanti gomma e cancella alla seconda riga
+        bottomRow.appendChild(eraserButtons);
+        bottomRow.appendChild(clearButton);
 
-        // Etichetta per la penna
-        const penLabel = document.createElement('div');
-        penLabel.className = 'tool-label';
-        penLabel.textContent = 'Penna';
+        // Aggiungi entrambe le righe al container degli strumenti
+        toolsContainer.appendChild(topRow);
+        toolsContainer.appendChild(bottomRow);
 
-        // Etichetta per la gomma
-        const eraserLabel = document.createElement('div');
-        eraserLabel.className = 'tool-label';
-        eraserLabel.textContent = 'Gomma';
-
-        // Aggiungi etichette e pulsanti al div degli strumenti di disegno
-        const penContainer = document.createElement('div');
-        penContainer.className = 'tool-container';
-        penContainer.appendChild(penLabel);
-        penContainer.appendChild(lineWidthButtons);
-
-        const eraserContainer = document.createElement('div');
-        eraserContainer.className = 'tool-container';
-        eraserContainer.appendChild(eraserLabel);
-        eraserContainer.appendChild(eraserButtons);
-
-        drawingTools.appendChild(penContainer);
-        drawingTools.appendChild(eraserContainer);
-
-        // Aggiungi il div degli strumenti di disegno al container degli strumenti
-        toolsContainer.appendChild(drawingTools);
-        toolsContainer.appendChild(fillButton);
-        toolsContainer.appendChild(clearButton);
-
-        // 2. SEZIONE COLORI - palette minimalista (resto del codice invariato)
-        const colorContainer = document.createElement('div');
-        colorContainer.className = 'color-container';
+        // Crea la palette di colori 8x2
+        const colorPalette = document.createElement('div');
+        colorPalette.className = 'color-palette';
 
         // Lista di 16 colori predefiniti
         const colors = [
@@ -837,9 +820,6 @@ document.addEventListener('DOMContentLoaded', () => {
             // Seconda riga (8 colori)
             '#FFA500', '#800080', '#008000', '#800000', '#808080', '#A52A2A', '#FFC0CB', '#FFD700'
         ];
-
-        const colorPalette = document.createElement('div');
-        colorPalette.className = 'color-palette';
 
         colors.forEach(color => {
             const colorButton = document.createElement('button');
@@ -854,26 +834,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentColor = color;
                 lastUsedColor = color;
 
-                // Se siamo in modalità gomma, passa alla penna
                 if (currentTool === 'eraser') {
                     currentTool = 'pen';
-                    // Rimuovi l'active da tutti i pulsanti della gomma
                     document.querySelectorAll('.eraser-button').forEach(btn => {
                         btn.classList.remove('active');
                     });
-                    // Attiva il pulsante penna con lo spessore corrente
                     const penButtons = document.querySelectorAll('.tool-button:not(.eraser-button):not(.fill-button):not(.clear-button)');
                     if (penButtons.length > 0) {
-                        penButtons[1].classList.add('active'); // Attiva il pulsante medio per default
+                        penButtons[1].classList.add('active');
                     }
                 }
 
-                // Rimuovi la classe active da tutti i pulsanti colore
                 document.querySelectorAll('.color-button').forEach(btn => {
                     btn.classList.remove('active');
                 });
-                // Aggiungi la classe active al pulsante selezionato
                 colorButton.classList.add('active');
+                updateCursorStyle();
             });
 
             colorPalette.appendChild(colorButton);
@@ -884,7 +860,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Assembla i controlli nel layout
         controlsLayout.appendChild(toolsContainer);
         controlsLayout.appendChild(colorContainer);
-
         controlsBox.appendChild(controlsLayout);
 
         // Aggiungi i controlli sotto il canvas
