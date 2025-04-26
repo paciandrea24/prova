@@ -130,6 +130,9 @@ io.on('connection', (socket) => {
         game.isActive = true;
         game.revealedIndices = new Set(); // Resetta le lettere rivelate
 
+        // Crea un piano per rivelare le lettere durante il turno
+        game.hintRevealPlan = createHintRevealPlan(word, 60);
+
         // Invia l'hint a tutti i giocatori
         io.to(lobbyId).emit('gameState', {
             players: game.players,
@@ -140,25 +143,18 @@ io.on('connection', (socket) => {
             correctGuesses: game.correctGuesses,
             round: game.currentRound,
             totalRounds: game.totalRounds,
-            currentWord: word  // Aggiungi la parola corrente qui
+            currentWord: word
         });
 
         // Pulisci la lavagna
         io.to(lobbyId).emit('clearCanvas');
 
-        // Imposta un intervallo per rivelare gradualmente le lettere (ogni 7 secondi)
-        if (game.hintInterval) {
-            clearInterval(game.hintInterval);
-        }
-
-        // Rivela una nuova lettera ogni 7 secondi
-        game.hintInterval = setInterval(() => {
-            updateHint(lobbyId);
-        }, 7000);
-
         // Inizia il timer del gioco
         game.timerInterval = setInterval(() => {
             game.timer--;
+
+            // Controlla se è il momento di rivelare una nuova lettera
+            checkAndUpdateHint(lobbyId);
 
             // Aggiorna il timer per tutti
             io.to(lobbyId).emit('gameState', {
@@ -170,7 +166,7 @@ io.on('connection', (socket) => {
                 correctGuesses: game.correctGuesses,
                 round: game.currentRound,
                 totalRounds: game.totalRounds,
-                currentWord: word  // Aggiungi la parola corrente anche qui
+                currentWord: word
             });
 
             // Se il timer arriva a 0 o tutti hanno indovinato, termina il turno
@@ -315,33 +311,48 @@ io.on('connection', (socket) => {
 
 // Database delle parole divise per difficoltà
 const words = [
-    // Parole che erano in "easy"
-    'casa', 'cane', 'gatto', 'sole', 'luna', 'mare', 'libro', 'porta', 'albero', 'fiore',
-    'palla', 'telefono', 'tavolo', 'cielo', 'scuola',
-    'lampada', 'biscotto', 'rana', 'sedia', 'nuvola',
-    'piuma', 'arancia', 'maglione', 'chiave', 'zaino',
-    'cuscino', 'matita', 'forchetta', 'occhiali', 'scarpa',
-
-    // Parole che erano in "medium"
-    'computer', 'montagna', 'castello', 'finestra', 'elefante',
-    'aereo', 'treno', 'pianoforte', 'chitarra', 'fragola',
-    'spiaggia', 'ombrello', 'bottiglia',
-    'bicicletta', 'pallone', 'specchio', 'tappeto', 'caramella',
-    'naso', 'muro', 'caffè', 'dente', 'serpente',
-
-    // Parole che erano in "hard"
-    'astronauta', 'termometro', 'piramide', 'vulcano', 'dinosauro',
-    'aquilone', 'mongolfiera', 'sottomarino', 'satellite', 'arcobaleno',
-    'labirinto', 'paracadute',
-    'drago', 'robot', 'pirata', 'scoiattolo', 'orologio',
-    'barattolo', 'ponte', 'quaderno', 'stivale', 'fiume', 'cornice',
-
-    // Puoi aggiungere altre parole qui
-    'farfalla', 'ristorante', 'orchestra', 'cappello', 'spazzolino',
-    'autobus', 'giraffa', 'coccodrillo', 'ambulanza', 'galleria',
-    'castello', 'temporale', 'cipolla', 'guanto', 'bandiera',
-    'passaporto', 'cavallo', 'mappa', 'chitarra', 'uovo',
-    'semaforo', 'lampadina', 'lente', 'yogurt', 'cornetto'
+    'casa', 'astronauta', 'pizza', 'bicicletta', 'computer', 'sole', 'gatto', 'barca', 'drago', 'foresta',
+    'telefono', 'fiume', 'cane', 'castello', 'lampada', 'gelato', 'treno', 'montagna', 'cactus', 'elefante',
+    'robot', 'pianeta', 'sirena', 'vulcano', 'nuvola', 'tigre', 'pirata', 'magia', 'caramella', 'dinosauro',
+    'aereo', 'mela', 'clown', 'nave', 'cielo', 'bruco', 'spada', 'scuola', 'trenino', 'vampiro',
+    'zaino', 'panda', 'fata', 'circo', 'orologio', 'cappello', 'giungla', 'medusa', 'arco', 'bosco',
+    'palla', 'matita', 'squalo', 'fantasma', 'luna', 'macchina', 'cervo', 'principessa', 'occhiali', 'balena',
+    'deserto', 'ponte', 'gufo', 'libreria', 'trampolino', 'chitarra', 'aquilone', 'panino', 'zebra', 'fiore',
+    'scimmia', 'castoro', 'bicchiere', 'sedia', 'scivolo', 'tenda', 'orco', 'zucchero', 'mongolfiera', 'penna',
+    'barboncino', 'crociera', 'carrozza', 'microfono', 'scudo', 'occhio', 'satellite', 'piramide', 'serpente', 'scoiattolo',
+    'nave spaziale', 'campanello', 'sottacqua', 'braccialetto', 'tempesta', 'ferrovia', 'maratoneta', 'televisore', 'flauto', 'pompiere',
+    'scacchi', 'tempio', 'camaleonte', 'bancomat', 'muratore', 'giocoliere', 'batteria', 'tartaruga', 'vento', 'sottomarino',
+    'giardino', 'muro', 'vaso', 'specchio', 'neve', 'castagna', 'nuotatore', 'albero', 'stella', 'vestito',
+    'tavolo', 'banco', 'elicottero', 'pianoforte', 'scheletro', 'farfalla', 'ambulanza', 'camion', 'ombra', 'frigorifero',
+    'trampoliere', 'zanzara', 'cuscino', 'pennello', 'pozzo', 'candela', 'porta', 'scarpa', 'barile', 'magnete',
+    'bagnino', 'ragno', 'sabbia', 'tavolozza', 'vichingo', 'capra', 'leone', 'sedia a rotelle', 'barca a vela', 'cameriere',
+    'treno merci', 'sedia da regista', 'cappuccetto rosso', 'pastore', 'balestra', 'cavalluccio marino', 'anatra', 'pipistrello', 'torre', 'ferro da stiro',
+    'teatro', 'scarafaggio', 'scarabeo', 'piramide', 'pantera', 'fungo', 'pallone', 'bastone', 'bruco', 'giraffa',
+    'scooter', 'sottomarino', 'spazzola', 'mummia', 'stregone', 'campione', 'miniera', 'orchestra', 'bagnoschiuma', 'vasca',
+    'cigno', 'camaleonte', 'carota', 'lettino', 'passeggino', 'fiocco', 'torcia', 'orologio da tasca', 'razzo', 'lampione',
+    'semaforo', 'spaventapasseri', 'cestino', 'ombrello', 'ventaglio', 'pappagallo', 'scacchiera', 'lanterna', 'prato', 'carro',
+    'autobus', 'pianista', 'mozzarella', 'bicchiere di vino', 'scatola', 'serratura', 'portaombrelli', 'coperta', 'cappotto', 'ghepardo',
+    'calzino', 'maglietta', 'zattera', 'dama', 'tridente', 'grattacielo', 'benzinaio', 'binocolo', 'collana', 'palestra',
+    'valigia', 'pittura', 'pavone', 'giostra', 'pattini', 'secchio', 'carta', 'fiammifero', 'fumo', 'grano',
+    'aratro', 'fattoria', 'serra', 'cintura', 'busto', 'pipa', 'foca', 'cerbiatto', 'pinguino', 'iguana',
+    'strega', 'scheletro', 'cowboy', 'sergente', 're', 'regina', 'mago', 'giullare', 'samurai', 'ninja',
+    'poeta', 'cantante', 'scrittore', 'regista', 'pilota', 'cavaliere', 'pescatore', 'contadino', 'panettiere', 'macellaio',
+    'giardiniere', 'cuoco', 'insegnante', 'meccanico', 'fabbro', 'falegname', 'pittore', 'architetto', 'avvocato', 'dottore',
+    'infermiere', 'pompiere', 'carabiniere', 'poliziotto', 'guardia', 'esploratore', 'scienziato', 'astronomo', 'biologo', 'geologo',
+    'antropologo', 'archeologo', 'storico', 'matematico', 'programmatore', 'gamer', 'tuffatore', 'giocatore di basket', 'surfista', 'sciatore',
+    'pattinatore', 'tennista', 'calciatore', 'cestista', 'corridore', 'nuotatore', 'pugile', 'arciere', 'cacciatore', 'paziente',
+    'fantino', 'contorsionista', 'illusionista', 'puparo', 'burattinaio', 'pastore', 'pellegrino', 'cercatore d’oro', 'cosmonauta', 'monaco',
+    'pirata', 'corsaro', 'mercante', 'narratore', 'viaggiatore', 'turista', 'esploratore polare', 'speleologo', 'paracadutista', 'vigile urbano',
+    'cassiere', 'commesso', 'bibliotecario', 'barista', 'rappresentante', 'venditore ambulante', 'ambulante', 'mendicante', 'spazzino', 'operatore ecologico',
+    'cucciolo', 'gattino', 'cagnolino', 'pulcino', 'anatroccolo', 'colibrì', 'struzzo', 'orso', 'cervo volante', 'falco',
+    'aquila', 'pipistrello', 'lucertola', 'rana', 'rospo', 'serpente', 'vipera', 'anguria', 'fragola', 'mirtillo',
+    'cocco', 'banana', 'ciliegia', 'pera', 'pesca', 'melone', 'susina', 'uva', 'lampone', 'mango',
+    'kiwi', 'ananas', 'mandarino', 'pomodoro', 'carciofo', 'sedano', 'zucchina', 'peperone', 'melanzana', 'patata',
+    'cipolla', 'aglio', 'carota', 'rapa', 'zucca', 'spinacio', 'broccolo', 'cavolfiore', 'lattuga', 'ravanello',
+    'barbabietola', 'asparago', 'funghetto', 'basilico', 'rosmarino', 'origano', 'menta', 'salvia', 'timo', 'alloro',
+    'cetriolo', 'finocchio', 'prezzemolo', 'cocomero', 'nocciola', 'mandorla', 'noce', 'pistacchio', 'arachide', 'castagna',
+    'scopa', 'martello', 'cacciavite', 'sega', 'trapano', 'pialla', 'scalpello', 'pinza', 'chiave inglese', 'livella',
+    'metro', 'calibro', 'tenaglia', 'taglierino', 'forbici', 'coltello', 'rastrello', 'zappa', 'pala', 'vanga'
 ];
 
 
@@ -407,8 +418,10 @@ function initializeGame(lobbyId, players, numRounds = 3) {
         isActive: false,
         correctGuesses: [],
         timerInterval: null,
-        hintInterval: null,       // Nuovo: intervallo per aggiornare l'indizio
-        revealedIndices: new Set() // Nuovo: tiene traccia delle lettere rivelate
+        hintInterval: null,       // Intervallo per aggiornare l'indizio
+        revealedIndices: new Set(), // Tiene traccia delle lettere rivelate
+        nextRevealTime: null,     // Prossimo momento in cui rivelare una lettera
+        hintRevealPlan: []        // Piano di rivelazione delle lettere
     };
 
     activeGames.set(lobbyId, game);
@@ -418,6 +431,117 @@ function initializeGame(lobbyId, players, numRounds = 3) {
 // Funzione per generare un hint iniziale (solo underscore)
 function generateInitialHint(word) {
     return Array(word.length).fill('_').join(' ');
+}
+
+// Funzione per creare un piano di rivelazione delle lettere
+function createHintRevealPlan(word, totalTimeInSeconds) {
+    const letterCount = word.length;
+
+    // Manteniamo almeno l'ultima lettera nascosta fino alla fine o quasi
+    // Per parole molto corte (2-3 lettere), riveleremo massimo 1 lettera
+    // Per parole più lunghe, riveleremo progressivamente fino a lasciare ~20% nascosto
+
+    let lettersToReveal;
+    if (letterCount <= 3) {
+        lettersToReveal = 1; // Per parole molto corte, rivela solo 1 lettera
+    } else if (letterCount <= 5) {
+        lettersToReveal = letterCount - 2; // Per parole corte, lascia 2 lettere nascoste
+    } else {
+        lettersToReveal = Math.ceil(letterCount * 0.8); // Rivela l'80% delle lettere
+    }
+
+    // Non rivelare mai tutto
+    lettersToReveal = Math.min(lettersToReveal, letterCount - 1);
+
+    // Crea una lista di indici casuali da rivelare
+    const indices = Array.from({ length: letterCount }, (_, i) => i);
+    shuffleArray(indices); // Mescola gli indici
+
+    const revealPlan = [];
+    const indicesForHint = indices.slice(0, lettersToReveal);
+
+    // Determina quando rivelare ogni lettera
+    if (lettersToReveal > 0) {
+        // Distribuisce le rivelazioni in modo più uniforme
+        // Lasciando più tempo all'inizio per permettere ai giocatori di indovinare
+
+        // Il primo 30% del tempo non rivela nulla
+        const noRevealTime = totalTimeInSeconds * 0.3;
+
+        // Tempo rimanente per rivelare le lettere
+        const revealTime = totalTimeInSeconds - noRevealTime;
+
+        // Intervallo tra le rivelazioni
+        const interval = revealTime / lettersToReveal;
+
+        for (let i = 0; i < lettersToReveal; i++) {
+            const revealAt = Math.floor(noRevealTime + interval * i);
+            revealPlan.push({
+                index: indicesForHint[i],
+                revealAt: revealAt
+            });
+        }
+    }
+
+    return revealPlan;
+}
+
+// Utility per mescolare un array
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+}
+
+// Funzione per aggiornare l'indizio in base al timer
+function checkAndUpdateHint(lobbyId) {
+    const game = activeGames.get(lobbyId);
+    if (!game || !game.currentWord || !game.isActive || !game.hintRevealPlan) return;
+
+    // Tempo rimanente in questo turno
+    const elapsedTime = 60 - game.timer;
+
+    // Controlla se è il momento di rivelare una nuova lettera
+    const letterToReveal = game.hintRevealPlan.find(item => item.revealAt === elapsedTime);
+
+    if (letterToReveal) {
+        // Aggiungi l'indice all'insieme delle lettere rivelate
+        game.revealedIndices.add(letterToReveal.index);
+
+        // Crea l'indizio aggiornato
+        updateHintDisplay(game);
+    }
+}
+
+// Funzione per aggiornare la visualizzazione dell'indizio
+function updateHintDisplay(game) {
+    const chars = game.currentWord.split('');
+
+    // Crea l'indizio aggiornato
+    const updatedHint = chars.map((char, index) => {
+        if (game.revealedIndices.has(index)) {
+            return char;
+        }
+        return '_';
+    }).join(' ');
+
+    // Aggiorna l'indizio nel gioco
+    game.hint = updatedHint;
+
+    // Invia l'indizio aggiornato a tutti i giocatori
+    io.to(game.lobbyId).emit('gameState', {
+        players: game.players,
+        scores: game.scores,
+        currentTurn: game.currentTurn,
+        timer: game.timer,
+        hint: game.hint,
+        correctGuesses: game.correctGuesses,
+        round: game.currentRound,
+        totalRounds: game.totalRounds,
+        currentWord: game.currentWord
+    });
 }
 
 // Funzione per aggiornare l'indizio rivelando una nuova lettera casuale
