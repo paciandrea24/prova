@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles/quiz.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <title>Mystery Investigation</title>
+</head>
+
+<body>
+    <div id="gameContainer">
+        <!-- Game phases will be displayed here -->
+        <div id="waiting-area" class="game-phase active">
+            <h2>Waiting for players...</h2>
+            <div class="players-list-container">
+                <h3>Players</h3>
+                <ul id="players-list" class="players-ul"></ul>
+            </div>
+            <div id="host-controls" class="hidden">
+                <button id="start-game-btn" class="primary-btn">Start Game</button>
+            </div>
+        </div>
+
+        <!-- Role Reveal Phase -->
+        <div id="role-reveal" class="game-phase">
+            <div class="role-container">
+                <h2>Your Role</h2>
+                <div id="role-card">
+                    <div id="role-name"></div>
+                    <div id="role-description"></div>
+                </div>
+                <button id="ready-btn" class="primary-btn">I'm Ready</button>
+            </div>
+        </div>
+
+        <!-- Image Display Phase -->
+        <div id="image-display" class="game-phase">
+            <h2>Observe carefully...</h2>
+            <div id="countdown">5</div>
+            <div id="image-container">
+                <img id="scenario-image" src="" alt="Scenario Image">
+            </div>
+        </div>
+
+        <!-- Drawing Phase -->
+        <div id="drawing-phase" class="game-phase">
+            <h2 id="drawing-instructions"></h2>
+            <div id="timer-container">Time left: <span id="drawing-timer">60</span>s</div>
+            <div id="canvas-container">
+                <canvas id="drawingCanvas" width="600" height="400"></canvas>
+                <div id="drawing-tools">
+                    <div class="tool-group">
+                        <button id="pen-tool" class="tool-btn active" title="Pen"><i class="fa fa-pencil"></i></button>
+                        <button id="eraser-tool" class="tool-btn" title="Eraser"><i class="fa fa-eraser"></i></button>
+                        <button id="clear-canvas" class="tool-btn" title="Clear"><i class="fa fa-trash"></i></button>
+                    </div>
+                    <div class="color-palette">
+                        <div class="color-option selected" data-color="#000000" style="background-color: #000000;">
+                        </div>
+                        <div class="color-option" data-color="#ff0000" style="background-color: #ff0000;"></div>
+                        <div class="color-option" data-color="#0000ff" style="background-color: #0000ff;"></div>
+                        <div class="color-option" data-color="#008000" style="background-color: #008000;"></div>
+                        <div class="color-option" data-color="#ffff00" style="background-color: #ffff00;"></div>
+                    </div>
+                    <div class="line-width">
+                        <input type="range" id="line-width" min="1" max="20" value="5">
+                    </div>
+                </div>
+            </div>
+            <button id="submit-drawing" class="primary-btn">Submit Drawing</button>
+        </div>
+
+        <!-- Gallery Phase -->
+        <div id="gallery-phase" class="game-phase">
+            <h2>Evidence Review</h2>
+            <div id="drawings-gallery"></div>
+            <div id="discussion-timer">Discussion time: <span id="discussion-countdown">120</span>s</div>
+        </div>
+
+        <!-- Voting Phase -->
+        <div id="voting-phase" class="game-phase">
+            <h2>Time to Vote</h2>
+            <p>Who do you think is a Killer trying to mislead the investigation?</p>
+            <div id="voting-options"></div>
+            <button id="submit-vote" class="primary-btn">Submit Vote</button>
+        </div>
+
+        <!-- Results Phase -->
+        <div id="results-phase" class="game-phase">
+            <h2>Voting Results</h2>
+            <div id="vote-results"></div>
+            <div id="eliminated-player"></div>
+            <button id="continue-btn" class="primary-btn">Continue</button>
+        </div>
+
+        <!-- Game End Phase -->
+        <div id="game-end" class="game-phase">
+            <h2 id="winner-announcement"></h2>
+            <div id="roles-reveal"></div>
+            <button id="back-to-lobby" class="primary-btn">Back to Lobby</button>
+        </div>
+    </div>
+
+    <!-- Game Info Sidebar -->
+    <div id="game-info">
+        <div id="round-info">
+            <h3>Round: <span id="current-round">0</span>/<span id="total-rounds">0</span></h3>
+        </div>
+        <div id="players-status">
+            <h3>Players</h3>
+            <ul id="player-status-list"></ul>
+        </div>
+        <div id="game-log">
+            <h3>Game Log</h3>
+            <div id="log-entries"></div>
+        </div>
+    </div>
+
+    <!-- Chat Box -->
+    <div id="chat-box" class="hidden">
+        <div id="chat-header">
+            <h3>Chat</h3>
+            <button id="toggle-chat"><i class="fa fa-chevron-down"></i></button>
+        </div>
+        <div id="chat-messages"></div>
+        <div id="chat-input-area">
+            <input type="text" id="chat-input" placeholder="Type a message...">
+            <button id="send-message">Send</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="quiz.js"></script>
+</body>
+
+</html>

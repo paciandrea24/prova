@@ -785,6 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Aggiungi pulsanti e controlli per l'artista
+    // Aggiungi pulsanti e controlli per l'artista
     function addArtistControls() {
         // Crea un box per i controlli dell'artista
         const controlsBox = document.createElement('div');
@@ -794,17 +795,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const controlsLayout = document.createElement('div');
         controlsLayout.className = 'controls-layout';
 
-        // 1. SEZIONE STRUMENTI a sinistra
-        const toolsContainer = document.createElement('div');
-        toolsContainer.className = 'tools-container';
+        // Prima riga
+        const firstRow = document.createElement('div');
+        firstRow.className = 'controls-row';
 
-        // 2. SEZIONE COLORI a destra
-        const colorContainer = document.createElement('div');
-        colorContainer.className = 'color-container';
+        // 1. SEZIONE STRUMENTI PRIMA RIGA a sinistra
+        const toolsContainerFirstRow = document.createElement('div');
+        toolsContainerFirstRow.className = 'tools-container first-row';
 
-        // Prima riga: pulsanti penna e fill
-        const topRow = document.createElement('div');
-        topRow.className = 'tools-row top-row';
+        // 2. SEZIONE COLORI PRIMA RIGA a destra
+        const colorContainerFirstRow = document.createElement('div');
+        colorContainerFirstRow.className = 'color-container first-row';
+
+        // Seconda riga
+        const secondRow = document.createElement('div');
+        secondRow.className = 'controls-row';
+
+        // 3. SEZIONE STRUMENTI SECONDA RIGA a sinistra
+        const toolsContainerSecondRow = document.createElement('div');
+        toolsContainerSecondRow.className = 'tools-container second-row';
+
+        // 4. SEZIONE COLORI SECONDA RIGA a destra
+        const colorContainerSecondRow = document.createElement('div');
+        colorContainerSecondRow.className = 'color-container second-row';
 
         // Aggiungi i 3 pulsanti per lo spessore della penna
         const lineWidthButtons = document.createElement('div');
@@ -873,17 +886,25 @@ document.addEventListener('DOMContentLoaded', () => {
             updateCursorStyle();
         });
 
-        // Aggiungi pulsanti penna e fill alla prima riga
-        topRow.appendChild(lineWidthButtons);
-        topRow.appendChild(fillButton);
+        // Pulsante Undo
+        const undoButton = document.createElement('button');
+        undoButton.className = 'tool-button undo-button';
+        undoButton.title = 'Annulla ultima azione';
+        undoButton.disabled = true;
+        undoButton.style.opacity = "0.5";
 
-        // Seconda riga: pulsanti gomma e cancella tutto
-        const bottomRow = document.createElement('div');
-        bottomRow.className = 'tools-row bottom-row';
+        // Icona per Undo
+        const undoIcon = document.createElement('span');
+        undoIcon.innerHTML = '↩️';
+        undoIcon.className = 'undo-icon';
 
-        // Terza riga: pulsanti undo e redo
-        const historyRow = document.createElement('div');
-        historyRow.className = 'tools-row history-row';
+        undoButton.appendChild(undoIcon);
+
+        undoButton.addEventListener('click', () => {
+            if (amIArtist) {
+                undoDrawing();
+            }
+        });
 
         // Aggiungi i 3 pulsanti per la gomma
         const eraserButtons = document.createElement('div');
@@ -930,23 +951,20 @@ document.addEventListener('DOMContentLoaded', () => {
         clearButton.className = 'tool-button clear-button';
         clearButton.title = 'Pulisci Lavagna';
 
-        // Pulsante Undo
-        const undoButton = document.createElement('button');
-        undoButton.className = 'tool-button undo-button';
-        undoButton.title = 'Annulla ultima azione';
-        undoButton.disabled = true;
-        undoButton.style.opacity = "0.5";
+        // Icona "X" per la cancellazione
+        const clearIcon = document.createElement('span');
+        clearIcon.textContent = '×';
+        clearIcon.className = 'clear-icon';
 
-        // Icona per Undo
-        const undoIcon = document.createElement('span');
-        undoIcon.innerHTML = '↩️';
-        undoIcon.className = 'undo-icon';
+        clearButton.appendChild(clearIcon);
 
-        undoButton.appendChild(undoIcon);
+        clearButton.addEventListener('click', () => {
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            socket.emit('clearCanvas', { lobbyId });
 
-        undoButton.addEventListener('click', () => {
             if (amIArtist) {
-                undoDrawing();
+                saveCanvasState();
             }
         });
 
@@ -970,57 +988,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Aggiungi i pulsanti alla riga
-        historyRow.appendChild(undoButton);
-        historyRow.appendChild(redoButton);
-
-        // Aggiungi la nuova riga al container degli strumenti
-        toolsContainer.appendChild(historyRow);
-
-        // Salva lo stato iniziale del canvas una volta che l'artista inizia il turno
-        if (amIArtist) {
-            // Salva lo stato iniziale (canvas bianco)
-            saveCanvasState();
-        }
-
-        // Icona "X" per la cancellazione
-        const clearIcon = document.createElement('span');
-        clearIcon.textContent = '×';
-        clearIcon.className = 'clear-icon';
-
-        clearButton.appendChild(clearIcon);
-
-        clearButton.addEventListener('click', () => {
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            socket.emit('clearCanvas', { lobbyId });
-
-            if (amIArtist) {
-                saveCanvasState();
-            }
-        });
-
-        // Aggiungi pulsanti gomma e cancella alla seconda riga
-        bottomRow.appendChild(eraserButtons);
-        bottomRow.appendChild(clearButton);
-
-        // Aggiungi entrambe le righe al container degli strumenti
-        toolsContainer.appendChild(topRow);
-        toolsContainer.appendChild(bottomRow);
-
-        // Crea la palette di colori 8x2
-        const colorPalette = document.createElement('div');
-        colorPalette.className = 'color-palette';
-
-        // Lista di 16 colori predefiniti
+        // Crea la palette di colori divisa su due righe
         const colors = [
-            // Prima riga (8 colori)
-            '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF',
-            // Seconda riga (8 colori)
-            '#FFA500', '#800080', '#008000', '#800000', '#808080', '#A52A2A', '#FFC0CB', '#FFD700'
+            // Prima riga (colori brillanti e saturi)
+            '#222831', '#EEEEEE', '#E63946', '#8AC926', '#1982C4', '#FFCA3A', '#8B4513', '#00F5D4',
+
+            // Seconda riga (colori più pastello/freschi)
+            '#FF924C', '#C850C0', '#4CAF50', '#FF6F91', '#95A5A6', '#B22222', '#FAB1A0', '#FFD6A5'
         ];
 
-        colors.forEach(color => {
+        // Crea la prima fila di colori (8)
+        const colorPaletteFirst = document.createElement('div');
+        colorPaletteFirst.className = 'color-palette first-row';
+
+        for (let i = 0; i < 8; i++) {
+            const color = colors[i];
             const colorButton = document.createElement('button');
             colorButton.className = 'color-button';
             colorButton.style.backgroundColor = color;
@@ -1051,18 +1033,80 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateCursorStyle();
             });
 
-            colorPalette.appendChild(colorButton);
-        });
+            colorPaletteFirst.appendChild(colorButton);
+        }
 
-        colorContainer.appendChild(colorPalette);
+        // Crea la seconda fila di colori (8)
+        const colorPaletteSecond = document.createElement('div');
+        colorPaletteSecond.className = 'color-palette second-row';
 
-        // Assembla i controlli nel layout
-        controlsLayout.appendChild(toolsContainer);
-        controlsLayout.appendChild(colorContainer);
+        for (let i = 8; i < 16; i++) {
+            const color = colors[i];
+            const colorButton = document.createElement('button');
+            colorButton.className = 'color-button';
+            colorButton.style.backgroundColor = color;
+
+            if (color === currentColor && currentTool !== 'eraser') {
+                colorButton.classList.add('active');
+            }
+
+            colorButton.addEventListener('click', () => {
+                currentColor = color;
+                lastUsedColor = color;
+
+                if (currentTool === 'eraser') {
+                    currentTool = 'pen';
+                    document.querySelectorAll('.eraser-button').forEach(btn => {
+                        btn.classList.remove('active');
+                    });
+                    const penButtons = document.querySelectorAll('.tool-button:not(.eraser-button):not(.fill-button):not(.clear-button)');
+                    if (penButtons.length > 0) {
+                        penButtons[1].classList.add('active');
+                    }
+                }
+
+                document.querySelectorAll('.color-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                colorButton.classList.add('active');
+                updateCursorStyle();
+            });
+
+            colorPaletteSecond.appendChild(colorButton);
+        }
+
+        // Assembla gli elementi per la prima riga
+        toolsContainerFirstRow.appendChild(lineWidthButtons);
+        toolsContainerFirstRow.appendChild(fillButton);
+        toolsContainerFirstRow.appendChild(undoButton);
+        colorContainerFirstRow.appendChild(colorPaletteFirst);
+        firstRow.appendChild(toolsContainerFirstRow);
+        firstRow.appendChild(colorContainerFirstRow);
+
+        // Assembla gli elementi per la seconda riga
+        toolsContainerSecondRow.appendChild(eraserButtons);
+        toolsContainerSecondRow.appendChild(clearButton);
+        toolsContainerSecondRow.appendChild(redoButton);
+        colorContainerSecondRow.appendChild(colorPaletteSecond);
+        secondRow.appendChild(toolsContainerSecondRow);
+        secondRow.appendChild(colorContainerSecondRow);
+
+        // Assembla le righe nel layout principale
+        controlsLayout.appendChild(firstRow);
+        controlsLayout.appendChild(secondRow);
         controlsBox.appendChild(controlsLayout);
 
         // Aggiungi i controlli sotto il canvas
         canvasBox.appendChild(controlsBox);
+
+        // Salva lo stato iniziale del canvas una volta che l'artista inizia il turno
+        if (amIArtist) {
+            // Salva lo stato iniziale (canvas bianco)
+            saveCanvasState();
+        }
+
+        // Aggiorna lo stato dei pulsanti undo/redo
+        updateUndoRedoButtons();
     }
 
     // Mostra un messaggio di benvenuto
