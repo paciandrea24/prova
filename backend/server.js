@@ -239,6 +239,9 @@ io.on('connection', (socket) => {
                 type: 'success'
             });
 
+            // 🔊 Fai partire il suono su tutti i client
+            io.to(lobbyId).emit('playCorrectSound');
+
             // Aggiorna lo stato del gioco
             io.to(lobbyId).emit('gameState', {
                 players: game.players,

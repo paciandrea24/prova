@@ -324,6 +324,17 @@ document.addEventListener('DOMContentLoaded', () => {
         addMessage(data.message, data.type);
     });
 
+    socket.on('playCorrectSound', () => {
+        const audio = document.getElementById('correctSound');
+        if (audio) {
+            audio.currentTime = 0;
+            audio.play().catch((err) => {
+                console.warn('Audio bloccato finché non c’è interazione utente:', err);
+            });
+        }
+    });
+
+
     socket.on('roundEnd', (data) => {
         // Mostra la parola e i punteggi alla fine del round
         revealedWordElement.textContent = data.word;
