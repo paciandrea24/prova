@@ -94,40 +94,21 @@ io.on('connection', (socket) => {
     // Quando un giocatore si unisce a un gioco
     socket.on('joinGame', (data) => {
         const { lobbyId, gameId, playerColor } = data;
-        console.log(`Player ${playerColor} joined game ${gameId} in lobby ${lobbyId}`);
+        console.log(`👤 Player ${playerColor} joined game ${gameId} in lobby ${lobbyId}`);
 
         // Verifica se la lobby esiste
         const lobby = lobbies.get(lobbyId);
         if (!lobby) {
-            console.log(`Lobby ${lobbyId} non trovata`);
+            console.log(`❌ Lobby ${lobbyId} non trovata`);
             return;
         }
 
-        // Se il gioco non è ancora iniziato, inizializzalo
-        if (!activeGames.has(lobbyId)) {
-            // Usa le impostazioni salvate nella lobby se esistono, altrimenti usa quelle di default
-            const gameSettings = lobby.gameSettings || getDefaultGameSettings(gameId);
-            console.log(`Inizializzando gioco per lobby ${lobbyId}:`);
-            console.log(`- Impostazioni lobby:`, lobby.gameSettings);
-            console.log(`- Impostazioni da usare:`, gameSettings);
-
-            initializeGame(lobbyId, lobby.players, gameId, gameSettings);
-
-            // Invia un messaggio che il gioco sta per iniziare
-            io.to(lobbyId).emit('message', {
-                message: 'Il gioco sta per iniziare!',
-                type: 'system'
-            });
-
-            // Inizia il primo turno dopo 3 secondi
-            setTimeout(() => {
-                console.log(`Avviando primo turno per lobby ${lobbyId}`);
-                startNewTurn(lobbyId);
-            }, 3000);
-        } else {
-            console.log(`Gioco già iniziato per lobby ${lobbyId}, inviando stato attuale`);
-            // Se il gioco è già iniziato, invia lo stato attuale
+        // Se il gioco è già iniziato, invia solo lo stato attuale
+        if (activeGames.has(lobbyId)) {
+            console.log(`ℹ️ Gioco già iniziato per lobby ${lobbyId}, inviando stato attuale a ${playerColor}`);
             const game = activeGames.get(lobbyId);
+
+            // Invia lo stato completo del gioco al giocatore che si è appena unito
             socket.emit('gameState', {
                 players: game.players,
                 scores: game.scores,
@@ -140,6 +121,10 @@ io.on('connection', (socket) => {
                 currentWord: game.currentWord,
                 wordOptions: game.wordOptions // Importante per i giocatori che si riconnettono
             });
+        } else {
+            console.log(`⏳ Gioco non ancora iniziato per lobby ${lobbyId}, in attesa...`);
+            // Il gioco non è ancora iniziato, probabilmente l'host deve ancora fare startGame
+            // Non fare nulla, aspetta che l'host avvii il gioco
         }
     });
 
@@ -325,18 +310,42 @@ io.on('connection', (socket) => {
     socket.on('startGame', (data) => {
         const { lobbyId, gameId, settings } = data;
 
-        console.log(`Gioco ${gameId} selezionato nella lobby ${lobbyId} con impostazioni:`, settings);
+        console.log(`🎮 Ricevuto startGame per lobby ${lobbyId}:`);
+        console.log(`- GameID: ${gameId}`);
+        console.log(`- Settings:`, settings);
 
         // Verifica se la lobby esiste
         const lobby = lobbies.get(lobbyId);
-        if (!lobby) return;
+        if (!lobby) {
+            console.log(`❌ Lobby ${lobbyId} non trovata`);
+            return;
+        }
 
-        // NUOVO: Salva le impostazioni nella lobby per usarle quando il gioco inizia effettivamente
+        // Salva le impostazioni nella lobby
         lobby.gameSettings = settings;
-        console.log(`Impostazioni salvate nella lobby ${lobbyId}:`, lobby.gameSettings);
+        console.log(`✅ Impostazioni salvate nella lobby ${lobbyId}`);
 
-        // Invia a tutti i client nella lobby (tranne il mittente) con le impostazioni
-        socket.to(lobbyId).emit('gameSelected', { gameId, settings });
+        // NUOVO: Inizializza immediatamente il gioco invece di aspettare joinGame
+        console.log(`🚀 Inizializzando gioco immediatamente...`);
+
+        // Usa le impostazioni per inizializzare il gioco
+        const gameSettings = settings || getDefaultGameSettings(gameId);
+        initializeGame(lobbyId, lobby.players, gameId, gameSettings);
+
+        // Invia a tutti i client nella lobby che il gioco è stato selezionato
+        io.to(lobbyId).emit('gameSelected', { gameId, settings });
+
+        // Invia un messaggio che il gioco sta per iniziare
+        io.to(lobbyId).emit('message', {
+            message: 'Il gioco sta per iniziare!',
+            type: 'system'
+        });
+
+        // Avvia il primo turno dopo 3 secondi
+        setTimeout(() => {
+            console.log(`🎯 Avviando primo turno per lobby ${lobbyId}`);
+            startNewTurn(lobbyId);
+        }, 3000);
     });
 
     socket.on('disconnect', () => {

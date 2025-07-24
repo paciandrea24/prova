@@ -1167,7 +1167,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (settingsDiv.parentNode) {
                 settingsDiv.parentNode.removeChild(settingsDiv);
             }
-        }, 8000);
+        }, 2500);
     }
 
     // Helper functions per le label
