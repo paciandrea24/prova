@@ -2,22 +2,37 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const http = require('http');
+
 const { Server } = require('socket.io')
-const fs = require('fs');
+
+/* const fs = require('fs'); */
+
+const lobbyRoutes = require('./routes/lobbyRoutes');
+const handleSocket = require('./sockets/gameSocket');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = require('socket.io')(server);
+
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cors());
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
+// Usa le route modulari
+app.use('/', lobbyRoutes);
 
-const lobbies = new Map();
-const users = new Map();
+// Socket.IO
+handleSocket(io);
 
-app.get('/', (req, res) => {
+server.listen(3000, () => {
+    console.log('✅ Server listening on port 3000');
+});
+
+/* const lobbies = new Map();
+const users = new Map(); */
+
+/* app.get('/', (req, res) => {
     res.json({ messaggio: 'Tutto ok da index!' });
 });
 
@@ -79,11 +94,11 @@ app.get('/api/invite/:lobbyId', (req, res) => {
 
     const inviteLink = `${req.protocol}://${req.get('host')}/index.html?join=${lobbyId}`;
     res.json({ inviteLink });
-});
+}); */
 
 
 // ######################### GESTIONE WEBSOCKET ##########################################
-io.on('connection', (socket) => {
+/* io.on('connection', (socket) => {
     console.log(`L'utente con id: ${socket.id} si è connesso`);
 
     // Quando un utente entra in una lobby
@@ -366,18 +381,18 @@ io.on('connection', (socket) => {
         console.log(`Il client con id: ${socket.id} si è disconnesso`);
     })
 
-})
+}) */
 
 // ##################### GESTIONE DEL GIOCO DI DISEGNO #####################
 
 // Database delle parole divise per difficoltà
-const wordsByDifficulty = JSON.parse(fs.readFileSync('./words.json', 'utf8'));
-const allWords = [...wordsByDifficulty.easy, ...wordsByDifficulty.medium, ...wordsByDifficulty.hard];
+/* const wordsByDifficulty = JSON.parse(fs.readFileSync('./words.json', 'utf8'));
+const endGame = [...wordsByDifficulty.easy, ...wordsByDifficulty.medium, ...wordsByDifficulty.hard]; */
 
 // Gestione dei giochi in corso
-const activeGames = new Map();
+/* const activeGames = new Map(); */
 
-// Funzione per ottenere le impostazioni di default
+/* // Funzione per ottenere le impostazioni di default
 function getDefaultGameSettings(gameId) {
     switch (gameId) {
         case 'drawing':
@@ -395,9 +410,9 @@ function getDefaultGameSettings(gameId) {
         default:
             return {};
     }
-}
+} */
 
-// Funzione per generare parole casuali in base alle impostazioni
+/* // Funzione per generare parole casuali in base alle impostazioni
 function getRandomWords(difficulty = 'medium', count = 3, exclude = []) {
     let wordPool;
 
@@ -785,8 +800,8 @@ function endGame(lobbyId) {
 
 server.listen(3000, () => {
     console.log('Server listening on port 3000');
-});
+}); */
 
-function generateLobbyId() {
+/* function generateLobbyId() {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
-}
+} */
