@@ -3,6 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io')
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
@@ -136,6 +137,9 @@ io.on('connection', (socket) => {
         if (!game || game.currentWord) return; // Ignora se il gioco non esiste o la parola è già stata selezionata
 
         game.currentWord = word;
+        game.usedWords = game.usedWords || [];
+        game.usedWords.push(word);
+
         game.hint = generateInitialHint(word); // Inizialmente mostra solo underscore
         game.isActive = true;
         game.revealedIndices = new Set(); // Resetta le lettere rivelate
@@ -233,9 +237,25 @@ io.on('connection', (socket) => {
             // Aggiungi giocatore alla lista di chi ha indovinato
             game.correctGuesses.push(playerColor);
 
+            // Calcola i punti in base alla posizione (0-based, quindi la posizione reale è +1)
+            const position = game.correctGuesses.length - 1;
+            const guessPoints = calculateGuessPoints(position);
+            const artistBonus = 20; // Punti fissi per l'artista
+
             // Aggiorna i punteggi
-            game.scores[playerColor] += 100; // 100 punti per chi indovina
-            game.scores[game.currentTurn] += 20; // 20 punti per l'artista
+            game.scores[playerColor] += guessPoints;
+            game.scores[game.currentTurn] += artistBonus;
+
+            // Messaggio personalizzato in base alla posizione
+            const positionMessages = [
+                '🥇 Primo posto!',
+                '🥈 Secondo posto!',
+                '🥉 Terzo posto!',
+                '4° posto!',
+                '5° posto!'
+            ];
+
+            const positionMessage = positionMessages[Math.min(position, positionMessages.length - 1)];
 
             // Invia un messaggio privato solo al giocatore che ha indovinato
             socket.emit('message', {
@@ -243,9 +263,9 @@ io.on('connection', (socket) => {
                 type: 'chat'
             });
 
-            // Invia un messaggio a tutti che un giocatore ha indovinato, senza mostrare la parola
+            // Invia un messaggio a tutti con posizione e punti
             io.to(lobbyId).emit('message', {
-                message: `${playerColor} ha indovinato la parola!`,
+                message: `${playerColor} ha indovinato! ${positionMessage} (+${guessPoints} punti)`,
                 type: 'success'
             });
 
@@ -268,12 +288,6 @@ io.on('connection', (socket) => {
             if (game.correctGuesses.length === game.players.length - 1) {
                 endTurn(lobbyId);
             }
-        } else {
-            // Se la risposta è sbagliata, invia il messaggio a tutti
-            io.to(lobbyId).emit('message', {
-                message: `${playerColor}: ${guess}`,
-                type: 'chat'
-            });
         }
     });
 
@@ -357,30 +371,8 @@ io.on('connection', (socket) => {
 // ##################### GESTIONE DEL GIOCO DI DISEGNO #####################
 
 // Database delle parole divise per difficoltà
-const wordsByDifficulty = {
-    easy: [
-        'casa', 'sole', 'gatto', 'cane', 'palla', 'mela', 'fiore', 'albero', 'luna', 'stella',
-        'macchina', 'barca', 'aereo', 'treno', 'gelato', 'pizza', 'acqua', 'fuoco', 'mare', 'montagna'
-    ],
-    medium: [
-        'astronauta', 'bicicletta', 'computer', 'elefante', 'castello', 'lampada', 'vulcano', 'robot',
-        'pirata', 'dinosauro', 'sirena', 'drago', 'fantasma', 'vampiro', 'principessa', 'chitarra',
-        'telefono', 'orologio', 'ombrello', 'farfalla', 'serpente', 'aquilone', 'mongolfiera', 'scimmia'
-    ],
-    hard: [
-        'nave spaziale', 'sottacqua', 'campanello', 'braccialetto', 'tempesta', 'ferrovia', 'maratoneta',
-        'giocoliere', 'camaleonte', 'bancomat', 'muratore', 'batteria', 'tartaruga', 'sottomarino',
-        'trampoliere', 'sedia a rotelle', 'barca a vela', 'cappuccetto rosso', 'cavalluccio marino',
-        'ferro da stiro', 'orologio da tasca', 'spaventapasseri', 'grattacielo', 'antropologo'
-    ]
-};
-
-// Tutte le parole per la modalità mixed
-const allWords = [
-    ...wordsByDifficulty.easy,
-    ...wordsByDifficulty.medium,
-    ...wordsByDifficulty.hard
-];
+const wordsByDifficulty = JSON.parse(fs.readFileSync('./words.json', 'utf8'));
+const allWords = [...wordsByDifficulty.easy, ...wordsByDifficulty.medium, ...wordsByDifficulty.hard];
 
 // Gestione dei giochi in corso
 const activeGames = new Map();
@@ -406,38 +398,37 @@ function getDefaultGameSettings(gameId) {
 }
 
 // Funzione per generare parole casuali in base alle impostazioni
-function getRandomWords(difficulty = 'medium', count = 3) {
+function getRandomWords(difficulty = 'medium', count = 3, exclude = []) {
     let wordPool;
 
     switch (difficulty) {
-        case 'easy':
-            wordPool = wordsByDifficulty.easy;
-            break;
-        case 'medium':
-            wordPool = wordsByDifficulty.medium;
-            break;
-        case 'hard':
-            wordPool = wordsByDifficulty.hard;
-            break;
-        case 'mixed':
-            wordPool = allWords;
-            break;
-        default:
-            wordPool = wordsByDifficulty.medium;
+        case 'easy': wordPool = wordsByDifficulty.easy; break;
+        case 'medium': wordPool = wordsByDifficulty.medium; break;
+        case 'hard': wordPool = wordsByDifficulty.hard; break;
+        case 'mixed': wordPool = allWords; break;
+        default: wordPool = wordsByDifficulty.medium;
     }
+
+    // Filtra le parole già usate
+    const filtered = wordPool.filter(word => !exclude.includes(word));
 
     const result = [];
     const usedIndices = new Set();
 
-    while (result.length < count && result.length < wordPool.length) {
-        const index = Math.floor(Math.random() * wordPool.length);
+    while (result.length < count && result.length < filtered.length) {
+        const index = Math.floor(Math.random() * filtered.length);
         if (!usedIndices.has(index)) {
             usedIndices.add(index);
-            result.push(wordPool[index]);
+            result.push(filtered[index]);
         }
     }
 
     return result;
+}
+
+function calculateGuessPoints(position) {
+    const pointsTable = [100, 80, 60, 40, 20]; // 1°, 2°, 3°, 4°, 5°+
+    return pointsTable[Math.min(position, pointsTable.length - 1)];
 }
 
 // Funzione per generare un hint (parola con lettere nascoste)
@@ -684,7 +675,9 @@ function startNewTurn(lobbyId) {
 
     // Reimposta i valori per il nuovo turno usando le impostazioni personalizzate
     game.currentWord = null;
-    game.wordOptions = getRandomWords(game.difficulty, 3); // Usa la difficoltà personalizzata
+    console.log(`🧪 Generazione parole (turno): difficoltà = ${game.difficulty}`);
+    game.wordOptions = getRandomWords(game.difficulty, 3, game.usedWords || []);
+
     game.timer = game.turnDuration; // Usa il timer personalizzato
     game.correctGuesses = [];
     game.hint = null;
