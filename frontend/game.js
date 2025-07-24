@@ -18,11 +18,24 @@ document.addEventListener('DOMContentLoaded', () => {
             canvas.classList.add('artist-cursor');
         }
     }
+
     // Recupera i parametri dalla URL
     const urlParams = new URLSearchParams(window.location.search);
     const lobbyId = urlParams.get('lobby');
     const playerColor = urlParams.get('color');
     const gameId = urlParams.get('game');
+
+    // NUOVO: Recupera le impostazioni dall'URL
+    let gameSettings = null;
+    const settingsParam = urlParams.get('settings');
+    if (settingsParam) {
+        try {
+            gameSettings = JSON.parse(decodeURIComponent(settingsParam));
+            console.log('Impostazioni del gioco caricate:', gameSettings);
+        } catch (error) {
+            console.error('Errore nel parsing delle impostazioni:', error);
+        }
+    }
 
     if (!lobbyId || !playerColor || !gameId) {
         window.location.href = '/';
@@ -70,15 +83,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let redoHistory = [];
     const MAX_HISTORY_LENGTH = 20;
 
-
     // Connessione Socket.io
     const socket = io();
 
     // Unisciti alla lobby
     socket.emit('joinLobby', lobbyId);
 
-    // Unisciti al gioco
-    socket.emit('joinGame', { lobbyId, gameId, playerColor });
+    // AGGIORNATO: Unisciti al gioco con le impostazioni
+    socket.emit('joinGame', {
+        lobbyId,
+        gameId,
+        playerColor,
+        settings: gameSettings // Invia le impostazioni al server
+    });
 
     // Richiedi lo stato attuale del gioco
     socket.emit('requestGameState', { lobbyId });
@@ -97,8 +114,6 @@ document.addEventListener('DOMContentLoaded', () => {
         isDrawing = true;
         [lastX, lastY] = getMousePos(canvas, e);
     }
-
-
 
     // Aggiorna la funzione draw per gestire la gomma
     function draw(e) {
@@ -329,11 +344,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (audio) {
             audio.currentTime = 0;
             audio.play().catch((err) => {
-                console.warn('Audio bloccato finché non c’è interazione utente:', err);
+                console.warn("Audio bloccato finché non c'è interazione utente: ", err);
             });
         }
     });
-
 
     socket.on('roundEnd', (data) => {
         // Mostra la parola e i punteggi alla fine del round
@@ -1118,6 +1132,63 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Aggiorna lo stato dei pulsanti undo/redo
         updateUndoRedoButtons();
+    }
+
+    // NUOVO: Mostra le impostazioni del gioco all'inizio se disponibili
+    if (gameSettings) {
+        displayGameSettings(gameSettings);
+    }
+
+    // NUOVO: Funzione per mostrare le impostazioni del gioco
+    function displayGameSettings(settings) {
+        const settingsDiv = document.createElement('div');
+        settingsDiv.className = 'game-settings-display';
+        settingsDiv.innerHTML = `
+            <div style="background: rgba(0,0,0,0.8); color: white; padding: 15px; border-radius: 10px; margin: 10px 0; text-align: center;">
+                <h4 style="margin: 0 0 10px 0;">Impostazioni di Gioco</h4>
+                <div style="display: flex; justify-content: space-around; flex-wrap: wrap;">
+                    ${settings.rounds ? `<span><strong>Round:</strong> ${settings.rounds}</span>` : ''}
+                    ${settings.time ? `<span><strong>Tempo:</strong> ${settings.time}s</span>` : ''}
+                    ${settings.difficulty ? `<span><strong>Difficoltà:</strong> ${getDifficultyLabel(settings.difficulty)}</span>` : ''}
+                    ${settings.questions ? `<span><strong>Domande:</strong> ${settings.questions}</span>` : ''}
+                    ${settings.category ? `<span><strong>Categoria:</strong> ${getCategoryLabel(settings.category)}</span>` : ''}
+                </div>
+            </div>
+        `;
+
+        // Inserisci dopo l'header principale
+        const header = document.querySelector('.header');
+        if (header && header.nextSibling) {
+            header.parentNode.insertBefore(settingsDiv, header.nextSibling);
+        }
+
+        // Rimuovi dopo 8 secondi
+        setTimeout(() => {
+            if (settingsDiv.parentNode) {
+                settingsDiv.parentNode.removeChild(settingsDiv);
+            }
+        }, 8000);
+    }
+
+    // Helper functions per le label
+    function getDifficultyLabel(difficulty) {
+        const labels = {
+            'easy': 'Facile',
+            'medium': 'Medio',
+            'hard': 'Difficile',
+            'mixed': 'Misto'
+        };
+        return labels[difficulty] || difficulty;
+    }
+
+    function getCategoryLabel(category) {
+        const labels = {
+            'general': 'Generale',
+            'history': 'Storia',
+            'science': 'Scienza',
+            'sports': 'Sport'
+        };
+        return labels[category] || category;
     }
 
     // Mostra un messaggio di benvenuto

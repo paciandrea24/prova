@@ -27,7 +27,8 @@ app.post('/create-lobby', (req, res) => {
         id: lobbyId,
         host: color,
         players: [color],
-        createdAt: new Date()
+        createdAt: new Date(),
+        gameSettings: null // Aggiungi campo per le impostazioni del gioco
     };
 
     lobbies.set(lobbyId, lobby);
@@ -97,13 +98,20 @@ io.on('connection', (socket) => {
 
         // Verifica se la lobby esiste
         const lobby = lobbies.get(lobbyId);
-        if (!lobby) return;
+        if (!lobby) {
+            console.log(`Lobby ${lobbyId} non trovata`);
+            return;
+        }
 
         // Se il gioco non è ancora iniziato, inizializzalo
         if (!activeGames.has(lobbyId)) {
-            // Usa le impostazioni di default se non sono state specificate
-            const defaultSettings = getDefaultGameSettings(gameId);
-            initializeGame(lobbyId, lobby.players, gameId, defaultSettings);
+            // Usa le impostazioni salvate nella lobby se esistono, altrimenti usa quelle di default
+            const gameSettings = lobby.gameSettings || getDefaultGameSettings(gameId);
+            console.log(`Inizializzando gioco per lobby ${lobbyId}:`);
+            console.log(`- Impostazioni lobby:`, lobby.gameSettings);
+            console.log(`- Impostazioni da usare:`, gameSettings);
+
+            initializeGame(lobbyId, lobby.players, gameId, gameSettings);
 
             // Invia un messaggio che il gioco sta per iniziare
             io.to(lobbyId).emit('message', {
@@ -113,8 +121,25 @@ io.on('connection', (socket) => {
 
             // Inizia il primo turno dopo 3 secondi
             setTimeout(() => {
+                console.log(`Avviando primo turno per lobby ${lobbyId}`);
                 startNewTurn(lobbyId);
             }, 3000);
+        } else {
+            console.log(`Gioco già iniziato per lobby ${lobbyId}, inviando stato attuale`);
+            // Se il gioco è già iniziato, invia lo stato attuale
+            const game = activeGames.get(lobbyId);
+            socket.emit('gameState', {
+                players: game.players,
+                scores: game.scores,
+                currentTurn: game.currentTurn,
+                timer: game.timer,
+                hint: game.hint,
+                correctGuesses: game.correctGuesses,
+                round: game.currentRound,
+                totalRounds: game.totalRounds,
+                currentWord: game.currentWord,
+                wordOptions: game.wordOptions // Importante per i giocatori che si riconnettono
+            });
         }
     });
 
@@ -296,7 +321,7 @@ io.on('connection', (socket) => {
         socket.to(lobbyId).emit('fillArea', { startX, startY, color });
     });
 
-    // Quando l'host seleziona un gioco (AGGIORNATO con gestione impostazioni)
+    // AGGIORNATO: Quando l'host seleziona un gioco e salva le impostazioni
     socket.on('startGame', (data) => {
         const { lobbyId, gameId, settings } = data;
 
@@ -306,11 +331,9 @@ io.on('connection', (socket) => {
         const lobby = lobbies.get(lobbyId);
         if (!lobby) return;
 
-        // Inizializza il gioco con le impostazioni personalizzate
-        if (!activeGames.has(lobbyId)) {
-            const gameSettings = settings || getDefaultGameSettings(gameId);
-            initializeGame(lobbyId, lobby.players, gameId, gameSettings);
-        }
+        // NUOVO: Salva le impostazioni nella lobby per usarle quando il gioco inizia effettivamente
+        lobby.gameSettings = settings;
+        console.log(`Impostazioni salvate nella lobby ${lobbyId}:`, lobby.gameSettings);
 
         // Invia a tutti i client nella lobby (tranne il mittente) con le impostazioni
         socket.to(lobbyId).emit('gameSelected', { gameId, settings });
@@ -434,23 +457,45 @@ function generateHint(word, percentRevealed = 0.3) {
     return hint;
 }
 
-// Funzione per inizializzare un nuovo gioco (AGGIORNATA con impostazioni personalizzate)
+// AGGIORNATA: Funzione per inizializzare un nuovo gioco con controllo migliore delle impostazioni
 function initializeGame(lobbyId, players, gameId, settings) {
-    // Parsing delle impostazioni in base al tipo di gioco
+    console.log(`🎮 Inizializzando gioco nella lobby ${lobbyId}:`);
+    console.log(`- GameID: ${gameId}`);
+    console.log(`- Players: ${players.join(', ')}`);
+    console.log(`- Impostazioni ricevute:`, settings);
+
+    // Parsing delle impostazioni in base al tipo di gioco con validazione
     let gameConfig = {};
 
     if (gameId === 'drawing') {
+        // Validazione e parsing delle impostazioni del gioco di disegno
+        const rounds = parseInt(settings.rounds);
+        const time = parseInt(settings.time);
+        const difficulty = settings.difficulty;
+
         gameConfig = {
-            totalRounds: parseInt(settings.rounds) || 3,
-            turnDuration: parseInt(settings.time) || 60,
-            difficulty: settings.difficulty || 'medium'
+            totalRounds: isNaN(rounds) ? 3 : Math.max(1, Math.min(10, rounds)), // Tra 1 e 10
+            turnDuration: isNaN(time) ? 60 : Math.max(30, Math.min(180, time)), // Tra 30 e 180 secondi
+            difficulty: ['easy', 'medium', 'hard', 'mixed'].includes(difficulty) ? difficulty : 'medium'
         };
+
+        console.log(`✅ Configurazione gioco di disegno:`, {
+            rounds: `${settings.rounds} -> ${gameConfig.totalRounds}`,
+            time: `${settings.time} -> ${gameConfig.turnDuration}`,
+            difficulty: `${settings.difficulty} -> ${gameConfig.difficulty}`
+        });
     } else if (gameId === 'quiz') {
+        const questions = parseInt(settings.questions);
+        const time = parseInt(settings.time);
+        const category = settings.category;
+
         gameConfig = {
-            totalQuestions: parseInt(settings.questions) || 10,
-            questionTime: parseInt(settings.time) || 30,
-            category: settings.category || 'general'
+            totalQuestions: isNaN(questions) ? 10 : Math.max(5, Math.min(50, questions)),
+            questionTime: isNaN(time) ? 30 : Math.max(10, Math.min(120, time)),
+            category: category || 'general'
         };
+
+        console.log(`✅ Configurazione quiz:`, gameConfig);
     }
 
     const game = {
@@ -475,15 +520,18 @@ function initializeGame(lobbyId, players, gameId, settings) {
         revealedIndices: new Set(),
         nextRevealTime: null,
         hintRevealPlan: [],
-        settings: settings // Salva le impostazioni per riferimento futuro
+        settings: settings // Salva le impostazioni originali per riferimento futuro
     };
 
     activeGames.set(lobbyId, game);
-    console.log(`Gioco inizializzato per lobby ${lobbyId}:`, {
+
+    console.log(`🚀 Gioco inizializzato con successo:`, {
+        lobbyId,
         gameId,
         totalRounds: game.totalRounds,
         turnDuration: game.turnDuration,
-        difficulty: game.difficulty
+        difficulty: game.difficulty,
+        playersCount: game.players.length
     });
 
     return game;
@@ -494,8 +542,10 @@ function generateInitialHint(word) {
     return Array(word.length).fill('_').join(' ');
 }
 
-// Funzione per creare un piano di rivelazione delle lettere (AGGIORNATA per usare timer personalizzato)
+// AGGIORNATA: Funzione per creare un piano di rivelazione delle lettere con debug
 function createHintRevealPlan(word, totalTimeInSeconds) {
+    console.log(`Creando piano di rivelazione per parola "${word}" con timer di ${totalTimeInSeconds} secondi`);
+
     const letterCount = word.length;
 
     // Manteniamo almeno l'ultima lettera nascosta fino alla fine o quasi
@@ -544,6 +594,7 @@ function createHintRevealPlan(word, totalTimeInSeconds) {
         }
     }
 
+    console.log(`Piano di rivelazione creato:`, revealPlan);
     return revealPlan;
 }
 
@@ -573,6 +624,8 @@ function checkAndUpdateHint(lobbyId) {
 
         // Crea l'indizio aggiornato
         updateHintDisplay(game);
+
+        console.log(`Lettera rivelata al secondo ${elapsedTime}: indice ${letterToReveal.index}`);
     }
 }
 
@@ -605,10 +658,20 @@ function updateHintDisplay(game) {
     });
 }
 
-// Funzione per iniziare un nuovo turno (AGGIORNATA per usare impostazioni personalizzate)
+// AGGIORNATA: Funzione per iniziare un nuovo turno con debug delle impostazioni
 function startNewTurn(lobbyId) {
     const game = activeGames.get(lobbyId);
-    if (!game) return;
+    if (!game) {
+        console.log(`❌ Impossibile iniziare turno: gioco non trovato per lobby ${lobbyId}`);
+        return;
+    }
+
+    console.log(`🎯 Iniziando nuovo turno per lobby ${lobbyId}:`);
+    console.log(`- Round: ${game.currentRound}/${game.totalRounds}`);
+    console.log(`- Timer: ${game.turnDuration}s`);
+    console.log(`- Difficoltà: ${game.difficulty}`);
+    console.log(`- Giocatore corrente: ${game.currentPlayer}`);
+    console.log(`- Players: ${game.players.join(', ')}`);
 
     // Reimposta i valori per il nuovo turno usando le impostazioni personalizzate
     game.currentWord = null;
@@ -620,10 +683,12 @@ function startNewTurn(lobbyId) {
     // Seleziona il giocatore corrente
     game.currentTurn = game.players[game.currentPlayer];
 
-    console.log(`Nuovo turno per lobby ${lobbyId}: Player ${game.currentTurn}, Round ${game.currentRound}/${game.totalRounds}, Timer: ${game.timer}s`);
+    console.log(`✅ Turno configurato:`);
+    console.log(`- Artista: ${game.currentTurn}`);
+    console.log(`- Parole generate (${game.difficulty}):`, game.wordOptions);
 
     // Notifica a tutti lo stato del gioco
-    io.to(lobbyId).emit('gameState', {
+    const gameStateForAll = {
         players: game.players,
         scores: game.scores,
         currentTurn: game.currentTurn,
@@ -633,27 +698,27 @@ function startNewTurn(lobbyId) {
         round: game.currentRound,
         totalRounds: game.totalRounds,
         currentWord: game.currentWord
-    });
+    };
 
-    // Invia le opzioni di parole solo all'artista
-    io.to(lobbyId).emit('gameState', {
-        players: game.players,
-        scores: game.scores,
-        currentTurn: game.currentTurn,
-        timer: game.timer,
-        wordOptions: game.wordOptions,
-        hint: game.hint,
-        correctGuesses: game.correctGuesses,
-        round: game.currentRound,
-        totalRounds: game.totalRounds,
-        currentWord: game.currentWord
-    });
+    console.log(`📤 Inviando gameState a tutti i giocatori:`, gameStateForAll);
+    io.to(lobbyId).emit('gameState', gameStateForAll);
+
+    // Invia le opzioni di parole a tutti (il frontend filtrerà per l'artista)
+    const gameStateWithWords = {
+        ...gameStateForAll,
+        wordOptions: game.wordOptions
+    };
+
+    console.log(`📤 Inviando gameState con parole:`, gameStateWithWords);
+    io.to(lobbyId).emit('gameState', gameStateWithWords);
 
     // Invia un messaggio a tutti
     io.to(lobbyId).emit('message', {
         message: `${game.currentTurn} è l'artista di questo turno!`,
         type: 'system'
     });
+
+    console.log(`✅ Turno avviato con successo per lobby ${lobbyId}`);
 }
 
 // Funzione per terminare un turno
@@ -704,7 +769,7 @@ function endGame(lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game) return;
 
-    console.log(`Gioco terminato per lobby ${lobbyId}. Punteggi finali:`, game.scores);
+    console.log(`🏁 Gioco terminato per lobby ${lobbyId}. Punteggi finali:`, game.scores);
 
     // Notifica a tutti che il gioco è finito
     io.to(lobbyId).emit('gameEnd', {
