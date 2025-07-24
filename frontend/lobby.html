@@ -36,42 +36,97 @@
             </div>
 
             <div class="right-side-box">
-                <h3>Minigames</h3>
-                <div class="game-list">
-                    <div class="game-selector" data-game-id="quiz">
-                        <img src="./imgs/drawing game.png" alt="Quiz Game">
-                        <span id="game-name">Drawing</span>
-                    </div>
+                <h3 id="section-title">Minigames</h3>
 
+                <!-- Lista dei giochi (visibile inizialmente) -->
+                <div class="game-list" id="game-list">
                     <div class="game-selector" data-game-id="drawing">
-                        <img src="./imgs/quiz.png" alt="Drawing Game">
-                        <span id="game-name">Quiz</span>
+                        <img src="./imgs/drawing game.png" alt="Drawing Game">
+                        <span class="game-name">Drawing</span>
                     </div>
 
+                    <div class="game-selector" data-game-id="quiz">
+                        <img src="./imgs/quiz.png" alt="Quiz Game">
+                        <span class="game-name">Quiz</span>
+                    </div>
+                </div>
 
-                    <!-- <div class="game-box">
-                            <figure>
-                                <img class="game-image" src="imgs/quiz.png" alt="quiz game">
-                            </figure>
-                            <p class="game-name">Quiz game</p>
+                <!-- Pannello delle impostazioni (nascosto inizialmente) -->
+                <div class="game-settings-panel" id="game-settings-panel" style="display: none;">
+                    <div class="settings-content">
+
+                        <!-- Impostazioni per il gioco Drawing -->
+                        <div class="settings-section" id="drawing-settings" style="display: none;">
+                            <div class="setting-group">
+                                <label for="drawing-rounds">Number of Rounds:</label>
+                                <select id="drawing-rounds">
+                                    <option value="3" selected>3 Rounds</option>
+                                    <option value="5">5 Rounds</option>
+                                    <option value="7">7 Rounds</option>
+                                </select>
+                            </div>
+
+                            <div class="setting-group">
+                                <label for="drawing-time">Time per Round:</label>
+                                <select id="drawing-time">
+                                    <option value="60" selected>60 seconds</option>
+                                    <option value="90">90 seconds</option>
+                                    <option value="120">120 seconds</option>
+                                </select>
+                            </div>
+
+                            <div class="setting-group">
+                                <label for="drawing-difficulty">Word Difficulty:</label>
+                                <select id="drawing-difficulty">
+                                    <option value="easy">Easy</option>
+                                    <option value="medium" selected>Medium</option>
+                                    <option value="hard">Hard</option>
+                                    <option value="mixed">Mixed</option>
+                                </select>
+                            </div>
                         </div>
 
-                        <div class="game-box">
-                            <figure>
-                                <img class="game-image" src="imgs/drawing.png" alt="drawing game">
-                            </figure>
-                            <p class="game-name">Drawing game</p>
+                        <!-- Impostazioni per il gioco Quiz -->
+                        <div class="settings-section" id="quiz-settings" style="display: none;">
+                            <div class="setting-group">
+                                <label for="quiz-questions">Number of Questions:</label>
+                                <select id="quiz-questions">
+                                    <option value="10" selected>10 Questions</option>
+                                    <option value="15">15 Questions</option>
+                                    <option value="20">20 Questions</option>
+                                </select>
+                            </div>
+
+                            <div class="setting-group">
+                                <label for="quiz-time">Time per Question:</label>
+                                <select id="quiz-time">
+                                    <option value="15">15 seconds</option>
+                                    <option value="30" selected>30 seconds</option>
+                                    <option value="45">45 seconds</option>
+                                </select>
+                            </div>
+
+                            <div class="setting-group">
+                                <label for="quiz-category">Category:</label>
+                                <select id="quiz-category">
+                                    <option value="general" selected>General Knowledge</option>
+                                    <option value="science">Science</option>
+                                    <option value="history">History</option>
+                                    <option value="sports">Sports</option>
+                                    <option value="entertainment">Entertainment</option>
+                                </select>
+                            </div>
                         </div>
 
-                        <div class="game-box">
-                            <figure>
-                                <img class="game-image" src="imgs/coming-soon.png" alt="coming soon">
-                            </figure>
-                            <p class="game-name">Coming soon</p>
-                        </div> -->
+                        <!-- Pulsanti di controllo -->
+                        <div class="settings-buttons">
+                            <button id="back-btn" class="back-button">Back</button>
+                            <button id="start-game-btn" class="start-game-button">Start Game</button>
+                        </div>
+                    </div>
                 </div>
             </div>
-
+        </div>
     </main>
     <script src="/socket.io/socket.io.js"></script>
     <script src="lobby.js" defer></script>

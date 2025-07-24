@@ -8,6 +8,21 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
+    // Variabili globali per la gestione del pannello impostazioni
+    let currentSelectedGame = null;
+    let gameSettings = {
+        drawing: {
+            rounds: 3,
+            time: 60,
+            difficulty: 'medium'
+        },
+        quiz: {
+            questions: 10,
+            time: 30,
+            category: 'general'
+        }
+    };
+
     // Imposta il colore dell'utente
     const userColor = document.querySelector('.avatar-color');
     if (userColor) {
@@ -31,9 +46,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Ascolta l'evento di selezione del gioco
     socket.on('gameSelected', (data) => {
-        const { gameId } = data;
-        // Reindirizza alla pagina del gioco
-        window.location.href = `/game.html?lobby=${lobbyId}&color=${selectedColor}&game=${gameId}`;
+        const { gameId, settings } = data;
+        // Reindirizza alla pagina del gioco con le impostazioni
+        const settingsParam = settings ? `&settings=${encodeURIComponent(JSON.stringify(settings))}` : '';
+        window.location.href = `/game.html?lobby=${lobbyId}&color=${selectedColor}&game=${gameId}${settingsParam}`;
     });
 
     // Funzione per caricare i dati della lobby
@@ -151,9 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
             linkCopiedBox.textContent = 'Link copied!';
             headerBox.appendChild(linkCopiedBox);
             setTimeout(function () { linkCopiedBox.style.display = "none" }, 3000);
-
-/*             alert("Link copiato");
- */        } catch (error) {
+        } catch (error) {
             console.error('Error generating invite link:', error);
             alert('Error generating invite link');
         }
@@ -179,11 +193,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.log(`Game selected: ${event.currentTarget.dataset.gameId}`);
                     const gameId = event.currentTarget.dataset.gameId;
 
-                    // Notifica a tutti che un gioco è stato selezionato
-                    socket.emit('startGame', { lobbyId, gameId });
-
-                    // Anche l'host si reindirizza
-                    window.location.href = `/game.html?lobby=${lobbyId}&color=${selectedColor}&game=${gameId}`;
+                    // Mostra il pannello delle impostazioni invece di iniziare subito il gioco
+                    showGameSettings(gameId);
                 });
 
                 // Assicuriamoci che non abbia la classe disabled
@@ -193,6 +204,141 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log(`Disabling game selector for non-host`);
                 gameElement.classList.add('disabled');
             }
+        });
+
+        // Setup dei pulsanti del pannello impostazioni
+        setupSettingsPanel();
+    }
+
+    // Funzione per mostrare il pannello delle impostazioni
+    function showGameSettings(gameId) {
+        currentSelectedGame = gameId;
+
+        // Nascondi la lista dei giochi
+        const gameList = document.getElementById('game-list');
+        const settingsPanel = document.getElementById('game-settings-panel');
+        const sectionTitle = document.getElementById('section-title');
+
+        gameList.style.display = 'none';
+        settingsPanel.style.display = 'flex';
+
+        // Cambia il titolo
+        const gameNames = {
+            'drawing': 'Drawing Game',
+            'quiz': 'Quiz Game'
+        };
+        sectionTitle.textContent = gameNames[gameId] || 'Game Settings';
+
+        // Mostra le impostazioni del gioco selezionato
+        showGameSpecificSettings(gameId);
+
+        // Carica le impostazioni salvate
+        loadGameSettings(gameId);
+    }
+
+    // Funzione per mostrare le impostazioni specifiche del gioco
+    function showGameSpecificSettings(gameId) {
+        // Nascondi tutte le sezioni delle impostazioni
+        const settingSections = document.querySelectorAll('.settings-section');
+        settingSections.forEach(section => {
+            section.style.display = 'none';
+        });
+
+        // Mostra la sezione appropriata
+        const targetSection = document.getElementById(`${gameId}-settings`);
+        if (targetSection) {
+            targetSection.style.display = 'flex';
+        }
+    }
+
+    // Funzione per caricare le impostazioni del gioco nei controlli
+    function loadGameSettings(gameId) {
+        const settings = gameSettings[gameId];
+        if (!settings) return;
+
+        Object.keys(settings).forEach(key => {
+            const element = document.getElementById(`${gameId}-${key}`);
+            if (element) {
+                element.value = settings[key];
+            }
+        });
+    }
+
+    // Funzione per salvare le impostazioni del gioco
+    function saveGameSettings(gameId) {
+        const settings = {};
+
+        // Trova tutti i controlli delle impostazioni per questo gioco
+        const settingsSection = document.getElementById(`${gameId}-settings`);
+        if (!settingsSection) return settings;
+
+        const selects = settingsSection.querySelectorAll('select');
+        selects.forEach(select => {
+            const key = select.id.replace(`${gameId}-`, '');
+            settings[key] = select.value;
+        });
+
+        // Salva nelle impostazioni globali
+        gameSettings[gameId] = { ...gameSettings[gameId], ...settings };
+
+        return settings;
+    }
+
+    // Funzione per tornare alla lista dei giochi
+    function backToGameList() {
+        const gameList = document.getElementById('game-list');
+        const settingsPanel = document.getElementById('game-settings-panel');
+        const sectionTitle = document.getElementById('section-title');
+
+        gameList.style.display = 'flex';
+        settingsPanel.style.display = 'none';
+        sectionTitle.textContent = 'Minigames';
+
+        currentSelectedGame = null;
+    }
+
+    // Funzione per iniziare il gioco con le impostazioni
+    function startGameWithSettings() {
+        if (!currentSelectedGame) return;
+
+        // Salva le impostazioni correnti
+        const settings = saveGameSettings(currentSelectedGame);
+
+        console.log(`Starting game ${currentSelectedGame} with settings:`, settings);
+
+        // Notifica a tutti che un gioco è stato selezionato con le impostazioni
+        socket.emit('startGame', {
+            lobbyId,
+            gameId: currentSelectedGame,
+            settings: settings
+        });
+
+        // Anche l'host si reindirizza
+        const settingsParam = `&settings=${encodeURIComponent(JSON.stringify(settings))}`;
+        window.location.href = `/game.html?lobby=${lobbyId}&color=${selectedColor}&game=${currentSelectedGame}${settingsParam}`;
+    }
+
+    // Funzione per configurare i pulsanti del pannello impostazioni
+    function setupSettingsPanel() {
+        const backBtn = document.getElementById('back-btn');
+        const startGameBtn = document.getElementById('start-game-btn');
+
+        if (backBtn) {
+            backBtn.addEventListener('click', backToGameList);
+        }
+
+        if (startGameBtn) {
+            startGameBtn.addEventListener('click', startGameWithSettings);
+        }
+
+        // Setup dei listener per salvare automaticamente le impostazioni
+        const allSelects = document.querySelectorAll('.settings-section select');
+        allSelects.forEach(select => {
+            select.addEventListener('change', () => {
+                if (currentSelectedGame) {
+                    saveGameSettings(currentSelectedGame);
+                }
+            });
         });
     }
 

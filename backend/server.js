@@ -84,12 +84,10 @@ app.get('/api/invite/:lobbyId', (req, res) => {
 io.on('connection', (socket) => {
     console.log(`L'utente con id: ${socket.id} si è connesso`);
 
-
     // Quando un utente entra in una lobby
     socket.on('joinLobby', (lobbyId) => {
         socket.join(lobbyId);
         console.log(`L'utente con id: ${socket.id} si è unito alla lobby: ${lobbyId}`);
-
     });
 
     // Quando un giocatore si unisce a un gioco
@@ -103,7 +101,9 @@ io.on('connection', (socket) => {
 
         // Se il gioco non è ancora iniziato, inizializzalo
         if (!activeGames.has(lobbyId)) {
-            initializeGame(lobbyId, lobby.players);
+            // Usa le impostazioni di default se non sono state specificate
+            const defaultSettings = getDefaultGameSettings(gameId);
+            initializeGame(lobbyId, lobby.players, gameId, defaultSettings);
 
             // Invia un messaggio che il gioco sta per iniziare
             io.to(lobbyId).emit('message', {
@@ -130,8 +130,8 @@ io.on('connection', (socket) => {
         game.isActive = true;
         game.revealedIndices = new Set(); // Resetta le lettere rivelate
 
-        // Crea un piano per rivelare le lettere durante il turno
-        game.hintRevealPlan = createHintRevealPlan(word, 60);
+        // Crea un piano per rivelare le lettere durante il turno usando il timer personalizzato
+        game.hintRevealPlan = createHintRevealPlan(word, game.turnDuration);
 
         // Invia l'hint a tutti i giocatori
         io.to(lobbyId).emit('gameState', {
@@ -296,12 +296,24 @@ io.on('connection', (socket) => {
         socket.to(lobbyId).emit('fillArea', { startX, startY, color });
     });
 
-    // Quando l'host seleziona un gioco
+    // Quando l'host seleziona un gioco (AGGIORNATO con gestione impostazioni)
     socket.on('startGame', (data) => {
-        const { lobbyId, gameId } = data;
-        // Invia a tutti i client nella lobby (tranne il mittente)
-        socket.to(lobbyId).emit('gameSelected', { gameId });
-        console.log(`Gioco ${gameId} selezionato nella lobby ${lobbyId}`);
+        const { lobbyId, gameId, settings } = data;
+
+        console.log(`Gioco ${gameId} selezionato nella lobby ${lobbyId} con impostazioni:`, settings);
+
+        // Verifica se la lobby esiste
+        const lobby = lobbies.get(lobbyId);
+        if (!lobby) return;
+
+        // Inizializza il gioco con le impostazioni personalizzate
+        if (!activeGames.has(lobbyId)) {
+            const gameSettings = settings || getDefaultGameSettings(gameId);
+            initializeGame(lobbyId, lobby.players, gameId, gameSettings);
+        }
+
+        // Invia a tutti i client nella lobby (tranne il mittente) con le impostazioni
+        socket.to(lobbyId).emit('gameSelected', { gameId, settings });
     });
 
     socket.on('disconnect', () => {
@@ -313,65 +325,83 @@ io.on('connection', (socket) => {
 // ##################### GESTIONE DEL GIOCO DI DISEGNO #####################
 
 // Database delle parole divise per difficoltà
-const words = [
-    'casa', 'astronauta', 'pizza', 'bicicletta', 'computer', 'sole', 'gatto', 'barca', 'drago', 'foresta',
-    'telefono', 'fiume', 'cane', 'castello', 'lampada', 'gelato', 'treno', 'montagna', 'cactus', 'elefante',
-    'robot', 'pianeta', 'sirena', 'vulcano', 'nuvola', 'tigre', 'pirata', 'magia', 'caramella', 'dinosauro',
-    'aereo', 'mela', 'clown', 'nave', 'cielo', 'bruco', 'spada', 'scuola', 'trenino', 'vampiro',
-    'zaino', 'panda', 'fata', 'circo', 'orologio', 'cappello', 'giungla', 'medusa', 'arco', 'bosco',
-    'palla', 'matita', 'squalo', 'fantasma', 'luna', 'macchina', 'cervo', 'principessa', 'occhiali', 'balena',
-    'deserto', 'ponte', 'gufo', 'libreria', 'trampolino', 'chitarra', 'aquilone', 'panino', 'zebra', 'fiore',
-    'scimmia', 'castoro', 'bicchiere', 'sedia', 'scivolo', 'tenda', 'orco', 'zucchero', 'mongolfiera', 'penna',
-    'barboncino', 'crociera', 'carrozza', 'microfono', 'scudo', 'occhio', 'satellite', 'piramide', 'serpente', 'scoiattolo',
-    'nave spaziale', 'campanello', 'sottacqua', 'braccialetto', 'tempesta', 'ferrovia', 'maratoneta', 'televisore', 'flauto', 'pompiere',
-    'scacchi', 'tempio', 'camaleonte', 'bancomat', 'muratore', 'giocoliere', 'batteria', 'tartaruga', 'vento', 'sottomarino',
-    'giardino', 'muro', 'vaso', 'specchio', 'neve', 'castagna', 'nuotatore', 'albero', 'stella', 'vestito',
-    'tavolo', 'banco', 'elicottero', 'pianoforte', 'scheletro', 'farfalla', 'ambulanza', 'camion', 'ombra', 'frigorifero',
-    'trampoliere', 'zanzara', 'cuscino', 'pennello', 'pozzo', 'candela', 'porta', 'scarpa', 'barile', 'magnete',
-    'bagnino', 'ragno', 'sabbia', 'tavolozza', 'vichingo', 'capra', 'leone', 'sedia a rotelle', 'barca a vela', 'cameriere',
-    'treno merci', 'sedia da regista', 'cappuccetto rosso', 'pastore', 'balestra', 'cavalluccio marino', 'anatra', 'pipistrello', 'torre', 'ferro da stiro',
-    'teatro', 'scarafaggio', 'scarabeo', 'piramide', 'pantera', 'fungo', 'pallone', 'bastone', 'bruco', 'giraffa',
-    'scooter', 'sottomarino', 'spazzola', 'mummia', 'stregone', 'campione', 'miniera', 'orchestra', 'bagnoschiuma', 'vasca',
-    'cigno', 'camaleonte', 'carota', 'lettino', 'passeggino', 'fiocco', 'torcia', 'orologio da tasca', 'razzo', 'lampione',
-    'semaforo', 'spaventapasseri', 'cestino', 'ombrello', 'ventaglio', 'pappagallo', 'scacchiera', 'lanterna', 'prato', 'carro',
-    'autobus', 'pianista', 'mozzarella', 'bicchiere di vino', 'scatola', 'serratura', 'portaombrelli', 'coperta', 'cappotto', 'ghepardo',
-    'calzino', 'maglietta', 'zattera', 'dama', 'tridente', 'grattacielo', 'benzinaio', 'binocolo', 'collana', 'palestra',
-    'valigia', 'pittura', 'pavone', 'giostra', 'pattini', 'secchio', 'carta', 'fiammifero', 'fumo', 'grano',
-    'aratro', 'fattoria', 'serra', 'cintura', 'busto', 'pipa', 'foca', 'cerbiatto', 'pinguino', 'iguana',
-    'strega', 'scheletro', 'cowboy', 'sergente', 're', 'regina', 'mago', 'giullare', 'samurai', 'ninja',
-    'poeta', 'cantante', 'scrittore', 'regista', 'pilota', 'cavaliere', 'pescatore', 'contadino', 'panettiere', 'macellaio',
-    'giardiniere', 'cuoco', 'insegnante', 'meccanico', 'fabbro', 'falegname', 'pittore', 'architetto', 'avvocato', 'dottore',
-    'infermiere', 'pompiere', 'carabiniere', 'poliziotto', 'guardia', 'esploratore', 'scienziato', 'astronomo', 'biologo', 'geologo',
-    'antropologo', 'archeologo', 'storico', 'matematico', 'programmatore', 'gamer', 'tuffatore', 'giocatore di basket', 'surfista', 'sciatore',
-    'pattinatore', 'tennista', 'calciatore', 'cestista', 'corridore', 'nuotatore', 'pugile', 'arciere', 'cacciatore', 'paziente',
-    'fantino', 'contorsionista', 'illusionista', 'puparo', 'burattinaio', 'pastore', 'pellegrino', 'cercatore d’oro', 'cosmonauta', 'monaco',
-    'pirata', 'corsaro', 'mercante', 'narratore', 'viaggiatore', 'turista', 'esploratore polare', 'speleologo', 'paracadutista', 'vigile urbano',
-    'cassiere', 'commesso', 'bibliotecario', 'barista', 'rappresentante', 'venditore ambulante', 'ambulante', 'mendicante', 'spazzino', 'operatore ecologico',
-    'cucciolo', 'gattino', 'cagnolino', 'pulcino', 'anatroccolo', 'colibrì', 'struzzo', 'orso', 'cervo volante', 'falco',
-    'aquila', 'pipistrello', 'lucertola', 'rana', 'rospo', 'serpente', 'vipera', 'anguria', 'fragola', 'mirtillo',
-    'cocco', 'banana', 'ciliegia', 'pera', 'pesca', 'melone', 'susina', 'uva', 'lampone', 'mango',
-    'kiwi', 'ananas', 'mandarino', 'pomodoro', 'carciofo', 'sedano', 'zucchina', 'peperone', 'melanzana', 'patata',
-    'cipolla', 'aglio', 'carota', 'rapa', 'zucca', 'spinacio', 'broccolo', 'cavolfiore', 'lattuga', 'ravanello',
-    'barbabietola', 'asparago', 'funghetto', 'basilico', 'rosmarino', 'origano', 'menta', 'salvia', 'timo', 'alloro',
-    'cetriolo', 'finocchio', 'prezzemolo', 'cocomero', 'nocciola', 'mandorla', 'noce', 'pistacchio', 'arachide', 'castagna',
-    'scopa', 'martello', 'cacciavite', 'sega', 'trapano', 'pialla', 'scalpello', 'pinza', 'chiave inglese', 'livella',
-    'metro', 'calibro', 'tenaglia', 'taglierino', 'forbici', 'coltello', 'rastrello', 'zappa', 'pala', 'vanga'
-];
+const wordsByDifficulty = {
+    easy: [
+        'casa', 'sole', 'gatto', 'cane', 'palla', 'mela', 'fiore', 'albero', 'luna', 'stella',
+        'macchina', 'barca', 'aereo', 'treno', 'gelato', 'pizza', 'acqua', 'fuoco', 'mare', 'montagna'
+    ],
+    medium: [
+        'astronauta', 'bicicletta', 'computer', 'elefante', 'castello', 'lampada', 'vulcano', 'robot',
+        'pirata', 'dinosauro', 'sirena', 'drago', 'fantasma', 'vampiro', 'principessa', 'chitarra',
+        'telefono', 'orologio', 'ombrello', 'farfalla', 'serpente', 'aquilone', 'mongolfiera', 'scimmia'
+    ],
+    hard: [
+        'nave spaziale', 'sottacqua', 'campanello', 'braccialetto', 'tempesta', 'ferrovia', 'maratoneta',
+        'giocoliere', 'camaleonte', 'bancomat', 'muratore', 'batteria', 'tartaruga', 'sottomarino',
+        'trampoliere', 'sedia a rotelle', 'barca a vela', 'cappuccetto rosso', 'cavalluccio marino',
+        'ferro da stiro', 'orologio da tasca', 'spaventapasseri', 'grattacielo', 'antropologo'
+    ]
+};
 
+// Tutte le parole per la modalità mixed
+const allWords = [
+    ...wordsByDifficulty.easy,
+    ...wordsByDifficulty.medium,
+    ...wordsByDifficulty.hard
+];
 
 // Gestione dei giochi in corso
 const activeGames = new Map();
 
-// Funzione per generare 3 parole casuali
-function getRandomWords() {
+// Funzione per ottenere le impostazioni di default
+function getDefaultGameSettings(gameId) {
+    switch (gameId) {
+        case 'drawing':
+            return {
+                rounds: '3',
+                time: '60',
+                difficulty: 'medium'
+            };
+        case 'quiz':
+            return {
+                questions: '10',
+                time: '30',
+                category: 'general'
+            };
+        default:
+            return {};
+    }
+}
+
+// Funzione per generare parole casuali in base alle impostazioni
+function getRandomWords(difficulty = 'medium', count = 3) {
+    let wordPool;
+
+    switch (difficulty) {
+        case 'easy':
+            wordPool = wordsByDifficulty.easy;
+            break;
+        case 'medium':
+            wordPool = wordsByDifficulty.medium;
+            break;
+        case 'hard':
+            wordPool = wordsByDifficulty.hard;
+            break;
+        case 'mixed':
+            wordPool = allWords;
+            break;
+        default:
+            wordPool = wordsByDifficulty.medium;
+    }
+
     const result = [];
     const usedIndices = new Set();
 
-    while (result.length < 3) {
-        const index = Math.floor(Math.random() * words.length);
+    while (result.length < count && result.length < wordPool.length) {
+        const index = Math.floor(Math.random() * wordPool.length);
         if (!usedIndices.has(index)) {
             usedIndices.add(index);
-            result.push(words[index]);
+            result.push(wordPool[index]);
         }
     }
 
@@ -404,30 +434,58 @@ function generateHint(word, percentRevealed = 0.3) {
     return hint;
 }
 
-// Funzione per inizializzare un nuovo gioco
-function initializeGame(lobbyId, players, numRounds = 3) {
+// Funzione per inizializzare un nuovo gioco (AGGIORNATA con impostazioni personalizzate)
+function initializeGame(lobbyId, players, gameId, settings) {
+    // Parsing delle impostazioni in base al tipo di gioco
+    let gameConfig = {};
+
+    if (gameId === 'drawing') {
+        gameConfig = {
+            totalRounds: parseInt(settings.rounds) || 3,
+            turnDuration: parseInt(settings.time) || 60,
+            difficulty: settings.difficulty || 'medium'
+        };
+    } else if (gameId === 'quiz') {
+        gameConfig = {
+            totalQuestions: parseInt(settings.questions) || 10,
+            questionTime: parseInt(settings.time) || 30,
+            category: settings.category || 'general'
+        };
+    }
+
     const game = {
         lobbyId,
+        gameId,
         players: [...players],
         scores: Object.fromEntries(players.map(player => [player, 0])),
         currentTurn: null,
         currentPlayer: 0,
         currentRound: 1,
-        totalRounds: numRounds,
+        totalRounds: gameConfig.totalRounds || 3,
+        turnDuration: gameConfig.turnDuration || 60,
+        difficulty: gameConfig.difficulty || 'medium',
         currentWord: null,
         wordOptions: [],
         hint: null,
-        timer: 60,
+        timer: gameConfig.turnDuration || 60,
         isActive: false,
         correctGuesses: [],
         timerInterval: null,
-        hintInterval: null,       // Intervallo per aggiornare l'indizio
-        revealedIndices: new Set(), // Tiene traccia delle lettere rivelate
-        nextRevealTime: null,     // Prossimo momento in cui rivelare una lettera
-        hintRevealPlan: []        // Piano di rivelazione delle lettere
+        hintInterval: null,
+        revealedIndices: new Set(),
+        nextRevealTime: null,
+        hintRevealPlan: [],
+        settings: settings // Salva le impostazioni per riferimento futuro
     };
 
     activeGames.set(lobbyId, game);
+    console.log(`Gioco inizializzato per lobby ${lobbyId}:`, {
+        gameId,
+        totalRounds: game.totalRounds,
+        turnDuration: game.turnDuration,
+        difficulty: game.difficulty
+    });
+
     return game;
 }
 
@@ -436,7 +494,7 @@ function generateInitialHint(word) {
     return Array(word.length).fill('_').join(' ');
 }
 
-// Funzione per creare un piano di rivelazione delle lettere
+// Funzione per creare un piano di rivelazione delle lettere (AGGIORNATA per usare timer personalizzato)
 function createHintRevealPlan(word, totalTimeInSeconds) {
     const letterCount = word.length;
 
@@ -503,8 +561,8 @@ function checkAndUpdateHint(lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game || !game.currentWord || !game.isActive || !game.hintRevealPlan) return;
 
-    // Tempo rimanente in questo turno
-    const elapsedTime = 60 - game.timer;
+    // Tempo rimanente in questo turno (usa il timer personalizzato)
+    const elapsedTime = game.turnDuration - game.timer;
 
     // Controlla se è il momento di rivelare una nuova lettera
     const letterToReveal = game.hintRevealPlan.find(item => item.revealAt === elapsedTime);
@@ -547,73 +605,22 @@ function updateHintDisplay(game) {
     });
 }
 
-// Funzione per aggiornare l'indizio rivelando una nuova lettera casuale
-function updateHint(lobbyId) {
-    const game = activeGames.get(lobbyId);
-    if (!game || !game.currentWord || !game.isActive) return;
-
-    // Converti la parola in array di caratteri
-    const chars = game.currentWord.split('');
-
-    // Se abbiamo già rivelato tutte le lettere, ferma l'intervallo
-    if (game.revealedIndices.size >= chars.length) {
-        if (game.hintInterval) {
-            clearInterval(game.hintInterval);
-            game.hintInterval = null;
-        }
-        return;
-    }
-
-    // Scegli una posizione casuale da rivelare (che non è già stata rivelata)
-    let randomIndex;
-    do {
-        randomIndex = Math.floor(Math.random() * chars.length);
-    } while (game.revealedIndices.has(randomIndex));
-
-    // Aggiungi l'indice all'insieme delle lettere rivelate
-    game.revealedIndices.add(randomIndex);
-
-    // Crea l'indizio aggiornato
-    const updatedHint = chars.map((char, index) => {
-        if (game.revealedIndices.has(index)) {
-            return char;
-        }
-        return '_';
-    }).join(' ');
-
-    // Aggiorna l'indizio nel gioco
-    game.hint = updatedHint;
-
-    // Invia l'indizio aggiornato a tutti i giocatori
-    io.to(lobbyId).emit('gameState', {
-        players: game.players,
-        scores: game.scores,
-        currentTurn: game.currentTurn,
-        timer: game.timer,
-        hint: game.hint,
-        correctGuesses: game.correctGuesses,
-        round: game.currentRound,
-        totalRounds: game.totalRounds,
-        currentWord: game.currentWord  // Aggiungi la parola corrente qui
-    });
-}
-
-
-
-// Funzione per iniziare un nuovo turno
+// Funzione per iniziare un nuovo turno (AGGIORNATA per usare impostazioni personalizzate)
 function startNewTurn(lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game) return;
 
-    // Reimposta i valori per il nuovo turno
+    // Reimposta i valori per il nuovo turno usando le impostazioni personalizzate
     game.currentWord = null;
-    game.wordOptions = getRandomWords();
-    game.timer = 60;
+    game.wordOptions = getRandomWords(game.difficulty, 3); // Usa la difficoltà personalizzata
+    game.timer = game.turnDuration; // Usa il timer personalizzato
     game.correctGuesses = [];
     game.hint = null;
 
     // Seleziona il giocatore corrente
     game.currentTurn = game.players[game.currentPlayer];
+
+    console.log(`Nuovo turno per lobby ${lobbyId}: Player ${game.currentTurn}, Round ${game.currentRound}/${game.totalRounds}, Timer: ${game.timer}s`);
 
     // Notifica a tutti lo stato del gioco
     io.to(lobbyId).emit('gameState', {
@@ -625,7 +632,7 @@ function startNewTurn(lobbyId) {
         correctGuesses: game.correctGuesses,
         round: game.currentRound,
         totalRounds: game.totalRounds,
-        currentWord: game.currentWord  // Aggiungi la parola corrente qui
+        currentWord: game.currentWord
     });
 
     // Invia le opzioni di parole solo all'artista
@@ -639,7 +646,7 @@ function startNewTurn(lobbyId) {
         correctGuesses: game.correctGuesses,
         round: game.currentRound,
         totalRounds: game.totalRounds,
-        currentWord: game.currentWord  // Aggiungi la parola corrente qui
+        currentWord: game.currentWord
     });
 
     // Invia un messaggio a tutti
@@ -696,6 +703,8 @@ function endTurn(lobbyId) {
 function endGame(lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game) return;
+
+    console.log(`Gioco terminato per lobby ${lobbyId}. Punteggi finali:`, game.scores);
 
     // Notifica a tutti che il gioco è finito
     io.to(lobbyId).emit('gameEnd', {
