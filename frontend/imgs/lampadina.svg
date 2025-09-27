@@ -1,0 +1,155 @@
+=== CONFIGURAZIONE ATTUALE ===
+script.js:1361 {
+  "bulbopoli": {
+    "x": 45,
+    "y": 45,
+    "scaleX": 1,
+    "scaleY": 1,
+    "rotation": 0.8999999999999999,
+    "radius": 55
+  },
+  "tropeaFields": {
+    "x": 55,
+    "y": 35,
+    "scaleX": 0.877226206509006,
+    "scaleY": 1,
+    "rotation": 11.899999999999974,
+    "radius": 60
+  },
+  "scalognaValley": {
+    "x": 165,
+    "y": 35,
+    "scaleX": 1,
+    "scaleY": 1,
+    "rotation": 2.2000000000000006,
+    "radius": 50
+  },
+  "carrotCity": {
+    "x": -80,
+    "y": 0,
+    "scaleX": 1.1,
+    "scaleY": 1,
+    "rotation": 0.7,
+    "radius": 65
+  },
+  "orangeCounty": {
+    "x": -75,
+    "y": -5,
+    "scaleX": 1.2100000000000002,
+    "scaleY": 1,
+    "rotation": 3.800000000000002,
+    "radius": 43.66345500000001
+  },
+  "rootDeep": {
+    "x": -110,
+    "y": -35,
+    "scaleX": 0.8645364090000005,
+    "scaleY": 1,
+    "rotation": 3.800000000000002,
+    "radius": 58
+  },
+  "sanMarzano": {
+    "x": 120,
+    "y": -75,
+    "scaleX": 1.6105100000000008,
+    "scaleY": 1,
+    "rotation": 2.800000000000001,
+    "radius": 52
+  },
+  "cherryValley": {
+    "x": 60,
+    "y": -35,
+    "scaleX": 1.1859210000000007,
+    "scaleY": 1,
+    "rotation": 1.9000000000000006,
+    "radius": 48
+  },
+  "pachinoCoast": {
+    "x": 90,
+    "y": 20,
+    "scaleX": 1,
+    "scaleY": 1,
+    "rotation": 1.0999999999999999,
+    "radius": 50
+  },
+  "greenValley": {
+    "x": -30,
+    "y": -30,
+    "scaleX": 0.9702990000000004,
+    "scaleY": 1,
+    "rotation": 0.9999999999999999,
+    "radius": 55
+  },
+  "broccoliForest": {
+    "x": -5,
+    "y": -40,
+    "scaleX": 1,
+    "scaleY": 1,
+    "rotation": -0.19999999999999998,
+    "radius": 60
+  },
+  "cavoloNero": {
+    "x": -25,
+    "y": -55,
+    "scaleX": 0.7217100000000002,
+    "scaleY": 1,
+    "rotation": 2.600000000000001,
+    "radius": 52
+  },
+  "snowpeak": {
+    "x": 30,
+    "y": 20,
+    "scaleX": 1.0566556110000005,
+    "scaleY": 1,
+    "rotation": -0.6999999999999997,
+    "radius": 53.905500000000025
+  },
+  "frostland": {
+    "x": 25,
+    "y": 5,
+    "scaleX": 0.9702990000000002,
+    "scaleY": 1,
+    "rotation": 2.1000000000000005,
+    "radius": 58.11605860500003
+  },
+  "iceberg": {
+    "x": 35,
+    "y": 35,
+    "scaleX": 1.0673289000000004,
+    "scaleY": 1,
+    "rotation": -3.600000000000002,
+    "radius": 48
+  },
+  "grandBazaar": {
+    "x": 10,
+    "y": 25,
+    "scaleX": 1.3045131000000008,
+    "scaleY": 1,
+    "rotation": 4.300000000000001,
+    "radius": 25
+  },
+  "seedBank": {
+    "x": 5,
+    "y": 20,
+    "scaleX": 1.2100000000000002,
+    "scaleY": 1,
+    "rotation": 2.1000000000000005,
+    "radius": 25
+  },
+  "compostWorks": {
+    "x": 5,
+    "y": 10,
+    "scaleX": 0.8820900000000002,
+    "scaleY": 1,
+    "rotation": 2.400000000000001,
+    "radius": 25
+  },
+  "greenhouseLabs": {
+    "x": 5,
+    "y": 40,
+    "scaleX": 1.2100000000000002,
+    "scaleY": 1,
+    "rotation": 0.30000000000000004,
+    "radius": 25
+  }
+}

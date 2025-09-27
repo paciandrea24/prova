@@ -162,3 +162,113 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+/* 
+
+
+const backgroundIconsContainer = document.querySelector('.background-icons');
+
+// Lista immagini da usare
+const icons = [
+    './imgs/lampadina.svg',
+    './imgs/libro.svg',
+    './imgs/ombrello.svg',
+    './imgs/sole.svg',
+    './imgs/tavolozza.svg',
+    './imgs/matita.svg',
+    './imgs/albero.svg',
+    './imgs/palla.svg'
+
+];
+
+const colors = ['#DC143C', '#4169E1', '#50C878', '#FFD700', '#9966CC', '#FF7F50', '#00CED1'];
+
+let cycle = 0;
+const CYCLE_DURATION = 8000; // 8 secondi visibili
+const FADE_DURATION = 1000;  // 1 secondo per dissolvenza
+
+function loadCycle() {
+    const usedAreas = [];
+
+    // 1. Fai svanire gli SVG attuali
+    const existingSvgs = document.querySelectorAll('.background-icons svg');
+    existingSvgs.forEach(svg => {
+        svg.classList.add('fade-out');
+    });
+
+    // 2. Dopo 1 secondo (quando sono spariti), carica i nuovi
+    setTimeout(() => {
+        backgroundIconsContainer.innerHTML = '';
+
+        icons.forEach((src, i) => {
+            fetch(src)
+                .then(res => res.text())
+                .then(svgText => {
+                    const wrapper = document.createElement('div');
+                    wrapper.innerHTML = svgText;
+                    const svg = wrapper.querySelector('svg');
+                    svg.classList.add('draw-icon');
+
+                    svg.style.setProperty('--delay', `${i * 0.3}s`);
+                    svg.style.color = colors[(i + cycle) % colors.length];
+
+                    const maxAttempts = 20;
+                    let attempts = 0;
+                    let placed = false;
+
+                    while (!placed && attempts < maxAttempts) {
+                        const side = Math.random() < 0.5 ? 'left' : 'right';
+                        const left = side === 'left'
+                            ? Math.random() * 40
+                            : Math.random() * 40 + 60;
+
+                        const top = Math.random() * 80 + 10;
+                        const width = 10;
+                        const height = 10;
+
+                        const area = {
+                            top,
+                            left,
+                            bottom: top + height,
+                            right: left + width
+                        };
+
+                        const overlaps = usedAreas.some(a =>
+                            !(a.right < area.left ||
+                                a.left > area.right ||
+                                a.bottom < area.top ||
+                                a.top > area.bottom)
+                        );
+
+                        if (!overlaps) {
+                            usedAreas.push(area);
+                            svg.style.top = `${top}%`;
+                            svg.style.left = `${left}%`;
+
+                            const strokeWidth = Math.floor(Math.random() * 3) + 3;
+                            svg.querySelectorAll('path, circle, line, polyline, rect').forEach(el => {
+                                el.setAttribute('stroke-width', strokeWidth);
+                            });
+
+                            backgroundIconsContainer.appendChild(svg);
+                            placed = true;
+                        }
+
+                        attempts++;
+                    }
+
+                    if (!placed) {
+                        console.warn(`Impossibile posizionare ${src} senza sovrapposizione`);
+                    }
+                })
+                .catch(err => console.error(`Errore nel caricamento di ${src}:`, err));
+        });
+
+        cycle++;
+    }, FADE_DURATION); // Dopo dissolvenza
+}
+
+// Primo caricamento
+loadCycle();
+
+// Ripeti ogni tot secondi
+setInterval(loadCycle, CYCLE_DURATION); */

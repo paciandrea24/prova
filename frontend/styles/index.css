@@ -63,6 +63,7 @@ main {
 }
 
 .form-box {
+    background-color: #FFFFF0;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -116,6 +117,7 @@ form {
 
 
 .change-color-box {
+    background-color: #FFFFF0;
     position: absolute;
     top: 150px;
     right: 300px;
@@ -138,3 +140,54 @@ form {
     justify-content: space-evenly;
     flex-wrap: wrap;
 }
+/* 
+.background-icons {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.background-icons svg {
+    position: absolute;
+    width: 10%;
+    height: auto;
+    opacity: 1;
+}
+
+.background-icons path,
+.background-icons circle,
+.background-icons line,
+.background-icons polyline,
+.background-icons rect {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 20;
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 1000;
+    animation: draw 2s ease forwards;
+    animation-delay: var(--delay);
+}
+
+@keyframes draw {
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+.fade-in {
+    animation: fadeOut 1s ease forwards;
+}
+
+.fade-out {
+    animation: fadeOut 1s ease forwards;
+}
+
+@keyframes fadeOut {
+    to {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+}
+ */
