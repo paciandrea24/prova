@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
             time: 60,
             difficulty: 'medium'
         },
-        quiz: {
+        trivia: {
             questions: 10,
             time: 30,
             category: 'general'
@@ -45,11 +45,26 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.emit('joinLobby', lobbyId);
 
     // Ascolta l'evento di selezione del gioco
+    // frontend/lobby.js
+
     socket.on('gameSelected', (data) => {
         const { gameId, settings } = data;
-        // Reindirizza alla pagina del gioco con le impostazioni
+
+        // Costruiamo la stringa dei settings come facevi prima
         const settingsParam = settings ? `&settings=${encodeURIComponent(JSON.stringify(settings))}` : '';
-        window.location.href = `/game.html?lobby=${lobbyId}&color=${selectedColor}&game=${gameId}${settingsParam}`;
+
+        // LOGICA DI SMISTAMENTO:
+        let targetPage = '/game.html'; // Default (Disegno)
+
+        if (gameId === 'trivia') {
+            targetPage = '/quiz.html'; // Nuovo gioco
+        }
+        // Puoi aggiungere altri else if in futuro per altri giochi
+
+        console.log(`Reindirizzamento a ${targetPage} per il gioco: ${gameId}`);
+
+        // Reindirizza alla pagina corretta portandosi dietro tutti i parametri
+        window.location.href = `${targetPage}?lobby=${lobbyId}&color=${selectedColor}&game=${gameId}${settingsParam}`;
     });
 
     // Funzione per caricare i dati della lobby
@@ -225,7 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Cambia il titolo
         const gameNames = {
             'drawing': 'Drawing Game',
-            'quiz': 'Quiz Game'
+            'trivia': 'Quiz Game'
         };
         sectionTitle.textContent = gameNames[gameId] || 'Game Settings';
 
@@ -306,16 +321,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
         console.log(`Starting game ${currentSelectedGame} with settings:`, settings);
 
-        // Notifica a tutti che un gioco è stato selezionato con le impostazioni
+        // Notifica a tutti che un gioco è stato selezionato
         socket.emit('startGame', {
             lobbyId,
             gameId: currentSelectedGame,
             settings: settings
         });
 
-        // Anche l'host si reindirizza
+        // --- CORREZIONE QUI SOTTO ---
+
+        // Invece di reindirizzare manualmente subito, è MEGLIO aspettare
+        // l'evento 'gameSelected' dal socket (come fanno gli altri giocatori).
+        // Questo assicura che server e host siano sincronizzati.
+
+        // Rimuoviamo il reindirizzamento manuale:
+        // window.location.href = ... (RIMOSSO)
+
+        // Se proprio vuoi reindirizzare subito per evitare lag, usa questa logica dinamica:
+        /*
+        let targetPage = '/game.html';
+        if (currentSelectedGame === 'trivia') targetPage = '/quiz.html';
+        
         const settingsParam = `&settings=${encodeURIComponent(JSON.stringify(settings))}`;
-        window.location.href = `/game.html?lobby=${lobbyId}&color=${selectedColor}&game=${currentSelectedGame}${settingsParam}`;
+        window.location.href = `${targetPage}?lobby=${lobbyId}&color=${selectedColor}&game=${currentSelectedGame}${settingsParam}`;
+        */
     }
 
     // Funzione per configurare i pulsanti del pannello impostazioni

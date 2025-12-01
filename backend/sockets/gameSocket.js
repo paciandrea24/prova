@@ -1,4 +1,4 @@
-const { lobbies, users } = require('../store/lobbies');
+/* const { lobbies, users } = require('../store/lobbies');
 const { activeGames } = require('../store/activeGames');
 const {
     getDefaultGameSettings,
@@ -311,4 +311,4 @@ module.exports = function (io) {
         })
 
     })
-}
+} */

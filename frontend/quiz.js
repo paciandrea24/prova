@@ -1,236 +1,184 @@
-document.addEventListener('DOMContentLoaded', () => {
-    // Parse URL parameters
-    const urlParams = new URLSearchParams(window.location.search);
-    const lobbyId = urlParams.get('lobby');
-    const playerColor = urlParams.get('color');
-    const gameId = urlParams.get('game');
+// frontend/quiz.js
+const socket = io();
+
+// 1. RECUPERA DATI DALL'URL
+const urlParams = new URLSearchParams(window.location.search);
+const lobbyId = urlParams.get('lobby');
+const playerColor = urlParams.get('color');
+const gameId = urlParams.get('game') || 'trivia';
+
+console.log("Variabili URL:", { lobbyId, playerColor, gameId });
+
+// 2. ELEMENTI DOM
+const questionText = document.getElementById('question-text');
+const answerBtns = document.querySelectorAll('.answer-btn');
+const timerFill = document.getElementById('timer-fill');
+const scoreList = document.getElementById('score-list');
+const roundInfo = document.getElementById('round-info');
+const statusMsg = document.getElementById('status-message');
+const answersContainer = document.getElementById('answers-container');
+
+// 3. CONNESSIONE SOCKET
+socket.on('connect', () => {
+    console.log('✅ Connesso al Server Socket:', socket.id);
 
     if (!lobbyId || !playerColor) {
-        window.location.href = '/';
+        alert("Errore: Parametri mancanti nell'URL");
         return;
     }
 
-    // Game state
-    const gameState = {
-        players: [],
-        playerRoles: {},
-        myRole: null,
-        isHost: false,
-        currentRound: 0,
-        totalRounds: 5,
-        currentPhase: 'waiting',
-        eliminatedPlayers: [],
-        drawings: {},
-        votes: {},
-        myVote: null,
-        scenario: null,
-        discussionTime: 120, // 2 minutes discussion
-        drawingTime: 60, // 1 minute to draw
-        viewingTime: 5, // 5 seconds to view image
-    };
+    // FONDAMENTALE: Diciamo al server "Ehi, sono arrivato nella pagina del gioco!"
+    console.log('📤 Invio richiesta joinGame...');
+    socket.emit('joinGame', {
+        lobbyId,
+        gameId,
+        playerColor
+    });
+});
 
-    // Canvas variables
-    let canvas, ctx;
-    let isDrawing = false;
-    let lastX = 0;
-    let lastY = 0;
-    let currentColor = '#000000';
-    let currentLineWidth = 5;
-    let currentTool = 'pen'; // 'pen' or 'eraser'
+// 4. GESTIONE EVENTI DAL SERVER
 
-    // Setup WebSocket
-    const socket = io();
+// Messaggio di attesa (es. "Il round sta per iniziare")
+socket.on('statusMessage', (data) => {
+    console.log('📩 Messaggio di stato:', data.message);
+    statusMsg.textContent = data.message;
+});
 
-    // Join lobby
-    socket.emit('joinLobby', lobbyId);
+// Arriva una domanda
+socket.on('newQuestion', (data) => {
+    console.log('📩 Nuova domanda ricevuta:', data);
+    const { question, options, round, totalRounds, time, scores } = data;
 
-    // Request lobby data
-    fetchLobbyData();
+    resetButtons();
+    statusMsg.textContent = 'Scegli la risposta!';
+    questionText.textContent = question;
+    roundInfo.textContent = `Round ${round}/${totalRounds}`;
 
-    // Request game data when joining
-    socket.emit('joinQuizGame', { lobbyId, playerColor });
-
-    // Listen for game events
-    setupSocketListeners();
-
-    // Setup UI event listeners
-    setupEventListeners();
-
-    // Initialize drawing canvas
-    initializeCanvas();
-
-    // Update the game UI based on current phase
-    function updateUI() {
-        // Hide all phases
-        document.querySelectorAll('.game-phase').forEach(phase => {
-            phase.classList.remove('active');
-        });
-
-        // Show current phase
-        document.getElementById(gameState.currentPhase).classList.add('active');
-
-        // Update round info
-        document.getElementById('current-round').textContent = gameState.currentRound;
-        document.getElementById('total-rounds').textContent = gameState.totalRounds;
-
-        // Update players status
-        updatePlayersStatus();
-
-        // Add specific phase logic here
-        switch (gameState.currentPhase) {
-            case 'waiting':
-                updateWaitingPhase();
-                break;
-            case 'role-reveal':
-                updateRoleRevealPhase();
-                break;
-            case 'image-display':
-                updateImageDisplayPhase();
-                break;
-            case 'drawing-phase':
-                updateDrawingPhase();
-                break;
-            case 'gallery-phase':
-                updateGalleryPhase();
-                break;
-            case 'voting-phase':
-                updateVotingPhase();
-                break;
-            case 'results-phase':
-                updateResultsPhase();
-                break;
-            case 'game-end':
-                updateGameEndPhase();
-                break;
-        }
+    // Aggiorna subito la classifica!
+    if (scores) {
+        updateScoreboard(scores);
     }
 
-    // Update waiting phase UI
-    function updateWaitingPhase() {
-        const playersList = document.getElementById('players-list');
-        playersList.innerHTML = '';
+    // Aggiorna Bottoni
+    answerBtns.forEach((btn, index) => {
+        btn.textContent = options[index];
+        btn.disabled = false;
+        btn.onclick = () => sendAnswer(index);
+    });
 
-        // Add current player
-        const myPlayerItem = document.createElement('li');
-        myPlayerItem.innerHTML = `
-            <div class="player-entry-1">
-                <div class="avatar-circle">
-                    <div class="avatar-color" style="background-color: ${playerColor};"></div>
-                </div>
-                <p class="player-entry-text">You</p>
-                ${gameState.isHost ? '<span class="host-indicator">(Host)</span>' : ''}
-            </div>
-        `;
-        playersList.appendChild(myPlayerItem);
+    // Barra del timer
+    timerFill.style.transition = 'none'; // Reset istantaneo
+    timerFill.style.width = '100%';
+    // Forza un reflow per riavviare l'animazione
+    void timerFill.offsetWidth;
+    timerFill.style.transition = `width ${time}s linear`;
+    timerFill.style.width = '0%';
+});
 
-        // Add other players
-        gameState.players.forEach((player, index) => {
-            if (player !== playerColor) {
-                const playerItem = document.createElement('li');
-                const entryClass = index % 2 === 0 ? 'player-entry-1' : 'player-entry-2';
-                playerItem.innerHTML = `
-                    <div class="${entryClass}">
-                        <div class="avatar-circle">
-                            <div class="avatar-color" style="background-color: ${player};"></div>
-                        </div>
-                        <p class="player-entry-text">${player}</p>
-                        ${gameState.isHost ? '' : ''}
-                    </div>
-                `;
-                playersList.appendChild(playerItem);
-            }
-        });
+// Risultati del Round
+socket.on('roundResult', (data) => {
+    console.log('📩 Risultati round:', data);
+    const { correctIndex, scores, playerAnswers } = data;
+    const myAnswer = playerAnswers[playerColor];
 
-        // Show/hide host controls
-        const hostControls = document.getElementById('host-controls');
-        if (gameState.isHost) {
-            hostControls.classList.remove('hidden');
+    answerBtns.forEach((btn, index) => {
+        btn.disabled = true;
+        if (index === correctIndex) btn.classList.add('correct');
+        else if (index === myAnswer) btn.classList.add('selected-wrong');
+        else btn.classList.add('wrong');
+    });
 
-            // Enable/disable start button based on player count
-            const startButton = document.getElementById('start-game-btn');
-            startButton.disabled = gameState.players.length < 3;
+    updateScoreboard(scores);
+});
 
-            if (gameState.players.length < 3) {
-                startButton.title = "Need at least 3 players to start";
-            } else {
-                startButton.title = "Start the game";
-            }
-        } else {
-            hostControls.classList.add('hidden');
-        }
-    }
+// Fine Gioco
+socket.on('gameOver', (data) => {
+    console.log('🏁 Game Over');
+    questionText.textContent = "GIOCO FINITO!";
+    answersContainer.style.display = 'none';
+    updateScoreboard(data.scores);
+});
 
-    // Update role reveal phase UI
-    function updateRoleRevealPhase() {
-        const roleName = document.getElementById('role-name');
-        const roleDescription = document.getElementById('role-description');
-
-        roleName.textContent = gameState.myRole;
-        roleName.className = gameState.myRole.toLowerCase();
-
-        if (gameState.myRole === 'Investigator') {
-            roleDescription.textContent = 'Your goal is to identify the Killers. Look carefully at the images and draw important evidence to help solve the case.';
-        } else {
-            roleDescription.textContent = 'Your goal is to mislead the investigation. You will see a different image than the Investigators. Try to blend in by drawing plausible but misleading evidence.';
-        }
-    }
-
-    // Update image display phase UI
-    function updateImageDisplayPhase() {
-        const countdown = document.getElementById('countdown');
-        const scenarioImage = document.getElementById('scenario-image');
-
-        // Set the image source based on role
-        if (gameState.scenario) {
-            const imageUrl = gameState.myRole === 'Investigator'
-                ? gameState.scenario.investigatorImage
-                : gameState.scenario.killerImage;
-
-            scenarioImage.src = imageUrl;
-        }
-
-        // Start countdown
-        let seconds = gameState.viewingTime;
-        countdown.textContent = seconds;
-
-        const timer = setInterval(() => {
-            seconds--;
-            countdown.textContent = seconds;
-
-            if (seconds <= 0) {
-                clearInterval(timer);
-                // This will be handled by the server event
-            }
-        }, 1000);
-    }
-
-    // Update drawing phase UI
-    function updateDrawingPhase() {
-        const instructions = document.getElementById('drawing-instructions');
-
-        if (gameState.myRole === 'Investigator') {
-            instructions.textContent = 'Draw an important piece of evidence you saw in the image';
-        } else {
-            instructions.textContent = 'Draw something that seems like it could be evidence from the scene';
-        }
-
-        // Reset canvas
-        clearCanvas();
-
-        // Start timer
-        let seconds = gameState.drawingTime;
-        document.getElementById('drawing-timer').textContent = seconds;
-
-        const timer = setInterval(() => {
-            seconds--;
-            document.getElementById('drawing-timer').textContent = seconds;
-
-            if (seconds <= 0) {
-                clearInterval(timer);
-                // This will be handled by server event or submit button
-            }
-        }, 1000);
-    }
-
-    // Update gallery phase UI
+// --- FUNZIONI UTILI ---
+function sendAnswer(index) {
+    answerBtns.forEach(btn => btn.disabled = true);
+    statusMsg.textContent = "Risposta inviata...";
+    socket.emit('triviaAnswer', { lobbyId, playerColor, answerIndex: index });
 }
+
+function resetButtons() {
+    answerBtns.forEach(btn => {
+        btn.className = 'answer-btn';
+        btn.disabled = true;
+    });
+}
+
+// frontend/quiz.js
+
+function updateScoreboard(scores) {
+    scoreList.innerHTML = '';
+
+    // Ordina i giocatori per punteggio decrescente
+    Object.entries(scores)
+        .sort(([, a], [, b]) => b - a)
+        .forEach(([pColor, score]) => {
+            const li = document.createElement('li');
+
+            // 1. Creiamo la struttura del pallino colorato
+            const avatarCircle = document.createElement('div');
+            avatarCircle.className = 'score-avatar-circle';
+
+            const avatarColorDiv = document.createElement('div');
+            avatarColorDiv.className = 'score-avatar-color';
+            avatarColorDiv.style.backgroundColor = pColor; // Applichiamo il colore RGB qui
+
+            // Assembliamo il pallino
+            avatarCircle.appendChild(avatarColorDiv);
+
+            // 2. Creiamo il testo del punteggio
+            const scoreText = document.createElement('span');
+            scoreText.textContent = `${score} pt`;
+
+            // 3. Verifica se sono io
+            if (pColor === playerColor) {
+                li.classList.add('current-player'); // Aggiunge bordo e stile
+                scoreText.textContent += " (Tu)";
+            }
+
+            // 4. Inseriamo tutto nella riga
+            li.appendChild(avatarCircle);
+            li.appendChild(scoreText);
+
+            scoreList.appendChild(li);
+        });
+}
+
+
+// --- GESTIONE CAMBIO TEMA ---
+
+const themeBtn = document.getElementById('theme-toggle-btn');
+const body = document.body;
+
+// 1. Controlla se l'utente aveva già scelto un tema in passato
+const savedTheme = localStorage.getItem('quiz-theme');
+if (savedTheme === 'dark') {
+    body.classList.add('theme-dark');
+    themeBtn.innerHTML = '☀️ Stile Light'; // Cambia testo bottone
+} else {
+    themeBtn.innerHTML = '🌘 Stile Dark';
+}
+
+// 2. Aggiungi il listener al click del bottone
+themeBtn.addEventListener('click', () => {
+    // Toggle della classe 'theme-dark' sul body
+    body.classList.toggle('theme-dark');
+
+    // Aggiorna il testo del bottone e salva la preferenza
+    if (body.classList.contains('theme-dark')) {
+        themeBtn.innerHTML = '☀️ Stile Light';
+        localStorage.setItem('quiz-theme', 'dark'); // Salva 'dark' in memoria
+    } else {
+        themeBtn.innerHTML = '🌘 Stile Dark';
+        localStorage.setItem('quiz-theme', 'light'); // Salva 'light' in memoria
+    }
+});

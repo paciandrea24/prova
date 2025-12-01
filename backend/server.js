@@ -8,7 +8,8 @@ const { Server } = require('socket.io')
 /* const fs = require('fs'); */
 
 const lobbyRoutes = require('./routes/lobbyRoutes');
-const handleSocket = require('./sockets/gameSocket');
+const socketManager = require('./sockets/socketManager');
+
 
 const app = express();
 const server = http.createServer(app);
@@ -23,7 +24,7 @@ app.use(express.static(path.join(__dirname, '..', 'frontend')));
 app.use('/', lobbyRoutes);
 
 // Socket.IO
-handleSocket(io);
+socketManager(io);
 
 server.listen(3000, () => {
     console.log('✅ Server listening on port 3000');
