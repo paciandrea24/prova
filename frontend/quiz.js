@@ -165,8 +165,12 @@ socket.on('gameOver', (data) => {
 
 // Evento: Redirect (per tornare alla lobby)
 socket.on('returnToLobbySignal', () => {
-    // Usiamo le variabili lobbyId e playerColor che abbiamo già in questo file!
-    window.location.href = `/lobby.html?lobby=${lobbyId}&color=${playerColor}`;
+    console.log("Ricevuto segnale ritorno alla lobby...");
+
+    // Costruiamo l'URL completo per evitare che il controllo di sicurezza ci cacci
+    const targetUrl = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
+
+    window.location.href = targetUrl;
 });
 
 // Evento: Gioco Riavviato (pulisci schermo e ricomincia)

@@ -60,6 +60,10 @@ module.exports = function (io, socket) {
         const lobby = lobbies.get(lobbyId);
         if (!lobby) return;
 
+        // --- FIX 1: SALVA LE IMPOSTAZIONI NELLA LOBBY ---
+        // Così ce le ricordiamo per il "Play Again"
+        lobby.lastGameSettings = settings;
+
         // 3. RECUPERA LE DOMANDE (DAL FILE LOCALE ORA)
         console.log("📥 Caricando domande...");
         const rounds = (settings && settings.questions) || 5;
@@ -149,35 +153,31 @@ module.exports = function (io, socket) {
 
     // 2. Gioca di Nuovo
     socket.on('playAgain', async (data) => {
-        const { lobbyId, settings } = data;
+        const { lobbyId } = data;
 
         const lobby = lobbies.get(lobbyId);
         if (!lobby) return;
 
         console.log(`🔄 Riavvio gioco per lobby ${lobbyId}`);
 
-        // Ri-scarica le domande
+        // Recupera le impostazioni salvate nella lobby (o usa default se mancano)
+        const settings = lobby.lastGameSettings || {};
         const rounds = (settings && settings.questions) || 5;
+
+        console.log(`⚙️ Riavvio con impostazioni: ${rounds} domande`);
+
         const questions = await fetchTriviaQuestions(rounds);
+        const game = initializeTriviaGame('trivia', settings, questions);
 
-        // Resetta il gioco (riutilizziamo la funzione di init)
-        const game = initializeTriviaGame('trivia', settings || {}, questions);
-
-        // Resetta i punteggi
-        lobby.players.forEach(playerColor => {
-            const color = typeof playerColor === 'object' ? playerColor.color : playerColor;
+        lobby.players.forEach(p => {
+            const color = typeof p === 'object' ? p.color : p;
             game.scores[color] = 0;
         });
 
         activeGames.set(lobbyId, game);
 
-        // Avvisa tutti che si ricomincia!
         io.to(lobbyId).emit('gameRestarted');
-
-        // Avvia il primo round dopo breve attesa
-        setTimeout(() => {
-            startTriviaRound(io, lobbyId);
-        }, 3000);
+        setTimeout(() => { startTriviaRound(io, lobbyId); }, 3000);
     });
 };
 
