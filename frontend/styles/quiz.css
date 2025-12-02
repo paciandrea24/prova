@@ -260,3 +260,146 @@ body.theme-dark #theme-toggle-btn {
     .sidebar { width: 100%; height: auto; flex-direction: row; overflow-x: auto; }
     .answers-grid { grid-template-columns: 1fr; }
 }
+
+
+
+
+
+/* frontend/styles/quiz.css */
+
+/* --- DOMANDA (Aggiornato) --- */
+.question-box { 
+    margin-bottom: 30px; 
+    text-align: center; 
+    max-width: 850px;
+    display: flex;         /* Usa Flexbox */
+    flex-direction: column;/* Impila gli elementi verticalmente */
+    align-items: center;   /* Centra tutto orizzontalmente */
+}
+
+#question-text { 
+    font-size: 2.2rem; 
+    font-weight: 900; 
+    line-height: 1.2; 
+    margin-bottom: 20px; /* Spazio tra testo e immagine */
+    margin-top: 0;
+}
+
+#question-image {
+    max-width: 100%;
+    max-height: 250px; /* Importante: limita l'altezza per non nascondere i tasti */
+    width: auto;
+    border-radius: 15px;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+    object-fit: contain;
+    border: 4px solid white; /* Effetto cornice */
+    
+    /* Animazione di entrata carina */
+    animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes popIn {
+    from { transform: scale(0.8); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+/* Adattamento per schermi piccoli (Mobile) */
+@media (max-width: 768px) {
+    #question-text { font-size: 1.5rem; margin-bottom: 15px; }
+    #question-image { max-height: 180px; } /* Immagine più piccola su mobile */
+}
+
+
+/* frontend/styles/quiz.css */
+
+/* --- GAME OVER SCREEN --- */
+.game-over-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.9); /* Sfondo scuro coprente */
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(5px);
+    animation: fadeIn 0.5s ease;
+}
+
+.game-over-content {
+    background: linear-gradient(135deg, #2c3e50, #000000);
+    padding: 40px;
+    border-radius: 20px;
+    text-align: center;
+    max-width: 600px;
+    width: 90%;
+    border: 2px solid #f1c40f; /* Bordo Oro */
+    box-shadow: 0 0 50px rgba(241, 196, 15, 0.3);
+}
+
+.game-over-content h1 {
+    color: #f1c40f;
+    font-size: 2.5rem;
+    margin-bottom: 30px;
+    text-shadow: 0 2px 5px rgba(0,0,0,0.5);
+}
+
+/* Stile Podio / Lista Finale */
+.final-rank-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255, 255, 255, 0.1);
+    margin-bottom: 10px;
+    padding: 15px 20px;
+    border-radius: 10px;
+    font-size: 1.2rem;
+    color: white;
+}
+
+.final-rank-item.winner {
+    background: linear-gradient(90deg, #f1c40f, #e67e22);
+    font-weight: bold;
+    transform: scale(1.05);
+    color: #000;
+    border: 2px solid white;
+}
+
+.rank-position { font-weight: 900; margin-right: 15px; }
+
+/* Bottoni Azione */
+#host-controls {
+    margin-top: 40px;
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.action-btn {
+    padding: 15px 30px;
+    font-size: 1.2rem;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: transform 0.2s;
+}
+
+.action-btn:hover { transform: scale(1.05); }
+
+#btn-play-again {
+    background-color: #2ecc71;
+    color: white;
+    box-shadow: 0 5px 15px rgba(46, 204, 113, 0.4);
+}
+
+#btn-back-lobby {
+    background-color: #e74c3c;
+    color: white;
+    box-shadow: 0 5px 15px rgba(231, 76, 60, 0.4);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}

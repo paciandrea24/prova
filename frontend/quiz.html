@@ -31,6 +31,8 @@
 
             <div class="question-box">
                 <h1 id="question-text">In attesa della domanda...</h1>
+
+                <img id="question-image" src="" alt="Quiz Image" style="display: none;">
             </div>
 
             <div class="answers-grid" id="answers-container">
@@ -41,6 +43,21 @@
             </div>
 
             <div id="status-message">Preparati!</div>
+        </div>
+    </div>
+
+    <div id="game-over-screen" class="game-over-overlay" style="display: none;">
+        <div class="game-over-content">
+            <h1>🏆 CLASSIFICA FINALE 🏆</h1>
+
+            <div id="final-podium"></div>
+
+            <div id="host-controls" style="display: none;">
+                <button id="btn-play-again" class="action-btn">🔄 Gioca di Nuovo</button>
+                <button id="btn-back-lobby" class="action-btn secondary">🏠 Torna alla Lobby</button>
+            </div>
+
+            <p id="waiting-host-msg" style="margin-top: 20px; color: #ccc;">In attesa che l'host decida...</p>
         </div>
     </div>
 

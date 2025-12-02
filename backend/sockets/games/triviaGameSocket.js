@@ -4,7 +4,8 @@ const { activeGames } = require('../../store/activeGames');
 const {
     initializeTriviaGame,
     getNextQuestion,
-    calculateTriviaPoints
+    calculateTriviaPoints,
+    fetchTriviaQuestions
 } = require('../../game/triviaGame');
 
 const GAME_ID = 'trivia';
@@ -34,11 +35,12 @@ module.exports = function (io, socket) {
             if (game.currentQuestion) {
                 socket.emit('newQuestion', {
                     question: game.currentQuestion,
-                    options: getNextQuestion(game.currentRound - 1).options, // Recupera le opzioni
+                    options: getNextQuestion(game).options, // Recupera le opzioni
                     round: game.currentRound,
                     totalRounds: game.totalRounds,
                     time: game.timer, // Il tempo rimasto attuale!
-                    scores: game.scores
+                    scores: game.scores,
+                    imageUrl: questionData.imageUrl
                 });
             } else {
                 // Se siamo nella pausa tra un round e l'altro o all'inizio
@@ -48,10 +50,9 @@ module.exports = function (io, socket) {
     });
 
     // --- AVVIO DEL GIOCO ---
-    socket.on('startGame', (data) => {
+    socket.on('startGame', async (data) => {
         const { lobbyId, gameId, settings } = data;
 
-        // Rispondi solo se il gioco è Trivia
         if (gameId !== GAME_ID) return;
 
         console.log(`🧠 Avvio TRIVIA Game per lobby ${lobbyId}`);
@@ -59,22 +60,32 @@ module.exports = function (io, socket) {
         const lobby = lobbies.get(lobbyId);
         if (!lobby) return;
 
-        // Inizializza stato del gioco
-        const game = initializeTriviaGame(gameId, settings || {});
+        // 3. RECUPERA LE DOMANDE (DAL FILE LOCALE ORA)
+        console.log("📥 Caricando domande...");
+        const rounds = (settings && settings.questions) || 5;
 
-        // Inizializza i punteggi a 0 per tutti i giocatori
+        // Aspettiamo che la funzione ci dia le domande mescolate
+        const questions = await fetchTriviaQuestions(rounds);
+
+        if (!questions || questions.length === 0) {
+            console.error("❌ Errore: Nessuna domanda trovata!");
+            return;
+        }
+
+        // 4. PASSA LE DOMANDE ALLA FUNZIONE DI INIZIALIZZAZIONE
+        // Questo è il punto che dava errore: mancava il terzo parametro!
+        const game = initializeTriviaGame(gameId, settings || {}, questions);
+
+        // Inizializza i punteggi
         lobby.players.forEach(playerColor => {
-            // Usiamo direttamente la stringa, oppure p.color se fosse un oggetto (per sicurezza)
             const color = typeof playerColor === 'object' ? playerColor.color : playerColor;
             game.scores[color] = 0;
         });
 
         activeGames.set(lobbyId, game);
 
-        // 1. Diciamo al frontend di cambiare pagina (Routing)
         io.to(lobbyId).emit('gameSelected', { gameId: GAME_ID, settings });
 
-        // 2. Facciamo partire il primo round dopo breve attesa
         setTimeout(() => {
             startTriviaRound(io, lobbyId);
         }, 3000);
@@ -85,30 +96,23 @@ module.exports = function (io, socket) {
         const { lobbyId, playerColor, answerIndex } = data;
         const game = activeGames.get(lobbyId);
 
-        // Controlli di sicurezza
         if (!game || game.type !== GAME_ID || !game.isActive) return;
-        if (game.playerAnswers[playerColor] !== undefined) return; // Ha già risposto
+        if (game.playerAnswers[playerColor] !== undefined) return;
 
-        // Registra la risposta
         game.playerAnswers[playerColor] = answerIndex;
         game.answeredCount++;
 
         console.log(`📝 ${playerColor} ha risposto: ${answerIndex}`);
 
-        // Calcola punti SE la risposta è corretta
         const isCorrect = answerIndex === game.correctAnswerIndex;
         let pointsEarned = 0;
 
         if (isCorrect) {
-            // Punti basati sul tempo rimasto (chi risponde prima prende di più)
             pointsEarned = calculateTriviaPoints(game.timer, game.roundDuration);
             game.scores[playerColor] += pointsEarned;
         }
 
-        // Notifica al singolo giocatore se ha indovinato (opzionale, per feedback immediato)
-        socket.emit('answerFeedback', { correct: isCorrect, points: pointsEarned });
-
-        // Se hanno risposto TUTTI, finiamo il round subito
+        // Se hanno risposto TUTTI
         if (game.answeredCount === Object.keys(game.scores).length) {
             endTriviaRound(io, lobbyId);
         }
@@ -121,12 +125,59 @@ module.exports = function (io, socket) {
         if (game && game.type === GAME_ID && game.currentQuestion) {
             socket.emit('newQuestion', {
                 question: game.currentQuestion,
-                options: getNextQuestion(game.currentRound - 1).options,
+                options: getNextQuestion(game).options, // Nota: passiamo 'game'
                 round: game.currentRound,
                 totalRounds: game.totalRounds,
-                time: game.timer
+                time: game.timer,
+                scores: game.scores,
+                imageUrl: questionData.imageUrl
             });
         }
+    });
+
+    // --- GESTIONE FINE PARTITA ---
+
+    // 1. Torna alla Lobby
+    socket.on('backToLobby', (data) => {
+        const { lobbyId } = data;
+        // Manda un segnale a TUTTI i client di quella lobby per reindirizzarli
+        io.to(lobbyId).emit('redirect', { url: `/index.html?lobby=${lobbyId}` }); // O lobby.html a seconda delle tue rotte
+
+        // Ora possiamo cancellare il gioco dalla memoria
+        activeGames.delete(lobbyId);
+    });
+
+    // 2. Gioca di Nuovo
+    socket.on('playAgain', async (data) => {
+        const { lobbyId, settings } = data;
+
+        const lobby = lobbies.get(lobbyId);
+        if (!lobby) return;
+
+        console.log(`🔄 Riavvio gioco per lobby ${lobbyId}`);
+
+        // Ri-scarica le domande
+        const rounds = (settings && settings.questions) || 5;
+        const questions = await fetchTriviaQuestions(rounds);
+
+        // Resetta il gioco (riutilizziamo la funzione di init)
+        const game = initializeTriviaGame('trivia', settings || {}, questions);
+
+        // Resetta i punteggi
+        lobby.players.forEach(playerColor => {
+            const color = typeof playerColor === 'object' ? playerColor.color : playerColor;
+            game.scores[color] = 0;
+        });
+
+        activeGames.set(lobbyId, game);
+
+        // Avvisa tutti che si ricomincia!
+        io.to(lobbyId).emit('gameRestarted');
+
+        // Avvia il primo round dopo breve attesa
+        setTimeout(() => {
+            startTriviaRound(io, lobbyId);
+        }, 3000);
     });
 };
 
@@ -136,42 +187,52 @@ function startTriviaRound(io, lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game) return;
 
-    // Controllo Fine Gioco
     if (game.currentRound >= game.totalRounds) {
-        io.to(lobbyId).emit('gameOver', { scores: game.scores });
-        activeGames.delete(lobbyId);
+        // Recupera l'host per inviarlo nel payload del Game Over
+        const lobby = lobbies.get(lobbyId);
+        const hostColor = lobby ? lobby.host : null;
+
+        io.to(lobbyId).emit('gameOver', {
+            scores: game.scores,
+            hostColor: hostColor // <--- AGGIUNTO: Passiamo chi è l'host
+        });
+
+        // NON cancellare il gioco subito (activeGames.delete), altrimenti non possiamo fare "Gioca di nuovo"
+        // activeGames.delete(lobbyId); <--- COMMENTA O RIMUOVI QUESTA RIGA
+        game.isActive = false; // Segniamolo come finito
         return;
     }
 
-    // Prepara nuova domanda
+    // Nota: getNextQuestion ora prende l'intero oggetto game per leggere dalla lista
+    const questionData = getNextQuestion(game);
+
+    if (!questionData) {
+        console.error("Errore: Domanda non trovata!");
+        return;
+    }
+
     game.currentRound++;
-    const questionData = getNextQuestion(game.currentRound - 1); // -1 perché array parte da 0
 
     game.currentQuestion = questionData.text;
     game.correctAnswerIndex = questionData.correctIndex;
-    game.playerAnswers = {}; // Resetta risposte
+    game.playerAnswers = {};
     game.answeredCount = 0;
     game.timer = game.roundDuration;
 
-    // Invia ai client (SENZA dire qual è la risposta giusta!)
     io.to(lobbyId).emit('newQuestion', {
         question: questionData.text,
         options: questionData.options,
         round: game.currentRound,
         totalRounds: game.totalRounds,
         time: game.roundDuration,
-        scores: game.scores
+        scores: game.scores,
+        imageUrl: questionData.imageUrl
     });
 
-    // Gestione Timer
     if (game.timerInterval) clearInterval(game.timerInterval);
 
     game.timerInterval = setInterval(() => {
         game.timer--;
-
-        // Opzionale: invia tick del timer ogni secondo se vuoi sincronizzare
-        // io.to(lobbyId).emit('timerTick', game.timer);
-
         if (game.timer <= 0) {
             endTriviaRound(io, lobbyId);
         }
@@ -185,16 +246,16 @@ function endTriviaRound(io, lobbyId) {
     clearInterval(game.timerInterval);
     game.timerInterval = null;
 
-    console.log("⏰ Fine round, invio risultati...");
+    // Recupera l'host dalla lobby per dirlo al frontend
+    const lobby = lobbies.get(lobbyId);
+    const hostColor = lobby ? lobby.host : null;
 
-    // Invia risultati del round (svela la risposta corretta e aggiorna classifica)
     io.to(lobbyId).emit('roundResult', {
         correctIndex: game.correctAnswerIndex,
-        scores: game.scores, // Classifica aggiornata
-        playerAnswers: game.playerAnswers // Per mostrare chi ha scelto cosa
+        scores: game.scores,
+        playerAnswers: game.playerAnswers
     });
 
-    // Attendi 5 secondi per far vedere i risultati, poi prossima domanda
     setTimeout(() => {
         startTriviaRound(io, lobbyId);
     }, 5000);

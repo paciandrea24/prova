@@ -6,6 +6,7 @@ const urlParams = new URLSearchParams(window.location.search);
 const lobbyId = urlParams.get('lobby');
 const playerColor = urlParams.get('color');
 const gameId = urlParams.get('game') || 'trivia';
+const questionImage = document.getElementById('question-image');
 
 console.log("Variabili URL:", { lobbyId, playerColor, gameId });
 
@@ -17,6 +18,14 @@ const scoreList = document.getElementById('score-list');
 const roundInfo = document.getElementById('round-info');
 const statusMsg = document.getElementById('status-message');
 const answersContainer = document.getElementById('answers-container');
+
+// Riferimenti ai nuovi elementi
+const gameOverScreen = document.getElementById('game-over-screen');
+const finalPodium = document.getElementById('final-podium');
+const hostControls = document.getElementById('host-controls');
+const waitingHostMsg = document.getElementById('waiting-host-msg');
+const btnPlayAgain = document.getElementById('btn-play-again');
+const btnBackLobby = document.getElementById('btn-back-lobby');
 
 // 3. CONNESSIONE SOCKET
 socket.on('connect', () => {
@@ -47,14 +56,25 @@ socket.on('statusMessage', (data) => {
 // Arriva una domanda
 socket.on('newQuestion', (data) => {
     console.log('📩 Nuova domanda ricevuta:', data);
-    const { question, options, round, totalRounds, time, scores } = data;
+
+    // 1. Estrai anche 'imageUrl'
+    const { question, options, round, totalRounds, time, scores, imageUrl } = data;
 
     resetButtons();
     statusMsg.textContent = 'Scegli la risposta!';
     questionText.textContent = question;
     roundInfo.textContent = `Round ${round}/${totalRounds}`;
 
-    // Aggiorna subito la classifica!
+    // --- GESTIONE IMMAGINE ---
+    if (imageUrl) {
+        questionImage.src = imageUrl;
+        questionImage.style.display = 'block'; // Mostra immagine
+    } else {
+        questionImage.style.display = 'none'; // Nascondi se non c'è
+        questionImage.src = '';
+    }
+    // -------------------------
+
     if (scores) {
         updateScoreboard(scores);
     }
@@ -93,10 +113,76 @@ socket.on('roundResult', (data) => {
 
 // Fine Gioco
 socket.on('gameOver', (data) => {
-    console.log('🏁 Game Over');
-    questionText.textContent = "GIOCO FINITO!";
-    answersContainer.style.display = 'none';
-    updateScoreboard(data.scores);
+    console.log('🏁 Game Over', data);
+    const { scores, hostColor } = data; // Riceviamo anche l'hostColor
+
+    // Nascondi interfaccia gioco
+    document.querySelector('.game-container').classList.add('blur-background'); // Opzionale: sfoca sfondo
+
+    // Mostra Overlay
+    gameOverScreen.style.display = 'flex';
+
+    // Genera Classifica Finale
+    finalPodium.innerHTML = '';
+    const sorted = Object.entries(scores).sort(([, a], [, b]) => b - a);
+
+    sorted.forEach(([pColor, score], index) => {
+        const div = document.createElement('div');
+        div.className = `final-rank-item ${index === 0 ? 'winner' : ''}`;
+
+        // Medaglie per i primi 3
+        let medal = '';
+        if (index === 0) medal = '🥇';
+        if (index === 1) medal = '🥈';
+        if (index === 2) medal = '🥉';
+
+        div.innerHTML = `
+            <div>
+                <span class="rank-position">${index + 1}° ${medal}</span>
+                <span style="color:${pColor}; font-weight:bold; text-shadow: 1px 1px 0 #000;">${pColor}</span>
+            </div>
+            <div>${score} pt</div>
+        `;
+        finalPodium.appendChild(div);
+    });
+
+    // Controlla se sono l'host
+    if (playerColor === hostColor) {
+        hostControls.style.display = 'flex';
+        waitingHostMsg.style.display = 'none';
+    } else {
+        hostControls.style.display = 'none';
+        waitingHostMsg.style.display = 'block';
+    }
+});
+
+// Evento: Redirect (per tornare alla lobby)
+socket.on('redirect', (data) => {
+    window.location.href = data.url;
+});
+
+// Evento: Gioco Riavviato (pulisci schermo e ricomincia)
+socket.on('gameRestarted', () => {
+    gameOverScreen.style.display = 'none'; // Nascondi overlay
+    // Reset interfaccia grafica (facoltativo, tanto arriverà newQuestion)
+    statusMsg.textContent = "Nuova partita in arrivo...";
+    updateScoreboard({}); // Pulisci classifica
+});
+
+// --- GESTIONE CLICK BOTTONI (Solo Host) ---
+
+btnPlayAgain.addEventListener('click', () => {
+    btnPlayAgain.textContent = "Caricamento...";
+    btnPlayAgain.disabled = true;
+
+    // Recupera settings dall'URL se possibile, o usa default
+    // Nota: per fare una cosa fatta bene dovremmo aver salvato i settings iniziali.
+    // Per ora passiamo un oggetto vuoto, userà i default del server o aggiungi logica per salvarli.
+    socket.emit('playAgain', { lobbyId, settings: {} });
+});
+
+btnBackLobby.addEventListener('click', () => {
+    socket.emit('backToLobby', { lobbyId });
 });
 
 // --- FUNZIONI UTILI ---

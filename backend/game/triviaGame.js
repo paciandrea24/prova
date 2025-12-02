@@ -1,72 +1,81 @@
 // game/triviaGame.js
+const ITALIAN_QUESTIONS = require('./italianQuestions');
 
-// Un set di domande di prova (in futuro le prenderemo da un DB o API)
-const MOCK_QUESTIONS = [
-    {
-        question: "Qual è la capitale della Francia?",
-        options: ["Londra", "Berlino", "Parigi", "Madrid"],
-        correctIndex: 2 // Parigi
-    },
-    {
-        question: "Quanto fa 5 * 5?",
-        options: ["10", "25", "55", "50"],
-        correctIndex: 1 // 25
-    },
-    {
-        question: "Di che colore è il cavallo bianco di Napoleone?",
-        options: ["Nero", "Bianco", "Marrone", "Grigio"],
-        correctIndex: 1 // Bianco
+// Funzione di utilità per mescolare un array (Fisher-Yates shuffle)
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
     }
-];
+    return array;
+}
 
-// Funzione per inizializzare il gioco Trivia
-function initializeTriviaGame(gameId, settings) {
+// Funzione simulata che "scarica" le domande (dal file locale)
+async function fetchTriviaQuestions(amount = 5) {
+    let allQuestions = [...ITALIAN_QUESTIONS];
+    shuffleArray(allQuestions);
+    const selectedQuestions = allQuestions.slice(0, amount);
+
+    return selectedQuestions.map(item => {
+        let options = [...item.incorrect_answers, item.correct_answer];
+        options = shuffleArray(options);
+        const correctIndex = options.indexOf(item.correct_answer);
+
+        return {
+            question: item.question,
+            options: options,
+            correctIndex: correctIndex,
+            imageUrl: item.imageUrl || null // <--- FONDAMENTALE: Questo deve esserci!
+        };
+    });
+}
+
+// Inizializza il gioco
+function initializeTriviaGame(gameId, settings, questions) {
     return {
-        type: 'trivia',      // Identificativo del gioco
+        type: 'trivia',
         isActive: true,
         currentRound: 0,
-        totalRounds: settings.rounds || 5, // Default 5 round
-        roundDuration: 15,   // Secondi per rispondere
+        totalRounds: questions.length,
+        roundDuration: 15,
         timer: 0,
 
-        // Stato della domanda corrente
+        questionsList: questions,
+
         currentQuestion: null,
         correctAnswerIndex: -1,
-
-        // Gestione risposte
-        playerAnswers: {},   // Chi ha risposto cosa
-        answeredCount: 0,    // Quanti hanno risposto
-
-        // Punteggi
-        scores: {},          // Mappa punteggi { 'Blue': 0, 'Red': 0 }
+        playerAnswers: {},
+        answeredCount: 0,
+        scores: {},
     };
 }
 
-// Logica per calcolare i punti basata sulla velocità
-// Più tempo rimane sul timer, più punti prendi (max 100, min 10)
+// Calcolo Punti
 function calculateTriviaPoints(timeLeft, totalTime) {
-    if (!timeLeft || !totalTime || totalTime === 0) return 10; // Sicurezza
-
+    if (!timeLeft || !totalTime || totalTime === 0) return 10;
     const percentage = timeLeft / totalTime;
     const points = Math.floor(100 * percentage);
-
-    // Assicuriamoci che torni un numero valido e almeno 10 punti
     return Math.max(points, 10);
 }
 
-// Prende una domanda a caso (o sequenziale)
-function getNextQuestion(roundIndex) {
-    // Per ora le prendiamo in ordine ciclico
-    const q = MOCK_QUESTIONS[roundIndex % MOCK_QUESTIONS.length];
+// Prende la prossima domanda
+function getNextQuestion(game) {
+    const roundIndex = game.currentRound;
+    if (roundIndex >= game.questionsList.length) return null;
+
+    const q = game.questionsList[roundIndex];
+
     return {
         text: q.question,
         options: q.options,
-        correctIndex: q.correctIndex
+        correctIndex: q.correctIndex,
+        imageUrl: q.imageUrl || null // <--- ANCHE QUI deve esserci!
     };
 }
 
 module.exports = {
     initializeTriviaGame,
     calculateTriviaPoints,
-    getNextQuestion
+    getNextQuestion,
+    fetchTriviaQuestions
 };
