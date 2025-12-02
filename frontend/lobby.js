@@ -53,7 +53,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Mostra l'ID della lobby (formattato nel nuovo header)
     const lobbyIdValue = document.getElementById('lobby-id-value');
+    const lobbyIdLabel = document.getElementById('lobby-id-label'); // Assicurati di avere questo ID nell'HTML (lo hai già)
+    const lobbyIdContainer = document.getElementById('lobby-id-container');
+
     if (lobbyIdValue) lobbyIdValue.textContent = lobbyId;
+
+    // --- NUOVA LOGICA: COPIA ID AL CLICK ---
+    if (lobbyIdContainer) {
+        lobbyIdContainer.addEventListener('click', () => {
+            // 1. Copia nella clipboard
+            navigator.clipboard.writeText(lobbyId).then(() => {
+
+                // 2. Feedback visivo: Cambia "Lobby ID:" in "Copiato!"
+                const originalLabel = lobbyIdLabel.textContent;
+                lobbyIdLabel.textContent = "Copiato! ✅";
+                lobbyIdContainer.style.backgroundColor = "#dff9fb"; // Opzionale: flash colore (funziona meglio su tema light)
+
+                // 3. Ripristina dopo 1.5 secondi
+                setTimeout(() => {
+                    lobbyIdLabel.textContent = originalLabel;
+                    lobbyIdContainer.style.backgroundColor = ""; // Rimuovi colore inline per tornare al CSS
+                }, 1500);
+
+            }).catch(err => {
+                console.error('Errore nella copia: ', err);
+            });
+        });
+    }
+    // ---------------------------------------
+
+
 
     // Carica i dati della lobby
     loadLobby();
@@ -178,12 +207,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function addInviteButton() {
         const leftBox = document.querySelector('.left-side-box');
-        if (!leftBox || document.querySelector('#invite-btn')) return;
+
+        // Se il bottone esiste già, non fare nulla
+        if (document.querySelector('#invite-btn')) return;
 
         const inviteBtn = document.createElement('button');
         inviteBtn.id = 'invite-btn';
         inviteBtn.textContent = 'Invite Players';
         inviteBtn.addEventListener('click', invitePlayers);
+
+        // Semplicemente aggiungilo in fondo alla colonna sinistra
         leftBox.appendChild(inviteBtn);
     }
 
@@ -299,4 +332,68 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     setInterval(loadLobby, 3000);
+
+    // --- GESTIONE CHAT (Aggiungi in fondo a lobby.js) ---
+    const chatInput = document.getElementById('chat-input');
+    const sendChatBtn = document.getElementById('send-chat-btn');
+    const chatMessages = document.getElementById('chat-messages');
+
+    function sendChat() {
+        const text = chatInput.value.trim();
+        console.log("Tentativo invio chat:", text); // DEBUG
+
+        if (text) {
+            // Assicurati che lobbyId e selectedColor siano definiti
+            if (!lobbyId || !selectedColor) {
+                console.error("Errore: lobbyId o selectedColor mancanti");
+                return;
+            }
+
+            socket.emit('sendChatMessage', {
+                lobbyId: lobbyId,
+                playerColor: selectedColor,
+                message: text
+            });
+            chatInput.value = '';
+            chatInput.focus();
+        }
+    }
+
+    if (sendChatBtn) {
+        sendChatBtn.addEventListener('click', sendChat);
+    }
+
+    if (chatInput) {
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendChat();
+        });
+    }
+
+    // RICEZIONE MESSAGGI
+    socket.on('receiveChatMessage', (data) => {
+        const { playerColor, message, timestamp } = data;
+
+        const msgDiv = document.createElement('div');
+        const isMe = (playerColor === selectedColor);
+
+        // Classe per allineamento
+        msgDiv.className = isMe ? 'chat-msg sent' : 'chat-msg received';
+
+        // Bordo colorato SOLO per i messaggi ricevuti (per capire chi è)
+        // Se è mio, niente bordo (è ovvio che sono io)
+        const bubbleStyle = isMe ? '' : `border-left: 4px solid ${playerColor}`;
+
+        msgDiv.innerHTML = `
+            <div class="chat-bubble" style="${bubbleStyle}">
+                ${message}
+            </div>
+            <div class="chat-time">
+                ${timestamp}
+            </div>
+        `;
+
+        chatMessages.appendChild(msgDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
 });
+

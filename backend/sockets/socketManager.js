@@ -1,6 +1,7 @@
 // sockets/socketManager.js
 const drawingGameSocket = require('./games/drawingGameSocket');
 const triviaGameSocket = require('./games/triviaGameSocket');
+const chatSocket = require('./chatSocket');
 
 module.exports = function (io) {
     io.on('connection', (socket) => {
@@ -18,5 +19,6 @@ module.exports = function (io) {
         // Inizializza i moduli dei giochi
         drawingGameSocket(io, socket);
         triviaGameSocket(io, socket);
+        chatSocket(io, socket);
     });
 };

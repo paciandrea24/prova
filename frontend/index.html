@@ -20,7 +20,7 @@
 
     <main>
         <div class="first-box">
-            <p class="label" id="main-title">Choose your color</p>
+            <p class="label" id="main-title">CHOOSE YOUR COLOR</p>
 
             <div class="form-box">
                 <form id="colorForm">
@@ -31,16 +31,24 @@
                         </div>
                         <p class="helper-text">Click to select</p>
                     </div>
-
                     <input type="hidden" id="hiddenInputForColorSelection" name="color">
 
-                    <div id="lobby-input-container" style="display: none;">
-                        <input type="text" id="lobby-id-input" placeholder="Enter Lobby ID" maxlength="10">
+                    <div id="actions-container">
+
+                        <button type="button" id="create-btn" class="submit-button main-btn" disabled>
+                            CREATE NEW LOBBY
+                        </button>
+
+                        <div class="divider"><span>OR</span></div>
+
+                        <div class="join-row">
+                            <input type="text" id="lobby-id-input" placeholder="CODE" maxlength="10" autocomplete="off">
+                            <button type="button" id="join-btn" class="submit-button secondary-btn" disabled>
+                                JOIN
+                            </button>
+                        </div>
                     </div>
 
-                    <button type="submit" class="submit-button" disabled>Choose a color first</button>
-
-                    <p class="toggle-mode-link" id="toggle-join-mode">Have a lobby code? Join here</p>
                 </form>
             </div>
         </div>
