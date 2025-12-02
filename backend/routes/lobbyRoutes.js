@@ -67,4 +67,20 @@ router.get('/api/invite/:lobbyId', (req, res) => {
     res.json({ inviteLink });
 });
 
+// ---------------------------------------------------------
+// [NUOVO] API per ottenere i colori occupati in una lobby
+// ---------------------------------------------------------
+router.get('/api/lobby-colors/:lobbyId', (req, res) => {
+    const { lobbyId } = req.params;
+    const lobby = lobbies.get(lobbyId);
+
+    if (!lobby) {
+        // Se la lobby non esiste, restituiamo array vuoto o errore
+        return res.status(404).json({ takenColors: [] });
+    }
+
+    // lobby.players è un array di stringhe colore es: ['#DC143C', '#4169E1']
+    res.json({ takenColors: lobby.players });
+});
+
 module.exports = router;

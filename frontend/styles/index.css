@@ -217,3 +217,26 @@ body.theme-dark .submit-button:active:not(:disabled) {
     transform: translateY(4px) !important; /* Scende giù */
     box-shadow: 0 2px 0 #1a2540 !important; /* Ombra ridotta */
 }
+
+
+/* --- AGGIUNGI IN FONDO A index.css --- */
+
+/* Stile per i colori già presi */
+.avatar-color.disabled {
+    opacity: 0.2 !important;       /* Molto trasparente */
+    cursor: not-allowed !important; /* Cursore di divieto */
+    pointer-events: none;          /* Disabilita click fisicamente */
+    border: 2px solid #ccc !important; /* Bordo grigio */
+    filter: grayscale(100%);       /* Toglie il colore */
+}
+
+/* Opzionale: aggiunge una X sopra */
+.avatar-color.disabled::after {
+    content: '✖';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    color: #333;
+    font-size: 24px;
+    font-weight: bold;
+}

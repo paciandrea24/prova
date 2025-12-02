@@ -1,11 +1,11 @@
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log("DOM Caricato. Script avviato.");
 
-    // --- 1. NUOVA GESTIONE TEMA (Copiato dalla logica quiz.js) ---
+    // --- 1. GESTIONE TEMA ---
     const themeBtn = document.getElementById('theme-toggle-btn');
     const body = document.body;
-
-    // Controlla memoria
     const savedTheme = localStorage.getItem('quiz-theme');
+
     if (savedTheme === 'dark') {
         body.classList.add('theme-dark');
         if (themeBtn) themeBtn.textContent = '☀️ Stile Light';
@@ -13,12 +13,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (themeBtn) themeBtn.textContent = '🌘 Stile Dark';
     }
 
-    // Click listener
     if (themeBtn) {
         themeBtn.addEventListener('click', (e) => {
             e.preventDefault();
             body.classList.toggle('theme-dark');
-
             if (body.classList.contains('theme-dark')) {
                 themeBtn.textContent = '☀️ Stile Light';
                 localStorage.setItem('quiz-theme', 'dark');
@@ -28,57 +26,81 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    // -------------------------------------------------------------
 
+    // --- 2. LOGICA FORM E COLORI ---
     const avatarBox = document.querySelector('.avatar-box');
     const selectedAvatarColor = document.querySelector('.avatar-color');
     const form = document.querySelector('#colorForm');
-    const hiddenInputForColorSelection = document.querySelector('#hiddenInputForColorSelection');
+    const hiddenInput = document.querySelector('#hiddenInputForColorSelection');
     const submitButton = document.querySelector('.submit-button');
 
-    // Inizializza con cerchio vuoto e nessun colore selezionato
+    // Inizializza UI
     selectedAvatarColor.style.backgroundColor = 'transparent';
     selectedAvatarColor.style.border = '2px dashed #ccc';
-    hiddenInputForColorSelection.value = '';
-
-    // Modifica il testo del pulsante e disabilitalo
+    hiddenInput.value = '';
     submitButton.textContent = 'Choose a color first';
     submitButton.disabled = true;
     submitButton.style.opacity = '0.6';
     submitButton.style.cursor = 'not-allowed';
 
-    // Controlla se stiamo entrando in una lobby esistente
+    // Controlla Join Lobby
     const urlParams = new URLSearchParams(window.location.search);
     const joinLobbyId = urlParams.get('join');
+
+    // Lista colori occupati
+    let takenColors = [];
+
+    // Funzione aggiornamento colori (dal server)
+    async function updateTakenColors() {
+        if (!joinLobbyId) return;
+        try {
+            const response = await fetch(`/api/lobby-colors/${joinLobbyId}`);
+            if (response.ok) {
+                const data = await response.json();
+                // Normalizza in maiuscolo
+                takenColors = (data.takenColors || []).map(c => c.toUpperCase());
+                console.log("Colori occupati (Server):", takenColors);
+            }
+        } catch (error) {
+            console.error("Errore fetch colori:", error);
+        }
+    }
+
     if (joinLobbyId) {
-        // Se abbiamo un ID di lobby da unirsi, mostriamo un messaggio
         const firstBox = document.querySelector('.first-box');
         const joinMessage = document.createElement('p');
         joinMessage.textContent = `Joining lobby: ${joinLobbyId}`;
-        joinMessage.style.color = '#333';
+        joinMessage.className = 'label';
+        joinMessage.style.fontSize = '1rem';
         joinMessage.style.marginBottom = '10px';
         firstBox.insertBefore(joinMessage, firstBox.firstChild);
 
-        // Modifica il testo del pulsante (ma rimane disabilitato finché non si sceglie un colore)
         submitButton.textContent = 'Choose a color to join';
+
+        await updateTakenColors();
     }
 
+    // LISTA COLORI UFFICIALE
     const availableColors = ['#DC143C', '#4169E1', '#50C878', '#FFD700', '#9966CC', '#36454F'];
 
-    selectedAvatarColor.addEventListener("click", e => {
+    // CLICK SUL BOX AVATAR
+    avatarBox.addEventListener("click", async (e) => {
         e.preventDefault();
-        // Rimuovi il box di selezione colore se esiste già
+        if (e.target.closest('.change-color-box')) return;
+
         const existingBox = document.querySelector('.change-color-box');
-        if (existingBox) {
-            existingBox.remove();
-            return;
+        if (existingBox) { existingBox.remove(); return; }
+
+        if (joinLobbyId) {
+            document.body.style.cursor = 'wait';
+            await updateTakenColors();
+            document.body.style.cursor = 'default';
         }
 
         const changeColorBox = showChangeColorBox();
         showColorOptions(changeColorBox);
     });
 
-    // CREA SOLO IL BOX
     function showChangeColorBox() {
         const changeColorBox = document.createElement('div');
         changeColorBox.setAttribute('class', 'change-color-box');
@@ -86,74 +108,80 @@ document.addEventListener('DOMContentLoaded', () => {
         return changeColorBox;
     }
 
-    // MOSTRA I COLORI DISPONIBILI NELLA LISTA availableColors
     function showColorOptions(changeColorBox) {
         const colorList = document.createElement('ul');
         colorList.setAttribute('class', 'color-list');
         changeColorBox.appendChild(colorList);
 
-        availableColors.forEach((color) => {
+        availableColors.forEach((colorHex) => {
+            const color = colorHex.toUpperCase();
+
+            const item = document.createElement('li');
             const availableCircle = document.createElement('div');
             availableCircle.setAttribute('class', 'avatar-circle');
-            availableCircle.style.width = '80px';
-            availableCircle.style.height = '80px';
-            colorList.appendChild(availableCircle);
+            availableCircle.style.width = '60px';
+            availableCircle.style.height = '60px';
 
             const availableColor = document.createElement('div');
             availableColor.setAttribute('class', 'avatar-color');
             availableColor.style.backgroundColor = color;
-            availableColor.style.width = '50px';
-            availableColor.style.height = '50px';
-            availableCircle.appendChild(availableColor);
+            availableColor.style.width = '40px';
+            availableColor.style.height = '40px';
 
-            // riempie i colori disponibili all'hover
-            availableColor.addEventListener('mouseenter', e => {
-                const currentColor = e.target.style.backgroundColor;
-                e.target.style.borderColor = currentColor;
-            });
-
-            // seleziona il colore cliccato
-            availableColor.addEventListener('click', e => {
-                e.preventDefault();
-
-                selectedAvatarColor.style.backgroundColor = e.target.style.backgroundColor;
-                selectedAvatarColor.style.border = 'none'; // Rimuovi il bordo tratteggiato
-                hiddenInputForColorSelection.value = e.target.style.backgroundColor;
-                console.log('Ho selezionato il colore: ' + hiddenInputForColorSelection.value);
-                changeColorBox.remove();
-
-                // Abilita il pulsante submit
-                if (joinLobbyId) {
-                    submitButton.textContent = 'Join lobby';
-                } else {
-                    submitButton.textContent = 'Create lobby';
-                }
-                submitButton.disabled = false;
-                submitButton.style.opacity = '1';
-                submitButton.style.cursor = 'pointer';
-
-                // aggiorna il colore dell'hover del colore selezionato
-                selectedAvatarColor.addEventListener('mouseenter', e => {
-                    const currentColor = e.target.style.backgroundColor;
-                    e.target.style.borderColor = currentColor;
+            // CONTROLLO DISPONIBILITÀ
+            if (takenColors.includes(color)) {
+                availableColor.classList.add('disabled');
+                availableColor.title = "Già occupato";
+                availableColor.style.opacity = '0.2';
+                availableColor.style.cursor = 'not-allowed';
+                availableColor.style.border = '2px solid #555';
+            } else {
+                availableColor.addEventListener('mouseenter', e => {
+                    e.target.style.borderColor = color;
                 });
-            });
+
+                availableColor.addEventListener('click', e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    selectedAvatarColor.style.backgroundColor = color;
+                    selectedAvatarColor.style.border = 'none';
+                    hiddenInputForColorSelection.value = color;
+
+                    console.log('Colore scelto:', color);
+                    changeColorBox.remove();
+
+                    if (joinLobbyId) {
+                        submitButton.textContent = 'Join lobby';
+                    } else {
+                        submitButton.textContent = 'Create lobby';
+                    }
+                    submitButton.disabled = false;
+                    submitButton.style.opacity = '1';
+                    submitButton.style.cursor = 'pointer';
+                });
+            }
+
+            availableCircle.appendChild(availableColor);
+            item.appendChild(availableCircle);
+            colorList.appendChild(item);
         });
     }
 
+    // INVIO FORM
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
 
         const color = hiddenInputForColorSelection.value;
-        if (!color) {
-            alert('Please select a color first!');
-            return;
-        }
+        if (!color) { alert('Please select a color first!'); return; }
+
+        submitButton.disabled = true;
+        submitButton.textContent = "Processing...";
 
         const joinLobbyId = urlParams.get('join');
 
         if (joinLobbyId) {
-            // Se stiamo entrando in una lobby esistente
+            // JOIN
             try {
                 const response = await fetch('/join-lobby', {
                     method: 'POST',
@@ -163,16 +191,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (response.ok) {
                     const data = await response.json();
+                    // Usiamo encodeURIComponent per gestire il # nel colore
                     window.location.href = `/lobby.html?lobby=${joinLobbyId}&color=${encodeURIComponent(color)}`;
                 } else {
-                    throw new Error('Server error');
+                    const errData = await response.json();
+                    if (errData.error && errData.error.includes('taken')) {
+                        alert("Colore già preso! Scegline un altro.");
+                        await updateTakenColors();
+                        submitButton.textContent = 'Choose a color to join';
+                        selectedAvatarColor.style.backgroundColor = 'transparent';
+                        selectedAvatarColor.style.border = '2px dashed #ccc';
+                        hiddenInputForColorSelection.value = '';
+                    } else {
+                        alert('Errore: ' + errData.error);
+                        submitButton.disabled = false;
+                    }
                 }
             } catch (error) {
                 console.error('Error:', error);
                 alert('Failed to join lobby');
+                submitButton.disabled = false;
             }
         } else {
-            // Se stiamo creando una nuova lobby
+            // CREATE LOBBY
             try {
                 const response = await fetch('/create-lobby', {
                     method: 'POST',
@@ -182,124 +223,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (response.ok) {
                     const data = await response.json();
-                    window.location.href = data.redirect;
+
+                    // --- FIX DEL RIMBALZO (HASH IN URL) ---
+                    let finalUrl = data.redirect;
+
+                    // Estrarre l'ID della lobby dalla stringa "brutta" del server
+                    // Es: "/lobby.html?lobby=xyz123&color=#FF0000"
+                    const match = data.redirect.match(/lobby=([^&]+)/);
+
+                    if (match && match[1]) {
+                        const newLobbyId = match[1];
+                        // Ricostruiamo l'URL pulito codificando il colore
+                        finalUrl = `/lobby.html?lobby=${newLobbyId}&color=${encodeURIComponent(color)}`;
+                    }
+
+                    console.log("Reindirizzamento a:", finalUrl);
+                    window.location.href = finalUrl;
+
                 } else {
                     throw new Error('Server error');
                 }
             } catch (error) {
                 console.error('Error:', error);
                 alert('Failed to create lobby');
+                submitButton.disabled = false;
+                submitButton.textContent = 'Create Lobby';
             }
         }
     });
-});
-/* 
 
-
-const backgroundIconsContainer = document.querySelector('.background-icons');
-
-// Lista immagini da usare
-const icons = [
-    './imgs/lampadina.svg',
-    './imgs/libro.svg',
-    './imgs/ombrello.svg',
-    './imgs/sole.svg',
-    './imgs/tavolozza.svg',
-    './imgs/matita.svg',
-    './imgs/albero.svg',
-    './imgs/palla.svg'
-
-];
-
-const colors = ['#DC143C', '#4169E1', '#50C878', '#FFD700', '#9966CC', '#FF7F50', '#00CED1'];
-
-let cycle = 0;
-const CYCLE_DURATION = 8000; // 8 secondi visibili
-const FADE_DURATION = 1000;  // 1 secondo per dissolvenza
-
-function loadCycle() {
-    const usedAreas = [];
-
-    // 1. Fai svanire gli SVG attuali
-    const existingSvgs = document.querySelectorAll('.background-icons svg');
-    existingSvgs.forEach(svg => {
-        svg.classList.add('fade-out');
+    // Chiudi popup cliccando fuori
+    document.addEventListener('click', (e) => {
+        if (!avatarBox.contains(e.target)) {
+            const existingBox = document.querySelector('.change-color-box');
+            if (existingBox) existingBox.remove();
+        }
     });
-
-    // 2. Dopo 1 secondo (quando sono spariti), carica i nuovi
-    setTimeout(() => {
-        backgroundIconsContainer.innerHTML = '';
-
-        icons.forEach((src, i) => {
-            fetch(src)
-                .then(res => res.text())
-                .then(svgText => {
-                    const wrapper = document.createElement('div');
-                    wrapper.innerHTML = svgText;
-                    const svg = wrapper.querySelector('svg');
-                    svg.classList.add('draw-icon');
-
-                    svg.style.setProperty('--delay', `${i * 0.3}s`);
-                    svg.style.color = colors[(i + cycle) % colors.length];
-
-                    const maxAttempts = 20;
-                    let attempts = 0;
-                    let placed = false;
-
-                    while (!placed && attempts < maxAttempts) {
-                        const side = Math.random() < 0.5 ? 'left' : 'right';
-                        const left = side === 'left'
-                            ? Math.random() * 40
-                            : Math.random() * 40 + 60;
-
-                        const top = Math.random() * 80 + 10;
-                        const width = 10;
-                        const height = 10;
-
-                        const area = {
-                            top,
-                            left,
-                            bottom: top + height,
-                            right: left + width
-                        };
-
-                        const overlaps = usedAreas.some(a =>
-                            !(a.right < area.left ||
-                                a.left > area.right ||
-                                a.bottom < area.top ||
-                                a.top > area.bottom)
-                        );
-
-                        if (!overlaps) {
-                            usedAreas.push(area);
-                            svg.style.top = `${top}%`;
-                            svg.style.left = `${left}%`;
-
-                            const strokeWidth = Math.floor(Math.random() * 3) + 3;
-                            svg.querySelectorAll('path, circle, line, polyline, rect').forEach(el => {
-                                el.setAttribute('stroke-width', strokeWidth);
-                            });
-
-                            backgroundIconsContainer.appendChild(svg);
-                            placed = true;
-                        }
-
-                        attempts++;
-                    }
-
-                    if (!placed) {
-                        console.warn(`Impossibile posizionare ${src} senza sovrapposizione`);
-                    }
-                })
-                .catch(err => console.error(`Errore nel caricamento di ${src}:`, err));
-        });
-
-        cycle++;
-    }, FADE_DURATION); // Dopo dissolvenza
-}
-
-// Primo caricamento
-loadCycle();
-
-// Ripeti ogni tot secondi
-setInterval(loadCycle, CYCLE_DURATION); */
+});
