@@ -1,4 +1,35 @@
 document.addEventListener('DOMContentLoaded', () => {
+
+    // --- 1. NUOVA GESTIONE TEMA (Copiato dalla logica quiz.js) ---
+    const themeBtn = document.getElementById('theme-toggle-btn');
+    const body = document.body;
+
+    // Controlla memoria
+    const savedTheme = localStorage.getItem('quiz-theme');
+    if (savedTheme === 'dark') {
+        body.classList.add('theme-dark');
+        if (themeBtn) themeBtn.textContent = '☀️ Stile Light';
+    } else {
+        if (themeBtn) themeBtn.textContent = '🌘 Stile Dark';
+    }
+
+    // Click listener
+    if (themeBtn) {
+        themeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            body.classList.toggle('theme-dark');
+
+            if (body.classList.contains('theme-dark')) {
+                themeBtn.textContent = '☀️ Stile Light';
+                localStorage.setItem('quiz-theme', 'dark');
+            } else {
+                themeBtn.textContent = '🌘 Stile Dark';
+                localStorage.setItem('quiz-theme', 'light');
+            }
+        });
+    }
+    // -------------------------------------------------------------
+
     const avatarBox = document.querySelector('.avatar-box');
     const selectedAvatarColor = document.querySelector('.avatar-color');
     const form = document.querySelector('#colorForm');

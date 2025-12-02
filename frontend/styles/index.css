@@ -1,193 +1,219 @@
-html, body{
-    margin: 0px;
-    border: 0px;
-    padding: 0px;
-    background-color: #FFFFF0;
-    font-family: 'Inter', sans-serif;
+/* ============================================================
+   1. RESET E STRUTTURA BASE (Layout soltanto, niente colori)
+   ============================================================ */
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    width: 100%;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: background 0.3s ease;
 }
 
 main {
-    width: 100%;
-    min-height: 100%;
-    background-color: #FFFFF0;
-    display: flex;
-    justify-content: center;
-    align-content: center;
-}
-
-.first-box {
-    height: 500px;
-    width: 40%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-top: 50px;
-    margin-bottom: 50px;
-    padding-top: 10px;
-    border-radius: 6px;
-}
-
-.label {
-    font-size: 46px;
-    margin-top: 20px;
-    margin-bottom: 10px;
-
-}
-
-#username {
-    margin-bottom: 10px;
-    border-radius: 8px;
-    background-color: #FFFFF0;
-    padding: 10px;
-    width: 80%;
-    border: 1px solid #B8B8B8;
-    margin-top: 10px;
-}
-
-.submit-button {
-    width: 250px;
-    margin-bottom: 10px;
-    color:#FFFFFF;
-    background-color: #59B159;
-    border-radius: 8px;
-    border: 1px solid #FFFFFF;
-    padding: 10px;
-    margin-top: 50px;
-    font-family: 'Inter', sans-serif;
-
-}
-
-.first-box button:hover {
-    cursor: pointer;
-    background-color: #329032;
-}
-
-.form-box {
-    background-color: #FFFFF0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 300px;
-    height: 300px;
-
-}
-
-form {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    flex-direction: column;
-    width: 200px;
-}
-
-.avatar-box {
-    background-color: #FFFFF0;
     width: 100%;
     height: 100%;
     display: flex;
     justify-content: center;
     align-items: center;
-    padding: 10px;
-
 }
+
+/* Pulsante Toggle Tema */
+#theme-toggle-btn {
+    position: absolute; top: 20px; right: 20px;
+    padding: 10px 20px; border-radius: 30px;
+    cursor: pointer; font-weight: bold; z-index: 100;
+    transition: all 0.3s;
+    font-family: inherit;
+    border: 1px solid rgba(0,0,0,0.1);
+}
+
+/* Card Centrale */
+.first-box {
+    width: 400px;
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border-radius: 25px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.label {
+    font-size: 2rem;
+    font-weight: 900;
+    margin-top: 0;
+    margin-bottom: 30px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.form-box, form, .avatar-box {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    /* IMPORTANTE: Sfondi trasparenti per evitare blocchi bianchi */
+    background-color: transparent !important;
+}
+
+/* Avatar */
+.avatar-box { margin-bottom: 30px; position: relative; }
 
 .avatar-circle {
-    border: 1px solid #B8B8B8;
+    width: 100px; height: 100px;
     border-radius: 50%;
-    width: 80px;
-    height: 80px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    display: flex; justify-content: center; align-items: center;
+    cursor: pointer; transition: transform 0.2s;
 }
+.avatar-circle:hover { transform: scale(1.05); }
 
 .avatar-color {
-    width: 50px;
-    height: 50px;
+    width: 70px; height: 70px;
     border-radius: 50%;
-    background-color: #DC143C;
-
+    transition: background 0.2s;
 }
 
-.avatar-color:hover {
-    cursor: pointer;
-    border: 16px solid #DC143C;
-    transition: 0.3s ease;
+.helper-text {
+    font-size: 0.9rem; margin-top: 10px; opacity: 0.6; font-weight: 600;
 }
 
+/* Bottone */
+.submit-button {
+    width: 100%; padding: 20px;
+    font-size: 1.3rem; font-weight: 800;
+    border-radius: 16px; cursor: pointer;
+    text-transform: uppercase; border: none;
+    transition: all 0.2s;
+}
+.submit-button:disabled {
+    cursor: not-allowed; opacity: 0.6; transform: none !important; box-shadow: none !important;
+}
 
+/* Popup Colore */
 .change-color-box {
-    background-color: #FFFFF0;
-    position: absolute;
-    top: 150px;
-    right: 300px;
-    width: 300px;
-    height: 200px;
-    display: flex;
-    border: 1px solid #B8B8B8;
-    border-radius: 8px;
-    padding: 10px;
-    
-    
+    position: absolute; top: 110%; left: 50%; transform: translateX(-50%);
+    width: 280px; padding: 15px; border-radius: 15px; z-index: 50;
+    display: flex; justify-content: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    animation: popIn 0.2s ease-out;
 }
-
-
 .color-list {
-    margin: 0px;
-    padding: 0px;
-    list-style: none;
-    display: flex;
-    justify-content: space-evenly;
-    flex-wrap: wrap;
+    list-style: none; padding: 0; margin: 0;
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
 }
-/* 
-.background-icons {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    overflow: hidden;
+.color-list .avatar-circle { width: 50px !important; height: 50px !important; border-width: 2px !important; }
+.color-list .avatar-color { width: 36px !important; height: 36px !important; }
+
+@keyframes popIn {
+    from { opacity: 0; transform: translateY(-10px) translateX(-50%); }
+    to { opacity: 1; transform: translateY(0) translateX(-50%); }
 }
 
-.background-icons svg {
-    position: absolute;
-    width: 10%;
-    height: auto;
-    opacity: 1;
+
+/* ============================================================
+   2. TEMA CHIARO (Applicato di default se non c'è .theme-dark)
+   ============================================================ */
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #FFFFF0; /* Crema Originale */
+    color: #333;
 }
 
-.background-icons path,
-.background-icons circle,
-.background-icons line,
-.background-icons polyline,
-.background-icons rect {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 20;
-    stroke-dasharray: 1000;
-    stroke-dashoffset: 1000;
-    animation: draw 2s ease forwards;
-    animation-delay: var(--delay);
+.background-icons { display: block; opacity: 0.5; } /* Le tue icone svg */
+
+#theme-toggle-btn { background: white; color: #333; }
+
+.first-box {
+    background-color: #FFFFFF;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.08);
 }
 
-@keyframes draw {
-    to {
-        stroke-dashoffset: 0;
-    }
+.label { color: #555; border-bottom: 2px dashed #ccc; padding-bottom: 10px; }
+.helper-text { color: #666; }
+
+.avatar-circle { background-color: #fff; border: 4px solid #ddd; }
+.change-color-box { background-color: #fff; border: 1px solid #ccc; }
+
+/* Bottone Verde Originale */
+.submit-button {
+    background-color: #59B159;
+    color: white;
+    box-shadow: 0 5px 0 #3e8e3e; /* Effetto 3D leggero */
+}
+.submit-button:hover:not(:disabled) { background-color: #4a9e4a; transform: translateY(-2px); }
+.submit-button:active:not(:disabled) { transform: translateY(2px); box-shadow: none; }
+
+
+/* ============================================================
+   3. TEMA SCURO (Forzato con !important per sovrascrivere tutto)
+   ============================================================ */
+body.theme-dark {
+    font-family: 'Poppins', sans-serif !important;
+    /* Gradiente Viola Scuro (Quiz Style) */
+    background: linear-gradient(135deg, #1e0c2b 0%, #2a0845 50%, #182848 100%) !important;
+    color: white !important;
 }
 
-.fade-in {
-    animation: fadeOut 1s ease forwards;
+/* Nascondi icone sfondo nel dark */
+body.theme-dark .background-icons { display: none !important; }
+
+/* Toggle Button */
+body.theme-dark #theme-toggle-btn {
+    background: rgba(255,255,255,0.1) !important;
+    color: white !important;
+    border: 1px solid rgba(255,255,255,0.2) !important;
 }
 
-.fade-out {
-    animation: fadeOut 1s ease forwards;
+/* Card: Effetto Vetro Scuro */
+body.theme-dark .first-box {
+    background-color: rgba(0, 0, 0, 0.3) !important;
+    backdrop-filter: blur(10px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-shadow: 0 0 50px rgba(0,0,0,0.5) !important;
 }
 
-@keyframes fadeOut {
-    to {
-        opacity: 0;
-        transform: scale(0.95);
-    }
+/* Testi */
+body.theme-dark .label { 
+    color: #ffffff !important;
+    border-bottom: 2px solid rgba(255,255,255,0.1) !important;
+    text-shadow: 0 2px 5px rgba(0,0,0,0.5) !important;
 }
- */
+body.theme-dark .helper-text { color: #a8c0ff !important; }
+
+/* Avatar */
+body.theme-dark .avatar-circle {
+    background-color: rgba(255,255,255,0.05) !important;
+    border: 2px solid rgba(255,255,255,0.5) !important;
+}
+
+/* Popup */
+body.theme-dark .change-color-box {
+    background-color: #2a0845 !important;
+    border: 1px solid rgba(255,255,255,0.2) !important;
+    color: white !important;
+}
+
+/* BOTTONE BLU 3D (Stile Quiz) */
+body.theme-dark .submit-button {
+    background: linear-gradient(145deg, #3a568c, #2a3d66) !important;
+    color: white !important;
+    box-shadow: 0 6px 0 #1a2540, 0 10px 10px rgba(0,0,0,0.3) !important;
+    border: none !important;
+}
+
+body.theme-dark .submit-button:hover:not(:disabled) {
+    background: linear-gradient(145deg, #4a69a5, #354a7a) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 0 #1a2540, 0 15px 15px rgba(0,0,0,0.3) !important;
+}
+
+body.theme-dark .submit-button:active:not(:disabled) {
+    transform: translateY(4px) !important; /* Scende giù */
+    box-shadow: 0 2px 0 #1a2540 !important; /* Ombra ridotta */
+}

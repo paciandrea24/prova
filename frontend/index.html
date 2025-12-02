@@ -4,36 +4,43 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="stylesheet" href="styles/index.css" />
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter&family=Work+Sans&family=Space+Grotesk&family=DM+Sans&display=swap"
-        rel="stylesheet">
+    <title>Game Lobby</title>
 
-    <title>Prova</title>
+    <link rel="stylesheet" href="styles/index.css" />
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&family=Poppins:wght@400;600;800&display=swap"
+        rel="stylesheet">
 </head>
 
 <body>
+
+    <button id="theme-toggle-btn" title="Cambia tema">🌓 Stile</button>
+
     <div class="background-icons"></div>
+
     <main>
         <div class="first-box">
-            <p class="label">Choose a color</p>
+            <p class="label">Choose your color</p>
+
             <div class="form-box">
-                <form action="/create-lobby" method="POST" id="colorForm" name="color">
+                <form id="colorForm">
+
                     <div class="avatar-box">
                         <div class="avatar-circle">
-                            <div class="avatar-color">
-
-                            </div>
+                            <div class="avatar-color"></div>
                         </div>
+                        <p class="helper-text">Click to select</p>
                     </div>
 
                     <input type="hidden" id="hiddenInputForColorSelection" name="color">
 
-                    <button type="submit" class="submit-button">Create lobby</button>
+                    <button type="submit" class="submit-button" disabled>Choose a color first</button>
                 </form>
             </div>
         </div>
     </main>
+
     <script src="index.js" defer></script>
 </body>
 
