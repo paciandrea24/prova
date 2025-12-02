@@ -797,73 +797,12 @@ const ITALIAN_QUESTIONS = [
         incorrect_answers: ["Luke, io sono tuo padre", "Tu non sai la verità", "Obi-Wan non ti ha detto tutto"]
     },
     {
-        category: "Curiosità",
-        type: "image",
-        difficulty: "medium",
-        question: "Come si scrive il nome di questi cereali?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/Froot-Loops-Cereal-Bowl.jpg/640px-Froot-Loops-Cereal-Bowl.jpg",
-        correct_answer: "Froot Loops",
-        incorrect_answers: ["Fruit Loops", "Fruity Loops", "Fruits Loops"]
-    },
-    {
         category: "Film",
         type: "multiple",
         difficulty: "medium",
         question: "Biancaneve: Cosa dice la Regina allo specchio?",
         correct_answer: "Specchio, servo delle mie brame",
         incorrect_answers: ["Specchio, specchio delle mie brame", "Specchio fatato, dimmi chi è", "Oh specchio, chi è la più bella"]
-    },
-
-    // --- 🔬 ZOOM ESTREMO (CHE OGGETTO È?) ---
-    {
-        category: "Zoom",
-        type: "image",
-        difficulty: "hard",
-        question: "Che cos'è questo oggetto visto al microscopio?",
-        // È Velcro
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Velcro_Hooks.jpg/640px-Velcro_Hooks.jpg",
-        correct_answer: "Velcro (chiusura a strappo)",
-        incorrect_answers: ["Ganci da pesca", "Peli di gatto", "Radici di una pianta"]
-    },
-    {
-        category: "Zoom",
-        type: "image",
-        difficulty: "medium",
-        question: "Zoom estremo: cosa stiamo guardando?",
-        // È una fragola
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Strawberry_surface_macro.jpg/640px-Strawberry_surface_macro.jpg",
-        correct_answer: "La superficie di una fragola",
-        incorrect_answers: ["Un cactus", "Lingua umana", "Una spugna rossa"]
-    },
-    {
-        category: "Zoom",
-        type: "image",
-        difficulty: "medium",
-        question: "Di che animale è questo occhio?",
-        // È una mosca
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/Compound_eye_of_a_mosquito.jpg/640px-Compound_eye_of_a_mosquito.jpg",
-        correct_answer: "Mosca / Insetto",
-        incorrect_answers: ["Serpente", "Camaleonte", "Ragno"]
-    },
-    {
-        category: "Zoom",
-        type: "image",
-        difficulty: "easy",
-        question: "Che oggetto sportivo è questo?",
-        // È una pallina da tennis
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Tennisball.jpg/640px-Tennisball.jpg",
-        correct_answer: "Pallina da Tennis",
-        incorrect_answers: ["Pallina da Padel", "Spugna per piatti", "Moquette"]
-    },
-    {
-        category: "Zoom",
-        type: "image",
-        difficulty: "hard",
-        question: "Cosa sono questi granelli visti da vicinissimo?",
-        // È sabbia
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/86/Sand_from_Gobi_Desert.jpg/640px-Sand_from_Gobi_Desert.jpg",
-        correct_answer: "Sabbia",
-        incorrect_answers: ["Sassi di fiume", "Caramelle", "Pietre preziose"]
     },
 ];
 

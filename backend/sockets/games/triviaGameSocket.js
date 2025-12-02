@@ -140,10 +140,10 @@ module.exports = function (io, socket) {
     // 1. Torna alla Lobby
     socket.on('backToLobby', (data) => {
         const { lobbyId } = data;
-        // Manda un segnale a TUTTI i client di quella lobby per reindirizzarli
-        io.to(lobbyId).emit('redirect', { url: `/index.html?lobby=${lobbyId}` }); // O lobby.html a seconda delle tue rotte
 
-        // Ora possiamo cancellare il gioco dalla memoria
+        // Diciamo al frontend: "Torna alla lobby, calcola tu il link!"
+        io.to(lobbyId).emit('returnToLobbySignal');
+
         activeGames.delete(lobbyId);
     });
 

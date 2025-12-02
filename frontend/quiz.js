@@ -130,19 +130,26 @@ socket.on('gameOver', (data) => {
         const div = document.createElement('div');
         div.className = `final-rank-item ${index === 0 ? 'winner' : ''}`;
 
-        // Medaglie per i primi 3
         let medal = '';
         if (index === 0) medal = '🥇';
         if (index === 1) medal = '🥈';
         if (index === 2) medal = '🥉';
 
+        // --- MODIFICA QUI SOTTO: Usiamo i pallini invece del testo ---
         div.innerHTML = `
-            <div>
+            <div style="display: flex; align-items: center; gap: 10px;">
                 <span class="rank-position">${index + 1}° ${medal}</span>
-                <span style="color:${pColor}; font-weight:bold; text-shadow: 1px 1px 0 #000;">${pColor}</span>
+                
+                <div class="score-avatar-circle">
+                    <div class="score-avatar-color" style="background-color: ${pColor}"></div>
+                </div>
+                
+                ${pColor === playerColor ? '<span style="font-size:0.8em; opacity:0.8;">(Tu)</span>' : ''}
             </div>
-            <div>${score} pt</div>
+            <div style="font-weight: bold;">${score} pt</div>
         `;
+        // -------------------------------------------------------------
+
         finalPodium.appendChild(div);
     });
 
@@ -157,16 +164,21 @@ socket.on('gameOver', (data) => {
 });
 
 // Evento: Redirect (per tornare alla lobby)
-socket.on('redirect', (data) => {
-    window.location.href = data.url;
+socket.on('returnToLobbySignal', () => {
+    // Usiamo le variabili lobbyId e playerColor che abbiamo già in questo file!
+    window.location.href = `/lobby.html?lobby=${lobbyId}&color=${playerColor}`;
 });
 
 // Evento: Gioco Riavviato (pulisci schermo e ricomincia)
 socket.on('gameRestarted', () => {
-    gameOverScreen.style.display = 'none'; // Nascondi overlay
-    // Reset interfaccia grafica (facoltativo, tanto arriverà newQuestion)
+    gameOverScreen.style.display = 'none';
     statusMsg.textContent = "Nuova partita in arrivo...";
-    updateScoreboard({}); // Pulisci classifica
+    updateScoreboard({});
+
+    // --- AGGIUNGI QUESTO: Resetta il bottone dell'Host ---
+    btnPlayAgain.textContent = "🔄 Gioca di Nuovo";
+    btnPlayAgain.disabled = false;
+    // -----------------------------------------------------
 });
 
 // --- GESTIONE CLICK BOTTONI (Solo Host) ---
