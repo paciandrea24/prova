@@ -1,5 +1,7 @@
+/* frontend/styles/index.css */
+
 /* ============================================================
-   1. RESET E STRUTTURA BASE (Layout soltanto, niente colori)
+   1. RESET E STRUTTURA BASE (Layout)
    ============================================================ */
 html, body {
     margin: 0;
@@ -19,6 +21,8 @@ main {
     display: flex;
     justify-content: center;
     align-items: center;
+    padding: 20px;
+    box-sizing: border-box;
 }
 
 /* Pulsante Toggle Tema */
@@ -47,23 +51,26 @@ main {
     font-size: 2rem;
     font-weight: 900;
     margin-top: 0;
-    margin-bottom: 30px;
+    margin-bottom: 20px;
     text-transform: uppercase;
     letter-spacing: 1px;
 }
 
-.form-box, form, .avatar-box {
+.form-box, form {
     width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    /* IMPORTANTE: Sfondi trasparenti per evitare blocchi bianchi */
     background-color: transparent !important;
 }
 
 /* Avatar */
-.avatar-box { margin-bottom: 30px; position: relative; }
+.avatar-box {
+    margin-bottom: 20px; position: relative;
+    display: flex; flex-direction: column; align-items: center;
+    background-color: transparent !important;
+}
 
 .avatar-circle {
     width: 100px; height: 100px;
@@ -83,7 +90,29 @@ main {
     font-size: 0.9rem; margin-top: 10px; opacity: 0.6; font-weight: 600;
 }
 
-/* Bottone */
+/* Input Lobby ID (Nuovo) */
+#lobby-input-container {
+    width: 100%; margin-bottom: 20px;
+    display: flex; justify-content: center;
+    animation: fadeIn 0.3s ease;
+}
+#lobby-id-input {
+    width: 80%; padding: 15px;
+    border-radius: 12px; font-size: 1.1rem;
+    text-align: center; font-weight: bold;
+    outline: none; transition: all 0.3s;
+    text-transform: uppercase; letter-spacing: 2px;
+}
+
+/* Link Toggle Mode */
+.toggle-mode-link {
+    margin-top: 20px; cursor: pointer;
+    font-size: 0.9rem; text-decoration: underline;
+    opacity: 0.8; font-weight: 600;
+}
+.toggle-mode-link:hover { opacity: 1; }
+
+/* Bottone Submit */
 .submit-button {
     width: 100%; padding: 20px;
     font-size: 1.3rem; font-weight: 800;
@@ -114,18 +143,19 @@ main {
     from { opacity: 0; transform: translateY(-10px) translateX(-50%); }
     to { opacity: 1; transform: translateY(0) translateX(-50%); }
 }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
 
 /* ============================================================
-   2. TEMA CHIARO (Applicato di default se non c'è .theme-dark)
+   2. TEMA CHIARO (Default - IL TUO ORIGINALE)
    ============================================================ */
 body {
     font-family: 'Inter', sans-serif;
-    background-color: #FFFFF0; /* Crema Originale */
+    background-color: #FFFFF0; /* Crema */
     color: #333;
 }
 
-.background-icons { display: block; opacity: 0.5; } /* Le tue icone svg */
+.background-icons { display: block; opacity: 0.5; }
 
 #theme-toggle-btn { background: white; color: #333; }
 
@@ -135,42 +165,44 @@ body {
 }
 
 .label { color: #555; border-bottom: 2px dashed #ccc; padding-bottom: 10px; }
-.helper-text { color: #666; }
+.helper-text, .toggle-mode-link { color: #666; }
 
 .avatar-circle { background-color: #fff; border: 4px solid #ddd; }
 .change-color-box { background-color: #fff; border: 1px solid #ccc; }
+
+/* Input Light */
+#lobby-id-input {
+    background: #f4f7f6; border: 2px solid #ddd; color: #333;
+}
+#lobby-id-input:focus { border-color: #59B159; background: #fff; }
 
 /* Bottone Verde Originale */
 .submit-button {
     background-color: #59B159;
     color: white;
-    box-shadow: 0 5px 0 #3e8e3e; /* Effetto 3D leggero */
+    box-shadow: 0 5px 0 #3e8e3e;
 }
 .submit-button:hover:not(:disabled) { background-color: #4a9e4a; transform: translateY(-2px); }
 .submit-button:active:not(:disabled) { transform: translateY(2px); box-shadow: none; }
 
 
 /* ============================================================
-   3. TEMA SCURO (Forzato con !important per sovrascrivere tutto)
+   3. TEMA SCURO (ARCADE 3D - Forzato)
    ============================================================ */
 body.theme-dark {
     font-family: 'Poppins', sans-serif !important;
-    /* Gradiente Viola Scuro (Quiz Style) */
     background: linear-gradient(135deg, #1e0c2b 0%, #2a0845 50%, #182848 100%) !important;
     color: white !important;
 }
 
-/* Nascondi icone sfondo nel dark */
 body.theme-dark .background-icons { display: none !important; }
 
-/* Toggle Button */
 body.theme-dark #theme-toggle-btn {
     background: rgba(255,255,255,0.1) !important;
     color: white !important;
     border: 1px solid rgba(255,255,255,0.2) !important;
 }
 
-/* Card: Effetto Vetro Scuro */
 body.theme-dark .first-box {
     background-color: rgba(0, 0, 0, 0.3) !important;
     backdrop-filter: blur(10px) !important;
@@ -178,25 +210,32 @@ body.theme-dark .first-box {
     box-shadow: 0 0 50px rgba(0,0,0,0.5) !important;
 }
 
-/* Testi */
 body.theme-dark .label { 
     color: #ffffff !important;
     border-bottom: 2px solid rgba(255,255,255,0.1) !important;
     text-shadow: 0 2px 5px rgba(0,0,0,0.5) !important;
 }
-body.theme-dark .helper-text { color: #a8c0ff !important; }
+body.theme-dark .helper-text, body.theme-dark .toggle-mode-link { color: #a8c0ff !important; }
 
-/* Avatar */
 body.theme-dark .avatar-circle {
     background-color: rgba(255,255,255,0.05) !important;
     border: 2px solid rgba(255,255,255,0.5) !important;
 }
 
-/* Popup */
 body.theme-dark .change-color-box {
     background-color: #2a0845 !important;
     border: 1px solid rgba(255,255,255,0.2) !important;
     color: white !important;
+}
+
+/* Input Dark */
+body.theme-dark #lobby-id-input {
+    background: rgba(0, 0, 0, 0.4) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    color: white !important;
+}
+body.theme-dark #lobby-id-input:focus {
+    border-color: #a8c0ff !important; background: rgba(0,0,0,0.6) !important;
 }
 
 /* BOTTONE BLU 3D (Stile Quiz) */
@@ -219,18 +258,19 @@ body.theme-dark .submit-button:active:not(:disabled) {
 }
 
 
-/* --- AGGIUNGI IN FONDO A index.css --- */
-
-/* Stile per i colori già presi */
+/* ============================================================
+   4. COLORI OCCUPATI (Stili Speciali)
+   ============================================================ */
 .avatar-color.disabled {
-    opacity: 0.2 !important;       /* Molto trasparente */
-    cursor: not-allowed !important; /* Cursore di divieto */
-    pointer-events: none;          /* Disabilita click fisicamente */
-    border: 2px solid #ccc !important; /* Bordo grigio */
-    filter: grayscale(100%);       /* Toglie il colore */
+    opacity: 0.2 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
+    border: 2px solid #999 !important;
+    filter: grayscale(100%) !important;
+    position: relative;
 }
 
-/* Opzionale: aggiunge una X sopra */
+/* X sopra il colore */
 .avatar-color.disabled::after {
     content: '✖';
     position: absolute;

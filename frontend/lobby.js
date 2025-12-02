@@ -64,13 +64,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('gameSelected', (data) => {
         const { gameId, settings } = data;
+
+        // Costruiamo la stringa dei settings
         const settingsParam = settings ? `&settings=${encodeURIComponent(JSON.stringify(settings))}` : '';
 
-        let targetPage = '/game.html';
-        if (gameId === 'trivia') targetPage = '/quiz.html';
+        // LOGICA DI SMISTAMENTO:
+        let targetPage = '/game.html'; // Default (Disegno)
 
-        console.log(`Reindirizzamento a ${targetPage}`);
-        window.location.href = `${targetPage}?lobby=${lobbyId}&color=${selectedColor}&game=${gameId}${settingsParam}`;
+        if (gameId === 'trivia') {
+            targetPage = '/quiz.html'; // Nuovo gioco
+        }
+
+        console.log(`Reindirizzamento a ${targetPage} per il gioco: ${gameId}`);
+
+        // --- FIX CRUCIALE QUI SOTTO ---
+        // Dobbiamo usare encodeURIComponent anche qui per il colore!
+        // Altrimenti il '#' del colore rompe l'URL e i parametri successivi vengono persi.
+
+        window.location.href = `${targetPage}?lobby=${lobbyId}&color=${encodeURIComponent(selectedColor)}&game=${gameId}${settingsParam}`;
     });
 
     async function loadLobby() {

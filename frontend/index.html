@@ -7,7 +7,6 @@
     <title>Game Lobby</title>
 
     <link rel="stylesheet" href="styles/index.css" />
-
     <link
         href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&family=Poppins:wght@400;600;800&display=swap"
         rel="stylesheet">
@@ -21,7 +20,7 @@
 
     <main>
         <div class="first-box">
-            <p class="label">Choose your color</p>
+            <p class="label" id="main-title">Choose your color</p>
 
             <div class="form-box">
                 <form id="colorForm">
@@ -35,7 +34,13 @@
 
                     <input type="hidden" id="hiddenInputForColorSelection" name="color">
 
+                    <div id="lobby-input-container" style="display: none;">
+                        <input type="text" id="lobby-id-input" placeholder="Enter Lobby ID" maxlength="10">
+                    </div>
+
                     <button type="submit" class="submit-button" disabled>Choose a color first</button>
+
+                    <p class="toggle-mode-link" id="toggle-join-mode">Have a lobby code? Join here</p>
                 </form>
             </div>
         </div>

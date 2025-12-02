@@ -34,6 +34,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const hiddenInput = document.querySelector('#hiddenInputForColorSelection');
     const submitButton = document.querySelector('.submit-button');
 
+    // Input manuale Lobby ID
+    const toggleJoinLink = document.getElementById('toggle-join-mode'); // Se hai aggiunto l'HTML del link
+    const lobbyInputContainer = document.getElementById('lobby-input-container'); // Se hai aggiunto l'HTML dell'input
+    const lobbyIdInput = document.getElementById('lobby-id-input');
+
     // Inizializza UI
     selectedAvatarColor.style.backgroundColor = 'transparent';
     selectedAvatarColor.style.border = '2px dashed #ccc';
@@ -43,33 +48,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     submitButton.style.opacity = '0.6';
     submitButton.style.cursor = 'not-allowed';
 
-    // Controlla Join Lobby
-    const urlParams = new URLSearchParams(window.location.search);
-    const joinLobbyId = urlParams.get('join');
-
-    // Lista colori occupati
+    // Variabili di stato
+    let isJoinMode = false;
+    let urlJoinId = new URLSearchParams(window.location.search).get('join');
     let takenColors = [];
 
     // Funzione aggiornamento colori (dal server)
-    async function updateTakenColors() {
-        if (!joinLobbyId) return;
+    async function updateTakenColors(targetLobbyId) {
+        if (!targetLobbyId) return;
         try {
-            const response = await fetch(`/api/lobby-colors/${joinLobbyId}`);
+            const response = await fetch(`/api/lobby-colors/${targetLobbyId}`);
             if (response.ok) {
                 const data = await response.json();
-                // Normalizza in maiuscolo
                 takenColors = (data.takenColors || []).map(c => c.toUpperCase());
-                console.log("Colori occupati (Server):", takenColors);
+                console.log(`Colori occupati in ${targetLobbyId}:`, takenColors);
             }
         } catch (error) {
             console.error("Errore fetch colori:", error);
         }
     }
 
-    if (joinLobbyId) {
+    // Se arriviamo da un link di invito
+    if (urlJoinId) {
+        // Nascondi input manuale se presente
+        if (lobbyInputContainer) lobbyInputContainer.style.display = 'none';
+        if (toggleJoinLink) toggleJoinLink.style.display = 'none';
+
         const firstBox = document.querySelector('.first-box');
         const joinMessage = document.createElement('p');
-        joinMessage.textContent = `Joining lobby: ${joinLobbyId}`;
+        joinMessage.textContent = `Joining lobby: ${urlJoinId}`;
         joinMessage.className = 'label';
         joinMessage.style.fontSize = '1rem';
         joinMessage.style.marginBottom = '10px';
@@ -77,7 +84,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         submitButton.textContent = 'Choose a color to join';
 
-        await updateTakenColors();
+        await updateTakenColors(urlJoinId);
+    }
+
+    // --- GESTIONE TOGGLE "ENTER CODE" (Opzionale, se hai messo l'HTML) ---
+    if (toggleJoinLink && lobbyInputContainer) {
+        toggleJoinLink.addEventListener('click', () => {
+            isJoinMode = !isJoinMode;
+            if (isJoinMode) {
+                lobbyInputContainer.style.display = 'flex'; // o block
+                toggleJoinLink.textContent = "Back to create lobby";
+                if (hiddenInput.value) submitButton.textContent = 'Join Lobby';
+                else submitButton.textContent = 'Choose a color first';
+
+                // Listener per aggiornare colori quando si scrive l'ID
+                if (lobbyIdInput) {
+                    lobbyIdInput.addEventListener('blur', async () => {
+                        if (lobbyIdInput.value.trim()) await updateTakenColors(lobbyIdInput.value.trim());
+                    });
+                }
+            } else {
+                lobbyInputContainer.style.display = 'none';
+                toggleJoinLink.textContent = "Have a lobby code? Join here";
+                takenColors = []; // Reset
+                if (hiddenInput.value) submitButton.textContent = 'Create Lobby';
+                else submitButton.textContent = 'Choose a color first';
+            }
+        });
     }
 
     // LISTA COLORI UFFICIALE
@@ -91,9 +124,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const existingBox = document.querySelector('.change-color-box');
         if (existingBox) { existingBox.remove(); return; }
 
-        if (joinLobbyId) {
+        // Se siamo in join (URL o Manuale), aggiorniamo i colori
+        let currentTargetLobby = urlJoinId;
+        if (isJoinMode && lobbyIdInput && lobbyIdInput.value.trim()) {
+            currentTargetLobby = lobbyIdInput.value.trim();
+        }
+
+        if (currentTargetLobby) {
             document.body.style.cursor = 'wait';
-            await updateTakenColors();
+            await updateTakenColors(currentTargetLobby);
             document.body.style.cursor = 'default';
         }
 
@@ -119,6 +158,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const item = document.createElement('li');
             const availableCircle = document.createElement('div');
             availableCircle.setAttribute('class', 'avatar-circle');
+            // Stili inline per il menu
             availableCircle.style.width = '60px';
             availableCircle.style.height = '60px';
 
@@ -146,16 +186,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     selectedAvatarColor.style.backgroundColor = color;
                     selectedAvatarColor.style.border = 'none';
-                    hiddenInputForColorSelection.value = color;
+                    hiddenInput.value = color;
 
                     console.log('Colore scelto:', color);
                     changeColorBox.remove();
 
-                    if (joinLobbyId) {
-                        submitButton.textContent = 'Join lobby';
+                    // Aggiorna testo bottone
+                    if (urlJoinId || (isJoinMode && lobbyIdInput && lobbyIdInput.value.trim())) {
+                        submitButton.textContent = 'Join Lobby';
+                    } else if (isJoinMode) {
+                        submitButton.textContent = 'Enter Lobby ID';
                     } else {
-                        submitButton.textContent = 'Create lobby';
+                        submitButton.textContent = 'Create Lobby';
                     }
+
                     submitButton.disabled = false;
                     submitButton.style.opacity = '1';
                     submitButton.style.cursor = 'pointer';
@@ -172,48 +216,58 @@ document.addEventListener('DOMContentLoaded', async () => {
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
 
-        const color = hiddenInputForColorSelection.value;
+        const color = hiddenInput.value;
         if (!color) { alert('Please select a color first!'); return; }
+
+        // Determina ID Lobby (da URL o Manuale)
+        let targetLobbyId = urlJoinId;
+        if (isJoinMode && lobbyIdInput) {
+            targetLobbyId = lobbyIdInput.value.trim();
+            if (!targetLobbyId) {
+                alert("Please enter a Lobby ID.");
+                return;
+            }
+        }
 
         submitButton.disabled = true;
         submitButton.textContent = "Processing...";
 
-        const joinLobbyId = urlParams.get('join');
-
-        if (joinLobbyId) {
-            // JOIN
+        if (targetLobbyId) {
+            // --- JOIN ---
             try {
                 const response = await fetch('/join-lobby', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ color: color, lobbyId: joinLobbyId })
+                    body: JSON.stringify({ color: color, lobbyId: targetLobbyId })
                 });
 
                 if (response.ok) {
-                    const data = await response.json();
-                    // Usiamo encodeURIComponent per gestire il # nel colore
-                    window.location.href = `/lobby.html?lobby=${joinLobbyId}&color=${encodeURIComponent(color)}`;
+                    // Fix URL per Join
+                    window.location.href = `/lobby.html?lobby=${targetLobbyId}&color=${encodeURIComponent(color)}`;
                 } else {
                     const errData = await response.json();
                     if (errData.error && errData.error.includes('taken')) {
-                        alert("Colore già preso! Scegline un altro.");
-                        await updateTakenColors();
-                        submitButton.textContent = 'Choose a color to join';
+                        alert("Colore già preso! La lista verrà aggiornata.");
+                        await updateTakenColors(targetLobbyId);
+
+                        // Reset UI
+                        submitButton.textContent = 'Choose color again';
                         selectedAvatarColor.style.backgroundColor = 'transparent';
                         selectedAvatarColor.style.border = '2px dashed #ccc';
-                        hiddenInputForColorSelection.value = '';
+                        hiddenInput.value = '';
                     } else {
                         alert('Errore: ' + errData.error);
                         submitButton.disabled = false;
+                        submitButton.textContent = 'Join Lobby';
                     }
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Failed to join lobby');
+                alert('Connection error');
                 submitButton.disabled = false;
             }
         } else {
-            // CREATE LOBBY
+            // --- CREATE ---
             try {
                 const response = await fetch('/create-lobby', {
                     method: 'POST',
@@ -225,20 +279,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const data = await response.json();
 
                     // --- FIX DEL RIMBALZO (HASH IN URL) ---
-                    let finalUrl = data.redirect;
+                    // Il server manda un URL "sporco" col # (es. ...color=#DC143C)
+                    // Dobbiamo estrarre l'ID e ricostruire l'URL "pulito" (es. ...color=%23DC143C)
 
-                    // Estrarre l'ID della lobby dalla stringa "brutta" del server
-                    // Es: "/lobby.html?lobby=xyz123&color=#FF0000"
+                    let finalLobbyId = "";
+
+                    // Tentativo 1: prendi da redirect string
                     const match = data.redirect.match(/lobby=([^&]+)/);
-
                     if (match && match[1]) {
-                        const newLobbyId = match[1];
-                        // Ricostruiamo l'URL pulito codificando il colore
-                        finalUrl = `/lobby.html?lobby=${newLobbyId}&color=${encodeURIComponent(color)}`;
+                        finalLobbyId = match[1];
                     }
 
-                    console.log("Reindirizzamento a:", finalUrl);
-                    window.location.href = finalUrl;
+                    if (finalLobbyId) {
+                        const cleanUrl = `/lobby.html?lobby=${finalLobbyId}&color=${encodeURIComponent(color)}`;
+                        console.log("Redirecting to clean URL:", cleanUrl);
+                        window.location.href = cleanUrl;
+                    } else {
+                        // Fallback se l'estrazione fallisce
+                        window.location.href = data.redirect;
+                    }
 
                 } else {
                     throw new Error('Server error');
@@ -252,7 +311,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // Chiudi popup cliccando fuori
     document.addEventListener('click', (e) => {
         if (!avatarBox.contains(e.target)) {
             const existingBox = document.querySelector('.change-color-box');
