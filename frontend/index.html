@@ -20,7 +20,7 @@
 
     <main>
         <div class="first-box">
-            <p class="label" id="main-title">CHOOSE YOUR COLOR</p>
+            <p class="label" id="main-title">Choose your color</p>
 
             <div class="form-box">
                 <form id="colorForm">
@@ -33,8 +33,7 @@
                     </div>
                     <input type="hidden" id="hiddenInputForColorSelection" name="color">
 
-                    <div id="actions-container">
-
+                    <div id="default-actions">
                         <button type="button" id="create-btn" class="submit-button main-btn" disabled>
                             CREATE NEW LOBBY
                         </button>
@@ -47,6 +46,23 @@
                                 JOIN
                             </button>
                         </div>
+                    </div>
+
+                    <div id="link-join-actions"
+                        style="display: none; width: 100%; flex-direction: column; align-items: center;">
+                        <p id="join-link-msg"
+                            style="margin-bottom: 20px; font-weight: 700; font-size: 1.1rem; opacity: 0.8;">
+                            Joining Lobby...
+                        </p>
+
+                        <button type="button" id="link-join-btn" class="submit-button main-btn" disabled>
+                            JOIN LOBBY
+                        </button>
+
+                        <p class="helper-text" style="margin-top: 15px; cursor: pointer; text-decoration: underline;"
+                            onclick="window.location.href='/'">
+                            Cancel
+                        </p>
                     </div>
 
                 </form>
