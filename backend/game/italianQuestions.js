@@ -403,7 +403,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Chi è l'autore di questo famoso dipinto 'L'Urlo'?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Edvard_Munch%2C_1893%2C_The_Scream%2C_oil%2C_tempera_and_pastel_on_cardboard%2C_91_x_73.5_cm%2C_National_Gallery_of_Norway.jpg/640px-Edvard_Munch%2C_1893%2C_The_Scream%2C_oil%2C_tempera_and_pastel_on_cardboard%2C_91_x_73.5_cm%2C_National_Gallery_of_Norway.jpg",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Edvard_Munch%2C_1893%2C_The_Scream%2C_oil%2C_tempera_and_pastel_on_cardboard%2C_91_x_73_cm%2C_National_Gallery_of_Norway.jpg/960px-Edvard_Munch%2C_1893%2C_The_Scream%2C_oil%2C_tempera_and_pastel_on_cardboard%2C_91_x_73_cm%2C_National_Gallery_of_Norway.jpg",
         correct_answer: "Edvard Munch",
         incorrect_answers: ["Vincent van Gogh", "Pablo Picasso", "Claude Monet"]
     },
@@ -430,7 +430,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Chi ha scolpito questa statua (Il Pensatore)?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/The_Thinker_MET_117242.jpg/640px-The_Thinker_MET_117242.jpg",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/The_Thinker%2C_Rodin.jpg/960px-The_Thinker%2C_Rodin.jpg",
         correct_answer: "Auguste Rodin",
         incorrect_answers: ["Donatello", "Bernini", "Michelangelo"]
     },
@@ -450,7 +450,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "In quale città si trova questa cattedrale (San Basilio)?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Saint_Basil%27s_Cathedral_on_Red_Square_in_Moscow.jpg/640px-Saint_Basil%27s_Cathedral_on_Red_Square_in_Moscow.jpg",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/%D0%A5%D1%80%D0%B0%D0%BC_%D0%92%D0%B0%D1%81%D0%B8%D0%BB%D0%B8%D1%8F_%D0%91%D0%BB%D0%B0%D0%B6%D0%B5%D0%BD%D0%BD%D0%BE%D0%B3%D0%BE_%E2%84%962.JPG/960px-%D0%A5%D1%80%D0%B0%D0%BC_%D0%92%D0%B0%D1%81%D0%B8%D0%BB%D0%B8%D1%8F_%D0%91%D0%BB%D0%B0%D0%B6%D0%B5%D0%BD%D0%BD%D0%BE%D0%B3%D0%BE_%E2%84%962.JPG",
         correct_answer: "Mosca",
         incorrect_answers: ["San Pietroburgo", "Kiev", "Varsavia"]
     },
@@ -477,7 +477,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Dove si trova questa statua (Cristo Redentore)?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Christ_the_Redeemer_-_Rio_de_Janeiro%2C_Brazil.jpg/640px-Christ_the_Redeemer_-_Rio_de_Janeiro%2C_Brazil.jpg",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Christ_the_Redeemer_-_Cristo_Redentor.jpg/500px-Christ_the_Redeemer_-_Cristo_Redentor.jpg",
         correct_answer: "Rio de Janeiro",
         incorrect_answers: ["Buenos Aires", "Lisbona", "Barcellona"]
     },
@@ -553,7 +553,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "easy",
         question: "Chi è questa icona del cinema?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2d/Marilyn_Monroe_in_The_Prince_and_the_Showgirl_trailer.jpg/640px-Marilyn_Monroe_in_The_Prince_and_the_Showgirl_trailer.jpg",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/2/2a/Marilyn_Monroe_in_How_to_Marry_a_Millionaire.jpg",
         correct_answer: "Marilyn Monroe",
         incorrect_answers: ["Audrey Hepburn", "Grace Kelly", "Elizabeth Taylor"]
     },
@@ -580,7 +580,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Chi è questo leggendario chitarrista?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Jimi_Hendrix_1967.png/640px-Jimi_Hendrix_1967.png",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/a/ae/Jimi_Hendrix_1967.png",
         correct_answer: "Jimi Hendrix",
         incorrect_answers: ["Bob Marley", "Lenny Kravitz", "Prince"]
     },
@@ -591,7 +591,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "hard",
         question: "Che animale è questo?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Red_Panda_%2825193861686%29.jpg/800px-Red_Panda_%2825193861686%29.jpg",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/5/5b/A_Kis_Panda.jpg",
         correct_answer: "Panda Minore",
         incorrect_answers: ["Volpe", "Procione", "Lemure"]
     },
@@ -600,7 +600,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Come si chiama questo animale australiano?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f3/Platypus.jpg/800px-Platypus.jpg",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/e/e0/Wild_Platypus_4.jpg",
         correct_answer: "Ornitorinco",
         incorrect_answers: ["Castoro", "Talpa", "Echidna"]
     },
@@ -609,7 +609,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Quale animale è raffigurato?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/40/Capybara_Costa_Rica.jpg/800px-Capybara_Costa_Rica.jpg",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/3/34/Hydrochoeris_hydrochaeris_in_Brazil_in_Petr%C3%B3polis%2C_Rio_de_Janeiro%2C_Brazil_09.jpg",
         correct_answer: "Capibara",
         incorrect_answers: ["Nutria", "Cavia", "Vombato"]
     },
@@ -618,7 +618,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "easy",
         question: "Che tipo di rettile è questo?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/Chamaeleo_calyptratus_Male_02.jpg/640px-Chamaeleo_calyptratus_Male_02.jpg",
+        imageUrl: "https://commons.wikimedia.org/w/index.php?title=Category:Chamaeleonidae&uselang=it#/media/File:Bradypodion_pumilum_Cape_chameleon_female_IMG_1767_(cropped).jpg",
         correct_answer: "Camaleonte",
         incorrect_answers: ["Iguana", "Geco", "Drago di Komodo"]
     },
@@ -627,7 +627,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "hard",
         question: "Come si chiama questo anfibio messicano?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Axolotl_2.jpg/800px-Axolotl_2.jpg",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/2/20/Ambystoma_mexicanum_Natural_History_Museum_University_of_Pisa_%28cropped%29.jpg",
         correct_answer: "Axolotl",
         incorrect_answers: ["Salamandra", "Tritone", "Geco Leopardo"]
     },
@@ -656,7 +656,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "easy",
         question: "Che strumento scientifico è questo?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Microscope-medical.jpg/640px-Microscope-medical.jpg",
+        imageUrl: "https://commons.wikimedia.org/wiki/Category:Microscopes#/media/File:Fine_rotative_table_Microscope_5_(12996283235).jpg",
         correct_answer: "Microscopio",
         incorrect_answers: ["Telescopio", "Stetoscopio", "Periscopio"]
     },
@@ -665,7 +665,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Cosa rappresenta questa struttura a doppia elica?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/81/DNA_orbit_animated.gif/400px-DNA_orbit_animated.gif",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/f/f5/DNA_Overview_it.png",
         correct_answer: "DNA",
         incorrect_answers: ["RNA", "Proteina", "Atomo"]
     },
@@ -685,7 +685,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Come si chiamano questi dolcetti francesi?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Macarons_-_flavors.jpg/800px-Macarons_-_flavors.jpg",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/e/e2/Macaron_colorati_1.JPG",
         correct_answer: "Macarons",
         incorrect_answers: ["Meringhe", "Bignè", "Eclair"]
     },
@@ -694,7 +694,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Qual è questo famoso piatto spagnolo?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Paella_de_marisco_01.jpg/800px-Paella_de_marisco_01.jpg",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/0/04/ValencianPaella.jpg",
         correct_answer: "Paella",
         incorrect_answers: ["Tapas", "Tortilla", "Gazpacho"]
     },
@@ -705,7 +705,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "easy",
         question: "Di quale famiglia animata è questa casa?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/742_Evergreen_Terrace.png/640px-742_Evergreen_Terrace.png",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/it/b/ba/The_Simpson.jpg",
         correct_answer: "I Simpson",
         incorrect_answers: ["I Griffin", "I Flintstones", "American Dad"]
     },
@@ -714,7 +714,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Come si chiama questo oggetto?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Rubik%27s_cube.svg/640px-Rubik%27s_cube.svg.png",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/b/bb/Rubiks_cube_by_keqs.jpg",
         correct_answer: "Cubo di Rubik",
         incorrect_answers: ["Piramide di Meffert", "Megaminx", "Cubo Magico"]
     },
@@ -723,7 +723,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "easy",
         question: "Che pezzo degli scacchi è questo?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Chess_klt45.svg/480px-Chess_klt45.svg.png",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/7/7e/Chess_piece_-_White_king.jpg",
         correct_answer: "Re",
         incorrect_answers: ["Regina", "Alfiere", "Torre"]
     },
@@ -775,7 +775,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "hard",
         question: "Il personaggio del Monopoly ha il monocolo?",
-        imageUrl: "https://upload.wikimedia.org/wikipedia/en/thumb/2/2b/Rich_Uncle_Pennybags.svg/300px-Rich_Uncle_Pennybags.svg.png",
+        imageUrl: "https://static.wikia.nocookie.net/mandela-effect/images/1/11/Sub-buzz-7165-1476217730-1.jpg/revision/latest?cb=20170213194026",
         correct_answer: "NO, mai avuto",
         incorrect_answers: ["SÌ, sull'occhio destro", "SÌ, sull'occhio sinistro", "Solo nelle vecchie edizioni"]
     },
@@ -807,3 +807,205 @@ const ITALIAN_QUESTIONS = [
 ];
 
 module.exports = ITALIAN_QUESTIONS;
+
+
+/* const ITALIAN_QUESTIONS = [
+    // ============================================================
+    //  🧠 CULTURA GENERALE & STORIA (Solo Testo - Difficili)
+    // ============================================================
+    {
+        category: "Storia",
+        type: "multiple",
+        difficulty: "hard",
+        question: "In che anno è caduto l'Impero Romano d'Occidente?",
+        correct_answer: "476 d.C.",
+        incorrect_answers: ["1492 d.C.", "313 d.C.", "800 d.C."]
+    },
+    {
+        category: "Letteratura",
+        type: "multiple",
+        difficulty: "hard",
+        question: "Chi ha scritto 'Il nome della rosa'?",
+        correct_answer: "Umberto Eco",
+        incorrect_answers: ["Italo Calvino", "Luigi Pirandello", "Dante Alighieri"]
+    },
+    {
+        category: "Scienza",
+        type: "multiple",
+        difficulty: "medium",
+        question: "Qual è l'elemento chimico più abbondante nell'Universo?",
+        correct_answer: "Idrogeno",
+        incorrect_answers: ["Ossigeno", "Carbonio", "Elio"]
+    },
+    {
+        category: "Geografia",
+        type: "multiple",
+        difficulty: "hard",
+        question: "Qual è il deserto più grande del mondo (inclusi quelli polari)?",
+        correct_answer: "Antartide",
+        incorrect_answers: ["Sahara", "Gobi", "Kalahari"]
+    },
+    {
+        category: "Arte",
+        type: "multiple",
+        difficulty: "medium",
+        question: "Quale stile artistico è associato a Claude Monet?",
+        correct_answer: "Impressionismo",
+        incorrect_answers: ["Cubismo", "Surrealismo", "Barocco"]
+    },
+    {
+        category: "Tecnologia",
+        type: "boolean",
+        difficulty: "medium",
+        question: "Vero o Falso: Il primo uomo sulla luna aveva uno smartphone più potente dei computer della NASA dell'epoca.",
+        correct_answer: "Falso", // I computer erano molto meno potenti di un moderno smartphone
+        incorrect_answers: ["Vero"]
+    },
+    {
+        category: "Mitologia",
+        type: "multiple",
+        difficulty: "medium",
+        question: "Chi è il dio greco del mare?",
+        correct_answer: "Poseidone",
+        incorrect_answers: ["Zeus", "Ares", "Apollo"]
+    },
+    {
+        category: "Sport",
+        type: "multiple",
+        difficulty: "hard",
+        question: "In quale città si sono svolte le prime Olimpiadi moderne (1896)?",
+        correct_answer: "Atene",
+        incorrect_answers: ["Parigi", "Londra", "Roma"]
+    },
+
+    // ============================================================
+    //  🖼️ ARTE & ARCHITETTURA (Immagini - Livello Avanzato)
+    // ============================================================
+    {
+        category: "Arte",
+        type: "image",
+        difficulty: "hard",
+        question: "Come si chiama questa celebre opera giapponese?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/Great_Wave_off_Kanagawa2.jpg/640px-Great_Wave_off_Kanagawa2.jpg",
+        correct_answer: "La grande onda di Kanagawa",
+        incorrect_answers: ["Il Monte Fuji Rosso", "Ciliegi in fiore", "La tempesta perfetta"]
+    },
+    {
+        category: "Arte",
+        type: "image",
+        difficulty: "hard",
+        question: "Chi è l'autore di quest'opera surrealista?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/en/d/dd/The_Persistence_of_Memory.jpg", // Link stabile Wikipedia EN fair use
+        correct_answer: "Salvador Dalí",
+        incorrect_answers: ["René Magritte", "Joan Miró", "Pablo Picasso"]
+    },
+    {
+        category: "Architettura",
+        type: "image",
+        difficulty: "medium",
+        question: "Quale famoso architetto ha progettato questa casa (Casa Batlló)?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b3/Casa_Batll%C3%B3_01.jpg/450px-Casa_Batll%C3%B3_01.jpg",
+        correct_answer: "Antoni Gaudí",
+        incorrect_answers: ["Le Corbusier", "Frank Lloyd Wright", "Renzo Piano"]
+    },
+    {
+        category: "Luoghi",
+        type: "image",
+        difficulty: "hard",
+        question: "In quale nazione si trova questo castello (Neuschwanstein)?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f8/Schloss_Neuschwanstein_2013.jpg/600px-Schloss_Neuschwanstein_2013.jpg",
+        correct_answer: "Germania",
+        incorrect_answers: ["Austria", "Svizzera", "Francia"]
+    },
+
+    // ============================================================
+    //  🔬 SCIENZA & NATURA (Zoom & Dettagli)
+    // ============================================================
+    {
+        category: "Zoom",
+        type: "image",
+        difficulty: "hard",
+        question: "Cosa stiamo guardando al microscopio?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/94/Snowflake_macro_photography_1.jpg/600px-Snowflake_macro_photography_1.jpg",
+        correct_answer: "Un fiocco di neve",
+        incorrect_answers: ["Un cristallo di sale", "Un diamante grezzo", "Vetro rotto"]
+    },
+    {
+        category: "Natura",
+        type: "image",
+        difficulty: "medium",
+        question: "Come si chiama questo fenomeno atmosferico?",
+        imageUrl: "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=600&q=80",
+        correct_answer: "Via Lattea (Galassia)",
+        incorrect_answers: ["Aurora Boreale", "Nebulosa di Orione", "Andromeda"]
+    },
+    {
+        category: "Animali",
+        type: "image",
+        difficulty: "hard",
+        question: "Che animale è questo (visto da molto vicino)?",
+        imageUrl: "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=600&q=80",
+        correct_answer: "Mosca / Insetto",
+        incorrect_answers: ["Ragno", "Granchio", "Alieno"]
+    },
+
+    // ============================================================
+    //  🎥 CINEMA & PERSONAGGI (Meno banali)
+    // ============================================================
+    {
+        category: "Cinema",
+        type: "image",
+        difficulty: "medium",
+        question: "Da quale famoso film di Kubrick è tratta questa scena?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/en/a/a6/2001_A_Space_Odyssey_Style_B.jpg", // Poster iconico
+        correct_answer: "2001: Odissea nello spazio",
+        incorrect_answers: ["Interstellar", "Star Wars", "Blade Runner"]
+    },
+    {
+        category: "Personaggi",
+        type: "image",
+        difficulty: "hard",
+        question: "Chi è questo storico Primo Ministro britannico?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/Sir_Winston_Churchill_-_19086236948.jpg/480px-Sir_Winston_Churchill_-_19086236948.jpg",
+        correct_answer: "Winston Churchill",
+        incorrect_answers: ["Franklin D. Roosevelt", "Margaret Thatcher", "John F. Kennedy"]
+    },
+
+    // ============================================================
+    //  🔠 LOGICA & PAROLE (Testuali per spezzare il ritmo)
+    // ============================================================
+    {
+        category: "Logica",
+        type: "multiple",
+        difficulty: "hard",
+        question: "Se un mattone pesa 1 kg più mezzo mattone, quanto pesa un mattone?",
+        correct_answer: "2 kg",
+        incorrect_answers: ["1.5 kg", "1 kg", "2.5 kg"]
+    },
+    {
+        category: "Proverbi",
+        type: "multiple",
+        difficulty: "medium",
+        question: "Completa il proverbio: 'Chi la dura...'",
+        correct_answer: "La vince",
+        incorrect_answers: ["Non molla", "La spunta", "Arriva in fondo"]
+    },
+    {
+        category: "Cucina",
+        type: "multiple",
+        difficulty: "medium",
+        question: "Qual è l'ingrediente base della pasta 'Cacio e Pepe' oltre al formaggio?",
+        correct_answer: "Pepe Nero",
+        incorrect_answers: ["Olio d'oliva", "Burro", "Panna"]
+    },
+    {
+        category: "Scienza",
+        type: "multiple",
+        difficulty: "medium",
+        question: "A quale temperatura l'acqua bolle a livello del mare?",
+        correct_answer: "100°C",
+        incorrect_answers: ["90°C", "110°C", "80°C"]
+    },
+];
+
+module.exports = ITALIAN_QUESTIONS; */
