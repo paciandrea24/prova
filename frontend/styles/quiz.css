@@ -48,11 +48,23 @@ body {
 .score-avatar-color { width: 24px; height: 24px; border-radius: 50%; }
 
 .main-content {
-    flex: 1; padding: 40px; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; position: relative;
+    flex: 1;
+    padding: 20px; /* Riduciamo un po' il padding laterale */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* CAMBIO FONDAMENTALE: */
+    justify-content: space-evenly; /* Distribuisce lo spazio invece di centrare e basta */
+    height: 100%;
+    overflow: hidden; /* Evita scrollbar indesiderate */
 }
 
-.header-info { width: 100%; max-width: 800px; margin-bottom: 40px; }
+.header-info {
+    width: 100%;
+    max-width: 800px;
+    margin-bottom: 0; /* Rimosso margine bottom forzato */
+    flex-shrink: 0; /* Non schiacciarti mai */
+}
 #round-info {
     text-align: center; font-weight: 800; margin-bottom: 15px;
     letter-spacing: 2px; text-transform: uppercase;
@@ -65,25 +77,64 @@ body {
     height: 100%; width: 100%; border-radius: 20px; transition: width 1s linear;
 }
 
-.question-box { margin-bottom: 40px; text-align: center; max-width: 850px; }
-#question-text { font-size: 2.5rem; font-weight: 900; line-height: 1.2; }
+.question-box { 
+    /* Riduciamo i margini fissi, lasciamo fare al flexbox space-evenly */
+    margin: 10px 0; 
+    text-align: center; 
+    max-width: 850px;
+    width: 100%;
+    display: flex;         
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 1; /* Permette a questo box di restringersi se serve */
+    min-height: 0; /* Trucco Flexbox per permettere lo shrinking */
+}
+
+#question-text { 
+    font-size: 2.4rem; /* Aumentato per maggiore impatto */
+    font-weight: 900; 
+    line-height: 1.2; 
+    margin-bottom: 20px; /* Un po' più di spazio sotto */
+    margin-top: 0;
+    
+    width: 100%;
+    text-align: center;
+    
+    /* Permette al testo di andare a capo se serve */
+    word-wrap: break-word; 
+}
 
 .answers-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
-    width: 100%; max-width: 850px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px; /* Gap leggermente ridotto */
+    width: 100%;
+    max-width: 850px;
+    flex-shrink: 0; /* Impedisce ai bottoni di schiacciarsi troppo */
 }
 
 .answer-btn {
-    padding: 30px 20px; font-size: 1.4rem; font-weight: 700;
+    padding: 20px 10px; /* Padding verticale ridotto (era 30px) */
+    font-size: 1.2rem;
+    font-weight: 700;
+    border-radius: 16px;
     cursor: pointer; position: relative; top: 0;
     transition: all 0.2s;
-    border-radius: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 60px;
 }
 .answer-btn:active:not(:disabled) { transform: scale(0.98); }
 .answer-btn:disabled { cursor: default; opacity: 0.7; transform: none; top: 0; }
 
 #status-message { 
-    margin-top: 30px; font-size: 1.6rem; font-weight: 800; min-height: 40px; 
+    margin-top: 15px; /* Ridotto da 30px */
+    font-size: 1.5rem; 
+    font-weight: 800; 
+    min-height: 30px; 
+    flex-shrink: 0;
 }
 
 /* Pulsante Toggle */
@@ -277,24 +328,28 @@ body.theme-dark #theme-toggle-btn {
     align-items: center;   /* Centra tutto orizzontalmente */
 }
 
-#question-text { 
+/* #question-text { 
     font-size: 2.2rem; 
     font-weight: 900; 
     line-height: 1.2; 
-    margin-bottom: 20px; /* Spazio tra testo e immagine */
+    margin-bottom: 20px; 
     margin-top: 0;
-}
+} */
 
 #question-image {
     max-width: 100%;
-    max-height: 250px; /* Importante: limita l'altezza per non nascondere i tasti */
     width: auto;
+    
+    /* LA CORREZIONE CHIAVE: */
+    height: auto;
+    max-height: 25vh; /* Non superare mai il 25% dell'altezza dello schermo */
+    
     border-radius: 15px;
     box-shadow: 0 10px 20px rgba(0,0,0,0.15);
     object-fit: contain;
-    border: 4px solid white; /* Effetto cornice */
+    border: 4px solid white;
     
-    /* Animazione di entrata carina */
+    /* Animazione */
     animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
@@ -402,4 +457,10 @@ body.theme-dark #theme-toggle-btn {
 @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
+}
+
+@media (max-width: 768px) {
+    #question-text { 
+        font-size: 1.8rem; /* Su mobile un po' più piccolo ma leggibile */
+    }
 }
