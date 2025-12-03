@@ -129,7 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setupGameSelectors(lobby.host);
         } catch (error) {
             console.error('Error loading lobby:', error);
-            alert('Error loading lobby. Redirecting to home page.');
+            showToast('Error loading lobby. Redirecting to home page.');
             window.location.href = '/';
         }
     }
@@ -234,7 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             console.error('Error generating invite link:', error);
-            alert('Error generating invite link');
+            showToast('Error generating invite link');
         }
     }
 
@@ -357,6 +357,38 @@ document.addEventListener('DOMContentLoaded', () => {
             chatInput.value = '';
             chatInput.focus();
         }
+    }
+    // Funzione Helper per Notifiche
+    function showToast(message, type = 'info') {
+        // Crea container se non esiste
+        let container = document.querySelector('.toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.className = 'toast-container';
+            document.body.appendChild(container);
+        }
+
+        // Crea il toast
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+
+        // Icona in base al tipo
+        let icon = '';
+        if (type === 'error') icon = '⚠️';
+        if (type === 'success') icon = '✅';
+        if (type === 'info') icon = 'ℹ️';
+
+        toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
+
+        container.appendChild(toast);
+
+        // Rimuovi dopo 3 secondi
+        setTimeout(() => {
+            toast.style.animation = 'fadeOut 0.3s forwards';
+            toast.addEventListener('animationend', () => {
+                toast.remove();
+            });
+        }, 3000);
     }
 
     if (sendChatBtn) {

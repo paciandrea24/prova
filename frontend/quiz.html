@@ -42,6 +42,11 @@
                 <button class="answer-btn" data-index="3">Opzione D</button>
             </div>
 
+            <div id="curiosity-box" style="display: none;">
+                <h4>💡 Lo sapevi?</h4>
+                <p id="curiosity-text"></p>
+            </div>
+
             <div id="status-message">Preparati!</div>
         </div>
     </div>
@@ -59,6 +64,11 @@
 
             <p id="waiting-host-msg" style="margin-top: 20px; color: #ccc;">In attesa che l'host decida...</p>
         </div>
+    </div>
+
+    <div id="image-lightbox" class="lightbox" style="display: none;">
+        <span class="close-lightbox">&times;</span>
+        <img class="lightbox-content" id="lightbox-img" alt="Zoom Immagine">
     </div>
 
     <audio id="sound-correct" src="./sounds/triviaGameSounds/rightanswer-95219.mp3" preload="auto"></audio>

@@ -656,7 +656,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "easy",
         question: "Che strumento scientifico è questo?",
-        imageUrl: "https://commons.wikimedia.org/wiki/Category:Microscopes#/media/File:Fine_rotative_table_Microscope_5_(12996283235).jpg",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/5/53/Fine_rotative_table_Microscope_5_%2812996283235%29.jpg",
         correct_answer: "Microscopio",
         incorrect_answers: ["Telescopio", "Stetoscopio", "Periscopio"]
     },

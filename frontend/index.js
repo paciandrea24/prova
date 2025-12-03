@@ -49,6 +49,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const linkJoinActions = document.getElementById('link-join-actions');
     const joinLinkMsg = document.getElementById('join-link-msg');
 
+    // Aggiungi questo listener in index.js
+
+    if (lobbyInput && joinBtn) {
+        lobbyInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault(); // Evita submit del form standard
+                joinBtn.click(); // Simula il click sul tasto Join
+            }
+        });
+    }
+
     // =========================================================
     // 3. STATO INIZIALE
     // =========================================================
@@ -184,7 +195,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function handleAction(endpoint, bodyData, targetLobbyId = null) {
         const color = bodyData.color;
-        if (!color) { alert("Select a color first!"); return; }
+        if (!color) { showToast("Select a color first!"); return; }
 
         if (createBtn) createBtn.disabled = true;
         if (joinBtn) joinBtn.disabled = true;
@@ -224,7 +235,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else {
                 const err = await response.json();
                 if (err.error && err.error.includes('taken')) {
-                    alert("Colore già preso! Aggiorno la lista.");
+                    showToast("Colore già preso! Aggiorno la lista.");
                     if (targetLobbyId) await fetchTakenColors(targetLobbyId);
 
                     // Reset
@@ -233,7 +244,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     hiddenInput.value = '';
                     if (helperText) helperText.textContent = "Click to select";
                 } else {
-                    alert(err.error || "Errore sconosciuto");
+                    showToast(err.error || "Errore sconosciuto");
                 }
 
                 // Ripristina tasti
@@ -243,11 +254,44 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } catch (error) {
             console.error(error);
-            alert("Errore di connessione");
+            showToast("Errore di connessione");
             if (createBtn) createBtn.disabled = false;
             if (joinBtn) joinBtn.disabled = false;
             if (linkJoinBtn) linkJoinBtn.disabled = false;
         }
+    }
+
+    // Funzione Helper per Notifiche
+    function showToast(message, type = 'info') {
+        // Crea container se non esiste
+        let container = document.querySelector('.toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.className = 'toast-container';
+            document.body.appendChild(container);
+        }
+
+        // Crea il toast
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+
+        // Icona in base al tipo
+        let icon = '';
+        if (type === 'error') icon = '⚠️';
+        if (type === 'success') icon = '✅';
+        if (type === 'info') icon = 'ℹ️';
+
+        toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
+
+        container.appendChild(toast);
+
+        // Rimuovi dopo 3 secondi
+        setTimeout(() => {
+            toast.style.animation = 'fadeOut 0.3s forwards';
+            toast.addEventListener('animationend', () => {
+                toast.remove();
+            });
+        }, 3000);
     }
 
     // --- LISTENER CLICK ---
@@ -263,7 +307,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         joinBtn.addEventListener('click', (e) => {
             e.preventDefault();
             const id = lobbyInput.value.trim();
-            if (!id) { alert("Inserisci il codice!"); return; }
+            if (!id) { showToast("Inserisci il codice!"); return; }
             handleAction('/join-lobby', { color: hiddenInput.value, lobbyId: id }, id);
         });
     }

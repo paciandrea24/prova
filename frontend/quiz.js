@@ -1,6 +1,8 @@
 // frontend/quiz.js
 const socket = io();
 
+let currentRoundOptions = []; // Per salvare le risposte del round corrente
+
 // 1. RECUPERA DATI DALL'URL
 const urlParams = new URLSearchParams(window.location.search);
 const lobbyId = urlParams.get('lobby');
@@ -53,6 +55,26 @@ socket.on('statusMessage', (data) => {
     statusMsg.textContent = data.message;
 });
 
+// 1. Ascolta quando qualcuno risponde
+socket.on('playerAnswered', (data) => {
+    const { playerColor: colorWhoAnswered } = data;
+    console.log(`Il giocatore ${colorWhoAnswered} ha risposto!`);
+
+    // Trova l'elemento nella lista
+    const playerItem = document.querySelector(`li[data-color="${colorWhoAnswered}"]`);
+
+    if (playerItem) {
+        // Aggiungi una classe CSS per indicare "Ha risposto"
+        playerItem.classList.add('has-answered');
+
+        // Opzionale: Riproduci un piccolo suono "pop"
+    }
+
+    // [NUOVO] Rimuovi lo stato "ha risposto" da tutti i giocatori
+    const allPlayers = document.querySelectorAll('#score-list li');
+    allPlayers.forEach(li => li.classList.remove('has-answered'));
+});
+
 // Arriva una domanda
 socket.on('newQuestion', (data) => {
     console.log('📩 Nuova domanda ricevuta:', data);
@@ -60,10 +82,20 @@ socket.on('newQuestion', (data) => {
     // 1. Estrai anche 'imageUrl'
     const { question, options, round, totalRounds, time, scores, imageUrl } = data;
 
+    // 1. Salviamo le opzioni per usarle dopo
+    currentRoundOptions = options;
+
+    // 2. Reset UI extra
+    document.getElementById('curiosity-box').style.display = 'none'; // Nascondi curiosità
+
     resetButtons();
     statusMsg.textContent = 'Scegli la risposta!';
     questionText.textContent = question;
     roundInfo.textContent = `Round ${round}/${totalRounds}`;
+
+    // [AGGIUNGI QUESTO] Rimuovi lo stato "ha risposto" dal round precedente
+    const allPlayers = document.querySelectorAll('#score-list li');
+    allPlayers.forEach(li => li.classList.remove('has-answered'));
 
     // --- GESTIONE IMMAGINE ---
     if (imageUrl) {
@@ -111,17 +143,49 @@ socket.on('roundResult', (data) => {
     // Evidenzia le risposte (Logica esistente)
     answerBtns.forEach((btn, index) => {
         btn.disabled = true;
+        // Rimuoviamo eventuali icone vecchie prima di aggiungerne nuove
+        // (Resettando il testo all'opzione originale salvata)
+        btn.textContent = currentRoundOptions[index];
 
         if (index === correctIndex) {
             btn.classList.add('correct');
+            btn.innerHTML += ' <span class="btn-icon"></span>'; // Icona Spunta
         }
         else if (index === myAnswer && index !== correctIndex) {
             btn.classList.add('selected-wrong');
+            btn.innerHTML += ' <span class="btn-icon"></span>'; // Icona Croce
         }
         else {
             btn.classList.add('wrong');
         }
     });
+
+    // 1. Ascolta quando qualcuno risponde
+    socket.on('playerAnswered', (data) => {
+        const { playerColor: colorWhoAnswered } = data;
+        console.log(`Il giocatore ${colorWhoAnswered} ha risposto!`);
+
+        // Trova l'elemento nella lista
+        const playerItem = document.querySelector(`li[data-color="${colorWhoAnswered}"]`);
+
+        if (playerItem) {
+            // Aggiungi una classe CSS per indicare "Ha risposto"
+            playerItem.classList.add('has-answered');
+
+            // Opzionale: Riproduci un piccolo suono "pop"
+        }
+    });
+
+    // --- LOGICA CURIOSITÀ / SPIEGAZIONE ---
+    const curiosityBox = document.getElementById('curiosity-box');
+    const curiosityText = document.getElementById('curiosity-text');
+
+    // Nota: Se in futuro aggiungi un campo "description" al backend, usalo qui!
+    // Per ora costruiamo una frase standard utile.
+    const correctAnswerText = currentRoundOptions[correctIndex];
+
+    curiosityBox.style.display = 'block';
+    curiosityText.innerHTML = `La risposta corretta era: <strong>${correctAnswerText}</strong>.`;
 
     // --- NUOVA LOGICA SUONI E FEEDBACK ---
     if (myAnswer === correctIndex) {
@@ -270,6 +334,8 @@ function updateScoreboard(scores) {
         .sort(([, a], [, b]) => b - a)
         .forEach(([pColor, score]) => {
             const li = document.createElement('li');
+            // [NUOVO] Aggiungiamo questo attributo per trovare l'elemento quando risponde
+            li.setAttribute('data-color', pColor);
 
             // 1. Creiamo la struttura del pallino colorato
             const avatarCircle = document.createElement('div');
@@ -328,4 +394,25 @@ themeBtn.addEventListener('click', () => {
         themeBtn.innerHTML = '🌘 Stile Dark';
         localStorage.setItem('quiz-theme', 'light'); // Salva 'light' in memoria
     }
+});
+
+// --- LIGHTBOX LOGIC ---
+const lightbox = document.getElementById('image-lightbox');
+const lightboxImg = document.getElementById('lightbox-img');
+const closeLightbox = document.querySelector('.close-lightbox');
+
+// Apri lightbox al click sull'immagine della domanda
+questionImage.addEventListener('click', () => {
+    if (questionImage.src && questionImage.style.display !== 'none') {
+        lightboxImg.src = questionImage.src;
+        lightbox.style.display = 'flex';
+    }
+});
+
+// Chiudi lightbox
+const hideLightbox = () => { lightbox.style.display = 'none'; };
+closeLightbox.addEventListener('click', hideLightbox);
+lightbox.addEventListener('click', (e) => {
+    // Chiudi se clicco sullo sfondo scuro, non sull'immagine
+    if (e.target === lightbox) hideLightbox();
 });

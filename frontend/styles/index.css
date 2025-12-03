@@ -245,3 +245,69 @@ body.theme-dark .submit-button:active:not(:disabled) {
     font-size: 24px;
     font-weight: bold;
 }
+
+/* --- NOTIFICHE TOAST (Quality of Life) --- */
+.toast-container {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none; /* Permette di cliccare sotto */
+}
+
+.toast {
+    background: white;
+    color: #333;
+    padding: 12px 24px;
+    border-radius: 50px;
+    font-weight: 700;
+    font-size: 1rem;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: slideDown 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    pointer-events: auto;
+    min-width: 200px;
+    justify-content: center;
+    border: 1px solid #eee;
+}
+
+/* Tipi di Notifica */
+.toast.error {
+    background-color: #ffebee;
+    color: #c62828;
+    border-color: #ffcdd2;
+}
+.toast.success {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+    border-color: #c8e6c9;
+}
+.toast.info {
+    background-color: #e3f2fd;
+    color: #1565c0;
+    border-color: #bbdefb;
+}
+
+/* Tema Scuro per Toast */
+body.theme-dark .toast {
+    background: #2c3e50;
+    color: white;
+    border-color: rgba(255,255,255,0.1);
+    box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+}
+body.theme-dark .toast.error { background: #4a1818; color: #ff8a80; }
+body.theme-dark .toast.success { background: #1b4d2e; color: #a5d6a7; }
+
+@keyframes slideDown {
+    from { transform: translateY(-100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+@keyframes fadeOut {
+    to { opacity: 0; transform: translateY(-20px); }
+}

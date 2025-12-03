@@ -166,6 +166,29 @@ body {
     box-shadow: 0 4px 10px rgba(162, 155, 254, 0.4);
     transform: scale(1.05);
 }
+
+/* [NUOVO] Quando un giocatore ha risposto */
+#score-list li.has-answered {
+    background-color: #dcdde1; /* Grigio chiaro per indicare "Fatto" */
+    transform: scale(0.98);    /* Leggermente più piccolo */
+    opacity: 0.8;
+}
+
+#score-list li.has-answered .score-avatar-circle {
+    border-color: #7f8c8d;
+    background-color: #ecf0f1;
+}
+
+/* Aggiungiamo una spunta visiva (check) */
+#score-list li.has-answered::after {
+    content: '✔';
+    position: absolute;
+    right: 15px;
+    font-size: 1.2rem;
+    color: #27ae60;
+    font-weight: bold;
+    animation: popIn 0.3s;
+}
 .score-avatar-circle { border: 2px solid #dfe6e9; }
 
 #round-info { color: #b2bec3; }
@@ -297,6 +320,11 @@ body.theme-dark #status-message {
 body.theme-dark #theme-toggle-btn {
     background: rgba(0, 0, 0, 0.3);
     color: white; border: 1px solid rgba(255,255,255,0.2);
+}
+/* Stile Dark Mode per has-answered */
+body.theme-dark #score-list li.has-answered {
+    background-color: rgba(255, 255, 255, 0.15);
+    border: 1px solid #f1c40f; /* Bordo dorato per risaltare nel buio */
 }
 
 /* Animazione Errore */
@@ -463,4 +491,86 @@ body.theme-dark #theme-toggle-btn {
     #question-text { 
         font-size: 1.8rem; /* Su mobile un po' più piccolo ma leggibile */
     }
+}
+
+/* --- OTTIMIZZAZIONI SPAZIO & UX --- */
+
+/* Riduciamo i margini per avvicinare risposte e immagine */
+.question-box {
+    margin-bottom: 15px; /* Era 30px o automatico */
+}
+
+/* Cursore zoom sull'immagine piccola */
+#question-image {
+    cursor: zoom-in;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+#question-image:hover {
+    transform: scale(1.02);
+    box-shadow: 0 15px 30px rgba(0,0,0,0.2);
+}
+
+/* --- LIGHTBOX (ZOOM) --- */
+.lightbox {
+    position: fixed;
+    z-index: 2000; /* Sopra a tutto */
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    background-color: rgba(0, 0, 0, 0.9); /* Sfondo scuro */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: zoom-out;
+    animation: fadeIn 0.3s;
+}
+
+.lightbox-content {
+    max-width: 90%;
+    max-height: 90vh;
+    border-radius: 8px;
+    box-shadow: 0 0 30px rgba(255, 255, 255, 0.1);
+    object-fit: contain;
+}
+
+.close-lightbox {
+    position: absolute;
+    top: 20px; right: 40px;
+    color: #f1f1f1;
+    font-size: 40px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.3s;
+}
+.close-lightbox:hover { color: #bbb; }
+
+/* --- ICONE PULSANTI & CURIOSITÀ --- */
+.btn-icon {
+    margin-left: 10px;
+    font-size: 1.3em;
+    vertical-align: middle;
+}
+
+#curiosity-box {
+    margin-top: 15px;
+    padding: 15px 20px;
+    background: #ffffff;
+    border-radius: 12px;
+    border-left: 6px solid #6c5ce7;
+    width: 100%;
+    max-width: 850px;
+    text-align: left;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+    animation: slideUp 0.3s ease-out;
+}
+
+/* Stile Dark per Curiosity */
+body.theme-dark #curiosity-box {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ecf0f1;
+    border-left-color: #f1c40f;
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }

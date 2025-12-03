@@ -100,6 +100,12 @@ module.exports = function (io, socket) {
         const { lobbyId, playerColor, answerIndex } = data;
         const game = activeGames.get(lobbyId);
 
+        // SE LA RISPOSTA È VALIDA, AVVISA TUTTI
+        if (game.playerAnswers[playerColor] !== undefined) {
+            // [NUOVO] Inviamo un segnale a tutti: "Questo colore ha risposto!"
+            io.to(lobbyId).emit('playerAnswered', { playerColor });
+        }
+
         if (!game || game.type !== GAME_ID || !game.isActive) return;
         if (game.playerAnswers[playerColor] !== undefined) return;
 
@@ -107,6 +113,8 @@ module.exports = function (io, socket) {
         game.answeredCount++;
 
         console.log(`📝 ${playerColor} ha risposto: ${answerIndex}`);
+
+        io.to(lobbyId).emit('playerAnswered', { playerColor });
 
         const isCorrect = answerIndex === game.correctAnswerIndex;
         let pointsEarned = 0;
