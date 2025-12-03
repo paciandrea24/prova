@@ -4,24 +4,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="./styles/game.css">
     <title>Drawing Game</title>
+
+    <link rel="stylesheet" href="./styles/game.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&family=Poppins:wght@400;600;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
 </head>
 
 <body>
     <div class="header">
         <div class="timer-box">
-            <div class="timer-box-content">
-                <img src="./imgs/timer.png" alt="timer" class="timer-icon">
-                <div class="timer-text-box">
-                    <p class="timer-text">60s</p>
-                </div>
-            </div>
+            <span class="timer-icon">⏱️</span>
+            <span class="timer-text">60s</span>
         </div>
 
         <div class="hint-box">
             <div class="hint-word">
-                <p class="hint">Waiting for the game to start...</p>
+                <p class="hint">In attesa...</p>
             </div>
         </div>
 
@@ -31,60 +32,49 @@
     </div>
 
     <div class="main-content">
+
         <div class="standing-box">
             <h3>Classifica</h3>
-            <ul class="players-ul">
-                <!-- Players will be dynamically added here -->
-            </ul>
+            <ul class="players-ul"></ul>
         </div>
 
         <div class="canvas-box">
-            <!-- Canvas will be created by JavaScript -->
+            <canvas id="drawing-canvas"></canvas>
             <div id="artist-notification"></div>
         </div>
 
         <div class="chat-box">
-            <div class="messages-box">
-                <!-- Messages will be added here -->
-            </div>
+            <h3>Chat</h3>
+            <div class="messages-box"></div>
 
             <div class="form-box">
                 <form action="" id="chat-form">
-                    <input type="text" placeholder="Guess the word..." autocomplete="off" id="chat-input">
-                    <button type="submit">Invia</button>
+                    <input type="text" placeholder="Indovina..." autocomplete="off" id="chat-input">
+                    <button type="submit" id="chat-btn">➤</button>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- Modal per il termine del gioco -->
     <div id="game-end-modal" class="modal" style="display: none;">
         <div class="modal-content">
             <h2>Game Over!</h2>
-            <div id="final-standings">
-                <!-- Final standings will be added here -->
-            </div>
-            <button id="back-to-lobby">Torna alla Lobby</button>
+            <div id="final-standings"></div>
+            <button id="back-to-lobby" class="submit-button">Torna alla Lobby</button>
         </div>
     </div>
 
-    <!-- Modal per la fine del round -->
     <div id="round-end-modal" class="modal" style="display: none;">
         <div class="modal-content">
-            <h2>Round Over!</h2>
-            <p>The word was: <strong id="revealed-word"></strong></p>
-            <div id="round-standings">
-                <!-- Round standings will be added here -->
-            </div>
-            <p>Preparing next round...</p>
+            <h2>Fine Round!</h2>
+            <p>La parola era: <strong id="revealed-word"></strong></p>
+            <div id="round-standings"></div>
+            <p>Prossimo round...</p>
         </div>
     </div>
 
-    <!-- Socket.io script -->
     <script src="/socket.io/socket.io.js"></script>
-    <!-- Game logic script -->
     <script src="game.js"></script>
-    <!-- 🔊 Player audio -->
     <audio id="correctSound" src="./sounds/quiz-game-show-pack-190031 (mp3cut.net).mp3" preload="auto"></audio>
 </body>
 

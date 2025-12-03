@@ -1,662 +1,271 @@
-/* ========== LAYOUT DI BASE ========== */
-body {
-    font-family: 'Inter', 'Work Sans', sans-serif;
-    margin: 0;
-    padding: 0;
-    background-color: #f5f5f5;
+/* frontend/styles/game.css */
+
+/* =========================================
+   1. LAYOUT BASE
+   ========================================= */
+html, body {
+    margin: 0; padding: 0;
+    height: 100vh; width: 100%;
+    overflow: hidden; /* Blocca scroll pagina intera */
+    display: flex; flex-direction: column;
+    font-family: 'Nunito', sans-serif;
+    background-color: #f0f2f5; /* Grigio chiaro sfondo */
     color: #333;
 }
 
+/* HEADER */
 .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 20px;
-    background-color: #fff;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    height: 70px; padding: 0 20px;
+    display: flex; justify-content: space-between; align-items: center;
+    background-color: white;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    z-index: 10; flex-shrink: 0;
+    border-bottom: 1px solid #e0e0e0;
 }
 
-.game-info {
-    display: flex;
-    align-items: center;
-}
-
-.round-info {
-    font-size: 16px;
-    font-weight: bold;
-}
-
-/* ========== TIMER ========== */
+/* Timer Emoji Style */
 .timer-box {
-    display: flex;
-    align-items: center;
-    background-color: #f8f8f8;
-    border-radius: 30px;
-    padding: 5px 15px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: bold; font-size: 1.2rem;
+    padding: 5px 15px; border-radius: 30px; min-width: 90px; 
+    background-color: #fff3e0; color: #e67e22; border: 2px solid #ffe0b2;
+}
+.timer-icon { 
+    margin-right: 8px; font-size: 1.4rem; line-height: 1; 
 }
 
-.timer-box-content {
-    display: flex;
-    align-items: center;
+/* Hint Box */
+.hint-box { 
+    flex: 2; text-align: center; display: flex; justify-content: center; 
+    overflow: hidden; 
 }
-
-.timer-icon {
-    width: 24px;
-    height: 24px;
-    margin-right: 8px;
-}
-
-.timer-text {
-    font-size: 20px;
-    font-weight: bold;
-    color: #ff5722;
-    margin: 0;
-}
-
-/* ========== INDIZIO ========== */
-.hint-box {
-    flex-grow: 1;
-    text-align: center;
-    margin: 0 20px;
-}
-
 .hint-word {
-    background-color: #e8f4f8;
-    border-radius: 5px;
-    padding: 10px;
-    display: inline-block;
-    min-width: 200px;
+    display: inline-block; padding: 5px 20px; border-radius: 10px;
+    font-family: monospace; font-size: 1.4rem; letter-spacing: 5px; font-weight: bold;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    background-color: #e8f5e9; border: 2px dashed #66bb6a; color: #2e7d32;
+}
+.hint-word.artist-view { 
+    letter-spacing: normal; font-family: inherit; 
+    background-color: #e3f2fd; border-color: #64b5f6; color: #1565c0;
 }
 
-.hint-word.artist-view {
-    background-color: #e8f8e8; /* Colore diverso quando è l'artista */
-    border: 2px dashed #4CAF50;
+.game-info { 
+    font-weight: bold; font-size: 1rem; min-width: 100px; text-align: right;
+    color: #7f8c8d; background: #f9f9f9; padding: 5px 10px; border-radius: 8px;
 }
 
-.hint {
-    font-size: 22px;
-    font-weight: bold;
-    margin: 0;
-    letter-spacing: 3px;
-}
-
-.hint.artist-view {
-    letter-spacing: normal; /* Rimuove lo spazio tra le lettere per l'artista */
-    color: #2e7d32; /* Colore diverso quando è l'artista */
-}
-
-/* ========== LAYOUT PAGINA PRINCIPALE ========== */
+/* =========================================
+   2. MAIN CONTENT
+   ========================================= */
 .main-content {
-    display: flex;
-    padding: 20px;
-    gap: 20px;
-    height: calc(100vh - 120px);
+    flex: 1; display: flex; padding: 15px; gap: 15px;
+    overflow: hidden; align-items: stretch;
 }
 
-.standing-box {
-    width: 20%;
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-    padding: 15px;
-    overflow-y: auto;
+/* Stili Comuni Box */
+.standing-box, .canvas-box, .chat-box {
+    background-color: #FFFFFF;
+    border-radius: 15px; padding: 15px;
+    display: flex; flex-direction: column;
+    height: 100%; box-sizing: border-box;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+    border: 1px solid #eee;
 }
 
-.canvas-box {
-    width: 60%;
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-    padding: 15px;
+.standing-box { width: 20%; min-width: 200px; }
+.chat-box { width: 25%; min-width: 250px; }
+
+/* CANVAS BOX (Centrale) */
+.canvas-box { 
+    flex: 1; 
+    display: flex;             /* Usa Flex */
+    align-items: center;       /* Centra verticalmente */
+    justify-content: center;   /* Centra orizzontalmente */
+    overflow: hidden; 
     position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    overflow: hidden; /* Impedisce agli elementi di uscire */
+    background-color: #e0e5ec; 
+    padding: 20px; /* Spazio intorno al foglio bianco */
 }
 
-.canvas-box canvas {
-    max-width: 100%;
-    height: auto;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+h3 { 
+    text-align: center; margin: 0 0 10px 0; 
+    text-transform: uppercase; font-size: 0.9rem; font-weight: 800; 
+    color: #59B159; border-bottom: 2px dashed #ccc; padding-bottom: 5px;
 }
 
-.chat-box {
-    width: 20%;
-    display: flex;
-    flex-direction: column;
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-}
 
-/* ========== CHAT ========== */
-.messages-box {
-    flex-grow: 1;
-    overflow-y: auto;
-    padding: 15px;
-}
-
-.form-box {
-    padding: 15px;
-    border-top: 1px solid #eee;
-}
-
-#chat-form {
-    display: flex;
-    gap: 10px;
-}
-
-#chat-input {
-    flex-grow: 1;
-    padding: 8px 12px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-}
-
-#chat-form button {
-    padding: 8px 15px;
-    background-color: #4CAF50;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-#chat-form button:hover {
-    background-color: #45a049;
-}
-
-/* Stili dei messaggi */
-.message {
-    padding: 8px 10px;
-    margin-bottom: 8px;
-    border-radius: 8px;
-    line-height: 1.4;
-}
-
-.message.chat {
-    background-color: #f5f5f5;
-}
-
-.message.system {
-    background-color: #e8f4f8;
-    color: #0277bd;
-}
-
-.message.success {
-    background-color: #e8f5e9;
-    color: #2e7d32;
-}
-
-.message.error {
-    background-color: #ffebee;
-    color: #c62828;
-}
-
-.message.info {
-    background-color: #e3f2fd;
-    color: #1565c0;
-}
-
-.message-color-block {
-    display: inline-block;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    margin-right: 5px;
-    vertical-align: middle;
-    border: 1px solid #ccc;
-}
-
-/* ========== MODALI ========== */
-.modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.7);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-}
-
-.modal-content {
-    background-color: white;
-    padding: 30px;
-    border-radius: 10px;
-    max-width: 500px;
-    width: 80%;
-    text-align: center;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-}
-
-.modal h2 {
-    margin-top: 0;
-    color: #333;
-}
-
-.modal button {
-    margin-top: 20px;
-    padding: 10px 20px;
-    background-color: #4CAF50;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 16px;
-}
-
-.modal button:hover {
-    background-color: #45a049;
-}
-
-/* ========== NOTIFICA ARTISTA ========== */
-#artist-notification {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background-color: rgba(255, 255, 255, 0.9);
-    padding: 20px;
-    border-radius: 10px;
-    text-align: center;
-    box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
-    z-index: 10;
-    display: none;
-}
-
-/* ========== STANDING DEI GIOCATORI ========== */
-.players-ul {
-    list-style-type: none;
-    padding: 0;
-    margin: 0;
-}
-
-.player-entry-1, .player-entry-2 {
-    display: flex;
-    align-items: center;
-    padding: 8px 10px;
-    border-radius: 4px;
-    margin-bottom: 5px;
-}
-
-.player-entry-1 {
-    background-color: #f5f5f5;
-}
-
-.player-entry-2 {
-    background-color: #e8f4f8;
-}
-
-.current-player {
-    font-weight: bold;
-    border-left: 3px solid #4CAF50;
-}
-
-.avatar-circle {
-    margin-right: 15px;
-}
-
-.avatar-color {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    border: 2px solid #ddd;
-}
-
-.score-box {
-    margin-left: auto;  /* This pushes the score to the right */
-    font-weight: bold;
-}
-
-.score-box p {
-    margin: 0;
-}
-
-.artist-icon {
-    margin-left: 5px;
-}
-
-/* Rimozione del color block duplicato nella standing-box */
-.player-color-block {
-    display: none; /* Nascondiamo il blocco colore rettangolare */
-}
-
-/* ========== SELEZIONE PAROLE ========== */
-.word-selection-modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.7);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-}
-
-.word-selection-content {
-    background-color: white;
-    padding: 30px;
-    border-radius: 10px;
-    max-width: 500px;
-    width: 80%;
-    text-align: center;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-}
-
-.word-selection-content h3 {
-    margin-top: 0;
-    color: #333;
-    margin-bottom: 20px;
-}
-
-.word-list {
-    display: flex;
-    gap: 15px;
-    justify-content: center;
-    flex-wrap: wrap;
-}
-
-.word-option {
-    padding: 12px 20px;
-    background-color: #4CAF50;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 18px;
-    transition: transform 0.2s, background-color 0.2s;
-}
-
-.word-option:hover {
-    background-color: #45a049;
-    transform: scale(1.05);
-}
-
-/* ========== CONTROLLI DISEGNO ARTISTA ========== */
-.artist-controls {
-    width: 90%;
-    background-color: #f9f9f9;
-    border-radius: 8px;
-    margin-top: 25px;
-    padding: 10px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    display: flex;
-    justify-content: center;
-}
-
-.controls-layout {
-    width: 100%;
-    max-width: 800px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-/* Righe dei controlli */
-.controls-row {
-    display: flex;
-    width: 100%;
-    gap: 15px;
-    align-items: center;
-}
-
-/* Container per gli strumenti */
-.tools-container {
-    width: 40%;
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-}
-
-/* Container per i colori */
-.color-container {
-    width: 60%;
-    flex: 1;
-    display: flex;
-    justify-content: center;
-}
-
-/* Righe di strumenti */
-.tools-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-/* Palette di colori */
-.color-palette {
-    display: flex;
-    gap: 8px;
-    flex-wrap: nowrap;
-}
-
-/* Stile base per i pulsanti degli strumenti */
-.tool-button {
-    width: 40px;
-    height: 40px;
-    border: 1px solid #e0e0e0;
-    border-radius: 50%;
-    background-color: white;
-    cursor: pointer;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    transition: all 0.2s ease;
-    padding: 0;
-    flex-shrink: 0;
-}
-
-.tool-button:hover {
-    background-color: #f5f5f5;
-    transform: scale(1.05);
-}
-
-.tool-button.active {
-    border: 2px solid #4CAF50;
-    box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
-}
-
-/* Stili per pulsanti specifici */
-.color-button {
-    width: 36px;
-    height: 36px;
-    border: 1px solid #e0e0e0;
-    border-radius: 50%;
-    cursor: pointer;
-    transition: transform 0.2s ease;
-    flex-shrink: 0;
-}
-
-.color-button:hover {
-    transform: scale(1.1);
-}
-
-.color-button.active {
-    border: 2px solid #333;
-    box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
-    transform: scale(1.1);
-}
-
-.clear-button {
-    background-color: white;
-    color: #ff5722;
-    font-weight: bold;
-}
-
-.clear-icon {
-    font-size: 24px;
-    line-height: 1;
-}
-
-.fill-button {
-    background-color: white;
-    color: #333;
-}
-
-.fill-icon {
-    font-size: 20px;
-    line-height: 1;
-}
-
-.fill-button:hover {
-    background-color: #e8f4f8;
-}
-
-.fill-button.active {
-    border: 2px solid #1565c0;
-    box-shadow: 0 0 5px rgba(21, 101, 192, 0.3);
-}
-
-.eraser-button {
-    background-color: #f5f5f5;
-}
-
-.eraser-img {
+/* =========================================
+   3. CANVAS & CONTROLLI
+   ========================================= */
+canvas {
+    background: white; 
+    border-radius: 8px; 
+    cursor: crosshair;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    
+    /* FONDAMENTALE: Occupa tutto lo spazio disponibile nel box */
+    width: 100%; 
+    height: 100%; 
+    
+    /* Rimuoviamo limiti fissi che rompono il mouse */
     display: block;
-    max-width: 80%;
-    max-height: 80%;
+    touch-action: none; /* Disabilita zoom/scroll su mobile mentre disegni */
 }
 
-.eraser-button.active {
-    border: 2px solid #ff5722;
-    box-shadow: 0 0 5px rgba(255, 87, 34, 0.3);
+/* CONTROLLI ARTISTA (Il pannello grigio sotto) */
+.artist-controls {
+    width: 100%; 
+    max-width: 100%; /* Assicura che non esca */
+    margin-top: 15px;
+    padding: 10px; 
+    border-radius: 12px;
+    background: #fbfbfb; border: 1px solid #eee;
+    box-sizing: border-box; /* Padding incluso nella larghezza */
 }
 
-/* Stili specifici per cerchi di spessore penna */
-.line-width-circle {
-    background-color: #333;
-    border-radius: 50%;
+.controls-layout { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+
+/* Righe di controlli */
+.controls-row { 
+    display: flex; 
+    width: 100%; 
+    gap: 15px; 
+    align-items: center; 
+    justify-content: center;
+    flex-wrap: wrap; /* FONDAMENTALE: Permette di andare a capo se stretto */
 }
 
-/* Stile per i gruppi di pulsanti */
-.line-width-buttons, .eraser-width-buttons {
-    display: flex;
-    gap: 8px;
+.tools-container { 
+    display: flex; gap: 5px; align-items: center; 
+    padding-right: 10px; border-right: 1px solid #ddd; 
 }
 
-/* Tool organizzati */
-.drawing-tools {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+.color-container { display: flex; justify-content: center; }
+
+/* Palette Colori */
+.color-palette { 
+    display: flex; 
+    gap: 5px; 
+    flex-wrap: wrap; /* FONDAMENTALE: Colori a capo se non c'è spazio */
+    justify-content: center;
 }
 
-.tool-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 5px;
+.line-width-buttons, .eraser-width-buttons { display: flex; gap: 5px; margin-right: 5px; }
+
+/* Bottoni */
+.tool-button {
+    width: 34px; height: 34px; border-radius: 6px;
+    border: 1px solid #ccc; background: white; cursor: pointer;
+    display: flex; justify-content: center; align-items: center;
+    color: #555; flex-shrink: 0;
+}
+.tool-button:hover { background: #eee; }
+.tool-button.active { border-color: #59B159; background-color: #e8f5e9; color: #2e7d32; }
+.tool-button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.color-button {
+    width: 28px; height: 28px; border-radius: 4px;
+    border: 1px solid rgba(0,0,0,0.1); cursor: pointer;
+    flex-shrink: 0;
+}
+.color-button:hover { transform: scale(1.2); z-index: 2; }
+.color-button.active { transform: scale(1.2); border: 2px solid #333; z-index: 2; }
+
+.line-width-circle { background: currentColor; border-radius: 50%; }
+.eraser-img { width: 80%; height: auto; opacity: 0.8; }
+.fill-icon, .undo-icon, .redo-icon, .clear-icon { font-size: 1.1rem; line-height: 1; }
+
+#artist-notification {
+    position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+    background: rgba(255,255,255,0.95); color: #333; padding: 20px 40px;
+    border-radius: 10px; font-size: 1.5rem; font-weight: bold;
+    z-index: 50; display: none; text-align: center; pointer-events: none;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.2); border: 2px solid #59B159;
 }
 
-.tool-label {
-    font-size: 12px;
-    color: #555;
-    text-align: center;
-}
 
-/* ========== CURSORI PERSONALIZZATI ========== */
-.artist-cursor {
-    cursor: url('../imgs/paintbrush.png') 5 20, auto;
+/* =========================================
+   4. CHAT & CLASSIFICA
+   ========================================= */
+.players-ul { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
+.players-ul li { margin-bottom: 8px; }
+.player-entry-1, .player-entry-2 {
+    display: flex; align-items: center; padding: 8px; border-radius: 8px; font-weight: bold; gap: 10px;
+    background: #f7f7f7; border: 1px solid #eee;
 }
-
-.artist-cursor.fill-mode {
-    cursor: url('../imgs/paint-bucket.png') 5 20, auto;
+.current-player { background-color: #e8f5e9; border: 1px solid #59B159; }
+.avatar-circle {
+    width: 30px; height: 30px; border-radius: 50%;
+    display: flex; justify-content: center; align-items: center;
+    border: 1px solid #ccc; background: white;
 }
+.avatar-color { width: 20px; height: 20px; border-radius: 50%; }
+.score-box { margin-left: auto; font-family: monospace; font-size: 1.1rem; }
+.artist-icon { margin-left: 5px; }
 
-.eraser-cursor {
-    cursor: url('../imgs/eraser32.png') 5 20, auto;
+/* Chat */
+.messages-box {
+    flex: 1; overflow-y: auto; margin-bottom: 10px; padding: 10px;
+    border-radius: 10px; display: flex; flex-direction: column; gap: 5px;
+    background-color: #f9f9f9;
 }
+.message { padding: 5px 10px; border-radius: 5px; font-size: 0.9rem; }
+.message.chat { background: white; border: 1px solid #eee; align-self: flex-start; }
+.message.success { background: #d1e7dd; color: #0f5132; width: 100%; text-align: center; font-weight: bold; }
+.message.system { font-style: italic; text-align: center; font-size: 0.8rem; color: #888; align-self: center; }
+.message-color-block { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
 
-.eraser-cursor.artist-active {
-    cursor: url('../imgs/paintbrush.png') 5 20, auto;
+.form-box form { display: flex; gap: 5px; }
+#chat-input { 
+    flex: 1; padding: 10px; border-radius: 8px; outline: none; 
+    border: 1px solid #ddd; background: white;
 }
-
-.fill-cursor {
-    cursor: url('../imgs/paint-bucket.png') 5 20, auto;
+#chat-btn { 
+    width: 40px; border-radius: 8px; cursor: pointer; border: none; font-weight: bold;
+    background-color: #59B159; color: white;
 }
+#chat-btn:hover { background-color: #4a9e4a; }
 
-.fill-cursor.artist-active {
-    cursor: url('../imgs/paint-bucket.png') 5 20, auto;
+
+/* =========================================
+   5. MODALI
+   ========================================= */
+.modal, .word-selection-modal {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1000;
+    backdrop-filter: blur(3px);
 }
+.modal-content, .word-selection-content {
+    background: white; padding: 30px; border-radius: 20px; text-align: center; 
+    max-width: 500px; width: 90%; box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    animation: popIn 0.3s ease;
+}
+.word-list { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+.word-option {
+    padding: 12px 20px; font-size: 1.1rem; border: none; border-radius: 10px;
+    cursor: pointer; font-weight: bold; background-color: #59B159; color: white;
+    transition: transform 0.2s;
+}
+.word-option:hover { transform: scale(1.05); background-color: #4a9e4a; }
 
-/* ========== MEDIA QUERIES ========== */
-@media (max-width: 992px) {
+#back-to-lobby {
+    margin-top: 20px; padding: 12px 25px;
+    background-color: #e74c3c; color: white; border: none; border-radius: 8px;
+    font-size: 1rem; font-weight: bold; cursor: pointer;
+}
+@keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* Mobile Responsive */
+@media (max-width: 1024px) {
     .main-content {
         flex-direction: column;
+        overflow-y: auto; /* Scroll verticale su mobile */
         height: auto;
     }
-
-    .standing-box, .canvas-box, .chat-box {
-        width: 100%;
-        margin-bottom: 20px;
+    .standing-box, .chat-box, .canvas-box {
+        width: 100%; min-height: 300px;
+        overflow: visible; /* Lascia scorrere su mobile */
     }
-
-    .canvas-box {
-        order: 1;
-    }
-
-    .standing-box {
-        order: 2;
-    }
-
-    .chat-box {
-        order: 3;
-        height: 300px;
-    }
-}
-
-/* Stili per la riga di pulsanti undo/redo */
-.history-row {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 5px;
-}
-
-/* Pulsanti undo/redo */
-.undo-button, .redo-button {
-    border-radius: 50%;
-    background-color: white;
-    cursor: pointer;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    transition: all 0.2s ease;
-}
-
-.undo-button:hover, .redo-button:hover {
-    background-color: #f5f5f5;
-    transform: scale(1.05);
-}
-
-.undo-button:disabled, .redo-button:disabled {
-    cursor: not-allowed;
-}
-
-.undo-icon, .redo-icon {
-    font-size: 20px;
-}
-
-/* Media query per adattamento responsive */
-@media (max-width: 768px) {
-    .controls-row {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-    
-    .tools-container, .color-container {
-        width: 100%;
-    }
-    
-    .color-palette {
-        justify-content: center;
-    }
+    canvas { max-height: 50vh; }
 }

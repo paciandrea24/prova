@@ -857,7 +857,17 @@ const ITALIAN_QUESTIONS = [
         imageUrl: "/imgs/avatars/6.png",
         correct_answer: "Pasta con l'aglio",
         incorrect_answers: ["Thailandese", "Pizza", "Fiorentina"]
+    },
+    {
+        category: "Personaggi famosi",
+        type: "image",
+        difficulty: "hard",
+        question: "Qual'è l'attività che dovrebbe fare giornalmente il ragazzo in foto?",
+        imageUrl: "/imgs/avatars/7.png",
+        correct_answer: "Pushare",
+        incorrect_answers: ["Tulodiciare", "DevFestare", "Caffettare"]
     }
+
 ];
 
 module.exports = ITALIAN_QUESTIONS;

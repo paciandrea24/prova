@@ -1,48 +1,42 @@
 document.addEventListener('DOMContentLoaded', () => {
+    console.log("🎨 Drawing Game Script Caricato");
 
-    // Aggiungi questo all'inizio del file dopo document.addEventListener('DOMContentLoaded', ...)
-    // per impostare lo stile del cursore in base allo strumento
-    function updateCursorStyle() {
-        if (!amIArtist) {
-            canvas.classList.remove('artist-cursor', 'eraser-cursor', 'fill-cursor');
-            return;
-        }
-
-        canvas.classList.remove('artist-cursor', 'eraser-cursor', 'fill-cursor');
-
-        if (fillMode) {
-            canvas.classList.add('fill-cursor');
-        } else if (currentTool === 'eraser') {
-            canvas.classList.add('eraser-cursor');
-        } else {
-            canvas.classList.add('artist-cursor');
-        }
-    }
-
-    // Recupera i parametri dalla URL
+    // =========================================================
+    // 1. SETUP INIZIALE
+    // =========================================================
     const urlParams = new URLSearchParams(window.location.search);
     const lobbyId = urlParams.get('lobby');
     const playerColor = urlParams.get('color');
     const gameId = urlParams.get('game');
 
-    // NUOVO: Recupera le impostazioni dall'URL
     let gameSettings = null;
-    const settingsParam = urlParams.get('settings');
-    if (settingsParam) {
-        try {
-            gameSettings = JSON.parse(decodeURIComponent(settingsParam));
-            console.log('Impostazioni del gioco caricate:', gameSettings);
-        } catch (error) {
-            console.error('Errore nel parsing delle impostazioni:', error);
-        }
-    }
+    try {
+        const settingsParam = urlParams.get('settings');
+        if (settingsParam) gameSettings = JSON.parse(decodeURIComponent(settingsParam));
+    } catch (e) { console.error(e); }
 
-    if (!lobbyId || !playerColor || !gameId) {
+    if (!lobbyId || !playerColor) {
+        console.error("Dati mancanti, ritorno alla home");
         window.location.href = '/';
         return;
     }
 
-    // Riferimenti agli elementi del DOM
+    // Gestione Tema (Opzionale)
+    const themeBtn = document.getElementById('theme-toggle-btn');
+    const body = document.body;
+    const savedTheme = localStorage.getItem('quiz-theme');
+    if (savedTheme === 'dark' && body) body.classList.add('theme-dark');
+
+    if (themeBtn) {
+        themeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            body.classList.toggle('theme-dark');
+            localStorage.setItem('quiz-theme', body.classList.contains('theme-dark') ? 'dark' : 'light');
+        });
+    }
+
+    // Elementi DOM
+    const canvasBox = document.querySelector('.canvas-box');
     const timerText = document.querySelector('.timer-text');
     const hintText = document.querySelector('.hint');
     const currentRoundText = document.getElementById('current-round');
@@ -50,7 +44,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const messagesBox = document.querySelector('.messages-box');
     const chatForm = document.getElementById('chat-form');
     const chatInput = document.getElementById('chat-input');
-    const canvasBox = document.querySelector('.canvas-box');
     const standingBox = document.querySelector('.players-ul');
     const artistNotification = document.getElementById('artist-notification');
     const gameEndModal = document.getElementById('game-end-modal');
@@ -58,219 +51,124 @@ document.addEventListener('DOMContentLoaded', () => {
     const revealedWordElement = document.getElementById('revealed-word');
     const backToLobbyBtn = document.getElementById('back-to-lobby');
 
-    // Crea il canvas per il disegno
-    const canvas = document.createElement('canvas');
+    // --- SETUP CANVAS (CORRETTO) ---
+    // Cerchiamo il canvas esistente, altrimenti lo creiamo
+    let canvas = document.getElementById('drawing-canvas');
+    if (!canvas) {
+        canvas = document.createElement('canvas');
+        canvas.id = 'drawing-canvas'; // Importante dare un ID
+        canvasBox.appendChild(canvas);
+    }
+
+    // Impostiamo la risoluzione interna fissa
     canvas.width = 800;
-    canvas.height = 400;
-    canvasBox.appendChild(canvas);
+    canvas.height = 600;
+
     const ctx = canvas.getContext('2d');
 
-    // Inizializza il canvas con sfondo bianco
+    // Sfondo Bianco Iniziale
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Inizializza le variabili per il disegno (aggiorna nella sezione iniziale del file game.js)
+    // Variabili Stato Disegno
     let isDrawing = false;
-    let lastX = 0;
-    let lastY = 0;
+    let lastX = 0, lastY = 0;
     let currentColor = '#000000';
-    let lastUsedColor = null; // Per memorizzare l'ultimo colore usato prima di passare alla gomma
     let currentLineWidth = 5;
-    let currentTool = 'pen'; // Nuovo: 'pen', 'eraser', o 'fill'
+    let currentTool = 'pen';
     let amIArtist = false;
-    let fillMode = false; // Flag per indicare se siamo in modalità riempimento
+    let fillMode = false;
     let drawingHistory = [];
     let redoHistory = [];
-    const MAX_HISTORY_LENGTH = 20;
+    const MAX_HISTORY = 30;
 
-    // Connessione Socket.io
+
+    // =========================================================
+    // 2. SOCKET IO
+    // =========================================================
     const socket = io();
 
-    // Unisciti alla lobby
+    // Unisciti alla stanza (FONDAMENTALE per vedere gli altri)
+    console.log(`🔌 Mi unisco alla lobby: ${lobbyId}`);
     socket.emit('joinLobby', lobbyId);
 
-    // AGGIORNATO: Unisciti al gioco con le impostazioni
     socket.emit('joinGame', {
         lobbyId,
         gameId,
         playerColor,
-        settings: gameSettings // Invia le impostazioni al server
+        settings: gameSettings
     });
 
-    // Richiedi lo stato attuale del gioco
     socket.emit('requestGameState', { lobbyId });
 
-    // Aggiorna la funzione startDrawing per gestire i diversi strumenti
-    function startDrawing(e) {
-        if (!amIArtist) return;  // Solo l'artista può disegnare
 
-        // Se siamo in modalità riempimento, esegui il riempimento invece di disegnare
-        if (fillMode) {
-            const [x, y] = getMousePos(canvas, e);
+    // =========================================================
+    // 3. LOGICA DISEGNO
+    // =========================================================
+
+    // Calcola coordinate precise mouse/touch relative al canvas
+    function getMousePos(evt) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        return [
+            (evt.clientX - rect.left) * scaleX,
+            (evt.clientY - rect.top) * scaleY
+        ];
+    }
+
+    function startDrawing(e) {
+        if (!amIArtist) return;
+
+        const event = e.touches ? e.touches[0] : e;
+        const [x, y] = getMousePos(event);
+
+        if (fillMode || currentTool === 'fill') {
             floodFill(x, y, currentColor);
             return;
         }
 
         isDrawing = true;
-        [lastX, lastY] = getMousePos(canvas, e);
+        [lastX, lastY] = [x, y];
+        draw(e); // Disegna punto singolo
     }
 
-    // Aggiorna la funzione draw per gestire la gomma
     function draw(e) {
-        if (!isDrawing || !amIArtist) return;  // Solo l'artista può disegnare
+        // Stop se mouse non premuto (fix cursore appiccicato)
+        if (e.type === 'mousemove' && e.buttons === 0) {
+            isDrawing = false;
+            return;
+        }
 
-        const [x, y] = getMousePos(canvas, e);
+        if (!isDrawing || !amIArtist) return;
+        if (e.type !== 'mousedown' && e.type !== 'touchstart') e.preventDefault();
 
-        // Disegna localmente
-        drawLine(ctx, lastX, lastY, x, y, currentColor, currentLineWidth);
+        const event = e.touches ? e.touches[0] : e;
+        const [x, y] = getMousePos(event);
 
-        // Invia il disegno agli altri giocatori
+        const colorToUse = (currentTool === 'eraser') ? '#FFFFFF' : currentColor;
+
+        // 1. Disegna locale
+        drawLine(ctx, lastX, lastY, x, y, colorToUse, currentLineWidth);
+
+        // 2. Invia agli altri
         socket.emit('draw', {
             lobbyId,
             from: { x: lastX, y: lastY },
             to: { x, y },
-            color: currentColor,
+            color: colorToUse,
             lineWidth: currentLineWidth
         });
 
         [lastX, lastY] = [x, y];
     }
 
-    // Aggiungi alla funzione stopDrawing() per salvare lo stato quando si smette di disegnare
     function stopDrawing() {
-        if (isDrawing && amIArtist) {
-            saveCanvasState();
-        }
+        if (isDrawing && amIArtist) saveCanvasState();
         isDrawing = false;
     }
 
-    function floodFill(startX, startY, fillColor) {
-        // Arrotondiamo le coordinate per lavorare con i pixel
-        startX = Math.floor(startX);
-        startY = Math.floor(startY);
-
-        // Otteniamo i dati dell'immagine dal canvas
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-
-        // Otteniamo il colore del pixel di partenza
-        const targetColor = getPixelColor(imageData, startX, startY);
-
-        // Convertiamo fillColor (formato hex) in un array RGBA
-        const fillColorRgb = hexToRgb(fillColor);
-        const fillColorArray = [fillColorRgb.r, fillColorRgb.g, fillColorRgb.b, 255]; // Alpha sempre a 255
-
-        // Se il colore di riempimento è uguale al colore target, non fare nulla
-        if (colorMatch(targetColor, fillColorArray)) {
-            return;
-        }
-
-        // Utilizziamo un algoritmo di riempimento con pila (simile a BFS)
-        const stack = [[startX, startY]];
-        const visited = new Set(); // Per tracciare i pixel già visitati
-        const key = (x, y) => `${x},${y}`;
-
-        while (stack.length) {
-            const [x, y] = stack.pop();
-
-            // Se questo pixel è già stato visitato, salta
-            if (visited.has(key(x, y))) continue;
-
-            // Segna questo pixel come visitato
-            visited.add(key(x, y));
-
-            // Ottieni il colore di questo pixel
-            const pixelColor = getPixelColor(imageData, x, y);
-
-            // Se questo pixel non corrisponde al colore target, salta
-            if (!colorMatch(pixelColor, targetColor)) continue;
-
-            // Colora questo pixel
-            setPixelColor(imageData, x, y, fillColorArray);
-
-            // Aggiungi i pixel adiacenti allo stack (4-connessi: alto, basso, sinistra, destra)
-            if (x > 0) stack.push([x - 1, y]);                 // sinistra
-            if (x < canvas.width - 1) stack.push([x + 1, y]);  // destra
-            if (y > 0) stack.push([x, y - 1]);                 // alto
-            if (y < canvas.height - 1) stack.push([x, y + 1]); // basso
-        }
-
-        // Aggiorna il canvas con i nuovi dati dell'immagine
-        ctx.putImageData(imageData, 0, 0);
-
-        // Invia l'evento di riempimento a tutti gli altri giocatori
-        socket.emit('fillArea', {
-            lobbyId,
-            startX,
-            startY,
-            color: fillColor
-        });
-
-        // Alla fine della funzione, aggiungi:
-        if (amIArtist) {
-            saveCanvasState();
-        }
-    }
-
-    // Funzione helper per ottenere il colore di un pixel
-    function getPixelColor(imageData, x, y) {
-        const index = (y * imageData.width + x) * 4;
-        return [
-            imageData.data[index],     // R
-            imageData.data[index + 1], // G
-            imageData.data[index + 2], // B
-            imageData.data[index + 3]  // A
-        ];
-    }
-
-    // Funzione helper per impostare il colore di un pixel
-    function setPixelColor(imageData, x, y, color) {
-        const index = (y * imageData.width + x) * 4;
-        imageData.data[index] = color[0];     // R
-        imageData.data[index + 1] = color[1]; // G
-        imageData.data[index + 2] = color[2]; // B
-        imageData.data[index + 3] = color[3]; // A
-    }
-
-    // Funzione helper per verificare se due colori sono uguali (con una tolleranza)
-    function colorMatch(color1, color2, tolerance = 10) {
-        return Math.abs(color1[0] - color2[0]) <= tolerance &&
-            Math.abs(color1[1] - color2[1]) <= tolerance &&
-            Math.abs(color1[2] - color2[2]) <= tolerance &&
-            Math.abs(color1[3] - color2[3]) <= tolerance;
-    }
-
-    // Funzione per convertire un colore hex in RGB
-    function hexToRgb(hex) {
-        // Rimuovi il prefisso # se presente
-        hex = hex.replace(/^#/, '');
-
-        // Analizza il valore hex
-        let bigint = parseInt(hex, 16);
-        return {
-            r: (bigint >> 16) & 255,
-            g: (bigint >> 8) & 255,
-            b: bigint & 255
-        };
-    }
-
-    // Aggiungiamo la gestione dell'evento fillArea da socket.io
-    socket.on('fillArea', (data) => {
-        if (!amIArtist) {  // Solo i non-artisti ricevono l'evento
-            floodFill(data.startX, data.startY, data.color);
-        }
-    });
-
-    // Funzione helper per ottenere la posizione del mouse rispetto al canvas
-    function getMousePos(canvas, evt) {
-        const rect = canvas.getBoundingClientRect();
-        return [
-            (evt.clientX - rect.left) / (rect.right - rect.left) * canvas.width,
-            (evt.clientY - rect.top) / (rect.bottom - rect.top) * canvas.height
-        ];
-    }
-
-    // Funzione per disegnare una linea
+    // Funzione che disegna effettivamente
     function drawLine(context, x1, y1, x2, y2, color, width) {
         context.beginPath();
         context.moveTo(x1, y1);
@@ -278,53 +176,46 @@ document.addEventListener('DOMContentLoaded', () => {
         context.strokeStyle = color;
         context.lineWidth = width;
         context.lineCap = 'round';
+        context.lineJoin = 'round';
         context.stroke();
+        context.closePath();
     }
 
-    // Aggiunta di eventi al canvas
+    // Listeners Canvas
     canvas.addEventListener('mousedown', startDrawing);
     canvas.addEventListener('mousemove', draw);
     canvas.addEventListener('mouseup', stopDrawing);
     canvas.addEventListener('mouseout', stopDrawing);
+    canvas.addEventListener('mouseleave', stopDrawing);
 
-    // Touch events for mobile
-    canvas.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        startDrawing(e.touches[0]);
-    });
-    canvas.addEventListener('touchmove', (e) => {
-        e.preventDefault();
-        draw(e.touches[0]);
-    });
+    canvas.addEventListener('touchstart', startDrawing, { passive: false });
+    canvas.addEventListener('touchmove', draw, { passive: false });
     canvas.addEventListener('touchend', stopDrawing);
 
-    // Gestione degli eventi socket
-    socket.on('gameState', (state) => {
-        // Aggiorna lo stato del gioco nella UI
-        updateGameState(state);
+
+    // =========================================================
+    // 4. SOCKET LISTENERS (Ricezione)
+    // =========================================================
+
+    // Ricevi disegno dagli altri
+    socket.on('drawLine', (data) => {
+        // Disegna usando le coordinate ricevute
+        drawLine(ctx, data.from.x, data.from.y, data.to.x, data.to.y, data.color, data.lineWidth);
     });
 
-    socket.on('drawLine', (data) => {
-        // Disegna le linee ricevute dagli altri giocatori
-        drawLine(
-            ctx,
-            data.from.x,
-            data.from.y,
-            data.to.x,
-            data.to.y,
-            data.color,
-            data.lineWidth
-        );
+    socket.on('fillArea', (data) => {
+        ctx.fillStyle = data.color;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
     });
 
     socket.on('clearCanvas', () => {
-        // Pulisci il canvas
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     });
 
+    // Ricevi stato completo (es. per chi entra dopo)
     socket.on('canvasState', (data) => {
-        if (!amIArtist) { // Solo i non-artisti ricevono gli aggiornamenti di stato
+        if (!amIArtist) {
             const img = new Image();
             img.src = data.dataURL;
             img.onload = () => {
@@ -334,351 +225,414 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    socket.on('message', (data) => {
-        // Aggiungi messaggi alla chat
-        addMessage(data.message, data.type);
+
+    // =========================================================
+    // 5. LOGICA DI GIOCO (Chat, GameState, UI)
+    // =========================================================
+
+    // Chat
+    chatForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const text = chatInput.value.trim();
+        if (!text) return;
+
+        if (amIArtist) {
+            addMessage("Non puoi suggerire mentre disegni!", "error");
+        } else {
+            socket.emit('guess', { lobbyId, playerColor, guess: text });
+        }
+        chatInput.value = '';
     });
 
-    socket.on('playCorrectSound', () => {
-        const audio = document.getElementById('correctSound');
-        if (audio) {
-            audio.currentTime = 0;
-            audio.play().catch((err) => {
-                console.warn("Audio bloccato finché non c'è interazione utente: ", err);
-            });
+    function addMessage(msg, type) {
+        const div = document.createElement('div');
+        div.className = `message ${type}`;
+        if (type === 'chat' && msg.includes(':')) {
+            const [name, txt] = msg.split(':');
+            div.innerHTML = `<span style="font-weight:bold">${name}:</span> ${txt}`;
+        } else {
+            div.textContent = msg;
+        }
+        messagesBox.appendChild(div);
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+    }
+
+    socket.on('message', (data) => addMessage(data.message, data.type));
+
+    // Aggiornamento Stato Gioco
+    socket.on('gameState', (state) => {
+        if (timerText) timerText.textContent = state.timer + 's';
+        if (currentRoundText) currentRoundText.textContent = state.round;
+        if (totalRoundsText) totalRoundsText.textContent = state.totalRounds;
+
+        const wasArtist = amIArtist;
+        amIArtist = (state.currentTurn === playerColor);
+
+        // Gestione Vista (Artista vs Indovinatore)
+        if (amIArtist) {
+            hintText.textContent = state.currentWord || "Scegli una parola...";
+            hintText.parentElement.classList.add('artist-view');
+
+            // Mostra controlli artista
+            if (!document.querySelector('.artist-controls')) addArtistControls();
+            const controls = document.querySelector('.artist-controls');
+            if (controls) controls.style.display = 'flex';
+
+            chatInput.disabled = true;
+            chatInput.placeholder = "Tu disegni!";
+            canvas.style.cursor = "url('../imgs/pencil.png'), crosshair";
+
+            if (!wasArtist) {
+                artistNotification.innerHTML = "È il tuo turno!<br>Disegna!";
+                artistNotification.style.display = 'block';
+                setTimeout(() => artistNotification.style.display = 'none', 2000);
+                saveCanvasState(); // Salva stato bianco iniziale
+            }
+
+        } else {
+            hintText.textContent = state.hint;
+            hintText.parentElement.classList.remove('artist-view');
+
+            const controls = document.querySelector('.artist-controls');
+            if (controls) controls.style.display = 'none';
+
+            chatInput.disabled = false;
+            chatInput.placeholder = "Indovina la parola...";
+            canvas.style.cursor = "default";
+        }
+
+        updateStandings(state.players, state.scores, state.currentTurn);
+
+        if (amIArtist && state.wordOptions && state.wordOptions.length > 0) {
+            showWordSelection(state.wordOptions);
         }
     });
 
     socket.on('roundEnd', (data) => {
-        // Mostra la parola e i punteggi alla fine del round
-        revealedWordElement.textContent = data.word;
-
-        // Mostra il modal di fine round
+        if (revealedWordElement) revealedWordElement.textContent = data.word;
         roundEndModal.style.display = 'flex';
+        setTimeout(() => { roundEndModal.style.display = 'none'; }, 4500);
+    });
 
-        // Nasconde il modal dopo 5 secondi (come nella logica del server)
-        setTimeout(() => {
-            roundEndModal.style.display = 'none';
-        }, 4500);
+    socket.on('gameEnd', (data) => {
+        gameEndModal.style.display = 'flex';
+    });
 
-        // Pulisci il canvas
+    if (backToLobbyBtn) {
+        backToLobbyBtn.addEventListener('click', () => {
+            window.location.href = `/lobby.html?lobby=${lobbyId}&color=${playerColor}`;
+        });
+    }
+
+    // UI Helpers
+    function updateStandings(players, scores, currentArtist) {
+        standingBox.innerHTML = '';
+        players.forEach(p => {
+            const li = document.createElement('li');
+            const div = document.createElement('div');
+            div.className = 'player-entry-1';
+            if (p === playerColor) div.classList.add('current-player');
+
+            div.innerHTML = `
+                <div class="avatar-circle">
+                    <div class="avatar-color" style="background-color:${p}"></div>
+                </div>
+                <div class="player-info">
+                    <div class="player-name">${p === playerColor ? 'You' : ''}</div>
+                </div>
+                <div class="score-box">
+                    ${scores[p] || 0} pt ${p === currentArtist ? '✏️' : ''}
+                </div>
+            `;
+            li.appendChild(div);
+            standingBox.appendChild(li);
+        });
+    }
+
+    function addArtistControls() {
+        if (document.querySelector('.artist-controls')) return;
+        const controls = document.createElement('div');
+        controls.className = 'artist-controls';
+        controls.innerHTML = `
+            <div class="controls-row">
+                <div class="tools-container">
+                     <button class="tool-button active" onclick="window.setTool('pen')">✏️</button>
+                     <button class="tool-button" onclick="window.setTool('eraser')">🧼</button>
+                     <button class="tool-button" onclick="window.clearCanvas()">❌</button>
+                </div>
+                <div class="color-container">
+                    <div class="color-palette">
+                        <div class="color-button" style="background:black" onclick="window.setColor('black')"></div>
+                        <div class="color-button" style="background:red" onclick="window.setColor('red')"></div>
+                        <div class="color-button" style="background:blue" onclick="window.setColor('blue')"></div>
+                        <div class="color-button" style="background:green" onclick="window.setColor('green')"></div>
+                        <div class="color-button" style="background:yellow" onclick="window.setColor('yellow')"></div>
+                        <div class="color-button" style="background:orange" onclick="window.setColor('orange')"></div>
+                        <div class="color-button" style="background:purple" onclick="window.setColor('purple')"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+        canvasBox.appendChild(controls);
+    }
+
+    // Espongo funzioni globali per l'onclick nell'HTML generato
+    window.setColor = (c) => { currentColor = c; currentTool = 'pen'; };
+    window.setTool = (t) => { currentTool = t; };
+    window.clearCanvas = () => {
+        ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        socket.emit('clearCanvas', { lobbyId });
+        saveCanvasState();
+    };
+
+    function showWordSelection(words) {
+        // Evita duplicati
+        if (document.querySelector('.word-selection-modal')) return;
+
+        const modal = document.createElement('div');
+        modal.className = 'word-selection-modal';
+        const content = document.createElement('div');
+        content.className = 'word-selection-content';
+        content.innerHTML = '<h3>Scegli una parola:</h3>';
+        const list = document.createElement('div');
+        list.className = 'word-list';
+
+        words.forEach(w => {
+            const btn = document.createElement('button');
+            btn.className = 'word-option';
+            btn.textContent = w;
+            btn.onclick = () => {
+                socket.emit('wordSelected', { lobbyId, word: w });
+                modal.remove();
+            };
+            list.appendChild(btn);
+        });
+        content.appendChild(list);
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+    }
+
+    function saveCanvasState() {
+        if (drawingHistory.length > MAX_HISTORY) drawingHistory.shift();
+        drawingHistory.push(canvas.toDataURL());
+    }
+
+    function floodFill(startX, startY, fillColor) {
+        ctx.fillStyle = fillColor;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        socket.emit('fillArea', { lobbyId, color: fillColor });
+        if (amIArtist) saveCanvasState();
+    }
+
+    // Aggiornamento cursore
+    function updateCursorStyle() {
+        // Implementazione opzionale se vuoi cambiare il cursore CSS
+    }
+
+    socket.on('fillArea', (data) => {
+        ctx.fillStyle = data.color;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    });
+
+    socket.on('clearCanvas', () => {
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     });
 
-    socket.on('gameEnd', (data) => {
-        // Mostra i punteggi finali del gioco
-        const finalStandings = document.getElementById('final-standings');
-        finalStandings.innerHTML = '';
-
-        // Crea un array di [color, score] e ordinalo per punteggio decrescente
-        const sortedPlayers = Object.entries(data.finalScores)
-            .sort((a, b) => b[1] - a[1]);
-
-        // Crea la classifica finale
-        sortedPlayers.forEach((player, index) => {
-            const playerEntry = document.createElement('div');
-            playerEntry.className = 'final-player-entry';
-
-            const colorDiv = document.createElement('div');
-            colorDiv.className = 'avatar-color';
-            colorDiv.style.backgroundColor = player[0];
-            colorDiv.style.width = '20px';
-            colorDiv.style.height = '20px';
-            colorDiv.style.display = 'inline-block';
-            colorDiv.style.marginRight = '10px';
-            colorDiv.style.borderRadius = '50%';
-
-            const position = document.createElement('span');
-            position.textContent = `${index + 1}. `;
-
-            const score = document.createElement('span');
-            score.textContent = ` - ${player[1]} points`;
-
-            // Evidenzia il giocatore corrente
-            if (player[0] === playerColor) {
-                playerEntry.style.fontWeight = 'bold';
-            }
-
-            playerEntry.appendChild(position);
-            playerEntry.appendChild(colorDiv);
-            playerEntry.appendChild(score);
-            finalStandings.appendChild(playerEntry);
-        });
-
-        // Mostra il modal di fine gioco
-        gameEndModal.style.display = 'flex';
+    socket.on('canvasState', (data) => {
+        if (!amIArtist) {
+            const img = new Image();
+            img.src = data.dataURL;
+            img.onload = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            };
+        }
     });
 
-    // Evento per tornare alla lobby
-    backToLobbyBtn.addEventListener('click', () => {
-        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${playerColor}`;
-    });
 
-    // Gestione del form di chat per indovinare
+    // =========================================================
+    // 6. LOGICA GIOCO (CHAT, UI, STATI)
+    // =========================================================
+
+    // Chat
     chatForm.addEventListener('submit', (e) => {
         e.preventDefault();
+        const text = chatInput.value.trim();
+        if (!text) return;
 
-        const guess = chatInput.value.trim();
-        if (!guess) return;
-
-        // Invia il tentativo di indovinello
-        socket.emit('guess', {
-            lobbyId,
-            playerColor,
-            guess
-        });
-
-        // Pulisci l'input
+        if (amIArtist) {
+            addMessage("Non puoi suggerire!", "error");
+        } else {
+            socket.emit('guess', { lobbyId, playerColor, guess: text });
+        }
         chatInput.value = '';
     });
 
-    // Funzione per aggiornare lo stato del gioco nella UI
-    function updateGameState(state) {
-        // Aggiorna il timer
-        timerText.textContent = `${state.timer}s`;
-
-        // Aggiorna l'indizio e verifica se sono l'artista di questo turno
-        const wasArtist = amIArtist; // Salva lo stato precedente
-        amIArtist = state.currentTurn === playerColor;
-
-        // Gestisci l'indizio in base al ruolo (artista o indovinatore)
-        if (amIArtist) {
-            // Se sono l'artista, mostra la parola completa
-            // Usa state.currentWord se disponibile, altrimenti controlla se ci sono wordOptions
-            if (state.currentWord) {
-                hintText.textContent = state.currentWord;
-                hintText.classList.add('artist-view');
-                document.querySelector('.hint-word').classList.add('artist-view');
-            } else {
-                hintText.textContent = "In attesa di scegliere una parola...";
-                hintText.classList.add('artist-view');
-                document.querySelector('.hint-word').classList.add('artist-view');
-            }
-        } else if (state.hint) {
-            // Altrimenti mostra l'indizio parziale che si aggiorna progressivamente
-            hintText.textContent = state.hint;
-            hintText.classList.remove('artist-view');
-            document.querySelector('.hint-word').classList.remove('artist-view');
-        }
-
-        // Aggiorna le informazioni sul round
-        if (state.round) {
-            currentRoundText.textContent = state.round;
-        }
-
-        if (state.totalRounds) {
-            totalRoundsText.textContent = state.totalRounds;
-        }
-
-        // Se sono appena diventato l'artista
-        if (!wasArtist && amIArtist) {
-            // Mostra notifica
-            artistNotification.innerHTML = '<h3>È il tuo turno di disegnare!</h3>';
-            artistNotification.style.display = 'block';
-
-            setTimeout(() => {
-                artistNotification.style.display = 'none';
-            }, 3000);
-
-            // Inizializza la cronologia quando diventi l'artista
-            drawingHistory = [];
-            redoHistory = [];
-            saveCanvasState(); // Salva lo stato iniziale (canvas bianco)
-        }
-
-        // Aggiorna la UI per l'artista o per chi deve indovinare
-        updateUIForRole(amIArtist);
-
-        // Se sono l'artista e ci sono opzioni di parole disponibili, mostrare la selezione
-        if (amIArtist && state.wordOptions && state.wordOptions.length > 0) {
-            showWordSelection(state.wordOptions);
-        }
-
-        // Aggiorna la classifica
-        updateStandings(state.players, state.scores, state.currentTurn);
-    }
-
-    // Aggiorna UI in base al ruolo (artista o indovinatore)
-    function updateUIForRole(isArtist) {
-        // Aggiorna placeholder dell'input di chat
-        chatInput.placeholder = isArtist ? "Non puoi indovinare mentre disegni..." : "Indovina la parola...";
-
-        // Disabilita l'input se sei l'artista
-        chatInput.disabled = isArtist;
-
-        // Mostra/nascondi controlli artista
-        const artistControls = document.querySelector('.artist-controls');
-        if (artistControls) {
-            artistControls.style.display = isArtist ? 'flex' : 'none';
-        } else if (isArtist) {
-            // Se non esistono ancora i controlli dell'artista, creali
-            addArtistControls();
-        }
-
-        if (isArtist) {
-            // Se l'utente è l'artista, imposta il cursore a pennello
-            canvas.classList.add('artist-cursor');
+    function addMessage(msg, type) {
+        const div = document.createElement('div');
+        div.className = `message ${type}`;
+        if (type === 'chat' && msg.includes(':')) {
+            const [name, txt] = msg.split(':');
+            div.innerHTML = `<span style="font-weight:bold">${name}:</span> ${txt}`;
         } else {
-            // Altrimenti, rimuovi la classe del cursore
-            canvas.classList.remove('artist-cursor');
+            div.textContent = msg;
         }
-
-        // Verifica che questi event listener siano stati aggiunti dopo la creazione del canvas
-        canvas.addEventListener('mouseenter', () => {
-            if (amIArtist) {
-                canvas.classList.add('artist-active');
-            }
-        });
-
-        canvas.addEventListener('mouseleave', () => {
-            canvas.classList.remove('artist-active');
-        });
-    }
-
-    // Funzione per mostrare la selezione della parola
-    function showWordSelection(words) {
-        // Rimuovi eventuali selezioni di parole precedenti
-        const existingWordSelection = document.querySelector('.word-selection-modal');
-        if (existingWordSelection) {
-            existingWordSelection.remove();
-        }
-
-        // Crea il modal per la selezione delle parole
-        const wordSelectionModal = document.createElement('div');
-        wordSelectionModal.className = 'word-selection-modal';
-
-        const modalContent = document.createElement('div');
-        modalContent.className = 'word-selection-content';
-
-        const wordTitle = document.createElement('h3');
-        wordTitle.textContent = 'Scegli una parola da disegnare:';
-        modalContent.appendChild(wordTitle);
-
-        const wordList = document.createElement('div');
-        wordList.className = 'word-list';
-
-        // Per ogni parola, crea un bottone
-        words.forEach(word => {
-            const wordButton = document.createElement('button');
-            wordButton.textContent = word;
-            wordButton.className = 'word-option';
-
-            wordButton.addEventListener('click', () => {
-                // Invia la parola selezionata
-                socket.emit('wordSelected', {
-                    lobbyId,
-                    word
-                });
-
-                // Rimuovi il modal
-                wordSelectionModal.remove();
-
-                // Pulisci il canvas
-                ctx.fillStyle = 'white';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-                // Aggiorna l'indizio per mostrare la parola all'artista
-                hintText.textContent = word;
-                hintText.classList.add('artist-view');
-                document.querySelector('.hint-word').classList.add('artist-view');
-
-                // NON aggiungere più il messaggio in chat
-                // addMessage(`Stai disegnando: ${word}`, 'system');
-            });
-
-            wordList.appendChild(wordButton);
-        });
-
-        modalContent.appendChild(wordList);
-        wordSelectionModal.appendChild(modalContent);
-
-        // Aggiungi il modal al body
-        document.body.appendChild(wordSelectionModal);
-    }
-
-    // Funzione per aggiungere messaggi alla chat
-    function addMessage(message, type) {
-        // Ignora i messaggi di benvenuto predefiniti
-        if (message.includes('Welcome to the Drawing Game!') ||
-            message.includes('Wait for your turn to draw') ||
-            message.includes('è l\'artista di questo turno')) {
-            return;
-        }
-
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${type || 'chat'}`;
-
-        // Se è un messaggio di chat con formato "colore: testo"
-        if (type === 'chat' && message.includes(':')) {
-            const parts = message.split(':');
-            const colorName = parts[0].trim();
-            const messageText = parts.slice(1).join(':').trim();
-
-            // Crea un elemento per il colore
-            const colorBlock = document.createElement('span');
-            colorBlock.className = 'message-color-block';
-            colorBlock.style.backgroundColor = colorName;
-
-            // Crea un elemento per il testo
-            const textSpan = document.createElement('span');
-            textSpan.textContent = `: ${messageText}`;
-
-            // Aggiungi entrambi al messaggio
-            messageDiv.appendChild(colorBlock);
-            messageDiv.appendChild(textSpan);
-        }
-        // Nuovo caso: messaggio di tipo "success" con colore RGB
-        else if (type === 'success' && message.includes('rgb(')) {
-            // Estrai il colore RGB dal messaggio
-            const rgbMatch = message.match(/rgb\([^)]+\)/);
-            if (rgbMatch) {
-                const rgbColor = rgbMatch[0];
-                const restOfMessage = message.replace(rgbColor, '').trim();
-
-                // Crea un elemento per il colore
-                const colorBlock = document.createElement('span');
-                colorBlock.className = 'message-color-block';
-                colorBlock.style.backgroundColor = rgbColor;
-
-                // Crea un elemento per il testo
-                const textSpan = document.createElement('span');
-                textSpan.textContent = ` ${restOfMessage}`;
-
-                // Aggiungi entrambi al messaggio
-                messageDiv.appendChild(colorBlock);
-                messageDiv.appendChild(textSpan);
-            } else {
-                // Fallback se non troviamo un colore RGB
-                messageDiv.textContent = message;
-            }
-        } else {
-            // Per altri tipi di messaggi, mostra il testo normale
-            messageDiv.textContent = message;
-        }
-
-        messagesBox.appendChild(messageDiv);
-
-        // Scorri in basso per vedere gli ultimi messaggi
+        messagesBox.appendChild(div);
         messagesBox.scrollTop = messagesBox.scrollHeight;
     }
 
-    // Funzione per salvare lo stato attuale del canvas nella cronologia
-    function saveCanvasState() {
-        // Limita la dimensione della cronologia
-        if (drawingHistory.length >= MAX_HISTORY_LENGTH) {
-            drawingHistory.shift(); // Rimuovi lo stato più vecchio
+    socket.on('message', (data) => addMessage(data.message, data.type));
+
+    // Game State
+    socket.on('gameState', (state) => {
+        timerText.textContent = state.timer + 's';
+        currentRoundText.textContent = state.round;
+        totalRoundsText.textContent = state.totalRounds;
+
+        amIArtist = (state.currentTurn === playerColor);
+
+        if (amIArtist) {
+            hintText.textContent = state.currentWord || "Scegli una parola...";
+            hintText.parentElement.classList.add('artist-view');
+
+            if (!document.querySelector('.artist-controls')) addArtistControls();
+            else document.querySelector('.artist-controls').style.display = 'flex';
+
+            chatInput.disabled = true;
+            chatInput.placeholder = "Tu disegni!";
+            canvas.style.cursor = "url('../imgs/pencil.png'), crosshair"; // Cursore custom se vuoi
+
+        } else {
+            hintText.textContent = state.hint;
+            hintText.parentElement.classList.remove('artist-view');
+
+            const controls = document.querySelector('.artist-controls');
+            if (controls) controls.style.display = 'none';
+
+            chatInput.disabled = false;
+            chatInput.placeholder = "Indovina la parola...";
+            canvas.style.cursor = "default";
         }
 
-        // Salva lo stato attuale
-        drawingHistory.push(canvas.toDataURL());
+        updateStandings(state.players, state.scores, state.currentTurn);
 
-        // Pulisci la cronologia redo quando si fa una nuova azione
-        redoHistory = [];
+        if (amIArtist && state.wordOptions && state.wordOptions.length > 0) {
+            showWordSelection(state.wordOptions);
+        }
+    });
 
-        // Aggiorna la UI dei pulsanti
-        updateUndoRedoButtons();
+    socket.on('roundEnd', (data) => {
+        revealedWordElement.textContent = data.word;
+        roundEndModal.style.display = 'flex';
+        setTimeout(() => { roundEndModal.style.display = 'none'; }, 4500);
+    });
+
+    socket.on('gameEnd', (data) => {
+        const box = document.getElementById('final-standings');
+        box.innerHTML = '';
+        // (Logica classifica finale qui...)
+        gameEndModal.style.display = 'flex';
+    });
+
+    // UI Helpers
+    function updateStandings(players, scores, currentArtist) {
+        standingBox.innerHTML = '';
+        players.forEach(p => {
+            const li = document.createElement('li');
+            const div = document.createElement('div');
+            div.className = 'player-entry-1';
+            if (p === playerColor) div.classList.add('current-player');
+
+            div.innerHTML = `
+                <div class="avatar-circle">
+                    <div class="avatar-color" style="background-color:${p}"></div>
+                </div>
+                <div class="player-info">
+                    <div class="player-name">${p === playerColor ? 'You' : ''}</div>
+                </div>
+                <div class="score-box">
+                    ${scores[p] || 0} pt ${p === currentArtist ? '✏️' : ''}
+                </div>
+            `;
+            li.appendChild(div);
+            standingBox.appendChild(li);
+        });
     }
+
+    // CONTROLLI ARTISTA (Generati dinamicamente)
+    function addArtistControls() {
+        if (document.querySelector('.artist-controls')) return;
+
+        const controls = document.createElement('div');
+        controls.className = 'artist-controls';
+
+        // Layout strumenti e colori
+        // (Uso una stringa template per brevità, ma puoi usare createElement)
+        controls.innerHTML = `
+            <div class="controls-row">
+                <div class="tools-container">
+                     <button class="tool-button active" onclick="window.setTool('pen')">✏️</button>
+                     <button class="tool-button" onclick="window.setTool('eraser')">🧼</button>
+                     <button class="tool-button" onclick="window.clearCanvas()">❌</button>
+                </div>
+                <div class="color-container">
+                    <div class="color-palette">
+                        <div class="color-button" style="background:black" onclick="window.setColor('black')"></div>
+                        <div class="color-button" style="background:red" onclick="window.setColor('red')"></div>
+                        <div class="color-button" style="background:blue" onclick="window.setColor('blue')"></div>
+                        <div class="color-button" style="background:green" onclick="window.setColor('green')"></div>
+                        <div class="color-button" style="background:yellow" onclick="window.setColor('yellow')"></div>
+                        <div class="color-button" style="background:orange" onclick="window.setColor('orange')"></div>
+                        <div class="color-button" style="background:purple" onclick="window.setColor('purple')"></div>
+                        <div class="color-button" style="background:brown" onclick="window.setColor('brown')"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Appendiamo DOPO il canvas ma DENTRO canvas-box
+        canvasBox.appendChild(controls);
+    }
+
+    // Espongo le funzioni globali per i bottoni
+    window.setColor = (c) => { currentColor = c; currentTool = 'pen'; };
+    window.setTool = (t) => { currentTool = t; };
+    window.clearCanvas = () => {
+        ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        socket.emit('clearCanvas', { lobbyId });
+        saveCanvasState();
+    };
+
+    function showWordSelection(words) {
+        const modal = document.createElement('div');
+        modal.className = 'word-selection-modal';
+        const content = document.createElement('div');
+        content.className = 'word-selection-content';
+        content.innerHTML = '<h3>Scegli una parola:</h3>';
+        const list = document.createElement('div');
+        list.className = 'word-list';
+
+        words.forEach(w => {
+            const btn = document.createElement('button');
+            btn.className = 'word-option';
+            btn.textContent = w;
+            btn.onclick = () => {
+                socket.emit('wordSelected', { lobbyId, word: w });
+                modal.remove();
+            };
+            list.appendChild(btn);
+        });
+        content.appendChild(list);
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+    }
+
+    function saveCanvasState() {
+        drawingHistory.push(canvas.toDataURL());
+    }
+    function updateUndoRedoButtons() { } // Placeholder
+
 
     // Funzione per eseguire l'undo
     function undoDrawing() {
