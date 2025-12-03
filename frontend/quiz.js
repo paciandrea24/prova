@@ -96,19 +96,64 @@ socket.on('newQuestion', (data) => {
 });
 
 // Risultati del Round
+// 2. Risultati del Round (Svela la risposta)
 socket.on('roundResult', (data) => {
     console.log('📩 Risultati round:', data);
     const { correctIndex, scores, playerAnswers } = data;
+
+    // Recupera la mia risposta
     const myAnswer = playerAnswers[playerColor];
 
+    // Riferimenti Audio
+    const soundCorrect = document.getElementById('sound-correct');
+    const soundWrong = document.getElementById('sound-wrong');
+
+    // Evidenzia le risposte (Logica esistente)
     answerBtns.forEach((btn, index) => {
         btn.disabled = true;
-        if (index === correctIndex) btn.classList.add('correct');
-        else if (index === myAnswer) btn.classList.add('selected-wrong');
-        else btn.classList.add('wrong');
+
+        if (index === correctIndex) {
+            btn.classList.add('correct');
+        }
+        else if (index === myAnswer && index !== correctIndex) {
+            btn.classList.add('selected-wrong');
+        }
+        else {
+            btn.classList.add('wrong');
+        }
     });
 
+    // --- NUOVA LOGICA SUONI E FEEDBACK ---
+    if (myAnswer === correctIndex) {
+        statusMsg.textContent = "Risposta Corretta!";
+        statusMsg.style.color = "#2ecc71"; // Verde
+
+        // Riproduci suono vittoria
+        if (soundCorrect) {
+            soundCorrect.currentTime = 0; // Riavvia se stava già suonando
+            soundCorrect.play().catch(e => console.log("Audio bloccato:", e));
+        }
+    } else {
+        if (myAnswer !== undefined) {
+            statusMsg.textContent = "Sbagliato...";
+        } else {
+            statusMsg.textContent = "Tempo scaduto! ⏰";
+        }
+        statusMsg.style.color = "#e74c3c"; // Rosso
+
+        // Riproduci suono sconfitta
+        if (soundWrong) {
+            soundWrong.currentTime = 0;
+            soundWrong.play().catch(e => console.log("Audio bloccato:", e));
+        }
+    }
+    // -------------------------------------
+
     updateScoreboard(scores);
+
+    // Reset timer bar
+    timerFill.style.transition = 'none';
+    timerFill.style.width = '100%';
 });
 
 // Fine Gioco
