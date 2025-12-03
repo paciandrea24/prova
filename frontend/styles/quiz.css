@@ -160,7 +160,7 @@ body {
 }
 .sidebar h3 { color: #6c5ce7; border-bottom: 2px dashed #dfe6e9; }
 
-#score-list li { background-color: #fff; border-radius: 50px; color: #636e72; }
+#score-list li {position: relative; background-color: #fff; border-radius: 50px; color: #636e72; }
 #score-list li.current-player {
     background-color: #a29bfe; color: white;
     box-shadow: 0 4px 10px rgba(162, 155, 254, 0.4);
@@ -573,4 +573,37 @@ body.theme-dark #curiosity-box {
 @keyframes slideUp {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- ANIMAZIONE PUNTI FLUTTUANTI --- */
+.score-float {
+    position: absolute;
+    top: 0;
+    right: 10px;
+    font-size: 1.5rem;
+    font-weight: 900;
+    color: #ffd700; /* Oro */
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    pointer-events: none; /* Non cliccabile */
+    animation: floatUp 1.5s ease-out forwards;
+    z-index: 100;
+}
+
+/* Variante per chi sbaglia (facoltativo, es. "-10") */
+.score-float.malus {
+    color: #ff7675;
+}
+
+@keyframes floatUp {
+    0% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+    50% {
+        transform: translateY(-20px) scale(1.2);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-40px) scale(1);
+    }
 }

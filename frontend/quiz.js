@@ -2,6 +2,7 @@
 const socket = io();
 
 let currentRoundOptions = []; // Per salvare le risposte del round corrente
+let previousScores = {}; // Mappa per ricordare i punteggi del round precedente
 
 // 1. RECUPERA DATI DALL'URL
 const urlParams = new URLSearchParams(window.location.search);
@@ -286,6 +287,7 @@ socket.on('returnToLobbySignal', () => {
 socket.on('gameRestarted', () => {
     gameOverScreen.style.display = 'none';
     statusMsg.textContent = "Nuova partita in arrivo...";
+    previousScores = {};
     updateScoreboard({});
 
     // --- AGGIUNGI QUESTO: Resetta il bottone dell'Host ---
@@ -337,6 +339,19 @@ function updateScoreboard(scores) {
             // [NUOVO] Aggiungiamo questo attributo per trovare l'elemento quando risponde
             li.setAttribute('data-color', pColor);
 
+            // --- LOGICA PUNTI FLUTTUANTI ---
+            const oldScore = previousScores[pColor] || 0;
+            const diff = score - oldScore;
+
+            // Se il punteggio è aumentato, mostra l'animazione!
+            if (diff > 0) {
+                const floatSpan = document.createElement('span');
+                floatSpan.className = 'score-float';
+                floatSpan.textContent = `+${diff}`;
+                li.appendChild(floatSpan);
+            }
+            // -------------------------------
+
             // 1. Creiamo la struttura del pallino colorato
             const avatarCircle = document.createElement('div');
             avatarCircle.className = 'score-avatar-circle';
@@ -364,6 +379,7 @@ function updateScoreboard(scores) {
 
             scoreList.appendChild(li);
         });
+    previousScores = { ...scores };
 }
 
 
