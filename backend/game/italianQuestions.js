@@ -1,7 +1,7 @@
 // game/italianQuestions.js
 
 const ITALIAN_QUESTIONS = [
-    /* // --- GEOGRAFIA ---
+    // --- GEOGRAFIA ---
     {
         category: "Geografia",
         type: "multiple",
@@ -803,7 +803,7 @@ const ITALIAN_QUESTIONS = [
         question: "Biancaneve: Cosa dice la Regina allo specchio?",
         correct_answer: "Specchio, servo delle mie brame",
         incorrect_answers: ["Specchio, specchio delle mie brame", "Specchio fatato, dimmi chi è", "Oh specchio, chi è la più bella"]
-    }, */
+    },
     {
         category: "Personaggi famosi",
         type: "image",
