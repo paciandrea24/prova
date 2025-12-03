@@ -497,13 +497,27 @@ body.theme-dark #score-list li.has-answered {
 
 /* Riduciamo i margini per avvicinare risposte e immagine */
 .question-box {
-    margin-bottom: 15px; /* Era 30px o automatico */
+    margin-bottom: 15px;
+    min-height: 250px; /* Evita che il box collassi mentre carica l'immagine */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
 }
 
-/* Cursore zoom sull'immagine piccola */
 #question-image {
-    cursor: zoom-in;
-    transition: transform 0.2s, box-shadow 0.2s;
+    max-height: 35vh; /* Altezza massima: 35% dello schermo */
+    width: auto;
+    max-width: 100%;  /* Non uscire mai dai bordi */
+    
+    border-radius: 12px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+    border: 4px solid #fff;
+    object-fit: contain; /* Adatta l'immagine senza tagliarla */
+    background-color: #f1f2f6; /* Sfondo grigio mentre carica */
+    
+    /* Animazione ingresso */
+    animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 #question-image:hover {
     transform: scale(1.02);

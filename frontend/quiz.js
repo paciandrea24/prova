@@ -1,434 +1,322 @@
 // frontend/quiz.js
 const socket = io();
 
-let currentRoundOptions = []; // Per salvare le risposte del round corrente
-let previousScores = {}; // Mappa per ricordare i punteggi del round precedente
+// Avvolgiamo tutto in questo evento per assicurarci che l'HTML sia caricato
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("DOM Caricato. Inizializzazione Quiz...");
 
-// 1. RECUPERA DATI DALL'URL
-const urlParams = new URLSearchParams(window.location.search);
-const lobbyId = urlParams.get('lobby');
-const playerColor = urlParams.get('color');
-const gameId = urlParams.get('game') || 'trivia';
-const questionImage = document.getElementById('question-image');
+    // =========================================================
+    // 1. RECUPERA DATI DALL'URL & ELEMENTI DOM
+    // =========================================================
+    const urlParams = new URLSearchParams(window.location.search);
+    const lobbyId = urlParams.get('lobby');
+    const playerColor = urlParams.get('color');
+    const gameId = urlParams.get('game') || 'trivia';
 
-console.log("Variabili URL:", { lobbyId, playerColor, gameId });
+    // Riferimenti DOM (Ora siamo sicuri che esistano!)
+    const questionImage = document.getElementById('question-image');
+    const questionText = document.getElementById('question-text');
+    const answerBtns = document.querySelectorAll('.answer-btn');
+    const timerFill = document.getElementById('timer-fill');
+    const scoreList = document.getElementById('score-list');
+    const roundInfo = document.getElementById('round-info');
+    const statusMsg = document.getElementById('status-message');
 
-// 2. ELEMENTI DOM
-const questionText = document.getElementById('question-text');
-const answerBtns = document.querySelectorAll('.answer-btn');
-const timerFill = document.getElementById('timer-fill');
-const scoreList = document.getElementById('score-list');
-const roundInfo = document.getElementById('round-info');
-const statusMsg = document.getElementById('status-message');
-const answersContainer = document.getElementById('answers-container');
+    // Elementi Game Over e Host
+    const gameOverScreen = document.getElementById('game-over-screen');
+    const finalPodium = document.getElementById('final-podium');
+    const hostControls = document.getElementById('host-controls');
+    const waitingHostMsg = document.getElementById('waiting-host-msg');
+    const btnPlayAgain = document.getElementById('btn-play-again');
+    const btnBackLobby = document.getElementById('btn-back-lobby');
 
-// Riferimenti ai nuovi elementi
-const gameOverScreen = document.getElementById('game-over-screen');
-const finalPodium = document.getElementById('final-podium');
-const hostControls = document.getElementById('host-controls');
-const waitingHostMsg = document.getElementById('waiting-host-msg');
-const btnPlayAgain = document.getElementById('btn-play-again');
-const btnBackLobby = document.getElementById('btn-back-lobby');
-
-// 3. CONNESSIONE SOCKET
-socket.on('connect', () => {
-    console.log('✅ Connesso al Server Socket:', socket.id);
-
-    if (!lobbyId || !playerColor) {
-        alert("Errore: Parametri mancanti nell'URL");
-        return;
-    }
-
-    // FONDAMENTALE: Diciamo al server "Ehi, sono arrivato nella pagina del gioco!"
-    console.log('📤 Invio richiesta joinGame...');
-    socket.emit('joinGame', {
-        lobbyId,
-        gameId,
-        playerColor
-    });
-});
-
-// 4. GESTIONE EVENTI DAL SERVER
-
-// Messaggio di attesa (es. "Il round sta per iniziare")
-socket.on('statusMessage', (data) => {
-    console.log('📩 Messaggio di stato:', data.message);
-    statusMsg.textContent = data.message;
-});
-
-// 1. Ascolta quando qualcuno risponde
-socket.on('playerAnswered', (data) => {
-    const { playerColor: colorWhoAnswered } = data;
-    console.log(`Il giocatore ${colorWhoAnswered} ha risposto!`);
-
-    // Trova l'elemento nella lista
-    const playerItem = document.querySelector(`li[data-color="${colorWhoAnswered}"]`);
-
-    if (playerItem) {
-        // Aggiungi una classe CSS per indicare "Ha risposto"
-        playerItem.classList.add('has-answered');
-
-        // Opzionale: Riproduci un piccolo suono "pop"
-    }
-
-    // [NUOVO] Rimuovi lo stato "ha risposto" da tutti i giocatori
-    const allPlayers = document.querySelectorAll('#score-list li');
-    allPlayers.forEach(li => li.classList.remove('has-answered'));
-});
-
-// Arriva una domanda
-socket.on('newQuestion', (data) => {
-    console.log('📩 Nuova domanda ricevuta:', data);
-
-    // 1. Estrai anche 'imageUrl'
-    const { question, options, round, totalRounds, time, scores, imageUrl } = data;
-
-    // 1. Salviamo le opzioni per usarle dopo
-    currentRoundOptions = options;
-
-    // 2. Reset UI extra
-    document.getElementById('curiosity-box').style.display = 'none'; // Nascondi curiosità
-
-    resetButtons();
-    statusMsg.textContent = 'Scegli la risposta!';
-    questionText.textContent = question;
-    roundInfo.textContent = `Round ${round}/${totalRounds}`;
-
-    // [AGGIUNGI QUESTO] Rimuovi lo stato "ha risposto" dal round precedente
-    const allPlayers = document.querySelectorAll('#score-list li');
-    allPlayers.forEach(li => li.classList.remove('has-answered'));
-
-    // --- GESTIONE IMMAGINE ---
-    if (imageUrl) {
-        questionImage.src = imageUrl;
-        questionImage.style.display = 'block'; // Mostra immagine
-    } else {
-        questionImage.style.display = 'none'; // Nascondi se non c'è
-        questionImage.src = '';
-    }
-    // -------------------------
-
-    if (scores) {
-        updateScoreboard(scores);
-    }
-
-    // Aggiorna Bottoni
-    answerBtns.forEach((btn, index) => {
-        btn.textContent = options[index];
-        btn.disabled = false;
-        btn.onclick = () => sendAnswer(index);
-    });
-
-    // Barra del timer
-    timerFill.style.transition = 'none'; // Reset istantaneo
-    timerFill.style.width = '100%';
-    // Forza un reflow per riavviare l'animazione
-    void timerFill.offsetWidth;
-    timerFill.style.transition = `width ${time}s linear`;
-    timerFill.style.width = '0%';
-});
-
-// Risultati del Round
-// 2. Risultati del Round (Svela la risposta)
-socket.on('roundResult', (data) => {
-    console.log('📩 Risultati round:', data);
-    const { correctIndex, scores, playerAnswers } = data;
-
-    // Recupera la mia risposta
-    const myAnswer = playerAnswers[playerColor];
-
-    // Riferimenti Audio
+    // Audio
     const soundCorrect = document.getElementById('sound-correct');
     const soundWrong = document.getElementById('sound-wrong');
 
-    // Evidenzia le risposte (Logica esistente)
-    answerBtns.forEach((btn, index) => {
-        btn.disabled = true;
-        // Rimuoviamo eventuali icone vecchie prima di aggiungerne nuove
-        // (Resettando il testo all'opzione originale salvata)
-        btn.textContent = currentRoundOptions[index];
+    // =========================================================
+    // 2. LOGICA SOCKET.IO
+    // =========================================================
 
-        if (index === correctIndex) {
-            btn.classList.add('correct');
-            btn.innerHTML += ' <span class="btn-icon"></span>'; // Icona Spunta
+    socket.on('connect', () => {
+        console.log('✅ Connesso al Server Socket:', socket.id);
+
+        if (!lobbyId || !playerColor) {
+            alert("Errore: Parametri mancanti nell'URL");
+            return;
         }
-        else if (index === myAnswer && index !== correctIndex) {
-            btn.classList.add('selected-wrong');
-            btn.innerHTML += ' <span class="btn-icon"></span>'; // Icona Croce
+
+        socket.emit('joinGame', {
+            lobbyId,
+            gameId,
+            playerColor
+        });
+    });
+
+    // Messaggio di stato
+    socket.on('statusMessage', (data) => {
+        statusMsg.textContent = data.message;
+    });
+
+    // --- ARRIVO NUOVA DOMANDA ---
+    socket.on('newQuestion', (data) => {
+        console.log('📩 Nuova domanda:', data);
+        const { question, options, round, totalRounds, time, scores, imageUrl } = data;
+
+        resetButtons();
+        statusMsg.textContent = 'Scegli la risposta!';
+        statusMsg.style.color = ""; // Reset colore
+        questionText.textContent = question;
+        roundInfo.textContent = `Round ${round}/${totalRounds}`;
+
+        // GESTIONE IMMAGINE (Safe check)
+        if (questionImage) {
+            if (imageUrl) {
+                questionImage.src = imageUrl;
+                questionImage.style.display = 'block';
+            } else {
+                questionImage.style.display = 'none';
+                questionImage.src = '';
+            }
         }
-        else {
-            btn.classList.add('wrong');
+
+        if (scores) updateScoreboard(scores);
+
+        // Aggiorna Testo Bottoni
+        answerBtns.forEach((btn, index) => {
+            btn.textContent = options[index];
+            btn.disabled = false;
+            // Rimuovi vecchie classi risultato
+            btn.classList.remove('correct', 'wrong', 'selected-wrong');
+
+            // Imposta click listener (usiamo una funzione anonima per passare l'indice)
+            btn.onclick = () => sendAnswer(index);
+        });
+
+        // ANIMAZIONE TIMER (Safe check)
+        if (timerFill) {
+            timerFill.style.transition = 'none';
+            timerFill.style.width = '100%';
+            void timerFill.offsetWidth; // Force reflow
+            timerFill.style.transition = `width ${time}s linear`;
+            timerFill.style.width = '0%';
         }
     });
 
-    // 1. Ascolta quando qualcuno risponde
+    // --- RISULTATO ROUND ---
+    socket.on('roundResult', (data) => {
+        console.log('📩 Risultati:', data);
+        const { correctIndex, scores, playerAnswers } = data;
+        const myAnswer = playerAnswers[playerColor];
+
+        // Disabilita e colora i bottoni
+        answerBtns.forEach((btn, index) => {
+            btn.disabled = true;
+            btn.onclick = null; // Rimuovi listener per sicurezza
+
+            if (index === correctIndex) {
+                btn.classList.add('correct');
+            } else if (index === myAnswer && index !== correctIndex) {
+                btn.classList.add('selected-wrong');
+            } else {
+                btn.classList.add('wrong');
+            }
+        });
+
+        // Feedback Utente & Audio
+        if (myAnswer === correctIndex) {
+            statusMsg.textContent = "Risposta Corretta!";
+            statusMsg.style.color = "#2ecc71";
+            if (soundCorrect) { soundCorrect.currentTime = 0; soundCorrect.play().catch(() => { }); }
+        } else {
+            statusMsg.textContent = (myAnswer !== undefined) ? "Sbagliato..." : "Tempo scaduto! ⏰";
+            statusMsg.style.color = "#e74c3c";
+            if (soundWrong) { soundWrong.currentTime = 0; soundWrong.play().catch(() => { }); }
+        }
+
+        updateScoreboard(scores);
+
+        // Ferma timer
+        if (timerFill) {
+            timerFill.style.transition = 'none';
+            timerFill.style.width = '100%'; // O 0%, a scelta
+        }
+    });
+
+    // --- GAME OVER ---
+    socket.on('gameOver', (data) => {
+        const { scores, hostColor } = data;
+
+        // Blur sfondo
+        const container = document.querySelector('.game-container');
+        if (container) container.classList.add('blur-background');
+
+        gameOverScreen.style.display = 'flex';
+        finalPodium.innerHTML = '';
+
+        const sorted = Object.entries(scores).sort(([, a], [, b]) => b - a);
+
+        sorted.forEach(([pColor, score], index) => {
+            const div = document.createElement('div');
+            div.className = `final-rank-item ${index === 0 ? 'winner' : ''}`;
+
+            let medal = '';
+            if (index === 0) medal = '🥇';
+            if (index === 1) medal = '🥈';
+            if (index === 2) medal = '🥉';
+
+            div.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span class="rank-position">${index + 1}° ${medal}</span>
+                    <div class="score-avatar-circle">
+                        <div class="score-avatar-color" style="background-color: ${pColor}"></div>
+                    </div>
+                    ${pColor === playerColor ? '<span style="opacity:0.8;">(Tu)</span>' : ''}
+                </div>
+                <div style="font-weight: bold;">${score} pt</div>
+            `;
+            finalPodium.appendChild(div);
+        });
+
+        if (playerColor === hostColor) {
+            hostControls.style.display = 'flex';
+            waitingHostMsg.style.display = 'none';
+        } else {
+            hostControls.style.display = 'none';
+            waitingHostMsg.style.display = 'block';
+        }
+    });
+
+    socket.on('returnToLobbySignal', () => {
+        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
+    });
+
+    socket.on('gameRestarted', () => {
+        gameOverScreen.style.display = 'none';
+        statusMsg.textContent = "Nuova partita in arrivo...";
+
+        const container = document.querySelector('.game-container');
+        if (container) container.classList.remove('blur-background');
+
+        updateScoreboard({});
+
+        // Reset bottoni host
+        btnPlayAgain.textContent = "🔄 Gioca di Nuovo";
+        btnPlayAgain.disabled = false;
+    });
+
+    // =========================================================
+    // 3. FUNZIONI HELPER
+    // =========================================================
+
+    function sendAnswer(index) {
+        // Disabilita subito per evitare doppi click
+        answerBtns.forEach(btn => btn.disabled = true);
+        statusMsg.textContent = "Risposta inviata...";
+        socket.emit('triviaAnswer', { lobbyId, playerColor, answerIndex: index });
+    }
+
+    function resetButtons() {
+        answerBtns.forEach(btn => {
+            btn.className = 'answer-btn';
+            btn.disabled = true;
+        });
+    }
+
+    let previousScores = {};
+
+    function updateScoreboard(scores) {
+        if (!scoreList) return;
+        scoreList.innerHTML = '';
+
+        Object.entries(scores)
+            .sort(([, a], [, b]) => b - a)
+            .forEach(([pColor, score]) => {
+                const li = document.createElement('li');
+                li.setAttribute('data-color', pColor);
+
+                // Logica Punti Fluttuanti
+                const oldScore = previousScores[pColor] || 0;
+                const diff = score - oldScore;
+
+                if (diff > 0) {
+                    const floatSpan = document.createElement('span');
+                    floatSpan.className = 'score-float';
+                    floatSpan.textContent = `+${diff}`;
+                    li.appendChild(floatSpan);
+                }
+
+                // Avatar
+                const avatarCircle = document.createElement('div');
+                avatarCircle.className = 'score-avatar-circle';
+                const avatarColorDiv = document.createElement('div');
+                avatarColorDiv.className = 'score-avatar-color';
+                avatarColorDiv.style.backgroundColor = pColor;
+                avatarCircle.appendChild(avatarColorDiv);
+
+                // Testo Punteggio
+                const scoreText = document.createElement('span');
+                scoreText.textContent = `${score} pt`;
+
+                if (pColor === playerColor) {
+                    li.classList.add('current-player');
+                    scoreText.textContent += " (Tu)";
+                }
+
+                li.appendChild(avatarCircle);
+                li.appendChild(scoreText);
+                scoreList.appendChild(li);
+            });
+
+        previousScores = { ...scores };
+    }
+
+    // LISTENER BOTTONI HOST
+    if (btnPlayAgain) {
+        btnPlayAgain.addEventListener('click', () => {
+            btnPlayAgain.textContent = "Caricamento...";
+            btnPlayAgain.disabled = true;
+            socket.emit('playAgain', { lobbyId, settings: {} });
+        });
+    }
+
+    if (btnBackLobby) {
+        btnBackLobby.addEventListener('click', () => {
+            socket.emit('backToLobby', { lobbyId });
+        });
+    }
+
+    // FEEDBACK LIVE (Pallini avversari)
     socket.on('playerAnswered', (data) => {
         const { playerColor: colorWhoAnswered } = data;
-        console.log(`Il giocatore ${colorWhoAnswered} ha risposto!`);
-
-        // Trova l'elemento nella lista
         const playerItem = document.querySelector(`li[data-color="${colorWhoAnswered}"]`);
-
         if (playerItem) {
-            // Aggiungi una classe CSS per indicare "Ha risposto"
             playerItem.classList.add('has-answered');
-
-            // Opzionale: Riproduci un piccolo suono "pop"
         }
     });
 
-    // --- LOGICA CURIOSITÀ / SPIEGAZIONE ---
-    const curiosityBox = document.getElementById('curiosity-box');
-    const curiosityText = document.getElementById('curiosity-text');
+    // GESTIONE TEMA
+    const themeBtn = document.getElementById('theme-toggle-btn');
+    const body = document.body;
+    const savedTheme = localStorage.getItem('quiz-theme');
 
-    // Nota: Se in futuro aggiungi un campo "description" al backend, usalo qui!
-    // Per ora costruiamo una frase standard utile.
-    const correctAnswerText = currentRoundOptions[correctIndex];
-
-    curiosityBox.style.display = 'block';
-    curiosityText.innerHTML = `La risposta corretta era: <strong>${correctAnswerText}</strong>.`;
-
-    // --- NUOVA LOGICA SUONI E FEEDBACK ---
-    if (myAnswer === correctIndex) {
-        statusMsg.textContent = "Risposta Corretta!";
-        statusMsg.style.color = "#2ecc71"; // Verde
-
-        // Riproduci suono vittoria
-        if (soundCorrect) {
-            soundCorrect.currentTime = 0; // Riavvia se stava già suonando
-            soundCorrect.play().catch(e => console.log("Audio bloccato:", e));
-        }
+    if (savedTheme === 'dark') {
+        body.classList.add('theme-dark');
+        if (themeBtn) themeBtn.innerHTML = '☀️ Stile Light';
     } else {
-        if (myAnswer !== undefined) {
-            statusMsg.textContent = "Sbagliato...";
-        } else {
-            statusMsg.textContent = "Tempo scaduto! ⏰";
-        }
-        statusMsg.style.color = "#e74c3c"; // Rosso
-
-        // Riproduci suono sconfitta
-        if (soundWrong) {
-            soundWrong.currentTime = 0;
-            soundWrong.play().catch(e => console.log("Audio bloccato:", e));
-        }
+        if (themeBtn) themeBtn.innerHTML = '🌘 Stile Dark';
     }
-    // -------------------------------------
 
-    updateScoreboard(scores);
-
-    // Reset timer bar
-    timerFill.style.transition = 'none';
-    timerFill.style.width = '100%';
-});
-
-// Fine Gioco
-socket.on('gameOver', (data) => {
-    console.log('🏁 Game Over', data);
-    const { scores, hostColor } = data; // Riceviamo anche l'hostColor
-
-    // Nascondi interfaccia gioco
-    document.querySelector('.game-container').classList.add('blur-background'); // Opzionale: sfoca sfondo
-
-    // Mostra Overlay
-    gameOverScreen.style.display = 'flex';
-
-    // Genera Classifica Finale
-    finalPodium.innerHTML = '';
-    const sorted = Object.entries(scores).sort(([, a], [, b]) => b - a);
-
-    sorted.forEach(([pColor, score], index) => {
-        const div = document.createElement('div');
-        div.className = `final-rank-item ${index === 0 ? 'winner' : ''}`;
-
-        let medal = '';
-        if (index === 0) medal = '🥇';
-        if (index === 1) medal = '🥈';
-        if (index === 2) medal = '🥉';
-
-        // --- MODIFICA QUI SOTTO: Usiamo i pallini invece del testo ---
-        div.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <span class="rank-position">${index + 1}° ${medal}</span>
-                
-                <div class="score-avatar-circle">
-                    <div class="score-avatar-color" style="background-color: ${pColor}"></div>
-                </div>
-                
-                ${pColor === playerColor ? '<span style="font-size:0.8em; opacity:0.8;">(Tu)</span>' : ''}
-            </div>
-            <div style="font-weight: bold;">${score} pt</div>
-        `;
-        // -------------------------------------------------------------
-
-        finalPodium.appendChild(div);
-    });
-
-    // Controlla se sono l'host
-    if (playerColor === hostColor) {
-        hostControls.style.display = 'flex';
-        waitingHostMsg.style.display = 'none';
-    } else {
-        hostControls.style.display = 'none';
-        waitingHostMsg.style.display = 'block';
-    }
-});
-
-// Evento: Redirect (per tornare alla lobby)
-socket.on('returnToLobbySignal', () => {
-    console.log("Ricevuto segnale ritorno alla lobby...");
-
-    // Costruiamo l'URL completo per evitare che il controllo di sicurezza ci cacci
-    const targetUrl = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
-
-    window.location.href = targetUrl;
-});
-
-// Evento: Gioco Riavviato (pulisci schermo e ricomincia)
-socket.on('gameRestarted', () => {
-    gameOverScreen.style.display = 'none';
-    statusMsg.textContent = "Nuova partita in arrivo...";
-    previousScores = {};
-    updateScoreboard({});
-
-    // --- AGGIUNGI QUESTO: Resetta il bottone dell'Host ---
-    btnPlayAgain.textContent = "🔄 Gioca di Nuovo";
-    btnPlayAgain.disabled = false;
-    // -----------------------------------------------------
-});
-
-// --- GESTIONE CLICK BOTTONI (Solo Host) ---
-
-btnPlayAgain.addEventListener('click', () => {
-    btnPlayAgain.textContent = "Caricamento...";
-    btnPlayAgain.disabled = true;
-
-    // Recupera settings dall'URL se possibile, o usa default
-    // Nota: per fare una cosa fatta bene dovremmo aver salvato i settings iniziali.
-    // Per ora passiamo un oggetto vuoto, userà i default del server o aggiungi logica per salvarli.
-    socket.emit('playAgain', { lobbyId, settings: {} });
-});
-
-btnBackLobby.addEventListener('click', () => {
-    socket.emit('backToLobby', { lobbyId });
-});
-
-// --- FUNZIONI UTILI ---
-function sendAnswer(index) {
-    answerBtns.forEach(btn => btn.disabled = true);
-    statusMsg.textContent = "Risposta inviata...";
-    socket.emit('triviaAnswer', { lobbyId, playerColor, answerIndex: index });
-}
-
-function resetButtons() {
-    answerBtns.forEach(btn => {
-        btn.className = 'answer-btn';
-        btn.disabled = true;
-    });
-}
-
-// frontend/quiz.js
-
-function updateScoreboard(scores) {
-    scoreList.innerHTML = '';
-
-    // Ordina i giocatori per punteggio decrescente
-    Object.entries(scores)
-        .sort(([, a], [, b]) => b - a)
-        .forEach(([pColor, score]) => {
-            const li = document.createElement('li');
-            // [NUOVO] Aggiungiamo questo attributo per trovare l'elemento quando risponde
-            li.setAttribute('data-color', pColor);
-
-            // --- LOGICA PUNTI FLUTTUANTI ---
-            const oldScore = previousScores[pColor] || 0;
-            const diff = score - oldScore;
-
-            // Se il punteggio è aumentato, mostra l'animazione!
-            if (diff > 0) {
-                const floatSpan = document.createElement('span');
-                floatSpan.className = 'score-float';
-                floatSpan.textContent = `+${diff}`;
-                li.appendChild(floatSpan);
+    if (themeBtn) {
+        themeBtn.addEventListener('click', () => {
+            body.classList.toggle('theme-dark');
+            if (body.classList.contains('theme-dark')) {
+                themeBtn.innerHTML = '☀️ Stile Light';
+                localStorage.setItem('quiz-theme', 'dark');
+            } else {
+                themeBtn.innerHTML = '🌘 Stile Dark';
+                localStorage.setItem('quiz-theme', 'light');
             }
-            // -------------------------------
-
-            // 1. Creiamo la struttura del pallino colorato
-            const avatarCircle = document.createElement('div');
-            avatarCircle.className = 'score-avatar-circle';
-
-            const avatarColorDiv = document.createElement('div');
-            avatarColorDiv.className = 'score-avatar-color';
-            avatarColorDiv.style.backgroundColor = pColor; // Applichiamo il colore RGB qui
-
-            // Assembliamo il pallino
-            avatarCircle.appendChild(avatarColorDiv);
-
-            // 2. Creiamo il testo del punteggio
-            const scoreText = document.createElement('span');
-            scoreText.textContent = `${score} pt`;
-
-            // 3. Verifica se sono io
-            if (pColor === playerColor) {
-                li.classList.add('current-player'); // Aggiunge bordo e stile
-                scoreText.textContent += " (Tu)";
-            }
-
-            // 4. Inseriamo tutto nella riga
-            li.appendChild(avatarCircle);
-            li.appendChild(scoreText);
-
-            scoreList.appendChild(li);
         });
-    previousScores = { ...scores };
-}
-
-
-// --- GESTIONE CAMBIO TEMA ---
-
-const themeBtn = document.getElementById('theme-toggle-btn');
-const body = document.body;
-
-// 1. Controlla se l'utente aveva già scelto un tema in passato
-const savedTheme = localStorage.getItem('quiz-theme');
-if (savedTheme === 'dark') {
-    body.classList.add('theme-dark');
-    themeBtn.innerHTML = '☀️ Stile Light'; // Cambia testo bottone
-} else {
-    themeBtn.innerHTML = '🌘 Stile Dark';
-}
-
-// 2. Aggiungi il listener al click del bottone
-themeBtn.addEventListener('click', () => {
-    // Toggle della classe 'theme-dark' sul body
-    body.classList.toggle('theme-dark');
-
-    // Aggiorna il testo del bottone e salva la preferenza
-    if (body.classList.contains('theme-dark')) {
-        themeBtn.innerHTML = '☀️ Stile Light';
-        localStorage.setItem('quiz-theme', 'dark'); // Salva 'dark' in memoria
-    } else {
-        themeBtn.innerHTML = '🌘 Stile Dark';
-        localStorage.setItem('quiz-theme', 'light'); // Salva 'light' in memoria
     }
-});
-
-// --- LIGHTBOX LOGIC ---
-const lightbox = document.getElementById('image-lightbox');
-const lightboxImg = document.getElementById('lightbox-img');
-const closeLightbox = document.querySelector('.close-lightbox');
-
-// Apri lightbox al click sull'immagine della domanda
-questionImage.addEventListener('click', () => {
-    if (questionImage.src && questionImage.style.display !== 'none') {
-        lightboxImg.src = questionImage.src;
-        lightbox.style.display = 'flex';
-    }
-});
-
-// Chiudi lightbox
-const hideLightbox = () => { lightbox.style.display = 'none'; };
-closeLightbox.addEventListener('click', hideLightbox);
-lightbox.addEventListener('click', (e) => {
-    // Chiudi se clicco sullo sfondo scuro, non sull'immagine
-    if (e.target === lightbox) hideLightbox();
 });

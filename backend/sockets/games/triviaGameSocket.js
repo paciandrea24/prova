@@ -12,11 +12,10 @@ const GAME_ID = 'trivia';
 
 module.exports = function (io, socket) {
 
-    // --- 1. GESTIONE JOIN  ---
+    // --- 1. GESTIONE JOIN ---
     socket.on('joinGame', (data) => {
         const { lobbyId, gameId, playerColor } = data;
 
-        // Ignora se non è trivia
         if (gameId && gameId !== GAME_ID) return;
 
         console.log(`🧠 Player ${playerColor} sta entrando nel TRIVIA in lobby ${lobbyId}`);
@@ -24,32 +23,27 @@ module.exports = function (io, socket) {
         const lobby = lobbies.get(lobbyId);
         if (!lobby) return;
 
-        // Unisci il socket alla stanza della lobby
         socket.join(lobbyId);
 
-        // Se il gioco è già attivo, manda subito lo stato a questo giocatore!
         const game = activeGames.get(lobbyId);
         if (game && game.type === GAME_ID) {
-
-            // Se c'è una domanda attiva, mandala subito al giocatore che è appena entrato
             if (game.currentQuestion) {
                 socket.emit('newQuestion', {
                     question: game.currentQuestion,
-                    options: getNextQuestion(game).options, // Recupera le opzioni
+                    options: getNextQuestion(game).options,
                     round: game.currentRound,
                     totalRounds: game.totalRounds,
-                    time: game.timer, // Il tempo rimasto attuale!
+                    time: game.timer,
                     scores: game.scores,
-                    imageUrl: questionData.imageUrl
+                    imageUrl: game.currentImageUrl // [FIX] Usa l'URL salvato nel gioco
                 });
             } else {
-                // Se siamo nella pausa tra un round e l'altro o all'inizio
                 socket.emit('statusMessage', { message: "Il round sta per iniziare..." });
             }
         }
     });
 
-    // --- AVVIO DEL GIOCO ---
+    // --- 2. AVVIO DEL GIOCO ---
     socket.on('startGame', async (data) => {
         const { lobbyId, gameId, settings } = data;
 
@@ -60,27 +54,19 @@ module.exports = function (io, socket) {
         const lobby = lobbies.get(lobbyId);
         if (!lobby) return;
 
-        // --- FIX 1: SALVA LE IMPOSTAZIONI NELLA LOBBY ---
-        // Così ce le ricordiamo per il "Play Again"
         lobby.lastGameSettings = settings;
 
-        // 3. RECUPERA LE DOMANDE (DAL FILE LOCALE ORA)
-        console.log("📥 Caricando domande...");
+        // Recupera le domande
         const rounds = (settings && settings.questions) || 5;
+        let questions = await fetchTriviaQuestions(rounds);
 
-        // Aspettiamo che la funzione ci dia le domande mescolate
-        const questions = await fetchTriviaQuestions(rounds);
-
-        if (!questions || questions.length === 0) {
-            console.error("❌ Errore: Nessuna domanda trovata!");
-            return;
+        // [NUOVO] Cerca immagini su Wikipedia se mancano
+        if (questions && questions.length > 0) {
+            questions = await enrichQuestionsWithMedia(questions);
         }
 
-        // 4. PASSA LE DOMANDE ALLA FUNZIONE DI INIZIALIZZAZIONE
-        // Questo è il punto che dava errore: mancava il terzo parametro!
         const game = initializeTriviaGame(gameId, settings || {}, questions);
 
-        // Inizializza i punteggi
         lobby.players.forEach(playerColor => {
             const color = typeof playerColor === 'object' ? playerColor.color : playerColor;
             game.scores[color] = 0;
@@ -95,16 +81,10 @@ module.exports = function (io, socket) {
         }, 3000);
     });
 
-    // --- RICEZIONE RISPOSTA ---
+    // --- 3. RICEZIONE RISPOSTA ---
     socket.on('triviaAnswer', (data) => {
         const { lobbyId, playerColor, answerIndex } = data;
         const game = activeGames.get(lobbyId);
-
-        // SE LA RISPOSTA È VALIDA, AVVISA TUTTI
-        if (game.playerAnswers[playerColor] !== undefined) {
-            // [NUOVO] Inviamo un segnale a tutti: "Questo colore ha risposto!"
-            io.to(lobbyId).emit('playerAnswered', { playerColor });
-        }
 
         if (!game || game.type !== GAME_ID || !game.isActive) return;
         if (game.playerAnswers[playerColor] !== undefined) return;
@@ -114,6 +94,7 @@ module.exports = function (io, socket) {
 
         console.log(`📝 ${playerColor} ha risposto: ${answerIndex}`);
 
+        // FEEDBACK LIVE: Avvisa tutti che questo giocatore ha risposto
         io.to(lobbyId).emit('playerAnswered', { playerColor });
 
         const isCorrect = answerIndex === game.correctAnswerIndex;
@@ -124,57 +105,52 @@ module.exports = function (io, socket) {
             game.scores[playerColor] += pointsEarned;
         }
 
-        // Se hanno risposto TUTTI
         if (game.answeredCount === Object.keys(game.scores).length) {
             endTriviaRound(io, lobbyId);
         }
     });
 
-    // --- 4. RICHIESTA STATO (In caso di reload pagina) ---
+    // --- 4. RICHIESTA STATO (Reload) ---
     socket.on('requestGameState', (data) => {
         const { lobbyId } = data;
         const game = activeGames.get(lobbyId);
         if (game && game.type === GAME_ID && game.currentQuestion) {
             socket.emit('newQuestion', {
                 question: game.currentQuestion,
-                options: getNextQuestion(game).options, // Nota: passiamo 'game'
+                options: getNextQuestion(game).options,
                 round: game.currentRound,
                 totalRounds: game.totalRounds,
                 time: game.timer,
                 scores: game.scores,
-                imageUrl: questionData.imageUrl
+                imageUrl: game.currentImageUrl // [FIX] Usa l'URL salvato
             });
         }
     });
 
-    // --- GESTIONE FINE PARTITA ---
-
-    // 1. Torna alla Lobby
+    // --- 5. FINE PARTITA ---
     socket.on('backToLobby', (data) => {
         const { lobbyId } = data;
-
-        // Diciamo al frontend: "Torna alla lobby, calcola tu il link!"
         io.to(lobbyId).emit('returnToLobbySignal');
-
         activeGames.delete(lobbyId);
     });
 
-    // 2. Gioca di Nuovo
     socket.on('playAgain', async (data) => {
         const { lobbyId } = data;
-
         const lobby = lobbies.get(lobbyId);
         if (!lobby) return;
 
         console.log(`🔄 Riavvio gioco per lobby ${lobbyId}`);
 
-        // Recupera le impostazioni salvate nella lobby (o usa default se mancano)
         const settings = lobby.lastGameSettings || {};
         const rounds = (settings && settings.questions) || 5;
 
-        console.log(`⚙️ Riavvio con impostazioni: ${rounds} domande`);
+        let questions = await fetchTriviaQuestions(rounds);
 
-        const questions = await fetchTriviaQuestions(rounds);
+        // [NUOVO] Cerca immagini anche al riavvio
+        if (questions && questions.length > 0) {
+            questions = await enrichQuestionsWithMedia(questions);
+        }
+
         const game = initializeTriviaGame('trivia', settings, questions);
 
         lobby.players.forEach(p => {
@@ -189,29 +165,25 @@ module.exports = function (io, socket) {
     });
 };
 
-// --- FUNZIONI DI SUPPORTO (interne al socket) ---
+// --- FUNZIONI INTERNE DEL GIOCO ---
 
 function startTriviaRound(io, lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game) return;
 
     if (game.currentRound >= game.totalRounds) {
-        // Recupera l'host per inviarlo nel payload del Game Over
         const lobby = lobbies.get(lobbyId);
         const hostColor = lobby ? lobby.host : null;
 
         io.to(lobbyId).emit('gameOver', {
             scores: game.scores,
-            hostColor: hostColor // <--- AGGIUNTO: Passiamo chi è l'host
+            hostColor: hostColor
         });
 
-        // NON cancellare il gioco subito (activeGames.delete), altrimenti non possiamo fare "Gioca di nuovo"
-        // activeGames.delete(lobbyId); <--- COMMENTA O RIMUOVI QUESTA RIGA
-        game.isActive = false; // Segniamolo come finito
+        game.isActive = false;
         return;
     }
 
-    // Nota: getNextQuestion ora prende l'intero oggetto game per leggere dalla lista
     const questionData = getNextQuestion(game);
 
     if (!questionData) {
@@ -220,9 +192,12 @@ function startTriviaRound(io, lobbyId) {
     }
 
     game.currentRound++;
-
     game.currentQuestion = questionData.text;
     game.correctAnswerIndex = questionData.correctIndex;
+
+    // [FIX] Salviamo l'URL nel game state per chi entra dopo o ricarica
+    game.currentImageUrl = questionData.imageUrl;
+
     game.playerAnswers = {};
     game.answeredCount = 0;
     game.timer = game.roundDuration;
@@ -254,10 +229,6 @@ function endTriviaRound(io, lobbyId) {
     clearInterval(game.timerInterval);
     game.timerInterval = null;
 
-    // Recupera l'host dalla lobby per dirlo al frontend
-    const lobby = lobbies.get(lobbyId);
-    const hostColor = lobby ? lobby.host : null;
-
     io.to(lobbyId).emit('roundResult', {
         correctIndex: game.correctAnswerIndex,
         scores: game.scores,
@@ -267,4 +238,48 @@ function endTriviaRound(io, lobbyId) {
     setTimeout(() => {
         startTriviaRound(io, lobbyId);
     }, 5000);
+}
+
+// --- NUOVE FUNZIONI HELPER (FONDO FILE) ---
+
+// 1. Cerca l'URL di un'immagine su Wikipedia
+async function fetchWikiImage(searchTerm) {
+    if (!searchTerm) return null;
+    try {
+        const endpoint = `https://it.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(searchTerm)}&prop=pageimages&format=json&pithumbsize=1000&origin=*`;
+
+        const response = await fetch(endpoint);
+        const data = await response.json();
+
+        const pages = data.query.pages;
+        const firstPageId = Object.keys(pages)[0];
+
+        if (firstPageId && pages[firstPageId].thumbnail) {
+            return pages[firstPageId].thumbnail.source;
+        }
+    } catch (error) {
+        console.error(`❌ Errore Wiki per '${searchTerm}':`, error.message);
+    }
+    return null;
+}
+
+// 2. Arricchisce le domande cercando le immagini mancanti
+async function enrichQuestionsWithMedia(questions) {
+    console.log("🎨 Cerco immagini su Wikipedia...");
+
+    // Esegue le richieste in parallelo
+    return Promise.all(questions.map(async (q) => {
+        // Se è tipo 'image', manca l'URL ma c'è un termine di ricerca
+        if (q.type === 'image' && !q.imageUrl && q.imageSearch) {
+            const foundUrl = await fetchWikiImage(q.imageSearch);
+            if (foundUrl) {
+                q.imageUrl = foundUrl;
+                console.log(`✅ Immagine trovata: ${q.imageSearch}`);
+            } else {
+                // Fallback
+                q.imageUrl = "https://via.placeholder.com/600x400?text=Immagine+non+disponibile";
+            }
+        }
+        return q;
+    }));
 }

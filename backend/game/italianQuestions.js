@@ -1,7 +1,7 @@
 // game/italianQuestions.js
 
 const ITALIAN_QUESTIONS = [
-    // --- GEOGRAFIA ---
+    /* // --- GEOGRAFIA ---
     {
         category: "Geografia",
         type: "multiple",
@@ -866,7 +866,29 @@ const ITALIAN_QUESTIONS = [
         imageUrl: "/imgs/avatars/7.png",
         correct_answer: "Pushare",
         incorrect_answers: ["Tulodiciare", "DevFestare", "Caffettare"]
-    }
+    }, */
+
+    {
+        category: "Arte",
+        type: "image",
+        difficulty: "hard",
+        question: "Chi ha dipinto questo quadro?",
+        // Lascia imageSearch (non fa male), ma aggiungi imageUrl per forzare questa foto:
+        imageSearch: "La persistenza della memoria",
+        // Link diretto (preso da Wikipedia EN o altra fonte stabile)
+        imageUrl: "https://upload.wikimedia.org/wikipedia/en/d/dd/The_Persistence_of_Memory.jpg",
+        correct_answer: "Salvador Dalì",
+        incorrect_answers: ["Picasso", "Magritte", "Mirò"]
+    },
+    {
+        category: "Personaggi",
+        type: "image",
+        difficulty: "easy",
+        question: "Chi è questo famoso scienziato?",
+        imageSearch: "Albert Einstein", // Cercherà automaticamente la foto su Wiki
+        correct_answer: "Albert Einstein",
+        incorrect_answers: ["Newton", "Tesla", "Galileo"]
+    },
 
 ];
 
