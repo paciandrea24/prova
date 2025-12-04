@@ -77,15 +77,16 @@ html, body {
 .chat-box { width: 25%; min-width: 250px; }
 
 /* CANVAS BOX (Centrale) */
-.canvas-box { 
-    flex: 1; 
-    display: flex;             /* Usa Flex */
-    align-items: center;       /* Centra verticalmente */
-    justify-content: center;   /* Centra orizzontalmente */
-    overflow: hidden; 
+.canvas-box {
     position: relative;
-    background-color: #e0e5ec; 
-    padding: 20px; /* Spazio intorno al foglio bianco */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 800px; 
+    margin: 0 auto;
+    overflow: visible; /* IMPORTANTE: permette ai comandi di vedersi */
 }
 
 h3 { 
@@ -96,7 +97,7 @@ h3 {
 
 
 /* =========================================
-   3. CANVAS & CONTROLLI
+   3. CANVAS & CONTROLLI (CORREZIONE QUI)
    ========================================= */
 canvas {
     background: white; 
@@ -104,77 +105,88 @@ canvas {
     cursor: crosshair;
     box-shadow: 0 5px 15px rgba(0,0,0,0.1);
     
-    /* FONDAMENTALE: Occupa tutto lo spazio disponibile nel box */
-    width: 100%; 
-    height: 100%; 
+    /* MODIFICA FONDAMENTALE: */
+    /* Non usare height: 100% fisso, altrimenti spinge via i controlli */
+    flex: 1;           /* Occupa tutto lo spazio DISPONIBILE */
+    min-height: 0;     /* Trucco flexbox per permettere il resize */
+    width: 100%;       /* Larghezza piena */
     
-    /* Rimuoviamo limiti fissi che rompono il mouse */
     display: block;
     touch-action: none; /* Disabilita zoom/scroll su mobile mentre disegni */
 }
 
-/* CONTROLLI ARTISTA (Il pannello grigio sotto) */
+/* CONTROLLI ARTISTA */
 .artist-controls {
-    width: 100%; 
-    max-width: 100%; /* Assicura che non esca */
-    margin-top: 15px;
-    padding: 10px; 
-    border-radius: 12px;
-    background: #fbfbfb; border: 1px solid #eee;
-    box-sizing: border-box; /* Padding incluso nella larghezza */
+    margin-top: 10px;
+    background: #f8f9fa; /* Sfondo leggero */
+    padding: 10px;
+    border-radius: 15px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    z-index: 100;
+    
+    /* Animazione ingresso */
+    animation: slideUp 0.3s ease-out;
 }
 
-.controls-layout { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
 
-/* Righe di controlli */
-.controls-row { 
-    display: flex; 
-    width: 100%; 
-    gap: 15px; 
-    align-items: center; 
+/* Riga strumenti (Undo, Redo, Sizes, Tools) */
+.tools-row {
+    display: flex;
     justify-content: center;
-    flex-wrap: wrap; /* FONDAMENTALE: Permette di andare a capo se stretto */
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #eee;
 }
 
-.tools-container { 
-    display: flex; gap: 5px; align-items: center; 
-    padding-right: 10px; border-right: 1px solid #ddd; 
-}
-
-.color-container { display: flex; justify-content: center; }
-
-/* Palette Colori */
-.color-palette { 
-    display: flex; 
-    gap: 5px; 
-    flex-wrap: wrap; /* FONDAMENTALE: Colori a capo se non c'è spazio */
+/* Riga Colori */
+.colors-row {
+    display: flex;
     justify-content: center;
+    gap: 5px;
+    flex-wrap: wrap;
 }
 
-.line-width-buttons, .eraser-width-buttons { display: flex; gap: 5px; margin-right: 5px; }
-
-/* Bottoni */
-.tool-button {
-    width: 34px; height: 34px; border-radius: 6px;
+/* STILI NUOVI BOTTONI (Uniformati) */
+.tool-btn {
+    width: 36px; height: 36px; border-radius: 8px;
     border: 1px solid #ccc; background: white; cursor: pointer;
     display: flex; justify-content: center; align-items: center;
-    color: #555; flex-shrink: 0;
+    font-size: 1.2rem; color: #555; transition: all 0.2s;
 }
-.tool-button:hover { background: #eee; }
-.tool-button.active { border-color: #59B159; background-color: #e8f5e9; color: #2e7d32; }
-.tool-button:disabled { opacity: 0.4; cursor: not-allowed; }
-
-.color-button {
-    width: 28px; height: 28px; border-radius: 4px;
-    border: 1px solid rgba(0,0,0,0.1); cursor: pointer;
-    flex-shrink: 0;
+.tool-btn:hover { background: #eee; transform: translateY(-2px); }
+.tool-btn:active { transform: scale(0.95); }
+.tool-btn.active { 
+    background-color: #e8f5e9; 
+    border-color: #59B159; 
+    color: #2e7d32; 
+    box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
 }
-.color-button:hover { transform: scale(1.2); z-index: 2; }
-.color-button.active { transform: scale(1.2); border: 2px solid #333; z-index: 2; }
+.tool-btn[style*="color:red"]:hover { background: #ffebee; border-color: #ef5350; }
 
-.line-width-circle { background: currentColor; border-radius: 50%; }
-.eraser-img { width: 80%; height: auto; opacity: 0.8; }
-.fill-icon, .undo-icon, .redo-icon, .clear-icon { font-size: 1.1rem; line-height: 1; }
+/* Bottoni Colore */
+.color-btn {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    border: 2px solid rgba(0,0,0,0.1);
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+.color-btn:hover { transform: scale(1.15); z-index: 2; }
+.color-btn.active { border-color: #333; transform: scale(1.2); z-index: 2; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+
+/* Retrocompatibilità classi vecchie (se servono ancora) */
+.tool-button { @extend .tool-btn; } 
+.color-button { @extend .color-btn; }
 
 #artist-notification {
     position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
@@ -213,6 +225,7 @@ canvas {
 .message { padding: 5px 10px; border-radius: 5px; font-size: 0.9rem; }
 .message.chat { background: white; border: 1px solid #eee; align-self: flex-start; }
 .message.success { background: #d1e7dd; color: #0f5132; width: 100%; text-align: center; font-weight: bold; }
+.message.error { background: #f8d7da; color: #721c24; width: 100%; text-align: center; } /* Aggiunto stile errore mancante */
 .message.system { font-style: italic; text-align: center; font-size: 0.8rem; color: #888; align-self: center; }
 .message-color-block { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
 
@@ -262,12 +275,19 @@ canvas {
         flex-direction: column;
         overflow-y: auto; /* Scroll verticale su mobile */
         height: auto;
+        padding-bottom: 20px; /* Spazio extra per scrollare */
     }
-    .standing-box, .chat-box, .canvas-box {
-        width: 100%; min-height: 300px;
-        overflow: visible; /* Lascia scorrere su mobile */
+    .standing-box, .chat-box {
+        width: 100%; height: 300px; flex-shrink: 0; order: 2; /* Chat e classifica sotto */
     }
-    canvas { max-height: 50vh; }
+    .canvas-box {
+        width: 100%; 
+        height: 60vh; /* Altezza fissa su mobile per il canvas+controlli */
+        min-height: 400px;
+        overflow: visible; 
+        order: 1; /* Canvas prima */
+    }
+    canvas { max-height: none; }
 }
 
 /* --- NOTIFICHE TOAST (Quality of Life) --- */
@@ -318,15 +338,27 @@ canvas {
     border-color: #bbdefb;
 }
 
-/* Tema Scuro per Toast */
-body.theme-dark .toast {
-    background: #2c3e50;
-    color: white;
-    border-color: rgba(255,255,255,0.1);
-    box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+/* Tema Scuro */
+body.theme-dark {
+    background-color: #1a1a1a; color: #f0f0f0;
 }
-body.theme-dark .toast.error { background: #4a1818; color: #ff8a80; }
-body.theme-dark .toast.success { background: #1b4d2e; color: #a5d6a7; }
+body.theme-dark .header, 
+body.theme-dark .standing-box, 
+body.theme-dark .chat-box, 
+body.theme-dark .canvas-box,
+body.theme-dark .artist-controls,
+body.theme-dark .message.chat,
+body.theme-dark #chat-input {
+    background-color: #2d2d2d;
+    border-color: #444;
+    color: #f0f0f0;
+}
+body.theme-dark .tool-btn {
+    background-color: #3d3d3d; border-color: #555; color: #eee;
+}
+body.theme-dark .tool-btn.active {
+    background-color: #2e7d32; border-color: #2e7d32; color: white;
+}
 
 @keyframes slideDown {
     from { transform: translateY(-100%); opacity: 0; }

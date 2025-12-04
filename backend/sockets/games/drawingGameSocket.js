@@ -1,4 +1,3 @@
-
 // sockets/games/drawingGameSocket.js
 
 // NOTA: Ho aggiornato i percorsi con ../../ perché siamo in una sottocartella
@@ -25,8 +24,6 @@ module.exports = function (io, socket) {
     socket.on('joinGame', (data) => {
         const { lobbyId, gameId, playerColor } = data;
 
-        // Se il join non è per questo gioco, ignoriamo (o gestiamo diversamente)
-        // Nota: Se gameId non è passato, potresti dover controllare activeGames.get(lobbyId).gameType
         if (gameId && gameId !== GAME_ID) {
             return;
         }
@@ -38,7 +35,6 @@ module.exports = function (io, socket) {
 
         if (activeGames.has(lobbyId)) {
             const game = activeGames.get(lobbyId);
-            // Sicurezza: controlliamo che sia una partita di disegno
             if (game.gameId !== GAME_ID && game.type !== GAME_ID) return;
 
             socket.emit('gameState', {
@@ -59,7 +55,6 @@ module.exports = function (io, socket) {
     socket.on('startGame', (data) => {
         const { lobbyId, gameId, settings } = data;
 
-        // IMPORTANTE: Questo handler risponde solo se il gameId è 'drawing'
         if (gameId && gameId !== GAME_ID) {
             return;
         }
@@ -72,7 +67,6 @@ module.exports = function (io, socket) {
         lobby.gameSettings = settings;
 
         const gameSettings = settings || getDefaultGameSettings(GAME_ID);
-        // Assicurati che initializeGame salvi anche il tipo di gioco ('drawing') nell'oggetto game
         initializeGame(lobbyId, lobby.players, GAME_ID, gameSettings);
 
         io.to(lobbyId).emit('gameSelected', { gameId, settings });
@@ -86,8 +80,6 @@ module.exports = function (io, socket) {
     socket.on('requestGameState', (data) => {
         const { lobbyId } = data;
         const game = activeGames.get(lobbyId);
-        // Controlla se il gioco attivo è di tipo 'drawing' prima di rispondere
-        // (Assumendo che tu abbia salvato un campo .type o .gameId nell'oggetto game)
         if (!game) return;
 
         socket.emit('gameState', {
@@ -162,6 +154,13 @@ module.exports = function (io, socket) {
         socket.to(lobbyId).emit('drawLine', { from, to, color, lineWidth });
     });
 
+    // [CORREZIONE] Aggiunto ascoltatore per l'Undo/Redo
+    socket.on('canvasState', (data) => {
+        const { lobbyId, dataURL } = data;
+        // Inoltra l'intera immagine agli altri giocatori nella lobby
+        socket.to(lobbyId).emit('canvasState', { dataURL });
+    });
+
     socket.on('clearCanvas', (data) => {
         const { lobbyId } = data;
         socket.to(lobbyId).emit('clearCanvas');
@@ -176,7 +175,6 @@ module.exports = function (io, socket) {
         const { lobbyId, playerColor, guess } = data;
         const game = activeGames.get(lobbyId);
 
-        // Verifica che il gioco esista e sia attivo
         if (!game || !game.isActive) return;
 
         if (playerColor === game.currentTurn) {
