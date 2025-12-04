@@ -2999,7 +2999,70 @@ const ITALIAN_QUESTIONS = [
         question: "Chi scrisse 'Il nome della rosa'?",
         correct_answer: "Umberto Eco",
         incorrect_answers: ["Italo Calvino", "Primo Levi", "Pier Paolo Pasolini"]
-    }
+    },
+    {
+        category: "Personaggi famosi",
+        type: "image",
+        difficulty: "hard",
+        question: "Cosa dice sempre il ragazzo in foto?",
+        imageUrl: "/imgs/avatars/1.png",
+        correct_answer: "Ce ne andiaaaamo?",
+        incorrect_answers: ["Ce ne andiamo viaa?", "Ce ne scappiaaamo?", "Non andiaaamo domani"]
+    },
+    {
+        category: "Personaggi famosi",
+        type: "image",
+        difficulty: "hard",
+        question: "Cosa ha sotto gli occhi la ragazza in foto?",
+        imageUrl: "/imgs/avatars/2.png",
+        correct_answer: "Occhiaie pronunciate",
+        incorrect_answers: ["Occhi aierini", "Naso", "Borse"]
+    },
+    {
+        category: "Personaggi famosi",
+        type: "image",
+        difficulty: "hard",
+        question: "Qual è il talento del ragazzo in foto?",
+        imageUrl: "/imgs/avatars/3.png",
+        correct_answer: "Imitare le voci",
+        incorrect_answers: ["Imitare i suoni", "Passare Machine Learning", "Sciupare le femmine"]
+    },
+    {
+        category: "Personaggi famosi",
+        type: "image",
+        difficulty: "hard",
+        question: "Questo ragazzo ha il vizio di usare spesso un termine particolare, qual'è?",
+        imageUrl: "/imgs/avatars/4.png",
+        correct_answer: "Giacchè",
+        incorrect_answers: ["Alchè", "Giammai", "Giacca"]
+    },
+    {
+        category: "Personaggi famosi",
+        type: "image",
+        difficulty: "hard",
+        question: "Qual è l'espressione preferita del ragazzo in foto?",
+        imageUrl: "/imgs/avatars/5.png",
+        correct_answer: "È una zzzoccola",
+        incorrect_answers: ["Ce ne andiaaamo?", "Gamification", "Stranger Things"]
+    },
+    {
+        category: "Personaggi famosi",
+        type: "image",
+        difficulty: "hard",
+        question: "Qual è il cibo preferito del ragazzo in foto?",
+        imageUrl: "/imgs/avatars/6.png",
+        correct_answer: "Pasta con l'aglio",
+        incorrect_answers: ["Thailandese", "Pizza", "Fiorentina"]
+    },
+    {
+        category: "Personaggi famosi",
+        type: "image",
+        difficulty: "hard",
+        question: "Qual'è l'attività che dovrebbe fare giornalmente il ragazzo in foto?",
+        imageUrl: "/imgs/avatars/7.png",
+        correct_answer: "Pushare",
+        incorrect_answers: ["Tulodiciare", "DevFestare", "Caffettare"]
+    },
 ]
 
 module.exports = ITALIAN_QUESTIONS;
