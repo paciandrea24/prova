@@ -1104,6 +1104,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "In quale città si trovava l'antica Biblioteca famosa per la sua vastità di testi?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/6/64/Ancientlibraryalex.jpg",
         imageSearch: "Biblioteca di Alessandria",
         correct_answer: "Alessandria d'Egitto",
         incorrect_answers: ["Atene", "Roma", "Cartagine"]
@@ -1112,7 +1113,7 @@ const ITALIAN_QUESTIONS = [
         category: "Geografia",
         type: "multiple",
         difficulty: "medium",
-        question: "Qual è il fiume più lungo d’Europa?",
+        question: "Qual è il fiume più lungo d'Europa?",
         correct_answer: "Volga",
         incorrect_answers: ["Danubio", "Dnepr", "Reno"]
     },
@@ -1121,6 +1122,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Chi ha dipinto il famoso affresco 'La Creazione di Adamo'?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/e/e0/Creaci%C3%B3n_de_Ad%C3%A1n.jpg",
         imageSearch: "Creazione di Adamo",
         correct_answer: "Michelangelo",
         incorrect_answers: ["Raffaello", "Leonardo da Vinci", "Caravaggio"]
@@ -1138,6 +1140,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Chi è il regista del film 'Pulp Fiction'?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/it/0/06/Pulp_Fiction.png",
         imageSearch: "Pulp Fiction",
         correct_answer: "Quentin Tarantino",
         incorrect_answers: ["Martin Scorsese", "Steven Spielberg", "Ridley Scott"]
@@ -1146,7 +1149,7 @@ const ITALIAN_QUESTIONS = [
         category: "Animali",
         type: "multiple",
         difficulty: "medium",
-        question: "Qual è l’animale terrestre più veloce?",
+        question: "Qual è l'animale terrestre più veloce?",
         correct_answer: "Ghepardo",
         incorrect_answers: ["Leone", "Tigre", "Antilope"]
     },
@@ -1155,6 +1158,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "In quale città si trova la famosa struttura chiamata Taj Mahal?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/5/5a/Monument_wiecznej_milosci-Taj_Mahal_Agra_-_panoramio.jpg",
         imageSearch: "Taj Mahal",
         correct_answer: "Agra",
         incorrect_answers: ["Delhi", "Jaipur", "Mumbai"]
@@ -1172,6 +1176,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Chi fu il primo presidente degli Stati Uniti?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/b/b6/Gilbert_Stuart_Williamstown_Portrait_of_George_Washington.jpg",
         imageSearch: "George Washington",
         correct_answer: "George Washington",
         incorrect_answers: ["Thomas Jefferson", "John Adams", "Benjamin Franklin"]
@@ -1181,6 +1186,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Quale montagna è la più alta del mondo?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/b/bf/Mt._Everest_from_Gokyo_Ri_November_5%2C_2012_Cropped.jpg",
         imageSearch: "Monte Everest",
         correct_answer: "Everest",
         incorrect_answers: ["K2", "Kangchenjunga", "Lhotse"]
@@ -1198,6 +1204,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Come si chiama la celebre scultura che rappresenta un uomo che pensa?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/5/56/The_Thinker%2C_Rodin.jpg",
         imageSearch: "Il Pensatore Rodin",
         correct_answer: "Il Pensatore",
         incorrect_answers: ["David", "La Pietà", "La Nike di Samotracia"]
