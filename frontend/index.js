@@ -112,7 +112,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     // =========================================================
     // 4. LOGICA SWAP (Selezione Colore)
     // =========================================================
-    const availableColors = ['#DC143C', '#4169E1', '#50C878', '#FFD700', '#9966CC', '#36454F'];
+    const availableColors = [
+        '#DC143C',
+        '#4169E1',
+        '#50C878',
+        '#FFD700',
+        '#9966CC',
+        '#36454F',
+        '#FF8C00',
+        '#00CED1',
+        '#FF1493',
+        '#8B4513',
+        '#7FFF00',
+        '#4B0082'
+    ];
 
     avatarCircleMain.addEventListener("click", async (e) => {
         e.preventDefault();
