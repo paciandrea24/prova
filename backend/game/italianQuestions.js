@@ -1222,6 +1222,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Chi è l'autore della celebre 'Nona Sinfonia'?",
+        imageUrl: "https://commons.wikimedia.org/wiki/Ludwig_van_Beethoven#/media/File:Beethoven.jpg",
         imageSearch: "Ludwig van Beethoven",
         correct_answer: "Ludwig van Beethoven",
         incorrect_answers: ["Mozart", "Bach", "Tchaikovsky"]
@@ -1231,6 +1232,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Dove si trova la Statua della Libertà?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/d/dd/Lady_Liberty_under_a_blue_sky_%28cropped%29.jpg",
         imageSearch: "Statua della Libertà",
         correct_answer: "New York",
         incorrect_answers: ["Boston", "Washington D.C.", "Philadelphia"]
@@ -1256,6 +1258,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Chi ha dipinto 'La Notte Stellata'?",
+        imageUrl: "https://it.wikipedia.org/wiki/Notte_stellata#/media/File:Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
         imageSearch: "La Notte Stellata Van Gogh",
         correct_answer: "Vincent van Gogh",
         incorrect_answers: ["Monet", "Picasso", "Renoir"]
@@ -1265,6 +1268,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Chi era il celebre fisico che formulò la teoria della relatività?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/2/28/Albert_Einstein_Head_cleaned.jpg",
         imageSearch: "Albert Einstein",
         correct_answer: "Albert Einstein",
         incorrect_answers: ["Isaac Newton", "Niels Bohr", "Max Planck"]
@@ -1283,6 +1287,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "In quale paese si trova il Machu Picchu?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/b/bb/Machu_Picchu%2C_2023_%28012%29.jpg",
         imageSearch: "Machu Picchu",
         correct_answer: "Perù",
         incorrect_answers: ["Bolivia", "Cile", "Argentina"]
@@ -1300,6 +1305,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Chi fu l'eroe nazionale francese noto per aver guidato l'esercito durante la Guerra dei Cent'Anni?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/c/c3/Joan_of_Arc_miniature_graded.jpg",
         imageSearch: "Giovanna d'Arco",
         correct_answer: "Giovanna d'Arco",
         incorrect_answers: ["Maria Antonietta", "Caterina de' Medici", "Eleonora d'Aquitania"]
@@ -1309,6 +1315,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Dove si trova il celebre affresco 'Il Cenacolo'?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/0/08/Leonardo_da_Vinci_%281452-1519%29_-_The_Last_Supper_%281495-1498%29.jpg",
         imageSearch: "Cenacolo Milano",
         correct_answer: "Milano",
         incorrect_answers: ["Venezia", "Firenze", "Roma"]
@@ -1326,6 +1333,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "In quale città si trova la Sagrada Família?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/5/57/Sagrada_Familia_8-12-21_%281%29.jpg",
         imageSearch: "Sagrada Família",
         correct_answer: "Barcellona",
         incorrect_answers: ["Madrid", "Valencia", "Siviglia"]
@@ -1343,6 +1351,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Come si chiama la galassia in cui si trova il Sistema Solare?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/e/e4/Milky_Way_infrared.jpg",
         imageSearch: "Via Lattea",
         correct_answer: "Via Lattea",
         incorrect_answers: ["Andromeda", "Triangolo", "Cane Maggiore"]
@@ -1368,6 +1377,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Chi ha scolpito il David di marmo conservato a Firenze?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/8/80/Michelangelo%27s_David_-_right_view_2.jpg",
         imageSearch: "David Michelangelo",
         correct_answer: "Michelangelo",
         incorrect_answers: ["Donatello", "Bernini", "Cellini"]
@@ -1377,6 +1387,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Qual è la saga cinematografica con il personaggio 'Darth Vader'?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/9/9c/Darth_Vader_-_2007_Disney_Weekends.jpg",
         imageSearch: "Darth Vader",
         correct_answer: "Star Wars",
         incorrect_answers: ["Star Trek", "Dune", "Avatar"]
@@ -1394,6 +1405,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Qual è il famoso anfiteatro situato nel centro di Roma?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/d/de/Colosseo_2020.jpg",
         imageSearch: "Colosseo",
         correct_answer: "Colosseo",
         incorrect_answers: ["Circo Massimo", "Pantheon", "Foro Romano"]
@@ -1411,6 +1423,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Qual è il deserto più grande del mondo?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/a/a7/Sahara_satellite_hires.jpg",
         imageSearch: "Deserto del Sahara",
         correct_answer: "Sahara",
         incorrect_answers: ["Gobi", "Kalahari", "Atacama"]
@@ -1428,6 +1441,7 @@ const ITALIAN_QUESTIONS = [
         type: "image",
         difficulty: "medium",
         question: "Chi ha dipinto 'Guernica'?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/7/76/Mural_del_%22Guernica%22_de_Picasso.jpg",
         imageSearch: "Guernica Picasso",
         correct_answer: "Pablo Picasso",
         incorrect_answers: ["Dalí", "Miró", "Goya"]
@@ -1436,7 +1450,8 @@ const ITALIAN_QUESTIONS = [
         category: "Personaggi Famosi",
         type: "image",
         difficulty: "medium",
-        question: "Chi è stato il primo uomo a camminare sulla Luna?",
+        question: "Chi è l'uomo riportato in figura?",
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/0/0d/Neil_Armstrong_pose.jpg",
         imageSearch: "Neil Armstrong",
         correct_answer: "Neil Armstrong",
         incorrect_answers: ["Buzz Aldrin", "Yuri Gagarin", "Michael Collins"]
