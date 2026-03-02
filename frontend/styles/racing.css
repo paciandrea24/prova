@@ -1,0 +1,183 @@
+body {
+    background-color: #2c3e50;
+    color: white;
+    font-family: 'Nunito', sans-serif;
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* Evita lo scroll se si preme troppo in giù */
+}
+
+#ui-header {
+    text-align: center;
+    padding: 10px;
+    background-color: rgba(0,0,0,0.5);
+}
+
+#status-text {
+    font-size: 20px;
+    font-weight: bold;
+    color: #f1c40f;
+}
+
+#arena-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+#arena {
+    background-color: #34495e; /* Colore asfalto */
+    position: relative;
+    border: 5px solid #bdc3c7;
+    border-radius: 10px;
+    /* Un pattern per far sembrare il terreno più "pista" */
+    background-image: radial-gradient(#2c3e50 1px, transparent 1px);
+    background-size: 20px 20px;
+    box-shadow: inset 0 0 20px #000;
+}
+
+#finish-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 40px; /* Spessore linea */
+    background: repeating-linear-gradient(
+      45deg,
+      #000,
+      #000 10px,
+      #fff 10px,
+      #fff 20px
+    );
+    z-index: 1;
+}
+
+/* --- CONTENITORE MACCHINA --- */
+.car {
+    width: 60px;
+    height: 30px;
+    position: absolute;
+    /* AGGIUNTO transform ALLA TRANSIZIONE PER UNA STERZATA FLUIDA */
+    transition: left 0.05s linear, top 0.05s linear, transform 0.1s ease-out; 
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Effetto speciale per far risaltare la TUA auto */
+.car.my-car .f1-body, 
+.car.my-car .f1-spoiler-front, 
+.car.my-car .f1-spoiler-rear {
+    box-shadow: 0 0 8px white;
+    border: 1px solid white;
+}
+
+.car.my-car {
+    z-index: 11; /* Sta sopra le altre macchine in caso di scontro */
+}
+
+.player-label {
+    position: absolute;
+    top: -20px;
+    font-size: 12px;
+    font-weight: 900;
+    color: white;
+    text-shadow: 1px 1px 2px black, -1px -1px 2px black;
+    white-space: nowrap;
+    /* AGGIUNTA LA TRANSIZIONE ANCHE QUI */
+    transition: transform 0.1s ease-out;
+}
+
+/* --- DESIGN DELLA FORMULA 1 (Vista dall'alto) --- */
+
+/* Carrozzeria Centrale */
+.f1-body {
+    width: 36px;
+    height: 12px;
+    border-radius: 4px 12px 12px 4px;
+    position: absolute;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); /* Effetto profondità */
+}
+
+/* Abitacolo / Casco del pilota */
+.f1-cockpit {
+    width: 10px;
+    height: 6px;
+    background-color: #111;
+    border-radius: 3px;
+    position: relative;
+    right: -3px; /* Spostato leggermente in avanti */
+    border: 1px solid #444;
+}
+
+/* Alettone Posteriore */
+.f1-spoiler-rear {
+    width: 6px;
+    height: 24px;
+    border-radius: 2px;
+    position: absolute;
+    left: 2px;
+    z-index: 3;
+    border-right: 2px solid rgba(0,0,0,0.4);
+}
+
+/* Alettone Anteriore (Muso) */
+.f1-spoiler-front {
+    width: 5px;
+    height: 20px;
+    border-radius: 2px;
+    position: absolute;
+    right: 2px;
+    z-index: 3;
+    border-left: 2px solid rgba(0,0,0,0.4);
+}
+
+/* Gomme Nere */
+.f1-tire {
+    width: 10px;
+    height: 6px;
+    background-color: #1a1a1a;
+    border-radius: 2px;
+    position: absolute;
+    z-index: 1;
+    box-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+}
+
+/* Posizioni specifiche delle 4 gomme */
+.tire-rl { top: 0; left: 8px; }      /* Posteriore Sinistra (Rear-Left) */
+.tire-fl { top: 1px; right: 8px; }   /* Anteriore Sinistra (Front-Left) */
+.tire-rr { bottom: 0; left: 8px; }   /* Posteriore Destra (Rear-Right) */
+.tire-fr { bottom: 1px; right: 8px; }/* Anteriore Destra (Front-Right) */
+
+#podium-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(0,0,0,0.9);
+    padding: 30px 50px;
+    border-radius: 20px;
+    border: 3px solid gold;
+    z-index: 100;
+    text-align: center;
+    box-shadow: 0 0 30px rgba(255, 215, 0, 0.5);
+}
+
+#podium-list {
+    list-style: none;
+    padding: 0;
+    font-size: 24px;
+    text-align: left;
+    margin: 20px 0;
+}
+
+#podium-list li {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}

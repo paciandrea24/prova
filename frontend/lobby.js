@@ -48,7 +48,8 @@ document.addEventListener('DOMContentLoaded', () => {
             questions: 10,
             time: 30,
             category: 'general'
-        }
+        },
+        racing: { difficulty: 'easy' }
     };
 
     // Mostra l'ID della lobby (formattato nel nuovo header)
@@ -101,7 +102,9 @@ document.addEventListener('DOMContentLoaded', () => {
         let targetPage = '/game.html'; // Default (Disegno)
 
         if (gameId === 'trivia') {
-            targetPage = '/quiz.html'; // Nuovo gioco
+            targetPage = '/quiz.html'; // Quiz Game
+        } else if (gameId === 'racing') {
+            targetPage = '/racing.html'; // <-- Racing Game
         }
 
         console.log(`Reindirizzamento a ${targetPage} per il gioco: ${gameId}`);

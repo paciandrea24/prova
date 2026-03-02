@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Racing Game 2D</title>
+    <link rel="stylesheet" href="styles/racing.css">
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <main>
+        <div id="ui-header">
+            <h1>🏁 Gara Libera: Usa W A S D per muoverti! 🏁</h1>
+            <p id="status-text">In attesa dell'inizio...</p>
+        </div>
+
+        <div id="arena-container">
+            <div id="arena">
+                <div id="finish-line"></div>
+            </div>
+        </div>
+
+        <div id="podium-modal" style="display: none;">
+            <h2>🏆 PODIO FINALE 🏆</h2>
+            <ol id="podium-list"></ol>
+            <p>Ritorno alla lobby in corso...</p>
+        </div>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="racing.js"></script>
+</body>
+
+</html>
