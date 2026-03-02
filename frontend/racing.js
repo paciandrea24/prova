@@ -45,18 +45,59 @@ document.addEventListener('DOMContentLoaded', () => {
         canvas.height = trackHeight;
 
         const ctx = canvas.getContext('2d');
+
         for (let row = 0; row < trackMap.length; row++) {
             for (let col = 0; col < trackMap[row].length; col++) {
                 const tile = trackMap[row][col];
-                if (tile === 0) ctx.fillStyle = '#27ae60'; // Erba
-                else if (tile === 1) ctx.fillStyle = '#7f8c8d'; // Asfalto
-                else if (tile === 2) ctx.fillStyle = '#ecf0f1'; // Traguardo
-                else if (tile === 3) ctx.fillStyle = '#f1c40f'; // Checkpoint
-                ctx.fillRect(col * tileSize, row * tileSize, tileSize, tileSize);
+                const x = col * tileSize;
+                const y = row * tileSize;
+
+                if (tile === 0) {
+                    // Sfondo Erba
+                    ctx.fillStyle = '#27ae60';
+                    ctx.fillRect(x, y, tileSize, tileSize);
+
+                    // --- GENERATORE DI NATURA PROCEDURALE ---
+                    // Creiamo un numero "casuale ma fisso" basato sulle coordinate
+                    const rand = (row * 37 + col * 13) % 100;
+
+                    ctx.font = `${tileSize * 0.65}px Arial`;
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    const centerX = x + tileSize / 2;
+                    const centerY = y + tileSize / 2 + 2;
+
+                    // Decidiamo cosa piantare in base al numero generato!
+                    if (rand < 10) {
+                        ctx.fillText('🌲', centerX, centerY); // 10% di probabilità
+                    } else if (rand < 18) {
+                        ctx.fillText('🌳', centerX, centerY); // 8% di probabilità
+                    } else if (rand < 25) {
+                        ctx.fillText('🌿', centerX, centerY); // 7% di cespugli
+                    } else if (rand === 50) {
+                        ctx.fillText('🌼', centerX, centerY); // Qualche fiorellino raro
+                    }
+
+                } else if (tile === 1) {
+                    // Asfalto liscio
+                    ctx.fillStyle = '#7f8c8d';
+                    ctx.fillRect(x, y, tileSize, tileSize);
+
+                } else if (tile === 2) {
+                    // Traguardo a scacchi!
+                    ctx.fillStyle = (col + row) % 2 === 0 ? '#ffffff' : '#000000';
+                    ctx.fillRect(x, y, tileSize, tileSize);
+
+                } else if (tile === 3 || tile === 6) {
+                    // AGGIUNTO || tile === 6
+                    // Checkpoint stile cordolo (Giallo e Nero)
+                    ctx.fillStyle = (col + row) % 2 === 0 ? '#f1c40f' : '#2c3e50';
+                    ctx.fillRect(x, y, tileSize, tileSize);
+                }
             }
         }
 
-        // Crea le macchinine
+        // Crea le macchinine (Senza impostare left, top o transform!)
         for (const [color, state] of Object.entries(playersState)) {
             let car = document.getElementById(`car-${color.replace('#', '')}`);
             if (!car) {
@@ -81,60 +122,81 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // --- MOTORE GRAFICO FRONTEND (LERP) ---
+    let serverState = {};       // Qui salviamo i dati grezzi che arrivano dal server
+    let visualState = {};       // Qui salviamo le posizioni morbide per lo schermo
+
+    // 1. Quando il server manda un aggiornamento, NON muoviamo il DOM, 
+    // aggiorniamo solo i nostri "bersagli" (target)
     socket.on('racingStateUpdate', (playersState) => {
-        for (const [color, state] of Object.entries(playersState)) {
+        serverState = playersState;
+
+        // Inizializza gli stati visivi se è la prima volta che vediamo l'auto
+        for (const color in playersState) {
+            if (!visualState[color]) {
+                visualState[color] = {
+                    x: playersState[color].x,
+                    y: playersState[color].y,
+                    angle: playersState[color].angle
+                };
+            }
+        }
+    });
+
+    // 2. Il Render Loop super fluido a 60/144Hz (dipende dal monitor)
+    function renderLoop() {
+        for (const [color, target] of Object.entries(serverState)) {
+            if (!visualState[color]) continue;
+
+            const visual = visualState[color];
+
+            // FORMULA LERP: Avvicina la posizione attuale al bersaglio del 30% ad ogni frame.
+            // Questo crea un movimento fluido come il burro e nasconde il lag!
+            visual.x += (target.x - visual.x) * 0.3;
+            visual.y += (target.y - visual.y) * 0.3;
+
+            // Calcolo intelligente per la rotazione (evita che l'auto giri su se stessa al contrario)
+            let angleDiff = target.angle - visual.angle;
+            while (angleDiff < -180) angleDiff += 360;
+            while (angleDiff > 180) angleDiff -= 360;
+            visual.angle += angleDiff * 0.3;
+
+            // Ora applichiamo la posizione fluida al DOM
             const carEl = document.getElementById(`car-${color.replace('#', '')}`);
             if (carEl) {
-                carEl.style.left = state.x + 'px';
-                carEl.style.top = state.y + 'px';
-                carEl.style.transform = `rotate(${state.angle}deg)`;
+                carEl.style.transform = `translate(${visual.x}px, ${visual.y}px) rotate(${visual.angle}deg)`;
 
                 const label = carEl.querySelector('.player-label');
-                if (label) label.style.transform = `rotate(${-state.angle}deg)`;
+                if (label) label.style.transform = `rotate(${-visual.angle}deg)`;
 
-                if (state.finished) carEl.style.opacity = '0.5';
+                if (target.finished) carEl.style.opacity = '0.5';
 
-                // LA VECCHIA TELECAMERA CENTRATA!
+                // LA TELECAMERA SCORREVOLE
                 if (color === myColor) {
                     const viewport = document.getElementById('camera-viewport');
                     if (viewport) {
                         const vWidth = viewport.clientWidth;
                         const vHeight = viewport.clientHeight;
-                        const cameraX = -(state.x + 30 - vWidth / 2);
-                        const cameraY = -(state.y + 15 - vHeight / 2);
+                        // Usa la posizione "visual" per la telecamera, non il target!
+                        const cameraX = -(visual.x + 30 - vWidth / 2);
+                        const cameraY = -(visual.y + 15 - vHeight / 2);
                         arena.style.transform = `translate(${cameraX}px, ${cameraY}px)`;
                     }
                 }
             }
         }
-    });
+
+        // Richiama se stesso al prossimo frame del monitor
+        requestAnimationFrame(renderLoop);
+    }
+
+    // Fai partire il motore grafico del frontend
+    requestAnimationFrame(renderLoop);
 
     socket.on('raceStarted', () => {
         isRacing = true;
     });
 
-    // Aggiornamento continuo delle posizioni 30 volte al sec
-    socket.on('racingStateUpdate', (playersState) => {
-        for (const [color, state] of Object.entries(playersState)) {
-            const carEl = document.getElementById(`car-${color.replace('#', '')}`);
-            if (carEl) {
-                carEl.style.left = state.x + 'px';
-                carEl.style.top = state.y + 'px';
-                carEl.style.transform = `rotate(${state.angle}deg)`;
-
-                const label = carEl.querySelector('.player-label');
-                if (label) {
-                    label.style.transform = `rotate(${-state.angle}deg)`;
-                }
-
-                if (state.finished) {
-                    carEl.style.opacity = '0.5';
-                }
-
-                // HO RIMOSSO TUTTO IL BLOCCO "if (color === myColor) { ... }" DELLA TELECAMERA!
-            }
-        }
-    });
 
     socket.on('raceEnded', (data) => {
         isRacing = false;
@@ -143,9 +205,48 @@ document.addEventListener('DOMContentLoaded', () => {
         const list = document.getElementById('podium-list');
         list.innerHTML = '';
 
-        data.podium.forEach((color, index) => {
+        // Costruiamo la classifica F1
+        data.podium.forEach((entry, index) => {
+            const color = entry.color;
+            const timeMs = entry.time;
+
+            // Formatta il tempo in M:SS.mmm
+            const mins = Math.floor(timeMs / 60000);
+            const secs = Math.floor((timeMs % 60000) / 1000);
+            const ms = timeMs % 1000;
+            const formattedTime = `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+
+            // Calcola il distacco dal PRIMO classificato (Gap)
+            let gapText = '';
+            if (index === 0) {
+                gapText = 'VINCITORE';
+            } else {
+                const gapMs = timeMs - data.podium[0].time;
+                const gapSecs = Math.floor(gapMs / 1000);
+                const gapMillis = gapMs % 1000;
+                gapText = `+${gapSecs}.${gapMillis.toString().padStart(3, '0')}`;
+            }
+
+            // Crea la riga della classifica
             const li = document.createElement('li');
-            li.innerHTML = `<span style="display:inline-block; width:20px; height:20px; background-color:${color}; border-radius:50%;"></span> Posto ${index + 1}`;
+            li.style.display = 'flex';
+            li.style.justifyContent = 'space-between';
+            li.style.alignItems = 'center';
+            li.style.padding = '10px 5px';
+            li.style.borderBottom = '1px solid #555';
+            li.style.fontSize = '20px';
+
+            li.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <span style="font-weight: 900; width: 30px; color: ${index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? '#cd7f32' : 'white'};">${index + 1}°</span>
+                    <span style="display: inline-block; width: 24px; height: 24px; background-color: ${color}; border-radius: 50%; border: 2px solid white;"></span>
+                    <span style="font-size: 14px; font-weight: bold;">${color === myColor ? '(TU)' : ''}</span>
+                </div>
+                <div style="font-family: monospace; text-align: right;">
+                    <div style="font-weight: bold;">${formattedTime}</div>
+                    <div style="font-size: 14px; color: #e74c3c;">${gapText}</div>
+                </div>
+            `;
             list.appendChild(li);
         });
 
