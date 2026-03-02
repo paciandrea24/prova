@@ -1,10 +1,10 @@
 body {
-    background-color: #2c3e50;
+    background-color: #000; /* Sfondo nero per i bordi fuori dalla mappa */
     color: white;
     font-family: 'Nunito', sans-serif;
     margin: 0;
     padding: 0;
-    overflow: hidden; /* Evita lo scroll se si preme troppo in giù */
+    overflow: hidden; 
 }
 
 #ui-header {
@@ -19,36 +19,43 @@ body {
     color: #f1c40f;
 }
 
-#arena-container {
-    display: flex;
-    justify-content: center;
-    margin-top: 20px;
+#camera-viewport {
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    padding: 0;
+    overflow: hidden; 
+    position: relative;
+    box-shadow: inset 0 0 50px rgba(0,0,0,0.5); 
 }
 
 #arena {
-    background-color: #34495e; /* Colore asfalto */
-    position: relative;
-    border: 5px solid #bdc3c7;
-    border-radius: 10px;
-    /* Un pattern per far sembrare il terreno più "pista" */
-    background-image: radial-gradient(#2c3e50 1px, transparent 1px);
-    background-size: 20px 20px;
-    box-shadow: inset 0 0 20px #000;
-}
-
-#finish-line {
     position: absolute;
     top: 0;
-    bottom: 0;
-    width: 40px; /* Spessore linea */
-    background: repeating-linear-gradient(
-      45deg,
-      #000,
-      #000 10px,
-      #fff 10px,
-      #fff 20px
-    );
-    z-index: 1;
+    left: 0;
+    will-change: transform;
+    transition: transform 0.01s linear; 
+    border: none;
+}
+
+#track-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1; /* Il canvas sta sul fondo */
+}
+
+/* Le macchine devono stare sopra al canvas (Z-index maggiore di 1) */
+.car {
+    width: 60px;
+    height: 30px;
+    position: absolute;
+    transition: left 0.05s linear, top 0.05s linear, transform 0.1s ease-out; 
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* RIMUOVI LA RIGA zoom: 0.35; CHE AVEVAMO MESSO PRIMA! */
 }
 
 /* --- CONTENITORE MACCHINA --- */

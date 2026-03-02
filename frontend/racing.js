@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.emit('joinRacing', { lobbyId, playerColor: decodeURIComponent(myColor) });
 
     const arena = document.getElementById('arena');
-    const statusText = document.getElementById('status-text');
     let isRacing = false;
 
     // Stato locale degli input per non spammare il server inutilmente
@@ -21,52 +20,97 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Costruisce l'arena
     // Costruisce l'arena
+    // Trova l'evento 'racingSetup' e cambialo così:
     socket.on('racingSetup', (data) => {
-        arena.style.width = data.trackWidth + 'px';
-        arena.style.height = data.trackHeight + 'px';
+        const { trackMap, tileSize, playersState } = data;
 
-        const finishLine = document.getElementById('finish-line');
-        finishLine.style.left = data.finishLineX + 'px';
+        const trackWidth = trackMap[0].length * tileSize;
+        const trackHeight = trackMap.length * tileSize;
 
-        // Crea i DOM elements per le macchine
-        for (const [color, state] of Object.entries(data.playersState)) {
-            const car = document.createElement('div');
-            car.className = 'car';
-            car.id = `car-${color.replace('#', '')}`;
-            car.style.left = state.x + 'px';
-            car.style.top = state.y + 'px';
-            car.style.transform = `rotate(${state.angle || 0}deg)`;
+        arena.style.width = trackWidth + 'px';
+        arena.style.height = trackHeight + 'px';
 
-            if (color === myColor) {
-                car.classList.add('my-car');
+        // Pulizia sicura immagine
+        arena.style.backgroundImage = 'none';
+        arena.style.transform = 'none'; // Via lo scale
+
+        // Ripristino del Canvas!
+        let canvas = document.getElementById('track-canvas');
+        if (!canvas) {
+            canvas = document.createElement('canvas');
+            canvas.id = 'track-canvas';
+            arena.appendChild(canvas);
+        }
+        canvas.width = trackWidth;
+        canvas.height = trackHeight;
+
+        const ctx = canvas.getContext('2d');
+        for (let row = 0; row < trackMap.length; row++) {
+            for (let col = 0; col < trackMap[row].length; col++) {
+                const tile = trackMap[row][col];
+                if (tile === 0) ctx.fillStyle = '#27ae60'; // Erba
+                else if (tile === 1) ctx.fillStyle = '#7f8c8d'; // Asfalto
+                else if (tile === 2) ctx.fillStyle = '#ecf0f1'; // Traguardo
+                else if (tile === 3) ctx.fillStyle = '#f1c40f'; // Checkpoint
+                ctx.fillRect(col * tileSize, row * tileSize, tileSize, tileSize);
             }
+        }
 
-            // --- COSTRUZIONE DELLA FORMULA 1 IN CSS ---
-            car.innerHTML = `
-                <div class="player-label">${color === myColor ? 'TU' : ''}</div>
-                
-                <div class="f1-spoiler-rear" style="background-color: ${color}"></div>
-                
-                <div class="f1-tire tire-rl"></div>
-                <div class="f1-tire tire-fl"></div>
-                <div class="f1-tire tire-rr"></div>
-                <div class="f1-tire tire-fr"></div>
-                
-                <div class="f1-body" style="background-color: ${color}">
-                    <div class="f1-cockpit"></div>
-                </div>
-                
-                <div class="f1-spoiler-front" style="background-color: ${color}"></div>
-            `;
+        // Crea le macchinine
+        for (const [color, state] of Object.entries(playersState)) {
+            let car = document.getElementById(`car-${color.replace('#', '')}`);
+            if (!car) {
+                car = document.createElement('div');
+                car.className = 'car';
+                car.id = `car-${color.replace('#', '')}`;
 
-            arena.appendChild(car);
+                if (color === myColor) car.classList.add('my-car');
+
+                car.innerHTML = `
+                    <div class="player-label">${color === myColor ? 'TU' : ''}</div>
+                    <div class="f1-spoiler-rear" style="background-color: ${color}"></div>
+                    <div class="f1-tire tire-rl"></div><div class="f1-tire tire-fl"></div>
+                    <div class="f1-tire tire-rr"></div><div class="f1-tire tire-fr"></div>
+                    <div class="f1-body" style="background-color: ${color}">
+                        <div class="f1-cockpit"></div>
+                    </div>
+                    <div class="f1-spoiler-front" style="background-color: ${color}"></div>
+                `;
+                arena.appendChild(car);
+            }
+        }
+    });
+
+    socket.on('racingStateUpdate', (playersState) => {
+        for (const [color, state] of Object.entries(playersState)) {
+            const carEl = document.getElementById(`car-${color.replace('#', '')}`);
+            if (carEl) {
+                carEl.style.left = state.x + 'px';
+                carEl.style.top = state.y + 'px';
+                carEl.style.transform = `rotate(${state.angle}deg)`;
+
+                const label = carEl.querySelector('.player-label');
+                if (label) label.style.transform = `rotate(${-state.angle}deg)`;
+
+                if (state.finished) carEl.style.opacity = '0.5';
+
+                // LA VECCHIA TELECAMERA CENTRATA!
+                if (color === myColor) {
+                    const viewport = document.getElementById('camera-viewport');
+                    if (viewport) {
+                        const vWidth = viewport.clientWidth;
+                        const vHeight = viewport.clientHeight;
+                        const cameraX = -(state.x + 30 - vWidth / 2);
+                        const cameraY = -(state.y + 15 - vHeight / 2);
+                        arena.style.transform = `translate(${cameraX}px, ${cameraY}px)`;
+                    }
+                }
+            }
         }
     });
 
     socket.on('raceStarted', () => {
         isRacing = true;
-        statusText.textContent = "GARA INIZIATA! MUOVITI!";
-        statusText.style.color = "#2ecc71";
     });
 
     // Aggiornamento continuo delle posizioni 30 volte al sec
@@ -76,27 +120,24 @@ document.addEventListener('DOMContentLoaded', () => {
             if (carEl) {
                 carEl.style.left = state.x + 'px';
                 carEl.style.top = state.y + 'px';
-
-                // --- NUOVO: ROTAZIONE DELLA MACCHINA ---
                 carEl.style.transform = `rotate(${state.angle}deg)`;
 
-                // Contro-rotazione per mantenere il testo "TU" dritto
                 const label = carEl.querySelector('.player-label');
                 if (label) {
                     label.style.transform = `rotate(${-state.angle}deg)`;
                 }
-                // ----------------------------------------
 
                 if (state.finished) {
                     carEl.style.opacity = '0.5';
                 }
+
+                // HO RIMOSSO TUTTO IL BLOCCO "if (color === myColor) { ... }" DELLA TELECAMERA!
             }
         }
     });
 
     socket.on('raceEnded', (data) => {
         isRacing = false;
-        statusText.textContent = "GARA TERMINATA!";
 
         const modal = document.getElementById('podium-modal');
         const list = document.getElementById('podium-list');

@@ -38,9 +38,8 @@ module.exports = function (io, socket) {
         // Invia setup iniziale dell'arena
         socket.emit('racingSetup', {
             playersState: game.playersState,
-            trackWidth: game.trackWidth,
-            trackHeight: game.trackHeight,
-            finishLineX: game.finishLineX
+            trackMap: game.trackMap,
+            tileSize: game.tileSize
         });
 
         // Se sei l'host, fai partire il countdown
