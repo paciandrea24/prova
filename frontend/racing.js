@@ -22,25 +22,30 @@ document.addEventListener('DOMContentLoaded', () => {
     // Costruisce l'arena
     // Trova l'evento 'racingSetup' e cambialo così:
     socket.on('racingSetup', (data) => {
-        const { trackMap, tileSize, playersState } = data;
+        const { trackMap, tileSize, playersState, trackName } = data;
+
+        // Chiudi il modal del podio se era aperto dalla gara precedente!
+        document.getElementById('podium-modal').style.display = 'none';
+
+        // Svuota il motore grafico altrimenti le auto "volano" dalla vecchia pista alla nuova
+        visualState = {};
 
         const trackWidth = trackMap[0].length * tileSize;
         const trackHeight = trackMap.length * tileSize;
 
         arena.style.width = trackWidth + 'px';
         arena.style.height = trackHeight + 'px';
-
-        // Pulizia sicura immagine
         arena.style.backgroundImage = 'none';
-        arena.style.transform = 'none'; // Via lo scale
+        arena.style.transform = 'none';
 
-        // Ripristino del Canvas!
+        // Elimina e ricrea il canvas per disegnare la nuova mappa
         let canvas = document.getElementById('track-canvas');
-        if (!canvas) {
-            canvas = document.createElement('canvas');
-            canvas.id = 'track-canvas';
-            arena.appendChild(canvas);
-        }
+        if (canvas) canvas.remove();
+
+        canvas = document.createElement('canvas');
+        canvas.id = 'track-canvas';
+        arena.appendChild(canvas);
+
         canvas.width = trackWidth;
         canvas.height = trackHeight;
 
@@ -53,72 +58,54 @@ document.addEventListener('DOMContentLoaded', () => {
                 const y = row * tileSize;
 
                 if (tile === 0) {
-                    // Sfondo Erba
                     ctx.fillStyle = '#27ae60';
                     ctx.fillRect(x, y, tileSize, tileSize);
 
-                    // --- GENERATORE DI NATURA PROCEDURALE ---
-                    // Creiamo un numero "casuale ma fisso" basato sulle coordinate
                     const rand = (row * 37 + col * 13) % 100;
-
                     ctx.font = `${tileSize * 0.65}px Arial`;
                     ctx.textAlign = "center";
                     ctx.textBaseline = "middle";
                     const centerX = x + tileSize / 2;
                     const centerY = y + tileSize / 2 + 2;
 
-                    // Decidiamo cosa piantare in base al numero generato!
-                    if (rand < 10) {
-                        ctx.fillText('🌲', centerX, centerY); // 10% di probabilità
-                    } else if (rand < 18) {
-                        ctx.fillText('🌳', centerX, centerY); // 8% di probabilità
-                    } else if (rand < 25) {
-                        ctx.fillText('🌿', centerX, centerY); // 7% di cespugli
-                    } else if (rand === 50) {
-                        ctx.fillText('🌼', centerX, centerY); // Qualche fiorellino raro
-                    }
+                    if (rand < 10) ctx.fillText('🌲', centerX, centerY);
+                    else if (rand < 18) ctx.fillText('🌳', centerX, centerY);
+                    else if (rand < 25) ctx.fillText('🌿', centerX, centerY);
+                    else if (rand === 50) ctx.fillText('🌼', centerX, centerY);
 
                 } else if (tile === 1) {
-                    // Asfalto liscio
                     ctx.fillStyle = '#7f8c8d';
                     ctx.fillRect(x, y, tileSize, tileSize);
-
                 } else if (tile === 2) {
-                    // Traguardo a scacchi!
                     ctx.fillStyle = (col + row) % 2 === 0 ? '#ffffff' : '#000000';
                     ctx.fillRect(x, y, tileSize, tileSize);
-
                 } else if (tile === 3 || tile === 6) {
-                    // AGGIUNTO || tile === 6
-                    // Checkpoint stile cordolo (Giallo e Nero)
                     ctx.fillStyle = (col + row) % 2 === 0 ? '#f1c40f' : '#2c3e50';
                     ctx.fillRect(x, y, tileSize, tileSize);
                 }
             }
         }
 
-        // Crea le macchinine (Senza impostare left, top o transform!)
+        // Pulisci le macchine vecchie dal DOM prima di ricrearle
+        document.querySelectorAll('.car').forEach(e => e.remove());
+
         for (const [color, state] of Object.entries(playersState)) {
-            let car = document.getElementById(`car-${color.replace('#', '')}`);
-            if (!car) {
-                car = document.createElement('div');
-                car.className = 'car';
-                car.id = `car-${color.replace('#', '')}`;
+            let car = document.createElement('div');
+            car.className = 'car';
+            car.id = `car-${color.replace('#', '')}`;
+            if (color === myColor) car.classList.add('my-car');
 
-                if (color === myColor) car.classList.add('my-car');
-
-                car.innerHTML = `
-                    <div class="player-label">${color === myColor ? 'TU' : ''}</div>
-                    <div class="f1-spoiler-rear" style="background-color: ${color}"></div>
-                    <div class="f1-tire tire-rl"></div><div class="f1-tire tire-fl"></div>
-                    <div class="f1-tire tire-rr"></div><div class="f1-tire tire-fr"></div>
-                    <div class="f1-body" style="background-color: ${color}">
-                        <div class="f1-cockpit"></div>
-                    </div>
-                    <div class="f1-spoiler-front" style="background-color: ${color}"></div>
-                `;
-                arena.appendChild(car);
-            }
+            car.innerHTML = `
+                <div class="player-label">${color === myColor ? 'TU' : ''}</div>
+                <div class="f1-spoiler-rear" style="background-color: ${color}"></div>
+                <div class="f1-tire tire-rl"></div><div class="f1-tire tire-fl"></div>
+                <div class="f1-tire tire-rr"></div><div class="f1-tire tire-fr"></div>
+                <div class="f1-body" style="background-color: ${color}">
+                    <div class="f1-cockpit"></div>
+                </div>
+                <div class="f1-spoiler-front" style="background-color: ${color}"></div>
+            `;
+            arena.appendChild(car);
         }
     });
 
@@ -205,29 +192,43 @@ document.addEventListener('DOMContentLoaded', () => {
         const list = document.getElementById('podium-list');
         list.innerHTML = '';
 
-        // Costruiamo la classifica F1
+        // Se non è l'ultima gara, aggiungi un titolo per far capire che il gioco continua
+        if (!data.isFinal) {
+            const title = document.createElement('h2');
+            title.style.color = '#f1c40f';
+            title.style.marginTop = '-10px';
+            title.textContent = `Fine ${data.trackName} - Prossima gara a breve...`;
+            list.appendChild(title);
+        } else {
+            const title = document.createElement('h2');
+            title.style.color = '#2ecc71';
+            title.style.marginTop = '-10px';
+            title.textContent = `🏆 CAMPIONATO CONCLUSO 🏆`;
+            list.appendChild(title);
+        }
+
+        // Costruiamo la classifica cumulativa!
         data.podium.forEach((entry, index) => {
             const color = entry.color;
-            const timeMs = entry.time;
+            const totalTimeMs = entry.totalTime;
 
-            // Formatta il tempo in M:SS.mmm
-            const mins = Math.floor(timeMs / 60000);
-            const secs = Math.floor((timeMs % 60000) / 1000);
-            const ms = timeMs % 1000;
-            const formattedTime = `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+            // Formatta il tempo totale in M:SS.mmm
+            const mins = Math.floor(totalTimeMs / 60000);
+            const secs = Math.floor((totalTimeMs % 60000) / 1000);
+            const ms = totalTimeMs % 1000;
+            const formattedTotal = `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
 
-            // Calcola il distacco dal PRIMO classificato (Gap)
+            // Calcola il distacco TOTALE dal primo classificato
             let gapText = '';
             if (index === 0) {
-                gapText = 'VINCITORE';
+                gapText = 'LEADER';
             } else {
-                const gapMs = timeMs - data.podium[0].time;
+                const gapMs = totalTimeMs - data.podium[0].totalTime;
                 const gapSecs = Math.floor(gapMs / 1000);
                 const gapMillis = gapMs % 1000;
                 gapText = `+${gapSecs}.${gapMillis.toString().padStart(3, '0')}`;
             }
 
-            // Crea la riga della classifica
             const li = document.createElement('li');
             li.style.display = 'flex';
             li.style.justifyContent = 'space-between';
@@ -243,7 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span style="font-size: 14px; font-weight: bold;">${color === myColor ? '(TU)' : ''}</span>
                 </div>
                 <div style="font-family: monospace; text-align: right;">
-                    <div style="font-weight: bold;">${formattedTime}</div>
+                    <div style="font-weight: bold;">${formattedTotal}</div>
                     <div style="font-size: 14px; color: #e74c3c;">${gapText}</div>
                 </div>
             `;

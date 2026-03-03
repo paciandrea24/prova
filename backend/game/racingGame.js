@@ -2,9 +2,12 @@ const { activeGames } = require('../store/activeGames');
 
 const TILE_SIZE = 80;
 
-// Mappa Fedele di Monza (27x53)
-// 0 = Erba, 1 = Asfalto, 2 = Traguardo, 3 = Checkpoint (Variante Ascari)
-const trackMap = [
+// ==========================================
+// 🏎️ CATALOGO DELLE MAPPE (MODULARE)
+// Puoi aggiungere quante mappe vuoi qui sotto!
+// 0=Erba, 1=Asfalto, 2=Traguardo, 3=Settore2, 6=Settore1
+// ==========================================
+const monzaMap = [
   /* 0*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   /* 1*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   /* 2*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Curve di Lesmo 1 e 2
@@ -34,55 +37,163 @@ const trackMap = [
   /*26*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 ];
 
+// Mappa Fedele di Spa-Francorchamps (27x53)
+// 0=Erba, 1=Asfalto, 2=Traguardo, 3=Settore2 (Fagnes), 6=Settore1 (Kemmel)
+const spaMap = [
+  /* 0*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /* 1*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /* 2*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Les Combes
+  /* 3*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /* 4*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Malmedy
+  /* 5*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /* 6*/[0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Bruxelles
+  /* 7*/[0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /* 8*/[0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /* 9*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /*10*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 6, 6, 6, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Kemmel Straight (Settore 1)
+  /*11*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /*12*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Pouhon Inizio
+  /*13*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /*14*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /*15*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Raidillon Uscita
+  /*16*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /*17*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Eau Rouge
+  /*18*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /*19*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /*20*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Fagnes (Settore 2) & Verso La Source
+  /*21*/[0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0], // Stavelot Inizio
+  /*22*/[0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0],
+  /*23*/[0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0], // La Source U-Turn Destra
+  /*24*/[0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0], // TRAGUARDO & Bus Stop
+  /*25*/[0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0], // TRAGUARDO & Blanchimont Raccordo
+  /*26*/[0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0]
+];
+
+
+// Mappa Fedele di Baku City Circuit (27x53)
+// 0=Erba, 1=Asfalto, 2=Traguardo, 3=Settore2 (Castello), 6=Settore1
+const bakuMap = [
+  /* 0*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /* 1*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 6, 6, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Strettoia Castello
+  /* 2*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 6, 6, 6, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Tornante Castello
+  /* 3*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 6, 6, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /* 4*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 6, 6, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Ingresso Castello
+  /* 5*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /* 6*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Discesa veloce
+  /* 7*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /* 8*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /* 9*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0],
+  /*10*/[0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0],
+  /*11*/[0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0],
+  /*12*/[0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0],
+  /*13*/[0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0], // Estremo Destro
+  /*14*/[0, 0, 0, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0], // Settore 1 in curva!
+  /*15*/[0, 0, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0],
+  /*16*/[0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0], // Estremo Sinistro
+  /*17*/[0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0],
+  /*18*/[0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0], // Curve a scendere
+  /*19*/[0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0],
+  /*20*/[0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+  /*21*/[0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /*22*/[0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /*23*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // TRAGUARDO
+  /*24*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /*25*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /*26*/[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+];
+
+// Questo Array contiene tutto il Campionato!
+const TRACKS = [
+    {
+        name: "Monza",
+        map: monzaMap,
+        spawnX: 1440,
+        spawnY: 1800,
+        angle: 0
+    },
+    {
+        name: "Spa-Francorchamps",
+        map: spaMap,
+        // Partenza sul rettilineo prima di La Source
+        spawnX: 2000,
+        spawnY: 1960,
+        angle: 0 // Si corre verso Destra!
+    },
+    {
+        name: "Baku (Diagonal Version)",
+        map: bakuMap,
+        // Nasci sul rettilineo in basso (Colonna 13)
+        spawnX: 1040,  // (13 * 80)
+        spawnY: 1920,  // (24 * 80) Centro della pista
+        angle: 0       // Parti verso Destra (Est)
+    }
+];
+
+// ==========================================
+// FUNZIONI DEL GIOCO
+// ==========================================
+
 function initializeRacingGame(lobbyId, players, settings) {
-    console.log(`🏎️ Inizializzazione Racing per lobby ${lobbyId} (Partenza Trackmania)`);
-
-    const playersState = {};
-
-    // Punto di spawn unico per tutti i giocatori!
-    // Colonna 18 (X = 1440), a metà esatta tra la riga 22 e 23 (Y = 1800)
-    const startX = 1440;
-    const startY = 1800;
-
-    players.forEach((p) => {
-        playersState[p] = {
-            color: p,
-            x: startX,
-            y: startY,
-            angle: 0,
-            inputs: { w: false, a: false, s: false, d: false },
-            progress: 0, // <--- SOSTITUISCE passedCheckpoint
-            finished: false,
-            place: null,
-            time: null
-        };
-    });
+    console.log(`🏎️ Inizializzazione Campionato per lobby ${lobbyId}`);
 
     const game = {
         lobbyId,
         gameId: 'racing',
         players: [...players],
-        playersState,
-        trackMap: trackMap,
-        tileSize: TILE_SIZE, // Usa il tuo TILE_SIZE (80)
+        playersState: {},
+
+        // Nuove variabili per il Campionato
+        tracks: TRACKS,
+        currentTrackIndex: 0,
+        cumulativeTimes: {}, // Qui sommiamo i millisecondi di ogni gara per ogni giocatore!
+
+        tileSize: TILE_SIZE,
         podium: [],
         isActive: false,
         startTime: null,
         loopInterval: null
     };
 
+    // Inizializza i tempi cumulativi a zero per tutti
+    players.forEach(p => {
+        game.cumulativeTimes[p] = 0;
+    });
+
+    // Posiziona i giocatori sulla prima mappa
+    resetPlayersForCurrentTrack(game);
+
     activeGames.set(lobbyId, game);
     return game;
+}
+
+// Funzione helper per riposizionare le auto ad ogni nuova gara
+function resetPlayersForCurrentTrack(game) {
+    const track = game.tracks[game.currentTrackIndex];
+    game.podium = []; // Svuota il podio della singola gara
+
+    game.players.forEach(p => {
+        game.playersState[p] = {
+            color: p,
+            x: track.spawnX,
+            y: track.spawnY,
+            angle: track.angle,
+            inputs: { w: false, a: false, s: false, d: false },
+            progress: 0,
+            finished: false,
+            place: null,
+            time: null
+        };
+    });
 }
 
 function runGameLoop(io, lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game) return;
 
-    // Velocità raddoppiata (es. da 9 a 18) per compensare i 60 FPS
     const speed = 18;
     const carWidth = 60;
     const carHeight = 30;
+    const currentTrackMap = game.tracks[game.currentTrackIndex].map;
 
     game.loopInterval = setInterval(() => {
         if (!game.isActive) return;
@@ -111,7 +222,6 @@ function runGameLoop(io, lobbyId) {
                 { x: nextX + carWidth, y: nextY + carHeight }
             ];
 
-            // Nuove variabili per i settori
             let canMove = true;
             let hitSector1 = false;
             let hitSector2 = false;
@@ -121,19 +231,18 @@ function runGameLoop(io, lobbyId) {
                 let col = Math.floor(pt.x / game.tileSize);
                 let row = Math.floor(pt.y / game.tileSize);
 
-                if (row < 0 || row >= game.trackMap.length || col < 0 || col >= game.trackMap[0].length) {
+                if (row < 0 || row >= currentTrackMap.length || col < 0 || col >= currentTrackMap[0].length) {
                     canMove = false;
                     break;
                 }
 
-                let tile = game.trackMap[row][col];
+                let tile = currentTrackMap[row][col];
 
                 if (tile === 0 || tile === 4 || tile === 5) {
-                    canMove = false; // Erba e ostacoli
+                    canMove = false;
                     break;
                 }
 
-                // Controlla cosa stiamo toccando
                 if (tile === 6) hitSector1 = true;
                 if (tile === 3) hitSector2 = true;
                 if (tile === 2) isOnFinishLine = true;
@@ -143,18 +252,12 @@ function runGameLoop(io, lobbyId) {
                 pState.x = nextX;
                 pState.y = nextY;
 
-                // SISTEMA ANTI-CHEAT: Ordine obbligatorio dei settori
-                if (hitSector1 && pState.progress === 0) {
-                    pState.progress = 1; // Ha passato il primo!
-                }
-                if (hitSector2 && pState.progress === 1) {
-                    pState.progress = 2; // Ha passato il secondo!
-                }
+                if (hitSector1 && pState.progress === 0) pState.progress = 1;
+                if (hitSector2 && pState.progress === 1) pState.progress = 2;
 
-                // TRAGUARDO (Gara finita solo se progress è 2)
                 if (isOnFinishLine && pState.progress === 2) {
                     pState.finished = true;
-                    pState.progress = 3; // Evita trigger multipli
+                    pState.progress = 3;
 
                     const lapTimeMs = Date.now() - game.startTime;
                     pState.time = lapTimeMs;
@@ -168,7 +271,7 @@ function runGameLoop(io, lobbyId) {
                     const formatted = `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
 
                     io.to(lobbyId).emit('message', {
-                        message: `🏁 ${color} ha tagliato il traguardo in ${formatted} (${pState.place}° posto)`,
+                        message: `🏁 ${color} ha finito la gara in ${formatted}`,
                         type: 'success'
                     });
                 }
@@ -185,11 +288,87 @@ function runGameLoop(io, lobbyId) {
 
         io.to(lobbyId).emit('racingStateUpdate', game.playersState);
 
-        // NUOVA CONDIZIONE DI FINE: Si ferma SOLO quando tutti hanno finito!
+        // Se tutti hanno finito la gara attuale
         if (everyoneFinished && game.players.length > 0) {
-            endRace(io, lobbyId);
+            handleRaceEnd(io, lobbyId);
         }
-    }, 1000 / 60); // <--- DA 120 A 60 FPS!
+    }, 1000 / 60);
+}
+
+// GESTIONE FINE GARA E PASSAGGIO ALLA PROSSIMA
+function handleRaceEnd(io, lobbyId) {
+    const game = activeGames.get(lobbyId);
+    if (!game) return;
+
+    game.isActive = false;
+    clearInterval(game.loopInterval);
+
+    // 1. Somma i tempi di questa gara al totale di ciascun giocatore
+    game.podium.forEach(entry => {
+        game.cumulativeTimes[entry.color] += entry.time;
+    });
+
+    // 2. Controlla se era l'ultima mappa del campionato
+    const isFinalRace = game.currentTrackIndex >= game.tracks.length - 1;
+
+    // 3. Crea la classifica cumulativa per il Frontend
+    const cumulativePodium = Object.keys(game.cumulativeTimes).map(color => {
+        return {
+            color: color,
+            totalTime: game.cumulativeTimes[color],
+            // Trova quanto ci ha messo in quest'ultima gara specifica
+            lastRaceTime: game.podium.find(p => p.color === color)?.time || 0
+        };
+    }).sort((a, b) => a.totalTime - b.totalTime); // Ordina chi ha il tempo TOTALE minore!
+
+    // 4. Invia i risultati al frontend
+    io.to(lobbyId).emit('raceEnded', {
+        podium: cumulativePodium,
+        isFinal: isFinalRace,
+        trackName: game.tracks[game.currentTrackIndex].name
+    });
+
+    // 5. Decidi cosa fare dopo
+    if (isFinalRace) {
+        // Campionato finito! Torna alla lobby dopo 10 sec
+        setTimeout(() => {
+            activeGames.delete(lobbyId);
+            io.to(lobbyId).emit('returnToLobby');
+        }, 10000);
+    } else {
+        // C'è un'altra mappa! Caricala dopo 7 secondi
+        io.to(lobbyId).emit('message', {
+            message: `Prossima gara tra 7 secondi...`,
+            type: 'system'
+        });
+
+        setTimeout(() => {
+            loadNextTrack(io, lobbyId);
+        }, 7000);
+    }
+}
+
+function loadNextTrack(io, lobbyId) {
+    const game = activeGames.get(lobbyId);
+    if (!game) return;
+
+    game.currentTrackIndex++;
+    resetPlayersForCurrentTrack(game);
+
+    const nextTrack = game.tracks[game.currentTrackIndex];
+
+    // Invia i dati della nuova mappa al frontend
+    io.to(lobbyId).emit('racingSetup', {
+        playersState: game.playersState,
+        trackMap: nextTrack.map,
+        tileSize: game.tileSize,
+        trackName: nextTrack.name
+    });
+
+    // Fai partire la gara automaticamente!
+    setTimeout(() => {
+        startRace(io, lobbyId);
+    }, 2000); // 2 secondi per far caricare la grafica al client prima di dare il via
 }
 
 function updatePlayerInput(lobbyId, playerColor, inputs) {
@@ -200,22 +379,16 @@ function updatePlayerInput(lobbyId, playerColor, inputs) {
 function startRace(io, lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game) return;
+
     game.isActive = true;
-    game.startTime = Date.now(); // <--- FA PARTIRE IL CRONOMETRO!
-    io.to(lobbyId).emit('raceStarted');
+    game.startTime = Date.now(); // Resetta e avvia il timer!
+
+    io.to(lobbyId).emit('raceStarted', {
+        trackName: game.tracks[game.currentTrackIndex].name
+    });
+
     runGameLoop(io, lobbyId);
 }
 
-function endRace(io, lobbyId) {
-    const game = activeGames.get(lobbyId);
-    if (!game) return;
-    game.isActive = false;
-    clearInterval(game.loopInterval);
-    io.to(lobbyId).emit('raceEnded', { podium: game.podium });
-    setTimeout(() => {
-        activeGames.delete(lobbyId);
-        io.to(lobbyId).emit('returnToLobby');
-    }, 10000);
-}
-
+// Esportiamo solo quello che serve al socket manager
 module.exports = { initializeRacingGame, updatePlayerInput, startRace };

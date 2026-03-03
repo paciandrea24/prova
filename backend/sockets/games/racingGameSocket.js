@@ -35,11 +35,15 @@ module.exports = function (io, socket) {
 
         const game = activeGames.get(lobbyId);
 
-        // Invia setup iniziale dell'arena
+        // --- NUOVO: Prendiamo la mappa attuale dal Campionato ---
+        const currentTrack = game.tracks[game.currentTrackIndex];
+
+        // Invia setup iniziale dell'arena con i dati della matrice!
         socket.emit('racingSetup', {
             playersState: game.playersState,
-            trackMap: game.trackMap,
-            tileSize: game.tileSize
+            trackMap: currentTrack.map,
+            tileSize: game.tileSize,
+            trackName: currentTrack.name
         });
 
         // Se sei l'host, fai partire il countdown
