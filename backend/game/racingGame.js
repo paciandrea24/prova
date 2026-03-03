@@ -136,16 +136,27 @@ const TRACKS = [
 function initializeRacingGame(lobbyId, players, settings) {
     console.log(`🏎️ Inizializzazione Campionato per lobby ${lobbyId}`);
 
+    // 1. Quante mappe ha scelto l'host? (Se non c'è il dato, usa 3 di default)
+    const requestedTracks = settings.numTracks || 3;
+
+    // 2. Mescoliamo a caso tutte le mappe disponibili nel gioco
+    // Usa lo spread operator [...] per non modificare l'array originale TRACKS
+    let shuffledTracks = [...TRACKS].sort(() => Math.random() - 0.5);
+
+    // 3. Tagliamo l'array per prendere SOLO il numero di mappe richieste!
+    // (Se chiedi 5 mappe ma ne hai create solo 3, slice prende automaticamente il massimo disponibile)
+    let selectedTracks = shuffledTracks.slice(0, requestedTracks);
+
     const game = {
         lobbyId,
         gameId: 'racing',
         players: [...players],
         playersState: {},
 
-        // Nuove variabili per il Campionato
-        tracks: TRACKS,
+        // Assegniamo SOLO le mappe selezionate e mescolate
+        tracks: selectedTracks,
         currentTrackIndex: 0,
-        cumulativeTimes: {}, // Qui sommiamo i millisecondi di ogni gara per ogni giocatore!
+        cumulativeTimes: {},
 
         tileSize: TILE_SIZE,
         podium: [],
@@ -159,7 +170,7 @@ function initializeRacingGame(lobbyId, players, settings) {
         game.cumulativeTimes[p] = 0;
     });
 
-    // Posiziona i giocatori sulla prima mappa
+    // Posiziona i giocatori sulla prima mappa estratta
     resetPlayersForCurrentTrack(game);
 
     activeGames.set(lobbyId, game);

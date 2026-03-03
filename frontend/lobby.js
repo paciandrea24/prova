@@ -49,7 +49,10 @@ document.addEventListener('DOMContentLoaded', () => {
             time: 30,
             category: 'general'
         },
-        racing: { difficulty: 'easy' }
+        racing: {
+            difficulty: 'easy',
+            numTracks: 3
+        }
     };
 
     // Mostra l'ID della lobby (formattato nel nuovo header)
