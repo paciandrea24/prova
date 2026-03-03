@@ -47,119 +47,44 @@ body {
 
 /* Le macchine devono stare sopra al canvas (Z-index maggiore di 1) */
 .car {
-    width: 60px;
-    height: 30px;
+    width: 86px;  /* Proporzione esatta per il tuo 652px */
+    height: 40px; /* Proporzione esatta per il tuo 304px */
     position: absolute;
-    top: 0;      /* <--- FONDAMENTALE */
-    left: 0;     /* <--- FONDAMENTALE */
+    top: 0;
+    left: 0;
     will-change: transform;
     z-index: 10;
     display: flex;
     align-items: center;
     justify-content: center;
+    filter: drop-shadow(0px 3px 4px rgba(0,0,0,0.4)); /* Ombra per il 3D */
 }
 
-/* --- CONTENITORE MACCHINA --- */
-.car {
-    width: 60px;
-    height: 30px;
+/* La nuova immagine PNG della macchina */
+.car-sprite {
+    width: 100%;
+    height: 100%;
+    object-fit: contain; /* Questa è la magia che impedisce deformazioni! */
+    pointer-events: none;
+}
+
+/* L'etichetta del giocatore (Dovrebbe già essere così) */
+.player-label {
     position: absolute;
-    /* AGGIUNTO transform ALLA TRANSIZIONE PER UNA STERZATA FLUIDA */
-    transition: left 0.05s linear, top 0.05s linear, transform 0.1s ease-out; 
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-/* Effetto speciale per far risaltare la TUA auto */
-.car.my-car .f1-body, 
-.car.my-car .f1-spoiler-front, 
-.car.my-car .f1-spoiler-rear {
-    box-shadow: 0 0 8px white;
-    border: 1px solid white;
+    top: -25px;
+    font-size: 14px;
+    font-weight: bold;
+    color: white;
+    text-shadow: 1px 1px 2px black;
+    white-space: nowrap;
+    z-index: 20;
 }
 
 .car.my-car {
     z-index: 11; /* Sta sopra le altre macchine in caso di scontro */
 }
 
-.player-label {
-    position: absolute;
-    top: -20px;
-    font-size: 12px;
-    font-weight: 900;
-    color: white;
-    text-shadow: 1px 1px 2px black, -1px -1px 2px black;
-    white-space: nowrap;
-    /* AGGIUNTA LA TRANSIZIONE ANCHE QUI */
-    transition: transform 0.1s ease-out;
-}
-
 /* --- DESIGN DELLA FORMULA 1 (Vista dall'alto) --- */
-
-/* Carrozzeria Centrale */
-.f1-body {
-    width: 36px;
-    height: 12px;
-    border-radius: 4px 12px 12px 4px;
-    position: absolute;
-    z-index: 2;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); /* Effetto profondità */
-}
-
-/* Abitacolo / Casco del pilota */
-.f1-cockpit {
-    width: 10px;
-    height: 6px;
-    background-color: #111;
-    border-radius: 3px;
-    position: relative;
-    right: -3px; /* Spostato leggermente in avanti */
-    border: 1px solid #444;
-}
-
-/* Alettone Posteriore */
-.f1-spoiler-rear {
-    width: 6px;
-    height: 24px;
-    border-radius: 2px;
-    position: absolute;
-    left: 2px;
-    z-index: 3;
-    border-right: 2px solid rgba(0,0,0,0.4);
-}
-
-/* Alettone Anteriore (Muso) */
-.f1-spoiler-front {
-    width: 5px;
-    height: 20px;
-    border-radius: 2px;
-    position: absolute;
-    right: 2px;
-    z-index: 3;
-    border-left: 2px solid rgba(0,0,0,0.4);
-}
-
-/* Gomme Nere */
-.f1-tire {
-    width: 10px;
-    height: 6px;
-    background-color: #1a1a1a;
-    border-radius: 2px;
-    position: absolute;
-    z-index: 1;
-    box-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-}
-
-/* Posizioni specifiche delle 4 gomme */
-.tire-rl { top: 0; left: 8px; }      /* Posteriore Sinistra (Rear-Left) */
-.tire-fl { top: 1px; right: 8px; }   /* Anteriore Sinistra (Front-Left) */
-.tire-rr { bottom: 0; left: 8px; }   /* Posteriore Destra (Rear-Right) */
-.tire-fr { bottom: 1px; right: 8px; }/* Anteriore Destra (Front-Right) */
 
 #podium-modal {
     position: fixed;

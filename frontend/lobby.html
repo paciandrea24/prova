@@ -160,6 +160,26 @@
         </div>
     </main>
 
+    <button id="leaderboard-btn"
+        style="background: #f1c40f; color: black; font-weight: bold; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; margin-left: 10px;">🏆
+        Leaderboard</button>
+
+    <div id="global-leaderboard-modal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 3000; justify-content: center; align-items: center;">
+        <div
+            style="background: #2c3e50; padding: 20px; border-radius: 10px; width: 90%; max-width: 600px; color: white; border: 2px solid #f1c40f; max-height: 80vh; overflow-y: auto;">
+            <div
+                style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1c40f; padding-bottom: 10px;">
+                <h2 style="margin: 0; color: #f1c40f;">🏆 Hall of Fame</h2>
+                <button id="close-leaderboard-btn"
+                    style="background: red; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 5px; font-weight: bold;">X</button>
+            </div>
+            <div id="leaderboard-content" style="margin-top: 20px;">
+                <p>Caricamento record in corso...</p>
+            </div>
+        </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script src="lobby.js" defer></script>
 </body>

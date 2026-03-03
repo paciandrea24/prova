@@ -1,4 +1,5 @@
 const { activeGames } = require('../store/activeGames');
+const leaderboard = require('../store/leaderboard');
 
 const TILE_SIZE = 80;
 
@@ -120,7 +121,7 @@ const TRACKS = [
         angle: 0 // Si corre verso Destra!
     },
     {
-        name: "Baku (Diagonal Version)",
+        name: "Baku",
         map: bakuMap,
         // Nasci sul rettilineo in basso (Colonna 13)
         spawnX: 1040,  // (13 * 80)
@@ -202,8 +203,8 @@ function runGameLoop(io, lobbyId) {
     if (!game) return;
 
     const speed = 18;
-    const carWidth = 60;
-    const carHeight = 30;
+    const carWidth = 86;
+    const carHeight = 40;
     const currentTrackMap = game.tracks[game.currentTrackIndex].map;
 
     game.loopInterval = setInterval(() => {
@@ -273,7 +274,17 @@ function runGameLoop(io, lobbyId) {
                     const lapTimeMs = Date.now() - game.startTime;
                     pState.time = lapTimeMs;
 
-                    game.podium.push({ color: color, time: lapTimeMs });
+                    // --- NUOVA LOGICA LEADERBOARD ---
+                    const trackName = currentTrackMap === game.tracks[0].map ? game.tracks[0].name : game.tracks[game.currentTrackIndex].name;
+                    const isRecord = leaderboard.isTop10Record(trackName, lapTimeMs);
+
+                    // Salviamo il tempo e la FLAG isRecord nel podio!
+                    game.podium.push({
+                        color: color,
+                        time: lapTimeMs,
+                        isRecord: isRecord
+                    });
+
                     pState.place = game.podium.length;
 
                     const mins = Math.floor(lapTimeMs / 60000);
@@ -281,10 +292,18 @@ function runGameLoop(io, lobbyId) {
                     const ms = lapTimeMs % 1000;
                     const formatted = `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
 
-                    io.to(lobbyId).emit('message', {
-                        message: `🏁 ${color} ha finito la gara in ${formatted}`,
-                        type: 'success'
-                    });
+                    // Se è da Top 10, facciamo esplodere la chat!
+                    if (isRecord) {
+                        io.to(lobbyId).emit('message', {
+                            message: `🚨 TEMPO DA TOP 10! ${color} ha chiuso in ${formatted}! 🚨`,
+                            type: 'success'
+                        });
+                    } else {
+                        io.to(lobbyId).emit('message', {
+                            message: `🏁 ${color} ha finito la gara in ${formatted}`,
+                            type: 'success'
+                        });
+                    }
                 }
             }
 
@@ -307,6 +326,7 @@ function runGameLoop(io, lobbyId) {
 }
 
 // GESTIONE FINE GARA E PASSAGGIO ALLA PROSSIMA
+// GESTIONE FINE GARA E PASSAGGIO ALLA PROSSIMA
 function handleRaceEnd(io, lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game) return;
@@ -314,48 +334,56 @@ function handleRaceEnd(io, lobbyId) {
     game.isActive = false;
     clearInterval(game.loopInterval);
 
-    // 1. Somma i tempi di questa gara al totale di ciascun giocatore
+    // 1. Somma i tempi di questa gara al totale
     game.podium.forEach(entry => {
         game.cumulativeTimes[entry.color] += entry.time;
     });
 
-    // 2. Controlla se era l'ultima mappa del campionato
     const isFinalRace = game.currentTrackIndex >= game.tracks.length - 1;
 
-    // 3. Crea la classifica cumulativa per il Frontend
     const cumulativePodium = Object.keys(game.cumulativeTimes).map(color => {
         return {
             color: color,
             totalTime: game.cumulativeTimes[color],
-            // Trova quanto ci ha messo in quest'ultima gara specifica
             lastRaceTime: game.podium.find(p => p.color === color)?.time || 0
         };
-    }).sort((a, b) => a.totalTime - b.totalTime); // Ordina chi ha il tempo TOTALE minore!
+    }).sort((a, b) => a.totalTime - b.totalTime);
 
-    // 4. Invia i risultati al frontend
+    // --- NUOVO: Diciamo al frontend se ci sono dei record ---
+    // Salviamo il podio della singola gara per inviarlo al client
+    const singleRacePodium = [...game.podium];
+
+    // Controlliamo se in questa gara c'è stato ALMENO un record
+    const someoneGotRecord = singleRacePodium.some(p => p.isRecord);
+
+    const trackName = game.tracks[game.currentTrackIndex].name;
+    const mapTop3 = leaderboard.getTop10(trackName).slice(0, 3); // Prende solo i primi 3
+
     io.to(lobbyId).emit('raceEnded', {
         podium: cumulativePodium,
+        singleRacePodium: singleRacePodium,
+        mapTop3: mapTop3, // <--- AGGIUNGIAMO LA TOP 3 GLOBALE
         isFinal: isFinalRace,
-        trackName: game.tracks[game.currentTrackIndex].name
+        trackName: trackName
     });
 
-    // 5. Decidi cosa fare dopo
     if (isFinalRace) {
-        // Campionato finito! Torna alla lobby dopo 10 sec
         setTimeout(() => {
             activeGames.delete(lobbyId);
             io.to(lobbyId).emit('returnToLobby');
-        }, 10000);
+        }, 15000); // Aumentato a 15 secondi per dare tempo di inserire il record
     } else {
-        // C'è un'altra mappa! Caricala dopo 7 secondi
+        // Se c'è un record diamo 12 secondi (per scrivere il nome), altrimenti i soliti 7
+        const delay = someoneGotRecord ? 12000 : 7000;
+
         io.to(lobbyId).emit('message', {
-            message: `Prossima gara tra 7 secondi...`,
+            message: `Prossima gara tra ${delay / 1000} secondi...`,
             type: 'system'
         });
 
         setTimeout(() => {
             loadNextTrack(io, lobbyId);
-        }, 7000);
+        }, delay);
     }
 }
 

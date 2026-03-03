@@ -19,8 +19,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const inputs = { w: false, a: false, s: false, d: false };
 
     // Costruisce l'arena
-    // Costruisce l'arena
-    // Trova l'evento 'racingSetup' e cambialo così:
     socket.on('racingSetup', (data) => {
         const { trackMap, tileSize, playersState, trackName } = data;
 
@@ -89,21 +87,20 @@ document.addEventListener('DOMContentLoaded', () => {
         // Pulisci le macchine vecchie dal DOM prima di ricrearle
         document.querySelectorAll('.car').forEach(e => e.remove());
 
+        // Creiamo le auto per la nuova mappa!
         for (const [color, state] of Object.entries(playersState)) {
             let car = document.createElement('div');
             car.className = 'car';
             car.id = `car-${color.replace('#', '')}`;
             if (color === myColor) car.classList.add('my-car');
 
+            // Togliamo il '#' dal colore per usarlo come nome del file!
+            const colorCode = color.replace('#', '');
+
+            // Inseriamo l'etichetta del giocatore e l'immagine PNG
             car.innerHTML = `
                 <div class="player-label">${color === myColor ? 'TU' : ''}</div>
-                <div class="f1-spoiler-rear" style="background-color: ${color}"></div>
-                <div class="f1-tire tire-rl"></div><div class="f1-tire tire-fl"></div>
-                <div class="f1-tire tire-rr"></div><div class="f1-tire tire-fr"></div>
-                <div class="f1-body" style="background-color: ${color}">
-                    <div class="f1-cockpit"></div>
-                </div>
-                <div class="f1-spoiler-front" style="background-color: ${color}"></div>
+                <img src="assets/${colorCode}.png" class="car-sprite" alt="F1 Car">
             `;
             arena.appendChild(car);
         }
@@ -165,8 +162,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         const vWidth = viewport.clientWidth;
                         const vHeight = viewport.clientHeight;
                         // Usa la posizione "visual" per la telecamera, non il target!
-                        const cameraX = -(visual.x + 30 - vWidth / 2);
-                        const cameraY = -(visual.y + 15 - vHeight / 2);
+                        const cameraX = -(visual.x + 43 - vWidth / 2); // 43 è la metà di 86
+                        const cameraY = -(visual.y + 20 - vHeight / 2); // 20 è la metà di 40
                         arena.style.transform = `translate(${cameraX}px, ${cameraY}px)`;
                     }
                 }
@@ -208,15 +205,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Costruiamo la classifica cumulativa!
+        // Costruiamo la classifica cumulativa!
         data.podium.forEach((entry, index) => {
             const color = entry.color;
             const totalTimeMs = entry.totalTime;
+            const lastRaceTimeMs = entry.lastRaceTime; // <-- IL TEMPO DI QUESTA SPECIFICA PISTA!
 
-            // Formatta il tempo totale in M:SS.mmm
-            const mins = Math.floor(totalTimeMs / 60000);
-            const secs = Math.floor((totalTimeMs % 60000) / 1000);
-            const ms = totalTimeMs % 1000;
-            const formattedTotal = `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+            // 1. Formatta il tempo TOTALE (Campionato)
+            const tMins = Math.floor(totalTimeMs / 60000);
+            const tSecs = Math.floor((totalTimeMs % 60000) / 1000);
+            const tMs = totalTimeMs % 1000;
+            const formattedTotal = `${tMins}:${tSecs.toString().padStart(2, '0')}.${tMs.toString().padStart(3, '0')}`;
+
+            // 2. Formatta il tempo della SINGOLA GARA
+            const rMins = Math.floor(lastRaceTimeMs / 60000);
+            const rSecs = Math.floor((lastRaceTimeMs % 60000) / 1000);
+            const rMs = lastRaceTimeMs % 1000;
+            const formattedRace = `${rMins}:${rSecs.toString().padStart(2, '0')}.${rMs.toString().padStart(3, '0')}`;
+
+            // 3. Controlla se questo giocatore ha fatto il record in questa specifica gara
+            const raceData = data.singleRacePodium.find(p => p.color === color);
+            const isRecord = raceData && raceData.isRecord;
+            const recordTag = isRecord ? `<span style="color: gold; font-size: 12px; font-weight: bold; margin-right: 8px; text-shadow: 0 0 5px gold;">🌟 RECORD</span>` : '';
 
             // Calcola il distacco TOTALE dal primo classificato
             let gapText = '';
@@ -243,15 +253,97 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span style="display: inline-block; width: 24px; height: 24px; background-color: ${color}; border-radius: 50%; border: 2px solid white;"></span>
                     <span style="font-size: 14px; font-weight: bold;">${color === myColor ? '(TU)' : ''}</span>
                 </div>
-                <div style="font-family: monospace; text-align: right;">
-                    <div style="font-weight: bold;">${formattedTotal}</div>
-                    <div style="font-size: 14px; color: #e74c3c;">${gapText}</div>
+                
+                <div style="font-family: monospace; text-align: right; display: flex; flex-direction: column; align-items: flex-end;">
+                    
+                    <div style="font-size: 15px; color: #34dbeb; margin-bottom: 3px;">
+                        ${recordTag} Pista: <strong>${formattedRace}</strong>
+                    </div>
+                    
+                    <div style="margin-bottom: 2px;">
+                        <span style="font-size: 12px; color: #aaa; margin-right: 5px; font-family: sans-serif;">Totale Campionato:</span>
+                        <span style="font-weight: bold;">${formattedTotal}</span>
+                    </div>
+                    
+                    <div style="font-size: 12px; color: #e74c3c;">${gapText}</div>
                 </div>
             `;
             list.appendChild(li);
         });
 
         modal.style.display = 'block';
+
+        // --- NUOVO: GESTIONE RECORD MONDIALE ---
+        // Controlliamo se IO (myColor) ho fatto un record in questa gara specifica
+        const myRaceData = data.singleRacePodium.find(p => p.color === myColor);
+
+        if (myRaceData && myRaceData.isRecord) {
+            const recordModal = document.getElementById('record-modal');
+            const recordInput = document.getElementById('record-name-input');
+            const recordBtn = document.getElementById('submit-record-btn');
+
+            if (recordModal) {
+                // Mostra il pop-up e metti il focus sull'input
+                recordModal.style.display = 'block';
+                recordInput.value = '';
+                recordInput.focus();
+
+                // Funzione per inviare il record al server
+                recordBtn.onclick = () => {
+                    // Prende le 3 lettere, se è vuoto usa "AAA" di default
+                    let initials = recordInput.value.trim().toUpperCase() || 'AAA';
+                    initials = initials.substring(0, 3); // Sicurezza extra: massimo 3 caratteri
+
+                    // Invia i dati al Socket!
+                    socket.emit('saveNewRecord', {
+                        lobbyId: lobbyId,
+                        trackName: data.trackName,
+                        playerName: initials,
+                        playerColor: myColor,
+                        time: myRaceData.time
+                    });
+
+                    // Chiudi il pop-up
+                    recordModal.style.display = 'none';
+
+                    // Mostra un feedback visivo al giocatore
+                    const title = document.createElement('h3');
+                    title.style.color = '#f1c40f';
+                    title.style.textAlign = 'center';
+                    title.textContent = `Record salvato come ${initials}!`;
+                    list.appendChild(title);
+                };
+            }
+        }
+
+        if (data.mapTop3 && data.mapTop3.length > 0) {
+            const top3Container = document.createElement('div');
+            top3Container.style.marginTop = '20px';
+            top3Container.style.padding = '10px';
+            top3Container.style.backgroundColor = 'rgba(0,0,0,0.5)';
+            top3Container.style.borderRadius = '8px';
+            top3Container.style.border = '1px dashed #7f8c8d';
+
+            let top3Html = `<h4 style="color: #bdc3c7; margin: 0 0 10px 0; text-align: center; text-transform: uppercase;">⏱️ Record All-Time (${data.trackName})</h4>`;
+
+            data.mapTop3.forEach((rec, i) => {
+                const m = Math.floor(rec.time / 60000);
+                const s = Math.floor((rec.time % 60000) / 1000);
+                const ms = rec.time % 1000;
+                const timeStr = `${m}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+
+                let medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
+
+                top3Html += `
+                    <div style="display: flex; justify-content: space-between; font-size: 16px; margin-bottom: 5px;">
+                        <span>${medal} <span style="display:inline-block; width:12px; height:12px; background-color:${rec.color}; border-radius:50%; margin-right:5px;"></span> <strong>${rec.name}</strong></span>
+                        <span style="font-family: monospace;">${timeStr}</span>
+                    </div>
+                `;
+            });
+            top3Container.innerHTML = top3Html;
+            list.appendChild(top3Container);
+        }
     });
 
     socket.on('returnToLobby', () => {

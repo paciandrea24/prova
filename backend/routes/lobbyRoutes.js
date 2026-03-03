@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { lobbies, users, generateLobbyId } = require('../store/lobbies');
+const leaderboard = require('../store/leaderboard');
 
 // GET root
 router.get('/', (req, res) => {
@@ -81,6 +82,13 @@ router.get('/api/lobby-colors/:lobbyId', (req, res) => {
 
     // lobby.players è un array di stringhe colore es: ['#DC143C', '#4169E1']
     res.json({ takenColors: lobby.players });
+});
+
+// ---------------------------------------------------------
+// API per ottenere tutta la Leaderboard Globale
+// ---------------------------------------------------------
+router.get('/api/leaderboard', (req, res) => {
+    res.json(leaderboard.getAllRecords());
 });
 
 module.exports = router;

@@ -1,6 +1,7 @@
 const { activeGames } = require('../../store/activeGames');
 const { lobbies } = require('../../store/lobbies');
 const { initializeRacingGame, startRace, updatePlayerInput } = require('../../game/racingGame');
+const leaderboard = require('../../store/leaderboard');
 
 module.exports = function (io, socket) {
 
@@ -53,6 +54,20 @@ module.exports = function (io, socket) {
                 startRace(io, lobbyId);
             }, 3000);
         }
+    });
+
+    // --- RICEZIONE NUOVO RECORD DAL FRONTEND ---
+    socket.on('saveNewRecord', (data) => {
+        const { lobbyId, trackName, playerName, playerColor, time } = data;
+
+        // Passa i dati al nostro "cervello" che li salva nel file JSON!
+        leaderboard.addRecord(trackName, playerName, playerColor, time);
+
+        // Annuncia a tutta la lobby l'avvenuta archiviazione
+        io.to(lobbyId).emit('message', {
+            message: `🌟 La leggenda [${playerName}] ha scritto il suo nome nella storia di ${trackName}!`,
+            type: 'success'
+        });
     });
 
     socket.on('racingInput', (data) => {
