@@ -198,7 +198,7 @@ const BarcelonaMap = [
 
 // Questo Array contiene tutto il Campionato!
 const TRACKS = [
-    /* {
+    {
         name: "Monza",
         map: monzaMap,
         spawnX: 1440,
@@ -234,7 +234,7 @@ const TRACKS = [
         spawnX: 2600,
         spawnY: 1400,
         angle: 0
-    }, */
+    },
     {
         name: "Barcelona",
         map: BarcelonaMap,
