@@ -58,7 +58,7 @@ router.post('/join-lobby', (req, res) => {
 
 // GET /api/invite/:lobbyId
 router.get('/api/invite/:lobbyId', (req, res) => {
-    const lobbyId = req.params.lobbyId;
+    const lobbyId = req.params.lobbyId ? req.params.lobbyId.toUpperCase() : '';;
 
     if (!lobbies.has(lobbyId)) {
         return res.status(404).json({ error: 'Lobby not found' });
