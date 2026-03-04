@@ -142,7 +142,22 @@ h3 {
     transition: all 0.2s;
 }
 .game-selector:hover { transform: translateY(-5px); }
-.game-selector.disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.game-selector.disabled {
+    opacity: 1 !important; /* Rimuove l'opacità globale ereditata */
+    background-color: rgba(255, 255, 255, 0.05); /* Rende lo sfondo più spento per far capire che è inattivo */
+    pointer-events: none; /* Blocca i click sulla card... */
+}
+
+.game-selector.disabled #leaderboard-mini-btn {
+    pointer-events: auto;
+}
+
+/* Rendiamo trasparenti SOLO il nome e l'icona del gioco per l'effetto "disabilitato" */
+.game-selector.disabled .game-icon,
+.game-selector.disabled .game-name {
+    opacity: 0.4;
+    filter: grayscale(100%); /* Chicca: li rende anche in bianco e nero! */
+}
 
 .game-icon { font-size: 4rem; margin-bottom: 15px; }
 .game-name { font-size: 1.5rem; font-weight: 800; }
@@ -573,4 +588,33 @@ body.theme-dark .toast.success { background: #1b4d2e; color: #a5d6a7; }
 }
 @keyframes fadeOut {
     to { opacity: 0; transform: translateY(-20px); }
+}
+
+
+/* Stile per il bottone Leaderboard dentro la card */
+#leaderboard-mini-btn {
+    margin-top: 10px;
+    background: #f1c40f;
+    color: black;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 900;
+    cursor: pointer;
+    text-transform: uppercase;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    transition: transform 0.1s, background 0.2s;
+    
+    /* FONDAMENTALE: Riabilita il click per chi non è Host! */
+    pointer-events: auto; 
+}
+
+#leaderboard-mini-btn:hover {
+    background: #f39c12;
+    transform: scale(1.05);
+}
+
+#leaderboard-mini-btn:active {
+    transform: scale(0.95);
 }

@@ -253,7 +253,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 gameElement.parentNode.replaceChild(newElement, gameElement);
 
                 newElement.addEventListener('click', (event) => {
-                    // Cerca il data attribute risalendo l'albero se clicco sull'icona
+                    // --- FIX: Se clicco sul bottone Leaderboard, fermati qui! ---
+                    if (event.target.closest('#leaderboard-mini-btn')) {
+                        return; // Esce senza aprire i settings del gioco
+                    }
+
+                    // Altrimenti apri normalmente le impostazioni
                     const target = event.target.closest('.game-selector');
                     const gameId = target.dataset.gameId;
                     showGameSettings(gameId);
@@ -437,10 +442,80 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // --- GESTIONE LEADERBOARD GLOBALE LOBBY ---
 const leaderboardBtn = document.getElementById('leaderboard-btn');
+// --- GESTIONE LEADERBOARD GLOBALE LOBBY (AGGIORNATA) ---
 const leaderboardModal = document.getElementById('global-leaderboard-modal');
 const closeLeaderboardBtn = document.getElementById('close-leaderboard-btn');
 const leaderboardContent = document.getElementById('leaderboard-content');
 
+// Usiamo la "Delegazione" per far funzionare il bottone a prescindere dal cloneNode
+document.addEventListener('click', async (e) => {
+    if (e.target && e.target.closest('#leaderboard-mini-btn')) {
+        e.preventDefault();
+        e.stopPropagation(); // IMPEDISCE all'Host di aprire i settings del gioco!
+
+        if (!leaderboardModal) return;
+
+        leaderboardModal.style.display = 'flex';
+        leaderboardContent.innerHTML = '<p style="text-align:center;">Recupero tempi record...</p>';
+
+        try {
+            const res = await fetch('/api/leaderboard');
+            const data = await res.json();
+
+            leaderboardContent.innerHTML = '';
+
+            if (Object.keys(data).length === 0) {
+                leaderboardContent.innerHTML = '<p style="text-align:center; color:#ccc;">Nessun record ancora registrato. Scendi in pista!</p>';
+                return;
+            }
+
+            // Genera l'HTML per ogni pista
+            for (const [trackName, records] of Object.entries(data)) {
+                let html = `<div style="margin-bottom: 20px; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px;">`;
+                html += `<h3 style="color: #3498db; margin-top: 0; border-bottom: 1px dashed #555; padding-bottom: 5px;">📍 ${trackName}</h3>`;
+
+                if (records.length === 0) {
+                    html += `<p style="color: #888;">Nessun tempo registrato.</p>`;
+                } else {
+                    html += `<ul style="list-style: none; padding: 0; margin: 0;">`;
+                    records.forEach((rec, index) => {
+                        const mins = Math.floor(rec.time / 60000);
+                        const secs = Math.floor((rec.time % 60000) / 1000);
+                        const ms = rec.time % 1000;
+                        const timeStr = `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+
+                        let color = 'white';
+                        if (index === 0) color = 'gold';
+                        if (index === 1) color = 'silver';
+                        if (index === 2) color = '#cd7f32';
+
+                        html += `
+                                <li style="display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #444; font-size: 18px;">
+                                    <span>
+                                        <strong style="color: ${color}; display: inline-block; width: 30px;">${index + 1}°</strong> 
+                                        <span style="display:inline-block; width:15px; height:15px; border-radius:50%; background-color:${rec.color}; vertical-align:middle; margin-right:5px; border:1px solid #fff;"></span>
+                                        <strong>${rec.name}</strong>
+                                    </span>
+                                    <span style="font-family: monospace; color: #ecf0f1;">${timeStr}</span>
+                                </li>`;
+                    });
+                    html += `</ul>`;
+                }
+                html += `</div>`;
+                leaderboardContent.innerHTML += html;
+            }
+        } catch (err) {
+            console.error(err);
+            leaderboardContent.innerHTML = '<p style="color: red; text-align:center;">Errore di connessione al server.</p>';
+        }
+    }
+});
+
+if (closeLeaderboardBtn) {
+    closeLeaderboardBtn.addEventListener('click', () => {
+        leaderboardModal.style.display = 'none';
+    });
+}
 if (leaderboardBtn && leaderboardModal) {
     leaderboardBtn.addEventListener('click', async () => {
         leaderboardModal.style.display = 'flex';
