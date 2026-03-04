@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <title>JSON to Matrix Map Converter (Binario 1-0)</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            background: #1e1e1e;
+            color: white;
+        }
+
+        textarea {
+            width: 100%;
+            height: 400px;
+            background: #2d2d2d;
+            color: #00ff00;
+            font-family: monospace;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Convertitore Mappa 1 e 0 (Pieno/Vuoto)</h2>
+    <p>Seleziona il tuo file <b>q9905zdy1_project.json</b>:</p>
+    <input type="file" id="fileInput" accept=".json">
+    <br><br>
+    <textarea id="output" placeholder="La tua matrice comparirà qui..." readonly></textarea>
+
+    <script>
+        function trovaTiles(obj) {
+            if (typeof obj !== 'object' || obj === null) return null;
+            if (obj.tiles && typeof obj.tiles === 'object' && !Array.isArray(obj.tiles)) {
+                if (Object.keys(obj.tiles).some(k => k.includes('-'))) return obj.tiles;
+            }
+            for (let key in obj) {
+                let trovato = trovaTiles(obj[key]);
+                if (trovato) return trovato;
+            }
+            return null;
+        }
+
+        document.getElementById('fileInput').addEventListener('change', function (event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    const json = JSON.parse(e.target.result);
+                    let tiles = trovaTiles(json);
+
+                    if (!tiles) throw new Error("Impossibile trovare i dati dei tile nel file.");
+
+                    // Calcola le dimensioni massime della griglia
+                    let maxX = 0; let maxY = 0;
+                    for (let key in tiles) {
+                        let coords = key.split('-');
+                        let x = parseInt(coords[0]); // Colonna
+                        let y = parseInt(coords[1]); // Riga
+                        if (!isNaN(x) && x > maxX) maxX = x;
+                        if (!isNaN(y) && y > maxY) maxY = y;
+                    }
+
+                    const larghezza = maxX + 1;
+                    const altezza = maxY + 1;
+
+                    // Crea la griglia vuota piena di 0
+                    let matrice = Array.from({ length: altezza }, () => Array(larghezza).fill(0));
+
+                    // Mette "1" in ogni posizione che esiste nel JSON
+                    for (let key in tiles) {
+                        let coords = key.split('-');
+                        let colonnaX = parseInt(coords[0]);
+                        let rigaY = parseInt(coords[1]);
+
+                        if (!isNaN(colonnaX) && !isNaN(rigaY)) {
+                            // Basta che il tile esista nel file, lo trasformiamo in 1
+                            matrice[rigaY][colonnaX] = 1;
+                        }
+                    }
+
+                    // Impagina l'output
+                    let result = "const interlagosMap = [\n";
+                    for (let y = 0; y < altezza; y++) {
+                        const numeroRiga = y.toString().padStart(2, ' ');
+                        result += `  /* ${numeroRiga}*/[${matrice[y].join(", ")}]`;
+                        if (y < altezza - 1) result += ",\n";
+                        else result += "\n";
+                    }
+                    result += "\n];";
+
+                    document.getElementById('output').value = result;
+
+                } catch (error) {
+                    alert("Errore nella lettura del JSON: " + error.message);
+                }
+            };
+            reader.readAsText(file);
+        });
+    </script>
+</body>
+
+</html>
