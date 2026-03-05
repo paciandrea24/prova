@@ -174,22 +174,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const infoDiv = document.createElement('div');
             infoDiv.className = 'player-info';
 
-            const nameP = document.createElement('p');
-            nameP.className = 'player-name';
-
+            // Creiamo il nome SOLO se sono "Io"
             if (isMe) {
+                const nameP = document.createElement('p');
+                nameP.className = 'player-name';
                 nameP.textContent = 'You';
                 nameP.style.fontWeight = 'bold';
-            } else {
-                nameP.textContent = 'Player';
+                // Assicurati che non ci siano margini strani se è l'unico elemento
+                nameP.style.margin = '0';
+                infoDiv.appendChild(nameP);
             }
 
-            infoDiv.appendChild(nameP);
-
+            // L'indicatore dell'host rimane
             if (pColor === hostColor) {
                 const hostSpan = document.createElement('span');
                 hostSpan.className = 'host-indicator';
                 hostSpan.textContent = '(Host)';
+                // Un po' di margine a sinistra se "You" è presente, altrimenti no
+                hostSpan.style.marginLeft = isMe ? '8px' : '0';
                 infoDiv.appendChild(hostSpan);
             }
 
@@ -385,9 +387,9 @@ document.addEventListener('DOMContentLoaded', () => {
         racingModeSelect.addEventListener('change', (e) => {
             if (e.target.value === 'single') {
                 groupNumTracks.style.display = 'none';
-                groupTrackSelect.style.display = 'block';
+                groupTrackSelect.style.display = 'flex';
             } else {
-                groupNumTracks.style.display = 'block';
+                groupNumTracks.style.display = 'flex';
                 groupTrackSelect.style.display = 'none';
             }
             if (currentSelectedGame === 'racing') saveGameSettings('racing');
