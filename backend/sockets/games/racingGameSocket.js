@@ -1,6 +1,6 @@
 const { activeGames } = require('../../store/activeGames');
 const { lobbies } = require('../../store/lobbies');
-const { initializeRacingGame, startRace, updatePlayerInput } = require('../../game/racingGame');
+const { initializeRacingGame, startRace, updatePlayerInput, restartRace } = require('../../game/racingGame');
 const leaderboard = require('../../store/leaderboard');
 
 module.exports = function (io, socket) {
@@ -44,7 +44,8 @@ module.exports = function (io, socket) {
             playersState: game.playersState,
             trackMap: currentTrack.map,
             tileSize: game.tileSize,
-            trackName: currentTrack.name
+            trackName: currentTrack.name,
+            hostColor: lobby.host
         });
 
         // Se sei l'host, fai partire il countdown
@@ -73,5 +74,15 @@ module.exports = function (io, socket) {
     socket.on('racingInput', (data) => {
         const { lobbyId, playerColor, inputs } = data;
         updatePlayerInput(lobbyId, playerColor, inputs);
+    });
+
+    // NUOVI EVENTI PER LA MODALITÀ SINGOLA
+    socket.on('restartRace', (lobbyId) => {
+        restartRace(io, lobbyId);
+    });
+
+    socket.on('forceReturnToLobby', (lobbyId) => {
+        activeGames.delete(lobbyId);
+        io.to(lobbyId).emit('returnToLobby');
     });
 };

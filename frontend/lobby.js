@@ -50,8 +50,9 @@ document.addEventListener('DOMContentLoaded', () => {
             category: 'general'
         },
         racing: {
-            difficulty: 'easy',
-            numTracks: 3
+            mode: 'championship',
+            numTracks: 3,
+            trackName: 'Monza'
         }
     };
 
@@ -339,6 +340,24 @@ document.addEventListener('DOMContentLoaded', () => {
             select.addEventListener('change', () => {
                 if (currentSelectedGame) saveGameSettings(currentSelectedGame);
             });
+        });
+    }
+
+    // --- GESTIONE MENU A TENDINA RACING ---
+    const racingModeSelect = document.getElementById('racing-mode');
+    const groupNumTracks = document.getElementById('group-numTracks');
+    const groupTrackSelect = document.getElementById('group-trackSelect');
+
+    if (racingModeSelect) {
+        racingModeSelect.addEventListener('change', (e) => {
+            if (e.target.value === 'single') {
+                groupNumTracks.style.display = 'none';
+                groupTrackSelect.style.display = 'block';
+            } else {
+                groupNumTracks.style.display = 'block';
+                groupTrackSelect.style.display = 'none';
+            }
+            if (currentSelectedGame === 'racing') saveGameSettings('racing');
         });
     }
 

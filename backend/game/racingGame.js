@@ -249,45 +249,43 @@ const TRACKS = [
 // ==========================================
 
 function initializeRacingGame(lobbyId, players, settings) {
-    console.log(`🏎️ Inizializzazione Campionato per lobby ${lobbyId}`);
+    console.log(`🏎️ Inizializzazione Racing per lobby ${lobbyId}`, settings);
 
-    // 1. Quante mappe ha scelto l'host? (Se non c'è il dato, usa 3 di default)
-    const requestedTracks = settings.numTracks || 3;
+    const isSingleMode = settings.mode === 'single';
+    let selectedTracks = [];
 
-    // 2. Mescoliamo a caso tutte le mappe disponibili nel gioco
-    // Usa lo spread operator [...] per non modificare l'array originale TRACKS
-    let shuffledTracks = [...TRACKS].sort(() => Math.random() - 0.5);
-
-    // 3. Tagliamo l'array per prendere SOLO il numero di mappe richieste!
-    // (Se chiedi 5 mappe ma ne hai create solo 3, slice prende automaticamente il massimo disponibile)
-    let selectedTracks = shuffledTracks.slice(0, requestedTracks);
+    if (isSingleMode) {
+        // Cerca la pista specifica scelta dall'host
+        const track = TRACKS.find(t => t.name === settings.trackName) || TRACKS[0];
+        selectedTracks = [track];
+    } else {
+        // Modalità Campionato
+        const requestedTracks = settings.numTracks || 3;
+        let shuffledTracks = [...TRACKS].sort(() => Math.random() - 0.5);
+        selectedTracks = shuffledTracks.slice(0, requestedTracks);
+    }
 
     const game = {
         lobbyId,
         gameId: 'racing',
         players: [...players],
         playersState: {},
-
-        // Assegniamo SOLO le mappe selezionate e mescolate
         tracks: selectedTracks,
         currentTrackIndex: 0,
         cumulativeTimes: {},
-
         tileSize: TILE_SIZE,
         podium: [],
         isActive: false,
+        isSingleMode: isSingleMode, // Salva la modalità nello stato del gioco
         startTime: null,
         loopInterval: null
     };
 
-    // Inizializza i tempi cumulativi a zero per tutti
     players.forEach(p => {
         game.cumulativeTimes[p] = 0;
     });
 
-    // Posiziona i giocatori sulla prima mappa estratta
     resetPlayersForCurrentTrack(game);
-
     activeGames.set(lobbyId, game);
     return game;
 }
@@ -448,13 +446,11 @@ function handleRaceEnd(io, lobbyId) {
     game.isActive = false;
     clearInterval(game.loopInterval);
 
-    // 1. Somma i tempi di questa gara al totale
     game.podium.forEach(entry => {
         game.cumulativeTimes[entry.color] += entry.time;
     });
 
     const isFinalRace = game.currentTrackIndex >= game.tracks.length - 1;
-
     const cumulativePodium = Object.keys(game.cumulativeTimes).map(color => {
         return {
             color: color,
@@ -463,41 +459,35 @@ function handleRaceEnd(io, lobbyId) {
         };
     }).sort((a, b) => a.totalTime - b.totalTime);
 
-    // --- NUOVO: Diciamo al frontend se ci sono dei record ---
-    // Salviamo il podio della singola gara per inviarlo al client
     const singleRacePodium = [...game.podium];
-
-    // Controlliamo se in questa gara c'è stato ALMENO un record
     const someoneGotRecord = singleRacePodium.some(p => p.isRecord);
-
     const trackName = game.tracks[game.currentTrackIndex].name;
-    const mapTop3 = leaderboard.getTop10(trackName).slice(0, 3); // Prende solo i primi 3
+    const mapTop3 = leaderboard.getTop10(trackName).slice(0, 3);
 
     io.to(lobbyId).emit('raceEnded', {
         podium: cumulativePodium,
         singleRacePodium: singleRacePodium,
-        mapTop3: mapTop3, // <--- AGGIUNGIAMO LA TOP 3 GLOBALE
+        mapTop3: mapTop3,
         isFinal: isFinalRace,
-        trackName: trackName
+        trackName: trackName,
+        isSingleMode: game.isSingleMode // <-- Importante: invialo al client!
     });
 
+    // Se è modalità singola, FERMIAMO IL TEMPO. Spetterà all'host riavviare o uscire.
+    if (game.isSingleMode) {
+        return; // Non fare nulla, aspetta l'evento socket 'restartRace' o 'forceReturnToLobby'
+    }
+
+    // Logica originale per il Campionato
     if (isFinalRace) {
         setTimeout(() => {
             activeGames.delete(lobbyId);
             io.to(lobbyId).emit('returnToLobby');
-        }, 15000); // Aumentato a 15 secondi per dare tempo di inserire il record
+        }, 15000);
     } else {
-        // Se c'è un record diamo 12 secondi (per scrivere il nome), altrimenti i soliti 7
         const delay = someoneGotRecord ? 12000 : 7000;
-
-        io.to(lobbyId).emit('message', {
-            message: `Prossima gara tra ${delay / 1000} secondi...`,
-            type: 'system'
-        });
-
-        setTimeout(() => {
-            loadNextTrack(io, lobbyId);
-        }, delay);
+        io.to(lobbyId).emit('message', { message: `Prossima gara tra ${delay / 1000} secondi...`, type: 'system' });
+        setTimeout(() => { loadNextTrack(io, lobbyId); }, delay);
     }
 }
 
@@ -543,5 +533,30 @@ function startRace(io, lobbyId) {
     runGameLoop(io, lobbyId);
 }
 
-// Esportiamo solo quello che serve al socket manager
-module.exports = { initializeRacingGame, updatePlayerInput, startRace };
+function restartRace(io, lobbyId) {
+    const game = activeGames.get(lobbyId);
+    if (!game) return;
+
+    // Resetta i tempi cumulativi per non falsare il tabellone se si riavvia
+    Object.keys(game.cumulativeTimes).forEach(p => {
+        game.cumulativeTimes[p] = 0;
+    });
+
+    resetPlayersForCurrentTrack(game);
+
+    io.to(lobbyId).emit('racingSetup', {
+        playersState: game.playersState,
+        trackMap: game.tracks[0].map,
+        tileSize: game.tileSize,
+        trackName: game.tracks[0].name
+    });
+
+    io.to(lobbyId).emit('message', { message: 'La gara è stata riavviata! Preparatevi...', type: 'system' });
+
+    setTimeout(() => {
+        startRace(io, lobbyId);
+    }, 3000);
+}
+
+// AGGIORNA l'export alla fine del file!
+module.exports = { initializeRacingGame, updatePlayerInput, startRace, restartRace };

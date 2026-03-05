@@ -120,19 +120,31 @@
 
                         <div class="settings-section" id="racing-settings" style="display: none;">
                             <div class="setting-group">
-                                <label>Difficoltà pista (Ostacoli futuri):</label>
-                                <select id="racing-difficulty">
-                                    <option value="easy">Semplice</option>
-                                    <option value="medium">Media</option>
+                                <label>Modalità di Gioco:</label>
+                                <select id="racing-mode">
+                                    <option value="championship">Campionato (Più mappe)</option>
+                                    <option value="single">Corsa Singola (Scegli Mappa)</option>
                                 </select>
                             </div>
-                            <div class="setting-group">
+
+                            <div class="setting-group" id="group-numTracks">
                                 <label>Numero di Circuiti:</label>
                                 <select id="racing-numTracks">
-                                    <option value="1">Gara Secca (1 Mappa)</option>
                                     <option value="2">Campionato Corto (2 Mappe)</option>
                                     <option value="3" selected>Campionato Medio (3 Mappe)</option>
                                     <option value="4">Campionato Lungo (4 Mappe)</option>
+                                </select>
+                            </div>
+
+                            <div class="setting-group" id="group-trackSelect" style="display: none;">
+                                <label>Seleziona Pista:</label>
+                                <select id="racing-trackName">
+                                    <option value="Monza">Monza</option>
+                                    <option value="Spa-Francorchamps">Spa-Francorchamps</option>
+                                    <option value="Baku">Baku</option>
+                                    <option value="Bahrain">Bahrain</option>
+                                    <option value="Interlagos">Interlagos</option>
+                                    <option value="Barcelona">Barcelona</option>
                                 </select>
                             </div>
                         </div>

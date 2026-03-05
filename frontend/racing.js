@@ -14,13 +14,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const arena = document.getElementById('arena');
     let isRacing = false;
+    let hostColor = null;
 
     // Stato locale degli input per non spammare il server inutilmente
     const inputs = { w: false, a: false, s: false, d: false };
 
     // Costruisce l'arena
     socket.on('racingSetup', (data) => {
-        const { trackMap, tileSize, playersState, trackName } = data;
+        const { trackMap, tileSize, playersState, trackName, hostColor: serverHostColor } = data;
+
+        if (serverHostColor) hostColor = serverHostColor;
 
         // Chiudi il modal del podio se era aperto dalla gara precedente!
         document.getElementById('podium-modal').style.display = 'none';
@@ -272,6 +275,37 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         modal.style.display = 'block';
+
+        // --- GESTIONE MODALITÀ SINGOLA (BOTTONI RIAVVIO) ---
+        const singleControls = document.getElementById('single-mode-controls');
+        const autoReturnText = document.getElementById('auto-return-text');
+
+        if (data.isSingleMode) {
+            autoReturnText.style.display = 'none'; // Nascondi testo "Ritorno in corso"
+
+            // Mostra i bottoni SOLO all'host
+            if (myColor === hostColor) {
+                singleControls.style.display = 'flex';
+
+                document.getElementById('restart-race-btn').onclick = () => {
+                    socket.emit('restartRace', lobbyId);
+                };
+
+                document.getElementById('back-to-lobby-btn').onclick = () => {
+                    socket.emit('forceReturnToLobby', lobbyId);
+                };
+            } else {
+                // Ai giocatori normali diciamo solo di attendere
+                singleControls.style.display = 'none';
+                autoReturnText.style.display = 'block';
+                autoReturnText.textContent = "In attesa che l'Host decida cosa fare...";
+            }
+        } else {
+            // Modalità Campionato Classica
+            singleControls.style.display = 'none';
+            autoReturnText.style.display = 'block';
+            autoReturnText.textContent = "Ritorno alla lobby in corso...";
+        }
 
         // --- NUOVO: GESTIONE RECORD MONDIALE ---
         // Controlliamo se IO (myColor) ho fatto un record in questa gara specifica
