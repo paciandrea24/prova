@@ -15,10 +15,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const arena = document.getElementById('arena');
     let isRacing = false;
     let hostColor = null;
+    let localStartTime = null;
+    let myFinalTime = null;
 
     // Stato locale degli input per non spammare il server inutilmente
     const inputs = { w: false, a: false, s: false, d: false };
 
+    // Costruisce l'arena
     // Costruisce l'arena
     socket.on('racingSetup', (data) => {
         const { trackMap, tileSize, playersState, trackName, hostColor: serverHostColor } = data;
@@ -28,8 +31,36 @@ document.addEventListener('DOMContentLoaded', () => {
         // Chiudi il modal del podio se era aperto dalla gara precedente!
         document.getElementById('podium-modal').style.display = 'none';
 
-        // Svuota il motore grafico altrimenti le auto "volano" dalla vecchia pista alla nuova
+        // --- INIZIALIZZA LE POSIZIONI VISIVE E DI STATO ISTANTANEAMENTE ---
+        serverState = playersState;
+        myFinalTime = null; // Resetta il congelamento del timer
+
         visualState = {};
+        for (const color in playersState) {
+            visualState[color] = {
+                x: playersState[color].x,
+                y: playersState[color].y,
+                angle: playersState[color].angle
+            };
+        }
+        // --------------------------------------------------------------
+
+        // Logica del countdown visivo
+        const countdownOverlay = document.getElementById('countdown-overlay');
+        const countdownTrack = document.getElementById('countdown-track');
+        const countdownNumber = document.getElementById('countdown-number');
+        const hudTimer = document.getElementById('hud-timer');
+
+        hudTimer.style.display = 'none';
+
+        countdownOverlay.style.display = 'flex';
+        countdownOverlay.style.background = 'rgba(0, 0, 0, 0.7)';
+        countdownTrack.textContent = trackName;
+        countdownNumber.textContent = '3';
+        countdownNumber.style.color = '#e74c3c'; // Rosso
+
+        setTimeout(() => { countdownNumber.textContent = '2'; countdownNumber.style.color = '#f39c12'; }, 1000);
+        setTimeout(() => { countdownNumber.textContent = '1'; countdownNumber.style.color = '#f1c40f'; }, 2000);
 
         const trackWidth = trackMap[0].length * tileSize;
         const trackHeight = trackMap.length * tileSize;
@@ -173,6 +204,33 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        // --- AGGIUNGI L'AGGIORNAMENTO DEL CRONOMETRO ---
+        if (isRacing && localStartTime) {
+            const myServerState = serverState[myColor];
+
+            // Se il server ci ha registrato come "finiti", usa il tempo ufficiale e congelalo
+            if (myServerState && myServerState.finished && myServerState.time) {
+                myFinalTime = myServerState.time;
+            }
+
+            // Calcola il tempo: usa il finale se l'ho finito, altrimenti il live
+            const timeToDisplay = myFinalTime !== null ? myFinalTime : (Date.now() - localStartTime);
+
+            const m = Math.floor(timeToDisplay / 60000);
+            const s = Math.floor((timeToDisplay % 60000) / 1000);
+            const ms = timeToDisplay % 1000;
+
+            document.getElementById('hud-timer').textContent =
+                `${m}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+
+            // Colora di verde quando finisci
+            if (myFinalTime !== null) {
+                document.getElementById('hud-timer').style.color = '#2ecc71';
+            } else {
+                document.getElementById('hud-timer').style.color = '#fff';
+            }
+        }
+
         // Richiama se stesso al prossimo frame del monitor
         requestAnimationFrame(renderLoop);
     }
@@ -182,6 +240,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('raceStarted', () => {
         isRacing = true;
+
+        // FONDAMENTALE: Invia subito al server lo stato dei tasti!
+        // Se il giocatore stava già tenendo premuto 'W' durante il 3,2,1, partirà a razzo.
+        sendInputs();
+
+        localStartTime = Date.now();
+
+        const countdownOverlay = document.getElementById('countdown-overlay');
+        const countdownNumber = document.getElementById('countdown-number');
+        const hudTimer = document.getElementById('hud-timer');
+
+        countdownNumber.textContent = 'GO!';
+        countdownNumber.style.color = '#2ecc71'; // Verde
+
+        // Rimuovi l'oscuramento nero ISTANTANEAMENTE così la pista è nitida
+        countdownOverlay.style.background = 'transparent';
+
+        hudTimer.style.display = 'block';
+        hudTimer.style.color = '#fff';
+
+        // Nascondi definitivamente la scritta "GO!" dopo 800ms
+        setTimeout(() => {
+            countdownOverlay.style.display = 'none';
+        }, 800);
     });
 
 
@@ -392,7 +474,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     document.addEventListener('keydown', (e) => {
-        if (!isRacing) return;
         let changed = false;
         const key = e.key.toLowerCase();
 
@@ -401,11 +482,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (key === 's' && !inputs.s) { inputs.s = true; changed = true; }
         if (key === 'd' && !inputs.d) { inputs.d = true; changed = true; }
 
-        if (changed) sendInputs();
+        // Se i tasti cambiano E la gara è partita, manda al server.
+        // Se la gara non è ancora partita, abbiamo comunque salvato "w: true" localmente.
+        if (changed && isRacing) sendInputs();
     });
 
     document.addEventListener('keyup', (e) => {
-        if (!isRacing) return;
         let changed = false;
         const key = e.key.toLowerCase();
 
@@ -414,6 +496,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (key === 's') { inputs.s = false; changed = true; }
         if (key === 'd') { inputs.d = false; changed = true; }
 
-        if (changed) sendInputs();
+        if (changed && isRacing) sendInputs();
     });
 });

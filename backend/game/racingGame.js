@@ -500,7 +500,6 @@ function loadNextTrack(io, lobbyId) {
 
     const nextTrack = game.tracks[game.currentTrackIndex];
 
-    // Invia i dati della nuova mappa al frontend
     io.to(lobbyId).emit('racingSetup', {
         playersState: game.playersState,
         trackMap: nextTrack.map,
@@ -511,7 +510,7 @@ function loadNextTrack(io, lobbyId) {
     // Fai partire la gara automaticamente!
     setTimeout(() => {
         startRace(io, lobbyId);
-    }, 2000); // 2 secondi per far caricare la grafica al client prima di dare il via
+    }, 3000); // <--- CAMBIA QUESTO DA 2000 A 3000
 }
 
 function updatePlayerInput(lobbyId, playerColor, inputs) {
