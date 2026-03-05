@@ -142,6 +142,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Funzione per aggiornare la lista dei giocatori
+    // Funzione per aggiornare la lista dei giocatori
+    // Funzione per aggiornare la lista dei giocatori
     function updatePlayerList(players, currentPlayerColor, hostColor) {
         const playersList = document.querySelector('.players-ul');
         if (!playersList) return;
@@ -151,10 +153,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Funzione helper per creare l'HTML di un giocatore
         const createPlayerItem = (pColor, isMe) => {
             const li = document.createElement('li');
+            // Rendiamo il tag <li> il punto di ancoraggio per il bottone assoluto
+            li.style.position = 'relative';
 
+            // Il tuo DIV ORIGINALE, senza nessuna alterazione flex o width!
             const entryDiv = document.createElement('div');
-            // Usiamo le classi entry-1 / entry-2 per alternare i colori di sfondo se vuoi, 
-            // oppure fisso 'player-entry-1' per semplicità (come nel tuo CSS)
             entryDiv.className = 'player-entry-1';
 
             // 1. Il Pallino (Avatar)
@@ -174,19 +177,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const nameP = document.createElement('p');
             nameP.className = 'player-name';
 
-            // --- MODIFICA QUI ---
             if (isMe) {
-                nameP.textContent = 'You'; // Mostra "You" se sei tu
+                nameP.textContent = 'You';
                 nameP.style.fontWeight = 'bold';
             } else {
-                nameP.textContent = ''; // Lascia VUOTO per gli altri (niente codice RGB!)
-                // Se volessi scrivere "Player" invece di niente, scrivi: nameP.textContent = 'Player';
+                nameP.textContent = 'Player';
             }
-            // --------------------
 
             infoDiv.appendChild(nameP);
 
-            // Etichetta Host
             if (pColor === hostColor) {
                 const hostSpan = document.createElement('span');
                 hostSpan.className = 'host-indicator';
@@ -194,10 +193,44 @@ document.addEventListener('DOMContentLoaded', () => {
                 infoDiv.appendChild(hostSpan);
             }
 
-            // Assemblaggio
+            // Assemblaggio base intatto
             entryDiv.appendChild(circle);
             entryDiv.appendChild(infoDiv);
             li.appendChild(entryDiv);
+
+            // --- BOTTONE KICK FLUTTUANTE ---
+            // Se io sono l'host E questo elemento non sono io, mostro il bottone per cacciarlo
+            if (currentPlayerColor === hostColor && !isMe) {
+                const kickBtn = document.createElement('button');
+                kickBtn.textContent = '❌';
+                kickBtn.title = 'Espelli giocatore';
+
+                // Stile assoluto: il bottone non altera in alcun modo le dimensioni del box
+                kickBtn.style.position = 'absolute';
+                kickBtn.style.right = '5px'; // Vicino al bordo destro della riga
+                kickBtn.style.top = '50%'; // Centrato verticalmente
+                kickBtn.style.transform = 'translateY(-50%)';
+
+                kickBtn.style.background = 'transparent'; // Niente sfondo rosso, solo l'icona
+                kickBtn.style.border = 'none';
+                kickBtn.style.cursor = 'pointer';
+                kickBtn.style.fontSize = '16px'; // Dimensione normale
+                kickBtn.style.padding = '5px';
+
+                kickBtn.addEventListener('click', () => {
+                    if (confirm('Vuoi davvero espellere questo giocatore?')) {
+                        socket.emit('kickPlayer', {
+                            lobbyId: lobbyId,
+                            hostColor: currentPlayerColor,
+                            targetColor: pColor
+                        });
+                    }
+                });
+
+                // Viene appeso al <li>, NON all'entryDiv!
+                li.appendChild(kickBtn);
+            }
+
             return li;
         };
 
@@ -456,6 +489,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         chatMessages.appendChild(msgDiv);
         chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+
+    // --- RICEZIONE EVENTO KICK ---
+    socket.on('playerKicked', (kickedColor) => {
+        // Se il colore espulso è il mio, vengo sbattuto fuori!
+        if (selectedColor === kickedColor) {
+            alert('Sei stato espulso dalla lobby.');
+            window.location.href = '/'; // Reindirizza alla home
+        } else {
+            // Per gli altri giocatori rimasti, ricarichiamo subito la lista 
+            // senza aspettare i 3 secondi dell'intervallo
+            loadLobby();
+        }
     });
 });
 
