@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mockup Stile Gartic/Skribbl</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-color: #E3F2FD;
+            /* Azzurrino Gartic */
+            --border-color: #2C3E50;
+            /* Blu scurissimo per i bordi */
+            --panel-bg: #FFFFFF;
+
+            /* Colori Bottoni/UI */
+            --green: #2ECC71;
+            --yellow: #F1C40F;
+            --red: #E74C3C;
+            --blue: #3498DB;
+
+            --border-width: 4px;
+            --shadow-size: 6px;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            /* Pattern a pallini sottile in sottofondo */
+            background-image: radial-gradient(#bdc3c7 2px, transparent 2px);
+            background-size: 30px 30px;
+            font-family: 'Fredoka', sans-serif;
+            color: var(--border-color);
+            margin: 0;
+            padding: 30px 20px;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        h1,
+        h2,
+        h3,
+        p {
+            margin: 0;
+        }
+
+        .container {
+            max-width: 1100px;
+            width: 100%;
+            display: grid;
+            grid-template-columns: 260px 1fr 320px;
+            gap: 20px;
+        }
+
+        /* --- STILE BASE PANNELLI E BOTTONI (IL FULCRO DELLO STILE) --- */
+        .panel {
+            background: var(--panel-bg);
+            border: var(--border-width) solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: var(--shadow-size) var(--shadow-size) 0px var(--border-color);
+        }
+
+        .btn {
+            background: var(--yellow);
+            color: var(--border-color);
+            border: var(--border-width) solid var(--border-color);
+            border-radius: 12px;
+            padding: 12px 20px;
+            font-family: 'Fredoka', sans-serif;
+            font-weight: 700;
+            font-size: 18px;
+            cursor: pointer;
+            box-shadow: 4px 4px 0px var(--border-color);
+            transition: all 0.1s ease;
+            text-align: center;
+            display: block;
+            width: 100%;
+        }
+
+        .btn:active {
+            box-shadow: 0px 0px 0px var(--border-color);
+            transform: translate(4px, 4px);
+        }
+
+        .btn.green {
+            background: var(--green);
+            color: white;
+            text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn.small {
+            padding: 6px 12px;
+            font-size: 14px;
+            width: auto;
+            background: var(--red);
+            color: white;
+            box-shadow: 2px 2px 0px var(--border-color);
+        }
+
+        .btn.small:active {
+            transform: translate(2px, 2px);
+            box-shadow: 0 0 0 transparent;
+        }
+
+        /* --- HEADER --- */
+        .header {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .header-title {
+            font-size: 40px;
+            font-weight: 700;
+            color: white;
+            /* Testo con bordo spesso */
+            text-shadow:
+                -3px -3px 0 var(--border-color),
+                3px -3px 0 var(--border-color),
+                -3px 3px 0 var(--border-color),
+                3px 3px 0 var(--border-color),
+                5px 5px 0 var(--border-color);
+            /* Ombra in basso */
+        }
+
+        .lobby-id {
+            background: var(--yellow);
+            border: var(--border-width) solid var(--border-color);
+            border-radius: 12px;
+            padding: 10px 20px;
+            font-weight: 700;
+            font-size: 20px;
+            box-shadow: 4px 4px 0px var(--border-color);
+            cursor: pointer;
+        }
+
+        /* --- COLONNA GIOCATORI --- */
+        .players-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 15px;
+            margin-bottom: 20px;
+        }
+
+        .player-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #F8F9FA;
+            border: 3px solid var(--border-color);
+            border-radius: 10px;
+            padding: 8px;
+        }
+
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 3px solid var(--border-color);
+            box-shadow: 2px 2px 0px var(--border-color);
+            flex-shrink: 0;
+        }
+
+        .p-name {
+            font-weight: 700;
+            font-size: 16px;
+            flex: 1;
+        }
+
+        .p-host {
+            font-size: 12px;
+            color: var(--yellow);
+            background: var(--border-color);
+            padding: 2px 6px;
+            border-radius: 5px;
+        }
+
+        /* --- COLONNA CENTRALE (GIOCHI) --- */
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .game-card {
+            background: #ecf0f1;
+            border: var(--border-width) solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px 10px;
+            text-align: center;
+            cursor: pointer;
+            box-shadow: 4px 4px 0px var(--border-color);
+            transition: transform 0.1s;
+        }
+
+        .game-card:hover {
+            transform: translateY(-3px);
+        }
+
+        .game-card:active {
+            box-shadow: 0 0 0 var(--border-color);
+            transform: translate(4px, 4px);
+        }
+
+        .game-card.active {
+            background: var(--yellow);
+        }
+
+        .g-icon {
+            font-size: 45px;
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        .g-title {
+            font-weight: 700;
+            font-size: 18px;
+        }
+
+        /* Settings Gioco */
+        .settings-box {
+            background: #ecf0f1;
+            border: var(--border-width) solid var(--border-color);
+            border-radius: 16px;
+            padding: 15px;
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .setting-row select {
+            font-family: 'Fredoka', sans-serif;
+            font-weight: 600;
+            border: 3px solid var(--border-color);
+            border-radius: 8px;
+            padding: 5px 10px;
+            background: white;
+            cursor: pointer;
+        }
+
+        /* --- COLONNA CHAT --- */
+        .chat-box {
+            display: flex;
+            flex-direction: column;
+            height: 500px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .msg-wrap {
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+            max-width: 90%;
+        }
+
+        .msg-wrap.me {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+
+        .msg-bubble {
+            background: #ecf0f1;
+            border: 3px solid var(--border-color);
+            padding: 10px 14px;
+            border-radius: 16px 16px 16px 0;
+            font-weight: 600;
+            font-size: 15px;
+            /* Ombretta piccolissima */
+            box-shadow: 2px 2px 0px var(--border-color);
+        }
+
+        .msg-wrap.me .msg-bubble {
+            background: var(--blue);
+            color: white;
+            border-radius: 16px 16px 0 16px;
+        }
+
+        .chat-input-area {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .chat-input {
+            flex: 1;
+            font-family: 'Fredoka', sans-serif;
+            font-weight: 600;
+            font-size: 16px;
+            border: var(--border-width) solid var(--border-color);
+            border-radius: 12px;
+            padding: 10px;
+            box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.05);
+            outline: none;
+        }
+
+        .btn-send {
+            background: var(--green);
+            color: white;
+            border: var(--border-width) solid var(--border-color);
+            border-radius: 12px;
+            width: 50px;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 4px 4px 0px var(--border-color);
+        }
+
+        .btn-send:active {
+            box-shadow: 0 0 0 transparent;
+            transform: translate(4px, 4px);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <div class="header">
+            <h1 class="header-title">MiniGames</h1>
+            <div class="lobby-id">Lobby ID: 8F4X</div>
+        </div>
+
+        <div class="panel">
+            <h3 style="font-size: 22px; border-bottom: 3px solid var(--border-color); padding-bottom: 10px;">Giocatori
+                (4/8)</h3>
+
+            <div class="players-list">
+                <div class="player-row" style="background: var(--yellow);">
+                    <div class="avatar" style="background: #E74C3C;"></div>
+                    <span class="p-name">TU</span>
+                    <span class="p-host">HOST</span>
+                </div>
+
+                <div class="player-row">
+                    <div class="avatar" style="background: #3498DB;"></div>
+                    <span class="p-name"></span>
+                    <button class="btn small">Kick</button>
+                </div>
+                <div class="player-row">
+                    <div class="avatar" style="background: #2ECC71;"></div>
+                    <span class="p-name"></span>
+                    <button class="btn small">Kick</button>
+                </div>
+                <div class="player-row">
+                    <div class="avatar" style="background: #9b59b6;"></div>
+                    <span class="p-name"></span>
+                    <button class="btn small">Kick</button>
+                </div>
+            </div>
+
+            <button class="btn">Invita Amici</button>
+        </div>
+
+        <div class="panel">
+            <h3 style="font-size: 24px; text-align: center;">Scegli il gioco</h3>
+
+            <div class="games-grid">
+                <div class="game-card">
+                    <span class="g-icon">✏️</span>
+                    <span class="g-title">Disegno</span>
+                </div>
+                <div class="game-card">
+                    <span class="g-icon">🧠</span>
+                    <span class="g-title">Quiz</span>
+                </div>
+                <div class="game-card active">
+                    <span class="g-icon">🏎️</span>
+                    <span class="g-title">Racing</span>
+                </div>
+            </div>
+
+            <div class="settings-box">
+                <h4 style="margin-bottom: 15px; font-size: 18px;">⚙️ Impostazioni</h4>
+                <div class="setting-row">
+                    <span>Modalità:</span>
+                    <select>
+                        <option>Campionato</option>
+                        <option>Singola</option>
+                    </select>
+                </div>
+                <div class="setting-row">
+                    <span>Pista:</span>
+                    <select>
+                        <option>Monza</option>
+                        <option>Imola</option>
+                    </select>
+                </div>
+            </div>
+
+            <button class="btn green" style="font-size: 24px; padding: 15px;">START GAME!</button>
+        </div>
+
+        <div class="panel chat-box">
+            <h3 style="font-size: 22px; border-bottom: 3px solid var(--border-color); padding-bottom: 10px;">Chat</h3>
+
+            <div class="chat-messages">
+                <div class="msg-wrap">
+                    <div class="avatar" style="background: #3498DB; width: 24px; height: 24px;"></div>
+                    <div class="msg-bubble">Ciao a tutti!</div>
+                </div>
+
+                <div class="msg-wrap">
+                    <div class="avatar" style="background: #2ECC71; width: 24px; height: 24px;"></div>
+                    <div class="msg-bubble">Pronti a farvi battere in pista? 🏎️💨</div>
+                </div>
+
+                <div class="msg-wrap me">
+                    <div class="msg-bubble">Avvio la partita!</div>
+                </div>
+            </div>
+
+            <div class="chat-input-area">
+                <input type="text" class="chat-input" placeholder="Scrivi qui...">
+                <button class="btn-send">➤</button>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+
+</html>

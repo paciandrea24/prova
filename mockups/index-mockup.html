@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mockup Home - Stile Gartic</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-color: #E3F2FD;
+            /* Azzurrino */
+            --border-color: #2C3E50;
+            /* Blu scurissimo per i bordi */
+            --panel-bg: #FFFFFF;
+
+            /* Colori UI */
+            --green: #2ECC71;
+            --yellow: #F1C40F;
+            --red: #E74C3C;
+            --blue: #3498DB;
+            --purple: #9b59b6;
+            --orange: #e67e22;
+
+            --border-width: 4px;
+            --shadow-size: 8px;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: radial-gradient(#bdc3c7 2px, transparent 2px);
+            background-size: 30px 30px;
+            font-family: 'Fredoka', sans-serif;
+            color: var(--border-color);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        /* --- LOGO FLUTTUANTE --- */
+        .logo {
+            font-size: 70px;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 30px;
+            text-align: center;
+            line-height: 1.1;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            /* Ombra dura stile fumetto */
+            text-shadow:
+                -4px -4px 0 var(--border-color),
+                4px -4px 0 var(--border-color),
+                -4px 4px 0 var(--border-color),
+                4px 4px 0 var(--border-color),
+                8px 8px 0 var(--border-color);
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0% {
+                transform: translateY(0px) rotate(-2deg);
+            }
+
+            50% {
+                transform: translateY(-15px) rotate(2deg);
+            }
+
+            100% {
+                transform: translateY(0px) rotate(-2deg);
+            }
+        }
+
+        /* --- PANNELLO CENTRALE --- */
+        .main-panel {
+            background: var(--panel-bg);
+            border: var(--border-width) solid var(--border-color);
+            border-radius: 24px;
+            padding: 40px;
+            width: 100%;
+            max-width: 450px;
+            box-shadow: var(--shadow-size) var(--shadow-size) 0px var(--border-color);
+            text-align: center;
+        }
+
+        h2 {
+            font-size: 24px;
+            margin-top: 0;
+            margin-bottom: 20px;
+        }
+
+        /* --- SELEZIONE COLORE --- */
+        .color-picker {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-bottom: 30px;
+        }
+
+        .color-circle {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            border: 4px solid var(--border-color);
+            cursor: pointer;
+            box-shadow: 4px 4px 0px var(--border-color);
+            transition: transform 0.1s ease;
+            position: relative;
+        }
+
+        .color-circle:hover {
+            transform: translateY(-4px) scale(1.1);
+        }
+
+        .color-circle:active {
+            box-shadow: 0 0 0 transparent;
+            transform: translate(4px, 4px);
+        }
+
+        /* Stato Attivo del Colore */
+        .color-circle.active {
+            box-shadow: 0 0 0 transparent;
+            transform: translate(4px, 4px);
+            border-color: var(--border-color);
+        }
+
+        .color-circle.active::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 28px;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 var(--border-color);
+        }
+
+        /* Separatore fumettoso */
+        .divider {
+            border: none;
+            border-top: 4px dashed #bdc3c7;
+            margin: 30px 0;
+        }
+
+        /* --- BOTTONI E INPUT --- */
+        .btn {
+            color: var(--border-color);
+            border: var(--border-width) solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px 20px;
+            font-family: 'Fredoka', sans-serif;
+            font-weight: 700;
+            font-size: 22px;
+            cursor: pointer;
+            box-shadow: 6px 6px 0px var(--border-color);
+            transition: all 0.1s ease;
+            width: 100%;
+            text-transform: uppercase;
+        }
+
+        .btn:active {
+            box-shadow: 0px 0px 0px var(--border-color);
+            transform: translate(6px, 6px);
+        }
+
+        .btn-create {
+            background: var(--green);
+            color: white;
+            text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.2);
+            margin-bottom: 25px;
+        }
+
+        .btn-join {
+            background: var(--yellow);
+            flex: 1;
+            padding: 12px 10px;
+            font-size: 18px;
+        }
+
+        /* Input Stanza */
+        .join-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .input-code {
+            flex: 2;
+            font-family: 'Fredoka', sans-serif;
+            font-weight: 700;
+            font-size: 20px;
+            border: var(--border-width) solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px 15px;
+            text-align: center;
+            text-transform: uppercase;
+            outline: none;
+            /* Ombra interna per dare profondità */
+            box-shadow: inset 4px 4px 0px rgba(0, 0, 0, 0.05);
+        }
+
+        .input-code::placeholder {
+            color: #95a5a6;
+            font-weight: 600;
+            text-transform: none;
+        }
+
+        /* Badge Or */
+        .badge-or {
+            display: inline-block;
+            background: var(--border-color);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: -42px;
+            /* Lo spinge sopra il divider */
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1 class="logo">PARTY<br>GAMES!</h1>
+
+    <div class="main-panel">
+
+        <h2>1. Chi sei?</h2>
+        <div class="color-picker" id="color-picker">
+            <div class="color-circle active" style="background-color: #E74C3C;" onclick="selectColor(this)"></div>
+            <div class="color-circle" style="background-color: #3498DB;" onclick="selectColor(this)"></div>
+            <div class="color-circle" style="background-color: #2ECC71;" onclick="selectColor(this)"></div>
+            <div class="color-circle" style="background-color: #F1C40F;" onclick="selectColor(this)"></div>
+            <div class="color-circle" style="background-color: #9b59b6;" onclick="selectColor(this)"></div>
+            <div class="color-circle" style="background-color: #e67e22;" onclick="selectColor(this)"></div>
+        </div>
+
+        <div style="position: relative;">
+            <hr class="divider">
+            <span class="badge-or">START</span>
+        </div>
+
+        <h2>2. Cosa vuoi fare?</h2>
+
+        <button class="btn btn-create">🎮 Crea Stanza</button>
+
+        <div class="join-group">
+            <input type="text" class="input-code" placeholder="Codice" maxlength="6">
+            <button class="btn btn-join">ENTRA ➤</button>
+        </div>
+
+    </div>
+
+    <script>
+        function selectColor(element) {
+            // Rimuove la classe active da tutti i colori
+            document.querySelectorAll('.color-circle').forEach(el => el.classList.remove('active'));
+            // La aggiunge a quello cliccato
+            element.classList.add('active');
+        }
+    </script>
+</body>
+
+</html>

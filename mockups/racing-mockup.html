@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mockup Racing - Stile Gartic</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-color: #E3F2FD;
+            --border-color: #2C3E50;
+            --panel-bg: #FFFFFF;
+
+            /* Colori base */
+            --green: #2ECC71;
+            --yellow: #F1C40F;
+            --red: #E74C3C;
+            --blue: #3498DB;
+            --asphalt: #7f8c8d;
+            --curb-red: #c0392b;
+
+            --border-width: 4px;
+            --shadow-size: 6px;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: radial-gradient(#bdc3c7 2px, transparent 2px);
+            background-size: 30px 30px;
+            font-family: 'Fredoka', sans-serif;
+            color: var(--border-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        /* --- CONTENITORE PRINCIPALE --- */
+        .game-layout {
+            display: grid;
+            grid-template-columns: 1fr 280px;
+            /* Pista a sinistra, Classifica a destra */
+            gap: 20px;
+            width: 100%;
+            max-width: 1300px;
+            height: 80vh;
+            min-height: 600px;
+        }
+
+        /* --- STILE PANNELLI (Il classico bordo spesso) --- */
+        .panel {
+            background: var(--panel-bg);
+            border: var(--border-width) solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: var(--shadow-size) var(--shadow-size) 0px var(--border-color);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- AREA DELLA PISTA (Finto Canvas) --- */
+        .arena-container {
+            background-color: var(--green);
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            /* Finto pattern erba */
+            background-image: radial-gradient(rgba(0, 0, 0, 0.05) 15%, transparent 15%);
+            background-size: 40px 40px;
+        }
+
+        /* Finta Pista in CSS */
+        .mock-track {
+            position: absolute;
+            top: 60px;
+            left: 60px;
+            right: 60px;
+            bottom: 60px;
+            border: 100px solid var(--asphalt);
+            border-radius: 150px;
+            /* Cordoli (Curbs) bianchi e rossi creati con box-shadow e outline */
+            box-shadow:
+                0 0 0 6px white,
+                inset 0 0 0 6px white;
+        }
+
+        .mock-track-centerline {
+            position: absolute;
+            top: 105px;
+            left: 105px;
+            right: 105px;
+            bottom: 105px;
+            border: 6px dashed rgba(255, 255, 255, 0.5);
+            border-radius: 110px;
+            pointer-events: none;
+        }
+
+        /* Traguardo a scacchi */
+        .finish-line {
+            position: absolute;
+            bottom: 60px;
+            left: 50%;
+            width: 30px;
+            height: 100px;
+            background: conic-gradient(var(--border-color) 90deg, #fff 90deg 180deg, var(--border-color) 180deg 270deg, #fff 270deg);
+            background-size: 15px 15px;
+            border-left: 4px solid var(--border-color);
+            border-right: 4px solid var(--border-color);
+            transform: translateX(-50%);
+        }
+
+        /* Alberi decorativi */
+        .tree {
+            position: absolute;
+            font-size: 40px;
+            filter: drop-shadow(4px 4px 0px rgba(0, 0, 0, 0.2));
+        }
+
+        .t1 {
+            top: 20px;
+            left: 40px;
+        }
+
+        .t2 {
+            bottom: 30px;
+            right: 80px;
+        }
+
+        .t3 {
+            top: 120px;
+            right: 50px;
+        }
+
+        .t4 {
+            top: 40%;
+            left: 45%;
+            font-size: 60px;
+        }
+
+        /* Macchine! */
+        .car {
+            position: absolute;
+            width: 44px;
+            height: 24px;
+            background: var(--red);
+            border: 4px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.3);
+            /* Ombra sulla pista */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .car::after {
+            /* Finto abitacolo */
+            content: '';
+            width: 12px;
+            height: 12px;
+            background: rgba(255, 255, 255, 0.4);
+            border-radius: 3px;
+        }
+
+        .car.red {
+            top: 75%;
+            left: 45%;
+            transform: rotate(-5deg);
+            background: var(--red);
+        }
+
+        .car.blue {
+            top: 80%;
+            left: 35%;
+            transform: rotate(15deg);
+            background: var(--blue);
+        }
+
+        .car.yellow {
+            top: 65%;
+            left: 52%;
+            transform: rotate(-25deg);
+            background: var(--yellow);
+        }
+
+        /* Etichetta del giocatore sulla macchina */
+        .player-tag {
+            position: absolute;
+            top: -30px;
+            background: var(--panel-bg);
+            color: var(--border-color);
+            border: 3px solid var(--border-color);
+            padding: 2px 8px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            box-shadow: 2px 2px 0px var(--border-color);
+            white-space: nowrap;
+        }
+
+        .car.red .player-tag {
+            background: var(--yellow);
+        }
+
+        /* --- HUD (OVERLAY A SCHERMO) --- */
+        .hud-badge {
+            position: absolute;
+            background: var(--panel-bg);
+            border: var(--border-width) solid var(--border-color);
+            box-shadow: 4px 4px 0px var(--border-color);
+            border-radius: 12px;
+            padding: 10px 20px;
+            font-size: 24px;
+            font-weight: 700;
+            z-index: 10;
+        }
+
+        .hud-timer {
+            top: 20px;
+            right: 20px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .hud-lap {
+            top: 20px;
+            left: 20px;
+            background: var(--yellow);
+        }
+
+        /* --- CLASSIFICA LATERALE --- */
+        .sidebar {
+            padding: 20px;
+            background: var(--panel-bg);
+        }
+
+        .sidebar h2 {
+            margin: 0 0 15px 0;
+            font-size: 24px;
+            border-bottom: 4px solid var(--border-color);
+            padding-bottom: 10px;
+            text-align: center;
+        }
+
+        .leaderboard-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .pos-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #ecf0f1;
+            border: 3px solid var(--border-color);
+            border-radius: 12px;
+            padding: 10px;
+            box-shadow: 3px 3px 0px var(--border-color);
+        }
+
+        /* Il tuo posizionamento è evidenziato */
+        .pos-card.me {
+            background: var(--yellow);
+        }
+
+        .pos-number {
+            font-size: 22px;
+            font-weight: 700;
+            width: 30px;
+            text-align: center;
+        }
+
+        .pos-color {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 3px solid var(--border-color);
+            box-shadow: 2px 2px 0px var(--border-color);
+        }
+
+        .pos-time {
+            margin-left: auto;
+            font-weight: 600;
+            font-family: monospace;
+            font-size: 16px;
+            background: rgba(255, 255, 255, 0.5);
+            padding: 2px 6px;
+            border-radius: 6px;
+            border: 2px solid var(--border-color);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="game-layout">
+
+        <div class="panel arena-container">
+
+            <div class="hud-badge hud-lap">Giro 2/3</div>
+            <div class="hud-badge hud-timer">01:24.030</div>
+
+            <div class="mock-track"></div>
+            <div class="mock-track-centerline"></div>
+            <div class="finish-line"></div>
+
+            <div class="tree t1">🌲</div>
+            <div class="tree t2">🌳</div>
+            <div class="tree t3">🌲</div>
+            <div class="tree t4">🌼</div>
+
+            <div class="car yellow"></div>
+
+            <div class="car red">
+                <div class="player-tag">TU</div>
+            </div>
+
+            <div class="car blue"></div>
+
+        </div>
+
+        <div class="panel sidebar">
+            <h2>Posizioni</h2>
+
+            <div class="leaderboard-list">
+                <div class="pos-card">
+                    <span class="pos-number">1°</span>
+                    <div class="pos-color" style="background: var(--yellow);"></div>
+                    <span class="pos-time">01:22.1</span>
+                </div>
+
+                <div class="pos-card me">
+                    <span class="pos-number">2°</span>
+                    <div class="pos-color" style="background: var(--red);"></div>
+                    <span class="pos-time">01:24.0</span>
+                </div>
+
+                <div class="pos-card">
+                    <span class="pos-number">3°</span>
+                    <div class="pos-color" style="background: var(--blue);"></div>
+                    <span class="pos-time">01:28.5</span>
+                </div>
+
+                <div class="pos-card" style="opacity: 0.5;">
+                    <span class="pos-number">4°</span>
+                    <div class="pos-color" style="background: var(--green);"></div>
+                    <span style="margin-left: auto; font-weight: bold; font-size: 14px;">DNF</span>
+                </div>
+            </div>
+
+            <div style="margin-top: auto; border-top: 4px dashed #bdc3c7; padding-top: 15px;">
+                <div style="font-weight: 700; font-size: 14px; margin-bottom: 10px;">Chat Rapida:</div>
+                <div style="display: flex; gap: 5px;">
+                    <input type="text" placeholder="Scrivi..."
+                        style="flex:1; border: 3px solid var(--border-color); border-radius: 8px; padding: 8px; font-family: 'Fredoka', sans-serif; font-weight: 600; outline: none;">
+                    <button
+                        style="background: var(--green); color: white; border: 3px solid var(--border-color); border-radius: 8px; font-weight: bold; cursor:pointer; box-shadow: 2px 2px 0px var(--border-color);">➤</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+
+</html>
