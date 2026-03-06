@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -70,6 +70,107 @@
             <p>La parola era: <strong id="revealed-word"></strong></p>
             <div id="round-standings"></div>
             <p>Prossimo round...</p>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+    <audio id="correctSound" src="./sounds/quiz-game-show-pack-190031 (mp3cut.net).mp3" preload="auto"></audio>
+</body>
+
+</html> -->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Project-W - Drawing Game</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./styles/game.css">
+</head>
+
+<body>
+    <div class="layout">
+
+        <div class="panel standings-col">
+            <div class="panel-title">Players</div>
+            <ul class="players-ul" id="players-ul">
+            </ul>
+        </div>
+
+        <div class="main-col">
+
+            <div class="panel top-bar">
+                <div class="timer-box">⏱️ <span class="timer-text">60</span></div>
+                <div class="word-to-draw hint">I N A T T E S A . . .</div>
+                <div class="round-info">Round <span id="current-round">1</span>/<span id="total-rounds">3</span></div>
+            </div>
+
+            <div class="panel canvas-area">
+                <canvas id="drawing-canvas"></canvas>
+                <div id="artist-notification">È il tuo turno!<br>Disegna!</div>
+            </div>
+
+            <div class="panel tools-bar" id="artist-controls" style="display: none;">
+
+                <div class="tools-group">
+                    <button class="tool-btn" onclick="window.undo()" title="Annulla">↩️</button>
+                    <button class="tool-btn" onclick="window.redo()" title="Ripeti">↪️</button>
+                    <div class="divider"></div>
+                    <button class="tool-btn active" data-tool="pen" onclick="window.setTool('pen')"
+                        title="Penna">✏️</button>
+                    <button class="tool-btn" data-tool="fill" onclick="window.setTool('fill')"
+                        title="Riempi">🪣</button>
+                    <button class="tool-btn" data-tool="eraser" onclick="window.setTool('eraser')"
+                        title="Gomma">🧼</button>
+                </div>
+
+                <div class="sizes tools-group">
+                    <div class="size-btn sz-1" data-size="2" onclick="window.setSize(2)"></div>
+                    <div class="size-btn sz-2 active" data-size="5" onclick="window.setSize(5)"></div>
+                    <div class="size-btn sz-3" data-size="15" onclick="window.setSize(15)"></div>
+                </div>
+
+                <div class="colors" id="colors-container">
+                </div>
+
+                <button class="btn-clear" onclick="window.clearCanvas()">🗑️ Pulisci</button>
+            </div>
+        </div>
+
+        <div class="panel chat-col">
+            <div class="panel-title">Chat</div>
+
+            <div class="chat-messages messages-box">
+            </div>
+
+            <form id="chat-form" class="chat-input-area">
+                <input type="text" id="chat-input" class="chat-input" placeholder="Indovina la parola..."
+                    autocomplete="off">
+                <button type="submit" id="chat-btn" class="chat-submit">➤</button>
+            </form>
+        </div>
+
+    </div>
+
+    <div id="game-end-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>🏆 GAME OVER 🏆</h2>
+            <div id="final-standings" class="modal-standings"></div>
+            <button id="back-to-lobby" class="btn btn-green" style="margin-top: 20px;">Torna alla Lobby</button>
+        </div>
+    </div>
+
+    <div id="round-end-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>⏱️ Tempo Scaduto!</h2>
+            <p style="font-size: 1.2rem; font-weight: 600;">La parola era: <br><strong id="revealed-word"
+                    style="font-size: 2rem; color: #E74C3C; text-transform: uppercase;"></strong></p>
+            <div id="round-standings" class="modal-standings"></div>
+            <p style="color: #7f8c8d; font-weight: bold; margin-top: 15px;">Preparazione prossimo round...</p>
         </div>
     </div>
 

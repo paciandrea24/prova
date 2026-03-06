@@ -8,6 +8,9 @@ let collection;
 // Questa è la nostra CACHE IN RAM. Mantiene il gioco velocissimo!
 let leaderboardData = {};
 
+// LIMITE RECORD: Riduciamo a 5 per salvare spazio su MongoDB
+const MAX_RECORDS_PER_TRACK = 5;
+
 async function loadLeaderboard() {
     if (!MONGODB_URI) {
         console.warn("⚠️ MONGODB_URI mancante! Uso solo la memoria RAM temporanea.");
@@ -25,6 +28,18 @@ async function loadLeaderboard() {
 
         if (data && data.records) {
             leaderboardData = data.records;
+
+            // PULIZIA AUTOMATICA: Se nel DB ci sono già 10 record per qualche pista, 
+            // li tagliamo a 5 in modo da alleggerire subito il DB al prossimo salvataggio.
+            let needsPruning = false;
+            for (const track in leaderboardData) {
+                if (leaderboardData[track].length > MAX_RECORDS_PER_TRACK) {
+                    leaderboardData[track] = leaderboardData[track].slice(0, MAX_RECORDS_PER_TRACK);
+                    needsPruning = true;
+                }
+            }
+            if (needsPruning) saveLeaderboard(); // Salva subito la versione pulita se necessario
+
             console.log("🏆 Leaderboard scaricata dal Database Cloud con successo!");
         } else {
             // Se non esiste ancora, lo creiamo vuoto
@@ -52,13 +67,16 @@ async function saveLeaderboard() {
 }
 
 // ==========================================
-// LE FUNZIONI SOTTO RIMANGONO IDENTICHE A PRIMA!
+// LOGICA DEI RECORD AGGIORNATA A 5 POSIZIONI
 // ==========================================
 
+// Manteniamo il nome isTop10Record per non dover modificare gli altri file del backend
 function isTop10Record(trackName, timeMs) {
     if (!leaderboardData[trackName]) leaderboardData[trackName] = [];
     const trackRecords = leaderboardData[trackName];
-    if (trackRecords.length < 10) return true;
+
+    if (trackRecords.length < MAX_RECORDS_PER_TRACK) return true;
+
     const worstRecord = trackRecords[trackRecords.length - 1];
     return timeMs < worstRecord.time;
 }
@@ -76,16 +94,18 @@ function addRecord(trackName, playerName, playerColor, timeMs) {
     leaderboardData[trackName].push(newRecord);
     leaderboardData[trackName].sort((a, b) => a.time - b.time);
 
-    if (leaderboardData[trackName].length > 10) {
-        leaderboardData[trackName] = leaderboardData[trackName].slice(0, 10);
+    // Taglia l'array per tenere solo i migliori 5
+    if (leaderboardData[trackName].length > MAX_RECORDS_PER_TRACK) {
+        leaderboardData[trackName] = leaderboardData[trackName].slice(0, MAX_RECORDS_PER_TRACK);
     }
 
-    // Qui chiama la nuova funzione che invia i dati al Cloud!
+    // Invia i dati aggiornati al Cloud!
     saveLeaderboard();
 
     return leaderboardData[trackName];
 }
 
+// Manteniamo il nome getTop10 per non dover modificare gli altri file del backend
 function getTop10(trackName) {
     return leaderboardData[trackName] || [];
 }
@@ -98,8 +118,8 @@ function getAllRecords() {
 loadLeaderboard();
 
 module.exports = {
-    isTop10Record,
+    isTop10Record, // Alias per compatibilità con il resto del codice
     addRecord,
-    getTop10,
+    getTop10,      // Alias per compatibilità con il resto del codice
     getAllRecords
 };

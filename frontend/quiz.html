@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="it">
 
 <head>
@@ -42,11 +42,6 @@
                 <button class="answer-btn" data-index="3">Opzione D</button>
             </div>
 
-            <!-- <div id="curiosity-box" style="display: none;">
-                <h4>💡 Lo sapevi?</h4>
-                <p id="curiosity-text"></p>
-            </div> -->
-
             <div id="status-message">Preparati!</div>
         </div>
     </div>
@@ -75,6 +70,75 @@
     <audio id="sound-wrong" src="./sounds/triviaGameSounds/wronganswer-37702.mp3" preload="auto"></audio>
     <script src="/socket.io/socket.io.js"></script>
     <script src="quiz.js"></script>
+</body>
+
+</html> -->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Project-W - Quiz Game</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./styles/quiz.css">
+</head>
+
+<body>
+    <div class="layout">
+
+        <div class="panel standings-col">
+            <div class="panel-title">Players</div>
+            <ul class="players-ul" id="players-ul">
+            </ul>
+        </div>
+
+        <div class="main-col">
+
+            <div class="panel top-bar">
+                <div class="timer-box">⏱️ <span class="timer-text" id="timer-text">30</span></div>
+                <div class="category-box" id="category-text">GENERAL KNOWLEDGE</div>
+                <div class="round-info">Round <span id="current-round">1</span>/<span id="total-rounds">10</span></div>
+            </div>
+
+            <div class="panel question-area">
+                <img id="question-image" src="" alt="Question Media" class="question-image" style="display: none;">
+                <h2 id="question-text" class="question-text">Waiting for the game to start...</h2>
+            </div>
+
+            <div class="options-grid" id="options-container">
+            </div>
+
+        </div>
+
+        <div class="panel chat-col">
+            <div class="panel-title">Chat</div>
+
+            <div class="chat-messages messages-box" id="messages-box">
+            </div>
+
+            <form id="chat-form" class="chat-input-area">
+                <input type="text" id="chat-input" class="chat-input" placeholder="Type a message..."
+                    autocomplete="off">
+                <button type="submit" id="chat-btn" class="chat-submit">➤</button>
+            </form>
+        </div>
+
+    </div>
+
+    <div id="game-end-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>🏆 GAME OVER 🏆</h2>
+            <div id="final-standings" class="modal-standings"></div>
+            <button id="back-to-lobby" class="btn-green" style="margin-top: 20px;">Back to Lobby</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="quiz.js"></script>
+    <audio id="correctSound" src="./sounds/triviaGameSounds/rightanswer-95219.mp3" preload="auto"></audio>
 </body>
 
 </html>

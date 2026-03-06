@@ -1,272 +1,263 @@
 /* frontend/styles/index.css */
 
-/* --- UTILITY CLASS (FONDAMENTALE PER LO SWAP) --- */
-.hidden {
-    display: none !important;
+:root {
+    --bg-color: #E3F2FD;
+    --border-color: #2C3E50;
+    --panel-bg: #FFFFFF;
+
+    /* Colori base notifiche */
+    --green: #2ECC71;
+    --yellow: #F1C40F;
+    --red: #E74C3C;
+    --blue: #3498DB;
+
+    --border-width: 4px;
+    --shadow-size: 6px;
 }
 
-/* =========================================
-   1. LAYOUT BASE
-   ========================================= */
-html, body {
-    margin: 0; padding: 0;
-    height: 100vh; width: 100%;
-    overflow: hidden;
-    display: flex; justify-content: center; align-items: center;
-    transition: background 0.3s ease;
-}
-
-main {
-    width: 100%; height: 100%;
-    display: flex; justify-content: center; align-items: center;
-    padding: 20px; box-sizing: border-box;
-}
-
-#theme-toggle-btn {
-    position: absolute; top: 20px; right: 20px;
-    padding: 10px 20px; border-radius: 30px;
-    cursor: pointer; font-weight: bold; z-index: 100;
-    transition: all 0.3s; font-family: inherit;
-}
-
-/* CARD CENTRALE */
-.first-box {
-    width: 100%; max-width: 450px;
-    padding: 40px; border-radius: 30px;
-    text-align: center;
-    display: flex; flex-direction: column; align-items: center;
-    transition: all 0.3s ease;
-}
-
-.label {
-    font-size: 2rem; font-weight: 900;
-    margin-top: 0; margin-bottom: 20px;
-    text-transform: uppercase; letter-spacing: 1px;
-    padding-bottom: 15px;
-    width: 100%;
-    /* La linea tratteggiata viene applicata qui nei temi */
-}
-
-.form-box, #setup-container {
-    width: 100%; display: flex; flex-direction: column; align-items: center;
-    background: transparent !important;
-}
-
-/* AVATAR BOX */
-.avatar-box {
-    margin-bottom: 25px;
-    width: 100%;
-    min-height: 140px; /* Altezza fissa per evitare salti */
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    position: relative;
-}
-
-.avatar-circle {
-    width: 100px; height: 100px; border-radius: 50%;
-    display: flex; justify-content: center; align-items: center;
-    cursor: pointer; transition: transform 0.2s;
-}
-.avatar-circle:hover { transform: scale(1.05); }
-.avatar-color { width: 70px; height: 70px; border-radius: 50%; transition: background 0.2s; }
-.helper-text { font-size: 0.9rem; margin-top: 10px; opacity: 0.6; font-weight: 700; }
-
-/* CONTAINER AZIONI */
-#default-actions, #link-join-actions { width: 100%; display: flex; flex-direction: column; gap: 15px; }
-
-/* DIVISORE "OR" */
-.divider {
-    display: flex; align-items: center; text-align: center;
-    margin: 5px 0; color: #999; font-weight: bold; font-size: 0.85rem;
-}
-.divider::before, .divider::after {
-    content: ''; flex: 1; border-bottom: 1px solid #ccc;
-}
-.divider span { padding: 0 10px; }
-
-/* RIGA JOIN */
-.join-row { display: flex; gap: 10px; height: 55px; }
-
-#lobby-id-input {
-    flex: 1; padding: 0 15px; border-radius: 12px;
-    font-size: 1.1rem; font-weight: 700; text-transform: uppercase;
-    text-align: center; outline: none; letter-spacing: 1px;
-}
-
-/* BOTTONI */
-.submit-button {
-    border-radius: 12px; font-weight: 800; cursor: pointer;
-    text-transform: uppercase; border: none; transition: all 0.2s;
-    font-size: 1.2rem; display: flex; justify-content: center; align-items: center;
-}
-.submit-button.main-btn { width: 100%; height: 60px; font-size: 1.3rem; }
-.submit-button.secondary-btn { width: 120px; height: 100%; }
-
-.submit-button:disabled { cursor: not-allowed; opacity: 0.6; box-shadow: none !important; }
-
-/* LISTA COLORI (INLINE) */
-.change-color-box {
-    width: 100%;
-    display: flex; justify-content: center;
-    animation: fadeIn 0.3s ease-out;
-    position: relative; z-index: 10;
-}
-.color-list {
-    list-style: none; padding: 0; margin: 0;
-    display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
-}
-.color-list .avatar-circle {
-    width: 50px !important; height: 50px !important; 
-    border-width: 2px !important; margin: 5px;
-}
-.color-list .avatar-color { width: 34px !important; height: 34px !important; }
-
-.avatar-color.disabled {
-    opacity: 0.2 !important; cursor: not-allowed; pointer-events: none;
-    border: 2px solid #999 !important; filter: grayscale(100%); position: relative;
-}
-.avatar-color.disabled::after {
-    content: '✖'; position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, -50%); color: #333; font-size: 20px; font-weight: bold;
-}
-
-@keyframes fadeIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
-
-
-/* =========================================
-   2. TEMA LIGHT (CREMA & VERDE PASTELLO)
-   ========================================= */
 body {
-    font-family: 'Nunito', sans-serif;
-    background-color: #FFFFF0; /* Crema */
-    color: #000;
+    background-color: var(--bg-color);
+    background-image: radial-gradient(#bdc3c7 2px, transparent 2px);
+    background-size: 30px 30px;
+    font-family: 'Fredoka', sans-serif;
+    color: var(--border-color);
+    margin: 0;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    box-sizing: border-box;
+    overflow-y: auto; /* Consente lo scroll solo se lo schermo è minuscolo (es. orizzontale) */
 }
-#theme-toggle-btn { background: white; border: 1px solid #ccc; color: #333; }
 
-.first-box { background: #FFFFFF; box-shadow: 0 10px 40px rgba(0,0,0,0.05); }
-.label { color: #000; border-bottom: 2px dashed #ccc; }
-.helper-text, .toggle-mode-link { color: #666; }
-
-/* Cerchio Tratteggiato Grigio */
-.avatar-circle { background: #fff; border: 3px dashed #ccc; } 
-
-/* Input Light */
-#lobby-id-input { background: #f4f4f4; border: 2px solid #eee; color: #333; }
-#lobby-id-input:focus { border-color: #8CC68C; background: #fff; }
-
-/* --- BOTTONI VERDI (MODIFICATI PER ILLUMINARSI) --- */
-.submit-button {
-    background-color: #8CC68C; /* Verde Pastello base (Disabilitato/Normale) */
+/* --- LOGO FLUTTUANTE --- */
+.logo {
+    font-size: 50px; /* Leggermente più grande */
+    font-weight: 700;
     color: white;
-    box-shadow: none; /* Piatto quando disabilitato */
-    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    margin-top: -30px; /* <-- ALZA IL LOGO per fare spazio al box più grande */
+    margin-bottom: 25px; /* <-- Più respiro tra logo e box */
+    text-align: center;
+    line-height: 1.1;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-shadow:
+        -3px -3px 0 var(--border-color),
+        3px -3px 0 var(--border-color),
+        -3px 3px 0 var(--border-color),
+        3px 3px 0 var(--border-color),
+        6px 6px 0 var(--border-color);
+    animation: float 3s ease-in-out infinite;
 }
 
-/* Quando il bottone è ABILITATO (colore scelto) si illumina e diventa 3D */
-.submit-button:not(:disabled) {
-    background-color: #75c975; /* Verde più vivo */
-    box-shadow: 0 5px 0 #5da35d; /* Ombra verde scuro per effetto 3D */
-    transform: translateY(-2px); /* Si alza un po' */
+@keyframes float {
+    0% { transform: translateY(0px) rotate(-2deg); }
+    50% { transform: translateY(-10px) rotate(2deg); }
+    100% { transform: translateY(0px) rotate(-2deg); }
 }
 
-.submit-button:hover:not(:disabled) {
-    background-color: #66bf66; /* Verde ancora più acceso all'hover */
-    transform: translateY(-4px); /* Sale ancora */
-    box-shadow: 0 7px 0 #5da35d; /* Ombra cresce */
+/* --- PANNELLO CENTRALE --- */
+.main-panel {
+    background: var(--panel-bg);
+    border: var(--border-width) solid var(--border-color);
+    border-radius: 20px;
+    padding: 30px 35px; /* <-- Box più spazioso (prima era 25px 30px) */
+    width: 100%;
+    max-width: 440px; /* <-- Box più largo (prima era 400px) */
+    box-shadow: var(--shadow-size) var(--shadow-size) 0px var(--border-color);
+    text-align: center;
+    box-sizing: border-box;
 }
 
-.submit-button:active:not(:disabled) {
-    transform: translateY(2px); /* Si preme */
-    box-shadow: 0 2px 0 #5da35d; /* Ombra si riduce */
+h2 {
+    font-size: 22px; /* <-- Testo più grande (prima era 20px) */
+    margin-top: 0;
+    margin-bottom: 18px;
 }
 
-
-/* =========================================
-   3. TEMA DARK (ARCADE BLUE/PURPLE)
-   ========================================= */
-body.theme-dark {
-    font-family: 'Poppins', sans-serif !important;
-    background: linear-gradient(135deg, #1e0c2b 0%, #2a0845 50%, #182848 100%) !important;
-    color: white !important;
-}
-body.theme-dark .background-icons { display: none; }
-body.theme-dark #theme-toggle-btn { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); }
-
-/* Card Vetro */
-body.theme-dark .first-box {
-    background-color: rgba(255, 255, 255, 0.15) !important;
-    backdrop-filter: blur(15px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    box-shadow: 0 20px 50px rgba(0,0,0,0.5) !important;
+/* --- SELEZIONE COLORE --- */
+.color-picker {
+    display: flex;
+    justify-content: center;
+    gap: 12px; /* <-- Colori leggermente più distanziati */
+    flex-wrap: wrap;
+    margin-bottom: 25px;
 }
 
-body.theme-dark .label { color: #fff !important; border-bottom: 2px solid rgba(255,255,255,0.1) !important; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
-body.theme-dark .helper-text { color: #ccc !important; }
-body.theme-dark .avatar-circle { background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.5); } /* Solido nel dark */
-
-/* Input Dark */
-body.theme-dark #lobby-id-input {
-    background: rgba(0,0,0,0.2) !important; border: none !important; color: white !important;
-}
-body.theme-dark #lobby-id-input::placeholder { color: rgba(255,255,255,0.5); }
-
-/* BOTTONI BLU 3D */
-body.theme-dark .submit-button {
-    background: #3b5998 !important; /* Blu scuro */
-    color: white !important;
-    box-shadow: 0 6px 0 #1a2540 !important; border-radius: 12px;
-}
-body.theme-dark .submit-button:hover:not(:disabled) {
-    background: #4a69a5 !important; transform: translateY(-2px);
-}
-body.theme-dark .submit-button:active:not(:disabled) {
-    transform: translateY(4px); box-shadow: 0 2px 0 #1a2540 !important;
-}
-
-
-/* ============================================================
-   4. COLORI OCCUPATI (Stili Speciali)
-   ============================================================ */
-.avatar-color.disabled {
-    opacity: 0.2 !important;
-    cursor: not-allowed !important;
-    pointer-events: none !important;
-    border: 2px solid #999 !important;
-    filter: grayscale(100%) !important;
+.color-circle {
+    width: 48px; /* <-- Pallini più grandi (prima era 42px) */
+    height: 48px;
+    border-radius: 50%;
+    border: 3px solid var(--border-color);
+    cursor: pointer;
+    box-shadow: 3px 3px 0px var(--border-color);
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
     position: relative;
 }
 
-/* X sopra il colore */
-.avatar-color.disabled::after {
+.color-circle:hover:not(.disabled) {
+    transform: translateY(-3px) scale(1.1);
+}
+
+.color-circle:active:not(.disabled) {
+    box-shadow: 0 0 0 transparent;
+    transform: translate(3px, 3px);
+}
+
+/* Stato Attivo del Colore */
+.color-circle.active {
+    box-shadow: 0 0 0 transparent;
+    transform: translate(3px, 3px);
+    border-color: var(--border-color);
+}
+
+.color-circle.active::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 22px;
+    font-weight: bold;
+    text-shadow: 2px 2px 0 var(--border-color);
+}
+
+/* Stato Disabilitato (Colore già in uso) */
+.color-circle.disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    pointer-events: none;
+    filter: grayscale(100%);
+    box-shadow: none;
+    transform: translate(3px, 3px);
+}
+
+.color-circle.disabled::after {
     content: '✖';
     position: absolute;
     top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    color: #333;
-    font-size: 24px;
+    color: var(--border-color);
+    font-size: 22px;
     font-weight: bold;
 }
 
-/* --- NOTIFICHE TOAST (Quality of Life) --- */
+/* --- DIVIDER "START" / "JOIN" --- */
+.divider {
+    border: none;
+    border-top: 3px dashed #bdc3c7;
+    margin: 20px 0;
+}
+
+.badge-or {
+    display: inline-block;
+    background: var(--border-color);
+    color: white;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: bold;
+    margin-top: -30px;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+/* --- BOTTONI E INPUT --- */
+.btn {
+    color: var(--border-color);
+    border: 3px solid var(--border-color);
+    border-radius: 12px;
+    padding: 14px 18px; /* <-- Bottoni più alti e cicciotti */
+    font-family: 'Fredoka', sans-serif;
+    font-weight: 700;
+    font-size: 20px; /* <-- Testo bottone più grande */
+    cursor: pointer;
+    box-shadow: 4px 4px 0px var(--border-color);
+    transition: all 0.1s ease;
+    width: 100%;
+    text-transform: uppercase;
+}
+
+.btn:active:not(:disabled) {
+    box-shadow: 0px 0px 0px transparent;
+    transform: translate(4px, 4px);
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    box-shadow: 0px 0px 0px transparent;
+    transform: translate(4px, 4px);
+}
+
+.btn-create {
+    background: var(--green);
+    color: white;
+    text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.2);
+    margin-bottom: 15px;
+}
+
+.join-group {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.input-code {
+    flex: 2;
+    font-family: 'Fredoka', sans-serif;
+    font-weight: 700;
+    font-size: 20px; /* <-- Testo input più grande */
+    border: 3px solid var(--border-color);
+    border-radius: 12px;
+    padding: 13px 15px; /* <-- Input più alto per allinearsi al bottone */
+    text-align: center;
+    text-transform: uppercase;
+    outline: none;
+    box-shadow: inset 3px 3px 0px rgba(0, 0, 0, 0.05);
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.input-code::placeholder {
+    color: #95a5a6;
+    font-weight: 600;
+    text-transform: none;
+}
+
+.btn-join {
+    background: var(--yellow);
+    flex: 1;
+    padding: 13px 10px; /* <-- Proporzionato all'input */
+    font-size: 18px; /* <-- Testo più grande */
+}
+
+/* --- NOTIFICHE TOAST --- */
 .toast-container {
     position: fixed;
-    top: 20px;
+    top: 15px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 2000;
     display: flex;
     flex-direction: column;
     gap: 10px;
-    pointer-events: none; /* Permette di cliccare sotto */
+    pointer-events: none;
 }
 
 .toast {
     background: white;
-    color: #333;
-    padding: 12px 24px;
-    border-radius: 50px;
+    color: var(--border-color);
+    border: 3px solid var(--border-color);
+    padding: 10px 20px;
+    border-radius: 12px;
     font-weight: 700;
     font-size: 1rem;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    box-shadow: 4px 4px 0px var(--border-color);
     display: flex;
     align-items: center;
     gap: 10px;
@@ -274,40 +265,26 @@ body.theme-dark .submit-button:active:not(:disabled) {
     pointer-events: auto;
     min-width: 200px;
     justify-content: center;
-    border: 1px solid #eee;
 }
 
-/* Tipi di Notifica */
-.toast.error {
-    background-color: #ffebee;
-    color: #c62828;
-    border-color: #ffcdd2;
-}
-.toast.success {
-    background-color: #e8f5e9;
-    color: #2e7d32;
-    border-color: #c8e6c9;
-}
-.toast.info {
-    background-color: #e3f2fd;
-    color: #1565c0;
-    border-color: #bbdefb;
-}
-
-/* Tema Scuro per Toast */
-body.theme-dark .toast {
-    background: #2c3e50;
-    color: white;
-    border-color: rgba(255,255,255,0.1);
-    box-shadow: 0 5px 20px rgba(0,0,0,0.5);
-}
-body.theme-dark .toast.error { background: #4a1818; color: #ff8a80; }
-body.theme-dark .toast.success { background: #1b4d2e; color: #a5d6a7; }
+.toast.error { background-color: var(--red); color: white; }
+.toast.success { background-color: var(--green); color: white; }
+.toast.info { background-color: var(--blue); color: white; }
 
 @keyframes slideDown {
     from { transform: translateY(-100%); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }
 }
+
 @keyframes fadeOut {
     to { opacity: 0; transform: translateY(-20px); }
+}
+
+/* Ottimizzazione estrema per schermi piccolissimi */
+@media (max-height: 650px) {
+    .logo { font-size: 38px; margin-bottom: 10px; }
+    .main-panel { padding: 20px; }
+    h2 { font-size: 18px; margin-bottom: 10px; }
+    .divider { margin: 15px 0; }
+    .color-circle { width: 36px; height: 36px; }
 }

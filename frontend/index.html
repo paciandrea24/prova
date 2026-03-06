@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -68,6 +68,70 @@
                 </form>
             </div>
         </div>
+    </main>
+
+    <script src="index.js" defer></script>
+</body>
+
+</html> -->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Project-W - Lobby</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles/index.css" />
+</head>
+
+<body>
+    <h1 class="logo">PROJECT-W<br>HOMEPAGE</h1>
+
+    <main class="main-panel">
+        <form id="colorForm">
+            <h2>Who are you?</h2>
+
+            <div class="color-picker" id="color-picker"></div>
+            <input type="hidden" id="hiddenInputForColorSelection" name="color">
+
+            <div id="default-actions">
+                <div style="position: relative;">
+                    <hr class="divider">
+                    <span class="badge-or">START</span>
+                </div>
+
+                <h2>What do you want to do?</h2>
+
+                <button type="button" id="create-btn" class="btn btn-create" disabled>🎮 Create Lobby</button>
+
+                <div class="join-group">
+                    <input type="text" id="lobby-id-input" class="input-code" placeholder="Code" maxlength="10"
+                        autocomplete="off">
+                    <button type="button" id="join-btn" class="btn btn-join" disabled>JOIN ➤</button>
+                </div>
+            </div>
+
+            <div id="link-join-actions" style="display: none; flex-direction: column; align-items: center;">
+                <div style="position: relative; width: 100%;">
+                    <hr class="divider">
+                    <span class="badge-or">JOIN</span>
+                </div>
+
+                <p id="join-link-msg" style="margin-bottom: 15px; font-weight: 700; font-size: 1.2rem;">Joining Lobby...
+                </p>
+
+                <button type="button" id="link-join-btn" class="btn btn-create" disabled>JOIN LOBBY</button>
+
+                <p style="margin-top: 10px; cursor: pointer; text-decoration: underline; font-weight: 600;"
+                    onclick="window.location.href='/'">
+                    Cancel
+                </p>
+            </div>
+
+        </form>
     </main>
 
     <script src="index.js" defer></script>
