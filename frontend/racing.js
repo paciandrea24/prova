@@ -90,7 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const y = row * tileSize;
 
                 if (tile === 0) {
-                    ctx.fillStyle = '#27ae60';
+                    ctx.fillStyle = '#27ae60'; // Erba
                     ctx.fillRect(x, y, tileSize, tileSize);
 
                     const rand = (row * 37 + col * 13) % 100;
@@ -106,13 +106,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     else if (rand === 50) ctx.fillText('🌼', centerX, centerY);
 
                 } else if (tile === 1) {
-                    ctx.fillStyle = '#7f8c8d';
+                    ctx.fillStyle = '#7f8c8d'; // Asfalto
                     ctx.fillRect(x, y, tileSize, tileSize);
                 } else if (tile === 2) {
-                    ctx.fillStyle = (col + row) % 2 === 0 ? '#ffffff' : '#000000';
+                    ctx.fillStyle = (col + row) % 2 === 0 ? '#ffffff' : '#000000'; // Traguardo
                     ctx.fillRect(x, y, tileSize, tileSize);
                 } else if (tile === 3 || tile === 6) {
-                    ctx.fillStyle = (col + row) % 2 === 0 ? '#f1c40f' : '#2c3e50';
+                    ctx.fillStyle = (col + row) % 2 === 0 ? '#f1c40f' : '#2c3e50'; // Settori
+                    ctx.fillRect(x, y, tileSize, tileSize);
+                } else if (tile === 4) { // NUOVO: GHIAIA
+                    ctx.fillStyle = '#d35400'; // Sfondo marrone/arancio scuro
+                    ctx.fillRect(x, y, tileSize, tileSize);
+                    // Effetto texture ghiaia con dei puntini
+                    ctx.fillStyle = '#e67e22';
+                    for (let i = 0; i < 12; i++) {
+                        let rx = x + Math.random() * (tileSize - 4);
+                        let ry = y + Math.random() * (tileSize - 4);
+                        ctx.fillRect(rx, ry, 4, 4);
+                    }
+                } else if (tile === 5) { // NUOVO: MURO (se vuoi bloccare alcune aree)
+                    ctx.fillStyle = '#2c3e50'; // Grigio molto scuro
                     ctx.fillRect(x, y, tileSize, tileSize);
                 }
             }
