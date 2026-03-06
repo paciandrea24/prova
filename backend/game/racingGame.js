@@ -1,7 +1,9 @@
 const { activeGames } = require('../store/activeGames');
 const leaderboard = require('../store/leaderboard');
+const { lobbies, users } = require('../store/lobbies');
 
 const TILE_SIZE = 80;
+const AFK_TIMEOUT_MS = 15000;
 
 // ==========================================
 // 🏎️ CATALOGO DELLE MAPPE (MODULARE)
@@ -368,7 +370,9 @@ function resetPlayersForCurrentTrack(game) {
             progress: 0,
             finished: false,
             place: null,
-            time: null
+            time: null,
+            lastActiveTime: Date.now(),
+            dnf: false
         };
     });
 }
@@ -389,6 +393,52 @@ function runGameLoop(io, lobbyId) {
 
         for (const [color, pState] of Object.entries(game.playersState)) {
             if (pState.finished) continue;
+
+            // --- INIZIO NUOVO CODICE AFK ---
+            // 1. Se sta premendo un tasto, resetta il timer di inattività
+            if (pState.inputs.w || pState.inputs.a || pState.inputs.s || pState.inputs.d) {
+                pState.lastActiveTime = Date.now();
+            }
+
+            // 2. Controlla se ha superato il tempo limite (AFK)
+            if (Date.now() - pState.lastActiveTime > AFK_TIMEOUT_MS) {
+                pState.finished = true;
+                pState.dnf = true;
+                pState.progress = 3;
+                pState.time = 9999999; // Penalità
+
+                game.podium.push({
+                    color: color,
+                    time: pState.time,
+                    isRecord: false,
+                    dnf: true
+                });
+
+                // Avvisa gli altri giocatori in chat
+                io.to(lobbyId).emit('message', {
+                    message: `💤 Il giocatore ${color} è stato squalificato per inattività ed è stato rimosso dalla lobby.`,
+                    type: 'system'
+                });
+
+                // --- INIZIO RIMOZIONE DALLA LOBBY ---
+                const lobby = lobbies.get(lobbyId);
+                if (lobby) {
+                    // Rimuovi dalla lobby generale
+                    lobby.players = lobby.players.filter(c => c !== color);
+                    users.delete(color);
+                }
+
+                // Rimuovi anche dall'array dei giocatori della gara in corso
+                game.players = game.players.filter(c => c !== color);
+
+                // Spara l'evento "playerKicked", il frontend farà il redirect alla home
+                io.to(lobbyId).emit('playerKicked', color);
+                // --- FINE RIMOZIONE DALLA LOBBY ---
+
+                continue; // Passa al prossimo giocatore
+            }
+            // --- FINE NUOVO CODICE AFK ---
+
             everyoneFinished = false;
 
             // 1. DETERMINA LA SUPERFICIE ATTUALE PER CALCOLARE LA VELOCITÀ
@@ -614,6 +664,10 @@ function startRace(io, lobbyId) {
 
     game.isActive = true;
     game.startTime = Date.now(); // Resetta e avvia il timer!
+
+    for (const pState of Object.values(game.playersState)) {
+        pState.lastActiveTime = Date.now();
+    }
 
     io.to(lobbyId).emit('raceStarted', {
         trackName: game.tracks[game.currentTrackIndex].name

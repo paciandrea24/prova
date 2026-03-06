@@ -279,6 +279,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 800);
     });
 
+    // --- GESTIONE ESPULSIONE / AFK DURANTE LA GARA ---
+    socket.on('playerKicked', (kickedColor) => {
+        if (kickedColor === myColor) {
+            // Se il colore kickato è il mio, vengo mandato subito alla homepage!
+            alert("Sei stato rimosso dalla partita per inattività.");
+            window.location.href = '/';
+        } else {
+            // Se è stato kickato un altro giocatore, facciamo sparire la sua auto visivamente
+            const carElement = document.getElementById(`car-${kickedColor.replace('#', '')}`);
+            if (carElement) {
+                // Effetto "fantasma" prima di scomparire
+                carElement.style.opacity = '0.2';
+                setTimeout(() => {
+                    if (carElement) carElement.remove();
+                }, 2000);
+            }
+        }
+    });
+
 
     socket.on('raceEnded', (data) => {
         isRacing = false;
@@ -309,20 +328,34 @@ document.addEventListener('DOMContentLoaded', () => {
             const totalTimeMs = entry.totalTime;
             const lastRaceTimeMs = entry.lastRaceTime; // <-- IL TEMPO DI QUESTA SPECIFICA PISTA!
 
+            // Controlla se questo giocatore ha un DNF (Ritirato)
+            const raceData = data.singleRacePodium.find(p => p.color === color);
+            const isDnf = raceData && raceData.dnf;
+
             // 1. Formatta il tempo TOTALE (Campionato)
-            const tMins = Math.floor(totalTimeMs / 60000);
-            const tSecs = Math.floor((totalTimeMs % 60000) / 1000);
-            const tMs = totalTimeMs % 1000;
-            const formattedTotal = `${tMins}:${tSecs.toString().padStart(2, '0')}.${tMs.toString().padStart(3, '0')}`;
+            let formattedTotal = "";
+            if (totalTimeMs >= 9999999) {
+                // Se ha beccato una penalità da 9 milioni di ms, risulta squalificato
+                formattedTotal = "<span style='color: #e74c3c;'>Squalificato</span>";
+            } else {
+                const tMins = Math.floor(totalTimeMs / 60000);
+                const tSecs = Math.floor((totalTimeMs % 60000) / 1000);
+                const tMs = totalTimeMs % 1000;
+                formattedTotal = `${tMins}:${tSecs.toString().padStart(2, '0')}.${tMs.toString().padStart(3, '0')}`;
+            }
 
             // 2. Formatta il tempo della SINGOLA GARA
-            const rMins = Math.floor(lastRaceTimeMs / 60000);
-            const rSecs = Math.floor((lastRaceTimeMs % 60000) / 1000);
-            const rMs = lastRaceTimeMs % 1000;
-            const formattedRace = `${rMins}:${rSecs.toString().padStart(2, '0')}.${rMs.toString().padStart(3, '0')}`;
+            let formattedRace = "";
+            if (isDnf) {
+                formattedRace = "<span style='color: #e74c3c; font-weight: bold;'>DNF (Ritirato)</span>";
+            } else {
+                const rMins = Math.floor(lastRaceTimeMs / 60000);
+                const rSecs = Math.floor((lastRaceTimeMs % 60000) / 1000);
+                const rMs = lastRaceTimeMs % 1000;
+                formattedRace = `${rMins}:${rSecs.toString().padStart(2, '0')}.${rMs.toString().padStart(3, '0')}`;
+            }
 
             // 3. Controlla se questo giocatore ha fatto il record in questa specifica gara
-            const raceData = data.singleRacePodium.find(p => p.color === color);
             const isRecord = raceData && raceData.isRecord;
             const recordTag = isRecord ? `<span style="color: gold; font-size: 12px; font-weight: bold; margin-right: 8px; text-shadow: 0 0 5px gold;">🌟 RECORD</span>` : '';
 
@@ -330,6 +363,8 @@ document.addEventListener('DOMContentLoaded', () => {
             let gapText = '';
             if (index === 0) {
                 gapText = 'LEADER';
+            } else if (totalTimeMs >= 9999999) {
+                gapText = 'OUT';
             } else {
                 const gapMs = totalTimeMs - data.podium[0].totalTime;
                 const gapSecs = Math.floor(gapMs / 1000);
