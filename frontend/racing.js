@@ -542,4 +542,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (changed && isRacing) sendInputs();
     });
+
+    // =========================================================
+    // FIX TASTI FANTASMA E PERDITA DI FOCUS
+    // =========================================================
+
+    // 1. Blocca il menu a tendina (tasto destro) per non interrompere il gameplay
+    document.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+    });
+
+    // 2. Funzione intelligente che simula il rilascio di tutti i tasti di movimento
+    function resetStuckKeys() {
+        const keysToRelease = [
+            { key: 'w', code: 'KeyW' }, { key: 'W', code: 'KeyW' },
+            { key: 'a', code: 'KeyA' }, { key: 'A', code: 'KeyA' },
+            { key: 's', code: 'KeyS' }, { key: 'S', code: 'KeyS' },
+            { key: 'd', code: 'KeyD' }, { key: 'D', code: 'KeyD' },
+            { key: 'ArrowUp', code: 'ArrowUp' },
+            { key: 'ArrowDown', code: 'ArrowDown' },
+            { key: 'ArrowLeft', code: 'ArrowLeft' },
+            { key: 'ArrowRight', code: 'ArrowRight' }
+        ];
+
+        keysToRelease.forEach(k => {
+            // Creiamo un finto evento 'keyup' e lo inviamo al tuo script originale!
+            const event = new KeyboardEvent('keyup', { key: k.key, code: k.code });
+            document.dispatchEvent(event);
+        });
+    }
+
+    // 3. Rilascia i tasti se clicchi fuori dalla finestra del gioco (o premi Alt-Tab)
+    window.addEventListener('blur', resetStuckKeys);
+
+    // 4. Rilascia i tasti se cambi scheda nel browser
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            resetStuckKeys();
+        }
+    });
 });
+

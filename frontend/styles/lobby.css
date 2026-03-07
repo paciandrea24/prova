@@ -213,7 +213,25 @@ body {
 .game-card:active:not(.disabled) { box-shadow: 0 0 0 transparent; transform: translate(4px, 4px); }
 
 .game-card.active { background: var(--yellow); }
-.game-card.disabled { opacity: 0.5; filter: grayscale(100%); cursor: not-allowed; }
+/* Stile per le carte disabilitate (Non-Host) */
+.game-card.disabled { 
+    background: #f8f9fa;
+    border-color: #bdc3c7;
+    box-shadow: 4px 4px 0px #bdc3c7;
+    cursor: not-allowed; 
+}
+
+/* Sbiadisce SOLO icona e testo del gioco, ignorando il bottone */
+.game-card.disabled .g-icon,
+.game-card.disabled .g-title {
+    opacity: 0.4;
+    filter: grayscale(100%);
+}
+
+/* Assicura che il cursore diventi una "manina" quando l'ospite passa sul bottone */
+.game-card.disabled #leaderboard-mini-btn {
+    cursor: pointer;
+}
 
 .g-icon { font-size: 45px; display: block; margin-bottom: 10px; }
 .g-title { font-weight: 700; font-size: 18px; }
