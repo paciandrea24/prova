@@ -53,30 +53,62 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function renderColors() {
-        colorPickerContainer.innerHTML = '';
+        // 1. CREIAMO I CERCHI SOLO SE NON ESISTONO ANCORA
+        if (colorPickerContainer.children.length === 0) {
+            availableColors.forEach(colorHex => {
+                const color = colorHex.toUpperCase();
+                const circle = document.createElement('div');
+                circle.className = 'color-circle';
+                circle.style.backgroundColor = color;
+                circle.dataset.color = color; // Salviamo il colore nel nodo
 
-        availableColors.forEach(colorHex => {
-            const color = colorHex.toUpperCase();
-            const circle = document.createElement('div');
-            circle.className = 'color-circle';
-            circle.style.backgroundColor = color;
-
-            if (takenColors.includes(color)) {
-                circle.classList.add('disabled');
-                circle.title = "Already taken";
-            } else {
                 circle.addEventListener('click', () => {
-                    document.querySelectorAll('.color-circle').forEach(el => el.classList.remove('active'));
+                    // Ignora il click se il colore è occupato
+                    if (circle.classList.contains('disabled')) return;
 
+                    // Rimuovi 'active' da tutti e mettilo su quello cliccato
+                    document.querySelectorAll('.color-circle').forEach(el => el.classList.remove('active'));
                     circle.classList.add('active');
                     hiddenInput.value = color;
 
+                    // Accendi subito i bottoni!
                     if (createBtn) createBtn.disabled = false;
                     if (joinBtn) joinBtn.disabled = false;
                     if (linkJoinBtn) linkJoinBtn.disabled = false;
                 });
+
+                colorPickerContainer.appendChild(circle);
+            });
+        }
+
+        // 2. AGGIORNIAMO LO STATO DEI COLORI (Senza distruggere l'HTML!)
+        const circles = colorPickerContainer.querySelectorAll('.color-circle');
+        circles.forEach(circle => {
+            const color = circle.dataset.color;
+
+            if (takenColors.includes(color)) {
+                circle.classList.add('disabled');
+                circle.title = "Already taken";
+                circle.classList.remove('active');
+
+                // Se l'utente aveva questo colore, resettiamo tutto
+                if (hiddenInput.value === color) {
+                    hiddenInput.value = '';
+                    if (createBtn) createBtn.disabled = true;
+                    if (joinBtn) joinBtn.disabled = true;
+                }
+            } else {
+                circle.classList.remove('disabled');
+                circle.title = "";
+
+                // Mantieni acceso il colore se l'utente lo aveva già selezionato
+                if (hiddenInput.value === color) {
+                    circle.classList.add('active');
+                    if (createBtn) createBtn.disabled = false;
+                    if (joinBtn) joinBtn.disabled = false;
+                    if (linkJoinBtn) linkJoinBtn.disabled = false;
+                }
             }
-            colorPickerContainer.appendChild(circle);
         });
     }
 
