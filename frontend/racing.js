@@ -115,50 +115,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (tile === 1) {
                     ctx.fillStyle = '#bdc3c7';
                     ctx.fillRect(x, y, tileSize, tileSize);
-                    // --- INIZIO NUOVI TILE CURVE MORBIDE ---
-                } else if (tile >= 11 && tile <= 14) {
-                    // Curve Interne (Sfondo Erba, Curva Asfalto)
-                    ctx.fillStyle = '#2ECC71';
-                    ctx.fillRect(x, y, tileSize, tileSize);
-                    ctx.fillStyle = '#bdc3c7';
-                    ctx.beginPath();
-                    if (tile === 11) { // Erba in alto-sinistra
-                        ctx.moveTo(x + tileSize, y + tileSize);
-                        ctx.arc(x + tileSize, y + tileSize, tileSize, Math.PI, Math.PI * 1.5);
-                    } else if (tile === 12) { // Erba in alto-destra
-                        ctx.moveTo(x, y + tileSize);
-                        ctx.arc(x, y + tileSize, tileSize, Math.PI * 1.5, Math.PI * 2);
-                    } else if (tile === 13) { // Erba in basso-sinistra
-                        ctx.moveTo(x + tileSize, y);
-                        ctx.arc(x + tileSize, y, tileSize, Math.PI * 0.5, Math.PI);
-                    } else if (tile === 14) { // Erba in basso-destra
-                        ctx.moveTo(x, y);
-                        ctx.arc(x, y, tileSize, 0, Math.PI * 0.5);
-                    }
-                    ctx.fill();
-
-                } else if (tile >= 21 && tile <= 24) {
-                    // Curve Esterne (Sfondo Asfalto, Curva Erba)
-                    ctx.fillStyle = '#bdc3c7';
-                    ctx.fillRect(x, y, tileSize, tileSize);
-                    ctx.fillStyle = '#2ECC71';
-                    ctx.beginPath();
-                    if (tile === 21) { // Asfalto in alto-sinistra
-                        ctx.moveTo(x + tileSize, y + tileSize);
-                        ctx.arc(x + tileSize, y + tileSize, tileSize, Math.PI, Math.PI * 1.5);
-                    } else if (tile === 22) { // Asfalto in alto-destra
-                        ctx.moveTo(x, y + tileSize);
-                        ctx.arc(x, y + tileSize, tileSize, Math.PI * 1.5, Math.PI * 2);
-                    } else if (tile === 23) { // Asfalto in basso-sinistra
-                        ctx.moveTo(x + tileSize, y);
-                        ctx.arc(x + tileSize, y, tileSize, Math.PI * 0.5, Math.PI);
-                    } else if (tile === 24) { // Asfalto in basso-destra
-                        ctx.moveTo(x, y);
-                        ctx.arc(x, y, tileSize, 0, Math.PI * 0.5);
-                    }
-                    ctx.fill();
-                    // --- FINE NUOVI TILE CURVE MORBIDE ---
-
                 } else if (tile === 2) {
                     ctx.fillStyle = '#bdc3c7';
                     ctx.fillRect(x, y, tileSize, tileSize);
