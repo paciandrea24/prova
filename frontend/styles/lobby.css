@@ -225,6 +225,10 @@ body {
     padding: 15px 20px;
     flex: 1;
     overflow-y: auto;
+    
+    /* Aggiungi queste due righe per risolvere la sovrapposizione! */
+    margin-bottom: 20px; 
+    box-shadow: 4px 4px 0px var(--border-color);
 }
 
 .setting-row {

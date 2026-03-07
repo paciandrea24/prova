@@ -45,7 +45,9 @@ module.exports = function (io, socket) {
             trackMap: currentTrack.map,
             tileSize: game.tileSize,
             trackName: currentTrack.name,
-            hostColor: lobby.host
+            hostColor: lobby.host,
+            isSingleMode: game.isSingleMode, // <-- FIX 1/3 MODALITA' SINGOLA
+            totalLaps: 1                     // <-- FIX 1/3 MODALITA' SINGOLA
         });
 
         // Se sei l'host, fai partire il countdown

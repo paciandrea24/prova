@@ -454,7 +454,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (lobbyInput) {
         lobbyInput.addEventListener('blur', async () => {
+            // FORZA IN MAIUSCOLO IL TESTO INSERITO
+            lobbyInput.value = lobbyInput.value.toUpperCase();
             const val = lobbyInput.value.trim();
+
             if (val.length > 0) {
                 await fetchTakenColors(val);
                 renderColors();
@@ -548,7 +551,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (joinBtn) {
         joinBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            const id = lobbyInput.value.trim();
+            // FORZA IL MAIUSCOLO QUI PRIMA DELL'INVIO
+            const id = lobbyInput.value.trim().toUpperCase();
             if (!id) { showToast("Enter the room code!", "error"); return; }
             handleAction('/join-lobby', { color: hiddenInput.value, lobbyId: id }, id);
         });

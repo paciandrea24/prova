@@ -21,43 +21,50 @@ document.addEventListener('DOMContentLoaded', () => {
     // Stato locale degli input per non spammare il server inutilmente
     const inputs = { w: false, a: false, s: false, d: false };
 
-    // Costruisce l'arena
+
     // Costruisce l'arena
     socket.on('racingSetup', (data) => {
         const { trackMap, tileSize, playersState, trackName, hostColor: serverHostColor } = data;
 
         if (serverHostColor) hostColor = serverHostColor;
 
-        // Chiudi il modal del podio se era aperto dalla gara precedente!
-        document.getElementById('podium-modal').style.display = 'none';
+        const podiumModal = document.getElementById('podium-modal');
+        if (podiumModal) podiumModal.style.display = 'none';
 
-        // --- INIZIALIZZA LE POSIZIONI VISIVE E DI STATO ISTANTANEAMENTE ---
+        // FIX NOME PISTA: Aggiorna l'HUD
+        const trackNameDisplay = document.getElementById('track-name-display');
+        if (trackNameDisplay) trackNameDisplay.textContent = trackName || "CIRCUIT";
+
         serverState = playersState;
-        myFinalTime = null; // Resetta il congelamento del timer
+        myFinalTime = null;
 
         visualState = {};
         for (const color in playersState) {
-            visualState[color] = {
-                x: playersState[color].x,
-                y: playersState[color].y,
-                angle: playersState[color].angle
-            };
+            visualState[color] = { x: playersState[color].x, y: playersState[color].y, angle: playersState[color].angle };
         }
-        // --------------------------------------------------------------
 
-        // Logica del countdown visivo
+        // FIX GIRI: Nascondi il box se la gara è singola
+        const lapBox = document.getElementById('lap-box');
+        const isSingle = data.isSingleMode || (data.settings && data.settings.mode === 'single') || data.totalLaps === 1;
+
+        if (isSingle) {
+            if (lapBox) lapBox.style.display = 'none';
+        } else {
+            if (lapBox) lapBox.style.display = 'flex';
+            document.getElementById('lap-display').textContent = `1/${data.totalLaps || 3}`;
+        }
+
         const countdownOverlay = document.getElementById('countdown-overlay');
         const countdownTrack = document.getElementById('countdown-track');
         const countdownNumber = document.getElementById('countdown-number');
-        const hudTimer = document.getElementById('hud-timer');
 
-        hudTimer.style.display = 'none';
+        document.getElementById('timer-box').style.visibility = 'hidden';
 
         countdownOverlay.style.display = 'flex';
         countdownOverlay.style.background = 'rgba(0, 0, 0, 0.7)';
         countdownTrack.textContent = trackName;
         countdownNumber.textContent = '3';
-        countdownNumber.style.color = '#e74c3c'; // Rosso
+        countdownNumber.style.color = '#e74c3c';
 
         setTimeout(() => { countdownNumber.textContent = '2'; countdownNumber.style.color = '#f39c12'; }, 1000);
         setTimeout(() => { countdownNumber.textContent = '1'; countdownNumber.style.color = '#f1c40f'; }, 2000);
@@ -70,17 +77,14 @@ document.addEventListener('DOMContentLoaded', () => {
         arena.style.backgroundImage = 'none';
         arena.style.transform = 'none';
 
-        // Elimina e ricrea il canvas per disegnare la nuova mappa
         let canvas = document.getElementById('track-canvas');
         if (canvas) canvas.remove();
 
         canvas = document.createElement('canvas');
         canvas.id = 'track-canvas';
         arena.appendChild(canvas);
-
         canvas.width = trackWidth;
         canvas.height = trackHeight;
-
         const ctx = canvas.getContext('2d');
 
         for (let row = 0; row < trackMap.length; row++) {
@@ -90,8 +94,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const y = row * tileSize;
 
                 if (tile === 0) {
-                    ctx.fillStyle = '#27ae60'; // Erba
+                    ctx.fillStyle = '#2ECC71';
                     ctx.fillRect(x, y, tileSize, tileSize);
+                    ctx.strokeStyle = 'rgba(39, 174, 96, 0.5)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x, y, tileSize, tileSize);
 
                     const rand = (row * 37 + col * 13) % 100;
                     ctx.font = `${tileSize * 0.65}px Arial`;
@@ -106,48 +113,51 @@ document.addEventListener('DOMContentLoaded', () => {
                     else if (rand === 50) ctx.fillText('🌼', centerX, centerY);
 
                 } else if (tile === 1) {
-                    ctx.fillStyle = '#7f8c8d'; // Asfalto
+                    ctx.fillStyle = '#bdc3c7';
                     ctx.fillRect(x, y, tileSize, tileSize);
                 } else if (tile === 2) {
-                    ctx.fillStyle = (col + row) % 2 === 0 ? '#ffffff' : '#000000'; // Traguardo
+                    ctx.fillStyle = '#bdc3c7';
                     ctx.fillRect(x, y, tileSize, tileSize);
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(x, y, tileSize / 2, tileSize / 2);
+                    ctx.fillRect(x + tileSize / 2, y + tileSize / 2, tileSize / 2, tileSize / 2);
+                    ctx.fillStyle = '#2C3E50';
+                    ctx.fillRect(x + tileSize / 2, y, tileSize / 2, tileSize / 2);
+                    ctx.fillRect(x, y + tileSize / 2, tileSize / 2, tileSize / 2);
                 } else if (tile === 3 || tile === 6) {
-                    ctx.fillStyle = (col + row) % 2 === 0 ? '#f1c40f' : '#2c3e50'; // Settori
+                    ctx.fillStyle = (col + row) % 2 === 0 ? '#F1C40F' : '#2C3E50';
                     ctx.fillRect(x, y, tileSize, tileSize);
-                } else if (tile === 4) { // NUOVO: GHIAIA
-                    ctx.fillStyle = '#d35400'; // Sfondo marrone/arancio scuro
+                } else if (tile === 4) {
+                    ctx.fillStyle = '#E67E22';
                     ctx.fillRect(x, y, tileSize, tileSize);
-                    // Effetto texture ghiaia con dei puntini
-                    ctx.fillStyle = '#e67e22';
+                    ctx.fillStyle = '#D35400';
                     for (let i = 0; i < 12; i++) {
                         let rx = x + Math.random() * (tileSize - 4);
                         let ry = y + Math.random() * (tileSize - 4);
                         ctx.fillRect(rx, ry, 4, 4);
                     }
-                } else if (tile === 5) { // NUOVO: MURO (se vuoi bloccare alcune aree)
-                    ctx.fillStyle = '#2c3e50'; // Grigio molto scuro
+                } else if (tile === 5) {
+                    ctx.fillStyle = '#2c3e50';
                     ctx.fillRect(x, y, tileSize, tileSize);
                 }
             }
         }
 
-        // Pulisci le macchine vecchie dal DOM prima di ricrearle
         document.querySelectorAll('.car').forEach(e => e.remove());
 
-        // Creiamo le auto per la nuova mappa!
         for (const [color, state] of Object.entries(playersState)) {
             let car = document.createElement('div');
             car.className = 'car';
-            car.id = `car-${color.replace('#', '')}`;
+
+            // FIX MACCHINE INVISIBILI: Forza l'uppercase sul codice esadecimale (es: 00CED1 invece di 00ced1)
+            const colorCode = color.replace('#', '').toUpperCase();
+            car.id = `car-${colorCode}`;
+
             if (color === myColor) car.classList.add('my-car');
 
-            // Togliamo il '#' dal colore per usarlo come nome del file!
-            const colorCode = color.replace('#', '');
-
-            // Inseriamo l'etichetta del giocatore e l'immagine PNG
             car.innerHTML = `
-                <div class="player-label">${color === myColor ? 'TU' : ''}</div>
-                <img src="assets/${colorCode}.png" class="car-sprite" alt="F1 Car">
+                <div class="player-label">${color === myColor ? 'YOU' : ''}</div>
+                <img src="assets/${colorCode}.png" class="car-sprite" alt="Car">
             `;
             arena.appendChild(car);
         }
@@ -181,19 +191,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const visual = visualState[color];
 
-            // FORMULA LERP: Avvicina la posizione attuale al bersaglio del 30% ad ogni frame.
-            // Questo crea un movimento fluido come il burro e nasconde il lag!
+            // LERP per movimento fluido
             visual.x += (target.x - visual.x) * 0.3;
             visual.y += (target.y - visual.y) * 0.3;
 
-            // Calcolo intelligente per la rotazione (evita che l'auto giri su se stessa al contrario)
             let angleDiff = target.angle - visual.angle;
             while (angleDiff < -180) angleDiff += 360;
             while (angleDiff > 180) angleDiff -= 360;
             visual.angle += angleDiff * 0.3;
 
-            // Ora applichiamo la posizione fluida al DOM
-            const carEl = document.getElementById(`car-${color.replace('#', '')}`);
+            // FIX: Cerca la macchina con l'id formattato in maiuscolo
+            const carEl = document.getElementById(`car-${color.replace('#', '').toUpperCase()}`);
             if (carEl) {
                 carEl.style.transform = `translate(${visual.x}px, ${visual.y}px) rotate(${visual.angle}deg)`;
 
@@ -202,49 +210,54 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (target.finished) carEl.style.opacity = '0.5';
 
-                // LA TELECAMERA SCORREVOLE
+                // TELECAMERA & GIRI (Solo per la tua auto)
                 if (color === myColor) {
                     const viewport = document.getElementById('camera-viewport');
                     if (viewport) {
                         const vWidth = viewport.clientWidth;
                         const vHeight = viewport.clientHeight;
-                        // Usa la posizione "visual" per la telecamera, non il target!
-                        const cameraX = -(visual.x + 43 - vWidth / 2); // 43 è la metà di 86
-                        const cameraY = -(visual.y + 20 - vHeight / 2); // 20 è la metà di 40
+                        const cameraX = -(visual.x + 43 - vWidth / 2);
+                        const cameraY = -(visual.y + 20 - vHeight / 2);
                         arena.style.transform = `translate(${cameraX}px, ${cameraY}px)`;
+                    }
+
+                    // AGGIORNA GIRI LIVE
+                    const lapBox = document.getElementById('lap-box');
+                    if (lapBox && lapBox.style.display !== 'none' && target.lap && target.totalLaps) {
+                        const displayLap = Math.min(target.lap, target.totalLaps);
+                        document.getElementById('lap-display').textContent = `${displayLap}/${target.totalLaps}`;
                     }
                 }
             }
         }
 
-        // --- AGGIUNGI L'AGGIORNAMENTO DEL CRONOMETRO ---
+        // AGGIORNAMENTO DEL CRONOMETRO
         if (isRacing && localStartTime) {
             const myServerState = serverState[myColor];
 
-            // Se il server ci ha registrato come "finiti", usa il tempo ufficiale e congelalo
             if (myServerState && myServerState.finished && myServerState.time) {
                 myFinalTime = myServerState.time;
             }
 
-            // Calcola il tempo: usa il finale se l'ho finito, altrimenti il live
             const timeToDisplay = myFinalTime !== null ? myFinalTime : (Date.now() - localStartTime);
 
             const m = Math.floor(timeToDisplay / 60000);
             const s = Math.floor((timeToDisplay % 60000) / 1000);
             const ms = timeToDisplay % 1000;
 
-            document.getElementById('hud-timer').textContent =
-                `${m}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+            const timerEl = document.getElementById('hud-timer');
+            if (timerEl) {
+                timerEl.textContent = `${m}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
 
-            // Colora di verde quando finisci
-            if (myFinalTime !== null) {
-                document.getElementById('hud-timer').style.color = '#2ecc71';
-            } else {
-                document.getElementById('hud-timer').style.color = '#fff';
+                // FIX COLORE TIMER (Scuro durante la gara, Verde quando tagli il traguardo)
+                if (myFinalTime !== null) {
+                    timerEl.style.color = '#2ecc71';
+                } else {
+                    timerEl.style.color = '#2C3E50';
+                }
             }
         }
 
-        // Richiama se stesso al prossimo frame del monitor
         requestAnimationFrame(renderLoop);
     }
 
@@ -253,27 +266,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('raceStarted', () => {
         isRacing = true;
-
-        // FONDAMENTALE: Invia subito al server lo stato dei tasti!
-        // Se il giocatore stava già tenendo premuto 'W' durante il 3,2,1, partirà a razzo.
         sendInputs();
-
         localStartTime = Date.now();
 
         const countdownOverlay = document.getElementById('countdown-overlay');
         const countdownNumber = document.getElementById('countdown-number');
-        const hudTimer = document.getElementById('hud-timer');
 
         countdownNumber.textContent = 'GO!';
-        countdownNumber.style.color = '#2ecc71'; // Verde
-
-        // Rimuovi l'oscuramento nero ISTANTANEAMENTE così la pista è nitida
+        countdownNumber.style.color = '#2ecc71';
         countdownOverlay.style.background = 'transparent';
 
-        hudTimer.style.display = 'block';
-        hudTimer.style.color = '#fff';
+        // Riabilita la visibilità del timer
+        document.getElementById('timer-box').style.visibility = 'visible';
 
-        // Nascondi definitivamente la scritta "GO!" dopo 800ms
         setTimeout(() => {
             countdownOverlay.style.display = 'none';
         }, 800);
@@ -306,37 +311,34 @@ document.addEventListener('DOMContentLoaded', () => {
         const list = document.getElementById('podium-list');
         list.innerHTML = '';
 
-        // Se non è l'ultima gara, aggiungi un titolo per far capire che il gioco continua
+        // Titolo (in Inglese)
         if (!data.isFinal) {
             const title = document.createElement('h2');
             title.style.color = '#f1c40f';
             title.style.marginTop = '-10px';
-            title.textContent = `Fine ${data.trackName} - Prossima gara a breve...`;
+            title.textContent = `Finished ${data.trackName} - Next race starting soon...`;
             list.appendChild(title);
         } else {
             const title = document.createElement('h2');
             title.style.color = '#2ecc71';
             title.style.marginTop = '-10px';
-            title.textContent = `🏆 CAMPIONATO CONCLUSO 🏆`;
+            title.textContent = `🏆 CHAMPIONSHIP CONCLUDED 🏆`;
             list.appendChild(title);
         }
 
         // Costruiamo la classifica cumulativa!
-        // Costruiamo la classifica cumulativa!
         data.podium.forEach((entry, index) => {
             const color = entry.color;
             const totalTimeMs = entry.totalTime;
-            const lastRaceTimeMs = entry.lastRaceTime; // <-- IL TEMPO DI QUESTA SPECIFICA PISTA!
+            const lastRaceTimeMs = entry.lastRaceTime;
 
-            // Controlla se questo giocatore ha un DNF (Ritirato)
             const raceData = data.singleRacePodium.find(p => p.color === color);
             const isDnf = raceData && raceData.dnf;
 
             // 1. Formatta il tempo TOTALE (Campionato)
             let formattedTotal = "";
             if (totalTimeMs >= 9999999) {
-                // Se ha beccato una penalità da 9 milioni di ms, risulta squalificato
-                formattedTotal = "<span style='color: #e74c3c;'>Squalificato</span>";
+                formattedTotal = "<span style='color: #e74c3c;'>Disqualified</span>";
             } else {
                 const tMins = Math.floor(totalTimeMs / 60000);
                 const tSecs = Math.floor((totalTimeMs % 60000) / 1000);
@@ -347,7 +349,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 2. Formatta il tempo della SINGOLA GARA
             let formattedRace = "";
             if (isDnf) {
-                formattedRace = "<span style='color: #e74c3c; font-weight: bold;'>DNF (Ritirato)</span>";
+                formattedRace = "<span style='color: #e74c3c; font-weight: bold;'>DNF (Retired)</span>";
             } else {
                 const rMins = Math.floor(lastRaceTimeMs / 60000);
                 const rSecs = Math.floor((lastRaceTimeMs % 60000) / 1000);
@@ -355,11 +357,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 formattedRace = `${rMins}:${rSecs.toString().padStart(2, '0')}.${rMs.toString().padStart(3, '0')}`;
             }
 
-            // 3. Controlla se questo giocatore ha fatto il record in questa specifica gara
             const isRecord = raceData && raceData.isRecord;
             const recordTag = isRecord ? `<span style="color: gold; font-size: 12px; font-weight: bold; margin-right: 8px; text-shadow: 0 0 5px gold;">🌟 RECORD</span>` : '';
 
-            // Calcola il distacco TOTALE dal primo classificato
+            // Calcola il distacco TOTALE
             let gapText = '';
             if (index === 0) {
                 gapText = 'LEADER';
@@ -377,118 +378,109 @@ document.addEventListener('DOMContentLoaded', () => {
             li.style.justifyContent = 'space-between';
             li.style.alignItems = 'center';
             li.style.padding = '10px 5px';
-            li.style.borderBottom = '1px solid #555';
+            li.style.borderBottom = '1px solid #bdc3c7'; // Bordo grigio chiaro
             li.style.fontSize = '20px';
+            li.style.color = '#2C3E50'; // Colore testo base
 
             li.innerHTML = `
                 <div style="display: flex; align-items: center; gap: 15px;">
-                    <span style="font-weight: 900; width: 30px; color: ${index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? '#cd7f32' : 'white'};">${index + 1}°</span>
-                    <span style="display: inline-block; width: 24px; height: 24px; background-color: ${color}; border-radius: 50%; border: 2px solid white;"></span>
-                    <span style="font-size: 14px; font-weight: bold;">${color === myColor ? '(TU)' : ''}</span>
+                    <span style="font-weight: 900; width: 30px; text-shadow: 1px 1px 0px rgba(0,0,0,0.1); color: ${index === 0 ? '#f1c40f' : index === 1 ? '#95a5a6' : index === 2 ? '#d35400' : '#2C3E50'};">${index + 1}°</span>
+                    <span style="display: inline-block; width: 24px; height: 24px; background-color: ${color}; border-radius: 50%; border: 3px solid #2C3E50; box-shadow: 2px 2px 0 rgba(0,0,0,0.2);"></span>
+                    <span style="font-size: 14px; font-weight: bold;">${color === myColor ? '(YOU)' : ''}</span>
                 </div>
                 
                 <div style="font-family: monospace; text-align: right; display: flex; flex-direction: column; align-items: flex-end;">
-                    
-                    <div style="font-size: 15px; color: #34dbeb; margin-bottom: 3px;">
-                        ${recordTag} Pista: <strong>${formattedRace}</strong>
+                    <div style="font-size: 15px; color: #3498DB; margin-bottom: 3px;">
+                        ${recordTag} Track: <strong>${formattedRace}</strong>
                     </div>
-                    
                     <div style="margin-bottom: 2px;">
-                        <span style="font-size: 12px; color: #aaa; margin-right: 5px; font-family: sans-serif;">Totale Campionato:</span>
-                        <span style="font-weight: bold;">${formattedTotal}</span>
+                        <span style="font-size: 12px; color: #7f8c8d; margin-right: 5px; font-family: 'Fredoka', sans-serif;">Total:</span>
+                        <span style="font-weight: bold; font-size: 16px;">${formattedTotal}</span>
                     </div>
-                    
-                    <div style="font-size: 12px; color: #e74c3c;">${gapText}</div>
+                    <div style="font-size: 12px; color: #E74C3C; font-weight: bold;">${gapText}</div>
                 </div>
             `;
             list.appendChild(li);
         });
 
-        modal.style.display = 'block';
+        // Mostra il modale usando FLEX per centrarlo
+        modal.style.display = 'flex';
 
-        // --- GESTIONE MODALITÀ SINGOLA (BOTTONI RIAVVIO) ---
+        // --- GESTIONE MODALITÀ E TESTO INFERIORE ---
         const singleControls = document.getElementById('single-mode-controls');
         const autoReturnText = document.getElementById('auto-return-text');
 
         if (data.isSingleMode) {
-            autoReturnText.style.display = 'none'; // Nascondi testo "Ritorno in corso"
-
-            // Mostra i bottoni SOLO all'host
+            autoReturnText.style.display = 'none';
             if (myColor === hostColor) {
                 singleControls.style.display = 'flex';
-
                 document.getElementById('restart-race-btn').onclick = () => {
                     socket.emit('restartRace', lobbyId);
                 };
-
                 document.getElementById('back-to-lobby-btn').onclick = () => {
                     socket.emit('forceReturnToLobby', lobbyId);
                 };
             } else {
-                // Ai giocatori normali diciamo solo di attendere
                 singleControls.style.display = 'none';
                 autoReturnText.style.display = 'block';
-                autoReturnText.textContent = "In attesa che l'Host decida cosa fare...";
+                autoReturnText.textContent = "Waiting for Host...";
             }
         } else {
-            // Modalità Campionato Classica
+            // MODALITÀ CAMPIONATO
             singleControls.style.display = 'none';
             autoReturnText.style.display = 'block';
-            autoReturnText.textContent = "Ritorno alla lobby in corso...";
+
+            // Controlla se è l'ultima gara del campionato
+            if (data.isFinal) {
+                autoReturnText.textContent = "Returning to lobby in 15 seconds...";
+            } else {
+                autoReturnText.textContent = "Loading next track...";
+            }
         }
 
-        // --- NUOVO: GESTIONE RECORD MONDIALE ---
-        // Controlliamo se IO (myColor) ho fatto un record in questa gara specifica
+        // --- GESTIONE RECORD MONDIALE ---
         const myRaceData = data.singleRacePodium.find(p => p.color === myColor);
+        const recordModal = document.getElementById('record-modal');
 
-        if (myRaceData && myRaceData.isRecord) {
-            const recordModal = document.getElementById('record-modal');
+        if (myRaceData && myRaceData.isRecord && recordModal) {
             const recordInput = document.getElementById('record-name-input');
             const recordBtn = document.getElementById('submit-record-btn');
 
-            if (recordModal) {
-                // Mostra il pop-up e metti il focus sull'input
-                recordModal.style.display = 'block';
-                recordInput.value = '';
-                recordInput.focus();
+            recordModal.style.display = 'flex';
+            recordInput.value = '';
+            recordInput.focus();
 
-                // Funzione per inviare il record al server
-                recordBtn.onclick = () => {
-                    // Prende le 3 lettere, se è vuoto usa "AAA" di default
-                    let initials = recordInput.value.trim().toUpperCase() || 'AAA';
-                    initials = initials.substring(0, 3); // Sicurezza extra: massimo 3 caratteri
+            recordBtn.onclick = () => {
+                let initials = recordInput.value.trim().toUpperCase() || 'AAA';
+                initials = initials.substring(0, 3);
+                socket.emit('saveNewRecord', {
+                    lobbyId: lobbyId,
+                    trackName: data.trackName,
+                    playerName: initials,
+                    playerColor: myColor,
+                    time: myRaceData.time
+                });
+                recordModal.style.display = 'none';
 
-                    // Invia i dati al Socket!
-                    socket.emit('saveNewRecord', {
-                        lobbyId: lobbyId,
-                        trackName: data.trackName,
-                        playerName: initials,
-                        playerColor: myColor,
-                        time: myRaceData.time
-                    });
-
-                    // Chiudi il pop-up
-                    recordModal.style.display = 'none';
-
-                    // Mostra un feedback visivo al giocatore
-                    const title = document.createElement('h3');
-                    title.style.color = '#f1c40f';
-                    title.style.textAlign = 'center';
-                    title.textContent = `Record salvato come ${initials}!`;
-                    list.appendChild(title);
-                };
-            }
+                const title = document.createElement('h3');
+                title.style.color = '#f1c40f';
+                title.style.textAlign = 'center';
+                title.textContent = `Record saved as ${initials}!`;
+                list.appendChild(title);
+            };
         }
 
+        // STILE GARTIC PER I RECORD ALL-TIME
         if (data.mapTop3 && data.mapTop3.length > 0) {
             const top3Container = document.createElement('div');
-            top3Container.style.marginTop = '20px';
-            top3Container.style.padding = '10px';
-            top3Container.style.backgroundColor = 'rgba(0,0,0,0.5)';
-            top3Container.style.borderRadius = '8px';
-            top3Container.style.border = '1px dashed #7f8c8d';
+            top3Container.style.marginTop = '25px';
+            top3Container.style.padding = '15px';
+            top3Container.style.backgroundColor = '#ecf0f1';
+            top3Container.style.borderRadius = '16px';
+            top3Container.style.border = '4px solid #2C3E50';
+            top3Container.style.boxShadow = '4px 4px 0 #2C3E50';
 
-            let top3Html = `<h4 style="color: #bdc3c7; margin: 0 0 10px 0; text-align: center; text-transform: uppercase;">⏱️ Record All-Time (${data.trackName})</h4>`;
+            let top3Html = `<h4 style="color: #3498DB; font-family:'Fredoka', sans-serif; font-size: 20px; margin: 0 0 15px 0; text-align: center; text-transform: uppercase;">🏆 Hall of Fame</h4>`;
 
             data.mapTop3.forEach((rec, i) => {
                 const m = Math.floor(rec.time / 60000);
@@ -499,9 +491,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 let medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
 
                 top3Html += `
-                    <div style="display: flex; justify-content: space-between; font-size: 16px; margin-bottom: 5px;">
-                        <span>${medal} <span style="display:inline-block; width:12px; height:12px; background-color:${rec.color}; border-radius:50%; margin-right:5px;"></span> <strong>${rec.name}</strong></span>
-                        <span style="font-family: monospace;">${timeStr}</span>
+                    <div style="display: flex; justify-content: space-between; align-items:center; font-size: 18px; margin-bottom: 8px; border-bottom: 2px dashed #bdc3c7; padding-bottom: 5px;">
+                        <span style="display:flex; align-items:center; color:#2C3E50; font-weight:bold;">
+                            <span style="margin-right:10px; text-shadow: 1px 1px 0px rgba(0,0,0,0.1);">${medal}</span> 
+                            <span style="display:inline-block; width:16px; height:16px; background-color:${rec.color}; border-radius:50%; border: 2px solid #2C3E50; margin-right:10px;"></span> 
+                            ${rec.name}
+                        </span>
+                        <span style="font-family: monospace; background:var(--yellow); color:var(--border-color); padding: 2px 8px; border-radius:8px; border:2px solid var(--border-color); font-weight:bold;">${timeStr}</span>
                     </div>
                 `;
             });

@@ -644,13 +644,15 @@ function loadNextTrack(io, lobbyId) {
         playersState: game.playersState,
         trackMap: nextTrack.map,
         tileSize: game.tileSize,
-        trackName: nextTrack.name
+        trackName: nextTrack.name,
+        isSingleMode: game.isSingleMode, // <-- FIX 1/3 MODALITA' SINGOLA
+        totalLaps: 1                     // <-- FIX 1/3 MODALITA' SINGOLA
     });
 
     // Fai partire la gara automaticamente!
     setTimeout(() => {
         startRace(io, lobbyId);
-    }, 3000); // <--- CAMBIA QUESTO DA 2000 A 3000
+    }, 3000);
 }
 
 function updatePlayerInput(lobbyId, playerColor, inputs) {
@@ -691,7 +693,9 @@ function restartRace(io, lobbyId) {
         playersState: game.playersState,
         trackMap: game.tracks[0].map,
         tileSize: game.tileSize,
-        trackName: game.tracks[0].name
+        trackName: game.tracks[0].name,
+        isSingleMode: game.isSingleMode, // <-- FIX 1/3 MODALITA' SINGOLA
+        totalLaps: 1                     // <-- FIX 1/3 MODALITA' SINGOLA
     });
 
     io.to(lobbyId).emit('message', { message: 'La gara è stata riavviata! Preparatevi...', type: 'system' });

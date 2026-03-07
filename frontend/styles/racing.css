@@ -1,190 +1,199 @@
+/* frontend/styles/racing.css */
+
+:root {
+    --bg-color: #E3F2FD;
+    --border-color: #2C3E50;
+    --panel-bg: #FFFFFF;
+    --green: #2ECC71;
+    --yellow: #F1C40F;
+    --red: #E74C3C;
+    --blue: #3498DB;
+    --border-width: 4px;
+    --shadow-size: 6px;
+}
+
 body {
-    background-color: #000; /* Sfondo nero per i bordi fuori dalla mappa */
-    color: white;
-    font-family: 'Nunito', sans-serif;
+    background: var(--bg-color);
+    background-image: radial-gradient(#bdc3c7 2px, transparent 2px);
+    background-size: 30px 30px;
+    font-family: 'Fredoka', sans-serif;
+    color: var(--border-color);
     margin: 0;
-    padding: 0;
-    overflow: hidden; 
+    padding: 10px; /* Ridotto al minimo per dare tutto lo spazio alla mappa */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
-#ui-header {
-    text-align: center;
-    padding: 10px;
-    background-color: rgba(0,0,0,0.5);
-}
-
-#status-text {
-    font-size: 20px;
-    font-weight: bold;
-    color: #f1c40f;
-}
-
-#camera-viewport {
+.layout {
     width: 100vw;
-    height: 100vh;
-    margin: 0;
-    padding: 0;
-    overflow: hidden; 
+    height: calc(100vh - 20px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.main-panel {
+    background: var(--panel-bg);
+    border: var(--border-width) solid var(--border-color);
+    border-radius: 20px;
+    padding: 10px; /* Ridotto al minimo per massimizzare la mappa */
+    box-shadow: var(--shadow-size) var(--shadow-size) 0px var(--border-color);
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+}
+
+/* SISTEMA TELECAMERA (Ora occupa il 100% dello spazio) */
+#camera-viewport {
     position: relative;
-    box-shadow: inset 0 0 50px rgba(0,0,0,0.5); 
+    width: 100%;
+    flex: 1;
+    background: #E3F2FD;
+    border: var(--border-width) solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: inset 4px 4px 0 rgba(0,0,0,0.1);
 }
 
 #arena {
     position: absolute;
-    top: 0;
-    left: 0;
-    will-change: transform;
-    transition: transform 0.01s linear; 
-    border: none;
+    transform-origin: top left;
 }
 
-#track-canvas {
+/* --- NUOVO HUD SOVRAPPOSTO (Pannelli Fluttuanti) --- */
+.hud-panel {
     position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 1; /* Il canvas sta sul fondo */
+    top: 20px;
+    z-index: 100; /* Deve stare sopra l'arena e le auto */
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none; /* Cliccandoci attraverso non blocchi l'interazione */
 }
 
-/* Le macchine devono stare sopra al canvas (Z-index maggiore di 1) */
-.car {
-    width: 86px;  /* Proporzione esatta per il tuo 652px */
-    height: 40px; /* Proporzione esatta per il tuo 304px */
-    position: absolute;
-    top: 0;
-    left: 0;
-    will-change: transform;
-    z-index: 10;
+.hud-left {
+    left: 20px;
+    align-items: flex-start;
+}
+
+.hud-right {
+    right: 20px;
+    align-items: flex-end;
+}
+
+.hud-box {
+    background: white;
+    padding: 6px 16px;
+    border-radius: 14px;
+    border: 4px solid var(--border-color);
+    font-weight: 800;
+    color: var(--border-color);
+    box-shadow: 4px 4px 0 var(--border-color);
     display: flex;
     align-items: center;
-    justify-content: center;
-    filter: drop-shadow(0px 3px 4px rgba(0,0,0,0.4)); /* Ombra per il 3D */
+    gap: 8px;
+    font-variant-numeric: tabular-nums;
 }
 
-/* La nuova immagine PNG della macchina */
+.track-name {
+    background: var(--yellow);
+    font-size: 18px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.lap-style { font-size: 20px; }
+.timer-style { font-size: 24px; }
+
+
+/* STILE MACCHINE PNG */
+.car {
+    position: absolute;
+    top: 0;   
+    left: 0;  
+    width: 86px;  
+    height: 40px;
+    margin-left: -43px; 
+    margin-top: -20px;  
+    z-index: 5;
+}
+
 .car-sprite {
     width: 100%;
     height: 100%;
-    object-fit: contain; /* Questa è la magia che impedisce deformazioni! */
-    pointer-events: none;
+    object-fit: contain;
+    filter: drop-shadow(4px 4px 0px rgba(44, 62, 80, 0.4));
 }
 
-/* L'etichetta del giocatore (Dovrebbe già essere così) */
 .player-label {
     position: absolute;
     top: -25px;
-    font-size: 14px;
-    font-weight: bold;
-    color: white;
-    text-shadow: 1px 1px 2px black;
-    white-space: nowrap;
-    z-index: 20;
-}
-
-.car.my-car {
-    z-index: 11; /* Sta sopra le altre macchine in caso di scontro */
-}
-
-/* --- DESIGN DELLA FORMULA 1 (Vista dall'alto) --- */
-
-#podium-modal {
-    position: fixed;
-    top: 50%;
     left: 50%;
-    transform: translate(-50%, -50%);
-    background-color: rgba(0,0,0,0.9);
-    padding: 30px 50px;
-    border-radius: 20px;
-    border: 3px solid gold;
-    z-index: 100;
-    text-align: center;
-    box-shadow: 0 0 30px rgba(255, 215, 0, 0.5);
-}
-
-#podium-list {
-    list-style: none;
-    padding: 0;
-    font-size: 24px;
-    text-align: left;
-    margin: 20px 0;
-}
-
-#podium-list li {
-    margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-
-/* Effetto "Texture Ruvida" sopra lo schermo */
-#camera-viewport::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    /* Un gradiente scuro ai bordi e un filtro a grana */
-    background: radial-gradient(circle, transparent 50%, rgba(0,0,0,0.4) 150%),
-                url('data:image/svg+xml,%3Csvg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="noiseFilter"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" stitchTiles="stitch"/%3E%3C/filter%3E%3Crect width="100%25" height="100%25" filter="url(%23noiseFilter)"/%3E%3C/svg%3E');
-    opacity: 0.20; 
-    pointer-events: none; /* Permette di cliccare attraverso il filtro */
-    z-index: 1000; 
-}
-
-/* --- HUD Timer e Countdown --- */
-#hud-timer {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    background: rgba(0, 0, 0, 0.7);
-    color: #fff;
-    padding: 10px 20px;
-    font-size: 28px;
+    transform: translateX(-50%);
+    font-size: 16px;
     font-weight: 900;
-    font-family: monospace;
-    border: 3px solid #f1c40f;
-    border-radius: 10px;
-    z-index: 1500;
-    text-shadow: 2px 2px 5px black;
-    box-shadow: 0 0 15px rgba(241, 196, 15, 0.5);
+    color: white;
+    text-shadow: 2px 2px 0 #2C3E50, -2px -2px 0 #2C3E50, 2px -2px 0 #2C3E50, -2px 2px 0 #2C3E50;
+    pointer-events: none;
+    z-index: 10;
 }
 
-#countdown-overlay {
+/* OVERLAY CONTO ALLA ROVESCIA */
+.overlay {
     position: absolute;
-    top: 0; 
-    left: 0; 
-    width: 100vw; 
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    background: rgba(0, 0, 0, 0.7);
-    z-index: 2000;
-    pointer-events: none; /* Permette di non bloccare i click sotto */
-}
-
-#countdown-track {
-    color: #f1c40f;
-    font-size: 70px;
-    margin: 0;
-    text-transform: uppercase;
-    text-shadow: 4px 4px 15px #000;
-    letter-spacing: 5px;
-}
-
-#countdown-number {
-    color: #e74c3c;
-    font-size: 150px;
+    top: 0; left: 0; width: 100%; height: 100%;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    font-size: 120px;
     font-weight: 900;
-    margin: 0;
-    text-shadow: 5px 5px 20px #000;
-    animation: pulse 1s infinite;
+    color: white;
+    text-shadow: -5px -5px 0 var(--border-color), 5px -5px 0 var(--border-color),
+                 -5px  5px 0 var(--border-color), 5px  5px 0 var(--border-color),
+                  10px 10px 0 var(--border-color);
+    z-index: 200;
+    pointer-events: none;
 }
 
-@keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.2); }
-    100% { transform: scale(1); }
+#countdown-track { font-size: 45px; text-transform: uppercase; color: var(--yellow); margin-bottom: -20px;}
+
+/* MODALI FINE GARA E RECORD */
+.modal {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(44, 62, 80, 0.8); display: flex; justify-content: center; align-items: center; z-index: 3000;
+}
+.modal-content {
+    background: white; border: var(--border-width) solid var(--border-color); border-radius: 20px;
+    padding: 30px; text-align: center; max-width: 550px; width: 90%;
+    box-shadow: 8px 8px 0px var(--border-color); animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    max-height: 90vh; overflow-y: auto;
+}
+
+.btn-green, .btn-red {
+    color: white; border: 4px solid var(--border-color); padding: 12px 20px;
+    border-radius: 12px; font-weight: bold; font-family: 'Fredoka'; font-size: 18px; cursor: pointer;
+    box-shadow: 4px 4px 0 var(--border-color); text-transform: uppercase; width: 100%;
+    transition: transform 0.1s;
+}
+.btn-green { background: var(--green); }
+.btn-red { background: var(--red); }
+.btn-green:active, .btn-red:active { box-shadow: 0 0 0 transparent; transform: translate(4px, 4px); }
+
+@keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* RESPONSIVITÀ PER SCHERMI PICCOLI */
+@media (max-width: 768px) {
+    .hud-panel { top: 10px; gap: 6px; }
+    .hud-left { left: 10px; }
+    .hud-right { right: 10px; }
+    .hud-box { padding: 4px 12px; border-width: 3px; box-shadow: 3px 3px 0 var(--border-color); }
+    .track-name { font-size: 14px; }
+    .lap-style { font-size: 16px; }
+    .timer-style { font-size: 20px; }
+    .overlay { font-size: 70px; }
+    #countdown-track { font-size: 30px; }
 }
