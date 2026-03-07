@@ -382,8 +382,6 @@ function runGameLoop(io, lobbyId) {
     if (!game) return;
 
     const baseSpeed = 18; // Velocità massima su asfalto
-    const carWidth = 86;
-    const carHeight = 40;
     const currentTrackMap = game.tracks[game.currentTrackIndex].map;
 
     game.loopInterval = setInterval(() => {
@@ -441,12 +439,23 @@ function runGameLoop(io, lobbyId) {
 
             everyoneFinished = false;
 
+            // --- HITBOX SIMMETRICA CENTRATA ---
+            // Usiamo dimensioni un po' più piccole dell'immagine reale (86x40)
+            // per rendere il gioco più fluido e perdonare i piccoli sfioramenti
+            const hitBoxWidth = 50;
+            const hitBoxHeight = 24;
+
+            let left = pState.x - (hitBoxWidth / 2);
+            let right = pState.x + (hitBoxWidth / 2);
+            let top = pState.y - (hitBoxHeight / 2);
+            let bottom = pState.y + (hitBoxHeight / 2);
+
             // 1. DETERMINA LA SUPERFICIE ATTUALE PER CALCOLARE LA VELOCITÀ
             let currentPoints = [
-                { x: pState.x, y: pState.y },
-                { x: pState.x + carWidth, y: pState.y },
-                { x: pState.x, y: pState.y + carHeight },
-                { x: pState.x + carWidth, y: pState.y + carHeight }
+                { x: left, y: top },
+                { x: right, y: top },
+                { x: left, y: bottom },
+                { x: right, y: bottom }
             ];
 
             let speedMultiplier = 1.0; // Di base 100% della velocità
@@ -461,7 +470,6 @@ function runGameLoop(io, lobbyId) {
                         // Se tocca la ghiaia (4), la velocità scende al 45%
                         speedMultiplier = Math.min(speedMultiplier, 0.45);
                     }
-                    // Non controlliamo più lo 0 qui, perché non ci si può più entrare!
                 }
             }
 
@@ -479,12 +487,18 @@ function runGameLoop(io, lobbyId) {
             let nextX = pState.x + dx;
             let nextY = pState.y + dy;
 
+            // Calcola i 4 angoli della PROSSIMA posizione
+            let nextLeft = nextX - (hitBoxWidth / 2);
+            let nextRight = nextX + (hitBoxWidth / 2);
+            let nextTop = nextY - (hitBoxHeight / 2);
+            let nextBottom = nextY + (hitBoxHeight / 2);
+
             // 2. CONTROLLA COSA C'È NELLA PROSSIMA POSIZIONE
             let nextPoints = [
-                { x: nextX, y: nextY },
-                { x: nextX + carWidth, y: nextY },
-                { x: nextX, y: nextY + carHeight },
-                { x: nextX + carWidth, y: nextY + carHeight }
+                { x: nextLeft, y: nextTop },
+                { x: nextRight, y: nextTop },
+                { x: nextLeft, y: nextBottom },
+                { x: nextRight, y: nextBottom }
             ];
 
             let canMove = true;
@@ -505,7 +519,6 @@ function runGameLoop(io, lobbyId) {
                 let tile = currentTrackMap[row][col];
 
                 // MURI (5) ED ERBA (0): Blocca il movimento!
-                // Ora la macchina "sbatte" contro l'erba o i muri
                 if (tile === 0 || tile === 5) {
                     canMove = false;
                     break;

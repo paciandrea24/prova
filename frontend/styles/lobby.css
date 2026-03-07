@@ -30,11 +30,25 @@ body {
     box-sizing: border-box;
 }
 
-/* Nasconde la scrollbar di default per la pagina, lasciandola nei pannelli */
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #bdc3c7; border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: var(--border-color); }
+/* --- SCROLLBAR PERSONALIZZATA (Stile Gartic) --- */
+::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+}
+::-webkit-scrollbar-track {
+    background: #ecf0f1;
+    border-radius: 10px;
+    border: 3px solid var(--border-color);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--yellow);
+    border-radius: 10px;
+    border: 3px solid var(--border-color);
+    cursor: pointer;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--green);
+}
 
 /* --- GRIGLIA PRINCIPALE --- */
 .container {
@@ -243,10 +257,20 @@ body {
     padding: 15px 20px;
     flex: 1;
     overflow-y: auto;
-    
-    /* Aggiungi queste due righe per risolvere la sovrapposizione! */
-    margin-bottom: 20px; 
+    margin-bottom: 20px;
     box-shadow: 4px 4px 0px var(--border-color);
+    text-align: left; /* <-- Assicura che il testo parta da sinistra */
+}
+
+/* Nuova regola per il titolo dei Settings */
+.settings-box h4 {
+    margin-top: 0; /* <-- Lo tira su rimuovendo il margine di default */
+    margin-bottom: 15px;
+    font-size: 20px;
+    color: var(--border-color);
+    text-transform: uppercase;
+    border-bottom: 3px dashed #bdc3c7; /* Riga tratteggiata stile fumetto */
+    padding-bottom: 10px;
 }
 
 .setting-row {
