@@ -168,7 +168,7 @@ body {
 }
 .modal-content {
     background: white; border: var(--border-width) solid var(--border-color); border-radius: 20px;
-    padding: 30px; text-align: center; max-width: 550px; width: 90%;
+    padding: 30px 10px 30px 30px; text-align: center; max-width: 550px; width: 90%;
     box-shadow: 8px 8px 0px var(--border-color); animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     max-height: 90vh; overflow-y: auto;
 }
