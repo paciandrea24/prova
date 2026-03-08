@@ -205,8 +205,23 @@ document.addEventListener('DOMContentLoaded', () => {
             if (carEl) {
                 carEl.style.transform = `translate(${visual.x}px, ${visual.y}px) rotate(${visual.angle}deg)`;
 
+                // 1. Contro-rotazione del nome (già presente)
                 const label = carEl.querySelector('.player-label');
                 if (label) label.style.transform = `rotate(${-visual.angle}deg)`;
+
+                // 2. NUOVO CODICE: Ribalta l'immagine se va verso sinistra!
+                const sprite = carEl.querySelector('.car-sprite');
+                if (sprite) {
+                    // Normalizza l'angolo per averlo sempre tra 0 e 360
+                    let normAngle = ((visual.angle % 360) + 360) % 360;
+
+                    // Se l'angolo va verso il quadrante sinistro, specchia la grafica
+                    if (normAngle > 90 && normAngle < 270) {
+                        sprite.style.transform = 'scaleY(-1)';
+                    } else {
+                        sprite.style.transform = 'scaleY(1)'; // Grafica normale
+                    }
+                }
 
                 if (target.finished) carEl.style.opacity = '0.5';
 
@@ -216,7 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (viewport) {
                         const vWidth = viewport.clientWidth;
                         const vHeight = viewport.clientHeight;
-                        const cameraX = -(visual.x + 43 - vWidth / 2);
+                        const cameraX = -(visual.x + 49 - vWidth / 2);
                         const cameraY = -(visual.y + 20 - vHeight / 2);
                         arena.style.transform = `translate(${cameraX}px, ${cameraY}px)`;
                     }

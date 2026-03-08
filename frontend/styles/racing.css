@@ -117,9 +117,9 @@ body {
     position: absolute;
     top: 0;   
     left: 0;  
-    width: 86px;  
+    width: 98px;         /* <-- Nuova larghezza proporzionata (426x174) */
     height: 40px;
-    margin-left: -43px; 
+    margin-left: -49px;  /* <-- Esattamente la metà di 98 per il perno centrale */
     margin-top: -20px;  
     z-index: 5;
 }
