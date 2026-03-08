@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -426,6 +426,609 @@
                 }
             } catch (err) {
                 alert('❌ Errore di importazione. Controlla la console per i dettagli.');
+                console.error(err);
+            }
+        }
+
+        initMap();
+    </script>
+</body>
+
+</html> -->
+
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Racing Game - Map Editor</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #2c3e50;
+            color: white;
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* SIDEBAR (Strumenti) */
+        .sidebar {
+            width: 380px;
+            background: #34495e;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            box-shadow: 4px 0 10px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+            box-sizing: border-box;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        h2 {
+            margin: 0;
+            color: #f1c40f;
+            text-align: center;
+            text-transform: uppercase;
+            border-bottom: 2px dashed #7f8c8d;
+            padding-bottom: 10px;
+            flex-shrink: 0;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            flex-shrink: 0;
+        }
+
+        label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #bdc3c7;
+        }
+
+        input[type="text"],
+        input[type="number"] {
+            padding: 8px;
+            border-radius: 6px;
+            border: 2px solid #bdc3c7;
+            background: #ecf0f1;
+            font-weight: bold;
+        }
+
+        /* PALETTE ATTREZZI */
+        .palette {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            flex-shrink: 0;
+            margin-bottom: 10px;
+        }
+
+        .tool-btn {
+            padding: 10px;
+            border: 3px solid transparent;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: 0.1s;
+            font-size: 13px;
+        }
+
+        .tool-btn.active {
+            border-color: white;
+            transform: scale(1.05);
+            box-shadow: 0 4px 0 rgba(0, 0, 0, 0.3);
+            z-index: 2;
+        }
+
+        /* Colori dei Tile Base */
+        #t-0 {
+            background: #2ECC71;
+        }
+
+        /* Erba */
+        #t-1 {
+            background: #bdc3c7;
+        }
+
+        /* Asfalto */
+        #t-2 {
+            background: #ecf0f1;
+            border: 3px dashed #2c3e50;
+        }
+
+        /* Traguardo */
+        #t-6 {
+            background: #F1C40F;
+        }
+
+        /* Settore 1 */
+        #t-3 {
+            background: #E67E22;
+        }
+
+        /* Settore 2 */
+        #t-4 {
+            background: #795548;
+            color: white;
+        }
+
+        /* Ghiaia (aggiornato a marrone) */
+        #t-5 {
+            background: #2c3e50;
+            border: 2px solid #bdc3c7;
+            color: white;
+        }
+
+        /* Muro */
+
+        #t-spawn {
+            background: #e74c3c;
+            color: white;
+            grid-column: span 2;
+            justify-content: center;
+        }
+
+        /* Colori dei Tile Nuovi (Cordoli) */
+        .curb-btn {
+            background: #bdc3c7;
+            border: 2px dashed #e74c3c;
+        }
+
+        button.action-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            margin-top: 10px;
+            flex-shrink: 0;
+        }
+
+        button.action-btn:hover {
+            background: #2980b9;
+        }
+
+        button.action-btn.green {
+            background: #2ecc71;
+        }
+
+        /* BOX DI TESTO ENORME */
+        textarea {
+            width: 100%;
+            flex-grow: 1;
+            min-height: 120px;
+            font-family: monospace;
+            font-size: 11px;
+            padding: 10px;
+            resize: none;
+            border-radius: 6px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            border: 3px solid #bdc3c7;
+        }
+
+        textarea:focus {
+            border-color: #3498db;
+            outline: none;
+        }
+
+        /* AREA CANVAS - MODIFICATA PER LO ZOOM E LO SCROLL */
+        .workspace {
+            flex: 1;
+            background: #1a252f;
+            padding: 40px;
+            box-sizing: border-box;
+            overflow: auto;
+            /* Aggiunge barre di scorrimento se la mappa è enorme */
+        }
+
+        canvas {
+            background: #2ECC71;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            image-rendering: pixelated;
+            display: block;
+            margin: 0 auto;
+            /* Centra la mappa orizzontalmente nello spazio */
+            transform-origin: top left;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="sidebar">
+        <h2>🏎️ Map Editor</h2>
+
+        <div class="control-group">
+            <label>Nome Tracciato</label>
+            <input type="text" id="track-name" value="Custom Circuit">
+        </div>
+
+        <div class="control-group">
+            <label>Angolo di Spawn (Gradi)</label>
+            <input type="number" id="spawn-angle" value="0" placeholder="es: 0, 90, 180, -90">
+        </div>
+
+        <div class="control-group" style="margin-top: 5px;">
+            <label>Zoom (O usa Ctrl + Rotellina)</label>
+            <div style="display: flex; gap: 5px;">
+                <button class="action-btn" style="margin: 0; padding: 8px; flex: 1;"
+                    onclick="changeZoom(-0.2)">➖</button>
+                <button class="action-btn" style="margin: 0; padding: 8px; flex: 1;" onclick="resetZoom()"
+                    id="zoom-lbl">100%</button>
+                <button class="action-btn" style="margin: 0; padding: 8px; flex: 1;"
+                    onclick="changeZoom(0.2)">➕</button>
+            </div>
+        </div>
+
+        <label style="margin-top: 10px;">Terreno Base & Logica:</label>
+        <div class="palette">
+            <div class="tool-btn active" id="t-1" onclick="selectTool(1)">⬜ Asfalto Base</div>
+            <div class="tool-btn" id="t-0" onclick="selectTool(0)">🟩 Erba</div>
+            <div class="tool-btn" id="t-4" onclick="selectTool(4)">🟫 Ghiaia</div>
+            <div class="tool-btn" id="t-5" onclick="selectTool(5)">⬛ Muro</div>
+            <div class="tool-btn" id="t-6" onclick="selectTool(6)">🟨 Settore 1</div>
+            <div class="tool-btn" id="t-3" onclick="selectTool(3)">🟧 Settore 2</div>
+            <div class="tool-btn" id="t-2" onclick="selectTool(2)">🏁 Traguardo</div>
+            <div class="tool-btn" id="t-spawn" onclick="selectTool('spawn')">📍 Posiziona Auto</div>
+        </div>
+
+        <label>Cordoli (Rettilinei):</label>
+        <div class="palette">
+            <div class="tool-btn curb-btn" id="t-11" onclick="selectTool(11)">⬆️ Cordolo Su</div>
+            <div class="tool-btn curb-btn" id="t-13" onclick="selectTool(13)">⬇️ Cordolo Giù</div>
+            <div class="tool-btn curb-btn" id="t-14" onclick="selectTool(14)">⬅️ Cordolo Sx</div>
+            <div class="tool-btn curb-btn" id="t-12" onclick="selectTool(12)">➡️ Cordolo Dx</div>
+        </div>
+
+        <label>Cordoli (Curve Esterne):</label>
+        <div class="palette">
+            <div class="tool-btn curb-btn" id="t-21" onclick="selectTool(21)">▛ Curva 1</div>
+            <div class="tool-btn curb-btn" id="t-22" onclick="selectTool(22)">▜ Curva 2</div>
+            <div class="tool-btn curb-btn" id="t-23" onclick="selectTool(23)">▙ Curva 3</div>
+            <div class="tool-btn curb-btn" id="t-24" onclick="selectTool(24)">▟ Curva 4</div>
+        </div>
+
+        <label>Cordoli (Curve Interne):</label>
+        <div class="palette">
+            <div class="tool-btn curb-btn" id="t-31" onclick="selectTool(31)">◰ Int 1 (Alto-Sx)</div>
+            <div class="tool-btn curb-btn" id="t-32" onclick="selectTool(32)">◳ Int 2 (Alto-Dx)</div>
+            <div class="tool-btn curb-btn" id="t-34" onclick="selectTool(34)">◱ Int 4 (Basso-Sx)</div>
+            <div class="tool-btn curb-btn" id="t-33" onclick="selectTool(33)">◲ Int 3 (Basso-Dx)</div>
+        </div>
+
+        <div class="control-group" style="margin-top: 5px;">
+            <label>Dimensione Mappa (Col x Righe)</label>
+            <div style="display: flex; gap: 10px;">
+                <input type="number" id="grid-cols" value="60" style="width: 100%;">
+                <input type="number" id="grid-rows" value="40" style="width: 100%;">
+            </div>
+            <button class="action-btn" style="padding: 8px; background: #e67e22;" onclick="resizeMap()">Applica
+                Dimensioni</button>
+        </div>
+
+        <button class="action-btn green" onclick="exportMap()">📥 Genera Codice</button>
+        <textarea id="output-code" spellcheck="false"
+            placeholder="Il codice apparirà qui... o incollalo per importarlo!"></textarea>
+        <button class="action-btn" onclick="importMap()" style="padding: 8px; margin-bottom: 20px;">📤 Importa
+            Mappa</button>
+    </div>
+
+    <div class="workspace" id="workspace">
+        <canvas id="mapCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('mapCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let ROWS = 40;
+        let COLS = 60;
+        const TILE_SIZE = 20;
+
+        let mapData = [];
+        let currentTool = 1;
+        let isDrawing = false;
+
+        let spawnTileX = 10;
+        let spawnTileY = 10;
+
+        // ZOOM LOGIC
+        let currentZoom = 1;
+
+        const colors = {
+            0: '#2ECC71', // Erba
+            1: '#bdc3c7', // Asfalto
+            2: '#ecf0f1', // Traguardo
+            3: '#E67E22', // Settore 2
+            4: '#795548', // Ghiaia (Ora color terra/marrone)
+            5: '#2c3e50', // Muro
+            6: '#F1C40F', // Settore 1
+            11: '#bdc3c7', 12: '#bdc3c7', 13: '#bdc3c7', 14: '#bdc3c7',
+            21: '#bdc3c7', 22: '#bdc3c7', 23: '#bdc3c7', 24: '#bdc3c7',
+            31: '#bdc3c7', 32: '#bdc3c7', 33: '#bdc3c7', 34: '#bdc3c7'
+        };
+
+        function initMap() {
+            mapData = Array(ROWS).fill().map(() => Array(COLS).fill(0));
+            updateCanvasSize();
+            drawMap();
+        }
+
+        // Funzione ridimensiona intelligente (non cancella il vecchio disegno!)
+        function resizeMap() {
+            let oldData = mapData;
+            let oldRows = mapData.length;
+            let oldCols = mapData[0].length;
+
+            COLS = parseInt(document.getElementById('grid-cols').value);
+            ROWS = parseInt(document.getElementById('grid-rows').value);
+
+            // Crea nuova griglia vuota
+            mapData = Array(ROWS).fill().map(() => Array(COLS).fill(0));
+
+            // Ricopia la vecchia mappa
+            for (let r = 0; r < Math.min(oldRows, ROWS); r++) {
+                for (let c = 0; c < Math.min(oldCols, COLS); c++) {
+                    mapData[r][c] = oldData[r][c];
+                }
+            }
+
+            updateCanvasSize();
+            drawMap();
+        }
+
+        // AGGIORNAMENTO DIMENSIONI E ZOOM
+        function updateCanvasSize() {
+            // Le dimensioni interne (pixel veri) restano matematiche
+            canvas.width = COLS * TILE_SIZE;
+            canvas.height = ROWS * TILE_SIZE;
+
+            // Le dimensioni CSS determinano lo zoom visivo
+            canvas.style.width = (canvas.width * currentZoom) + 'px';
+            canvas.style.height = (canvas.height * currentZoom) + 'px';
+        }
+
+        function changeZoom(delta) {
+            currentZoom += delta;
+            if (currentZoom < 0.2) currentZoom = 0.2; // Zoom Minimo 20%
+            if (currentZoom > 5) currentZoom = 5;     // Zoom Massimo 500%
+
+            document.getElementById('zoom-lbl').textContent = Math.round(currentZoom * 100) + '%';
+            updateCanvasSize();
+            drawMap();
+        }
+
+        function resetZoom() {
+            currentZoom = 1;
+            document.getElementById('zoom-lbl').textContent = '100%';
+            updateCanvasSize();
+            drawMap();
+        }
+
+        // Ascolta la rotellina del mouse nel workspace
+        const workspace = document.getElementById('workspace');
+        workspace.addEventListener('wheel', (e) => {
+            // Se preme Ctrl o Cmd, fa lo Zoom, altrimenti scorre la pagina normalmente
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault(); // Blocca lo zoom di tutto il sito web del browser
+                const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                changeZoom(delta);
+            }
+        }, { passive: false });
+
+        // ==========================================
+        // NUOVO: GESTIONE SPOSTAMENTO TELECAMERA CON WASD
+        // ==========================================
+        const keys = { w: false, a: false, s: false, d: false };
+        const panSpeed = 15; // Velocità in pixel dello spostamento
+
+        window.addEventListener('keydown', (e) => {
+            // Evita che premendo W/A/S/D si attivi la telecamera se stai scrivendo nel nome o nel codice
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+            const key = e.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) {
+                keys[key] = true;
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) {
+                keys[key] = false;
+            }
+        });
+
+        function panLoop() {
+            if (keys.w) workspace.scrollTop -= panSpeed;
+            if (keys.s) workspace.scrollTop += panSpeed;
+            if (keys.a) workspace.scrollLeft -= panSpeed;
+            if (keys.d) workspace.scrollLeft += panSpeed;
+
+            requestAnimationFrame(panLoop);
+        }
+        // Avvia il loop di scorrimento appena si apre l'editor
+        requestAnimationFrame(panLoop);
+        // ==========================================
+
+
+        function selectTool(toolId) {
+            currentTool = toolId;
+            document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`t-${toolId}`).classList.add('active');
+        }
+
+        function drawMap() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    let tile = mapData[r][c];
+                    const x = c * TILE_SIZE;
+                    const y = r * TILE_SIZE;
+
+                    // Colore base
+                    ctx.fillStyle = colors[tile] || colors[0];
+                    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+
+                    // Bordo griglia
+                    ctx.strokeStyle = 'rgba(0,0,0,0.05)';
+                    ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+
+                    if (tile === 2) {
+                        ctx.fillStyle = '#2c3e50';
+                        ctx.fillRect(x, y, TILE_SIZE / 2, TILE_SIZE / 2);
+                        ctx.fillRect(x + TILE_SIZE / 2, y + TILE_SIZE / 2, TILE_SIZE / 2, TILE_SIZE / 2);
+                    } else if (tile === 4) {
+                        ctx.fillStyle = '#795548'; // Ghiaia base
+                        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                        ctx.fillStyle = '#5D4037'; // Puntini più scuri
+                        for (let i = 0; i < 5; i++) {
+                            ctx.fillRect(x + Math.random() * (TILE_SIZE - 2), y + Math.random() * (TILE_SIZE - 2), 2, 2);
+                        }
+                    }
+
+                    // Indicatori visuali per CORDOLI (Rosso)
+                    const curbThick = 4;
+                    ctx.fillStyle = '#e74c3c';
+
+                    if (tile === 11) ctx.fillRect(x, y, TILE_SIZE, curbThick);
+                    if (tile === 12) ctx.fillRect(x + TILE_SIZE - curbThick, y, curbThick, TILE_SIZE);
+                    if (tile === 13) ctx.fillRect(x, y + TILE_SIZE - curbThick, TILE_SIZE, curbThick);
+                    if (tile === 14) ctx.fillRect(x, y, curbThick, TILE_SIZE);
+
+                    if (tile === 21) { ctx.fillRect(x, y, TILE_SIZE, curbThick); ctx.fillRect(x, y, curbThick, TILE_SIZE); }
+                    if (tile === 22) { ctx.fillRect(x, y, TILE_SIZE, curbThick); ctx.fillRect(x + TILE_SIZE - curbThick, y, curbThick, TILE_SIZE); }
+                    if (tile === 23) { ctx.fillRect(x, y + TILE_SIZE - curbThick, TILE_SIZE, curbThick); ctx.fillRect(x, y, curbThick, TILE_SIZE); }
+                    if (tile === 24) { ctx.fillRect(x, y + TILE_SIZE - curbThick, TILE_SIZE, curbThick); ctx.fillRect(x + TILE_SIZE - curbThick, y, curbThick, TILE_SIZE); }
+
+                    // Indicatori visuali per Curve Interne
+                    const innerSize = 6;
+                    if (tile === 31) ctx.fillRect(x, y, innerSize, innerSize);
+                    if (tile === 32) ctx.fillRect(x + TILE_SIZE - innerSize, y, innerSize, innerSize);
+                    if (tile === 33) ctx.fillRect(x + TILE_SIZE - innerSize, y + TILE_SIZE - innerSize, innerSize, innerSize);
+                    if (tile === 34) ctx.fillRect(x, y + TILE_SIZE - innerSize, innerSize, innerSize);
+                }
+            }
+
+            // Disegna punto di spawn
+            ctx.fillStyle = '#e74c3c';
+            ctx.beginPath();
+            ctx.arc(spawnTileX * TILE_SIZE + TILE_SIZE / 2, spawnTileY * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE / 2 - 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = "white";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        function handlePointer(e) {
+            const rect = canvas.getBoundingClientRect();
+            // LA MAGIA: scaleX / scaleY fanno sì che il tuo mouse funzioni perfettamente a prescindere dal livello di Zoom!
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            const col = Math.floor(x / TILE_SIZE);
+            const row = Math.floor(y / TILE_SIZE);
+
+            if (row >= 0 && row < ROWS && col >= 0 && col < COLS) {
+                if (currentTool === 'spawn') {
+                    if (e.type === 'mousedown') {
+                        spawnTileX = col;
+                        spawnTileY = row;
+                        drawMap();
+                    }
+                } else {
+                    if (isDrawing && mapData[row][col] !== currentTool) {
+                        mapData[row][col] = currentTool;
+                        drawMap();
+                    }
+                }
+            }
+        }
+
+        canvas.addEventListener('mousedown', (e) => { isDrawing = true; handlePointer(e); });
+        canvas.addEventListener('mousemove', (e) => { if (isDrawing) handlePointer(e); });
+        window.addEventListener('mouseup', () => { isDrawing = false; });
+
+        function exportMap() {
+            const trackName = document.getElementById('track-name').value || 'CustomMap';
+            const cleanVarName = trackName.replace(/[^a-zA-Z0-9]/g, '');
+            const angle = parseInt(document.getElementById('spawn-angle').value) || 0;
+
+            const realSpawnX = spawnTileX * 80;
+            const realSpawnY = spawnTileY * 80;
+
+            let out = `const ${cleanVarName}Map = [\n`;
+            for (let r = 0; r < ROWS; r++) {
+                const rowStr = mapData[r].map(num => num.toString().padStart(2, ' ')).join(', ');
+                out += `  /* ${r.toString().padStart(2, '0')} */[${rowStr}]`;
+                out += (r < ROWS - 1) ? ",\n" : "\n";
+            }
+            out += `];\n\n`;
+
+            out += `    {\n`;
+            out += `        name: "${trackName}",\n`;
+            out += `        map: ${cleanVarName}Map,\n`;
+            out += `        spawnX: ${realSpawnX},\n`;
+            out += `        spawnY: ${realSpawnY},\n`;
+            out += `        angle: ${angle}\n`;
+            out += `    }`;
+
+            document.getElementById('output-code').value = out;
+        }
+
+        function importMap() {
+            try {
+                let input = document.getElementById('output-code').value;
+                const startIndex = input.indexOf('[');
+                const endIndex = input.lastIndexOf(']');
+
+                if (startIndex === -1 || endIndex === -1) {
+                    alert('Errore: Impossibile trovare un array [ ... ] nel testo incollato.');
+                    return;
+                }
+
+                let arrayStr = input.substring(startIndex, endIndex + 1);
+                arrayStr = arrayStr.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '');
+                arrayStr = arrayStr.replace(/,\s*]/g, ']');
+
+                const importedMap = eval('(' + arrayStr + ')');
+
+                if (Array.isArray(importedMap) && Array.isArray(importedMap[0])) {
+                    ROWS = importedMap.length;
+                    COLS = importedMap[0].length;
+                    document.getElementById('grid-rows').value = ROWS;
+                    document.getElementById('grid-cols').value = COLS;
+
+                    mapData = importedMap;
+                    updateCanvasSize(); // Aggiorna scala dopo l'import
+                    drawMap();
+
+                    document.getElementById('output-code').value = '';
+                    alert('✅ Mappa Importata con successo!');
+                } else {
+                    alert('Formato array non valido.');
+                }
+            } catch (err) {
+                alert('❌ Errore di importazione. Controlla la console.');
                 console.error(err);
             }
         }

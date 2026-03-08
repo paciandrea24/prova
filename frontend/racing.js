@@ -21,6 +21,39 @@ document.addEventListener('DOMContentLoaded', () => {
     // Stato locale degli input per non spammare il server inutilmente
     const inputs = { w: false, a: false, s: false, d: false };
 
+    // --- NUOVO: PRECARICAMENTO IMMAGINI MAPPA ---
+    // Definisci gli ID che userai nelle matrici (es. 11, 12 per i rettilinei, 21, 22 per le curve)
+    const trackImages = {
+        4: new Image(),
+        11: new Image(),
+        12: new Image(),
+        13: new Image(),
+        14: new Image(),
+        21: new Image(),
+        22: new Image(),
+        23: new Image(),
+        24: new Image(),
+        31: new Image(),
+        32: new Image(),
+        33: new Image(),
+        34: new Image()
+    };
+
+    // Inserisci qui il nome esatto dei tuoi file PNG
+    trackImages[4].src = 'assets/gravel.png';
+    trackImages[11].src = 'assets/rettilineo_top.png';
+    trackImages[12].src = 'assets/rettilineo_right.png';
+    trackImages[13].src = 'assets/rettilineo_bottom.png';
+    trackImages[14].src = 'assets/rettilineo_left.png';
+    trackImages[21].src = 'assets/curva_1.png';
+    trackImages[22].src = 'assets/curva_2.png';
+    trackImages[23].src = 'assets/curva_3.png';
+    trackImages[24].src = 'assets/curva_4.png';
+    trackImages[31].src = 'assets/curva_interna_1.png';
+    trackImages[32].src = 'assets/curva_interna_2.png';
+    trackImages[33].src = 'assets/curva_interna_3.png';
+    trackImages[34].src = 'assets/curva_interna_4.png';
+
 
     // Costruisce l'arena
     socket.on('racingSetup', (data) => {
@@ -113,7 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     else if (rand === 50) ctx.fillText('🌼', centerX, centerY);
 
                 } else if (tile === 1) {
-                    ctx.fillStyle = '#bdc3c7';
+                    ctx.fillStyle = '#405158';
                     ctx.fillRect(x, y, tileSize, tileSize);
                 } else if (tile === 2) {
                     ctx.fillStyle = '#bdc3c7';
@@ -127,18 +160,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (tile === 3 || tile === 6) {
                     ctx.fillStyle = (col + row) % 2 === 0 ? '#F1C40F' : '#2C3E50';
                     ctx.fillRect(x, y, tileSize, tileSize);
-                } else if (tile === 4) {
-                    ctx.fillStyle = '#E67E22';
-                    ctx.fillRect(x, y, tileSize, tileSize);
-                    ctx.fillStyle = '#D35400';
-                    for (let i = 0; i < 12; i++) {
-                        let rx = x + Math.random() * (tileSize - 4);
-                        let ry = y + Math.random() * (tileSize - 4);
-                        ctx.fillRect(rx, ry, 4, 4);
-                    }
                 } else if (tile === 5) {
                     ctx.fillStyle = '#2c3e50';
                     ctx.fillRect(x, y, tileSize, tileSize);
+
+                } else if (trackImages[tile]) {
+                    // Se l'immagine è associata a questo numero, disegnala!
+                    if (trackImages[tile].complete) {
+                        ctx.drawImage(trackImages[tile], x, y, tileSize, tileSize);
+                    } else {
+                        // Se l'immagine sta ancora caricando, aspetta e poi disegnala
+                        trackImages[tile].onload = () => {
+                            ctx.drawImage(trackImages[tile], x, y, tileSize, tileSize);
+                        };
+                    }
                 }
             }
         }
