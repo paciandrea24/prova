@@ -3078,6 +3078,178 @@ const ITALIAN_QUESTIONS = [
         correct_answer: "Pushare",
         incorrect_answers: ["Tulodiciare", "DevFestare", "Caffettare"]
     },
+    // GEOGRAFIA
+    {
+        category: "Geografia", type: "multiple", difficulty: "easy",
+        question: "Qual è la capitale dell'Australia?",
+        correct_answer: "Canberra",
+        incorrect_answers: ["Sydney", "Melbourne", "Brisbane"],
+        imageSearch: "Canberra Australia"
+    },
+    {
+        category: "Geografia", type: "multiple", difficulty: "easy",
+        question: "Qual è il fiume più lungo d'Italia?",
+        correct_answer: "Po",
+        incorrect_answers: ["Tevere", "Arno", "Adige"],
+        imageSearch: "Fiume Po"
+    },
+    {
+        category: "Geografia", type: "multiple", difficulty: "medium",
+        question: "In quale stato si trova il monte Kilimangiaro?",
+        correct_answer: "Tanzania",
+        incorrect_answers: ["Kenya", "Sudafrica", "Uganda"],
+        imageSearch: "Monte Kilimangiaro"
+    },
+    {
+        category: "Geografia", type: "multiple", difficulty: "medium",
+        question: "Qual è l'oceano più grande del mondo?",
+        correct_answer: "Oceano Pacifico",
+        incorrect_answers: ["Oceano Atlantico", "Oceano Indiano", "Oceano Artico"],
+        imageSearch: "Oceano Pacifico"
+    },
+    {
+        category: "Geografia", type: "multiple", difficulty: "hard",
+        question: "Qual è il paese più piccolo del mondo per superficie?",
+        correct_answer: "Città del Vaticano",
+        incorrect_answers: ["Monaco", "Nauru", "San Marino"],
+        imageSearch: "Città del Vaticano"
+    },
+
+    // STORIA
+    {
+        category: "Storia", type: "multiple", difficulty: "easy",
+        question: "In che anno Cristoforo Colombo ha scoperto l'America?",
+        correct_answer: "1492",
+        incorrect_answers: ["1482", "1502", "1453"],
+        imageSearch: "Cristoforo Colombo"
+    },
+    {
+        category: "Storia", type: "multiple", difficulty: "medium",
+        question: "In che anno è caduto il Muro di Berlino?",
+        correct_answer: "1989",
+        incorrect_answers: ["1991", "1987", "1990"],
+        imageSearch: "Muro di Berlino 1989"
+    },
+    {
+        category: "Storia", type: "multiple", difficulty: "hard",
+        question: "Quale imperatore romano nominò il suo cavallo senatore?",
+        correct_answer: "Caligola",
+        incorrect_answers: ["Nerone", "Commodo", "Domiziano"],
+        imageSearch: "Busto Caligola"
+    },
+    {
+        category: "Storia", type: "multiple", difficulty: "medium",
+        question: "Chi è stato il primo Presidente della Repubblica Italiana?",
+        correct_answer: "Enrico De Nicola",
+        incorrect_answers: ["Luigi Einaudi", "Sandro Pertini", "Giovanni Leone"],
+        imageSearch: "Enrico De Nicola"
+    },
+
+    // SCIENZA E NATURA
+    {
+        category: "Scienza", type: "multiple", difficulty: "easy",
+        question: "Qual è il pianeta più grande del sistema solare?",
+        correct_answer: "Giove",
+        incorrect_answers: ["Saturno", "Marte", "Terra"],
+        imageSearch: "Pianeta Giove"
+    },
+    {
+        category: "Scienza", type: "multiple", difficulty: "medium",
+        question: "Quale elemento chimico ha come simbolo 'O'?",
+        correct_answer: "Ossigeno",
+        incorrect_answers: ["Oro", "Osmio", "Oganessio"],
+        imageSearch: "Ossigeno molecola"
+    },
+    {
+        category: "Scienza", type: "multiple", difficulty: "hard",
+        question: "Quanti cromosomi ha il corpo umano in una cellula somatica normale?",
+        correct_answer: "46",
+        incorrect_answers: ["44", "48", "42"],
+        imageSearch: "Cromosomi umani"
+    },
+    {
+        category: "Scienza", type: "multiple", difficulty: "medium",
+        question: "Qual è il materiale naturale più duro sulla Terra?",
+        correct_answer: "Diamante",
+        incorrect_answers: ["Grafene", "Titanio", "Quarzo"],
+        imageSearch: "Diamante grezzo"
+    },
+
+    // ARTE E LETTERATURA
+    {
+        category: "Arte", type: "multiple", difficulty: "easy",
+        question: "Chi ha dipinto la 'Notte Stellata'?",
+        correct_answer: "Vincent van Gogh",
+        incorrect_answers: ["Pablo Picasso", "Claude Monet", "Leonardo da Vinci"],
+        imageSearch: "Notte Stellata van Gogh"
+    },
+    {
+        category: "Letteratura", type: "multiple", difficulty: "easy",
+        question: "Chi ha scritto 'La Divina Commedia'?",
+        correct_answer: "Dante Alighieri",
+        incorrect_answers: ["Giovanni Boccaccio", "Francesco Petrarca", "Ludovico Ariosto"],
+        imageSearch: "Dante Alighieri ritratto"
+    },
+    {
+        category: "Letteratura", type: "multiple", difficulty: "medium",
+        question: "Come si chiama il burattino di legno creato da Collodi?",
+        correct_answer: "Pinocchio",
+        incorrect_answers: ["Geppetto", "Lucignolo", "Mangiafuoco"],
+        imageSearch: "Pinocchio"
+    },
+
+    // CULTURA POP E INTRATTENIMENTO
+    {
+        category: "Intrattenimento", type: "multiple", difficulty: "easy",
+        question: "In quale universo immaginario è ambientato 'Il Trono di Spade'?",
+        correct_answer: "Westeros",
+        incorrect_answers: ["La Terra di Mezzo", "Narnia", "Hogwarts"],
+        imageSearch: "Westeros map"
+    },
+    {
+        category: "Intrattenimento", type: "multiple", difficulty: "medium",
+        question: "Chi ha diretto il film 'Pulp Fiction'?",
+        correct_answer: "Quentin Tarantino",
+        incorrect_answers: ["Martin Scorsese", "Steven Spielberg", "Christopher Nolan"],
+        imageSearch: "Quentin Tarantino"
+    },
+    {
+        category: "Videogiochi", type: "multiple", difficulty: "easy",
+        question: "Come si chiama l'idraulico fratello di Super Mario?",
+        correct_answer: "Luigi",
+        incorrect_answers: ["Wario", "Toad", "Yoshi"],
+        imageSearch: "Luigi Nintendo"
+    },
+    {
+        category: "Videogiochi", type: "multiple", difficulty: "medium",
+        question: "Quale console è stata la più venduta di tutti i tempi?",
+        correct_answer: "PlayStation 2",
+        incorrect_answers: ["Nintendo DS", "Nintendo Switch", "PlayStation 4"],
+        imageSearch: "PlayStation 2 console"
+    },
+
+    // SPORT
+    {
+        category: "Sport", type: "multiple", difficulty: "easy",
+        question: "Quanti giocatori compongono una squadra di calcio in campo?",
+        correct_answer: "11",
+        incorrect_answers: ["10", "12", "9"],
+        imageSearch: "Campo da calcio"
+    },
+    {
+        category: "Sport", type: "multiple", difficulty: "medium",
+        question: "In quale sport eccelleva Michael Jordan?",
+        correct_answer: "Pallacanestro",
+        incorrect_answers: ["Baseball", "Golf", "Football Americano"],
+        imageSearch: "Palla da basket"
+    },
+    {
+        category: "Sport", type: "multiple", difficulty: "hard",
+        question: "Quanti anelli compongono il logo delle Olimpiadi?",
+        correct_answer: "5",
+        incorrect_answers: ["4", "6", "7"],
+        imageSearch: "Anelli olimpici"
+    }
 ]
 
 module.exports = ITALIAN_QUESTIONS;

@@ -199,20 +199,34 @@ body {
 /* --- ANIMAZIONE PUNTI CLASSIFICA --- */
 .score-gain {
     position: absolute;
-    right: -40px;
-    top: 0;
-    color: var(--green);
+    right: 20px; /* Si allinea a destra, esattamente sopra al numero del punteggio */
+    top: 50%;
+    
+    /* Stile coerente con la tua piattaforma */
+    color: var(--green, #2ECC71); 
+    font-size: 22px;
     font-weight: 900;
-    font-size: 16px;
-    animation: floatUp 2s forwards cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    text-shadow: 1px 1px 0 var(--border-color);
-    pointer-events: none;
-    z-index: 10;
+    text-shadow: 2px 2px 0px var(--border-color, #2C3E50); 
+    
+    pointer-events: none; /* Il mouse ci passa attraverso senza bloccarsi */
+    z-index: 50;
+    
+    /* Esegue l'animazione definita sotto */
+    animation: floatUpStraight 1.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
-@keyframes floatUp {
-    0% { opacity: 0; transform: translateY(10px) scale(0.5); }
-    15% { opacity: 1; transform: translateY(0px) scale(1.3); }
-    80% { opacity: 1; transform: translateY(-15px) scale(1); }
-    100% { opacity: 0; transform: translateY(-25px) scale(0.8); }
+/* L'animazione: muove i punti SOLO sull'asse Y (verticale), niente più barra orizzontale! */
+@keyframes floatUpStraight {
+    0% {
+        opacity: 0;
+        transform: translateY(-50%) scale(0.5); /* Parte invisibile e piccolino */
+    }
+    15% {
+        opacity: 1;
+        transform: translateY(-70%) scale(1.2); /* Fa un piccolo "Pop!" visivo */
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-200%) scale(1); /* Fluttua dritto verso l'alto e svanisce */
+    }
 }
