@@ -341,7 +341,79 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Costruzione Grafica Messaggi Chat
-    // --- FUNZIONE ROBUSTA PER LA CLASSIFICA FINALE ---
+
+    // 1. Funzione per stampare i messaggi nel box
+    function addMessage(text, type = 'chat') {
+        const msgDiv = document.createElement('div');
+        msgDiv.style.padding = "8px 10px";
+        msgDiv.style.borderBottom = "1px solid #ecf0f1";
+        msgDiv.style.wordBreak = "break-word";
+        // Usiamo Flexbox per allineare perfettamente il pallino e il testo
+        msgDiv.style.display = "flex";
+        msgDiv.style.alignItems = "center";
+        msgDiv.style.gap = "8px";
+        msgDiv.style.fontSize = "15px";
+
+        let colorStyle = '#2C3E50';
+        let fontWeight = '500';
+
+        // Imposta i colori in base al tipo di messaggio
+        if (type === 'success') {
+            colorStyle = '#27ae60';
+            fontWeight = 'bold';
+        } else if (type === 'error') {
+            colorStyle = '#e74c3c';
+            fontWeight = 'bold';
+        } else if (type === 'system') {
+            colorStyle = '#2980b9';
+            msgDiv.style.fontStyle = 'italic';
+        } else if (type === 'info') {
+            colorStyle = '#f39c12';
+        }
+
+        // Cerca un colore HEX all'inizio del messaggio (es. "#E74C3C")
+        const hexRegex = /^(#[0-9A-Fa-f]{6})/i;
+        const match = text.match(hexRegex);
+
+        if (match) {
+            const colorHex = match[1];
+            let remainingText = text.replace(colorHex, '').replace(/^:\s*/, '').trim();
+
+            // Crea il pallino con l'ombra cartoon netta
+            msgDiv.innerHTML = `
+                <div style="
+                    width: 20px; 
+                    height: 20px; 
+                    min-width: 20px;
+                    border-radius: 50%; 
+                    background-color: ${colorHex}; 
+                    border: 2px solid #2C3E50; 
+                    box-shadow: 2px 2px 0px #2C3E50; /* <--- MODIFICATO QUI */
+                    flex-shrink: 0;
+                "></div>
+                <span style="color: ${colorStyle}; font-weight: ${fontWeight};">${remainingText}</span>
+            `;
+        } else {
+            // Messaggio normale senza utente (es. messaggi di sistema puri)
+            const span = document.createElement('span');
+            span.style.color = colorStyle;
+            span.style.fontWeight = fontWeight;
+            span.textContent = text;
+            msgDiv.appendChild(span);
+        }
+
+        messagesBox.appendChild(msgDiv);
+
+        // Auto-scroll verso il basso
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+    }
+
+    // 2. Ascolto dell'evento 'message' dal backend
+    socket.on('message', (data) => {
+        addMessage(data.message, data.type);
+    });
+
+
     // --- FUNZIONE ROBUSTA PER LA CLASSIFICA FINALE ---
     function showGameEnd(payload) {
         const finalStandingsDiv = document.getElementById('final-standings');
@@ -382,8 +454,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <li style="display:flex; align-items:center; justify-content:space-between; background:#ecf0f1; padding:10px 15px; border-radius:12px; margin-bottom:10px; border:3px solid #2C3E50; font-size: 20px; font-weight:bold;">
                         <div style="display:flex; align-items:center; gap:10px;">
                             <span>${medal}</span>
-                            <div style="width:25px; height:25px; min-width:25px; min-height:25px; border-radius:50%; background-color:${p}; border:2px solid #2C3E50; flex-shrink:0;"></div>
-                            ${p === playerColor ? '<span>Tu</span>' : ''}
+                            <div style="width:25px; height:25px; min-width:25px; min-height:25px; border-radius:50%; background-color:${p}; border:3px solid #2C3E50; box-shadow: 3px 3px 0px #2C3E50; flex-shrink:0;"></div> ${p === playerColor ? '<span>Tu</span>' : ''}
                         </div>
                         <span>${actualScores[p]} pt</span>
                     </li>
