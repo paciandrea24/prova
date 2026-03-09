@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Passa la Bomba - Mockup</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Variabili Base (Stile Project-W) */
+        :root {
+            --bg-color: #E3F2FD;
+            --border-color: #2C3E50;
+            --panel-bg: #FFFFFF;
+            --green: #2ECC71;
+            --yellow: #F1C40F;
+            --red: #E74C3C;
+            --blue: #3498DB;
+            --border-width: 4px;
+            --shadow-size: 6px;
+        }
+
+        body {
+            background: var(--bg-color);
+            background-image: radial-gradient(#bdc3c7 2px, transparent 2px);
+            background-size: 30px 30px;
+            font-family: 'Fredoka', sans-serif;
+            color: var(--border-color);
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        /* Layout a 3 Colonne */
+        .layout {
+            display: grid;
+            grid-template-columns: 240px 1fr 300px;
+            gap: 15px;
+            max-width: 1400px;
+            width: 100%;
+            height: 95vh;
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            border: var(--border-width) solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: var(--shadow-size) var(--shadow-size) 0px var(--border-color);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-title {
+            font-size: 20px;
+            font-weight: bold;
+            border-bottom: 3px solid var(--border-color);
+            padding: 10px;
+            text-align: center;
+            text-transform: uppercase;
+            background: #ecf0f1;
+        }
+
+        /* --- COLONNA 1: GIOCATORI E VITE --- */
+        .players-ul {
+            list-style: none;
+            padding: 10px;
+            margin: 0;
+            overflow-y: auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .player-entry {
+            display: flex;
+            align-items: center;
+            padding: 8px 10px;
+            border-radius: 10px;
+            font-weight: bold;
+            gap: 10px;
+            border: 3px solid var(--border-color);
+            background: #F8F9FA;
+        }
+
+        /* Highlight di chi ha la bomba ora */
+        .player-entry.has-bomb {
+            background: #fff8b0;
+            border-color: var(--red);
+            animation: panic 0.4s infinite alternate;
+        }
+
+        .avatar-circle {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 3px solid var(--border-color);
+            background: white;
+            flex-shrink: 0;
+            box-shadow: 2px 2px 0 #2c3e50;
+        }
+
+        .player-info {
+            font-size: 15px;
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .lives {
+            letter-spacing: 2px;
+            font-size: 14px;
+        }
+
+        .lost-life {
+            filter: grayscale(100%) opacity(0.3);
+        }
+
+        /* Cuore perso */
+
+        /* --- COLONNA 2: AREA GIOCO (LA BOMBA) --- */
+        .main-col {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .top-bar {
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            font-size: 22px;
+            font-weight: 700;
+            background: var(--yellow);
+        }
+
+        .timer-box {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            border: 3px solid var(--border-color);
+            color: var(--red);
+            font-size: 26px;
+        }
+
+        /* Contenitore della Bomba */
+        .bomb-area {
+            flex: 1;
+            background: #2c3e50;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        /* Texture radiale di sfondo per l'area gioco */
+        .bomb-area::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+        }
+
+        /* La Bomba Fisica */
+        .bomb-container {
+            position: relative;
+            animation: bomb-shake 0.1s infinite;
+            /* Tremolio veloce */
+        }
+
+        .bomb-body {
+            width: 250px;
+            height: 250px;
+            background: #1a252f;
+            border-radius: 50%;
+            border: 8px solid #000;
+            box-shadow: inset -20px -20px 0 rgba(0, 0, 0, 0.5), 10px 10px 0 rgba(0, 0, 0, 0.3);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            z-index: 2;
+        }
+
+        /* Riflesso sulla bomba */
+        .bomb-body::after {
+            content: '';
+            position: absolute;
+            top: 30px;
+            left: 40px;
+            width: 50px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            transform: rotate(-45deg);
+        }
+
+        /* Miccia */
+        .fuse {
+            position: absolute;
+            top: -40px;
+            right: 20px;
+            width: 40px;
+            height: 60px;
+            border-right: 6px solid #e67e22;
+            border-top: 6px solid transparent;
+            border-radius: 50%;
+            z-index: 1;
+        }
+
+        /* Scintilla */
+        .spark {
+            position: absolute;
+            top: -55px;
+            right: -5px;
+            font-size: 40px;
+            animation: spark-burn 0.2s infinite alternate;
+            z-index: 3;
+        }
+
+        /* Sillaba scritta sulla bomba */
+        .syllable {
+            color: white;
+            font-size: 70px;
+            font-weight: 900;
+            letter-spacing: 5px;
+            text-shadow: 4px 4px 0 #000;
+        }
+
+        .turn-indicator {
+            margin-top: 40px;
+            background: white;
+            padding: 10px 25px;
+            border-radius: 20px;
+            border: 4px solid var(--red);
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--red);
+            box-shadow: 4px 4px 0 var(--border-color);
+            z-index: 2;
+        }
+
+        /* --- COLONNA 3: STORICO PAROLE E INPUT --- */
+        .words-col {
+            padding: 0;
+        }
+
+        .words-history {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 15px;
+            align-items: flex-end;
+            /* Allinea a destra stile chat */
+        }
+
+        .word-tag {
+            background: #ecf0f1;
+            border: 3px solid var(--border-color);
+            padding: 8px 16px;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 18px;
+            box-shadow: 2px 2px 0px var(--border-color);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        /* Highlight della sillaba nelle parole passate */
+        .word-tag span.match {
+            color: var(--red);
+            text-decoration: underline;
+        }
+
+        .input-area {
+            padding: 10px;
+            background: #ecf0f1;
+            border-top: 3px solid var(--border-color);
+        }
+
+        .word-input {
+            width: 100%;
+            border: 3px solid var(--border-color);
+            border-radius: 10px;
+            padding: 12px;
+            font-family: 'Fredoka';
+            font-weight: bold;
+            font-size: 20px;
+            outline: none;
+            text-align: center;
+            text-transform: uppercase;
+            box-sizing: border-box;
+            box-shadow: inset 3px 3px 0 rgba(0, 0, 0, 0.05);
+        }
+
+        .word-input:focus {
+            border-color: var(--blue);
+        }
+
+        /* --- ANIMAZIONI --- */
+        @keyframes bomb-shake {
+            0% {
+                transform: translate(1px, 1px) rotate(0deg);
+            }
+
+            25% {
+                transform: translate(-1px, -2px) rotate(-1deg);
+            }
+
+            50% {
+                transform: translate(-2px, 1px) rotate(1deg);
+            }
+
+            75% {
+                transform: translate(2px, 1px) rotate(0deg);
+            }
+
+            100% {
+                transform: translate(1px, -1px) rotate(-1deg);
+            }
+        }
+
+        @keyframes spark-burn {
+            from {
+                transform: scale(0.8) rotate(-10deg);
+                opacity: 0.8;
+            }
+
+            to {
+                transform: scale(1.2) rotate(10deg);
+                opacity: 1;
+            }
+        }
+
+        @keyframes popIn {
+            from {
+                transform: scale(0.5);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes panic {
+            from {
+                box-shadow: 0 0 0 transparent;
+            }
+
+            to {
+                box-shadow: 0 0 10px rgba(231, 76, 60, 0.6);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="layout">
+
+        <div class="panel standings-col">
+            <div class="panel-title">Sopravvissuti</div>
+            <ul class="players-ul">
+                <li class="player-entry">
+                    <div class="avatar-circle" style="background-color: #3498DB;"></div>
+                    <div class="player-info">Player 1</div>
+                    <div class="lives">❤️❤️❤️</div>
+                </li>
+                <li class="player-entry">
+                    <div class="avatar-circle" style="background-color: #2ECC71;"></div>
+                    <div class="player-info">Player 2</div>
+                    <div class="lives">❤️❤️<span class="lost-life">❤️</span></div>
+                </li>
+                <li class="player-entry has-bomb">
+                    <div class="avatar-circle" style="background-color: #E67E22;"></div>
+                    <div class="player-info">Tu</div>
+                    <div class="lives">❤️❤️❤️</div>
+                </li>
+                <li class="player-entry" style="opacity: 0.5;">
+                    <div class="avatar-circle" style="background-color: #9B59B6;"></div>
+                    <div class="player-info"><strike>Player 4</strike></div>
+                    <div class="lives">💀</div>
+                </li>
+            </ul>
+        </div>
+
+        <div class="main-col">
+            <div class="panel top-bar">
+                <div>Round 2/5</div>
+                <div class="timer-box">⏱️ 04.3s</div>
+            </div>
+
+            <div class="panel bomb-area">
+
+                <div class="bomb-container">
+                    <div class="fuse"></div>
+                    <div class="spark">🎇</div>
+                    <div class="bomb-body">
+                        <span class="syllable">SBA</span>
+                    </div>
+                </div>
+
+                <div class="turn-indicator">
+                    Tocca a te! Scrivi! ⌨️
+                </div>
+
+            </div>
+        </div>
+
+        <div class="panel words-col">
+            <div class="panel-title">Parole Usate</div>
+
+            <div class="words-history">
+                <div class="word-tag">
+                    <div class="avatar-circle" style="width: 15px; height: 15px; background-color: #3498DB;"></div>
+                    <span><span class="match">SBA</span>GLIO</span>
+                </div>
+                <div class="word-tag">
+                    <div class="avatar-circle" style="width: 15px; height: 15px; background-color: #2ECC71;"></div>
+                    <span><span class="match">SBA</span>DATO</span>
+                </div>
+                <div class="word-tag">
+                    <div class="avatar-circle" style="width: 15px; height: 15px; background-color: #F1C40F;"></div>
+                    <span><span class="match">SBA</span>RRA</span>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <input type="text" class="word-input" placeholder="Scrivi in fretta!" autofocus autocomplete="off">
+            </div>
+        </div>
+
+    </div>
+
+</body>
+
+</html>

@@ -169,10 +169,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (trackImages[tile].complete) {
                         ctx.drawImage(trackImages[tile], x, y, tileSize, tileSize);
                     } else {
-                        // Se l'immagine sta ancora caricando, aspetta e poi disegnala
-                        trackImages[tile].onload = () => {
+                        // Se l'immagine sta ancora caricando, accodiamo il disegno.
+                        // Usiamo addEventListener per non sovrascrivere i tile precedenti dello stesso tipo!
+                        trackImages[tile].addEventListener('load', () => {
                             ctx.drawImage(trackImages[tile], x, y, tileSize, tileSize);
-                        };
+                        });
                     }
                 }
             }

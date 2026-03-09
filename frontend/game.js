@@ -488,12 +488,6 @@ document.addEventListener('DOMContentLoaded', () => {
             chatInput.disabled = true;
             chatInput.placeholder = "Tu disegni!";
             artistControls.style.display = 'flex';
-
-            if (!prevArtist) {
-                artistNotification.innerHTML = "È il tuo turno!<br>Disegna!";
-                artistNotification.style.display = 'block';
-                setTimeout(() => artistNotification.style.display = 'none', 2500);
-            }
         } else {
             hintText.textContent = state.hint;
             hintText.classList.remove('artist-view');
