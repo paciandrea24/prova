@@ -49,78 +49,82 @@
                     <button id="leaderboard-mini-btn" class="btn small" title="Global Leaderboard"
                         style="position: absolute; top: -10px; right: -10px; font-size: 16px;">🏆</button>
                 </div>
+
+                <div class="game-card" data-game-id="bomb">
+                    <span class="g-icon">💣</span>
+                    <span class="g-title">Bomb</span>
+                </div>
             </div>
 
-            <div class="settings-box" id="game-settings-panel" style="display: none;">
-                <h4>⚙️ Settings</h4>
+            <div id="waiting-host-msg"
+                style="text-align: center; margin-top: auto; font-size: 22px; font-weight: bold; color: #7f8c8d; display: none;">
+                ⏳ Waiting for the Host to start...
+            </div>
+        </div>
 
+        <div class="panel chat-box">
+            <h3 class="panel-title">Chat</h3>
+            <div class="chat-messages" id="chat-messages">
+                <div class="chat-system-msg">Welcome to the lobby!</div>
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="chat-input" class="chat-input" placeholder="Type here..." maxlength="100"
+                    autocomplete="off">
+                <button id="send-chat-btn" class="btn-send">➤</button>
+            </div>
+        </div>
+
+    </div>
+    <div id="settings-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="settings-modal-title">⚙️ Settings</h2>
+                <button id="close-settings-btn" class="btn-close">X</button>
+            </div>
+
+            <div class="settings-box" id="game-settings-panel">
                 <div class="settings-section" id="drawing-settings" style="display: none;">
-                    <div class="setting-row">
-                        <span>Rounds:</span>
-                        <select id="drawing-rounds">
+                    <div class="setting-row"><span>Rounds:</span><select id="drawing-rounds">
                             <option value="3">3</option>
                             <option value="5">5</option>
-                        </select>
-                    </div>
-                    <div class="setting-row">
-                        <span>Time:</span>
-                        <select id="drawing-time">
+                        </select></div>
+                    <div class="setting-row"><span>Time:</span><select id="drawing-time">
                             <option value="60">60s</option>
                             <option value="90">90s</option>
-                        </select>
-                    </div>
-                    <div class="setting-row">
-                        <span>Difficulty:</span>
-                        <select id="drawing-difficulty">
+                        </select></div>
+                    <div class="setting-row"><span>Difficulty:</span><select id="drawing-difficulty">
                             <option value="medium">Medium</option>
                             <option value="hard">Hard</option>
-                        </select>
-                    </div>
+                        </select></div>
                 </div>
 
                 <div class="settings-section" id="trivia-settings" style="display: none;">
-                    <div class="setting-row">
-                        <span>Questions:</span>
-                        <select id="trivia-questions">
+                    <div class="setting-row"><span>Questions:</span><select id="trivia-questions">
                             <option value="10">10</option>
                             <option value="20">20</option>
-                        </select>
-                    </div>
-                    <div class="setting-row">
-                        <span>Time:</span>
-                        <select id="trivia-time">
+                        </select></div>
+                    <div class="setting-row"><span>Time:</span><select id="trivia-time">
                             <option value="15">15s</option>
                             <option value="30" selected>30s</option>
-                        </select>
-                    </div>
-                    <div class="setting-row">
-                        <span>Category:</span>
-                        <select id="trivia-category">
+                        </select></div>
+                    <div class="setting-row"><span>Category:</span><select id="trivia-category">
                             <option value="general">General</option>
                             <option value="history">History</option>
-                        </select>
-                    </div>
+                        </select></div>
                 </div>
 
                 <div class="settings-section" id="racing-settings" style="display: none;">
-                    <div class="setting-row">
-                        <span>Mode:</span>
-                        <select id="racing-mode">
+                    <div class="setting-row"><span>Mode:</span><select id="racing-mode">
                             <option value="championship">Championship</option>
                             <option value="single">Single Race</option>
-                        </select>
-                    </div>
-                    <div class="setting-row" id="group-numTracks">
-                        <span>Tracks:</span>
-                        <select id="racing-numTracks">
+                        </select></div>
+                    <div class="setting-row" id="group-numTracks"><span>Tracks:</span><select id="racing-numTracks">
                             <option value="2">Short (2)</option>
                             <option value="3" selected>Medium (3)</option>
                             <option value="4">Long (4)</option>
-                        </select>
-                    </div>
-                    <div class="setting-row" id="group-trackSelect" style="display: none;">
-                        <span>Select Track:</span>
-                        <select id="racing-trackName">
+                        </select></div>
+                    <div class="setting-row" id="group-trackSelect" style="display: none;"><span>Select
+                            Track:</span><select id="racing-trackName">
                             <option value="Monza">Monza</option>
                             <option value="Spa-Francorchamps">Spa-Francorchamps</option>
                             <option value="Baku">Baku</option>
@@ -128,14 +132,27 @@
                             <option value="Interlagos">Interlagos</option>
                             <option value="Barcelona">Barcelona</option>
                             <option value="Melbourne">Melbourne Test</option>
-                        </select>
-                    </div>
+                        </select></div>
+                </div>
+
+                <div class="settings-section" id="bomb-settings" style="display: none;">
+                    <div class="setting-row"><span>Vite Iniziali:</span><select id="bomb-maxLives">
+                            <option value="3">3</option>
+                            <option value="5">5</option>
+                        </select></div>
+                    <div class="setting-row"><span>Timer (s):</span><select id="bomb-initialTimer">
+                            <option value="10">10s</option>
+                            <option value="15">15s</option>
+                        </select></div>
                 </div>
             </div>
 
-            <button id="start-game-btn" class="btn green" style="font-size: 24px; padding: 15px; margin-top: auto;"
-                disabled>START GAME!</button>
+            <button id="start-game-btn" class="btn green"
+                style="font-size: 24px; padding: 15px; margin-top: 15px;">START GAME!</button>
         </div>
+    </div>
+
+    <div id="global-leaderboard-modal" class="modal" style="display: none;">
 
         <div class="panel chat-box">
             <h3 class="panel-title">Chat</h3>

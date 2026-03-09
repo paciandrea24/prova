@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let targetPage = '/game.html';
         if (gameId === 'trivia') targetPage = '/quiz.html';
         else if (gameId === 'racing') targetPage = '/racing.html';
+        else if (gameId === 'bomb') targetPage = '/bomb.html';
 
         window.location.href = `${targetPage}?lobby=${lobbyId}&color=${encodeURIComponent(selectedColor)}&game=${gameId}${settingsParam}`;
     });
@@ -161,40 +162,41 @@ document.addEventListener('DOMContentLoaded', () => {
         leftBox.appendChild(inviteBtn);
     }
 
-    // 6. Selezione Minigiochi e Settings (FIX BOTTONE START)
+    // 6. Selezione Minigiochi e Settings
     function setupGameSelectors(hostColor) {
         const gameCards = document.querySelectorAll('.game-card');
         const startGameBtn = document.getElementById('start-game-btn');
+        const waitingMsg = document.getElementById('waiting-host-msg');
 
         // SE NON SEI L'HOST
         if (selectedColor !== hostColor) {
             gameCards.forEach(card => card.classList.add('disabled'));
-            if (startGameBtn) {
-                startGameBtn.disabled = true;
-                startGameBtn.textContent = 'WAITING FOR HOST...'; // Visuale per gli ospiti
-            }
-            // Disabilita anche le select
-            document.querySelectorAll('.settings-section select').forEach(s => s.disabled = true);
+            if (waitingMsg) waitingMsg.style.display = 'block'; // Mostra scritta attesa
             return;
         }
 
         // SE SEI L'HOST
+        if (waitingMsg) waitingMsg.style.display = 'none';
+
         gameCards.forEach(card => {
             card.classList.remove('disabled');
 
             card.addEventListener('click', (e) => {
                 if (e.target.closest('#leaderboard-mini-btn')) return;
 
-                document.querySelectorAll('.game-card').forEach(c => c.classList.remove('active'));
-                card.classList.add('active');
-
                 const gameId = card.dataset.gameId;
-                showGameSettings(gameId);
-
-                // Ora il bottone si attiva correttamente!
-                if (startGameBtn) startGameBtn.disabled = false;
+                showGameSettings(gameId); // Apre semplicemente il modale
             });
         });
+
+        // Evento chiusura Modale Settings
+        const closeSettingsBtn = document.getElementById('close-settings-btn');
+        if (closeSettingsBtn) {
+            closeSettingsBtn.addEventListener('click', () => {
+                document.getElementById('settings-modal').style.display = 'none';
+                currentSelectedGame = null;
+            });
+        }
 
         document.querySelectorAll('.settings-section select').forEach(select => {
             select.addEventListener('change', () => {
@@ -206,6 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
             startGameBtn.addEventListener('click', () => {
                 if (!currentSelectedGame) return;
                 const settings = saveGameSettings(currentSelectedGame);
+                document.getElementById('settings-modal').style.display = 'none'; // Chiude il modale all'avvio
                 socket.emit('startGame', { lobbyId, gameId: currentSelectedGame, settings });
             });
         }
@@ -213,9 +216,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showGameSettings(gameId) {
         currentSelectedGame = gameId;
-        const panel = document.getElementById('game-settings-panel');
-        if (panel) panel.style.display = 'block';
+        const modal = document.getElementById('settings-modal');
+        const modalTitle = document.getElementById('settings-modal-title');
 
+        // Aggiorna il titolo del modale in base al gioco
+        const titles = {
+            drawing: '✏️ Drawing Settings',
+            trivia: '🧠 Quiz Settings',
+            racing: '🏎️ Racing Settings',
+            bomb: '💣 Bomb Settings'
+        };
+        if (modalTitle) modalTitle.textContent = titles[gameId] || '⚙️ Settings';
+
+        // Mostra il modale
+        if (modal) modal.style.display = 'flex';
+
+        // Mostra solo le impostazioni del gioco scelto
         document.querySelectorAll('.settings-section').forEach(s => s.style.display = 'none');
         const targetSection = document.getElementById(`${gameId}-settings`);
         if (targetSection) targetSection.style.display = 'block';

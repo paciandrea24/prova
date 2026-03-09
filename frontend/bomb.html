@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Project-W - Passa la Bomba</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./styles/bomb.css">
+</head>
+
+<body>
+
+    <div class="layout">
+        <div class="panel standings-col">
+            <div class="panel-title">Sopravvissuti</div>
+            <ul class="players-ul" id="players-ul">
+            </ul>
+        </div>
+
+        <div class="main-col">
+            <div class="panel top-bar">
+                <div class="timer-box">⏱️ <span id="timer-text">10.0s</span></div>
+            </div>
+
+            <div class="panel bomb-area">
+                <div class="bomb-container" id="bomb-container">
+                    <div class="fuse"></div>
+                    <div class="spark">🎇</div>
+                    <div class="bomb-body">
+                        <span class="syllable" id="syllable-display">?</span>
+                    </div>
+                </div>
+                <div class="turn-indicator" id="turn-indicator" style="display: none;">
+                    Tocca a te! Scrivi! ⌨️
+                </div>
+            </div>
+        </div>
+
+        <div class="panel words-col">
+            <div class="panel-title">Parole Usate</div>
+
+            <div class="words-history" id="words-history">
+            </div>
+
+            <div class="input-area">
+                <input type="text" id="word-input" class="word-input" placeholder="Scrivi in fretta..."
+                    autocomplete="off" disabled>
+            </div>
+        </div>
+    </div>
+
+    <div id="game-end-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>🏆 GAME OVER 🏆</h2>
+            <p style="font-size: 20px;">Il sopravvissuto è:</p>
+            <div id="final-winner"
+                style="display: flex; justify-content: center; align-items: center; gap: 15px; margin: 20px 0; font-size: 24px; font-weight: bold;">
+            </div>
+            <button id="back-to-lobby" class="btn-green" style="margin-top: 20px;">Torna alla Lobby</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="bomb.js"></script>
+</body>
+
+</html>
