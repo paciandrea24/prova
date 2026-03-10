@@ -28,21 +28,36 @@ try {
 }
 
 // --- FUNZIONE GENERATRICE DI SILLABE REALI ---
-function generateValidSyllable() {
+// --- FUNZIONE GENERATRICE DI SILLABE (MIGLIORATA) ---
+function generateValidSyllable(usedWords = []) {
     if (dictionaryArray.length === 0) return "CA";
 
-    // 1. Pesca una parola a caso dal dizionario (abbastanza lunga)
-    let randomWord = "";
-    while (randomWord.length < 5) {
-        randomWord = dictionaryArray[Math.floor(Math.random() * dictionaryArray.length)];
+    let validSyllable = "";
+    let possibleAnswers = 0;
+
+    // Riprova finché non trova una sillaba che ha ALMENO 15 parole possibili nel dizionario
+    while (possibleAnswers < 15) {
+        let randomWord = "";
+        while (randomWord.length < 5) {
+            randomWord = dictionaryArray[Math.floor(Math.random() * dictionaryArray.length)];
+        }
+
+        // Estrai 2 o 3 lettere
+        const pieceLength = Math.random() > 0.3 ? 2 : 3;
+        const startIndex = Math.floor(Math.random() * (randomWord.length - pieceLength + 1));
+        validSyllable = randomWord.substring(startIndex, startIndex + pieceLength);
+
+        // Conta velocemente quante parole contengono questa sillaba
+        possibleAnswers = 0;
+        for (let i = 0; i < dictionaryArray.length; i++) {
+            if (dictionaryArray[i].includes(validSyllable) && !usedWords.includes(dictionaryArray[i])) {
+                possibleAnswers++;
+                if (possibleAnswers >= 15) break; // Ottimizzazione: appena arriva a 15 si ferma
+            }
+        }
     }
 
-    // 2. Decidi se estrarre 2 o 3 lettere (es. 70% di probabilità per 2 lettere, 30% per 3 lettere)
-    const pieceLength = Math.random() > 0.3 ? 2 : 3;
-
-    // 3. Estrai una sottostringa casuale all'interno della parola
-    const startIndex = Math.floor(Math.random() * (randomWord.length - pieceLength + 1));
-    return randomWord.substring(startIndex, startIndex + pieceLength);
+    return validSyllable;
 }
 
 function getDefaultGameSettings(gameId) {
@@ -77,6 +92,7 @@ function initializeGame(lobbyId, players, gameId, settings) {
         currentTurn: players[0], // Colore del giocatore corrente
         currentSyllable: '',
         usedWords: [],
+        explosionCount: 0,
         timer: mergedSettings.initialTimer,
         settings: mergedSettings,
         isActive: false,
@@ -143,11 +159,12 @@ function processGuess(io, lobbyId, playerColor, word) {
     game.currentTurnIndex = (game.currentTurnIndex + 1) % game.activePlayers.length;
     game.currentTurn = game.activePlayers[game.currentTurnIndex];
 
-    // Invia il successo (Usa ancora la vecchia sillaba per evidenziarla nel frontend)
+    // Invia il successo
     io.to(lobbyId).emit('wordAccepted', { word: upperWord, playerColor });
 
-    // CAMBIA LA SILLABA PER IL PROSSIMO GIOCATORE
-    game.currentSyllable = generateValidSyllable();
+    // CAMBIA LA SILLABA PER IL PROSSIMO GIOCATORE (Passando le parole usate)
+    game.currentSyllable = generateValidSyllable(game.usedWords);
+    game.explosionCount = 0; // <--- AZZERA IL CONTATORE DELLE ESPLOSIONI
 
     emitGameState(io, lobbyId, game);
     startBombTimer(io, lobbyId, game);
@@ -179,6 +196,9 @@ function explodeBomb(io, lobbyId, game) {
         game.currentTurnIndex = (game.currentTurnIndex + 1) % game.activePlayers.length;
     }
 
+    // Aumenta il contatore delle esplosioni per questa sillaba
+    game.explosionCount += 1;
+
     io.to(lobbyId).emit('bombExploded', { loser: loser, livesLeft: game.lives[loser] });
 
     if (isGameOver) {
@@ -190,8 +210,17 @@ function explodeBomb(io, lobbyId, game) {
         setTimeout(() => {
             game.currentTurn = game.activePlayers[game.currentTurnIndex];
 
-            // LA SILLABA NON CAMBIA, ma resettiamo timer e parole usate
-            game.usedWords = [];
+            // CONTROLLO LOOP DELLA MORTE: È scoppiata a tutti?
+            if (game.explosionCount >= game.activePlayers.length) {
+                game.currentSyllable = generateValidSyllable(game.usedWords);
+                game.explosionCount = 0; // Resetta il contatore
+                game.usedWords = []; // Svuota lo storico dato che la sillaba è nuova
+            } else {
+                // Se non cambiamo sillaba, svuotiamo comunque le parole usate per dare più chance?
+                // (Opzionale: puoi lasciare game.usedWords intatto per rendere il gioco punitivo)
+                game.usedWords = [];
+            }
+
             game.timer = game.settings.initialTimer;
             game.isActive = true;
 
