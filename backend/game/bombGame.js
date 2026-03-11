@@ -88,6 +88,7 @@ function initializeGame(lobbyId, players, gameId, settings) {
         players: [...players],
         activePlayers: [...players], // Chi è ancora vivo
         lives: lives,
+        eliminationOrder: [],
         currentTurnIndex: 0,
         currentTurn: players[0], // Colore del giocatore corrente
         currentSyllable: '',
@@ -108,8 +109,7 @@ function startNewTurn(io, lobbyId) {
     if (!game) return;
 
     // Genera una sillaba estratta da una parola vera!
-    game.currentSyllable = generateValidSyllable();
-    game.usedWords = [];
+    game.currentSyllable = generateValidSyllable(game.usedWords);
     game.timer = game.settings.initialTimer;
     game.isActive = true;
 
@@ -184,6 +184,8 @@ function explodeBomb(io, lobbyId, game) {
     if (game.lives[loser] <= 0) {
         game.activePlayers = game.activePlayers.filter(p => p !== loser);
 
+        game.eliminationOrder.push(loser);
+
         // Se rimane solo uno, vince!
         if (game.activePlayers.length <= 1) {
             isGameOver = true;
@@ -203,7 +205,16 @@ function explodeBomb(io, lobbyId, game) {
 
     if (isGameOver) {
         setTimeout(() => {
-            io.to(lobbyId).emit('gameEnd', { winner: game.activePlayers[0], lives: game.lives });
+            const winner = game.activePlayers[0];
+            // La classifica è: il vincitore, seguito da chi è morto per ultimo, penultimo, ecc.
+            const ranking = [winner, ...game.eliminationOrder.reverse()];
+
+            // MODIFICA L'EMIT COSÌ:
+            io.to(lobbyId).emit('gameEnd', {
+                winner: winner,
+                ranking: ranking,
+                lives: game.lives
+            });
         }, 3000);
     } else {
         // Pausa drammatica, poi si riparte per il prossimo giocatore
@@ -214,11 +225,6 @@ function explodeBomb(io, lobbyId, game) {
             if (game.explosionCount >= game.activePlayers.length) {
                 game.currentSyllable = generateValidSyllable(game.usedWords);
                 game.explosionCount = 0; // Resetta il contatore
-                game.usedWords = []; // Svuota lo storico dato che la sillaba è nuova
-            } else {
-                // Se non cambiamo sillaba, svuotiamo comunque le parole usate per dare più chance?
-                // (Opzionale: puoi lasciare game.usedWords intatto per rendere il gioco punitivo)
-                game.usedWords = [];
             }
 
             game.timer = game.settings.initialTimer;

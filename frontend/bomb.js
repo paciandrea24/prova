@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const gameEndModal = document.getElementById('game-end-modal');
     const finalWinnerDiv = document.getElementById('final-winner');
     const backToLobbyBtn = document.getElementById('back-to-lobby');
+    const bombArea = document.querySelector('.bomb-area');
 
     // Suoni (Opzionali, puoi aggiungerli nella cartella sounds)
     // const correctSound = new Audio('./sounds/correct.mp3');
@@ -62,11 +63,13 @@ document.addEventListener('DOMContentLoaded', () => {
             turnIndicator.style.display = 'block';
             wordInput.disabled = false;
             wordInput.focus();
+            bombArea.classList.add('my-turn');
         } else {
             turnIndicator.style.display = 'none';
             wordInput.disabled = true;
             wordInput.value = '';
             wordInput.placeholder = "Aspetta il tuo turno...";
+            bombArea.classList.remove('my-turn');
         }
     });
 
@@ -122,11 +125,35 @@ document.addEventListener('DOMContentLoaded', () => {
         turnIndicator.style.display = 'none';
     });
 
+    // Cerca socket.on('gameEnd', ...) e sostituiscilo TUTTO con questo:
     socket.on('gameEnd', (data) => {
-        finalWinnerDiv.innerHTML = `
-            <div class="avatar-circle" style="width:40px; height:40px; background-color: ${data.winner}"></div>
-            <span>${data.winner === playerColor ? 'Hai Vinto!' : 'Vincitore!'}</span>
-        `;
+        const ranking = data.ranking; // [1° classificato, 2°, 3°, ecc.]
+        const podiumContainer = document.getElementById('podium-container');
+        podiumContainer.innerHTML = '';
+
+        // Funzione per creare il gradino
+        const createSpot = (pColor, position) => {
+            if (!pColor) return ''; // Se c'erano meno di 3 giocatori, ignora
+
+            let className = `podium-${position}`;
+            let isMe = pColor === playerColor ? '<div class="podium-me-badge">TU</div>' : '';
+
+            return `
+                <div class="podium-spot ${className}">
+                    ${isMe}
+                    <div class="avatar-circle" style="background-color: ${pColor};"></div>
+                    <div class="podium-rank">${position}</div>
+                </div>
+            `;
+        };
+
+        // Costruiamo l'HTML nell'ordine visivo classico dei podi: 2, 1, 3
+        let html = '';
+        if (ranking[1]) html += createSpot(ranking[1], 2); // Secondo posto (Sinistra)
+        if (ranking[0]) html += createSpot(ranking[0], 1); // Primo posto (Centro)
+        if (ranking[2]) html += createSpot(ranking[2], 3); // Terzo posto (Destra)
+
+        podiumContainer.innerHTML = html;
         gameEndModal.style.display = 'flex';
     });
 
