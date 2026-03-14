@@ -291,9 +291,13 @@ body {
 
 /* --- COLONNA 3: CHAT --- */
 .chat-messages {
-    flex: 1; overflow-y: auto;
-    display: flex; flex-direction: column; gap: 12px;
-    padding: 15px 6px 15px 15px;;
+    flex: 1; 
+    overflow-y: auto;       /* Mantiene la scrollbar verticale */
+    overflow-x: hidden;     /* NASCONDE la scrollbar orizzontale */
+    display: flex; 
+    flex-direction: column; 
+    gap: 12px;
+    padding: 15px 6px 15px 15px;
 }
 
 .chat-system-msg {
@@ -308,9 +312,18 @@ body {
 .msg-wrap.me { align-self: flex-end; flex-direction: row-reverse; }
 
 .msg-bubble {
-    background: #ecf0f1; border: 3px solid var(--border-color);
-    padding: 10px 14px; border-radius: 16px 16px 16px 0;
-    font-weight: 600; font-size: 15px; word-wrap: break-word;
+    background: #ecf0f1; 
+    border: 3px solid var(--border-color);
+    padding: 10px 14px; 
+    border-radius: 16px 16px 16px 0;
+    font-weight: 600; 
+    font-size: 15px; 
+    
+    /* Proprietà per spezzare i messaggi lunghissimi */
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    
     box-shadow: 2px 2px 0px var(--border-color);
     position: relative;
 }

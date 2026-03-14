@@ -4,6 +4,7 @@ const triviaGameSocket = require('./games/triviaGameSocket');
 const chatSocket = require('./chatSocket');
 const racingGameSocket = require('./games/racingGameSocket');
 const bombGameSocket = require('./games/bombGameSocket');
+const footballGameSocket = require('./games/footballGameSocket');
 
 // IMPORTANTE: Importiamo lo store delle lobby per poterle modificare
 const { lobbies, users } = require('../store/lobbies');
@@ -49,5 +50,6 @@ module.exports = function (io) {
         chatSocket(io, socket);
         racingGameSocket(io, socket);
         bombGameSocket(io, socket);
+        footballGameSocket(io, socket);
     });
 };

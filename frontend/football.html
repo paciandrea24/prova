@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project-W - Football</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./styles/football.css">
+</head>
+
+<body>
+    <div id="spectator-badge" class="spectator-badge" style="display: none;">
+        👁️ SPECTATOR
+    </div>
+
+    <div class="panel">
+        <div id="setup-panel" class="setup-panel" style="display: none;">
+            <h2 class="setup-title">Match Setup</h2>
+            <p>Choose who takes the field!</p>
+
+            <div class="setup-columns">
+                <div class="setup-col">
+                    <h3>Home Team</h3>
+                    <div id="slot-left" class="slot" data-team="left">Empty</div>
+                </div>
+                <div class="setup-col">
+                    <h3>Away Team</h3>
+                    <div id="slot-right" class="slot" data-team="right">Empty</div>
+                </div>
+            </div>
+
+            <div class="setup-col spectators-col">
+                <h3>Spectators</h3>
+                <div id="slot-spectators" class="spectators-list"></div>
+                <button id="btn-join-spectators" class="btn-secondary btn-small">Become Spectator</button>
+            </div>
+
+            <button id="btn-confirm-setup" class="btn-primary" style="display: none;">Start Match!</button>
+        </div>
+
+        <div id="game-ui" style="display: none; width: 100%; flex-direction: column; align-items: center; gap: 15px;">
+            <div class="scoreboard" id="scoreboard"></div>
+            <canvas id="game-canvas" width="800" height="400"></canvas>
+        </div>
+
+        <button id="btn-leave" class="btn-leave" style="margin-top: 10px;">Back to Lobby</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="football.js"></script>
+</body>
+
+</html>

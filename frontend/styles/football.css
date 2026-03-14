@@ -1,0 +1,301 @@
+:root {
+    --bg-color: #E3F2FD;
+    --border-color: #2C3E50;
+    --panel-bg: #FFFFFF;
+    --blue: #3498DB;
+    --red: #E74C3C;
+    --green: #2ECC71; /* <-- ECCO IL VERDE MANCANTE */
+    --yellow: #F1C40F;
+}
+
+body {
+    background-color: var(--bg-color);
+    background-image: radial-gradient(#bdc3c7 2px, transparent 2px);
+    background-size: 30px 30px;
+    font-family: 'Fredoka', sans-serif;
+    color: var(--border-color);
+    margin: 0;
+    padding: 10px; /* Padding ridotto per evitare di sfondare lo schermo */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh; /* Fissa l'altezza esattamente alla finestra visibile */
+    width: 100vw;
+    overflow: hidden; /* Uccide definitivamente qualsiasi barra di scorrimento */
+    box-sizing: border-box;
+}
+
+.panel {
+    background: var(--panel-bg);
+    border: 4px solid var(--border-color);
+    border-radius: 16px;
+    box-shadow: 6px 6px 0px var(--border-color);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    /* AGGIUNTE FONDAMENTALI PER BLOCCARE LE BARRE DI SCORRIMENTO */
+    position: relative; 
+    overflow: hidden; 
+    max-height: 95vh;
+}
+
+.scoreboard {
+    font-size: 28px;
+    font-weight: bold;
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+    background: #ecf0f1;
+    padding: 10px 20px;
+    border-radius: 12px;
+    border: 3px solid var(--border-color);
+    box-shadow: 4px 4px 0 var(--border-color);
+}
+
+.score-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--border-color);
+}
+
+.score-color {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 3px solid var(--border-color);
+}
+
+canvas {
+    background-color: #2ecc71;
+    border: 4px solid var(--border-color);
+    border-radius: 8px;
+    display: block;
+}
+
+.btn-leave {
+    background: #bdc3c7;
+    color: var(--border-color);
+    border: 4px solid var(--border-color);
+    padding: 10px 20px;
+    border-radius: 12px;
+    font-weight: bold;
+    font-family: 'Fredoka', sans-serif;
+    font-size: 18px;
+    cursor: pointer;
+    box-shadow: 4px 4px 0 var(--border-color);
+    text-transform: uppercase;
+}
+.btn-leave:active { box-shadow: none; transform: translate(4px, 4px); }
+
+/* --- PANNELLO DI FINE PARTITA INTEGRATO COMPATTO --- */
+.game-over-panel {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background-color: rgba(44, 62, 80, 0.85); 
+    display: flex; justify-content: center; align-items: center;
+    z-index: 100; 
+    box-sizing: border-box;
+}
+
+.go-content {
+    background: var(--panel-bg);
+    border: 4px solid var(--border-color);
+    border-radius: 20px; 
+    padding: 20px; /* Ridotto */
+    display: flex; flex-direction: column; align-items: center;
+    gap: 10px; /* Ridotto */
+    max-width: 400px; /* Ridotto */
+    width: 90%; 
+    color: var(--border-color);
+    font-family: 'Fredoka', sans-serif;
+    text-align: center;
+    box-shadow: 8px 8px 0px var(--border-color); 
+    animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.go-icon { font-size: 45px; line-height: 1; margin: 0;}
+.go-title { font-size: 28px; font-weight: 900; margin: 0; }
+
+.winner-display {
+    display: flex; justify-content: center; align-items: center;
+    background: #ecf0f1; border: 4px solid var(--border-color);
+    padding: 10px; border-radius: 50%;
+    margin: 5px 0;
+}
+.winner-color { width: 50px; height: 50px; border-radius: 50%; border: 4px solid var(--border-color); }
+
+.final-score {
+    display: flex; gap: 15px; justify-content: center;
+    background: #ecf0f1; padding: 5px 15px;
+    border-radius: 12px; border: 3px solid var(--border-color);
+}
+
+.go-buttons { display: flex; flex-direction: column; gap: 10px; width: 100%; margin-top: 5px; }
+
+.btn-primary, .btn-secondary {
+    color: white; border: 4px solid var(--border-color); 
+    padding: 10px 15px; border-radius: 12px; font-weight: bold; 
+    font-family: 'Fredoka', sans-serif; font-size: 16px; 
+    cursor: pointer; box-shadow: 4px 4px 0 var(--border-color); 
+    text-transform: uppercase; width: 100%;
+}
+.btn-primary { background: var(--green); }
+.btn-secondary { background: var(--red); }
+.btn-primary:active, .btn-secondary:active { box-shadow: 0 0 0 transparent; transform: translate(4px, 4px); }
+
+/* Animazione Modale */
+@keyframes popIn { 
+    from { transform: scale(0.8); opacity: 0; } 
+    to { transform: scale(1); opacity: 1; } 
+}
+
+/* --- BADGE SPETTATORE --- */
+.spectator-badge {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: var(--yellow);
+    color: var(--border-color);
+    border: 3px solid var(--border-color);
+    padding: 8px 15px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 900;
+    box-shadow: 4px 4px 0 var(--border-color);
+    text-transform: uppercase;
+    z-index: 1000;
+    pointer-events: none;
+    animation: pulseBadge 2s infinite;
+}
+
+@keyframes pulseBadge {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+/* --- LOBBY DI SETUP PRE-PARTITA (OTTIMIZZATA IN VERTICALE) --- */
+.setup-panel {
+    display: flex; 
+    flex-direction: column; 
+    width: 100%; 
+    max-width: 750px; 
+    align-items: center; 
+    gap: 10px; /* Gap principale ridotto da 20px a 10px */
+    text-align: center;
+    max-height: 95vh; /* Assicura di non superare mai l'altezza dello schermo */
+}
+
+.setup-title { 
+    margin: 0; 
+    font-size: 28px; /* Ridotto da 34px */
+    color: var(--border-color); 
+    text-transform: uppercase;
+}
+
+.setup-panel > p { 
+    margin: 0 0 5px 0; /* Margine ridotto */
+    font-size: 15px; /* Ridotto da 18px */
+    color: #7f8c8d;
+    font-weight: 600;
+}
+
+.setup-columns { 
+    display: grid; 
+    grid-template-columns: 1fr 1fr; 
+    gap: 20px; /* Ridotto da 30px */
+    width: 100%; 
+}
+
+.setup-col {
+    border: 4px solid var(--border-color); 
+    border-radius: 16px;
+    padding: 15px 15px; /* Padding interno molto più compatto (era 25px) */
+    background: #f8f9fa; 
+    box-shadow: 5px 5px 0 var(--border-color);
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: flex-start;
+}
+
+.setup-col h3 { 
+    margin: 0 0 10px 0; /* Spazio sotto il titolo dimezzato */
+    font-size: 18px; /* Ridotto da 22px */
+}
+
+/* Cerchi rimpiccioliti per salvare spazio verticale */
+.slot {
+    width: 55px; /* Ridotto da 70px */
+    height: 55px; 
+    border-radius: 50%; 
+    border: 4px dashed var(--border-color);
+    margin: 0; 
+    cursor: pointer; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
+    background: #ffffff; 
+    font-size: 12px; 
+    font-weight: bold; 
+    transition: transform 0.2s, background-color 0.2s;
+}
+
+.slot:hover { 
+    transform: scale(1.1); 
+    background-color: #ecf0f1;
+}
+
+.slot.filled { 
+    border-style: solid; 
+    box-shadow: 3px 3px 0 var(--border-color); 
+    color: transparent;
+}
+
+.spectators-col { 
+    width: 100%; 
+    box-sizing: border-box; 
+    margin-top: 5px; /* Margine ridotto */
+}
+
+.spectators-list { 
+    display: flex; 
+    gap: 10px; 
+    justify-content: center; 
+    flex-wrap: wrap; 
+    margin-bottom: 10px; /* Ridotto da 20px */
+    min-height: 35px; /* Ridotto da 45px */
+}
+
+/* Pallini degli spettatori scalati proporzionalmente */
+.spectator-dot { 
+    width: 35px; /* Ridotto da 45px */
+    height: 35px; 
+    border-radius: 50%; 
+    border: 3px solid var(--border-color); 
+    box-shadow: 2px 2px 0 var(--border-color);
+}
+
+.btn-small { 
+    padding: 8px 16px; /* Bottone spettatore leggermente più sottile */
+    font-size: 14px; 
+    width: auto; 
+}
+
+/* --- BADGE SPETTATORE CORRETTO --- */
+.spectator-badge {
+    /* Rimosso position: absolute. Ora si posiziona tra la scoreboard e il campo */
+    background: var(--yellow);
+    color: var(--border-color);
+    border: 3px solid var(--border-color);
+    padding: 5px 20px;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 900;
+    box-shadow: 2px 2px 0 var(--border-color);
+    text-transform: uppercase;
+}

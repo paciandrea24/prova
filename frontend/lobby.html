@@ -249,6 +249,11 @@
                     <span class="g-icon">💣</span>
                     <span class="g-title">Bomb</span>
                 </div>
+
+                <div class="game-card" data-game-id="football">
+                    <span class="g-icon">⚽</span>
+                    <span class="g-title">Football</span>
+                </div>
             </div>
 
             <div id="waiting-host-msg"
@@ -340,6 +345,17 @@
                     <div class="setting-row"><span>Timer (s):</span><select id="bomb-initialTimer">
                             <option value="10">10s</option>
                             <option value="15">15s</option>
+                        </select></div>
+                </div>
+
+                <div class="settings-section" id="football-settings" style="display: none;">
+                    <div class="setting-row"><span>Giocatori:</span><select id="football-maxPlayers">
+                            <option value="2">2 Giocatori (1v1)</option>
+                        </select></div>
+                    <div class="setting-row"><span>Gol per Vincere:</span><select id="football-maxGoals">
+                            <option value="3">3 Gol</option>
+                            <option value="5">5 Gol</option>
+                            <option value="10">10 Gol</option>
                         </select></div>
                 </div>
             </div>

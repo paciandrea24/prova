@@ -17,7 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let gameSettings = {
         drawing: { rounds: 3, time: 60, difficulty: 'medium' },
         trivia: { questions: 10, time: 30, category: 'general' },
-        racing: { mode: 'championship', numTracks: 3, trackName: 'Monza' }
+        racing: { mode: 'championship', numTracks: 3, trackName: 'Monza' },
+        football: { maxGoals: 3 }
     };
 
     // 2. Interfaccia Header (ID e Copia)
@@ -49,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (gameId === 'trivia') targetPage = '/quiz.html';
         else if (gameId === 'racing') targetPage = '/racing.html';
         else if (gameId === 'bomb') targetPage = '/bomb.html';
+        else if (gameId === 'football') targetPage = '/football.html';
 
         window.location.href = `${targetPage}?lobby=${lobbyId}&color=${encodeURIComponent(selectedColor)}&game=${gameId}${settingsParam}`;
     });
@@ -224,7 +226,8 @@ document.addEventListener('DOMContentLoaded', () => {
             drawing: '✏️ Drawing Settings',
             trivia: '🧠 Quiz Settings',
             racing: '🏎️ Racing Settings',
-            bomb: '💣 Bomb Settings'
+            bomb: '💣 Bomb Settings',
+            football: '⚽ Football Settings'
         };
         if (modalTitle) modalTitle.textContent = titles[gameId] || '⚙️ Settings';
 
