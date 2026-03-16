@@ -423,7 +423,7 @@ function runGameLoop(io, lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game) return;
 
-    const baseSpeed = 20; // Velocità massima su asfalto
+    const baseSpeed = 24; // Velocità massima su asfalto
     const currentTrackMap = game.tracks[game.currentTrackIndex].map;
 
     game.loopInterval = setInterval(() => {
@@ -518,13 +518,26 @@ function runGameLoop(io, lobbyId) {
             // Applica la velocità modificata
             let actualSpeed = baseSpeed * speedMultiplier;
 
+            let moveX = 0;
+            let moveY = 0;
+
+            if (pState.inputs.w) moveY -= 1;
+            if (pState.inputs.s) moveY += 1;
+            if (pState.inputs.a) moveX -= 1;
+            if (pState.inputs.d) moveX += 1;
+
             let dx = 0;
             let dy = 0;
 
-            if (pState.inputs.w) dy -= actualSpeed;
-            if (pState.inputs.s) dy += actualSpeed;
-            if (pState.inputs.a) dx -= actualSpeed;
-            if (pState.inputs.d) dx += actualSpeed;
+            // Se c'è movimento, normalizza il vettore
+            if (moveX !== 0 || moveY !== 0) {
+                const magnitude = Math.sqrt(moveX * moveX + moveY * moveY);
+                const normalizedX = moveX / magnitude;
+                const normalizedY = moveY / magnitude;
+
+                dx = normalizedX * actualSpeed;
+                dy = normalizedY * actualSpeed;
+            }
 
             let nextX = pState.x + dx;
             let nextY = pState.y + dy;

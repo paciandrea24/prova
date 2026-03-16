@@ -199,10 +199,24 @@ function updatePhysics(game, io, lobbyId) {
         const p = game.players[color];
         if (p.team === 'spectator') continue;
 
-        if (p.inputs.up) p.vy -= p.speed;
-        if (p.inputs.down) p.vy += p.speed;
-        if (p.inputs.left) p.vx -= p.speed;
-        if (p.inputs.right) p.vx += p.speed;
+        // Calcola la direzione desiderata (valori da -1 a 1)
+        let moveX = 0;
+        let moveY = 0;
+
+        if (p.inputs.up) moveY -= 1;
+        if (p.inputs.down) moveY += 1;
+        if (p.inputs.left) moveX -= 1;
+        if (p.inputs.right) moveX += 1;
+
+        // Se c'è movimento, normalizza il vettore
+        if (moveX !== 0 || moveY !== 0) {
+            const magnitude = Math.sqrt(moveX * moveX + moveY * moveY);
+            const normalizedX = moveX / magnitude;
+            const normalizedY = moveY / magnitude;
+
+            p.vx += normalizedX * p.speed;
+            p.vy += normalizedY * p.speed;
+        }
 
         p.isKicking = p.inputs.kick;
 
