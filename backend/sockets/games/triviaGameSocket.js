@@ -229,9 +229,28 @@ function endTriviaRound(io, lobbyId) {
     }, 5000);
 }
 
+// =========================================================================
+// SISTEMA DI CACHE PER LE IMMAGINI DI WIKIPEDIA
+// =========================================================================
+// Questa mappa manterrà in memoria gli URL delle immagini già cercate
+// finché il server Node.js rimane acceso.
+const wikiImageCache = new Map();
+
 async function fetchWikiImage(searchTerm) {
     if (!searchTerm) return null;
+
+    // 1. Normalizziamo il termine (es. "Roma" e "roma" saranno la stessa chiave)
+    const normalizedTerm = searchTerm.toLowerCase().trim();
+
+    // 2. Controlliamo se l'immagine è già presente in Cache
+    if (wikiImageCache.has(normalizedTerm)) {
+        console.log(`⚡ Cache HIT! Immagine di '${searchTerm}' recuperata dalla memoria.`);
+        return wikiImageCache.get(normalizedTerm);
+    }
+
+    // 3. Se non c'è, facciamo la chiamata all'API di Wikipedia
     try {
+        console.log(`🌐 Chiamata API Wikipedia in corso per: '${searchTerm}'...`);
         const endpoint = `https://it.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(searchTerm)}&prop=pageimages&format=json&pithumbsize=1000&origin=*`;
         const response = await fetch(endpoint);
         const data = await response.json();
@@ -239,7 +258,17 @@ async function fetchWikiImage(searchTerm) {
         const firstPageId = Object.keys(pages)[0];
 
         if (firstPageId && pages[firstPageId].thumbnail) {
-            return pages[firstPageId].thumbnail.source;
+            const imageUrl = pages[firstPageId].thumbnail.source;
+
+            // 4. Salviamo l'URL trovato nella cache per le partite future!
+            wikiImageCache.set(normalizedTerm, imageUrl);
+
+            return imageUrl;
+        } else {
+            // Ottimizzazione Extra: Salviamo in cache anche i risultati "vuoti" (null).
+            // Così, se un'immagine non esiste, il server non proverà a cercarla 
+            // su Wikipedia ad ogni singola partita!
+            wikiImageCache.set(normalizedTerm, null);
         }
     } catch (error) {
         console.error(`❌ Wiki error for '${searchTerm}':`, error.message);
@@ -247,6 +276,7 @@ async function fetchWikiImage(searchTerm) {
     return null;
 }
 
+// La funzione enrichQuestionsWithMedia rimane esattamente come la tua
 async function enrichQuestionsWithMedia(questions) {
     return Promise.all(questions.map(async (q) => {
         if (q.type === 'image' && !q.imageUrl && q.imageSearch) {

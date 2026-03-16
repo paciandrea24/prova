@@ -41,7 +41,8 @@ module.exports = function (io, socket) {
                 players: {},
                 ball: { x: 400, y: 200, vx: 0, vy: 0, radius: 10, friction: 0.96 },
                 score: {},
-                gameOver: false
+                gameOver: false,
+                kickoffTeam: null
             };
 
             const game = activeGames[lobbyId];
@@ -140,6 +141,7 @@ module.exports = function (io, socket) {
         const game = activeGames[lobbyId];
         game.gameOver = false;
         game.ball = { x: 400, y: 200, vx: 0, vy: 0, radius: 10, friction: 0.96 };
+        game.kickoffTeam = null;
 
         for (let color in game.score) { game.score[color] = 0; }
 
@@ -213,6 +215,22 @@ function updatePhysics(game, io, lobbyId) {
         if (p.x > 800 - p.radius) p.x = 800 - p.radius;
         if (p.y < p.radius) p.y = p.radius;
         if (p.y > 400 - p.radius) p.y = 400 - p.radius;
+
+        if (game.kickoffTeam) {
+            // Il cerchio centrale ha raggio 60. Aggiungiamo il raggio del giocatore per tenerlo completamente fuori.
+            const keepOutDistance = 60 + p.radius;
+
+            // Se tocca al team sinistro battere, il team destro deve stare fuori dal cerchio di centrocampo
+            if (game.kickoffTeam === 'left' && p.team === 'right' && p.x < 400 + keepOutDistance) {
+                p.x = 400 + keepOutDistance;
+                p.vx = 0; // Ferma lo slancio
+            }
+            // Se tocca al team destro battere, il team sinistro deve stare fuori dal cerchio di centrocampo
+            else if (game.kickoffTeam === 'right' && p.team === 'left' && p.x > 400 - keepOutDistance) {
+                p.x = 400 - keepOutDistance;
+                p.vx = 0; // Ferma lo slancio
+            }
+        }
     }
 
     // 2. Collisioni tra Giocatori
@@ -272,16 +290,25 @@ function updatePhysics(game, io, lobbyId) {
         let dx = b.x - p.x; let dy = b.y - p.y;
         let dist = Math.sqrt(dx * dx + dy * dy);
 
+        let hasTouchedBall = false; // NUOVO FLAG
+
         if (dist < p.radius + b.radius) {
             let nx = dx / dist; let ny = dy / dist;
             let overlap = (p.radius + b.radius) - dist;
             b.x += nx * overlap; b.y += ny * overlap;
             b.vx = p.vx + nx * 0.5; b.vy = p.vy + ny * 0.5;
+            hasTouchedBall = true;
         }
 
         if (p.isKicking && dist < p.radius + b.radius + 12) {
             let nx = dx / dist; let ny = dy / dist;
             b.vx += nx * 12; b.vy += ny * 12;
+            hasTouchedBall = true;
+        }
+
+        // NUOVO: Rimuovi il muro invisibile appena la squadra autorizzata tocca o calcia la palla
+        if (hasTouchedBall && game.kickoffTeam && p.team === game.kickoffTeam) {
+            game.kickoffTeam = null;
         }
     }
 }
@@ -312,6 +339,8 @@ function goalScored(game, goalSide, io, lobbyId) {
 
     // Resetta le posizioni se la partita continua
     game.ball.x = 400; game.ball.y = 200; game.ball.vx = 0; game.ball.vy = 0;
+
+    game.kickoffTeam = goalSide;
 
     for (let color in game.players) {
         const p = game.players[color];
