@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { activeGames } = require('../store/activeGames');
+const { lobbies } = require('../store/lobbies');
 
 // Variabili per contenere il dizionario
 let dictionarySet = new Set();
@@ -206,14 +207,17 @@ function explodeBomb(io, lobbyId, game) {
     if (isGameOver) {
         setTimeout(() => {
             const winner = game.activePlayers[0];
-            // La classifica è: il vincitore, seguito da chi è morto per ultimo, penultimo, ecc.
             const ranking = [winner, ...game.eliminationOrder.reverse()];
 
-            // MODIFICA L'EMIT COSÌ:
+            // Recupera la lobby per l'host
+            const lobby = lobbies.get(lobbyId);
+            const hostColor = lobby ? lobby.host : null;
+
             io.to(lobbyId).emit('gameEnd', {
                 winner: winner,
                 ranking: ranking,
-                lives: game.lives
+                lives: game.lives,
+                hostColor: hostColor // <-- Invia l'host al frontend
             });
         }, 3000);
     } else {

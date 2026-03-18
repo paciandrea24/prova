@@ -1,5 +1,6 @@
 const { activeGames } = require('../store/activeGames');
 const { allWords, wordsByDifficulty } = require('../config/words');
+const { lobbies } = require('../store/lobbies');
 
 
 // Funzione per ottenere le impostazioni di default
@@ -396,12 +397,17 @@ function endGame(io, lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game) return;
 
+    // 1. Recuperiamo la lobby per sapere chi è l'host
+    const lobby = lobbies.get(lobbyId);
+    const hostColor = lobby ? lobby.host : null;
+
     console.log(`🏁 Gioco terminato per lobby ${lobbyId}. Punteggi finali:`, game.scores);
 
-    // Notifica a tutti che il gioco è finito
+    // 2. Invia i punteggi E il colore dell'host a tutti
     io.to(lobbyId).emit('gameEnd', {
         players: game.players,
-        finalScores: game.scores
+        finalScores: game.scores,
+        hostColor: hostColor // <-- Ora il frontend saprà chi è l'host!
     });
 
     // Rimuovi il gioco dalla lista dei giochi attivi

@@ -141,13 +141,12 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('gameOver', (data) => {
         isGameOver = true;
 
-        // Nascondi il bottone normale "Torna alla lobby"
         document.getElementById('btn-leave').style.display = 'none';
 
-        // Mostra e aggiorna il pannello di vittoria
         const victoryPanel = document.getElementById('victory-panel');
         const winnerDot = document.getElementById('winner-color-dot');
         const winnerText = document.getElementById('winner-text');
+        const btnVictoryLeave = document.getElementById('btn-victory-leave'); // <-- Prendiamo il bottone
 
         if (data.winner === 'Nessuno') {
             winnerDot.style.display = 'none';
@@ -158,7 +157,30 @@ document.addEventListener('DOMContentLoaded', () => {
             winnerText.innerText = 'HA VINTO LA PARTITA!';
         }
 
+        // GESTIONE PULSANTE HOST
+        if (playerColor === data.hostColor) {
+            btnVictoryLeave.style.display = 'inline-block';
+            btnVictoryLeave.textContent = 'Ritorna alla Lobby (Tutti)';
+            btnVictoryLeave.onclick = () => {
+                socket.emit('forceReturnToLobby', lobbyId);
+            };
+        } else {
+            btnVictoryLeave.style.display = 'none';
+            if (!document.getElementById('waiting-host-text-multi')) {
+                const waitMsg = document.createElement('p');
+                waitMsg.id = 'waiting-host-text-multi';
+                waitMsg.style.color = '#fff';
+                waitMsg.style.fontWeight = 'bold';
+                waitMsg.textContent = 'In attesa che l\'host ritorni alla lobby...';
+                victoryPanel.appendChild(waitMsg);
+            }
+        }
+
         victoryPanel.style.display = 'flex';
+    });
+
+    socket.on('redirectAllToLobby', () => {
+        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
     });
 
     // Funzione per tornare alla lobby (collegata a entrambi i bottoni)

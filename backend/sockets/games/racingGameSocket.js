@@ -83,9 +83,4 @@ module.exports = function (io, socket) {
     socket.on('restartRace', (lobbyId) => {
         restartRace(io, lobbyId);
     });
-
-    socket.on('forceReturnToLobby', (lobbyId) => {
-        activeGames.delete(lobbyId);
-        io.to(lobbyId).emit('returnToLobby');
-    });
 };

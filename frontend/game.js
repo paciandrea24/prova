@@ -415,7 +415,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // --- FUNZIONE ROBUSTA PER LA CLASSIFICA FINALE ---
-    function showGameEnd(payload) {
+    function showGameEnd(payload, hostColor) {
         const finalStandingsDiv = document.getElementById('final-standings');
 
         // Cerca in modo ricorsivo l'oggetto dei punteggi (ignora strutture sporche del server)
@@ -464,6 +464,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
         html += '</ul>';
         finalStandingsDiv.innerHTML = html;
+        if (backToLobbyBtn) {
+            // Se sei l'host, vedi il pulsante
+            if (playerColor === hostColor) {
+                backToLobbyBtn.style.display = 'block';
+                backToLobbyBtn.textContent = 'Ritorna alla Lobby (Tutti)';
+                backToLobbyBtn.onclick = () => {
+                    socket.emit('forceReturnToLobby', lobbyId);
+                };
+            } else {
+                // Se NON sei l'host, il pulsante sparisce e vedi un messaggio
+                backToLobbyBtn.style.display = 'none';
+
+                // Crea il testo di attesa solo se non esiste già
+                if (!document.getElementById('waiting-host-text')) {
+                    const waitMsg = document.createElement('p');
+                    waitMsg.id = 'waiting-host-text';
+                    waitMsg.style.color = '#7f8c8d';
+                    waitMsg.style.fontWeight = 'bold';
+                    waitMsg.style.textAlign = 'center';
+                    waitMsg.textContent = 'In attesa che l\'host ritorni alla lobby...';
+                    finalStandingsDiv.appendChild(waitMsg);
+                }
+            }
+        }
+
         gameEndModal.style.display = 'flex';
     }
 
@@ -508,12 +533,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('gameEnd', (data) => {
-        showGameEnd(data);
+        showGameEnd(data, data.hostColor); // Passiamo l'hostColor
+    });
+
+    // Aggiungi questo listener in game.js
+    socket.on('redirectAllToLobby', () => {
+        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
     });
 
     if (backToLobbyBtn) {
         backToLobbyBtn.onclick = () => {
-            window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
+            // Ora emettiamo l'evento al server invece di reindirizzare solo noi stessi
+            socket.emit('forceReturnToLobby', lobbyId);
         };
     }
 

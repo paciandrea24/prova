@@ -320,6 +320,8 @@ function checkWinCondition(game, io, lobbyId) {
     if (activePlayers.length <= 1) {
         game.gameOver = true;
         const winnerColor = activePlayers.length === 1 ? activePlayers[0].color : 'Nessuno';
-        io.to(lobbyId).emit('gameOver', { winner: winnerColor });
+        const lobby = lobbies.get(lobbyId);
+        const hostColor = lobby ? lobby.host : null;
+        io.to(lobbyId).emit('gameOver', { winner: winnerColor, hostColor: hostColor });
     }
 }

@@ -646,7 +646,6 @@ function runGameLoop(io, lobbyId) {
 }
 
 // GESTIONE FINE GARA E PASSAGGIO ALLA PROSSIMA
-// GESTIONE FINE GARA E PASSAGGIO ALLA PROSSIMA
 function handleRaceEnd(io, lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game) return;
@@ -672,13 +671,18 @@ function handleRaceEnd(io, lobbyId) {
     const trackName = game.tracks[game.currentTrackIndex].name;
     const mapTop3 = leaderboard.getTop10(trackName).slice(0, 3);
 
+    // Recupera la lobby per l'host
+    const lobby = lobbies.get(lobbyId);
+    const hostColor = lobby ? lobby.host : null;
+
     io.to(lobbyId).emit('raceEnded', {
         podium: cumulativePodium,
         singleRacePodium: singleRacePodium,
         mapTop3: mapTop3,
         isFinal: isFinalRace,
         trackName: trackName,
-        isSingleMode: game.isSingleMode // <-- Importante: invialo al client!
+        isSingleMode: game.isSingleMode,
+        hostColor: hostColor // <-- Aggiunto l'host!
     });
 
     // Se è modalità singola, FERMIAMO IL TEMPO. Spetterà all'host riavviare o uscire.

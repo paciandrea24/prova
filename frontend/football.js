@@ -122,15 +122,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // CON QUESTO
     socket.on('gameOver', (data) => {
         isGameOver = true;
         for (let key in keys) keys[key] = false;
-        showGameOverPanel(data.winner, data.finalScore);
+        showGameOverPanel(data.winner, data.finalScore, data.hostColor); // Passiamo l'host
     });
 
     socket.on('gameRestarted', () => {
         isGameOver = false;
         hideGameOverPanel();
+    });
+
+    socket.on('redirectAllToLobby', () => {
+        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
     });
 
     let lastScoreState = "";
@@ -195,7 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // TRADUZIONE DEL PANNELLO DI FINE PARTITA
-    function showGameOverPanel(winnerColor, finalScores) {
+    function showGameOverPanel(winnerColor, finalScores, hostColor) { // <- Aggiunto parametro
         const panel = document.createElement('div');
         panel.id = 'game-over-panel';
         panel.className = 'game-over-panel';
@@ -227,9 +232,23 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('btn-restart').onclick = () => {
             socket.emit('restartGameRequest', { lobbyId });
         };
-        document.getElementById('btn-lobby').onclick = () => {
-            window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
-        };
+
+        // GESTIONE PULSANTE HOST
+        const btnLobby = document.getElementById('btn-lobby');
+        if (playerColor === hostColor) {
+            btnLobby.style.display = 'inline-block';
+            btnLobby.textContent = 'Ritorna alla Lobby (Tutti)';
+            btnLobby.onclick = () => {
+                socket.emit('forceReturnToLobby', lobbyId);
+            };
+        } else {
+            btnLobby.style.display = 'none';
+            const waitMsg = document.createElement('p');
+            waitMsg.style.color = '#7f8c8d';
+            waitMsg.style.fontWeight = 'bold';
+            waitMsg.textContent = 'In attesa che l\'host ritorni alla lobby...';
+            panel.querySelector('.go-content').appendChild(waitMsg);
+        }
     }
 
     function hideGameOverPanel() {

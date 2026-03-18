@@ -560,7 +560,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    socket.on('returnToLobby', () => {
+    socket.on('redirectAllToLobby', () => {
         window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(myColor)}`;
     });
 

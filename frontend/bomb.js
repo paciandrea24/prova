@@ -125,15 +125,20 @@ document.addEventListener('DOMContentLoaded', () => {
         turnIndicator.style.display = 'none';
     });
 
+    // ASCOLTATORE RIENTRO FORZATO
+    socket.on('redirectAllToLobby', () => {
+        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
+    });
+
     // Cerca socket.on('gameEnd', ...) e sostituiscilo TUTTO con questo:
     socket.on('gameEnd', (data) => {
-        const ranking = data.ranking; // [1° classificato, 2°, 3°, ecc.]
+        const ranking = data.ranking;
+        const hostColor = data.hostColor; // <-- Riceviamo l'host
         const podiumContainer = document.getElementById('podium-container');
         podiumContainer.innerHTML = '';
 
-        // Funzione per creare il gradino
         const createSpot = (pColor, position) => {
-            if (!pColor) return ''; // Se c'erano meno di 3 giocatori, ignora
+            if (!pColor) return '';
 
             let className = `podium-${position}`;
             let isMe = pColor === playerColor ? '<div class="podium-me-badge">TU</div>' : '';
@@ -147,19 +152,37 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         };
 
-        // Costruiamo l'HTML nell'ordine visivo classico dei podi: 2, 1, 3
         let html = '';
-        if (ranking[1]) html += createSpot(ranking[1], 2); // Secondo posto (Sinistra)
-        if (ranking[0]) html += createSpot(ranking[0], 1); // Primo posto (Centro)
-        if (ranking[2]) html += createSpot(ranking[2], 3); // Terzo posto (Destra)
+        if (ranking[1]) html += createSpot(ranking[1], 2);
+        if (ranking[0]) html += createSpot(ranking[0], 1);
+        if (ranking[2]) html += createSpot(ranking[2], 3);
 
         podiumContainer.innerHTML = html;
+
+        // --- GESTIONE PULSANTE HOST ---
+        if (backToLobbyBtn) {
+            if (playerColor === hostColor) {
+                backToLobbyBtn.style.display = 'block';
+                backToLobbyBtn.textContent = 'Ritorna alla Lobby (Tutti)';
+                backToLobbyBtn.onclick = () => {
+                    socket.emit('forceReturnToLobby', lobbyId);
+                };
+            } else {
+                backToLobbyBtn.style.display = 'none';
+                if (!document.getElementById('waiting-host-text')) {
+                    const waitMsg = document.createElement('p');
+                    waitMsg.id = 'waiting-host-text';
+                    waitMsg.style.color = '#7f8c8d';
+                    waitMsg.style.fontWeight = 'bold';
+                    waitMsg.style.textAlign = 'center';
+                    waitMsg.textContent = 'In attesa che l\'host ritorni alla lobby...';
+                    podiumContainer.parentElement.appendChild(waitMsg);
+                }
+            }
+        }
+
         gameEndModal.style.display = 'flex';
     });
-
-    backToLobbyBtn.onclick = () => {
-        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
-    };
 
     // --- FUNZIONI DI SUPPORTO ---
 

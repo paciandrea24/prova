@@ -148,8 +148,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data.scores) updateStandings(data.scores);
     });
 
+    // Aggiungi questo in un punto globale del file (es. sotto le altre socket.on)
+    socket.on('redirectAllToLobby', () => {
+        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
+    });
+
     socket.on('gameOver', (data) => {
-        showGameEnd(data.scores);
+        showGameEnd(data.scores, data.hostColor);
     });
 
     function renderOptions(options) {
@@ -220,9 +225,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 6. CLASSIFICA FINALE (SOLO COLORI)
-    function showGameEnd(scores) {
+    function showGameEnd(scores, hostColor) {
         const finalStandingsDiv = document.getElementById('final-standings');
-
         if (!scores) scores = {};
 
         const sortedPlayers = Object.keys(scores).sort((a, b) => scores[b] - scores[a]);
@@ -247,6 +251,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         html += '</ul>';
         finalStandingsDiv.innerHTML = html;
+        // GESTIONE PULSANTE HOST
+        if (backToLobbyBtn) {
+            if (playerColor === hostColor) {
+                backToLobbyBtn.style.display = 'block';
+                backToLobbyBtn.textContent = 'Ritorna alla Lobby (Tutti)';
+                backToLobbyBtn.onclick = () => {
+                    socket.emit('forceReturnToLobby', lobbyId);
+                };
+            } else {
+                backToLobbyBtn.style.display = 'none';
+
+                // Opzionale: mostra un testo di attesa
+                const waitMsg = document.createElement('p');
+                waitMsg.style.color = '#7f8c8d';
+                waitMsg.style.fontWeight = 'bold';
+                waitMsg.textContent = 'In attesa che l\'host ritorni alla lobby...';
+                finalStandingsDiv.appendChild(waitMsg);
+            }
+        }
+
         gameEndModal.style.display = 'flex';
     }
 

@@ -101,6 +101,27 @@ module.exports = function (io) {
             }
         });
 
+        // --- 4. RITORNO FORZATO IN LOBBY (Solo Host) ---
+        socket.on('forceReturnToLobby', (lobbyId) => {
+            const lobby = lobbies.get(lobbyId);
+
+            // Verifichiamo che la lobby esista e che a richiederlo sia l'host
+            if (lobby && lobby.host === socket.color) {
+                console.log(`🔙 L'host ${socket.color} ha chiuso la partita. Rientro in lobby per ${lobbyId}`);
+
+                // 1. Eliminiamo la partita attiva dalla memoria per evitare bug con i nuovi giocatori
+                const { activeGames } = require('../store/activeGames');
+                if (activeGames.has(lobbyId)) {
+                    const game = activeGames.get(lobbyId);
+                    if (game.timerInterval) clearInterval(game.timerInterval); // Pulizia timer
+                    activeGames.delete(lobbyId);
+                }
+
+                // 2. Ordiniamo a TUTTI i client della stanza di tornare alla lobby
+                io.to(lobbyId).emit('redirectAllToLobby');
+            }
+        });
+
         // Inizializza i moduli dei giochi
         drawingGameSocket(io, socket);
         triviaGameSocket(io, socket);

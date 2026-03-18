@@ -354,7 +354,9 @@ function goalScored(game, goalSide, io, lobbyId) {
 
     if (winnerFound) {
         game.gameOver = true;
-        io.to(lobbyId).emit('gameOver', { winner: winnerFound, finalScore: game.score });
+        const lobby = lobbies.get(lobbyId);
+        const hostColor = lobby ? lobby.host : null;
+        io.to(lobbyId).emit('gameOver', { winner: winnerFound, finalScore: game.score, hostColor: hostColor });
         return;
     }
 
