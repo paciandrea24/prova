@@ -85,6 +85,24 @@ router.get('/api/lobby-colors/:lobbyId', (req, res) => {
 });
 
 // ---------------------------------------------------------
+// [NUOVO] API per ottenere tutte le lobby pubbliche
+// ---------------------------------------------------------
+router.get('/api/lobbies', (req, res) => {
+    const publicLobbies = [];
+
+    // Iteriamo sulla Map delle lobby
+    for (const [id, lobby] of lobbies.entries()) {
+        publicLobbies.push({
+            id: lobby.id,
+            playersCount: lobby.players.length,
+            // Puoi nascondere lobby piene se vuoi, per ora le mandiamo tutte
+        });
+    }
+
+    res.json(publicLobbies);
+});
+
+// ---------------------------------------------------------
 // API per ottenere tutta la Leaderboard Globale
 // ---------------------------------------------------------
 router.get('/api/leaderboard', (req, res) => {

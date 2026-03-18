@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Socket Setup
     const socket = io();
-    socket.emit('joinLobby', lobbyId);
+    socket.emit('joinLobby', { lobbyId: lobbyId, color: playerColor });
     socket.emit('joinGame', { lobbyId, gameId, playerColor });
 
     // --- RICEZIONE STATO DI GIOCO ---

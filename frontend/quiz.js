@@ -45,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 2. SOCKET IO
     const socket = io();
-    socket.emit('joinLobby', lobbyId);
+    socket.emit('joinLobby', { lobbyId: lobbyId, color: playerColor });
     socket.emit('joinGame', { lobbyId, gameId, playerColor, settings: gameSettings });
     socket.emit('requestGameState', { lobbyId });
 

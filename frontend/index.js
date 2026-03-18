@@ -16,20 +16,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const linkJoinActions = document.getElementById('link-join-actions');
     const joinLinkMsg = document.getElementById('join-link-msg');
 
-    // Palette: Primi 6 Gartic Style + i 6 colori scelti da te, armonizzati
+    // Elementi Modal
+    const browseBtn = document.getElementById('browse-btn');
+    const modal = document.getElementById('lobbies-modal');
+    const closeModal = document.getElementById('close-modal');
+    const lobbiesList = document.getElementById('lobbies-list');
+
+    // Palette Colori
     const availableColors = [
-        '#E74C3C', // Rosso
-        '#3498DB', // Blu
-        '#2ECC71', // Verde
-        '#F1C40F', // Giallo
-        '#9B59B6', // Viola
-        '#E67E22', // Arancione
-        '#00BCD4', // Ciano (Sostituisce #00CED1)
-        '#FF4081', // Fucsia/Rosa acceso (Sostituisce #FF1493)
-        '#795548', // Marrone Flat (Sostituisce #8B4513)
-        '#CDDC39', // Lime/Verde Acido (Sostituisce #7FFF00)
-        '#4B0082', // Indaco Intenso (Sostituisce #4B0082)
-        '#455A64'  // Grigio Antracite (Sostituisce #36454F)
+        '#E74C3C', '#3498DB', '#2ECC71', '#F1C40F',
+        '#9B59B6', '#E67E22', '#00BCD4', '#FF4081',
+        '#795548', '#CDDC39', '#4B0082', '#455A64'
     ];
 
     let takenColors = [];
@@ -53,25 +50,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function renderColors() {
-        // 1. CREIAMO I CERCHI SOLO SE NON ESISTONO ANCORA
         if (colorPickerContainer.children.length === 0) {
             availableColors.forEach(colorHex => {
                 const color = colorHex.toUpperCase();
                 const circle = document.createElement('div');
                 circle.className = 'color-circle';
                 circle.style.backgroundColor = color;
-                circle.dataset.color = color; // Salviamo il colore nel nodo
+                circle.dataset.color = color;
 
                 circle.addEventListener('click', () => {
-                    // Ignora il click se il colore è occupato
                     if (circle.classList.contains('disabled')) return;
 
-                    // Rimuovi 'active' da tutti e mettilo su quello cliccato
                     document.querySelectorAll('.color-circle').forEach(el => el.classList.remove('active'));
                     circle.classList.add('active');
                     hiddenInput.value = color;
 
-                    // Accendi subito i bottoni!
                     if (createBtn) createBtn.disabled = false;
                     if (joinBtn) joinBtn.disabled = false;
                     if (linkJoinBtn) linkJoinBtn.disabled = false;
@@ -81,7 +74,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
 
-        // 2. AGGIORNIAMO LO STATO DEI COLORI (Senza distruggere l'HTML!)
         const circles = colorPickerContainer.querySelectorAll('.color-circle');
         circles.forEach(circle => {
             const color = circle.dataset.color;
@@ -91,7 +83,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 circle.title = "Already taken";
                 circle.classList.remove('active');
 
-                // Se l'utente aveva questo colore, resettiamo tutto
                 if (hiddenInput.value === color) {
                     hiddenInput.value = '';
                     if (createBtn) createBtn.disabled = true;
@@ -101,7 +92,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 circle.classList.remove('disabled');
                 circle.title = "";
 
-                // Mantieni acceso il colore se l'utente lo aveva già selezionato
                 if (hiddenInput.value === color) {
                     circle.classList.add('active');
                     if (createBtn) createBtn.disabled = false;
@@ -133,7 +123,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (lobbyInput) {
         lobbyInput.addEventListener('blur', async () => {
-            // FORZA IN MAIUSCOLO IL TESTO INSERITO
             lobbyInput.value = lobbyInput.value.toUpperCase();
             const val = lobbyInput.value.trim();
 
@@ -158,7 +147,68 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // =========================================================
-    // 4. GESTIONE INVIO (CREATE / JOIN)
+    // 4. GESTIONE MODAL BROWSE LOBBIES
+    // =========================================================
+    if (browseBtn && modal) {
+        browseBtn.addEventListener('click', async () => {
+            modal.style.display = 'flex';
+            lobbiesList.innerHTML = '<p style="font-weight:bold; color:var(--blue);">Loading lobbies...</p>';
+
+            try {
+                const res = await fetch('/api/lobbies');
+                const data = await res.json();
+
+                lobbiesList.innerHTML = ''; // Pulisci il caricamento
+
+                if (data.length === 0) {
+                    lobbiesList.innerHTML = '<p style="font-weight:bold; color:var(--red);">No active lobbies found.<br>Create one!</p>';
+                    return;
+                }
+
+                // Genera la lista
+                data.forEach(lobby => {
+                    const div = document.createElement('div');
+                    div.className = 'lobby-item';
+                    div.innerHTML = `<span>Room: ${lobby.id}</span> <span>👥 ${lobby.playersCount}</span>`;
+
+                    div.addEventListener('click', async () => {
+                        lobbyInput.value = lobby.id; // Compila l'input in automatico
+                        modal.style.display = 'none'; // Chiudi il modal
+
+                        await fetchTakenColors(lobby.id);
+                        renderColors();
+
+                        if (takenColors.includes(hiddenInput.value)) {
+                            hiddenInput.value = '';
+                            if (joinBtn) joinBtn.disabled = true;
+                            showToast("Your color is taken in this room! Pick another.", "info");
+                        } else {
+                            showToast(`Room ${lobby.id} selected!`, "success");
+                            if (hiddenInput.value && joinBtn) joinBtn.disabled = false;
+                        }
+                    });
+
+                    lobbiesList.appendChild(div);
+                });
+            } catch (e) {
+                console.error("Error fetching lobbies:", e);
+                lobbiesList.innerHTML = '<p style="color:var(--red);">Error loading lobbies.</p>';
+            }
+        });
+
+        closeModal.addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+
+        window.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+    }
+
+    // =========================================================
+    // 5. GESTIONE INVIO (CREATE / JOIN)
     // =========================================================
 
     async function handleAction(endpoint, bodyData, targetLobbyId = null) {
@@ -230,7 +280,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (joinBtn) {
         joinBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            // FORZA IL MAIUSCOLO QUI PRIMA DELL'INVIO
             const id = lobbyInput.value.trim().toUpperCase();
             if (!id) { showToast("Enter the room code!", "error"); return; }
             handleAction('/join-lobby', { color: hiddenInput.value, lobbyId: id }, id);
@@ -245,7 +294,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // =========================================================
-    // 5. HELPER NOTIFICHE TOAST
+    // 6. HELPER NOTIFICHE TOAST
     // =========================================================
     function showToast(message, type = 'info') {
         let container = document.querySelector('.toast-container');

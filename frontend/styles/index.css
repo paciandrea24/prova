@@ -27,9 +27,9 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 100vh;
+    height: 100vh;          /* Modificato: usa l'altezza esatta dello schermo */
     box-sizing: border-box;
-    overflow-y: auto; /* Consente lo scroll solo se lo schermo è minuscolo (es. orizzontale) */
+    overflow: hidden;       /* Modificato: NASCONDE la scrollbar generale */
 }
 
 /* --- LOGO FLUTTUANTE --- */
@@ -63,12 +63,20 @@ body {
     background: var(--panel-bg);
     border: var(--border-width) solid var(--border-color);
     border-radius: 20px;
-    padding: 30px 35px; /* <-- Box più spazioso (prima era 25px 30px) */
+    padding: 30px 35px; 
     width: 100%;
-    max-width: 440px; /* <-- Box più largo (prima era 400px) */
+    max-width: 440px; 
     box-shadow: var(--shadow-size) var(--shadow-size) 0px var(--border-color);
     text-align: center;
     box-sizing: border-box;
+    max-height: 85vh;       /* Novità: se lo schermo è piccolo, si adatta */
+    overflow-y: auto;       /* Novità: permette lo scroll interno se necessario */
+    scrollbar-width: none;  /* Novità: nasconde la scrollbar su Firefox */
+}
+
+/* Novità: nasconde la scrollbar del pannello su Chrome/Safari */
+.main-panel::-webkit-scrollbar {
+    display: none; 
 }
 
 h2 {
@@ -288,3 +296,86 @@ h2 {
     .divider { margin: 15px 0; }
     .color-circle { width: 36px; height: 36px; }
 }
+
+/* --- [NUOVO] BROWSE LOBBIES E MODAL --- */
+.btn-browse {
+    background: #9B59B6; /* Viola per distinguerlo */
+    color: white;
+    font-size: 16px;
+    padding: 10px;
+}
+
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 3000;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.modal-content {
+    background: var(--panel-bg);
+    border: var(--border-width) solid var(--border-color);
+    border-radius: 20px;
+    padding: 25px;
+    width: 90%;
+    max-width: 400px;
+    box-shadow: var(--shadow-size) var(--shadow-size) 0px var(--border-color);
+    position: relative;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    animation: slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.close-modal {
+    position: absolute;
+    top: 15px; right: 20px;
+    font-size: 28px;
+    font-weight: bold;
+    color: var(--border-color);
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+
+.close-modal:hover { transform: scale(1.2); }
+
+.lobbies-container {
+    overflow-y: auto;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.lobby-item {
+    border: 3px solid var(--border-color);
+    border-radius: 12px;
+    padding: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-color);
+    cursor: pointer;
+    font-weight: 700;
+    color: var(--border-color);
+    box-shadow: 3px 3px 0px var(--border-color);
+    transition: all 0.1s ease;
+}
+
+.lobby-item:hover {
+    transform: translateY(-2px);
+    background: #D6EAF8;
+}
+
+.lobby-item:active {
+    box-shadow: 0px 0px 0px transparent;
+    transform: translate(3px, 3px);
+}
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }

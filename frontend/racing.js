@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const socket = io();
-    socket.emit('joinLobby', lobbyId);
+    socket.emit('joinLobby', { lobbyId: lobbyId, color: myColor });
     socket.emit('joinRacing', { lobbyId, playerColor: decodeURIComponent(myColor) });
 
     const arena = document.getElementById('arena');

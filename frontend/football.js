@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const socket = io();
-    socket.emit('joinLobby', lobbyId);
+    socket.emit('joinLobby', { lobbyId: lobbyId, color: playerColor });
     socket.emit('joinGame', { lobbyId, gameId, playerColor });
 
     const canvas = document.getElementById('game-canvas');
