@@ -3,322 +3,348 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mockup - Brawl-Ball (Fullscreen)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mockup - Brawl Football</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
 
     <style>
         :root {
+            --bg-color: #E3F2FD;
             --border-color: #2C3E50;
+            --panel-bg: #FFFFFF;
+
             --green: #2ECC71;
             --yellow: #F1C40F;
             --red: #E74C3C;
             --blue: #3498DB;
-            --orange: #E67E22;
+            --purple: #9b59b6;
+            --orange: #e67e22;
+
+            --border-width: 4px;
             --shadow-size: 6px;
         }
 
         body {
-            /* Sfondo di base nel caso in cui lo schermo sia più largo del gioco */
-            background-color: #2c3e50;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(#bdc3c7 2px, transparent 2px);
+            background-size: 30px 30px;
             font-family: 'Fredoka', sans-serif;
             color: var(--border-color);
             margin: 0;
-            padding: 10px;
+            padding: 15px;
             display: flex;
-            justify-content: center;
+            flex-direction: column;
             align-items: center;
             height: 100vh;
             box-sizing: border-box;
             overflow: hidden;
-        }
-
-        /* L'arena occupa quasi tutto lo schermo */
-        .game-window {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            max-width: 1600px;
-            background: #87CEEB;
-            /* Cielo */
-            border: 6px solid var(--border-color);
-            border-radius: 20px;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5), inset 0 0 50px rgba(0, 0, 0, 0.2);
-            overflow: hidden;
-        }
-
-        /* Nuvole di sfondo dell'arena */
-        .game-window::before {
-            content: '☁️ ☁️ ☁️ ☁️';
-            position: absolute;
-            top: 50px;
-            left: 10%;
-            font-size: 100px;
-            opacity: 0.3;
-            letter-spacing: 200px;
-            white-space: nowrap;
-        }
-
-        /* --- HUD (IN SOVRIMPRESSIONE) --- */
-
-        /* Stile base per i pannelli semi-trasparenti (Vetro cartoonesco) */
-        .hud-panel {
-            background: rgba(255, 255, 255, 0.65);
-            backdrop-filter: blur(6px);
-            -webkit-backdrop-filter: blur(6px);
-            border: 3px solid var(--border-color);
-            border-radius: 16px;
-            box-shadow: 4px 4px 0 rgba(44, 62, 80, 0.5);
-            z-index: 100;
-            /* Sempre sopra i giocatori */
-        }
-
-        /* Top Bar centrale */
-        .hud-top {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            padding: 5px 25px;
-        }
-
-        .game-title {
-            font-size: 26px;
-            font-weight: 900;
-            text-transform: uppercase;
-            margin: 0;
-        }
-
-        .timer-box {
-            font-size: 26px;
-            font-weight: bold;
-            color: var(--red);
-        }
-
-        /* Controlli (In alto a sinistra) */
-        .hud-controls {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            padding: 8px 15px;
-            font-weight: bold;
-            font-size: 14px;
-        }
-
-        /* Pannello dei Danni (In basso) */
-        .hud-damage-container {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
             gap: 15px;
-            width: 90%;
-            max-width: 1000px;
-            z-index: 100;
+            /* Spazio tra vite e campo */
         }
 
-        .damage-card {
-            flex: 1;
+        /* --- LIVES BOARD (SOLO COLORI) --- */
+        .lives-panel {
             display: flex;
-            flex-direction: column;
+            flex-wrap: wrap;
             justify-content: center;
-            align-items: center;
-            padding: 10px;
-            transition: transform 0.2s;
+            gap: 12px;
+            width: 100%;
+            max-width: 1200px;
+            /* Nessun background ingombrante, le pillole fluttuano libere */
         }
 
-        .card-header {
+        .life-pill {
             display: flex;
             align-items: center;
             gap: 10px;
-            font-size: 16px;
-            font-weight: bold;
+            background: var(--panel-bg);
+            border: 3px solid var(--border-color);
+            border-radius: 25px;
+            padding: 8px 16px;
+            font-weight: 700;
+            font-size: 18px;
+            box-shadow: 4px 4px 0 var(--border-color);
+            transition: transform 0.2s;
         }
 
-        .damage-card .avatar-circle {
-            width: 20px;
-            height: 20px;
+        .life-pill.eliminated {
+            opacity: 0.5;
+            background: #bdc3c7;
+            text-decoration: line-through;
+            box-shadow: 2px 2px 0 var(--border-color);
+        }
+
+        .color-dot {
+            width: 22px;
+            height: 22px;
             border-radius: 50%;
             border: 3px solid var(--border-color);
         }
 
-        .damage-value {
-            font-size: 40px;
-            font-weight: 900;
-            color: var(--border-color);
-            text-shadow: 2px 2px 0px rgba(255, 255, 255, 0.8);
-        }
-
-        .damage-card.danger .damage-value {
+        .hearts {
             color: var(--red);
-            animation: shake 0.3s infinite alternate;
+            letter-spacing: 2px;
+            font-size: 20px;
         }
 
-        .damage-card.eliminated {
-            background: rgba(0, 0, 0, 0.4);
-            color: white;
-            border-color: #555;
+        /* --- GAME AREA CONTENITORE --- */
+        .game-container {
+            background: var(--panel-bg);
+            border: var(--border-width) solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: var(--shadow-size) var(--shadow-size) 0 var(--border-color);
+            width: 100%;
+            max-width: 1400px;
+            /* Limite massimo per non sgranare su schermi ultrawide */
+            flex: 1;
+            /* IL SEGRETO: prende tutto lo spazio verticale rimanente */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+            /* Evita qualsiasi sbordamento */
+        }
+
+        /* --- CANVAS DEL CAMPO --- */
+        #game-canvas {
+            /* Adatta il canvas al 100% dello spazio disponibile nel container mantenendo il ratio quadrato */
+            max-width: 100%;
+            max-height: 100%;
+            aspect-ratio: 1 / 1;
+            object-fit: contain;
+        }
+
+        /* --- TASTO ESCI FLUTTUANTE NEL CAMPO --- */
+        .btn-leave {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: #bdc3c7;
+            color: var(--border-color);
+            border: var(--border-width) solid var(--border-color);
+            padding: 10px 20px;
+            border-radius: 12px;
+            font-weight: bold;
+            font-family: 'Fredoka', sans-serif;
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: 4px 4px 0 var(--border-color);
+            text-transform: uppercase;
+            transition: transform 0.1s;
+            z-index: 10;
+        }
+
+        .btn-leave:active {
             box-shadow: none;
-            backdrop-filter: grayscale(100%);
+            transform: translate(4px, 4px);
         }
 
-        .damage-card.eliminated .damage-value {
-            font-size: 28px;
-            text-shadow: none;
-            color: #ccc;
-            margin-top: 5px;
-        }
-
-        .damage-card.eliminated .card-header {
-            opacity: 0.5;
-        }
-
-        /* --- ELEMENTI DI GIOCO --- */
-        .platform {
+        /* --- GAME OVER MODAL --- */
+        .game-over-overlay {
             position: absolute;
-            background: var(--orange);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(44, 62, 80, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .go-content {
+            background: var(--panel-bg);
+            border: var(--border-width) solid var(--border-color);
+            border-radius: 20px;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 8px 8px 0px var(--border-color);
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .go-title {
+            font-size: 32px;
+            font-weight: 900;
+            margin: 0;
+            color: var(--border-color);
+            text-transform: uppercase;
+        }
+
+        .winner-display {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            background: #ecf0f1;
             border: 4px solid var(--border-color);
-            border-radius: 10px;
-            border-top: 12px solid var(--green);
-            box-shadow: 0 10px 0 rgba(0, 0, 0, 0.1) inset;
+            padding: 15px 25px;
+            border-radius: 50px;
+            font-size: 24px;
+            font-weight: bold;
         }
 
-        .platform-main {
-            bottom: 10%;
-            left: 15%;
-            right: 15%;
-            height: 10%;
-            border-bottom-left-radius: 40px;
-            border-bottom-right-radius: 40px;
-        }
-
-        .platform-float-left {
-            bottom: 40%;
-            left: 20%;
-            width: 15%;
-            height: 25px;
-        }
-
-        .platform-float-right {
-            bottom: 40%;
-            right: 20%;
-            width: 15%;
-            height: 25px;
-        }
-
-        .platform-float-top {
-            bottom: 65%;
-            left: 40%;
-            right: 40%;
-            height: 25px;
-        }
-
-        /* I Giocatori */
-        .brawler {
-            position: absolute;
-            width: 45px;
-            height: 45px;
+        .winner-color {
+            width: 30px;
+            height: 30px;
             border-radius: 50%;
             border: 4px solid var(--border-color);
-            box-shadow: inset -5px -5px 0 rgba(0, 0, 0, 0.3);
-            z-index: 50;
-            /* Sotto l'HUD (100) ma sopra il livello */
         }
 
-        .brawler.me {
-            border-color: white;
-            box-shadow: 0 0 0 4px var(--border-color), inset -5px -5px 0 rgba(0, 0, 0, 0.3);
+        .btn-primary {
+            background: var(--blue);
+            color: white;
+            border: 4px solid var(--border-color);
+            padding: 12px 20px;
+            border-radius: 12px;
+            font-weight: bold;
+            font-family: 'Fredoka', sans-serif;
+            font-size: 18px;
+            cursor: pointer;
+            box-shadow: 4px 4px 0 var(--border-color);
+            text-transform: uppercase;
+            width: 100%;
+            margin-top: 10px;
         }
 
-        .dash-trail {
-            position: absolute;
-            top: 12px;
-            right: 45px;
-            width: 80px;
-            height: 20px;
-            background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.9));
-            border-radius: 10px;
+        .btn-primary:active {
+            box-shadow: none;
+            transform: translate(4px, 4px);
         }
 
-        .flying-fx {
-            position: absolute;
-            top: -20px;
-            left: -20px;
-            font-size: 35px;
-            animation: shake 0.1s infinite;
-        }
-
-        @keyframes shake {
-            0% {
-                transform: translateX(-2px);
+        @keyframes popIn {
+            from {
+                transform: scale(0.8);
+                opacity: 0;
             }
 
-            100% {
-                transform: translateX(2px);
+            to {
+                transform: scale(1);
+                opacity: 1;
             }
         }
     </style>
 </head>
 
 <body>
-    <div class="game-window">
 
-        <div class="hud-panel hud-controls">
-            🕹️ Frecce: Muoviti/Salta<br>
-            🟩 Spazio: Scatto
+    <div class="lives-panel">
+        <div class="life-pill">
+            <div class="color-dot" style="background-color: var(--blue);"></div>
+            <span class="hearts">❤️❤️❤️</span>
         </div>
-
-        <div class="hud-panel hud-top">
-            <h1 class="game-title">💥 Brawl-Ball</h1>
-            <div class="timer-box">⏱️ 01:45</div>
+        <div class="life-pill">
+            <div class="color-dot" style="background-color: var(--red);"></div>
+            <span class="hearts">❤️❤️</span>
         </div>
-
-        <div class="hud-damage-container">
-            <div class="hud-panel damage-card">
-                <div class="card-header">
-                    <div class="avatar-circle" style="background: var(--red);"></div>Tu
-                </div>
-                <div class="damage-value">24%</div>
-            </div>
-            <div class="hud-panel damage-card">
-                <div class="card-header">
-                    <div class="avatar-circle" style="background: var(--blue);"></div>Blu
-                </div>
-                <div class="damage-value">85%</div>
-            </div>
-            <div class="hud-panel damage-card danger">
-                <div class="card-header">
-                    <div class="avatar-circle" style="background: var(--green);"></div>Verde
-                </div>
-                <div class="damage-value">160%</div>
-            </div>
-            <div class="hud-panel damage-card eliminated">
-                <div class="card-header">
-                    <div class="avatar-circle" style="background: var(--yellow);"></div>Giallo
-                </div>
-                <div class="damage-value">💀 ELIMINATO</div>
-            </div>
+        <div class="life-pill">
+            <div class="color-dot" style="background-color: var(--green);"></div>
+            <span class="hearts">❤️</span>
         </div>
-
-        <div class="platform platform-float-top"></div>
-        <div class="platform platform-float-left"></div>
-        <div class="platform platform-float-right"></div>
-        <div class="platform platform-main"></div>
-
-        <div class="brawler me" style="left: 25%; bottom: 43%; background-color: var(--red);"></div>
-        <div class="brawler" style="left: 50%; bottom: 20%; background-color: var(--blue);"></div>
-        <div class="brawler" style="left: 35%; bottom: 20%; background-color: var(--yellow);">
-            <div class="dash-trail"></div>
+        <div class="life-pill">
+            <div class="color-dot" style="background-color: var(--yellow);"></div>
+            <span class="hearts">❤️❤️❤️</span>
         </div>
-        <div class="brawler" style="left: 85%; bottom: 70%; background-color: var(--green);">
-            <div class="flying-fx">💢</div>
+        <div class="life-pill eliminated">
+            <div class="color-dot" style="background-color: var(--purple);"></div>
+            <span class="hearts">💀</span>
+        </div>
+        <div class="life-pill eliminated">
+            <div class="color-dot" style="background-color: var(--orange);"></div>
+            <span class="hearts">💀</span>
+        </div>
+    </div>
+
+    <div class="game-container">
+
+        <canvas id="game-canvas" width="1000" height="1000"></canvas>
+
+        <button class="btn-leave">Torna alla Lobby</button>
+
+        <div class="game-over-overlay" id="victory-panel" style="display: none;">
+            <div class="go-content">
+                <h2 class="go-title">PARTITA FINITA!</h2>
+                <div class="winner-display">
+                    <div class="winner-color" style="background-color: var(--blue);"></div>
+                    <span>Ha Vinto!</span>
+                </div>
+                <button class="btn-primary" onclick="toggleGameOver()">Gioca Ancora</button>
+            </div>
         </div>
 
     </div>
+
+    <button onclick="toggleGameOver()" style="position:fixed; top:5px; right:5px; font-size:10px; cursor:pointer;">Test
+        Fine Partita</button>
+
+    <script>
+        function toggleGameOver() {
+            const panel = document.getElementById('victory-panel');
+            panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+        }
+
+        // Script per simulare il disegno del prato e dimostrare come riempie lo spazio
+        window.onload = () => {
+            const canvas = document.getElementById('game-canvas');
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const radius = 450; // Raggio aumentato proporzionalmente alla grandezza 1000x1000
+            const sides = 6;
+
+            // Disegna Sfondo Verde del campo (Il Prato Esagonale)
+            ctx.beginPath();
+            for (let i = 0; i < sides; i++) {
+                const angle = i * 2 * Math.PI / sides - Math.PI / 2;
+                ctx.lineTo(centerX + radius * Math.cos(angle), centerY + radius * Math.sin(angle));
+            }
+            ctx.closePath();
+            ctx.fillStyle = '#2ECC71';
+            ctx.fill();
+            ctx.lineWidth = 20;
+            ctx.strokeStyle = '#2C3E50';
+            ctx.stroke();
+
+            // Linee del campo decorative
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 100, 0, 2 * Math.PI);
+            ctx.lineWidth = 10;
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 15, 0, 2 * Math.PI);
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.fill();
+
+            // Porte finte
+            const colors = ['#3498DB', '#E74C3C', '#2ECC71', '#F1C40F', '#9b59b6', '#e67e22'];
+            for (let i = 0; i < sides; i++) {
+                const angle = i * 2 * Math.PI / sides - Math.PI / 2;
+                const nextAngle = (i + 1) * 2 * Math.PI / sides - Math.PI / 2;
+
+                const midX = (centerX + radius * Math.cos(angle) + centerX + radius * Math.cos(nextAngle)) / 2;
+                const midY = (centerY + radius * Math.sin(angle) + centerY + radius * Math.sin(nextAngle)) / 2;
+
+                ctx.beginPath();
+                ctx.arc(midX, midY, 50, angle + Math.PI / 2, angle + Math.PI / 2 + Math.PI);
+                ctx.fillStyle = colors[i];
+                ctx.fill();
+                ctx.lineWidth = 5;
+                ctx.strokeStyle = '#2C3E50';
+                ctx.stroke();
+            }
+        };
+    </script>
 </body>
 
 </html>
