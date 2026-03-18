@@ -45,6 +45,8 @@ module.exports = function (io) {
                     lobby.players.push(color);
                     users.set(color, lobbyId);
                 }
+
+                io.to(lobbyId).emit('lobbyUpdated', { players: lobby.players, host: lobby.host });
             }
         });
 
@@ -63,6 +65,8 @@ module.exports = function (io) {
                     message: `Un giocatore è stato espulso dall'Host.`,
                     type: 'system'
                 });
+
+                io.to(lobbyId).emit('lobbyUpdated', { players: lobby.players, host: lobby.host });
             }
         });
 
@@ -84,6 +88,10 @@ module.exports = function (io) {
                         message: `Un giocatore ha abbandonato la stanza.`,
                         type: 'system'
                     });
+
+                    if (lobby.players.length > 0) {
+                        io.to(socket.lobbyId).emit('lobbyUpdated', { players: lobby.players, host: lobby.host });
+                    }
 
                     // SE LA LOBBY È VUOTA, avviamo il timer di distruzione
                     if (lobby.players.length === 0) {

@@ -58,7 +58,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 4. Caricamento Dati Lobby
     loadLobby();
-    setInterval(loadLobby, 3000); // Aggiorna solo i giocatori, non la UI dei giochi
+    socket.on('lobbyUpdated', (data) => {
+        updatePlayerList(data.players, selectedColor, data.host);
+    });
 
     async function loadLobby() {
         try {
