@@ -70,6 +70,29 @@ module.exports = function (io) {
             }
         });
 
+        // --- 5. TRASFERIMENTO HOST ---
+        socket.on('transferHost', (data) => {
+            const { lobbyId, currentHost, newHost } = data;
+            const lobby = lobbies.get(lobbyId);
+
+            // Verifica che la lobby esista e che a richiedere il cambio sia l'host attuale
+            if (lobby && lobby.host === currentHost) {
+                // Verifica che il nuovo host sia effettivamente nella stanza
+                if (lobby.players.includes(newHost)) {
+                    lobby.host = newHost;
+                    console.log(`👑 Host cambiato nella lobby ${lobbyId}: il nuovo host è ${newHost}`);
+
+                    io.to(lobbyId).emit('message', {
+                        message: `👑 ${newHost} è il nuovo Host della stanza!`,
+                        type: 'system'
+                    });
+
+                    // Aggiorna istantaneamente la UI di tutti
+                    io.to(lobbyId).emit('lobbyUpdated', { players: lobby.players, host: lobby.host });
+                }
+            }
+        });
+
         // --- 3. DISCONNESSIONE E DISTRUZIONE LOBBY ---
         socket.on('disconnect', () => {
             console.log(`❌ Client disconnesso: ${socket.id}`);

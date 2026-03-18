@@ -1,5 +1,5 @@
 // backend/sockets/games/footballGameSocket.js
-const activeGames = require('../../store/activeGames');
+const { activeGames } = require('../../store/activeGames'); // <-- FIX: Estratto correttamente
 const { lobbies } = require('../../store/lobbies');
 
 const GAME_ID = 'football';
@@ -18,8 +18,6 @@ module.exports = function (io, socket) {
 
         const playerCount = lobby.players.length || lobby.players.size || Object.keys(lobby.players).length;
 
-        // TRUCCO: Se ci sono più di 2 giocatori, cambiamo l'ID in 'footballMulti'
-        // Così il frontend reindirizzerà a footballMulti.html invece di football.html
         const actualGameId = playerCount > 2 ? 'footballMulti' : 'football';
 
         io.to(lobbyId).emit('gameSelected', { gameId: actualGameId, settings });
@@ -37,11 +35,12 @@ module.exports = function (io, socket) {
         const lobby = lobbies.get(lobbyId);
         if (!lobby) return;
 
-        if (!activeGames[lobbyId]) {
+        // FIX: Uso corretto della mappa attiva
+        if (!activeGames.has(lobbyId)) {
             const maxG = parseInt(lobby.lastGameSettings['maxGoals']) || 3;
             const initialStatus = lobby.players.length > 2 ? 'setup' : 'playing';
 
-            activeGames[lobbyId] = {
+            activeGames.set(lobbyId, {
                 gameId: GAME_ID,
                 status: initialStatus,
                 maxGoals: maxG,
@@ -50,9 +49,9 @@ module.exports = function (io, socket) {
                 score: {},
                 gameOver: false,
                 kickoffTeam: null
-            };
+            });
 
-            const game = activeGames[lobbyId];
+            const game = activeGames.get(lobbyId);
             let assignedLeft = false;
             let assignedRight = false;
 
@@ -81,15 +80,15 @@ module.exports = function (io, socket) {
             }
         }
 
-        if (activeGames[lobbyId].status === 'setup') {
-            socket.emit('setupState', { players: activeGames[lobbyId].players, host: lobby.host });
+        if (activeGames.get(lobbyId).status === 'setup') {
+            socket.emit('setupState', { players: activeGames.get(lobbyId).players, host: lobby.host });
         }
     });
 
     socket.on('switchTeam', (newTeam) => {
         const lobbyId = socket.data.lobbyId;
         const color = socket.data.playerColor;
-        const game = activeGames[lobbyId];
+        const game = activeGames.get(lobbyId);
 
         if (!game || game.status !== 'setup') return;
 
@@ -104,11 +103,10 @@ module.exports = function (io, socket) {
         }
     });
 
-    // CORREZIONE BUG POSIZIONAMENTO
     socket.on('confirmSetup', () => {
         const lobbyId = socket.data.lobbyId;
         const color = socket.data.playerColor;
-        const game = activeGames[lobbyId];
+        const game = activeGames.get(lobbyId);
         const lobby = lobbies.get(lobbyId);
 
         if (!game || game.status !== 'setup' || lobby.host !== color) return;
@@ -118,20 +116,18 @@ module.exports = function (io, socket) {
 
         game.status = 'playing';
 
-        // Resetta la palla
         game.ball.x = 400; game.ball.y = 200; game.ball.vx = 0; game.ball.vy = 0;
         game.score = {};
 
-        // Forza le coordinate fisiche corrette per tutti i giocatori in base al team scelto
         for (let c in game.players) {
             const p = game.players[c];
             if (p.team !== 'spectator') {
                 game.score[c] = 0;
-                p.x = p.team === 'left' ? 200 : 600; // Posizione sui blocchi di partenza
+                p.x = p.team === 'left' ? 200 : 600;
                 p.y = 200;
                 p.vx = 0; p.vy = 0;
             } else {
-                p.x = -100; // Spettatori bloccati fuori schermo
+                p.x = -100;
                 p.y = -100;
                 p.vx = 0; p.vy = 0;
             }
@@ -143,9 +139,9 @@ module.exports = function (io, socket) {
 
     socket.on('restartGameRequest', (data) => {
         const { lobbyId } = data;
-        if (!lobbyId || !activeGames[lobbyId] || !activeGames[lobbyId].gameOver) return;
+        const game = activeGames.get(lobbyId);
+        if (!lobbyId || !game || !game.gameOver) return;
 
-        const game = activeGames[lobbyId];
         game.gameOver = false;
         game.ball = { x: 400, y: 200, vx: 0, vy: 0, radius: 10, friction: 0.96 };
         game.kickoffTeam = null;
@@ -171,10 +167,10 @@ module.exports = function (io, socket) {
     socket.on('playerInput', (keys) => {
         const lobbyId = socket.data.lobbyId;
         const color = socket.data.playerColor;
+        const game = activeGames.get(lobbyId);
 
-        if (!lobbyId || !color || !activeGames[lobbyId] || activeGames[lobbyId].gameId !== GAME_ID || activeGames[lobbyId].gameOver) return;
+        if (!lobbyId || !color || !game || game.gameId !== GAME_ID || game.gameOver) return;
 
-        const game = activeGames[lobbyId];
         if (game.players && game.players[color] && game.players[color].team !== 'spectator') {
             game.players[color].inputs = keys;
         }
@@ -182,19 +178,25 @@ module.exports = function (io, socket) {
 };
 
 function startGameLoop(lobbyId, io) {
-    const game = activeGames[lobbyId];
+    const game = activeGames.get(lobbyId);
     if (gameLoops[lobbyId]) clearInterval(gameLoops[lobbyId]);
+
     gameLoops[lobbyId] = setInterval(() => {
+        // FIX: Se la partita è stata eliminata (rientro in lobby), spegni il server loop fisico
+        if (!activeGames.has(lobbyId)) {
+            clearInterval(gameLoops[lobbyId]);
+            delete gameLoops[lobbyId];
+            return;
+        }
+
         if (game.gameOver) return;
         updatePhysics(game, io, lobbyId);
-        if (activeGames[lobbyId]) {
-            io.to(lobbyId).emit('gameState', {
-                players: game.players,
-                ball: game.ball,
-                score: game.score,
-                gameOver: game.gameOver
-            });
-        }
+        io.to(lobbyId).emit('gameState', {
+            players: game.players,
+            ball: game.ball,
+            score: game.score,
+            gameOver: game.gameOver
+        });
     }, 1000 / 30);
 }
 

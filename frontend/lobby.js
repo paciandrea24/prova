@@ -60,6 +60,16 @@ document.addEventListener('DOMContentLoaded', () => {
     loadLobby();
     socket.on('lobbyUpdated', (data) => {
         updatePlayerList(data.players, selectedColor, data.host);
+
+        // AGGIORNAMENTO DINAMICO DEI POTERI DA HOST
+        setupGameSelectors(data.host);
+
+        if (selectedColor === data.host && !document.querySelector('#invite-btn')) {
+            addInviteButton();
+        } else if (selectedColor !== data.host) {
+            const inviteBtn = document.querySelector('#invite-btn');
+            if (inviteBtn) inviteBtn.remove();
+        }
     });
 
     async function loadLobby() {
@@ -102,6 +112,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const avatar = document.createElement('div');
             avatar.className = 'avatar';
             avatar.style.backgroundColor = pColor;
+
+            // Se l'utente corrente è l'host e non sta cliccando su se stesso
+            if (currentPlayerColor === hostColor && !isMe) {
+                avatar.style.cursor = 'pointer';
+                avatar.title = "Passa il ruolo di Host a questo giocatore";
+                avatar.style.transition = "transform 0.2s ease";
+                avatar.onmouseover = () => avatar.style.transform = 'scale(1.2)';
+                avatar.onmouseout = () => avatar.style.transform = 'scale(1)';
+
+                avatar.addEventListener('click', () => {
+                    openTransferHostModal(pColor);
+                });
+            }
 
             const name = document.createElement('span');
             name.className = 'p-name';
@@ -340,7 +363,49 @@ document.addEventListener('DOMContentLoaded', () => {
             toast.addEventListener('animationend', () => toast.remove());
         }, 3000);
     }
+
+    // --- LOGICA MODALE TRASFERIMENTO HOST ---
+    let pendingNewHost = null;
+    const transferModal = document.getElementById('transfer-host-modal');
+
+    // Funzione globale esposta a window per poter essere chiamata dai pallini
+    window.openTransferHostModal = function (targetColor) {
+        const preview = document.getElementById('new-host-avatar-preview');
+        if (!transferModal) return;
+
+        pendingNewHost = targetColor;
+        if (preview) preview.style.backgroundColor = targetColor;
+
+        transferModal.style.display = 'flex';
+    };
+
+    const closeTransferModalBtn = document.getElementById('close-transfer-modal');
+    const cancelTransferBtn = document.getElementById('cancel-transfer-btn');
+    const confirmTransferBtn = document.getElementById('confirm-transfer-btn');
+
+    const closeTransferModal = () => {
+        if (transferModal) transferModal.style.display = 'none';
+        pendingNewHost = null;
+    };
+
+    if (closeTransferModalBtn) closeTransferModalBtn.addEventListener('click', closeTransferModal);
+    if (cancelTransferBtn) cancelTransferBtn.addEventListener('click', closeTransferModal);
+
+    if (confirmTransferBtn) {
+        confirmTransferBtn.addEventListener('click', () => {
+            // Ora socket, lobbyId e selectedColor esistono e sono accessibili!
+            if (pendingNewHost && lobbyId && selectedColor) {
+                socket.emit('transferHost', {
+                    lobbyId: lobbyId,
+                    currentHost: selectedColor,
+                    newHost: pendingNewHost
+                });
+                closeTransferModal();
+            }
+        });
+    }
 });
+
 
 // --- LEADERBOARD GLOBALE ---
 document.addEventListener('click', async (e) => {

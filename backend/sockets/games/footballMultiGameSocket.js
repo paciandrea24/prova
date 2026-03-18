@@ -1,4 +1,5 @@
-const activeGames = require('../../store/activeGames');
+// backend/sockets/games/footballMultiGameSocket.js
+const { activeGames } = require('../../store/activeGames'); // <-- FIX
 const { lobbies } = require('../../store/lobbies');
 
 const GAME_ID = 'footballMulti';
@@ -17,24 +18,26 @@ module.exports = function (io, socket) {
         const lobby = lobbies.get(lobbyId);
         if (!lobby) return;
 
-        if (activeGames[lobbyId] && activeGames[lobbyId].gameOver) {
+        // FIX: Pulisce sessioni precedenti usando la Mappa corretta
+        const existingGame = activeGames.get(lobbyId);
+        if (existingGame && existingGame.gameOver) {
             if (gameLoops[lobbyId]) clearInterval(gameLoops[lobbyId]);
-            delete activeGames[lobbyId];
+            activeGames.delete(lobbyId);
         }
 
-        if (!activeGames[lobbyId]) {
-            activeGames[lobbyId] = {
+        if (!activeGames.has(lobbyId)) {
+            activeGames.set(lobbyId, {
                 gameId: GAME_ID,
                 status: 'playing',
                 players: {},
                 ball: { x: 500, y: 500, vx: 0, vy: 0, radius: 12, friction: 0.98 },
                 arena: [],
                 gameOver: false
-            };
+            });
             startGameLoop(lobbyId, io);
         }
 
-        const game = activeGames[lobbyId];
+        const game = activeGames.get(lobbyId);
 
         if (!game.players[playerColor]) {
             game.players[playerColor] = {
@@ -54,7 +57,7 @@ module.exports = function (io, socket) {
     socket.on('playerInput', (keys) => {
         const lobbyId = socket.data.lobbyId;
         const color = socket.data.playerColor;
-        const game = activeGames[lobbyId];
+        const game = activeGames.get(lobbyId);
         if (game && game.players[color] && !game.players[color].eliminated) {
             game.players[color].inputs = keys;
         }
@@ -107,19 +110,24 @@ function resetMatchState(game) {
 }
 
 function startGameLoop(lobbyId, io) {
-    const game = activeGames[lobbyId];
+    const game = activeGames.get(lobbyId);
     if (gameLoops[lobbyId]) clearInterval(gameLoops[lobbyId]);
 
     gameLoops[lobbyId] = setInterval(() => {
+        // FIX: Spegnimento intelligente del loop quando si rientra in lobby
+        if (!activeGames.has(lobbyId)) {
+            clearInterval(gameLoops[lobbyId]);
+            delete gameLoops[lobbyId];
+            return;
+        }
+
         if (game.gameOver) return;
         updateMultiPhysics(game, io, lobbyId);
-        if (activeGames[lobbyId]) {
-            io.to(lobbyId).emit('gameState', {
-                players: game.players,
-                ball: game.ball,
-                arena: game.arena
-            });
-        }
+        io.to(lobbyId).emit('gameState', {
+            players: game.players,
+            ball: game.ball,
+            arena: game.arena
+        });
     }, 1000 / 30);
 }
 
