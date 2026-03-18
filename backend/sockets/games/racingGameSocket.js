@@ -5,24 +5,17 @@ const leaderboard = require('../../store/leaderboard');
 
 module.exports = function (io, socket) {
 
-    // --- NUOVO: Ascolta quando l'host clicca "Start Game" ---
     socket.on('startGame', (data) => {
         const { lobbyId, gameId, settings } = data;
 
-        // Se il gioco selezionato è 'racing', procediamo!
         if (gameId === 'racing') {
             console.log(`🎮 StartGame ricevuto per Racing in lobby ${lobbyId}`);
-
             const lobby = lobbies.get(lobbyId);
-            if (lobby) {
-                lobby.gameSettings = settings; // Salva le impostazioni (es. difficoltà)
-            }
+            if (lobby) lobby.gameSettings = settings;
 
-            // Invia l'evento a tutti per farli reindirizzare alla pagina corretta
             io.to(lobbyId).emit('gameSelected', { gameId, settings });
         }
     });
-    // --------------------------------------------------------
 
     socket.on('joinRacing', (data) => {
         const { lobbyId, playerColor } = data;
@@ -36,37 +29,46 @@ module.exports = function (io, socket) {
 
         const game = activeGames.get(lobbyId);
 
-        // --- NUOVO: Prendiamo la mappa attuale dal Campionato ---
+        // [FIX EXPLOIT]: Inizializziamo dei flag di sicurezza per tracciare se la gara è già partita
+        if (game.countdownTriggered === undefined) {
+            game.countdownTriggered = false;
+            game.raceStarted = false;
+        }
+
         const currentTrack = game.tracks[game.currentTrackIndex];
 
-        // Invia setup iniziale dell'arena con i dati della matrice!
         socket.emit('racingSetup', {
             playersState: game.playersState,
             trackMap: currentTrack.map,
             tileSize: game.tileSize,
             trackName: currentTrack.name,
             hostColor: lobby.host,
-            isSingleMode: game.isSingleMode, // <-- FIX 1/3 MODALITA' SINGOLA
-            totalLaps: 1                     // <-- FIX 1/3 MODALITA' SINGOLA
+            isSingleMode: game.isSingleMode,
+            totalLaps: game.totalLaps || 1
         });
 
-        // Se sei l'host, fai partire il countdown
-        if (playerColor === lobby.host) {
+        // [FIX EXPLOIT CRITICO]: Avviamo il countdown SOLO la primissima volta che l'host entra.
+        // Se la gara è già stata avviata (es. il giocatore ha premuto F5), NON azzeriamo i tempi!
+        if (playerColor === lobby.host && !game.countdownTriggered) {
+            game.countdownTriggered = true; // Blocca i futuri avvii abusivi
             io.to(lobbyId).emit('message', { message: 'La gara inizierà tra 3 secondi...', type: 'system' });
+
             setTimeout(() => {
-                startRace(io, lobbyId);
+                game.raceStarted = true;
+                startRace(io, lobbyId); // [FIX]: Rimosso serverStartTime, ci pensa startRace!
             }, 3000);
+        } else if (game.raceStarted && game.startTime) {
+            // [FIX]: Utilizziamo game.startTime che viene aggiornato ad ogni nuova mappa!
+            const elapsed = Date.now() - game.startTime;
+
+            // Inviamo il segnale di GO! passando anche il tempo da recuperare
+            socket.emit('raceStarted', { syncTime: elapsed });
         }
     });
 
-    // --- RICEZIONE NUOVO RECORD DAL FRONTEND ---
     socket.on('saveNewRecord', (data) => {
         const { lobbyId, trackName, playerName, playerColor, time } = data;
-
-        // Passa i dati al nostro "cervello" che li salva nel file JSON!
         leaderboard.addRecord(trackName, playerName, playerColor, time);
-
-        // Annuncia a tutta la lobby l'avvenuta archiviazione
         io.to(lobbyId).emit('message', {
             message: `🌟 La leggenda [${playerName}] ha scritto il suo nome nella storia di ${trackName}!`,
             type: 'success'
@@ -78,7 +80,6 @@ module.exports = function (io, socket) {
         updatePlayerInput(lobbyId, playerColor, inputs);
     });
 
-    // NUOVI EVENTI PER LA MODALITÀ SINGOLA
     socket.on('restartRace', (lobbyId) => {
         restartRace(io, lobbyId);
     });

@@ -315,10 +315,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Fai partire il motore grafico del frontend
     requestAnimationFrame(renderLoop);
 
-    socket.on('raceStarted', () => {
+    socket.on('raceStarted', (data) => {
         isRacing = true;
         sendInputs();
-        localStartTime = Date.now();
+
+        // [FIX TIMING]: Se il server ci manda un tempo trascorso (syncTime), lo scaliamo dalla partenza locale
+        const elapsed = (data && data.syncTime) ? data.syncTime : 0;
+        localStartTime = Date.now() - elapsed;
 
         const countdownOverlay = document.getElementById('countdown-overlay');
         const countdownNumber = document.getElementById('countdown-number');
