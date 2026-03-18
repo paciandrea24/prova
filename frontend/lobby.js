@@ -51,6 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (gameId === 'racing') targetPage = '/racing.html';
         else if (gameId === 'bomb') targetPage = '/bomb.html';
         else if (gameId === 'football') targetPage = '/football.html';
+        else if (data.gameId === 'footballMulti') targetPage = '/footballMulti.html';
 
         window.location.href = `${targetPage}?lobby=${lobbyId}&color=${encodeURIComponent(selectedColor)}&game=${gameId}${settingsParam}`;
     });

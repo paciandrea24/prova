@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project-W - Brawl Football</title>
+    <link rel="stylesheet" href="./styles/footballMulti.css">
+</head>
+
+<body>
+    <div id="game-wrapper">
+        <div class="ui-overlay">
+            <div class="lives-container" id="lives-board">In attesa di giocatori...</div>
+        </div>
+
+        <button id="btn-leave" class="btn-leave">Torna alla Lobby</button>
+
+        <canvas id="game-canvas" width="1000" height="1000"></canvas>
+
+        <div id="victory-panel" class="victory-panel" style="display: none;">
+            <h1 class="victory-title">PARTITA FINITA!</h1>
+            <div class="winner-display">
+                <span id="winner-color-dot" class="color-dot"
+                    style="width: 30px; height: 30px; margin-right: 15px;"></span>
+                <span id="winner-text">Ha Vinto!</span>
+            </div>
+            <button id="btn-victory-leave" class="btn-leave"
+                style="position: static; margin-top: 15px; background: #3498db;">Torna alla Lobby</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="footballMulti.js"></script>
+</body>
+
+</html>

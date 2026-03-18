@@ -15,8 +15,15 @@ module.exports = function (io, socket) {
         if (!lobby) return;
 
         lobby.lastGameSettings = settings || {};
-        io.to(lobbyId).emit('gameSelected', { gameId, settings });
-        io.to(lobbyId).emit('message', { message: 'The football match is about to start!', type: 'system' });
+
+        const playerCount = lobby.players.length || lobby.players.size || Object.keys(lobby.players).length;
+
+        // TRUCCO: Se ci sono più di 2 giocatori, cambiamo l'ID in 'footballMulti'
+        // Così il frontend reindirizzerà a footballMulti.html invece di football.html
+        const actualGameId = playerCount > 2 ? 'footballMulti' : 'football';
+
+        io.to(lobbyId).emit('gameSelected', { gameId: actualGameId, settings });
+        io.to(lobbyId).emit('message', { message: 'Il match sta per iniziare!', type: 'system' });
     });
 
     socket.on('joinGame', (data) => {
