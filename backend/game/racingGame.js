@@ -3,7 +3,7 @@ const leaderboard = require('../store/leaderboard');
 const { lobbies, users } = require('../store/lobbies');
 
 const TILE_SIZE = 80;
-const AFK_TIMEOUT_MS = 15000;
+const AFK_TIMEOUT_MS = 8000;
 
 // ==========================================
 // 🏎️ CATALOGO DELLE MAPPE (MODULARE)
@@ -427,6 +427,12 @@ function runGameLoop(io, lobbyId) {
     const currentTrackMap = game.tracks[game.currentTrackIndex].map;
 
     game.loopInterval = setInterval(() => {
+        // [FIX CRITICO]: Se la partita non esiste più in memoria, distruggi il loop fantasma!
+        if (!activeGames.has(lobbyId)) {
+            clearInterval(game.loopInterval);
+            return;
+        }
+
         if (!game.isActive) return;
 
         let everyoneFinished = true;
@@ -694,7 +700,8 @@ function handleRaceEnd(io, lobbyId) {
     if (isFinalRace) {
         setTimeout(() => {
             activeGames.delete(lobbyId);
-            io.to(lobbyId).emit('returnToLobby');
+            // [FIX]: Il frontend ascolta "redirectAllToLobby", non "returnToLobby"!
+            io.to(lobbyId).emit('redirectAllToLobby');
         }, 15000);
     } else {
         const delay = someoneGotRecord ? 12000 : 7000;
@@ -754,6 +761,19 @@ function restartRace(io, lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game) return;
 
+    // [FIX]: Sincronizza l'array della gara leggendo chi c'è DAVVERO in lobby ora
+    const lobby = lobbies.get(lobbyId);
+    if (lobby) {
+        lobby.players.forEach(pColor => {
+            if (!game.players.includes(pColor)) {
+                game.players.push(pColor);
+            }
+            if (game.cumulativeTimes[pColor] === undefined) {
+                game.cumulativeTimes[pColor] = 0;
+            }
+        });
+    }
+
     // Resetta i tempi cumulativi per non falsare il tabellone se si riavvia
     Object.keys(game.cumulativeTimes).forEach(p => {
         game.cumulativeTimes[p] = 0;
@@ -766,8 +786,8 @@ function restartRace(io, lobbyId) {
         trackMap: game.tracks[0].map,
         tileSize: game.tileSize,
         trackName: game.tracks[0].name,
-        isSingleMode: game.isSingleMode, // <-- FIX 1/3 MODALITA' SINGOLA
-        totalLaps: 1                     // <-- FIX 1/3 MODALITA' SINGOLA
+        isSingleMode: game.isSingleMode,
+        totalLaps: 1
     });
 
     io.to(lobbyId).emit('message', { message: 'La gara è stata riavviata! Preparatevi...', type: 'system' });

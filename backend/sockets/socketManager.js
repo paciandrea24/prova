@@ -136,19 +136,17 @@ module.exports = function (io) {
         socket.on('forceReturnToLobby', (lobbyId) => {
             const lobby = lobbies.get(lobbyId);
 
-            // Verifichiamo che la lobby esista e che a richiederlo sia l'host
             if (lobby && lobby.host === socket.color) {
                 console.log(`🔙 L'host ${socket.color} ha chiuso la partita. Rientro in lobby per ${lobbyId}`);
 
-                // 1. Eliminiamo la partita attiva dalla memoria per evitare bug con i nuovi giocatori
                 const { activeGames } = require('../store/activeGames');
                 if (activeGames.has(lobbyId)) {
                     const game = activeGames.get(lobbyId);
-                    if (game.timerInterval) clearInterval(game.timerInterval); // Pulizia timer
+                    if (game.timerInterval) clearInterval(game.timerInterval);
+                    if (game.loopInterval) clearInterval(game.loopInterval); // FIX: Stoppa il loop di Racing!
                     activeGames.delete(lobbyId);
                 }
 
-                // 2. Ordiniamo a TUTTI i client della stanza di tornare alla lobby
                 io.to(lobbyId).emit('redirectAllToLobby');
             }
         });

@@ -35,7 +35,13 @@ module.exports = function (io, socket) {
         const lobby = lobbies.get(lobbyId);
         if (!lobby) return;
 
-        // FIX: Uso corretto della mappa attiva
+        // FIX: Pulisce sessioni precedenti se qualcuno era rimasto incastrato
+        const existingGame = activeGames.get(lobbyId);
+        if (existingGame && existingGame.gameOver) {
+            if (gameLoops[lobbyId]) clearInterval(gameLoops[lobbyId]);
+            activeGames.delete(lobbyId);
+        }
+
         if (!activeGames.has(lobbyId)) {
             const maxG = parseInt(lobby.lastGameSettings['maxGoals']) || 3;
             const initialStatus = lobby.players.length > 2 ? 'setup' : 'playing';
@@ -80,8 +86,38 @@ module.exports = function (io, socket) {
             }
         }
 
-        if (activeGames.get(lobbyId).status === 'setup') {
-            socket.emit('setupState', { players: activeGames.get(lobbyId).players, host: lobby.host });
+        const game = activeGames.get(lobbyId);
+
+        // [FIX CRITICO]: Se un giocatore entra dopo o ricarica la pagina, aggiungiamolo al volo
+        if (!game.players[playerColor]) {
+            let team = 'spectator';
+            if (game.status === 'setup' || game.status === 'playing') {
+                const hasLeft = Object.values(game.players).some(p => p.team === 'left');
+                const hasRight = Object.values(game.players).some(p => p.team === 'right');
+                if (!hasLeft) team = 'left';
+                else if (!hasRight) team = 'right';
+            }
+
+            game.players[playerColor] = {
+                x: team === 'left' ? 200 : (team === 'right' ? 600 : -100),
+                y: 200,
+                vx: 0, vy: 0,
+                radius: 15,
+                color: playerColor,
+                team: team,
+                speed: 1.8,
+                friction: 0.85,
+                inputs: { up: false, down: false, left: false, right: false, kick: false },
+                isKicking: false
+            };
+            if (team !== 'spectator') game.score[playerColor] = 0;
+        }
+
+        // Notifica il client che è tutto pronto per renderizzare
+        if (game.status === 'setup') {
+            socket.emit('setupState', { players: game.players, host: lobby.host });
+        } else if (game.status === 'playing') {
+            socket.emit('matchStarted');
         }
     });
 
