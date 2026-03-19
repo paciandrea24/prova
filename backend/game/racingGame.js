@@ -3,7 +3,7 @@ const leaderboard = require('../store/leaderboard');
 const { lobbies, users } = require('../store/lobbies');
 
 const TILE_SIZE = 80;
-const AFK_TIMEOUT_MS = 8000;
+const AFK_TIMEOUT_MS = 15000;
 
 // ==========================================
 // 🏎️ CATALOGO DELLE MAPPE (MODULARE)
@@ -702,7 +702,7 @@ function handleRaceEnd(io, lobbyId) {
             activeGames.delete(lobbyId);
             // [FIX]: Il frontend ascolta "redirectAllToLobby", non "returnToLobby"!
             io.to(lobbyId).emit('redirectAllToLobby');
-        }, 15000);
+        }, 8000);
     } else {
         const delay = someoneGotRecord ? 12000 : 7000;
         io.to(lobbyId).emit('message', { message: `Prossima gara tra ${delay / 1000} secondi...`, type: 'system' });

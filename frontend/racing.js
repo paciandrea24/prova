@@ -486,7 +486,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Controlla se è l'ultima gara del campionato
             if (data.isFinal) {
-                autoReturnText.textContent = "Returning to lobby in 15 seconds...";
+                autoReturnText.textContent = "Returning to lobby in 8 seconds...";
             } else {
                 autoReturnText.textContent = "Loading next track...";
             }
