@@ -21,39 +21,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Stato locale degli input per non spammare il server inutilmente
     const inputs = { w: false, a: false, s: false, d: false };
 
-    // --- NUOVO: PRECARICAMENTO IMMAGINI MAPPA ---
-    // Definisci gli ID che userai nelle matrici (es. 11, 12 per i rettilinei, 21, 22 per le curve)
-    const trackImages = {
-        4: new Image(),
-        11: new Image(),
-        12: new Image(),
-        13: new Image(),
-        14: new Image(),
-        21: new Image(),
-        22: new Image(),
-        23: new Image(),
-        24: new Image(),
-        31: new Image(),
-        32: new Image(),
-        33: new Image(),
-        34: new Image()
-    };
 
-    // Inserisci qui il nome esatto dei tuoi file PNG
-    trackImages[4].src = 'assets/gravel.png';
-    trackImages[11].src = 'assets/rettilineo_top.png';
-    trackImages[12].src = 'assets/rettilineo_right.png';
-    trackImages[13].src = 'assets/rettilineo_bottom.png';
-    trackImages[14].src = 'assets/rettilineo_left.png';
-    trackImages[21].src = 'assets/curva_1.png';
-    trackImages[22].src = 'assets/curva_2.png';
-    trackImages[23].src = 'assets/curva_3.png';
-    trackImages[24].src = 'assets/curva_4.png';
-    trackImages[31].src = 'assets/curva_interna_1.png';
-    trackImages[32].src = 'assets/curva_interna_2.png';
-    trackImages[33].src = 'assets/curva_interna_3.png';
-    trackImages[34].src = 'assets/curva_interna_4.png';
+    // --- NUOVO: CARICAMENTO TILESET UNICO ---
+    const tilesetImg = new Image();
+    tilesetImg.src = 'assets/tileset.png';
 
+    // ⚠️ ATTENZIONE: INSERISCI QUI I DATI DEL TUO TILESET PNG ⚠️
+    const TILESET_COLUMNS = 18;   // Quanti tile ci sono in orizzontale nel file tileset.png?
+    const SOURCE_TILE_SIZE = 128;  // Quanti pixel è grande ogni tile nel file PNG originario
 
     // Costruisce l'arena
     socket.on('racingSetup', (data) => {
@@ -64,7 +39,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const podiumModal = document.getElementById('podium-modal');
         if (podiumModal) podiumModal.style.display = 'none';
 
-        // FIX NOME PISTA: Aggiorna l'HUD
         const trackNameDisplay = document.getElementById('track-name-display');
         if (trackNameDisplay) trackNameDisplay.textContent = trackName || "CIRCUIT";
 
@@ -76,7 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
             visualState[color] = { x: playersState[color].x, y: playersState[color].y, angle: playersState[color].angle };
         }
 
-        // FIX GIRI: Nascondi il box se la gara è singola
         const lapBox = document.getElementById('lap-box');
         const isSingle = data.isSingleMode || (data.settings && data.settings.mode === 'single') || data.totalLaps === 1;
 
@@ -102,8 +75,9 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => { countdownNumber.textContent = '2'; countdownNumber.style.color = '#f39c12'; }, 1000);
         setTimeout(() => { countdownNumber.textContent = '1'; countdownNumber.style.color = '#f1c40f'; }, 2000);
 
-        const trackWidth = trackMap[0].length * tileSize;
-        const trackHeight = trackMap.length * tileSize;
+        // ATTENZIONE: La grandezza della pista è decisa dal layer "bottom"
+        const trackWidth = trackMap.bottom[0].length * tileSize;
+        const trackHeight = trackMap.bottom.length * tileSize;
 
         arena.style.width = trackWidth + 'px';
         arena.style.height = trackHeight + 'px';
@@ -120,63 +94,47 @@ document.addEventListener('DOMContentLoaded', () => {
         canvas.height = trackHeight;
         const ctx = canvas.getContext('2d');
 
-        for (let row = 0; row < trackMap.length; row++) {
-            for (let col = 0; col < trackMap[row].length; col++) {
-                const tile = trackMap[row][col];
-                const x = col * tileSize;
-                const y = row * tileSize;
+        // FUNZIONE PER DISEGNARE UN LIVELLO TILED
+        const drawLayer = (layerData) => {
+            if (!layerData) return;
 
-                if (tile === 0) {
-                    ctx.fillStyle = '#2ECC71';
-                    ctx.fillRect(x, y, tileSize, tileSize);
-                    ctx.strokeStyle = 'rgba(39, 174, 96, 0.5)';
-                    ctx.lineWidth = 1;
-                    ctx.strokeRect(x, y, tileSize, tileSize);
+            for (let row = 0; row < layerData.length; row++) {
+                for (let col = 0; col < layerData[row].length; col++) {
+                    const tileId = layerData[row][col];
+                    if (tileId === 0 || tileId === -1) continue; // Lo 0 in Tiled significa "spazio vuoto"
 
-                    const rand = (row * 37 + col * 13) % 100;
-                    ctx.font = `${tileSize * 0.65}px Arial`;
-                    ctx.textAlign = "center";
-                    ctx.textBaseline = "middle";
-                    const centerX = x + tileSize / 2;
-                    const centerY = y + tileSize / 2 + 2;
+                    const x = col * tileSize;
+                    const y = row * tileSize;
 
-                    if (rand < 10) ctx.fillText('🌲', centerX, centerY);
-                    else if (rand < 18) ctx.fillText('🌳', centerX, centerY);
-                    else if (rand < 25) ctx.fillText('🌿', centerX, centerY);
-                    else if (rand === 50) ctx.fillText('🌼', centerX, centerY);
+                    // Calcolo le coordinate X e Y del tile all'interno di tileset.png
+                    // (Gli ID esportati in CSV da Tiled partono sempre da 1)
+                    const sourceCol = (tileId) % TILESET_COLUMNS;
+                    const sourceRow = Math.floor((tileId) / TILESET_COLUMNS);
 
-                } else if (tile === 1) {
-                    ctx.fillStyle = '#405158';
-                    ctx.fillRect(x, y, tileSize, tileSize);
-                } else if (tile === 2) {
-                    ctx.fillStyle = '#bdc3c7';
-                    ctx.fillRect(x, y, tileSize, tileSize);
-                    ctx.fillStyle = 'white';
-                    ctx.fillRect(x, y, tileSize / 2, tileSize / 2);
-                    ctx.fillRect(x + tileSize / 2, y + tileSize / 2, tileSize / 2, tileSize / 2);
-                    ctx.fillStyle = '#2C3E50';
-                    ctx.fillRect(x + tileSize / 2, y, tileSize / 2, tileSize / 2);
-                    ctx.fillRect(x, y + tileSize / 2, tileSize / 2, tileSize / 2);
-                } else if (tile === 3 || tile === 6) {
-                    ctx.fillStyle = (col + row) % 2 === 0 ? '#F1C40F' : '#2C3E50';
-                    ctx.fillRect(x, y, tileSize, tileSize);
-                } else if (tile === 5) {
-                    ctx.fillStyle = '#2c3e50';
-                    ctx.fillRect(x, y, tileSize, tileSize);
+                    const sx = sourceCol * SOURCE_TILE_SIZE;
+                    const sy = sourceRow * SOURCE_TILE_SIZE;
 
-                } else if (trackImages[tile]) {
-                    // Se l'immagine è associata a questo numero, disegnala!
-                    if (trackImages[tile].complete) {
-                        ctx.drawImage(trackImages[tile], x, y, tileSize, tileSize);
-                    } else {
-                        // Se l'immagine sta ancora caricando, accodiamo il disegno.
-                        // Usiamo addEventListener per non sovrascrivere i tile precedenti dello stesso tipo!
-                        trackImages[tile].addEventListener('load', () => {
-                            ctx.drawImage(trackImages[tile], x, y, tileSize, tileSize);
-                        });
-                    }
+                    // Disegna solo quel pezzettino di PNG
+                    ctx.drawImage(
+                        tilesetImg,
+                        sx, sy, SOURCE_TILE_SIZE, SOURCE_TILE_SIZE,  // Ritaglio
+                        x, y, tileSize, tileSize                     // Posizione nella Canvas
+                    );
                 }
             }
+        };
+
+        // Disegna prima il fondo (layer 2) e poi le decorazioni sopra (layer 1)
+        const renderMap = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Pulisce
+            drawLayer(trackMap.bottom);
+            drawLayer(trackMap.top);
+        };
+
+        if (tilesetImg.complete) {
+            renderMap();
+        } else {
+            tilesetImg.addEventListener('load', renderMap);
         }
 
         document.querySelectorAll('.car').forEach(e => e.remove());
