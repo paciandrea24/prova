@@ -544,7 +544,7 @@ function runGameLoop(io, lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game) return;
 
-    const baseSpeed = 30; // Velocità massima su asfalto
+    const baseSpeed = 24; // Velocità massima su asfalto
     const currentTrackMap = game.tracks[game.currentTrackIndex].map;
 
     game.loopInterval = setInterval(() => {
