@@ -21,7 +21,7 @@ const TILE_GROUPS = {
 // 0=Erba, 1=Asfalto, 2=Traguardo, 3=Settore2, 6=Settore1
 // ==========================================
 
-const newMapLevel1_Top = [
+const monzaLevel1_Top = [
   /* 00 */[245, 245, 245, 245, 245, 245, 245, 226, 257, 257, 257, 257, 257, 257, 257, 257, 257, 208, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245],
   /* 01 */[245, 245, 226, 257, 257, 257, 257, 152, 261, 261, 261, 261, 261, 261, 261, 261, 261, 170, 257, 208, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245],
   /* 02 */[245, 226, 152, 261, 261, 261, 261, 261, 261, 149, 185, 185, 185, 185, 185, 131, 261, 261, 261, 170, 208, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245],
@@ -64,7 +64,7 @@ const newMapLevel1_Top = [
   /* 39 */[245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245, 245],
 ];
 
-const newMapLevel2_Bottom = [
+const monzaLevel2_Bottom = [
   /* 00 */[-1, -1, -1, -1, -1, -1, -1, 245, -1, -1, -1, -1, -1, -1, -1, -1, -1, 245, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
   /* 01 */[-1, -1, 245, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 245, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
   /* 02 */[-1, 245, -1, -1, -1, -1, -1, -1, -1, 261, -1, -1, -1, -1, -1, 261, -1, -1, -1, -1, 245, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
@@ -409,22 +409,22 @@ const MelbourneMap = [
 // Questo Array contiene tutto il Campionato!
 const TRACKS = [
     {
-        name: "Nuova Mappa",
+        name: "Monza",
         map: {
-            bottom: newMapLevel2_Bottom,
-            top: newMapLevel1_Top
+            bottom: monzaLevel2_Bottom,
+            top: monzaLevel1_Top
         },
-        spawnX: 3200,
-        spawnY: 2880,
+        spawnX: 3500,
+        spawnY: 2800,
         angle: 180
     },
-    {
+    /* {
         name: "Monza",
         map: monzaMap,
         spawnX: 3200,
         spawnY: 2880,
         angle: 180
-    },
+    }, */
     {
         name: "Spa-Francorchamps",
         map: spaMap,
@@ -654,6 +654,26 @@ function runGameLoop(io, lobbyId) {
             }
 
             let actualSpeed = baseSpeed * speedMultiplier;
+
+            // ==========================================
+            // 🔥 NUOVO: FIX DELTA TIME (Indipendenza dal Frame Rate)
+            // ==========================================
+            let now = Date.now();
+            if (!pState.lastTickTime) pState.lastTickTime = now;
+
+            // Calcolo i secondi passati dall'ultimo aggiornamento
+            let dt = (now - pState.lastTickTime) / 1000;
+            pState.lastTickTime = now;
+
+            // Sicurezza: se il server si blocca per un istante (es. lag di 1 secondo),
+            // evitiamo che la macchina venga teletrasportata fuori mappa
+            if (dt > 0.1) dt = 0.016; // 0.016 = tempo ideale a 60fps
+
+            // Moltiplichiamo la velocità per il tempo trascorso.
+            // Aggiungiamo "* 60" per fare in modo che la macchina vada esattamente 
+            // alla stessa velocità di prima senza doverti far cambiare tutti i valori di "baseSpeed"
+            actualSpeed = actualSpeed * (dt * 60);
+            // ==========================================
 
             let moveX = 0;
             let moveY = 0;
