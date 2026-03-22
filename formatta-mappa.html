@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Convertitore Tiled CSV a JS Array</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            background: #222;
+            color: #eee;
+        }
+
+        textarea {
+            width: 100%;
+            height: 200px;
+            margin-bottom: 10px;
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 10px;
+        }
+
+        input,
+        button {
+            padding: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            cursor: pointer;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>1. Incolla qui il CSV di Tiled</h2>
+    <textarea id="inputCsv" placeholder="-1, -1, 261, ..."></textarea>
+
+    <label>Larghezza Mappa (numero di tile per riga): </label>
+    <input type="number" id="mapWidth" value="60">
+
+    <label>Nome Variabile: </label>
+    <input type="text" id="varName" value="livelloTile">
+
+    <br>
+    <button onclick="convertiMappa()">Converti in Matrice JS</button>
+
+    <h2>2. Risultato Formattato</h2>
+    <textarea id="outputJs" readonly placeholder="Il risultato apparirà qui..."></textarea>
+
+    <script>
+        function convertiMappa() {
+            const csvString = document.getElementById('inputCsv').value;
+            const mapWidth = parseInt(document.getElementById('mapWidth').value, 10);
+            const varName = document.getElementById('varName').value;
+
+            if (!csvString) { alert("Incolla qualcosa prima!"); return; }
+
+            // FIX: Sostituiamo gli "a capo" con delle virgole prima di dividere l'array
+            // Poi filtriamo via gli spazi vuoti generati per errore
+            const rawValues = csvString
+                .replace(/\r?\n|\r/g, ',')
+                .split(',')
+                .map(v => v.trim())
+                .filter(v => v !== '');
+
+            let result = `const ${varName} = [\n`;
+
+            for (let i = 0; i < rawValues.length; i += mapWidth) {
+                const rowChunk = rawValues.slice(i, i + mapWidth);
+
+                // Se la riga è incompleta o vuota, la ignoriamo
+                if (rowChunk.length === 0) continue;
+
+                const cleanedRow = rowChunk.map(val => {
+                    const num = parseInt(val, 10);
+                    if (isNaN(num)) return 0;
+                    if (num === -1) return -1;
+
+                    // Pulizia dei flag di rotazione
+                    const gid = (num >>> 0) & 0x1FFFFFFF;
+                    return gid;
+                });
+
+                const rowNumStr = String(Math.floor(i / mapWidth)).padStart(2, '0');
+                result += `  /* ${rowNumStr} */[${cleanedRow.join(', ')}],\n`;
+            }
+
+            result += `];`;
+            document.getElementById('outputJs').value = result;
+        }
+    </script>
+</body>
+
+</html>
