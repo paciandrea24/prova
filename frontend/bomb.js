@@ -118,7 +118,10 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('bombExploded', (data) => {
         // explodeSound.play().catch(e => {}); // Suono opzionale
         clearInterval(timerInterval);
-        timerText.textContent = "00.0s";
+
+        timerText.textContent = "BOOM! 💥"; // Modificato da "00.0s"
+        bombContainer.style.removeProperty('--shake-speed'); // Pulisce la variabile
+
         bombContainer.classList.remove('active');
         bombContainer.classList.add('exploded');
         wordInput.disabled = true;
@@ -189,6 +192,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function startLocalTimer(seconds) {
         clearInterval(timerInterval);
         localTimerValue = seconds;
+        const turnMaxTime = seconds > 0 ? seconds : 1; // Evita divisioni per zero
+
+        // Imposta il testo fisso
+        timerText.textContent = "Tic Tac...";
+        bombContainer.style.setProperty('--shake-speed', '0.5s');
 
         timerInterval = setInterval(() => {
             localTimerValue -= 0.1;
@@ -196,7 +204,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 localTimerValue = 0;
                 clearInterval(timerInterval);
             }
-            timerText.textContent = localTimerValue.toFixed(1) + "s";
+
+            // Calcola il rapporto di tempo rimanente (da 1 a 0)
+            let ratio = localTimerValue / turnMaxTime;
+            if (ratio < 0) ratio = 0;
+
+            // Il tremolio va da 0.5s (inizio) a 0.05s (iper-veloce prima dello scoppio)
+            let currentSpeed = 0.05 + (ratio * 0.45);
+            bombContainer.style.setProperty('--shake-speed', `${currentSpeed.toFixed(3)}s`);
+
         }, 100);
     }
 

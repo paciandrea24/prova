@@ -109,7 +109,7 @@ body {
 }
 
 .bomb-container { position: relative; transition: transform 0.1s; }
-.bomb-container.active { animation: bomb-shake 0.1s infinite; }
+.bomb-container.active { animation: bomb-shake var(--shake-speed, 0.5s) infinite; }
 .bomb-body {
     width: 250px; height: 250px; background: #1a252f; border-radius: 50%;
     border: 8px solid #000; box-shadow: inset -20px -20px 0 rgba(0,0,0,0.5), 10px 10px 0 rgba(0,0,0,0.3);

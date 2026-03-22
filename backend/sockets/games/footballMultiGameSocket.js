@@ -185,34 +185,105 @@ function updateMultiPhysics(game, io, lobbyId) {
         }
     }
 
-    // 3. Movimento Palla 
-    const speed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
-    if (speed > 16) { b.vx = (b.vx / speed) * 16; b.vy = (b.vy / speed) * 16; }
-
+    // 3. Movimento Palla (Sub-stepped per evitare tunneling)
     b.vx *= b.friction; b.vy *= b.friction;
-    b.x += b.vx; b.y += b.vy;
 
-    // 4. Collisione Giocatore-Palla (Spostata PRIMA dei Muri)
-    for (let p of playersArr) {
-        let dx = b.x - p.x; let dy = b.y - p.y;
-        let dist = Math.sqrt(dx * dx + dy * dy);
+    for (let step = 0; step < 2; step++) {
+        b.x += b.vx / 2; b.y += b.vy / 2;
 
-        if (dist === 0) { dx = 1; dist = 1; }
+        // Fase A: Risoluzione compenetrazioni palla-giocatore (dribbling)
+        let pushX = 0, pushY = 0;
+        let newVx = 0, newVy = 0;
+        let touchCount = 0;
 
-        if (dist < p.radius + b.radius) {
-            let nx = dx / dist; let ny = dy / dist;
-            let overlap = (p.radius + b.radius) - dist;
-            b.x += nx * overlap; b.y += ny * overlap; // La palla viene spinta
-            b.vx = p.vx + nx * 0.5; b.vy = p.vy + ny * 0.5;
+        for (let p of playersArr) {
+            let dx = b.x - p.x; let dy = b.y - p.y;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist === 0) { dx = 1; dist = 1; }
+
+            if (dist < p.radius + b.radius) {
+                let nx = dx / dist; let ny = dy / dist;
+                let overlap = (p.radius + b.radius) - dist;
+
+                pushX += nx * overlap;
+                pushY += ny * overlap;
+                newVx += p.vx + nx * 0.5;
+                newVy += p.vy + ny * 0.5;
+                touchCount++;
+            }
         }
 
-        if (p.isKicking && dist < p.radius + b.radius + 18) {
-            let nx = dx / dist; let ny = dy / dist;
-            b.vx += nx * 14; b.vy += ny * 14;
+        // Applica le forze mediate
+        if (touchCount > 0) {
+            b.x += pushX;
+            b.y += pushY;
+            b.vx = newVx / touchCount;
+            b.vy = newVy / touchCount;
         }
+
+        // Collisione Palla-Muri (e GOAL)
+        let goalScoredInStep = false;
+        for (let i = 0; i < game.arena.length; i++) {
+            const p1 = game.arena[i];
+            const p2 = game.arena[(i + 1) % game.arena.length];
+
+            const l2 = dist2(p1, p2);
+            if (l2 == 0) continue;
+
+            let t = ((b.x - p1.x) * (p2.x - p1.x) + (b.y - p1.y) * (p2.y - p1.y)) / l2;
+            t = Math.max(0, Math.min(1, t));
+
+            const closestX = p1.x + t * (p2.x - p1.x);
+            const closestY = p1.y + t * (p2.y - p1.y);
+
+            const dx = b.x - closestX;
+            const dy = b.y - closestY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            let nx = dx / (distance || 1);
+            let ny = dy / (distance || 1);
+
+            let toCenterX = 500 - closestX;
+            let toCenterY = 500 - closestY;
+            let isOutside = (nx * toCenterX + ny * toCenterY) < 0;
+
+            if (distance < b.radius || (distance < 50 && isOutside)) {
+                if (isOutside) { nx = -nx; ny = -ny; }
+
+                const wallRatio = 0.30;
+                const isGoalArea = t > wallRatio && t < (1 - wallRatio);
+
+                if (!p1.eliminated && isGoalArea) {
+                    const victim = game.players[p1.ownerColor];
+                    if (victim) {
+                        victim.lives--;
+                        if (victim.lives <= 0) {
+                            victim.eliminated = true;
+                            p1.eliminated = true;
+                            checkWinCondition(game, io, lobbyId);
+                        }
+                    }
+                    resetMatchState(game);
+                    goalScoredInStep = true;
+                    break;
+                } else {
+                    b.x = closestX + nx * b.radius;
+                    b.y = closestY + ny * b.radius;
+                    let dot = b.vx * nx + b.vy * ny;
+                    if (dot < 0) {
+                        b.vx -= 2 * dot * nx;
+                        b.vy -= 2 * dot * ny;
+                        b.vx *= 0.8; b.vy *= 0.8;
+                    }
+                }
+            }
+        }
+        // Se c'è stato un gol, interrompi l'aggiornamento fisico di questo frame
+        if (goalScoredInStep) return;
     }
 
-    // 5. Collisioni Giocatore-Muri (Il Poligono)
+    // 5. Collisioni Giocatore-Muri (Eseguite 1 sola volta)
     for (let p of playersArr) {
         for (let i = 0; i < game.arena.length; i++) {
             const p1 = game.arena[i];
@@ -234,13 +305,12 @@ function updateMultiPhysics(game, io, lobbyId) {
             let nx = dx / (distance || 1);
             let ny = dy / (distance || 1);
 
-            // FIX: Calcola se il giocatore è fisicamente "fuori" dal campo
             let toCenterX = 500 - closestX;
             let toCenterY = 500 - closestY;
             let isOutside = (nx * toCenterX + ny * toCenterY) < 0;
 
             if (distance < p.radius || (distance < 50 && isOutside)) {
-                if (isOutside) { nx = -nx; ny = -ny; } // Inverti la normale verso il centro
+                if (isOutside) { nx = -nx; ny = -ny; }
 
                 p.x = closestX + nx * p.radius;
                 p.y = closestY + ny * p.radius;
@@ -251,69 +321,26 @@ function updateMultiPhysics(game, io, lobbyId) {
         }
     }
 
-    // 6. Collisione Palla-Muri (con recupero Tunneling e GOAL)
-    for (let i = 0; i < game.arena.length; i++) {
-        const p1 = game.arena[i];
-        const p2 = game.arena[(i + 1) % game.arena.length];
+    // 6. Fase B: Calci (Si sommano)
+    for (let p of playersArr) {
+        let dx = b.x - p.x; let dy = b.y - p.y;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist === 0) { dx = 1; dist = 1; }
 
-        const l2 = dist2(p1, p2);
-        if (l2 == 0) continue;
-
-        let t = ((b.x - p1.x) * (p2.x - p1.x) + (b.y - p1.y) * (p2.y - p1.y)) / l2;
-        t = Math.max(0, Math.min(1, t));
-
-        const closestX = p1.x + t * (p2.x - p1.x);
-        const closestY = p1.y + t * (p2.y - p1.y);
-
-        const dx = b.x - closestX;
-        const dy = b.y - closestY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        let nx = dx / (distance || 1);
-        let ny = dy / (distance || 1);
-
-        // FIX TUNNELING: Calcoliamo se la palla ha sfondato il muro
-        let toCenterX = 500 - closestX;
-        let toCenterY = 500 - closestY;
-        let isOutside = (nx * toCenterX + ny * toCenterY) < 0;
-
-        // Catturiamo la palla se è dentro (normale collisione) OPPURE se è fuori per colpa di una spinta (max 50px)
-        if (distance < b.radius || (distance < 50 && isOutside)) {
-
-            // Assicuriamoci che la forza repulsiva del muro spinga sempre verso il centro!
-            if (isOutside) { nx = -nx; ny = -ny; }
-
-            const wallRatio = 0.30;
-            const isGoalArea = t > wallRatio && t < (1 - wallRatio);
-
-            if (!p1.eliminated && isGoalArea) {
-                // GOAL
-                const victim = game.players[p1.ownerColor];
-                if (victim) {
-                    victim.lives--;
-                    if (victim.lives <= 0) {
-                        victim.eliminated = true;
-                        p1.eliminated = true;
-                        checkWinCondition(game, io, lobbyId);
-                    }
-                }
-                resetMatchState(game);
-                break;
-            } else {
-                // RIMBALZO su Muro
-                b.x = closestX + nx * b.radius;
-                b.y = closestY + ny * b.radius;
-                let dot = b.vx * nx + b.vy * ny;
-                if (dot < 0) {
-                    b.vx -= 2 * dot * nx;
-                    b.vy -= 2 * dot * ny;
-                    b.vx *= 0.8; b.vy *= 0.8;
-                }
-            }
+        if (p.isKicking && dist < p.radius + b.radius + 18) {
+            let nx = dx / dist; let ny = dy / dist;
+            b.vx += nx * 14; b.vy += ny * 14;
         }
     }
 
-    // 7. Sistema Anti-Glitch Assoluto (Se vola oltre i 600px la si resetta)
+    // 7. Fase C: Limite di velocità finale
+    const postKickSpeed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+    if (postKickSpeed > 16) {
+        b.vx = (b.vx / postKickSpeed) * 16;
+        b.vy = (b.vy / postKickSpeed) * 16;
+    }
+
+    // 8. Sistema Anti-Glitch Assoluto (Se vola oltre i 600px la si resetta)
     const distFromCenter = Math.sqrt((b.x - 500) ** 2 + (b.y - 500) ** 2);
     if (distFromCenter > 600 || isNaN(b.x) || isNaN(b.y)) {
         resetMatchState(game);
