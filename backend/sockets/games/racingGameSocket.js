@@ -100,6 +100,35 @@ module.exports = function (io, socket) {
         }
     });
 
+    socket.on('forceQuickRestart', (lobbyId) => {
+        const game = activeGames.get(lobbyId);
+
+        if (!game || game.gameId !== 'racing' || game.players.length > 1) return;
+
+        // 1. Ferma il loop attuale
+        if (game.loopInterval) {
+            clearInterval(game.loopInterval);
+            game.loopInterval = null;
+        }
+
+        // 2. Resetta lo stato del giocatore (posizioni, boost, cronometro server)
+        const { resetPlayersForCurrentTrack, startRace } = require('../../game/racingGame');
+        resetPlayersForCurrentTrack(game);
+
+        // 3. Mette la gara in pausa per i 3 secondi di attesa
+        game.raceStarted = false;
+
+        // 4. 🔥 FIX: Invia al frontend SOLO le nuove posizioni e il comando del Countdown!
+        io.to(lobbyId).emit('racingStateUpdate', game.playersState);
+        io.to(lobbyId).emit('quickRestartCountdown');
+
+        // 5. Dopo 3 secondi precisi, il server fa partire il "GO!" e ridà i comandi
+        setTimeout(() => {
+            game.raceStarted = true;
+            startRace(io, lobbyId);
+        }, 3000);
+    });
+
     socket.on('saveNewRecord', (data) => {
         const { lobbyId, trackName, playerName, playerColor, time } = data;
         leaderboard.addRecord(trackName, playerName, playerColor, time);

@@ -22,6 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let localStartTime = null;
     let myFinalTime = null;
 
+    let canQuickRestart = false;
+
     // Stato locale degli input per non spammare il server inutilmente
     const inputs = { w: false, a: false, s: false, d: false };
 
@@ -56,6 +58,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const lapBox = document.getElementById('lap-box');
         const isSingle = data.isSingleMode || (data.settings && data.settings.mode === 'single') || data.totalLaps === 1;
+
+        // --- INIZIO NUOVO CODICE QUICK RESTART ---
+        // Verifica se c'è un solo giocatore in lobby
+        const isAlone = Object.keys(playersState).length === 1;
+        canQuickRestart = isAlone && data.isSingleMode === true;
+
+        const restartHint = document.getElementById('quick-restart-hint');
+        if (restartHint) {
+            restartHint.style.display = canQuickRestart ? 'flex' : 'none';
+
+            // Permetti il riavvio anche cliccando il bottone
+            restartHint.onclick = () => {
+                if (canQuickRestart && isRacing) {
+                    socket.emit('forceQuickRestart', lobbyId);
+                    isRacing = false; // Disabilita input per evitare spam
+                }
+            };
+        }
 
         if (isSingle) {
             if (lapBox) lapBox.style.display = 'none';
@@ -161,6 +181,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // 🔥 NUOVO: Listener dedicato al Quick Restart
+    socket.on('quickRestartCountdown', () => {
+        isRacing = false;
+        myFinalTime = null; // Resetta il cronometro se avevi già finito
+
+        // Nasconde il timer durante il 3, 2, 1
+        document.getElementById('timer-box').style.visibility = 'hidden';
+
+        // Mostra l'overlay del countdown esattamente come all'inizio
+        const countdownOverlay = document.getElementById('countdown-overlay');
+        const countdownNumber = document.getElementById('countdown-number');
+
+        countdownOverlay.style.display = 'flex';
+        countdownOverlay.style.background = 'rgba(0, 0, 0, 0.7)';
+        countdownNumber.textContent = '3';
+        countdownNumber.style.color = '#e74c3c';
+
+        setTimeout(() => { countdownNumber.textContent = '2'; countdownNumber.style.color = '#f39c12'; }, 1000);
+        setTimeout(() => { countdownNumber.textContent = '1'; countdownNumber.style.color = '#f1c40f'; }, 2000);
+
+        // TELETRASPORTO VISIVO: Sposta istantaneamente la macchina alla partenza 
+        // per evitare l'effetto "scivolata" del motore grafico
+        for (const color in serverState) {
+            if (visualState[color]) {
+                visualState[color].x = serverState[color].x;
+                visualState[color].y = serverState[color].y;
+                visualState[color].angle = serverState[color].angle;
+            }
+        }
+    });
+
     // --- MOTORE GRAFICO FRONTEND (LERP) ---
     let serverState = {};       // Qui salviamo i dati grezzi che arrivano dal server
     let visualState = {};       // Qui salviamo le posizioni morbide per lo schermo
@@ -244,10 +295,46 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // AGGIORNAMENTO DEL CRONOMETRO
+        // AGGIORNAMENTO DEL CRONOMETRO E MOLTIPLICATORE
         if (isRacing && localStartTime) {
             const myServerState = serverState[myColor];
 
+            // --- INIZIO NUOVO CODICE MOLTIPLICATORE ---
+            const multiplierBox = document.getElementById('multiplier-box');
+            const multiplierDisplay = document.getElementById('multiplier-display');
+
+            if (myServerState && myServerState.boostTime !== undefined && multiplierBox) {
+                multiplierBox.style.display = 'flex';
+
+                // Calcolo del bonus (da 0.00 a 0.20 proporzionale come nel backend)
+                let currentBonus = (myServerState.boostTime / 4.0) * 0.20;
+                let displayValue = (1.0 + currentBonus).toFixed(2); // Es: "1.15"
+                multiplierDisplay.textContent = displayValue;
+
+                // Feedback visivo morbido: cambia colore in base alla carica
+                if (currentBonus >= 0.20) {
+                    // Boost Massimo: Giallo/Oro e si ingrandisce leggermente
+                    multiplierBox.style.color = '#f1c40f';
+                    multiplierBox.style.borderColor = '#f1c40f';
+                    multiplierBox.style.boxShadow = '4px 4px 0px rgba(241, 196, 15, 0.4)';
+                    multiplierBox.style.transform = 'scale(1.1)';
+                } else if (currentBonus > 0) {
+                    // In ricarica: Arancione
+                    multiplierBox.style.color = '#e67e22';
+                    multiplierBox.style.borderColor = '#e67e22';
+                    multiplierBox.style.boxShadow = '4px 4px 0px rgba(230, 126, 34, 0.4)';
+                    multiplierBox.style.transform = 'scale(1)';
+                } else {
+                    // Nessun boost / Fuori pista: Grigio spento
+                    multiplierBox.style.color = '#95a5a6';
+                    multiplierBox.style.borderColor = '#95a5a6';
+                    multiplierBox.style.boxShadow = '4px 4px 0px rgba(149, 165, 166, 0.4)';
+                    multiplierBox.style.transform = 'scale(1)';
+                }
+            }
+            // --- FINE NUOVO CODICE MOLTIPLICATORE ---
+
+            // Codice del timer originale
             if (myServerState && myServerState.finished && myServerState.time) {
                 myFinalTime = myServerState.time;
             }
@@ -262,7 +349,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (timerEl) {
                 timerEl.textContent = `${m}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
 
-                // FIX COLORE TIMER (Scuro durante la gara, Verde quando tagli il traguardo)
                 if (myFinalTime !== null) {
                     timerEl.style.color = '#2ecc71';
                 } else {
@@ -542,8 +628,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (key === 's' && !inputs.s) { inputs.s = true; changed = true; }
         if (key === 'd' && !inputs.d) { inputs.d = true; changed = true; }
 
-        // Se i tasti cambiano E la gara è partita, manda al server.
-        // Se la gara non è ancora partita, abbiamo comunque salvato "w: true" localmente.
+        // 🔥 NUOVO: Listener per il tasto R
+        if (key === 'r' && canQuickRestart && isRacing) {
+            socket.emit('forceQuickRestart', lobbyId);
+            isRacing = false; // Blocca ulteriori input finché non riparte
+            return;
+        }
+
         if (changed && isRacing) sendInputs();
     });
 

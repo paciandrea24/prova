@@ -197,3 +197,8 @@ body {
     .overlay { font-size: 70px; }
     #countdown-track { font-size: 30px; }
 }
+
+.multiplier-style {
+    font-size: 20px;
+    transition: all 0.2s ease-out; /* Effetto morbido per colore e grandezza */
+}

@@ -762,7 +762,9 @@ function resetPlayersForCurrentTrack(game) {
             place: null,
             time: null,
             lastActiveTime: Date.now(),
-            dnf: false
+            dnf: false,
+            lastTickTime: null,
+            boostTime: 0
         };
     });
 }
@@ -862,50 +864,56 @@ function runGameLoop(io, lobbyId) {
             ];
 
             // 1. DETERMINA LA SUPERFICIE ATTUALE PER CALCOLARE LA VELOCITÀ
-            // Invece di controllare i 4 angoli, controlliamo solo il CENTRO della macchina
             let speedMultiplier = 1.0;
-
             let centerCol = Math.floor(pState.x / game.tileSize);
             let centerRow = Math.floor(pState.y / game.tileSize);
+            let effectiveTile = 0;
 
             if (centerRow >= 0 && centerRow < mapHeight && centerCol >= 0 && centerCol < mapWidth) {
                 let tileL2 = (currentTrackMap.bottom && currentTrackMap.bottom[centerRow] && currentTrackMap.bottom[centerRow][centerCol]) || 0;
                 let tileL1 = (currentTrackMap.top && currentTrackMap.top[centerRow] && currentTrackMap.top[centerRow][centerCol]) || 0;
-
                 if (tileL2 === -1) tileL2 = 0;
                 if (tileL1 === -1) tileL1 = 0;
-
-                let effectiveTile = tileL1 !== 0 ? tileL1 : tileL2;
-
-                // Rallenta SOLO se il centro esatto della macchina è sulla ghiaia
-                if (TILE_GROUPS.GRAVEL.has(effectiveTile)) {
-                    speedMultiplier = 0.55; // (Puoi abbassare questo valore a 0.4 se vuoi che la ghiaia freni di più)
-                }
+                effectiveTile = tileL1 !== 0 ? tileL1 : tileL2;
             }
 
-            let actualSpeed = baseSpeed * speedMultiplier;
-
             // ==========================================
-            // 🔥 NUOVO: FIX DELTA TIME (Indipendenza dal Frame Rate)
+            // 🔥 FIX DELTA TIME (Spostato prima per usarlo nel boost)
             // ==========================================
             let now = Date.now();
             if (!pState.lastTickTime) pState.lastTickTime = now;
-
-            // Calcolo i secondi passati dall'ultimo aggiornamento
             let dt = (now - pState.lastTickTime) / 1000;
             pState.lastTickTime = now;
 
-            // Sicurezza: se il server si blocca per un istante (es. lag di 1 secondo),
-            // evitiamo che la macchina venga teletrasportata fuori mappa
             if (dt > 0.5) dt = IDEAL_DT;
-            // if (dt > 0.1) dt = IDEAL_DT; se metto 60 FPS
 
-            // Moltiplichiamo la velocità per il tempo trascorso.
-            // Aggiungiamo "* 60" per fare in modo che la macchina vada esattamente 
-            // alla stessa velocità di prima senza doverti far cambiare tutti i valori di "baseSpeed"
-            actualSpeed = actualSpeed * (dt * 60);
             // ==========================================
+            // 🔥 SISTEMA DI BOOST GRADUALE
+            // ==========================================
+            let bonusSpeed = 0;
+            let isMoving = pState.inputs.w || pState.inputs.a || pState.inputs.s || pState.inputs.d;
 
+            if (TILE_GROUPS.GRAVEL.has(effectiveTile)) {
+                speedMultiplier = 0.55;  // Frenata sulla ghiaia
+                pState.boostTime = 0;    // Azzera il boost
+            } else if (TILE_GROUPS.GRASS.has(effectiveTile) || effectiveTile === 0) {
+                pState.boostTime = 0;    // Azzera il boost (erba o fuori mappa)
+            } else if (isMoving) {
+                // Sull'asfalto e in movimento: accumula tempo (max 4.0 secondi)
+                pState.boostTime = Math.min(pState.boostTime + dt, 4.0);
+
+                // Calcola il bonus: massimo +20% di velocità
+                bonusSpeed = (pState.boostTime / 4.0) * 0.20;
+            } else {
+                // Se si ferma mollando i tasti, il boost scende rapidamente
+                pState.boostTime = Math.max(pState.boostTime - (dt * 2), 0);
+            }
+
+            // Calcolo della velocità finale unendo base, penalità(Multiplier) e premio(bonus)
+            let actualSpeed = baseSpeed * (speedMultiplier + bonusSpeed);
+            actualSpeed = actualSpeed * (dt * 60);
+
+            // ==========================================
             let moveX = 0;
             let moveY = 0;
 
@@ -1186,4 +1194,4 @@ function restartRace(io, lobbyId) {
 }
 
 // AGGIORNA l'export alla fine del file!
-module.exports = { initializeRacingGame, updatePlayerInput, startRace, restartRace };
+module.exports = { initializeRacingGame, updatePlayerInput, startRace, restartRace, resetPlayersForCurrentTrack };
