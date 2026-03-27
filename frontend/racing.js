@@ -189,6 +189,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const visual = visualState[color];
 
+            // ==================================================
+            // 🔥 CLIENT-SIDE PREDICTION & RECONCILIATION
+            // ==================================================
+            if (color === myColor && isRacing) {
+                // 1. PREDIZIONE: Calcola il movimento predetto in base agli input attuali
+                let moveX = 0;
+                let moveY = 0;
+
+                if (inputs.w) moveY -= 1;
+                if (inputs.s) moveY += 1;
+                if (inputs.a) moveX -= 1;
+                if (inputs.d) moveX += 1;
+
+                if (moveX !== 0 || moveY !== 0) {
+                    const magnitude = Math.sqrt(moveX * moveX + moveY * moveY);
+                    const normalizedX = moveX / magnitude;
+                    const normalizedY = moveY / magnitude;
+
+                    // Velocità finta del client. Da tarare se la senti troppo lenta o veloce!
+                    const CLIENT_SPEED = 14;
+                    visual.x += normalizedX * CLIENT_SPEED;
+                    visual.y += normalizedY * CLIENT_SPEED;
+
+                    // Predici anche l'angolo di rotazione istantaneo
+                    let targetAngle = Math.atan2(normalizedY, normalizedX) * (180 / Math.PI);
+                    let diff = targetAngle - visual.angle;
+                    while (diff <= -180) diff += 360;
+                    while (diff > 180) diff -= 360;
+                    visual.angle += diff * 0.4;
+                }
+
+                // 2. RICONCILIAZIONE (Server Authority)
+                // Usiamo un "elastico" molto morbido (0.1) per tirare la tua auto verso 
+                // le coordinate reali del server senza farti notare gli scatti di lag
+                visual.x += (target.x - visual.x) * 0.1;
+                visual.y += (target.y - visual.y) * 0.1;
+
+            } else {
+                // ==================================================
+                // 👻 AUTO DEGLI AVVERSARI (Solo LERP classico)
+                // ==================================================
+                visual.x += (target.x - visual.x) * 0.3;
+                visual.y += (target.y - visual.y) * 0.3;
+
+                let angleDiff = target.angle - visual.angle;
+                while (angleDiff < -180) angleDiff += 360;
+                while (angleDiff > 180) angleDiff -= 360;
+                visual.angle += angleDiff * 0.3;
+            }
+
             // LERP per movimento fluido
             visual.x += (target.x - visual.x) * 0.3;
             visual.y += (target.y - visual.y) * 0.3;
