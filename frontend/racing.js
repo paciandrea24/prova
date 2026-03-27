@@ -182,109 +182,42 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Variabile globale per calcolare il tempo tra un frame visivo e l'altro
-    let lastRenderTime = Date.now();
-
-    // 2. Il Render Loop super fluido
+    // 2. Il Render Loop super fluido a 60/144Hz (dipende dal monitor)
     function renderLoop() {
-        // --- CALCOLO DEL DELTA TIME FRONTEND ---
-        let now = Date.now();
-        let dt = (now - lastRenderTime) / 1000;
-        if (dt > 0.1) dt = 0.016; // Failsafe se cambi scheda del browser
-        lastRenderTime = now;
-
-        // La velocità esatta che ha il Server (24 di baseSpeed * 60 frame ideali = 1440 pixel al secondo)
-        const SPEED_PER_SECOND = 1440;
-        const ROTATION_PER_SECOND = 240;
-
         for (const [color, target] of Object.entries(serverState)) {
             if (!visualState[color]) continue;
 
             const visual = visualState[color];
 
-            // ==================================================
-            // 🔥 CLIENT-SIDE PREDICTION & SMART RECONCILIATION
-            // ==================================================
-            if (color === myColor && isRacing) {
-                // 1. PREDIZIONE
-                let moveX = 0;
-                let moveY = 0;
+            // LERP per movimento fluido
+            visual.x += (target.x - visual.x) * 0.3;
+            visual.y += (target.y - visual.y) * 0.3;
 
-                if (inputs.w) moveY -= 1;
-                if (inputs.s) moveY += 1;
-                if (inputs.a) moveX -= 1;
-                if (inputs.d) moveX += 1;
+            let angleDiff = target.angle - visual.angle;
+            while (angleDiff < -180) angleDiff += 360;
+            while (angleDiff > 180) angleDiff -= 360;
+            visual.angle += angleDiff * 0.3;
 
-                if (moveX !== 0 || moveY !== 0) {
-                    const magnitude = Math.sqrt(moveX * moveX + moveY * moveY);
-                    const normalizedX = moveX / magnitude;
-                    const normalizedY = moveY / magnitude;
-
-                    // Movimento esatto slegato dagli Hz del monitor
-                    let step = SPEED_PER_SECOND * dt;
-                    visual.x += normalizedX * step;
-                    visual.y += normalizedY * step;
-
-                    // Predici anche l'angolo di rotazione istantaneo
-                    let targetAngle = Math.atan2(normalizedY, normalizedX) * (180 / Math.PI);
-                    let diff = targetAngle - visual.angle;
-                    while (diff <= -180) diff += 360;
-                    while (diff > 180) diff -= 360;
-                    visual.angle += diff * (ROTATION_PER_SECOND * dt * 0.05);
-                }
-
-                // 2. RICONCILIAZIONE INTELLIGENTE (SMART ELASTIC)
-                let dx = target.x - visual.x;
-                let dy = target.y - visual.y;
-                let distance = Math.sqrt(dx * dx + dy * dy);
-
-                // Siccome il server è sempre un po' "indietro" per colpa del ping,
-                // la distanza non sarà mai 0. Creiamo delle fasce di tolleranza:
-
-                if (distance > 100) {
-                    // DESINCRONIZZAZIONE GRAVE (es. hai sbattuto a un muro sul server, ma il client non lo sapeva)
-                    // Elastico forte per riportarti subito in carreggiata
-                    visual.x += dx * 0.3;
-                    visual.y += dy * 0.3;
-                } else if (distance > 40) {
-                    // LEGGERA DERIVA (es. sei andato sulla ghiaia e il server ti ha rallentato)
-                    // Elastico morbidissimo, quasi impercettibile all'occhio
-                    visual.x += dx * 0.05;
-                    visual.y += dy * 0.05;
-                }
-                // Se la distance è < 40... NON FACCIAMO NULLA! 
-                // Lasciamo comandare il tuo schermo (Zero microscatti)
-
-            } else {
-                // ==================================================
-                // 👻 AUTO DEGLI AVVERSARI (Solo LERP classico)
-                // ==================================================
-                visual.x += (target.x - visual.x) * 0.3;
-                visual.y += (target.y - visual.y) * 0.3;
-
-                let angleDiff = target.angle - visual.angle;
-                while (angleDiff < -180) angleDiff += 360;
-                while (angleDiff > 180) angleDiff -= 360;
-                visual.angle += angleDiff * 0.3;
-            }
-
-            // --- AGGIORNAMENTO GRAFICO NEL DOM ---
+            // FIX: Cerca la macchina con l'id formattato in maiuscolo
             const carEl = document.getElementById(`car-${color.replace('#', '').toUpperCase()}`);
             if (carEl) {
                 carEl.style.transform = `translate(${visual.x}px, ${visual.y}px) rotate(${visual.angle}deg)`;
 
-                // 1. Contro-rotazione del nome 
+                // 1. Contro-rotazione del nome (già presente)
                 const label = carEl.querySelector('.player-label');
                 if (label) label.style.transform = `rotate(${-visual.angle}deg)`;
 
-                // 2. Ribalta l'immagine se va verso sinistra
+                // 2. NUOVO CODICE: Ribalta l'immagine se va verso sinistra!
                 const sprite = carEl.querySelector('.car-sprite');
                 if (sprite) {
+                    // Normalizza l'angolo per averlo sempre tra 0 e 360
                     let normAngle = ((visual.angle % 360) + 360) % 360;
+
+                    // Se l'angolo va verso il quadrante sinistro, specchia la grafica
                     if (normAngle > 90 && normAngle < 270) {
                         sprite.style.transform = 'scaleY(-1)';
                     } else {
-                        sprite.style.transform = 'scaleY(1)';
+                        sprite.style.transform = 'scaleY(1)'; // Grafica normale
                     }
                 }
 
@@ -301,6 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         arena.style.transform = `translate(${cameraX}px, ${cameraY}px)`;
                     }
 
+                    // AGGIORNA GIRI LIVE
                     const lapBox = document.getElementById('lap-box');
                     if (lapBox && lapBox.style.display !== 'none' && target.lap && target.totalLaps) {
                         const displayLap = Math.min(target.lap, target.totalLaps);
@@ -327,6 +261,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const timerEl = document.getElementById('hud-timer');
             if (timerEl) {
                 timerEl.textContent = `${m}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+
+                // FIX COLORE TIMER (Scuro durante la gara, Verde quando tagli il traguardo)
                 if (myFinalTime !== null) {
                     timerEl.style.color = '#2ecc71';
                 } else {
