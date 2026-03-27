@@ -774,6 +774,9 @@ function runGameLoop(io, lobbyId) {
     const baseSpeed = 24; // Velocità massima su asfalto
     const currentTrackMap = game.tracks[game.currentTrackIndex].map;
 
+    const TARGET_FPS = 30;
+    const IDEAL_DT = 1 / TARGET_FPS;
+
     game.loopInterval = setInterval(() => {
         // [FIX CRITICO]: Se la partita non esiste più in memoria, distruggi il loop fantasma!
         if (!activeGames.has(lobbyId)) {
@@ -894,7 +897,8 @@ function runGameLoop(io, lobbyId) {
 
             // Sicurezza: se il server si blocca per un istante (es. lag di 1 secondo),
             // evitiamo che la macchina venga teletrasportata fuori mappa
-            if (dt > 0.1) dt = 0.016; // 0.016 = tempo ideale a 60fps
+            if (dt > 0.5) dt = IDEAL_DT;
+            // if (dt > 0.1) dt = IDEAL_DT; se metto 60 FPS
 
             // Moltiplichiamo la velocità per il tempo trascorso.
             // Aggiungiamo "* 60" per fare in modo che la macchina vada esattamente 
@@ -1032,7 +1036,7 @@ function runGameLoop(io, lobbyId) {
         if (everyoneFinished && game.players.length > 0) {
             handleRaceEnd(io, lobbyId);
         }
-    }, 1000 / 60);
+    }, 1000 / TARGET_FPS);
 }
 
 // GESTIONE FINE GARA E PASSAGGIO ALLA PROSSIMA

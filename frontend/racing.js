@@ -8,7 +8,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    const socket = io();
+    const socket = io({
+        transports: ['websocket'],
+        upgrade: false
+    });
+
     socket.emit('joinLobby', { lobbyId: lobbyId, color: myColor });
     socket.emit('joinRacing', { lobbyId, playerColor: decodeURIComponent(myColor) });
 
