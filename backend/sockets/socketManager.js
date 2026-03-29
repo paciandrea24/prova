@@ -6,6 +6,7 @@ const racingGameSocket = require('./games/racingGameSocket');
 const bombGameSocket = require('./games/bombGameSocket');
 const footballGameSocket = require('./games/footballGameSocket');
 const footballMultiGameSocket = require('./games/footballMultiGameSocket');
+const deductionGameSocket = require('./games/deductionGameSocket');
 
 // IMPORTANTE: Importiamo lo store delle lobby per poterle modificare
 const { lobbies, users } = require('../store/lobbies');
@@ -159,5 +160,6 @@ module.exports = function (io) {
         bombGameSocket(io, socket);
         footballGameSocket(io, socket);
         footballMultiGameSocket(io, socket);
+        deductionGameSocket(io, socket);
     });
 };

@@ -1,0 +1,73 @@
+body {
+    margin: 0;
+    background: #2C3E50;
+    color: white;
+    font-family: 'Fredoka', sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.hud {
+    display: flex;
+    justify-content: space-between;
+    width: 800px;
+    margin-top: 15px;
+    margin-bottom: 10px;
+    font-size: 22px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 10px 20px;
+    border-radius: 10px;
+    box-sizing: border-box;
+    border: 2px solid #34495E;
+}
+
+#gameCanvas {
+    background: #34495E;
+    border: 4px solid #ecf0f1;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.crewmate-text { color: #2ecc71; }
+.impostor-text { color: #e74c3c; animation: pulse 2s infinite; }
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+}
+
+/* OVERLAYS INIZIO E FINE PARTITA */
+.overlay {
+    position: absolute;
+    top: 0; left: 0; 
+    width: 100vw; height: 100vh;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    text-align: center;
+}
+
+.hidden { display: none !important; }
+
+.role-title { 
+    font-size: 80px; 
+    font-weight: bold; 
+    margin-bottom: 20px; 
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.role-subtitle { 
+    font-size: 24px; 
+    color: #bdc3c7; 
+}
+
+.crewmate-blue { color: #3498db; text-shadow: 0 0 20px rgba(52, 152, 219, 0.5); }
+.impostor-red { color: #e74c3c; text-shadow: 0 0 20px rgba(231, 76, 60, 0.5); }
