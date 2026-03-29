@@ -11,8 +11,23 @@
 
 <body>
     <div class="hud">
-        <div>Stanza: <strong id="room-display">Caricamento...</strong></div>
-        <div>Ruolo: <strong id="role-display">...</strong></div>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div>Stanza: <strong id="room-display">Caricamento...</strong></div>
+            <div>Ruolo: <strong id="role-display">...</strong></div>
+            <div id="tasks-list" style="font-size: 14px; margin-top: 10px; color: #f1c40f;"></div>
+        </div>
+
+        <div class="progress-container"
+            style="width: 300px; height: 20px; background: #2C3E50; border: 2px solid white; border-radius: 10px; overflow: hidden; display: none;"
+            id="progress-container">
+            <div id="progress-bar" style="width: 0%; height: 100%; background: #2ecc71; transition: width 0.3s ease;">
+            </div>
+        </div>
+    </div>
+
+    <div id="interaction-hint" class="hidden"
+        style="position: absolute; top: 75%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); color: white; padding: 10px 20px; border-radius: 10px; font-family: 'Fredoka', sans-serif; font-size: 20px; pointer-events: none; text-align: center;">
+        Avvicinati e premi E per completare la Task
     </div>
     <canvas id="gameCanvas" width="800" height="600"></canvas>
 

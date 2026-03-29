@@ -13,30 +13,49 @@ const ROOM_CONFIG = {
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
 
+// DEFINIZIONE DELLE TASK SULLA MAPPA
+const ALL_TASKS = [
+    { id: 'task_router', room: 'Nord', name: 'Riavvia Router', x: 400, y: 150 },
+    { id: 'task_motori', room: 'Sud', name: 'Allinea Motore', x: 400, y: 450 },
+    { id: 'task_dati', room: 'Est', name: 'Scarica Dati', x: 650, y: 300 },
+    { id: 'task_spazzatura', room: 'Ovest', name: 'Svuota Spazzatura', x: 150, y: 300 },
+    { id: 'task_id', room: 'Centro', name: 'Scansiona ID', x: 400, y: 200 }
+];
+
 function initializeGame(io, lobbyId, players, settings) {
     const numImpostors = parseInt(settings.impostors) || 1;
-
     let game = activeGames.get(lobbyId);
 
-    // PREVENZIONE BUG LAMPEGGIO SERVER: Elimina i loop vecchi se riavvi il gioco
     if (game && game.loopInterval) {
         clearInterval(game.loopInterval);
     }
 
-    // Scegli impostori a caso
     const shuffled = [...players].sort(() => 0.5 - Math.random());
     const impostors = shuffled.slice(0, numImpostors);
 
+    let totalGlobalTasks = 0;
     const playersState = {};
+
     players.forEach(color => {
+        const isImpostor = impostors.includes(color);
+        let myTasks = [];
+
+        // Se è un Crewmate, gli diamo 3 task casuali
+        if (!isImpostor) {
+            const shuffledTasks = [...ALL_TASKS].sort(() => 0.5 - Math.random());
+            myTasks = shuffledTasks.slice(0, 3).map(t => ({ ...t, completed: false }));
+            totalGlobalTasks += myTasks.length;
+        }
+
         playersState[color] = {
             color: color,
-            room: 'Centro', // Spawn iniziale
+            room: 'Centro',
             x: CANVAS_WIDTH / 2,
             y: CANVAS_HEIGHT / 2,
             facing: 'down',
-            isImpostor: impostors.includes(color),
-            isDead: false
+            isImpostor: isImpostor,
+            isDead: false,
+            tasks: myTasks
         };
     });
 
@@ -45,24 +64,25 @@ function initializeGame(io, lobbyId, players, settings) {
         type: 'deduction',
         phase: 'starting',
         playersState: playersState,
+        totalTasks: totalGlobalTasks,
+        completedTasks: 0,
         loopInterval: null
     };
 
     activeGames.set(lobbyId, game);
 
-    // TEMPORIZZATORE: Dopo 6 secondi toglie l'overlay a tutti e permette di muoversi
     setTimeout(() => {
         const activeGame = activeGames.get(lobbyId);
-        // Controlla che il gioco esista ancora e sia effettivamente bloccato in "starting"
         if (activeGame && activeGame.phase === 'starting') {
             activeGame.phase = 'exploration';
-            io.to(lobbyId).emit('explorationStarted');
+            io.to(lobbyId).emit('explorationStarted', {
+                totalTasks: activeGame.totalTasks,
+                completedTasks: activeGame.completedTasks
+            });
             console.log(`🔪 Partita Deduction iniziata nella lobby ${lobbyId}`);
         }
-    }, 6000); // 6 secondi compensano il tempo di caricamento della pagina web
+    }, 6000);
 
-    // Mettiamo il tick del server a 30 FPS. Il movimento sembrerà a 60 FPS
-    // perché i client fanno previsione locale per se stessi.
     game.loopInterval = setInterval(() => {
         if (game.phase !== 'exploration') return;
 
@@ -71,7 +91,13 @@ function initializeGame(io, lobbyId, players, settings) {
             const playersInRoom = {};
             for (let color in game.playersState) {
                 if (game.playersState[color].room === roomName) {
-                    playersInRoom[color] = game.playersState[color];
+                    playersInRoom[color] = {
+                        color: game.playersState[color].color,
+                        x: game.playersState[color].x,
+                        y: game.playersState[color].y,
+                        facing: game.playersState[color].facing,
+                        isDead: game.playersState[color].isDead
+                    };
                 }
             }
             io.to(`${lobbyId}_${roomName}`).emit('gameState', playersInRoom);
@@ -92,7 +118,6 @@ function processMovement(io, socket, lobbyId, playerColor, x, y, facing) {
     player.y = y;
     player.facing = facing;
 
-    // Controllo Transizioni (Porte)
     let newRoom = null;
     if (player.x < 0 && ROOM_CONFIG[player.room].left) {
         newRoom = ROOM_CONFIG[player.room].left;
@@ -109,12 +134,41 @@ function processMovement(io, socket, lobbyId, playerColor, x, y, facing) {
     }
 
     if (newRoom) {
-        // Logica Socket.io Sub-Rooms
         socket.leave(`${lobbyId}_${player.room}`);
         player.room = newRoom;
         socket.join(`${lobbyId}_${player.room}`);
-
         socket.emit('roomTransition', { newRoom, x: player.x, y: player.y });
+    }
+}
+
+function processTask(io, socket, lobbyId, playerColor, taskId) {
+    const game = activeGames.get(lobbyId);
+    if (!game || game.phase !== 'exploration') return;
+
+    const player = game.playersState[playerColor];
+    if (!player || player.isDead || player.isImpostor) return;
+
+    const task = player.tasks.find(t => t.id === taskId);
+
+    // Controlla che la task esista, non sia completata e il giocatore sia nella stanza giusta
+    if (task && !task.completed && player.room === task.room) {
+        // Controllo distanza (sicurezza lato server)
+        const dx = player.x - task.x;
+        const dy = player.y - task.y;
+        if (Math.sqrt(dx * dx + dy * dy) < 80) {
+            task.completed = true;
+            game.completedTasks++;
+
+            // Aggiorna solo il giocatore sulla sua task
+            socket.emit('taskCompleted', taskId);
+            // Aggiorna tutti sulla barra globale
+            io.to(lobbyId).emit('globalTaskProgress', {
+                completedTasks: game.completedTasks,
+                totalTasks: game.totalTasks
+            });
+
+            checkWinCondition(io, lobbyId);
+        }
     }
 }
 
@@ -125,40 +179,36 @@ function processKill(io, lobbyId, playerColor) {
     const killer = game.playersState[playerColor];
     if (!killer || !killer.isImpostor || killer.isDead) return;
 
-    // Cerca vittima nella STESSA STANZA
     for (let targetColor in game.playersState) {
         if (targetColor === playerColor) continue;
         const victim = game.playersState[targetColor];
 
         if (victim.room === killer.room && !victim.isDead && !victim.isImpostor) {
-            // Teorema di Pitagora
             const dx = victim.x - killer.x;
             const dy = victim.y - killer.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
 
-            if (distance < 100) { // Range
-                // Validazione sguardo (Semplificata)
-                let valid = false;
-                if (killer.facing === 'right' && victim.x > killer.x) valid = true;
-                if (killer.facing === 'left' && victim.x < killer.x) valid = true;
-                if (killer.facing === 'up' && victim.y < killer.y) valid = true;
-                if (killer.facing === 'down' && victim.y > killer.y) valid = true;
+            if (Math.sqrt(dx * dx + dy * dy) < 100) {
+                victim.isDead = true;
 
-                if (valid) {
-                    victim.isDead = true;
-                    io.to(`${lobbyId}_${killer.room}`).emit('playerKilled', targetColor);
+                // Rimuovi le task della vittima dal totale globale per non bloccare la vittoria
+                const unfinishedTasks = victim.tasks.filter(t => !t.completed).length;
+                game.totalTasks -= unfinishedTasks;
 
-                    // CONTROLLA SE LA PARTITA DEVE FINIRE DOPO QUESTA UCCISIONE
-                    checkWinCondition(io, lobbyId);
+                io.to(`${lobbyId}_${killer.room}`).emit('playerKilled', targetColor);
 
-                    break;
-                }
+                // Aggiorna la barra perché il totale è sceso
+                io.to(lobbyId).emit('globalTaskProgress', {
+                    completedTasks: game.completedTasks,
+                    totalTasks: game.totalTasks
+                });
+
+                checkWinCondition(io, lobbyId);
+                break;
             }
         }
     }
 }
 
-// AGGIUNGI QUESTA FUNZIONE
 function checkWinCondition(io, lobbyId) {
     const game = activeGames.get(lobbyId);
     if (!game || game.phase !== 'exploration') return;
@@ -174,21 +224,21 @@ function checkWinCondition(io, lobbyId) {
         }
     }
 
-    // Recupera l'Host della lobby
     const lobby = lobbies.get(lobbyId);
     const hostColor = lobby ? lobby.host : null;
 
+    // Vittoria Impostori
     if (aliveImpostors >= aliveCrewmates) {
         game.phase = 'gameOver';
         clearInterval(game.loopInterval);
-        // Aggiungi hostColor qui
         io.to(lobbyId).emit('gameOver', { winner: 'impostors', hostColor });
-    } else if (aliveImpostors === 0) {
+    }
+    // Vittoria Crewmates (Impostori morti OR Tutte le task finite)
+    else if (aliveImpostors === 0 || (game.totalTasks > 0 && game.completedTasks >= game.totalTasks)) {
         game.phase = 'gameOver';
         clearInterval(game.loopInterval);
-        // Aggiungi hostColor qui
         io.to(lobbyId).emit('gameOver', { winner: 'crewmates', hostColor });
     }
 }
 
-module.exports = { initializeGame, processMovement, processKill };
+module.exports = { initializeGame, processMovement, processKill, processTask };

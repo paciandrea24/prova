@@ -14,7 +14,13 @@ let isDead = false;
 let gameStarted = false; // Ferma il rendering finché non siamo posizionati
 let phase = 'starting';
 
+let myTasks = [];
+let activeTaskInRange = null;
+let globalTotalTasks = 1;
+let globalCompletedTasks = 0;
+
 // Join Game
+socket.emit('joinLobby', { lobbyId: lobbyId, color: myColor });
 socket.emit('joinGame', { lobbyId, gameId: 'deduction', playerColor: myColor });
 
 // Setup Iniziale e Overlay
@@ -24,6 +30,9 @@ socket.on('initData', (data) => {
     myX = data.x;
     myY = data.y;
     phase = data.phase; // <-- Legge la fase dal server
+    myTasks = data.tasks || []; // <-- Prendi le task
+
+    updateTasksUI();
 
     document.getElementById('room-display').innerText = currentRoom;
     const roleDisp = document.getElementById('role-display');
@@ -67,7 +76,7 @@ socket.on('explorationStarted', () => {
     phase = 'exploration';
 });
 
-// Quando qualcuno vince
+
 // Quando qualcuno vince
 socket.on('gameOver', (data) => {
     phase = 'gameOver';
@@ -86,17 +95,66 @@ socket.on('gameOver', (data) => {
         title.className = 'role-title crewmate-blue';
     }
 
-    // Mostra il pulsante SOLO se io sono l'Host
-    if (myColor === data.hostColor) {
+    // --- FIX: Assicuriamoci che i colori siano decodificati e senza spazi ---
+    const cleanMyColor = decodeURIComponent(String(myColor)).trim();
+    const cleanHostColor = data.hostColor ? String(data.hostColor).trim() : 'SCONOSCIUTO';
+
+    console.log("🛠️ DEBUG FRONTEND - Mio colore:", cleanMyColor);
+    console.log("🛠️ DEBUG FRONTEND - Colore Host dal server:", cleanHostColor);
+
+    // Controlliamo l'uguaglianza
+    if (cleanMyColor === cleanHostColor) {
         subtitle.innerText = "Sei l'Host. Puoi terminare la partita.";
         btn.classList.remove('hidden');
+        btn.style.display = 'block'; // Forza la visibilità
+
         btn.onclick = () => {
             socket.emit('forceReturnToLobby', lobbyId);
         };
     } else {
         subtitle.innerText = "In attesa che l'Host torni alla lobby...";
+        btn.classList.add('hidden');
+        btn.style.display = 'none';
     }
 });
+
+socket.on('explorationStarted', (data) => {
+    document.getElementById('role-reveal-overlay').classList.add('hidden');
+    phase = 'exploration';
+
+    // Mostra e setta la barra del progresso
+    document.getElementById('progress-container').style.display = 'block';
+    if (data) updateProgressBar(data.completedTasks, data.totalTasks);
+});
+
+socket.on('globalTaskProgress', (data) => {
+    updateProgressBar(data.completedTasks, data.totalTasks);
+});
+
+socket.on('taskCompleted', (taskId) => {
+    const t = myTasks.find(t => t.id === taskId);
+    if (t) t.completed = true;
+    updateTasksUI();
+});
+
+function updateProgressBar(completed, total) {
+    const bar = document.getElementById('progress-bar');
+    const percentage = total > 0 ? (completed / total) * 100 : 0;
+    bar.style.width = `${percentage}%`;
+}
+
+function updateTasksUI() {
+    if (isImpostor) return;
+    const list = document.getElementById('tasks-list');
+    list.innerHTML = '<strong>Le tue Task:</strong><br>';
+    myTasks.forEach(t => {
+        if (t.completed) {
+            list.innerHTML += `<span style="color: #2ecc71; text-decoration: line-through;">- ${t.name} (${t.room})</span><br>`;
+        } else {
+            list.innerHTML += `<span style="color: white;">- ${t.name} (${t.room})</span><br>`;
+        }
+    });
+}
 
 // Aggiungi questo in fondo al file per ascoltare il segnale di chiusura del server
 socket.on('redirectAllToLobby', () => {
@@ -129,6 +187,10 @@ window.addEventListener('keydown', (e) => {
 
     if (key === 'q' && isImpostor && !isDead) {
         socket.emit('attemptKill', { lobbyId, playerColor: myColor });
+    }
+
+    if (key === 'e' && !isImpostor && !isDead && activeTaskInRange) {
+        socket.emit('attemptTask', { lobbyId, playerColor: myColor, taskId: activeTaskInRange });
     }
 });
 window.addEventListener('keyup', (e) => {
@@ -181,6 +243,43 @@ function render() {
     ctx.fillRect(canvas.width / 2 - 40, canvas.height - 20, 80, 20);
     ctx.fillRect(0, canvas.height / 2 - 40, 20, 80);
     ctx.fillRect(canvas.width - 20, canvas.height / 2 - 40, 20, 80);
+
+    // DISEGNA LE TASK DELLA STANZA E CALCOLA DISTANZA
+    activeTaskInRange = null;
+    let hintVisible = false;
+
+    if (!isImpostor && !isDead) {
+        myTasks.forEach(t => {
+            if (t.room === currentRoom && !t.completed) {
+                // Disegna il punto di interazione (Cerchio Giallo)
+                ctx.beginPath();
+                ctx.arc(t.x, t.y, 25, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(241, 196, 15, 0.4)';
+                ctx.fill();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#f1c40f';
+                ctx.stroke();
+
+                // Disegna icona generica (Punto esclamativo)
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 20px Fredoka';
+                ctx.textAlign = 'center';
+                ctx.fillText('!', t.x, t.y + 7);
+
+                // Calcola distanza per l'interazione
+                const dx = myX - t.x;
+                const dy = myY - t.y;
+                if (Math.sqrt(dx * dx + dy * dy) < 60) {
+                    activeTaskInRange = t.id;
+                    hintVisible = true;
+                }
+            }
+        });
+    }
+
+    const hintEl = document.getElementById('interaction-hint');
+    if (hintVisible) hintEl.classList.remove('hidden');
+    else hintEl.classList.add('hidden');
 
     // 1. DISEGNA GLI ALTRI (Dai dati del Server)
     Object.values(players).forEach(p => {

@@ -1,6 +1,7 @@
 const { lobbies } = require('../../store/lobbies');
 const { activeGames } = require('../../store/activeGames');
-const { initializeGame, processMovement, processKill } = require('../../game/deductionGame');
+const { initializeGame, processMovement, processKill, processTask } = require('../../game/deductionGame');
+
 
 const GAME_ID = 'deduction';
 
@@ -9,6 +10,11 @@ module.exports = function (io, socket) {
     socket.on('joinGame', (data) => {
         const { lobbyId, gameId, playerColor } = data;
         if (gameId !== GAME_ID) return;
+
+        // AGGIUNGI QUESTE DUE RIGHE FONDAMENTALI
+        socket.lobbyId = lobbyId;
+        socket.color = playerColor;
+        // ------------------------------------
 
         console.log(`🔪 Player ${playerColor} joined DEDUCTION in lobby ${lobbyId}`);
         const lobby = lobbies.get(lobbyId);
@@ -30,7 +36,8 @@ module.exports = function (io, socket) {
                     room: player.room,
                     x: player.x,
                     y: player.y,
-                    phase: game.phase // <-- AGGIUNTA FONDAMENTALE
+                    phase: game.phase,
+                    tasks: player.tasks
                 });
             }
         }
@@ -57,5 +64,10 @@ module.exports = function (io, socket) {
     socket.on('attemptKill', (data) => {
         const { lobbyId, playerColor } = data;
         processKill(io, lobbyId, playerColor);
+    });
+
+    socket.on('attemptTask', (data) => {
+        const { lobbyId, playerColor, taskId } = data;
+        processTask(io, socket, lobbyId, playerColor, taskId);
     });
 };
