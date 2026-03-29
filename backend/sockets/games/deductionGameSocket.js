@@ -1,6 +1,6 @@
 const { lobbies } = require('../../store/lobbies');
 const { activeGames } = require('../../store/activeGames');
-const { initializeGame, processMovement, processKill, processTask } = require('../../game/deductionGame');
+const { initializeGame, processMovement, processKill, processTask, processReport, processVote } = require('../../game/deductionGame');
 
 
 const GAME_ID = 'deduction';
@@ -69,5 +69,30 @@ module.exports = function (io, socket) {
     socket.on('attemptTask', (data) => {
         const { lobbyId, playerColor, taskId } = data;
         processTask(io, socket, lobbyId, playerColor, taskId);
+    });
+
+    socket.on('reportCorpse', (data) => {
+        const { lobbyId, playerColor } = data;
+        processReport(io, lobbyId, playerColor);
+    });
+
+    socket.on('submitVote', (data) => {
+        const { lobbyId, voterColor, targetColor } = data;
+        processVote(io, lobbyId, voterColor, targetColor);
+    });
+
+    socket.on('sendMeetingChat', (data) => {
+        const { lobbyId, playerColor, message } = data;
+
+        // Controlla che la partita sia in corso e nella fase di meeting
+        const game = activeGames.get(lobbyId);
+        if (!game || game.phase !== 'meeting') return;
+
+        // I morti non possono parlare (opzionale, ma consigliato per i giochi di deduzione!)
+        const player = game.playersState[playerColor];
+        if (player && player.isDead) return;
+
+        // Inoltra il messaggio a tutti nella lobby
+        io.to(lobbyId).emit('receiveMeetingChat', { playerColor, message });
     });
 };

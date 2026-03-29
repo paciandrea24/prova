@@ -19,6 +19,10 @@ let activeTaskInRange = null;
 let globalTotalTasks = 1;
 let globalCompletedTasks = 0;
 
+let corpseInRange = false;
+let meetingInterval = null;
+let iHaveVoted = false;
+
 // Join Game
 socket.emit('joinLobby', { lobbyId: lobbyId, color: myColor });
 socket.emit('joinGame', { lobbyId, gameId: 'deduction', playerColor: myColor });
@@ -80,6 +84,12 @@ socket.on('explorationStarted', () => {
 // Quando qualcuno vince
 socket.on('gameOver', (data) => {
     phase = 'gameOver';
+
+    // FIX: Nascondiamo forzatamente le schermate del meeting/espulsione
+    // altrimenti coprono il bottone di fine partita!
+    document.getElementById('meeting-overlay').classList.add('hidden');
+    document.getElementById('ejection-overlay').classList.add('hidden');
+
     const overlay = document.getElementById('game-over-overlay');
     const title = document.getElementById('winner-title');
     const subtitle = document.getElementById('game-over-subtitle');
@@ -95,12 +105,8 @@ socket.on('gameOver', (data) => {
         title.className = 'role-title crewmate-blue';
     }
 
-    // --- FIX: Assicuriamoci che i colori siano decodificati e senza spazi ---
     const cleanMyColor = decodeURIComponent(String(myColor)).trim();
     const cleanHostColor = data.hostColor ? String(data.hostColor).trim() : 'SCONOSCIUTO';
-
-    console.log("🛠️ DEBUG FRONTEND - Mio colore:", cleanMyColor);
-    console.log("🛠️ DEBUG FRONTEND - Colore Host dal server:", cleanHostColor);
 
     // Controlliamo l'uguaglianza
     if (cleanMyColor === cleanHostColor) {
@@ -192,6 +198,10 @@ window.addEventListener('keydown', (e) => {
     if (key === 'e' && !isImpostor && !isDead && activeTaskInRange) {
         socket.emit('attemptTask', { lobbyId, playerColor: myColor, taskId: activeTaskInRange });
     }
+
+    if (key === 'r' && !isDead && corpseInRange && phase === 'exploration') {
+        socket.emit('reportCorpse', { lobbyId, playerColor: myColor });
+    }
 });
 window.addEventListener('keyup', (e) => {
     const key = e.key.toLowerCase();
@@ -246,6 +256,8 @@ function render() {
 
     // DISEGNA LE TASK DELLA STANZA E CALCOLA DISTANZA
     activeTaskInRange = null;
+    corpseInRange = false;
+    let hintText = "";
     let hintVisible = false;
 
     if (!isImpostor && !isDead) {
@@ -266,11 +278,26 @@ function render() {
                 ctx.textAlign = 'center';
                 ctx.fillText('!', t.x, t.y + 7);
 
-                // Calcola distanza per l'interazione
                 const dx = myX - t.x;
                 const dy = myY - t.y;
                 if (Math.sqrt(dx * dx + dy * dy) < 60) {
                     activeTaskInRange = t.id;
+                    hintText = "Premi E per fare la Task";
+                    hintVisible = true;
+                }
+            }
+        });
+    }
+
+    // NUOVO: Rilevamento Cadaveri
+    if (!isDead) {
+        Object.values(players).forEach(p => {
+            if (p.isDead && p.color !== myColor) { // Il cadavere deve essere nella stessa stanza (gestito da gameState)
+                const dx = myX - p.x;
+                const dy = myY - p.y;
+                if (Math.sqrt(dx * dx + dy * dy) < 80) {
+                    corpseInRange = true;
+                    hintText = "Premi R per Reportare il corpo";
                     hintVisible = true;
                 }
             }
@@ -278,8 +305,12 @@ function render() {
     }
 
     const hintEl = document.getElementById('interaction-hint');
-    if (hintVisible) hintEl.classList.remove('hidden');
-    else hintEl.classList.add('hidden');
+    if (hintVisible) {
+        hintEl.innerText = hintText;
+        hintEl.classList.remove('hidden');
+    } else {
+        hintEl.classList.add('hidden');
+    }
 
     // 1. DISEGNA GLI ALTRI (Dai dati del Server)
     Object.values(players).forEach(p => {
@@ -303,3 +334,131 @@ function render() {
         drawCharacter(myX, myY, myColor, myFacing, false);
     }
 }
+
+// --- LOGICA CHAT MEETING ---
+const chatInput = document.getElementById('chat-input');
+const chatSendBtn = document.getElementById('chat-send-btn');
+const chatMessages = document.getElementById('chat-messages');
+
+function sendChatMessage() {
+    const msg = chatInput.value.trim();
+    if (msg !== '' && !isDead) {
+        socket.emit('sendMeetingChat', { lobbyId, playerColor: myColor, message: msg });
+        chatInput.value = '';
+    }
+}
+
+chatSendBtn.addEventListener('click', sendChatMessage);
+chatInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendChatMessage();
+});
+
+socket.on('receiveMeetingChat', (data) => {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'chat-msg';
+    msgDiv.innerHTML = `<strong style="color: ${data.playerColor};">${data.playerColor}:</strong> <span style="color: white;">${data.message}</span>`;
+    chatMessages.appendChild(msgDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight; // Auto-scroll in basso
+});
+
+// --- LOGICA MEETING E VOTAZIONE ---
+
+socket.on('meetingStarted', (data) => {
+    phase = 'meeting';
+    iHaveVoted = false;
+    document.getElementById('meeting-overlay').classList.remove('hidden');
+    document.getElementById('interaction-hint').classList.add('hidden');
+    document.getElementById('my-vote-status').innerText = "";
+
+    // Pulisci la chat del meeting precedente
+    chatMessages.innerHTML = '';
+    if (isDead) {
+        chatInput.disabled = true;
+        chatInput.placeholder = "I morti non parlano...";
+        chatSendBtn.disabled = true;
+    } else {
+        chatInput.disabled = false;
+        chatInput.placeholder = "Discuti con l'equipaggio...";
+        chatSendBtn.disabled = false;
+    }
+
+    // Timer
+    let timeLeft = data.duration;
+    document.getElementById('meeting-timer').innerText = `Tempo rimasto: ${timeLeft}s`;
+    if (meetingInterval) clearInterval(meetingInterval);
+    meetingInterval = setInterval(() => {
+        timeLeft--;
+        if (timeLeft >= 0) {
+            document.getElementById('meeting-timer').innerText = `Tempo rimasto: ${timeLeft}s`;
+        }
+    }, 1000);
+
+    // Popola i bottoni (Identico a prima)
+    const grid = document.getElementById('voting-grid');
+    grid.innerHTML = '';
+
+    data.players.forEach(p => {
+        const btn = document.createElement('button');
+        btn.className = 'vote-btn';
+        btn.id = `vote-btn-${p.color}`;
+
+        const colorBox = `<div class="player-color-box" style="background-color: ${p.color}"></div>`;
+        const nameText = `<span>${p.color} ${p.color === myColor ? '(Tu)' : ''}</span>`;
+        const statusBadge = `<span class="voted-badge hidden" id="badge-${p.color}">Ha Votato</span>`;
+
+        btn.innerHTML = `${colorBox} ${nameText} ${statusBadge}`;
+
+        if (p.isDead) {
+            btn.disabled = true;
+            btn.style.opacity = '0.3';
+            btn.innerHTML += ' 💀';
+        } else {
+            btn.onclick = () => castVote(p.color);
+        }
+
+        grid.appendChild(btn);
+    });
+
+    const skipBtn = document.getElementById('skip-vote-btn');
+    skipBtn.disabled = isDead;
+    skipBtn.onclick = () => castVote('skip');
+});
+
+function castVote(targetColor) {
+    if (isDead || iHaveVoted) return;
+    iHaveVoted = true;
+
+    socket.emit('submitVote', { lobbyId, voterColor: myColor, targetColor });
+    document.getElementById('my-vote-status').innerText = `Hai votato per: ${targetColor}`;
+
+    // Disabilita tutti i bottoni per me
+    document.querySelectorAll('.vote-btn').forEach(b => b.disabled = true);
+}
+
+socket.on('playerVoted', (voterColor) => {
+    // Mostra il badge "Ha votato" su chi ha espresso il voto
+    const badge = document.getElementById(`badge-${voterColor}`);
+    if (badge) badge.classList.remove('hidden');
+});
+
+// IL FIX DELLA MORTE È QUI
+socket.on('meetingEnded', (data) => {
+    if (meetingInterval) clearInterval(meetingInterval);
+    document.getElementById('meeting-overlay').classList.add('hidden');
+
+    const ejectionOverlay = document.getElementById('ejection-overlay');
+    const ejectionText = document.getElementById('ejection-text');
+
+    ejectionText.innerText = data.message;
+    ejectionOverlay.classList.remove('hidden');
+
+    // FIX: Se il server mi dice che il colore espulso è il mio, io muoio sul client ORA.
+    if (data.ejectedColor === myColor) {
+        isDead = true;
+    }
+});
+
+socket.on('resumeExploration', () => {
+    phase = 'exploration';
+    document.getElementById('ejection-overlay').classList.add('hidden');
+});

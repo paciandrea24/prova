@@ -44,7 +44,44 @@
             Torna alla Lobby
         </button>
     </div>
-    <script src="/socket.io/socket.io.js"></script>
+
+    <div id="meeting-overlay" class="overlay hidden" style="z-index: 200; background: rgba(30, 40, 50, 0.95);">
+        <div
+            style="width: 90%; max-width: 1000px; display: flex; flex-direction: column; align-items: center; height: 80vh;">
+            <h1 id="meeting-title" class="role-title" style="color: #e74c3c; font-size: 40px; margin-bottom: 10px;">
+                MEETING D'EMERGENZA</h1>
+            <h2 id="meeting-timer" style="color: white; margin-bottom: 20px;">Tempo rimasto: --</h2>
+
+            <div style="display: flex; width: 100%; height: 100%; gap: 20px;">
+                <div style="flex: 1; display: flex; flex-direction: column;">
+                    <div id="voting-grid" class="voting-grid" style="overflow-y: auto; flex: 1;">
+                    </div>
+                    <div style="margin-top: 15px; width: 100%;">
+                        <button id="skip-vote-btn" class="vote-btn skip-btn" style="width: 100%;">Salta il Voto</button>
+                    </div>
+                    <div id="my-vote-status"
+                        style="margin-top: 10px; color: #f1c40f; font-size: 18px; text-align: center;"></div>
+                </div>
+
+                <div
+                    style="flex: 1; display: flex; flex-direction: column; background: #34495E; border: 3px solid #7f8c8d; border-radius: 10px; overflow: hidden;">
+                    <div id="chat-messages"
+                        style="flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;">
+                    </div>
+                    <div style="display: flex; padding: 10px; background: #2C3E50;">
+                        <input type="text" id="chat-input" placeholder="Discuti con l'equipaggio..."
+                            style="flex: 1; padding: 10px; border-radius: 5px; border: none; font-family: 'Fredoka', sans-serif; font-size: 16px;">
+                        <button id="chat-send-btn"
+                            style="background: #3498db; color: white; border: none; padding: 10px 20px; margin-left: 10px; border-radius: 5px; cursor: pointer; font-family: 'Fredoka', sans-serif; font-weight: bold; font-size: 16px;">Invia</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="ejection-overlay" class="overlay hidden" style="z-index: 250;">
+        <h1 id="ejection-text" class="role-title" style="color: white; font-size: 40px; text-transform: none;">...</h1>
+    </div>
 
 
 

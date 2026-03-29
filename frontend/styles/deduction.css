@@ -71,3 +71,83 @@ body {
 
 .crewmate-blue { color: #3498db; text-shadow: 0 0 20px rgba(52, 152, 219, 0.5); }
 .impostor-red { color: #e74c3c; text-shadow: 0 0 20px rgba(231, 76, 60, 0.5); }
+
+/* STILI MEETING E VOTAZIONE */
+.voting-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+    width: 100%;
+}
+
+.vote-btn {
+    background: #34495E;
+    border: 3px solid #7f8c8d;
+    color: white;
+    padding: 15px;
+    font-size: 20px;
+    font-family: 'Fredoka', sans-serif;
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.2s;
+}
+
+.vote-btn:hover:not(:disabled) {
+    background: #465d75;
+    border-color: #bdc3c7;
+    transform: scale(1.02);
+}
+
+.vote-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: #2c3e50;
+}
+
+.vote-btn.voted {
+    border-color: #2ecc71;
+    background: #27ae60;
+}
+
+.skip-btn {
+    background: #7f8c8d;
+    justify-content: center;
+    min-width: 200px;
+}
+
+.player-color-box {
+    width: 30px;
+    height: 30px;
+    border-radius: 5px;
+    border: 2px solid white;
+}
+
+.voted-badge {
+    font-size: 14px;
+    background: #e74c3c;
+    padding: 3px 8px;
+    border-radius: 10px;
+}
+
+/* STILI CHAT MEETING */
+.chat-msg {
+    background: rgba(0, 0, 0, 0.4);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 16px;
+    line-height: 1.4;
+    word-wrap: break-word;
+}
+.chat-msg strong {
+    margin-right: 5px;
+    text-shadow: 1px 1px 2px black;
+}
+#chat-input:focus {
+    outline: 2px solid #3498db;
+}
+#chat-send-btn:hover {
+    background: #2980b9;
+}
