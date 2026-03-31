@@ -23,6 +23,25 @@ let corpseInRange = false;
 let meetingInterval = null;
 let iHaveVoted = false;
 
+// --- GESTIONE SPRITESHEET E ANIMAZIONI ---
+const characterSprite = new Image();
+characterSprite.src = 'assets/spritesheet.png';
+
+// Le tue nuove dimensioni corrette!
+const spriteWidth = 16;
+const spriteHeight = 32;
+
+// Aumentiamo un po' la scala visto che l'immagine base è piccolina
+const spriteScale = 3.5;
+
+const directionRows = { 'down': 0, 'up': 3, 'left': 2, 'right': 1 };
+
+let currentFrame = 0;
+let animationTimer = 0;
+const animationSpeed = 8;
+const totalFrames = 4;
+const lastPositions = {};
+
 // Join Game
 socket.emit('joinLobby', { lobbyId: lobbyId, color: myColor });
 socket.emit('joinGame', { lobbyId, gameId: 'deduction', playerColor: myColor });
@@ -209,42 +228,112 @@ window.addEventListener('keyup', (e) => {
 });
 
 // Loop Locale (60 FPS reali)
+// Loop Locale (60 FPS reali)
 function gameLoop() {
-    if (!isDead && phase === 'exploration') {
-        let moved = false;
-        const speed = 5;
-        if (keys.w) { myY -= speed; myFacing = 'up'; moved = true; }
-        if (keys.s) { myY += speed; myFacing = 'down'; moved = true; }
-        if (keys.a) { myX -= speed; myFacing = 'left'; moved = true; }
-        if (keys.d) { myX += speed; myFacing = 'right'; moved = true; }
+    let amIMoving = false; // Controlla se mi sto muovendo
+    const speed = 5;
 
-        if (moved) {
-            // Invia al server, ma senza aspettare la risposta per muoversi a schermo
+    if (!isDead && phase === 'exploration') {
+        if (keys.w) { myY -= speed; myFacing = 'up'; amIMoving = true; }
+        if (keys.s) { myY += speed; myFacing = 'down'; amIMoving = true; }
+        if (keys.a) { myX -= speed; myFacing = 'left'; amIMoving = true; }
+        if (keys.d) { myX += speed; myFacing = 'right'; amIMoving = true; }
+
+        if (amIMoving) {
             socket.emit('playerMove', { lobbyId, playerColor: myColor, x: myX, y: myY, facing: myFacing });
         }
     }
 
-    render();
+    // Gestione del timer dell'animazione (Gira sempre in background per tutti)
+    animationTimer++;
+    if (animationTimer >= animationSpeed) {
+        currentFrame = (currentFrame + 1) % totalFrames;
+        animationTimer = 0;
+    }
+
+    // Passiamo la variabile al render!
+    render(amIMoving);
     requestAnimationFrame(gameLoop);
 }
 
-function drawCharacter(pX, pY, color, facing, isCorpse) {
-    ctx.fillStyle = isCorpse ? '#7f8c8d' : color;
+function drawCharacter(pX, pY, color, facing, isCorpse, isMoving = false) {
+    // 1. FALLBACK SICURO: Se l'immagine non c'è, non è caricata, o ha dimensioni 0
+    if (!characterSprite || !characterSprite.complete || characterSprite.naturalWidth === 0) {
+        ctx.fillStyle = isCorpse ? '#7f8c8d' : color;
+        if (isCorpse) {
+            ctx.fillRect(pX - 25, pY - 10, 50, 20);
+        } else {
+            ctx.fillRect(pX - 15, pY - 20, 30, 40);
+        }
 
-    if (isCorpse) {
-        ctx.fillRect(pX - 25, pY - 10, 50, 20); // Cadavere
-    } else {
-        ctx.fillRect(pX - 15, pY - 20, 30, 40); // In piedi
+        // Nome sopra la testa anche nel fallback
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 14px Fredoka';
+        ctx.textAlign = 'center';
+        ctx.fillText(color.toUpperCase(), pX, pY - 25);
+        return;
+    }
 
-        ctx.fillStyle = 'rgba(255,255,255,0.7)';
-        if (facing === 'up') ctx.fillRect(pX - 10, pY - 20, 20, 10);
-        if (facing === 'down') ctx.fillRect(pX - 10, pY - 10, 20, 10);
-        if (facing === 'left') ctx.fillRect(pX - 15, pY - 15, 10, 15);
-        if (facing === 'right') ctx.fillRect(pX + 5, pY - 15, 10, 15);
+    const drawWidth = spriteWidth * spriteScale;
+    const drawHeight = spriteHeight * spriteScale;
+
+    try {
+        if (isCorpse) {
+            ctx.save();
+            ctx.translate(pX, pY);
+            ctx.rotate(Math.PI / 2);
+            ctx.drawImage(
+                characterSprite,
+                0, 0, spriteWidth, spriteHeight,
+                -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight
+            );
+            ctx.restore();
+
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(pX, pY - (drawHeight / 2) + 5, 6, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            let frameX = 0;
+            let frameY = (directionRows[facing] || 0) * spriteHeight;
+
+            if (isMoving) {
+                frameX = currentFrame * spriteWidth;
+            }
+
+            // CONTROLLO ANTI-CRASH: Evitiamo di ritagliare fuori dai bordi dell'immagine
+            // Se l'immagine caricata non ha abbastanza frame, forziamo il frame 0
+            if (frameX + spriteWidth > characterSprite.naturalWidth) {
+                frameX = 0;
+            }
+            if (frameY + spriteHeight > characterSprite.naturalHeight) {
+                frameY = 0;
+            }
+
+            ctx.drawImage(
+                characterSprite,
+                frameX, frameY, spriteWidth, spriteHeight, // Area da ritagliare
+                pX - drawWidth / 2, pY - drawHeight / 2, drawWidth, drawHeight // Dove disegnare
+            );
+
+            // Disegna il nome del colore
+            ctx.fillStyle = color;
+            ctx.font = 'bold 14px Fredoka';
+            ctx.textAlign = 'center';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 3;
+            ctx.strokeText(color.toUpperCase(), pX, pY - (drawHeight / 2) - 5);
+            ctx.fillText(color.toUpperCase(), pX, pY - (drawHeight / 2) - 5);
+        }
+    } catch (e) {
+        // SE C'È UN ERRORE IMPREVISTO SULL'IMMAGINE, NON CRASHARE MA DISEGNA IL RETTANGOLO
+        console.error("Errore nel disegno dello sprite:", e);
+        ctx.fillStyle = color;
+        ctx.fillRect(pX - 15, pY - 20, 30, 40);
     }
 }
 
-function render() {
+function render(isMoving = false) { // ECCO IL PARAMETRO MANCANTE!
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Disegna porte fittizie
@@ -263,7 +352,7 @@ function render() {
     if (!isImpostor && !isDead) {
         myTasks.forEach(t => {
             if (t.room === currentRoom && !t.completed) {
-                // Disegna il punto di interazione (Cerchio Giallo)
+                // Disegna il punto di interazione
                 ctx.beginPath();
                 ctx.arc(t.x, t.y, 25, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(241, 196, 15, 0.4)';
@@ -289,10 +378,10 @@ function render() {
         });
     }
 
-    // NUOVO: Rilevamento Cadaveri
+    // Rilevamento Cadaveri
     if (!isDead) {
         Object.values(players).forEach(p => {
-            if (p.isDead && p.color !== myColor) { // Il cadavere deve essere nella stessa stanza (gestito da gameState)
+            if (p.isDead && p.color !== myColor) {
                 const dx = myX - p.x;
                 const dy = myY - p.y;
                 if (Math.sqrt(dx * dx + dy * dy) < 80) {
@@ -314,15 +403,33 @@ function render() {
 
     // 1. DISEGNA GLI ALTRI (Dai dati del Server)
     Object.values(players).forEach(p => {
-        // Ignoro me stesso dalla lista del server per evitare lo "sdoppiamento/tremolio"
         if (p.color !== myColor) {
-            drawCharacter(p.x, p.y, p.color, p.facing, p.isDead);
+            let remoteMoving = false;
+
+            // Logica per fluidificare l'animazione di chi lagga
+            if (!lastPositions[p.color]) {
+                lastPositions[p.color] = { x: p.x, y: p.y, movingTimer: 0 };
+            } else {
+                if (lastPositions[p.color].x !== p.x || lastPositions[p.color].y !== p.y) {
+                    lastPositions[p.color].movingTimer = 10;
+                }
+            }
+
+            if (lastPositions[p.color].movingTimer > 0) {
+                remoteMoving = true;
+                lastPositions[p.color].movingTimer--;
+            }
+
+            lastPositions[p.color].x = p.x;
+            lastPositions[p.color].y = p.y;
+
+            drawCharacter(p.x, p.y, p.color, p.facing, p.isDead, remoteMoving);
         }
     });
 
     // 2. DISEGNA ME STESSO (In tempo reale e fluido)
     if (isDead) {
-        drawCharacter(myX, myY, myColor, myFacing, true);
+        drawCharacter(myX, myY, myColor, myFacing, true, false);
 
         ctx.fillStyle = 'rgba(231, 76, 60, 0.3)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -331,7 +438,8 @@ function render() {
         ctx.textAlign = 'center';
         ctx.fillText('SEI MORTO', canvas.width / 2, canvas.height / 2);
     } else {
-        drawCharacter(myX, myY, myColor, myFacing, false);
+        // Qui isMoving funziona perché l'abbiamo ricevuto dal gameLoop!
+        drawCharacter(myX, myY, myColor, myFacing, false, isMoving);
     }
 }
 
