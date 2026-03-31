@@ -24,14 +24,56 @@ let meetingInterval = null;
 let iHaveVoted = false;
 
 // --- GESTIONE SPRITESHEET E ANIMAZIONI ---
-const characterSprite = new Image();
-characterSprite.src = 'assets/spritesheet.png';
+const baseSprite = new Image();
+baseSprite.onload = () => console.log("✅ baseSprite caricato correttamente! (Larghezza:", baseSprite.naturalWidth, ")");
+baseSprite.onerror = () => console.error("❌ ERRORE: Impossibile trovare spritesheet_base.png");
+baseSprite.src = 'assets/spritesheet_base.png';
 
-// Le tue nuove dimensioni corrette!
+const detailsSprite = new Image();
+detailsSprite.onload = () => console.log("✅ detailsSprite caricato correttamente! (Larghezza:", detailsSprite.naturalWidth, ")");
+detailsSprite.onerror = () => console.error("❌ ERRORE: Impossibile trovare spritesheet_details.png");
+detailsSprite.src = 'assets/spritesheet_details.png';
+
+const tintedSprites = {};
+
+function getTintedSprite(color) {
+    if (tintedSprites[color]) return tintedSprites[color];
+
+    // Aspettiamo che ENTRAMBE le immagini siano caricate
+    if (!baseSprite.complete || baseSprite.naturalWidth === 0 ||
+        !detailsSprite.complete || detailsSprite.naturalWidth === 0) {
+        return null;
+    }
+
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = baseSprite.naturalWidth;
+    offCanvas.height = baseSprite.naturalHeight;
+    const offCtx = offCanvas.getContext('2d');
+
+    // 1. Riempiamo il canvas con il colore scelto
+    offCtx.fillStyle = color;
+    offCtx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+
+    // 2. Moltiplichiamo il colore per la base (per dare le ombre)
+    offCtx.globalCompositeOperation = 'multiply';
+    offCtx.drawImage(baseSprite, 0, 0);
+
+    // 3. Ritagliamo il colore in eccesso usando la forma della base
+    offCtx.globalCompositeOperation = 'destination-in';
+    offCtx.drawImage(baseSprite, 0, 0);
+
+    // 4. MAGIA: Disegniamo i dettagli (linee nere, occhi bianchi) SOPRA il corpo colorato!
+    offCtx.globalCompositeOperation = 'source-over';
+    offCtx.drawImage(detailsSprite, 0, 0);
+
+    // Salviamo in memoria
+    tintedSprites[color] = offCanvas;
+    return offCanvas;
+}
+
+// Dimensioni
 const spriteWidth = 16;
 const spriteHeight = 32;
-
-// Aumentiamo un po' la scala visto che l'immagine base è piccolina
 const spriteScale = 3.5;
 
 const directionRows = { 'down': 0, 'up': 3, 'left': 2, 'right': 1 };
@@ -257,16 +299,17 @@ function gameLoop() {
 }
 
 function drawCharacter(pX, pY, color, facing, isCorpse, isMoving = false) {
-    // 1. FALLBACK SICURO: Se l'immagine non c'è, non è caricata, o ha dimensioni 0
-    if (!characterSprite || !characterSprite.complete || characterSprite.naturalWidth === 0) {
+    // Ottieni lo spritesheet ricolorato per questo specifico giocatore
+    const activeSprite = getTintedSprite(color);
+
+    // FALLBACK SICURO: Se l'immagine non c'è ancora o ha fallito il ricoloramento
+    if (!activeSprite) {
         ctx.fillStyle = isCorpse ? '#7f8c8d' : color;
         if (isCorpse) {
             ctx.fillRect(pX - 25, pY - 10, 50, 20);
         } else {
             ctx.fillRect(pX - 15, pY - 20, 30, 40);
         }
-
-        // Nome sopra la testa anche nel fallback
         ctx.fillStyle = 'white';
         ctx.font = 'bold 14px Fredoka';
         ctx.textAlign = 'center';
@@ -283,15 +326,16 @@ function drawCharacter(pX, pY, color, facing, isCorpse, isMoving = false) {
             ctx.translate(pX, pY);
             ctx.rotate(Math.PI / 2);
             ctx.drawImage(
-                characterSprite,
+                activeSprite, // <-- Usiamo lo sprite ricolorato
                 0, 0, spriteWidth, spriteHeight,
                 -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight
             );
             ctx.restore();
 
-            ctx.fillStyle = color;
+            // Macchia di sangue
+            ctx.fillStyle = '#c0392b'; // Rosso sangue fisso
             ctx.beginPath();
-            ctx.arc(pX, pY - (drawHeight / 2) + 5, 6, 0, Math.PI * 2);
+            ctx.arc(pX, pY - (drawHeight / 2) + 5, 8, 0, Math.PI * 2);
             ctx.fill();
         } else {
             let frameX = 0;
@@ -301,22 +345,17 @@ function drawCharacter(pX, pY, color, facing, isCorpse, isMoving = false) {
                 frameX = currentFrame * spriteWidth;
             }
 
-            // CONTROLLO ANTI-CRASH: Evitiamo di ritagliare fuori dai bordi dell'immagine
-            // Se l'immagine caricata non ha abbastanza frame, forziamo il frame 0
-            if (frameX + spriteWidth > characterSprite.naturalWidth) {
-                frameX = 0;
-            }
-            if (frameY + spriteHeight > characterSprite.naturalHeight) {
-                frameY = 0;
-            }
+            // ANTI-CRASH
+            if (frameX + spriteWidth > activeSprite.width) frameX = 0;
+            if (frameY + spriteHeight > activeSprite.height) frameY = 0;
 
             ctx.drawImage(
-                characterSprite,
-                frameX, frameY, spriteWidth, spriteHeight, // Area da ritagliare
-                pX - drawWidth / 2, pY - drawHeight / 2, drawWidth, drawHeight // Dove disegnare
+                activeSprite, // <-- Usiamo lo sprite ricolorato
+                frameX, frameY, spriteWidth, spriteHeight,
+                pX - drawWidth / 2, pY - drawHeight / 2, drawWidth, drawHeight
             );
 
-            // Disegna il nome del colore
+            // Disegna il nome sopra la testa
             ctx.fillStyle = color;
             ctx.font = 'bold 14px Fredoka';
             ctx.textAlign = 'center';
@@ -326,7 +365,6 @@ function drawCharacter(pX, pY, color, facing, isCorpse, isMoving = false) {
             ctx.fillText(color.toUpperCase(), pX, pY - (drawHeight / 2) - 5);
         }
     } catch (e) {
-        // SE C'È UN ERRORE IMPREVISTO SULL'IMMAGINE, NON CRASHARE MA DISEGNA IL RETTANGOLO
         console.error("Errore nel disegno dello sprite:", e);
         ctx.fillStyle = color;
         ctx.fillRect(pX - 15, pY - 20, 30, 40);
