@@ -6,6 +6,9 @@ const socket = io();
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+// AGGIUNGI QUESTA RIGA: Disabilita l'anti-aliasing per mantenere la pixel art nitida
+ctx.imageSmoothingEnabled = false;
+
 let players = {};
 let isImpostor = false;
 let currentRoom = 'Centro';
@@ -23,6 +26,8 @@ let corpseInRange = false;
 let meetingInterval = null;
 let iHaveVoted = false;
 
+let isTaskOpen = false;
+
 // --- GESTIONE SPRITESHEET E ANIMAZIONI ---
 const baseSprite = new Image();
 baseSprite.onload = () => console.log("✅ baseSprite caricato correttamente! (Larghezza:", baseSprite.naturalWidth, ")");
@@ -36,10 +41,10 @@ detailsSprite.src = 'assets/spritesheet_details.png';
 
 const tintedSprites = {};
 
+// frontend/deduction.js (RIGA 33 circa)
 function getTintedSprite(color) {
     if (tintedSprites[color]) return tintedSprites[color];
 
-    // Aspettiamo che ENTRAMBE le immagini siano caricate
     if (!baseSprite.complete || baseSprite.naturalWidth === 0 ||
         !detailsSprite.complete || detailsSprite.naturalWidth === 0) {
         return null;
@@ -49,6 +54,9 @@ function getTintedSprite(color) {
     offCanvas.width = baseSprite.naturalWidth;
     offCanvas.height = baseSprite.naturalHeight;
     const offCtx = offCanvas.getContext('2d');
+
+    // AGGIUNGI QUESTA RIGA: Disabilita lo smoothing anche qui!
+    offCtx.imageSmoothingEnabled = false;
 
     // 1. Riempiamo il canvas con il colore scelto
     offCtx.fillStyle = color;
@@ -256,8 +264,19 @@ window.addEventListener('keydown', (e) => {
         socket.emit('attemptKill', { lobbyId, playerColor: myColor });
     }
 
-    if (key === 'e' && !isImpostor && !isDead && activeTaskInRange) {
-        socket.emit('attemptTask', { lobbyId, playerColor: myColor, taskId: activeTaskInRange });
+    // NUOVO GESTORE DEL TASTO E
+    if (key === 'e' && !isImpostor && !isDead && activeTaskInRange && !isTaskOpen) {
+
+        // Cerca i dettagli della task che il giocatore sta provando a fare
+        const currentTaskObj = myTasks.find(t => t.id === activeTaskInRange);
+
+        if (currentTaskObj) {
+            // SMISTATORE: usa i nomi ESATTI presenti nel backend
+            if (currentTaskObj.name === 'Scansiona ID' || currentTaskObj.name === 'Riavvia Router') {
+                KeypadTask.open(activeTaskInRange);
+            }
+            // in futuro aggiungerai: else if (currentTaskObj.name === 'Svuota Spazzatura') { ... }
+        }
     }
 
     if (key === 'r' && !isDead && corpseInRange && phase === 'exploration') {
@@ -275,12 +294,12 @@ function gameLoop() {
     let amIMoving = false; // Controlla se mi sto muovendo
     const speed = 5;
 
-    if (!isDead && phase === 'exploration') {
+    // MODIFICA QUESTA RIGA: Aggiungi && !isTaskOpen
+    if (!isDead && phase === 'exploration' && !isTaskOpen) {
         if (keys.w) { myY -= speed; myFacing = 'up'; amIMoving = true; }
         if (keys.s) { myY += speed; myFacing = 'down'; amIMoving = true; }
         if (keys.a) { myX -= speed; myFacing = 'left'; amIMoving = true; }
         if (keys.d) { myX += speed; myFacing = 'right'; amIMoving = true; }
-
         if (amIMoving) {
             socket.emit('playerMove', { lobbyId, playerColor: myColor, x: myX, y: myY, facing: myFacing });
         }
@@ -310,10 +329,10 @@ function drawCharacter(pX, pY, color, facing, isCorpse, isMoving = false) {
         } else {
             ctx.fillRect(pX - 15, pY - 20, 30, 40);
         }
-        ctx.fillStyle = 'white';
+        /* ctx.fillStyle = 'white';
         ctx.font = 'bold 14px Fredoka';
         ctx.textAlign = 'center';
-        ctx.fillText(color.toUpperCase(), pX, pY - 25);
+        ctx.fillText(color.toUpperCase(), pX, pY - 25); */
         return;
     }
 
@@ -355,14 +374,6 @@ function drawCharacter(pX, pY, color, facing, isCorpse, isMoving = false) {
                 pX - drawWidth / 2, pY - drawHeight / 2, drawWidth, drawHeight
             );
 
-            // Disegna il nome sopra la testa
-            ctx.fillStyle = color;
-            ctx.font = 'bold 14px Fredoka';
-            ctx.textAlign = 'center';
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 3;
-            ctx.strokeText(color.toUpperCase(), pX, pY - (drawHeight / 2) - 5);
-            ctx.fillText(color.toUpperCase(), pX, pY - (drawHeight / 2) - 5);
         }
     } catch (e) {
         console.error("Errore nel disegno dello sprite:", e);
@@ -510,6 +521,7 @@ socket.on('receiveMeetingChat', (data) => {
 // --- LOGICA MEETING E VOTAZIONE ---
 
 socket.on('meetingStarted', (data) => {
+    if (isTaskOpen) KeypadTask.close();
     phase = 'meeting';
     iHaveVoted = false;
     document.getElementById('meeting-overlay').classList.remove('hidden');
@@ -608,3 +620,4 @@ socket.on('resumeExploration', () => {
     phase = 'exploration';
     document.getElementById('ejection-overlay').classList.add('hidden');
 });
+
