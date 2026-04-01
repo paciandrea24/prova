@@ -264,41 +264,24 @@ window.addEventListener('keydown', (e) => {
         socket.emit('attemptKill', { lobbyId, playerColor: myColor });
     }
 
-    // NUOVO GESTORE DEL TASTO E
+    // GESTORE DEL TASTO E
     if (key === 'e' && !isImpostor && !isDead && activeTaskInRange && !isTaskOpen) {
 
-        // Cerca i dettagli della task che il giocatore sta provando a fare
         const currentTaskObj = myTasks.find(t => t.id === activeTaskInRange);
 
-        // GESTORE DEL TASTO E
-        if (key === 'e' && !isImpostor && !isDead && activeTaskInRange && !isTaskOpen) {
+        if (currentTaskObj) {
+            const taskName = currentTaskObj.name;
 
-            const currentTaskObj = myTasks.find(t => t.id === activeTaskInRange);
-
-            if (currentTaskObj) {
-                const taskName = currentTaskObj.name;
-
-                // SMISTATORE COMPLETO PER LE 9 TASK
-                if (taskName === 'Scansiona ID') {
-                    KeypadTask.open(activeTaskInRange);
-                } else if (taskName === 'Scarica Dati') {
-                    DownloadTask.open(activeTaskInRange);
-                } else if (taskName === 'Svuota Spazzatura') {
-                    GarbageTask.open(activeTaskInRange);
-                } else if (taskName === 'Attiva Scudi') {
-                    ShieldsTask.open(activeTaskInRange);
-                } else if (taskName === 'Riavvia Router') {
-                    RouterTask.open(activeTaskInRange);
-                } else if (taskName === 'Allinea Motore') {
-                    EngineTask.open(activeTaskInRange);
-                } else if (taskName === 'Carica Armi') {
-                    WeaponsTask.open(activeTaskInRange);
-                } else if (taskName === 'Filtra Ossigeno') {
-                    OxygenTask.open(activeTaskInRange);
-                } else if (taskName === 'Mappa Rotta') {
-                    NavigationTask.open(activeTaskInRange);
-                }
-            }
+            // SMISTATORE COMPLETO (9 TASK)
+            if (taskName === 'Scansiona ID') { KeypadTask.open(activeTaskInRange); }
+            else if (taskName === 'Scarica Dati') { DownloadTask.open(activeTaskInRange); }
+            else if (taskName === 'Svuota Spazzatura') { GarbageTask.open(activeTaskInRange); }
+            else if (taskName === 'Attiva Scudi') { ShieldsTask.open(activeTaskInRange); }
+            else if (taskName === 'Riavvia Router') { RouterTask.open(activeTaskInRange); }
+            else if (taskName === 'Allinea Motore') { EngineTask.open(activeTaskInRange); }
+            else if (taskName === 'Carica Armi') { WeaponsTask.open(activeTaskInRange); }
+            else if (taskName === 'Filtra Ossigeno') { OxygenTask.open(activeTaskInRange); }
+            else if (taskName === 'Mappa Rotta') { NavigationTask.open(activeTaskInRange); }
         }
     }
 
@@ -545,7 +528,7 @@ socket.on('receiveMeetingChat', (data) => {
 
 socket.on('meetingStarted', (data) => {
 
-    // Chiude QUALSIASI task aperta con la forza se suona l'allarme
+    // CHIUSURA FORZATA DI TUTTE LE TASK IN CASO DI MEETING
     if (isTaskOpen) {
         if (typeof KeypadTask !== 'undefined') KeypadTask.close();
         if (typeof DownloadTask !== 'undefined') DownloadTask.close();

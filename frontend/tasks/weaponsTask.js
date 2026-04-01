@@ -11,8 +11,9 @@ const WeaponsTask = {
                     <button onclick="WeaponsTask.close()" class="close-btn">X</button>
                 </div>
                 <p style="color: white; margin: 0 0 10px 0; text-align: center;">Distruggi <span id="weapons-counter">5</span> bersagli</p>
-                <div id="weapons-screen" style="flex: 1; background: #000; position: relative; border: 3px solid #7f8c8d; border-radius: 5px; overflow: hidden; cursor: crosshair;">
-                    </div>
+                
+                <div id="weapons-screen" style="width: 100%; flex: 1; background: #000; position: relative; border: 3px solid #7f8c8d; border-radius: 5px; overflow: hidden; cursor: crosshair;">
+                </div>
             </div>
         </div>`;
         document.body.insertAdjacentHTML('beforeend', html);
