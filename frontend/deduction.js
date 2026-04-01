@@ -270,12 +270,29 @@ window.addEventListener('keydown', (e) => {
         // Cerca i dettagli della task che il giocatore sta provando a fare
         const currentTaskObj = myTasks.find(t => t.id === activeTaskInRange);
 
-        if (currentTaskObj) {
-            // SMISTATORE: usa i nomi ESATTI presenti nel backend
-            if (currentTaskObj.name === 'Scansiona ID' || currentTaskObj.name === 'Riavvia Router') {
-                KeypadTask.open(activeTaskInRange);
+        // GESTORE DEL TASTO E
+        if (key === 'e' && !isImpostor && !isDead && activeTaskInRange && !isTaskOpen) {
+
+            const currentTaskObj = myTasks.find(t => t.id === activeTaskInRange);
+
+            if (currentTaskObj) {
+                // SMISTATORE COMPLETO DI TUTTE LE 5 TASK
+                if (currentTaskObj.name === 'Scansiona ID') {
+                    KeypadTask.open(activeTaskInRange);
+                }
+                else if (currentTaskObj.name === 'Scarica Dati') {
+                    DownloadTask.open(activeTaskInRange);
+                }
+                else if (currentTaskObj.name === 'Svuota Spazzatura') {
+                    GarbageTask.open(activeTaskInRange);
+                }
+                else if (currentTaskObj.name === 'Riavvia Router') {
+                    RouterTask.open(activeTaskInRange);
+                }
+                else if (currentTaskObj.name === 'Allinea Motore') {
+                    EngineTask.open(activeTaskInRange);
+                }
             }
-            // in futuro aggiungerai: else if (currentTaskObj.name === 'Svuota Spazzatura') { ... }
         }
     }
 
@@ -521,7 +538,16 @@ socket.on('receiveMeetingChat', (data) => {
 // --- LOGICA MEETING E VOTAZIONE ---
 
 socket.on('meetingStarted', (data) => {
-    if (isTaskOpen) KeypadTask.close();
+    // Chiude qualsiasi task aperta con la forza
+    if (isTaskOpen) {
+        KeypadTask.close();
+        DownloadTask.close();
+        GarbageTask.close();
+        RouterTask.close(); // Aggiunto
+        EngineTask.close(); // Aggiunto
+    }
+
+
     phase = 'meeting';
     iHaveVoted = false;
     document.getElementById('meeting-overlay').classList.remove('hidden');
