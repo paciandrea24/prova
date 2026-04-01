@@ -1,25 +1,39 @@
 const { activeGames } = require('../store/activeGames');
 const { lobbies } = require('../store/lobbies');
-
-// Architettura Mappa a Grafo
-const ROOM_CONFIG = {
-    'Centro': { top: 'Nord', bottom: 'Sud', left: 'Ovest', right: 'Est' },
-    'Nord': { bottom: 'Centro' },
-    'Sud': { top: 'Centro' },
-    'Est': { left: 'Centro' },
-    'Ovest': { right: 'Centro' }
-};
-
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
 
 // DEFINIZIONE DELLE TASK SULLA MAPPA
+// backend/game/deductionGame.js
+
+// Architettura Mappa a Grafo (Griglia 3x3)
+const ROOM_CONFIG = {
+    'Centro': { top: 'Nord', bottom: 'Sud', left: 'Ovest', right: 'Est' },
+    'Nord': { bottom: 'Centro', left: 'Nord-Ovest', right: 'Nord-Est' },
+    'Sud': { top: 'Centro', left: 'Sud-Ovest', right: 'Sud-Est' },
+    'Est': { left: 'Centro', top: 'Nord-Est', bottom: 'Sud-Est' },
+    'Ovest': { right: 'Centro', top: 'Nord-Ovest', bottom: 'Sud-Ovest' },
+
+    // NUOVE STANZE AGLI ANGOLI
+    'Nord-Ovest': { right: 'Nord', bottom: 'Ovest' },
+    'Nord-Est': { left: 'Nord', bottom: 'Est' },
+    'Sud-Ovest': { right: 'Sud', top: 'Ovest' },
+    'Sud-Est': { left: 'Sud', top: 'Est' }
+};
+
+// Aggiungiamo 4 nuove task nelle nuove stanze (totale 9 task)
 const ALL_TASKS = [
     { id: 'task_router', room: 'Nord', name: 'Riavvia Router', x: 400, y: 150 },
     { id: 'task_motori', room: 'Sud', name: 'Allinea Motore', x: 400, y: 450 },
     { id: 'task_dati', room: 'Est', name: 'Scarica Dati', x: 650, y: 300 },
     { id: 'task_spazzatura', room: 'Ovest', name: 'Svuota Spazzatura', x: 150, y: 300 },
-    { id: 'task_id', room: 'Centro', name: 'Scansiona ID', x: 400, y: 200 }
+    { id: 'task_id', room: 'Centro', name: 'Scansiona ID', x: 400, y: 200 },
+
+    // NUOVE TASK
+    { id: 'task_scudi', room: 'Nord-Ovest', name: 'Attiva Scudi', x: 200, y: 200 },
+    { id: 'task_armi', room: 'Nord-Est', name: 'Carica Armi', x: 600, y: 200 },
+    { id: 'task_ossigeno', room: 'Sud-Ovest', name: 'Filtra Ossigeno', x: 200, y: 400 },
+    { id: 'task_navigazione', room: 'Sud-Est', name: 'Mappa Rotta', x: 600, y: 400 }
 ];
 
 function initializeGame(io, lobbyId, players, settings) {

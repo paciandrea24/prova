@@ -276,21 +276,27 @@ window.addEventListener('keydown', (e) => {
             const currentTaskObj = myTasks.find(t => t.id === activeTaskInRange);
 
             if (currentTaskObj) {
-                // SMISTATORE COMPLETO DI TUTTE LE 5 TASK
-                if (currentTaskObj.name === 'Scansiona ID') {
+                const taskName = currentTaskObj.name;
+
+                // SMISTATORE COMPLETO PER LE 9 TASK
+                if (taskName === 'Scansiona ID') {
                     KeypadTask.open(activeTaskInRange);
-                }
-                else if (currentTaskObj.name === 'Scarica Dati') {
+                } else if (taskName === 'Scarica Dati') {
                     DownloadTask.open(activeTaskInRange);
-                }
-                else if (currentTaskObj.name === 'Svuota Spazzatura') {
+                } else if (taskName === 'Svuota Spazzatura') {
                     GarbageTask.open(activeTaskInRange);
-                }
-                else if (currentTaskObj.name === 'Riavvia Router') {
+                } else if (taskName === 'Attiva Scudi') {
+                    ShieldsTask.open(activeTaskInRange);
+                } else if (taskName === 'Riavvia Router') {
                     RouterTask.open(activeTaskInRange);
-                }
-                else if (currentTaskObj.name === 'Allinea Motore') {
+                } else if (taskName === 'Allinea Motore') {
                     EngineTask.open(activeTaskInRange);
+                } else if (taskName === 'Carica Armi') {
+                    WeaponsTask.open(activeTaskInRange);
+                } else if (taskName === 'Filtra Ossigeno') {
+                    OxygenTask.open(activeTaskInRange);
+                } else if (taskName === 'Mappa Rotta') {
+                    NavigationTask.open(activeTaskInRange);
                 }
             }
         }
@@ -538,13 +544,18 @@ socket.on('receiveMeetingChat', (data) => {
 // --- LOGICA MEETING E VOTAZIONE ---
 
 socket.on('meetingStarted', (data) => {
-    // Chiude qualsiasi task aperta con la forza
+
+    // Chiude QUALSIASI task aperta con la forza se suona l'allarme
     if (isTaskOpen) {
-        KeypadTask.close();
-        DownloadTask.close();
-        GarbageTask.close();
-        RouterTask.close(); // Aggiunto
-        EngineTask.close(); // Aggiunto
+        if (typeof KeypadTask !== 'undefined') KeypadTask.close();
+        if (typeof DownloadTask !== 'undefined') DownloadTask.close();
+        if (typeof GarbageTask !== 'undefined') GarbageTask.close();
+        if (typeof ShieldsTask !== 'undefined') ShieldsTask.close();
+        if (typeof RouterTask !== 'undefined') RouterTask.close();
+        if (typeof EngineTask !== 'undefined') EngineTask.close();
+        if (typeof WeaponsTask !== 'undefined') WeaponsTask.close();
+        if (typeof OxygenTask !== 'undefined') OxygenTask.close();
+        if (typeof NavigationTask !== 'undefined') NavigationTask.close();
     }
 
 
