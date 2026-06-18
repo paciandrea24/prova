@@ -1,6 +1,6 @@
 const { lobbies } = require('../../store/lobbies');
 const { activeGames } = require('../../store/activeGames');
-const { initializeGame, processMovement, processKill, processTask, processReport, processVote } = require('../../game/deductionGame');
+const { initializeGame, processMovement, processKill, processTask, processReport, processVote, processEmergencyButton } = require('../../game/deductionGame');
 
 
 const GAME_ID = 'deduction';
@@ -94,5 +94,11 @@ module.exports = function (io, socket) {
 
         // Inoltra il messaggio a tutti nella lobby
         io.to(lobbyId).emit('receiveMeetingChat', { playerColor, message });
+    });
+
+    // AGGIUNGI QUESTO BLOCCO (Sotto socket.on('reportCorpse'))
+    socket.on('pressEmergencyButton', (data) => {
+        const { lobbyId, playerColor } = data;
+        processEmergencyButton(io, lobbyId, playerColor);
     });
 };

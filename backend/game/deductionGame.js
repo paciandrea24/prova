@@ -23,6 +23,9 @@ const ROOM_CONFIG = {
 
 // Aggiungiamo 4 nuove task nelle nuove stanze (totale 9 task)
 const ALL_TASKS = [
+    // IL BOTTONE ROSSO D'EMERGENZA (Sempre presente, non si "completa")
+    { id: 'task_emergency', room: 'Centro', name: 'Emergency Meeting', x: 400, y: 300, isEmergency: true },
+
     { id: 'task_router', room: 'Nord', name: 'Riavvia Router', x: 400, y: 150 },
     { id: 'task_motori', room: 'Sud', name: 'Allinea Motore', x: 400, y: 450 },
     { id: 'task_dati', room: 'Est', name: 'Scarica Dati', x: 650, y: 300 },
@@ -125,6 +128,27 @@ function initializeGame(io, lobbyId, players, settings) {
 let meetingTimers = {}; // Per tracciare i timer dei meeting
 
 // --- NUOVE FUNZIONI DA AGGIUNGERE ---
+
+// backend/game/deductionGame.js
+// Aggiungila vicino a processReport
+
+function processEmergencyButton(io, lobbyId, playerColor) {
+    const game = activeGames.get(lobbyId);
+    if (!game || game.phase !== 'exploration') return;
+
+    const caller = game.playersState[playerColor];
+    if (!caller || caller.isDead) return;
+
+    // Controlla che il giocatore sia fisicamente vicino al bottone
+    const button = ALL_TASKS.find(t => t.id === 'task_emergency');
+    if (caller.room === button.room) {
+        const dx = caller.x - button.x;
+        const dy = caller.y - button.y;
+        if (Math.sqrt(dx * dx + dy * dy) < 80) { // Distanza valida
+            startMeeting(io, lobbyId, playerColor);
+        }
+    }
+}
 
 function processReport(io, lobbyId, reporterColor) {
     const game = activeGames.get(lobbyId);
@@ -420,4 +444,4 @@ function checkWinCondition(io, lobbyId) {
     }
 }
 
-module.exports = { initializeGame, processMovement, processKill, processTask, processReport, processVote };
+module.exports = { initializeGame, processMovement, processKill, processTask, processReport, processVote, processEmergencyButton };
