@@ -267,6 +267,12 @@ window.addEventListener('keydown', (e) => {
     // GESTORE DEL TASTO E
     if (key === 'e' && !isImpostor && !isDead && activeTaskInRange && !isTaskOpen) {
 
+        // 1. GESTIONE SPECIALE: Bottone d'Emergenza
+        if (activeTaskInRange === 'task_emergency') {
+            socket.emit('pressEmergencyButton', { lobbyId, playerColor: myColor });
+            return; // Ferma l'esecuzione qui
+        }
+
         const currentTaskObj = myTasks.find(t => t.id === activeTaskInRange);
 
         if (currentTaskObj) {
@@ -398,34 +404,50 @@ function render(isMoving = false) { // ECCO IL PARAMETRO MANCANTE!
     ctx.fillRect(0, canvas.height / 2 - 40, 20, 80);
     ctx.fillRect(canvas.width - 20, canvas.height / 2 - 40, 20, 80);
 
-    // DISEGNA LE TASK DELLA STANZA E CALCOLA DISTANZA
+    // DISEGNA IL BOTTONE D'EMERGENZA (Sempre presente al Centro)
     activeTaskInRange = null;
     corpseInRange = false;
     let hintText = "";
     let hintVisible = false;
 
+    if (currentRoom === 'Centro') {
+        const btnX = 400; const btnY = 300;
+
+        // Disegna il tavolo
+        ctx.fillStyle = '#7f8c8d';
+        ctx.beginPath(); ctx.arc(btnX, btnY, 40, 0, Math.PI * 2); ctx.fill();
+
+        // Disegna il bottone rosso
+        ctx.fillStyle = '#c0392b';
+        ctx.beginPath(); ctx.arc(btnX, btnY, 15, 0, Math.PI * 2); ctx.fill();
+
+        // Controllo vicinanza per TUTTI i giocatori
+        if (!isDead) {
+            const dx = myX - btnX;
+            const dy = myY - btnY;
+            if (Math.sqrt(dx * dx + dy * dy) < 80) {
+                activeTaskInRange = 'task_emergency';
+                hintText = "Premi E per chiamare un Meeting";
+                hintVisible = true;
+            }
+        }
+    }
+
+    // DISEGNA LE TASK DELLA STANZA (Solo per i Crewmate)
     if (!isImpostor && !isDead) {
         myTasks.forEach(t => {
-            if (t.room === currentRoom && !t.completed) {
-                // Disegna il punto di interazione
-                ctx.beginPath();
-                ctx.arc(t.x, t.y, 25, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(241, 196, 15, 0.4)';
-                ctx.fill();
-                ctx.lineWidth = 3;
-                ctx.strokeStyle = '#f1c40f';
-                ctx.stroke();
+            if (t.room === currentRoom && !t.completed && !t.isEmergency) {
 
-                // Disegna icona generica (Punto esclamativo)
-                ctx.fillStyle = 'white';
-                ctx.font = 'bold 20px Fredoka';
-                ctx.textAlign = 'center';
-                ctx.fillText('!', t.x, t.y + 7);
+                ctx.beginPath(); ctx.arc(t.x, t.y, 25, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(241, 196, 15, 0.4)'; ctx.fill();
+                ctx.lineWidth = 3; ctx.strokeStyle = '#f1c40f'; ctx.stroke();
 
-                const dx = myX - t.x;
-                const dy = myY - t.y;
+                ctx.fillStyle = 'white'; ctx.font = 'bold 20px Fredoka';
+                ctx.textAlign = 'center'; ctx.fillText('!', t.x, t.y + 7);
+
+                const dx = myX - t.x; const dy = myY - t.y;
                 if (Math.sqrt(dx * dx + dy * dy) < 60) {
-                    activeTaskInRange = t.id;
+                    activeTaskInRange = t.id; // Sovrascrive il bottone se sono sovrapposti
                     hintText = "Premi E per fare la Task";
                     hintVisible = true;
                 }

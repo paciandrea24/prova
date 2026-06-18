@@ -204,14 +204,19 @@ body {
     padding: 3px 6px; border-radius: 6px;
 }
 
+
 /* --- COLONNA 2: GIOCHI & SETTINGS --- */
 .games-grid {
     display: grid;
-    /* Invece di 1fr (che li allarga al 50%), forziamo la larghezza originaria (~160px) e li centriamo */
     grid-template-columns: repeat(2, 160px); 
     justify-content: center;
     gap: 20px;
     margin-bottom: 20px;
+    
+    /* AGGIUNGI QUESTE TRE RIGHE: */
+    overflow-y: auto;       /* Mostra la scrollbar se necessario */
+    flex: 1;                /* Occupa tutto lo spazio disponibile per scorrere bene */
+    padding: 10px;          /* Evita che la scrollbar tagli l'ombra delle carte */
 }
 
 .game-card {
