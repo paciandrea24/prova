@@ -58,21 +58,33 @@ gltfLoader.load('/assets/kart.glb', (gltf) => {
 myKart.position.y = 0.5;
 scene.add(myKart);
 
-// Array per memorizzare i muri invisibili contro cui si scontrerà il kart
-const collidableObjects = [];
+// Aggiungiamo i gruppi di tile per farli riconoscere a Three.js
+const TILE_GROUPS = {
+    GRASS: [245],
+    TRACK: [149, 185, 183, 75, 94, 202, 166, 130, 93, 75, 131, 148, 184, 58, 59, 77],
+    // Trattiamo la ghiaia o i blocchi sconosciuti come muri/ostacoli
+    WALLS: [226, 257, 279, 152, 261, 225, 153, 208, 170, 243, 260, 207, 153, 171]
+};
 
-// Funzione che converte la matrice 2D in blocchi 3D
+const collidableObjects = []; // Qui salviamo i muri per le collisioni fisiche
+
+// frontend/kart.js
+
+// Trova e sostituisci solo la funzione buildTrack con questa:
+
 function buildTrack(mapMatrix) {
     const blockSize = 10;
 
-    // Calcoliamo l'offset per centrare la mappa sullo schermo
     const offsetX = (mapMatrix[0].length * blockSize) / 2;
     const offsetZ = (mapMatrix.length * blockSize) / 2;
 
-    const asphaltMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 }); // Grigio scuro
-    const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xbdc3c7 });    // Grigio chiaro
+    // Colori di base
+    const trackMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 }); // Asfalto
+    const grassMaterial = new THREE.MeshStandardMaterial({ color: 0x27ae60 }); // Erba
+    const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xe74c3c });  // Muri (rossi per risaltare)
+
     const floorGeo = new THREE.BoxGeometry(blockSize, 0.5, blockSize);
-    const wallGeo = new THREE.BoxGeometry(blockSize, 3, blockSize);
+    const wallGeo = new THREE.BoxGeometry(blockSize, 4, blockSize);
 
     for (let row = 0; row < mapMatrix.length; row++) {
         for (let col = 0; col < mapMatrix[row].length; col++) {
@@ -82,17 +94,27 @@ function buildTrack(mapMatrix) {
             const z = (row * blockSize) - offsetZ;
 
             if (tileCode === 0) {
-                // Strada
-                const block = new THREE.Mesh(floorGeo, asphaltMaterial);
+                // 0: STRADA (Asfalto piatto)
+                const block = new THREE.Mesh(floorGeo, trackMaterial);
                 block.position.set(x, 0, z);
+                block.receiveShadow = true;
                 scene.add(block);
-            } else {
-                // Muro laterale
+            }
+            else if (tileCode === 1) {
+                // 1: ERBA (Prato piatto)
+                const block = new THREE.Mesh(floorGeo, grassMaterial);
+                block.position.set(x, 0, z);
+                block.receiveShadow = true;
+                scene.add(block);
+            }
+            else if (tileCode === 2) {
+                // 2: MURO (Ostacolo 3D fisico)
                 const block = new THREE.Mesh(wallGeo, wallMaterial);
-                block.position.set(x, 1.5, z); // Rialzato
+                block.position.set(x, 2, z);
+                block.castShadow = true;
                 scene.add(block);
 
-                // Lo aggiungiamo all'array delle collisioni!
+                // Aggiungiamo solo i muri all'array delle collisioni!
                 collidableObjects.push(block);
             }
         }
@@ -129,6 +151,16 @@ socket.on('kartSetup', (data) => {
 const keys = { w: false, a: false, s: false, d: false };
 document.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
 document.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+
+// NUOVO: Variabile per tracciare quale telecamera stiamo usando
+let isFirstPerson = false;
+
+// NUOVO: Ascoltatore per cambiare la visuale premendo il tasto "C"
+document.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'c') {
+        isFirstPerson = !isFirstPerson; // Inverte lo stato (da true a false e viceversa)
+    }
+});
 
 // Variabili fisiche di base
 let speed = 0;
@@ -242,12 +274,29 @@ function animate() {
     myKart.position.x += moveX;
     myKart.position.z += moveZ;
 
-    // --- (La parte della Telecamera e dell'invio Socket rimane identica) ---
-    // La telecamera segue il kart da dietro
-    const relativeCameraOffset = new THREE.Vector3(0, 5, -10);
-    const cameraOffset = relativeCameraOffset.applyMatrix4(myKart.matrixWorld);
-    camera.position.copy(cameraOffset);
-    camera.lookAt(myKart.position);
+    // 5. GESTIONE DELLA TELECAMERA (Switch Terza / Prima Persona)
+    if (isFirstPerson) {
+        // --- TELECAMERA IN PRIMA PERSONA ---
+        // Posizioniamo la telecamera all'altezza degli occhi del pilota 
+        // (Y: 1.2) e leggermente in avanti sul muso (Z: 1)
+        const fpvCameraOffset = new THREE.Vector3(0, 1.2, 1);
+        const cameraPos = fpvCameraOffset.applyMatrix4(myKart.matrixWorld);
+        camera.position.copy(cameraPos);
+
+        // Diciamo alla telecamera di guardare un punto fisso MOLTO avanti rispetto al kart
+        const fpvTargetOffset = new THREE.Vector3(0, 1.2, 50);
+        const targetPos = fpvTargetOffset.applyMatrix4(myKart.matrixWorld);
+        camera.lookAt(targetPos);
+    } else {
+        // --- TELECAMERA IN TERZA PERSONA (Originale) ---
+        // Posizioniamo la telecamera in alto (Y: 5) e dietro al kart (Z: -10)
+        const tpvCameraOffset = new THREE.Vector3(0, 5, -10);
+        const cameraPos = tpvCameraOffset.applyMatrix4(myKart.matrixWorld);
+        camera.position.copy(cameraPos);
+
+        // La telecamera guarda direttamente il centro del kart
+        camera.lookAt(myKart.position);
+    }
 
     // INVIA DATI AL SERVER
     if (Math.abs(speed) > 0 || keys.a || keys.d || velocity.lengthSq() > 0.001) {

@@ -20,7 +20,8 @@ document.addEventListener('DOMContentLoaded', () => {
         racing: { mode: 'championship', numTracks: 3, trackName: 'Monza' },
         football: { maxGoals: 3 },
         deduction: { impostors: 1 },
-        kart: { laps: 3 }
+        kart: { laps: 3 },
+        spleef: { mapSize: 20 }
     };
 
     // 2. Interfaccia Header (ID e Copia)
@@ -56,6 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (data.gameId === 'footballMulti') targetPage = '/footballMulti.html';
         else if (gameId === 'deduction') targetPage = '/deduction.html';
         else if (gameId === 'kart') targetPage = '/kart.html';
+        else if (gameId === 'spleef') targetPage = '/spleef.html';
 
         window.location.href = `${targetPage}?lobby=${lobbyId}&color=${encodeURIComponent(selectedColor)}&game=${gameId}${settingsParam}`;
     });
@@ -259,7 +261,8 @@ document.addEventListener('DOMContentLoaded', () => {
             bomb: '💣 Bomb Settings',
             football: '⚽ Football Settings',
             deduction: '🔪 Deduction Settings',
-            kart: '🏎️ Kart 3D Settings'
+            kart: '🏎️ Kart 3D Settings',
+            spleef: '⛏️ Spleef Settings'
         };
         if (modalTitle) modalTitle.textContent = titles[gameId] || '⚙️ Settings';
 

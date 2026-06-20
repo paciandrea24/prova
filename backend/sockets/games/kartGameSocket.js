@@ -1,54 +1,45 @@
 // backend/sockets/games/kartGameSocket.js
 const { lobbies } = require('../../store/lobbies');
-// Importiamo i tracciati dal tuo gioco racing!
-const { monzaLevel1_Top, monzaLevel1_Bottom } = require('../../game/racingGame'); // Assicurati che il percorso sia corretto.
 
 const players = {};
 
-// Per semplicità, creiamo un array di piste come hai fatto nel racing.
-const kartTracks = [
-    {
-        name: 'Monza',
-        map: monzaLevel1_Top,
-        tileSize: 40,
-        spawnX: 420,
-        spawnY: 100,
-        angle: 0
-    }
-    // Puoi aggiungere le altre piste in seguito
+// LEGENDA MAPPA INDIPENDENTE KART 3D:
+// 0 = Asfalto (Strada percorribile)
+// 1 = Erba (Percorribile, ma fuori pista)
+// 2 = Muri / Ostacoli (Collisione attiva)
+const customKartTrack = [
+    [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+    [2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2],
+    [2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2],
+    [2, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 2],
+    [2, 1, 0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 1, 1, 2],
+    [2, 1, 0, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 0, 1, 1, 2],
+    [2, 1, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 0, 1, 1, 2],
+    [2, 1, 0, 1, 2, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 2, 1, 0, 1, 1, 2],
+    [2, 1, 0, 1, 2, 1, 0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 1, 2, 1, 0, 1, 1, 2],
+    [2, 1, 0, 1, 1, 1, 0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 1, 1, 1, 0, 1, 1, 2],
+    [2, 1, 0, 0, 0, 0, 0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 1, 1, 2],
+    [2, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 2],
+    [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
 ];
 
 module.exports = function (io, socket) {
 
-    // --- 1. GESTIONE AVVIO DALLA LOBBY ---
     socket.on('startGame', (data) => {
         const { lobbyId, gameId, settings } = data;
 
         if (gameId === 'kart') {
             console.log(`🏎️ StartGame ricevuto per Kart 3D in lobby ${lobbyId}`);
-
             const lobby = lobbies.get(lobbyId);
             if (lobby) {
                 lobby.gameSettings = settings;
             }
-
-            // Inviamo i dati del primo tracciato al client.
-            const trackData = kartTracks[0];
-
-            io.to(lobbyId).emit('gameSelected', {
-                gameId,
-                settings,
-                trackData: trackData // Aggiungiamo i dati della pista
-            });
+            io.to(lobbyId).emit('gameSelected', { gameId, settings });
         }
     });
 
-    // --- INIZIO LOGICA DEL MOVIMENTO E SETUP 3D ---
     socket.on('joinKartGame', (lobbyId) => {
         socket.join(lobbyId);
-
-        // Debug: controlliamo se la mappa esiste davvero qui
-        console.log("Stato di monzaLevel1_Top:", typeof monzaLevel1_Top);
 
         players[socket.id] = {
             id: socket.id,
@@ -60,12 +51,11 @@ module.exports = function (io, socket) {
         };
 
         const setupData = {
-            trackMap: monzaLevel1_Top, // Assicurati che l'import in alto sia corretto
+            trackMap: customKartTrack,
             players: players,
-            spawn: { x: 0, z: 0 }
+            // Facciamo spawnare il giocatore nella strada in alto a sinistra!
+            spawn: { x: -80, z: -40 }
         };
-
-        console.log("Invio dati setup. Mappa ha righe:", setupData.trackMap ? setupData.trackMap.length : "ERRORE - NULLA");
 
         socket.emit('kartSetup', setupData);
         socket.to(lobbyId).emit('newPlayer', players[socket.id]);

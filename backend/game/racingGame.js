@@ -1194,4 +1194,4 @@ function restartRace(io, lobbyId) {
 }
 
 // AGGIORNA l'export alla fine del file!
-module.exports = { initializeRacingGame, updatePlayerInput, startRace, restartRace, resetPlayersForCurrentTrack, monzaLevel1_Top };
+module.exports = { initializeRacingGame, updatePlayerInput, startRace, restartRace, resetPlayersForCurrentTrack, monzaLevel1_Top, monzaLevel2_Bottom };
