@@ -71,6 +71,11 @@
                     <span class="g-icon">⛏️</span>
                     <span class="g-title">Spleef</span>
                 </div>
+
+                <div class="game-card" data-game-id="fps">
+                    <span class="g-icon">🎯</span>
+                    <span class="g-title">FPS</span>
+                </div>
             </div>
 
             <div id="waiting-host-msg"
@@ -203,6 +208,18 @@
                             <option value="15">Piccola (15x15)</option>
                             <option value="20" selected>Media (20x20)</option>
                             <option value="25">Grande (25x25)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="settings-section" id="fps-settings" style="display: none;">
+                    <div class="setting-row">
+                        <span>Rounds:</span>
+                        <select id="fps-rounds">
+                            <option value="3">3 Rounds</option>
+                            <option value="5" selected>5 Rounds</option>
+                            <option value="7">7 Rounds</option>
+                            <option value="10">10 Rounds</option>
                         </select>
                     </div>
                 </div>

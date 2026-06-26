@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project-W — FPS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles/fps.css">
+</head>
+
+<body>
+
+    <!-- ═══════════ CANVAS THREE.JS ═══════════ -->
+    <canvas id="fps-canvas"></canvas>
+
+    <!-- ═══════════ CROSSHAIR ═══════════ -->
+    <div id="crosshair"></div>
+
+    <!-- ═══════════ DANNO VIGNETTE ═══════════ -->
+    <div id="dmg-vignette"></div>
+
+    <!-- ═══════════ HUD ═══════════ -->
+    <div id="hud">
+
+        <!-- Round counter -->
+        <div id="hud-round">
+            <div id="hud-round-text">Round</div>
+            <div id="hud-round-num">1 / 5</div>
+        </div>
+
+        <!-- Score live -->
+        <div id="hud-scores"></div>
+
+        <!-- Kill feed -->
+        <div id="hud-killfeed"></div>
+
+        <!-- HP -->
+        <div id="hud-hp">
+            <div id="hud-hp-label">Health</div>
+            <div id="hud-hp-val">100</div>
+            <div id="hud-hp-bar-wrap">
+                <div id="hud-hp-bar" style="width:100%"></div>
+            </div>
+        </div>
+
+        <!-- Ammo -->
+        <div id="hud-ammo">
+            <div id="hud-weapon-name">Assault Rifle</div>
+            <div id="hud-ammo-count">30<span> / 30</span></div>
+            <div id="hud-ammo-label">Ammo</div>
+        </div>
+
+    </div>
+
+    <!-- Reload bar (fuori HUD per z-index) -->
+    <div id="reload-bar-wrap">
+        <div id="reload-label">Reloading…</div>
+        <div id="reload-bar-bg">
+            <div id="reload-bar-fill"></div>
+        </div>
+    </div>
+
+    <!-- Minimap -->
+    <div id="minimap">
+        <canvas id="minimap-canvas" width="100" height="100"></canvas>
+    </div>
+
+    <!-- Chat in-game -->
+    <div id="fps-chat-wrap"></div>
+
+    <!-- ═══════════ SCHERMO MORTO ═══════════ -->
+    <div id="dead-screen">
+        <h2>You Died</h2>
+        <p>Waiting for round to end…</p>
+    </div>
+
+    <!-- ═══════════ OVERLAY ROUND END / GAME OVER ═══════════ -->
+    <div id="overlay">
+        <div id="overlay-box">
+            <div id="overlay-title">Round Over</div>
+            <div id="overlay-main">Player Wins!</div>
+            <div id="overlay-scores"></div>
+            <div id="overlay-countdown">Next round in <span id="overlay-cd-val">5</span>s…</div>
+            <button id="overlay-btn">Return to Lobby</button>
+        </div>
+    </div>
+
+    <!-- ═══════════ SELEZIONE ARMA ═══════════ -->
+    <div id="weapon-select-screen">
+        <div id="ws-header">
+            <div id="ws-title">Choose Your Loadout</div>
+            <div id="ws-round">Round 1 of 5</div>
+            <div id="ws-timer">⏱ 20s</div>
+        </div>
+
+        <div id="ws-grid">
+
+            <div class="ws-card selected" data-weapon="assault">
+                <span class="ws-weapon-icon">🔫</span>
+                <div class="ws-weapon-name">Assault Rifle</div>
+                <div class="ws-weapon-stats">
+                    <div class="ws-stat-row">
+                        DMG <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:25%"></div>
+                        </div>
+                    </div>
+                    <div class="ws-stat-row">
+                        RANGE <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:53%"></div>
+                        </div>
+                    </div>
+                    <div class="ws-stat-row">
+                        FIRE RATE <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:73%"></div>
+                        </div>
+                    </div>
+                    <div class="ws-stat-row">
+                        AMMO <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:67%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ws-card" data-weapon="smg">
+                <span class="ws-weapon-icon">🔫</span>
+                <div class="ws-weapon-name">SMG</div>
+                <div class="ws-weapon-stats">
+                    <div class="ws-stat-row">
+                        DMG <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:18%"></div>
+                        </div>
+                    </div>
+                    <div class="ws-stat-row">
+                        RANGE <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:27%"></div>
+                        </div>
+                    </div>
+                    <div class="ws-stat-row">
+                        FIRE RATE <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:93%"></div>
+                        </div>
+                    </div>
+                    <div class="ws-stat-row">
+                        AMMO <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:100%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ws-card" data-weapon="shotgun">
+                <span class="ws-weapon-icon">🔫</span>
+                <div class="ws-weapon-name">Shotgun</div>
+                <div class="ws-weapon-stats">
+                    <div class="ws-stat-row">
+                        DMG <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:80%"></div>
+                        </div>
+                    </div>
+                    <div class="ws-stat-row">
+                        RANGE <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:13%"></div>
+                        </div>
+                    </div>
+                    <div class="ws-stat-row">
+                        FIRE RATE <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:13%"></div>
+                        </div>
+                    </div>
+                    <div class="ws-stat-row">
+                        AMMO <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:18%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ws-card" data-weapon="sniper">
+                <span class="ws-weapon-icon">🎯</span>
+                <div class="ws-weapon-name">Sniper Rifle</div>
+                <div class="ws-weapon-stats">
+                    <div class="ws-stat-row">
+                        DMG <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:95%"></div>
+                        </div>
+                    </div>
+                    <div class="ws-stat-row">
+                        RANGE <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:100%"></div>
+                        </div>
+                    </div>
+                    <div class="ws-stat-row">
+                        FIRE RATE <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:7%"></div>
+                        </div>
+                    </div>
+                    <div class="ws-stat-row">
+                        AMMO <div class="ws-stat-bar-bg">
+                            <div class="ws-stat-bar-fill" style="width:11%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div id="ws-footer">
+            <button id="ws-confirm-btn">Confirm Loadout</button>
+            <div id="ws-players-ready">
+                <!-- dot per player inseriti via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════ POINTER LOCK PROMPT ═══════════ -->
+    <div id="pointer-prompt" class="active">
+        <h2>FPS Mode</h2>
+        <p>Click to capture mouse and start playing</p>
+        <button id="ptr-btn">Click to Play</button>
+    </div>
+
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Socket.io (per signaling WebRTC) -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- Logica di gioco -->
+    <script src="fps.js" defer></script>
+
+</body>
+
+</html>

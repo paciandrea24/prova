@@ -1,0 +1,609 @@
+/* frontend/styles/fps.css */
+
+/* ─── RESET & BASE ─────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --col-bg:       #0a0c0f;
+    --col-surface:  #111418;
+    --col-border:   #2a2f38;
+    --col-accent:   #c8a84b;      /* oro militare */
+    --col-danger:   #d63031;
+    --col-safe:     #00b894;
+    --col-text:     #dfe3ea;
+    --col-muted:    #6c7584;
+    --font-ui:      'Courier New', monospace;
+    --hud-size:     14px;
+}
+
+html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: var(--col-bg);
+    font-family: var(--font-ui);
+    color: var(--col-text);
+    user-select: none;
+}
+
+/* ─── CANVAS ────────────────────────────────────── */
+#fps-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: none;
+}
+
+/* ─── CROSSHAIR ─────────────────────────────────── */
+#crosshair {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 100;
+    width: 28px; height: 28px;
+}
+#crosshair::before,
+#crosshair::after {
+    content: '';
+    position: absolute;
+    background: rgba(255,255,255,0.85);
+    border-radius: 1px;
+}
+#crosshair::before { /* horizontal */
+    width: 12px; height: 2px;
+    top: 50%; left: 0;
+    transform: translateY(-50%);
+    box-shadow: 16px 0 0 rgba(255,255,255,0.85);
+}
+#crosshair::after { /* vertical */
+    width: 2px; height: 12px;
+    left: 50%; top: 0;
+    transform: translateX(-50%);
+    box-shadow: 0 16px 0 rgba(255,255,255,0.85);
+}
+#crosshair.sniper::before,
+#crosshair.sniper::after { background: rgba(255, 60, 60, 0.9); box-shadow: none; }
+#crosshair.sniper { width: 2px; height: 2px; border: 1px solid rgba(255,60,60,0.9); }
+body.ads #crosshair { opacity: 0; }
+
+/* ─── HUD PRINCIPALE ─────────────────────────────── */
+#hud {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 200;
+    font-size: var(--hud-size);
+    letter-spacing: 0.05em;
+}
+
+/* HP Bar */
+#hud-hp {
+    position: absolute;
+    bottom: 40px; left: 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+#hud-hp-label {
+    font-size: 11px;
+    color: var(--col-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+#hud-hp-bar-wrap {
+    width: 220px;
+    height: 6px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 3px;
+    overflow: hidden;
+}
+#hud-hp-bar {
+    height: 100%;
+    background: var(--col-safe);
+    border-radius: 3px;
+    transition: width 0.2s ease, background 0.3s ease;
+}
+#hud-hp-val {
+    font-size: 36px;
+    font-weight: bold;
+    color: #fff;
+    line-height: 1;
+}
+
+/* Ammo */
+#hud-ammo {
+    position: absolute;
+    bottom: 40px; right: 40px;
+    text-align: right;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+}
+#hud-ammo-count {
+    font-size: 42px;
+    font-weight: bold;
+    color: #fff;
+    line-height: 1;
+}
+#hud-ammo-count span { font-size: 22px; color: var(--col-muted); }
+#hud-ammo-label {
+    font-size: 11px;
+    color: var(--col-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+#hud-weapon-name {
+    font-size: 13px;
+    color: var(--col-accent);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+/* Round info */
+#hud-round {
+    position: absolute;
+    top: 24px; left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+}
+#hud-round-text {
+    font-size: 12px;
+    color: var(--col-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+}
+#hud-round-num {
+    font-size: 22px;
+    color: var(--col-accent);
+    font-weight: bold;
+}
+
+/* Kill feed */
+#hud-killfeed {
+    position: absolute;
+    top: 80px; right: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-end;
+    max-width: 260px;
+}
+.killfeed-entry {
+    background: rgba(0,0,0,0.55);
+    border-left: 3px solid var(--col-danger);
+    padding: 5px 10px;
+    font-size: 12px;
+    border-radius: 2px;
+    animation: kfSlide 0.2s ease;
+    white-space: nowrap;
+}
+@keyframes kfSlide {
+    from { opacity:0; transform: translateX(20px); }
+    to   { opacity:1; transform: translateX(0); }
+}
+
+/* Scoreboard in game */
+#hud-scores {
+    position: absolute;
+    top: 24px; left: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.hud-score-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--col-text);
+}
+.hud-score-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.hud-score-wins {
+    margin-left: auto;
+    color: var(--col-accent);
+    font-weight: bold;
+    min-width: 20px;
+    text-align: right;
+}
+
+/* Damage vignette */
+#dmg-vignette {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 150;
+    box-shadow: inset 0 0 80px rgba(214,48,49,0);
+    transition: box-shadow 0.1s ease;
+}
+#dmg-vignette.hit {
+    box-shadow: inset 0 0 80px rgba(214,48,49,0.7);
+    animation: vignetteOut 0.5s ease forwards;
+}
+@keyframes vignetteOut {
+    0%   { box-shadow: inset 0 0 80px rgba(214,48,49,0.7); }
+    100% { box-shadow: inset 0 0 80px rgba(214,48,49,0);   }
+}
+
+/* Reload bar */
+#reload-bar-wrap {
+    position: fixed;
+    bottom: 90px; right: 40px;
+    width: 120px;
+    display: none;
+}
+#reload-bar-wrap.active { display: block; }
+#reload-label {
+    font-size: 10px;
+    color: var(--col-accent);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 4px;
+    text-align: right;
+}
+#reload-bar-bg {
+    height: 3px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    overflow: hidden;
+}
+#reload-bar-fill {
+    height: 100%;
+    background: var(--col-accent);
+    border-radius: 2px;
+    width: 0%;
+    transition: width linear;
+}
+
+/* ─── SCHERMO MORTO ──────────────────────────────── */
+#dead-screen {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(214,48,49,0.18);
+    z-index: 300;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 12px;
+}
+#dead-screen.active { display: flex; }
+#dead-screen h2 {
+    font-size: 48px;
+    color: var(--col-danger);
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    text-shadow: 0 0 40px rgba(214,48,49,0.8);
+}
+#dead-screen p {
+    font-size: 14px;
+    color: var(--col-muted);
+    letter-spacing: 0.1em;
+}
+
+/* ─── OVERLAY GENERICO (round end / game over) ───── */
+#overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.82);
+    z-index: 400;
+    align-items: center;
+    justify-content: center;
+}
+#overlay.active { display: flex; }
+#overlay-box {
+    background: var(--col-surface);
+    border: 1px solid var(--col-border);
+    padding: 40px 56px;
+    min-width: 380px;
+    text-align: center;
+    position: relative;
+}
+#overlay-box::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--col-accent);
+}
+#overlay-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--col-muted);
+    margin-bottom: 8px;
+}
+#overlay-main {
+    font-size: 36px;
+    font-weight: bold;
+    color: var(--col-accent);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 28px;
+}
+#overlay-scores {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 28px;
+}
+.overlay-score-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--col-border);
+}
+.overlay-score-row.winner {
+    border-color: var(--col-accent);
+    background: rgba(200,168,75,0.08);
+}
+.overlay-score-color {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.overlay-score-wins {
+    margin-left: auto;
+    color: var(--col-accent);
+    font-weight: bold;
+}
+#overlay-countdown {
+    font-size: 12px;
+    color: var(--col-muted);
+    margin-bottom: 20px;
+}
+#overlay-btn {
+    display: none;
+    background: var(--col-accent);
+    color: #000;
+    border: none;
+    padding: 12px 32px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    cursor: pointer;
+    font-weight: bold;
+    pointer-events: all;
+}
+#overlay-btn:hover { background: #e0bc5a; }
+
+/* ─── MENU SELEZIONE ARMA ────────────────────────── */
+#weapon-select-screen {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.88);
+    z-index: 500;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 32px;
+}
+#weapon-select-screen.active { display: flex; }
+
+#ws-header {
+    text-align: center;
+}
+#ws-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    color: var(--col-muted);
+    margin-bottom: 6px;
+}
+#ws-round {
+    font-size: 28px;
+    color: var(--col-accent);
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+#ws-timer {
+    font-size: 13px;
+    color: var(--col-muted);
+    margin-top: 4px;
+}
+
+#ws-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    max-width: 680px;
+    width: 100%;
+    padding: 0 20px;
+}
+
+.ws-card {
+    background: var(--col-surface);
+    border: 1px solid var(--col-border);
+    padding: 20px 24px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    position: relative;
+}
+.ws-card:hover {
+    border-color: var(--col-accent);
+    background: rgba(200,168,75,0.06);
+}
+.ws-card.selected {
+    border-color: var(--col-accent);
+    background: rgba(200,168,75,0.12);
+}
+.ws-card.selected::after {
+    content: '✓';
+    position: absolute;
+    top: 10px; right: 14px;
+    color: var(--col-accent);
+    font-size: 16px;
+}
+.ws-weapon-icon {
+    font-size: 32px;
+    margin-bottom: 10px;
+    display: block;
+}
+.ws-weapon-name {
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--col-text);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
+}
+.ws-weapon-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.ws-stat-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    color: var(--col-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.ws-stat-bar-bg {
+    flex: 1;
+    height: 3px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.ws-stat-bar-fill {
+    height: 100%;
+    background: var(--col-accent);
+    border-radius: 2px;
+}
+
+#ws-footer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+#ws-confirm-btn {
+    background: var(--col-accent);
+    color: #000;
+    border: none;
+    padding: 14px 48px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background 0.15s;
+}
+#ws-confirm-btn:hover   { background: #e0bc5a; }
+#ws-confirm-btn:disabled {
+    background: var(--col-border);
+    color: var(--col-muted);
+    cursor: not-allowed;
+}
+#ws-players-ready {
+    font-size: 11px;
+    color: var(--col-muted);
+    letter-spacing: 0.1em;
+}
+.ws-ready-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin: 0 2px;
+    vertical-align: middle;
+    opacity: 0.3;
+    transition: opacity 0.2s;
+}
+.ws-ready-dot.on { opacity: 1; }
+
+/* ─── POINTER LOCK PROMPT ────────────────────────── */
+#pointer-prompt {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 600;
+    background: rgba(0,0,0,0.9);
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+}
+#pointer-prompt.active { display: flex; }
+#pointer-prompt h2 {
+    font-size: 22px;
+    color: var(--col-accent);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+}
+#pointer-prompt p {
+    font-size: 13px;
+    color: var(--col-muted);
+    letter-spacing: 0.08em;
+}
+#ptr-btn {
+    margin-top: 8px;
+    background: var(--col-accent);
+    color: #000;
+    border: none;
+    padding: 12px 36px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+/* ─── MINIMAP ────────────────────────────────────── */
+#minimap {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100px;
+    height: 100px;
+    border: 1px solid var(--col-border);
+    background: rgba(0,0,0,0.5);
+    border-radius: 50%;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 200;
+}
+#minimap-canvas {
+    width: 100%;
+    height: 100%;
+}
+
+/* ─── CHAT IN-GAME ───────────────────────────────── */
+#fps-chat-wrap {
+    position: fixed;
+    bottom: 160px; left: 24px;
+    width: 280px;
+    pointer-events: none;
+    z-index: 200;
+}
+.fps-chat-msg {
+    font-size: 12px;
+    color: rgba(255,255,255,0.8);
+    background: rgba(0,0,0,0.45);
+    padding: 3px 8px;
+    margin-bottom: 3px;
+    border-radius: 2px;
+    animation: chatFade 8s ease forwards;
+}
+@keyframes chatFade {
+    0%,70% { opacity:1; }
+    100%    { opacity:0; }
+}
