@@ -1,5 +1,5 @@
 // backend/sockets/games/fpsGameSocket.js
-const { lobbies } = require('../../store/lobbies');
+const { lobbies, destroyTimers } = require('../../store/lobbies');
 const { activeGames } = require('../../store/activeGames');
 
 const GAME_ID = 'fps';
@@ -12,16 +12,18 @@ const WEAPONS = {
     sniper: { name: 'Sniper Rifle', damage: 95, fireRate: 1500, range: 150, ammo: 5, reload: 3000, spread: 0.005, auto: false }
 };
 
-// Spawn points per la mappa
+// Spawn points — Nuketown: cortili delle due case rivolti verso il centro.
+// Primi 4 = cortile NORD (casa gialla, guardano verso +Z → angle = PI)
+// Ultimi 4 = cortile SUD (casa verde, guardano verso -Z → angle = 0)
 const SPAWN_POINTS = [
-    { x: -45, y: 0, z: -45, angle: Math.PI * 0.25 },
-    { x: 45, y: 0, z: 45, angle: Math.PI * 1.25 },
-    { x: -45, y: 0, z: 45, angle: Math.PI * -0.25 },
-    { x: 45, y: 0, z: -45, angle: Math.PI * 0.75 },
-    { x: 0, y: 0, z: -55, angle: Math.PI },
-    { x: 0, y: 0, z: 55, angle: 0 },
-    { x: -55, y: 0, z: 0, angle: Math.PI * 0.5 },
-    { x: 55, y: 0, z: 0, angle: Math.PI * -0.5 }
+    { x: -8, y: 0, z: -22, angle: Math.PI },
+    { x:  8, y: 0, z: -22, angle: Math.PI },
+    { x: -19, y: 0, z: -16, angle: Math.PI },
+    { x:  19, y: 0, z: -16, angle: Math.PI },
+    { x:  8, y: 0, z:  22, angle: 0 },
+    { x: -8, y: 0, z:  22, angle: 0 },
+    { x:  19, y: 0, z:  16, angle: 0 },
+    { x: -19, y: 0, z:  16, angle: 0 }
 ];
 
 const PLAYER_HP = 100;
@@ -56,6 +58,20 @@ module.exports = function (io, socket) {
         const lobby = lobbies.get(lobbyId);
         if (!lobby) return;
 
+        // Cancella il timer di distruzione lobby impostato quando i giocatori
+        // hanno navigato dalla lobby alla pagina FPS (i vecchi socket si sono disconnessi).
+        if (destroyTimers.has(lobbyId)) {
+            clearTimeout(destroyTimers.get(lobbyId));
+            destroyTimers.delete(lobbyId);
+            console.log(`♻️ Destroy timer annullato (joinFPS) per lobby ${lobbyId}`);
+        }
+
+        // Il vecchio socket (lobby) si è disconnesso e ha rimosso il player da lobby.players.
+        // Lo reinseriamo qui affinché launchRound lo trovi.
+        if (!lobby.players.includes(playerColor)) {
+            lobby.players.push(playerColor);
+        }
+
         // Inizializza partita se non esiste
         if (!activeGames.has(lobbyId)) {
             const settings = lobby.gameSettings || {};
@@ -84,6 +100,22 @@ module.exports = function (io, socket) {
         }
 
         const game = activeGames.get(lobbyId);
+
+        // Giocatore entrato dopo la creazione del game: aggiunge scores/choices mancanti
+        if (!game.scores.hasOwnProperty(playerColor)) {
+            game.scores[playerColor] = 0;
+            game.weaponChoices[playerColor] = 'assault';
+        }
+
+        // Aggiorna tutti i client sul totale giocatori (conta corretta per il countdown armi)
+        if (game.phase === 'weapon_select') {
+            const confirmedCount = game._confirmed ? game._confirmed.size : 0;
+            io.to(lobbyId).emit('playerConfirmed', {
+                playerColor,
+                count: confirmedCount,
+                total: lobby.players.length
+            });
+        }
 
         // Invia stato attuale al giocatore appena connesso
         socket.emit('fpsInit', {
@@ -255,14 +287,17 @@ function launchRound(io, lobbyId) {
 
     game.phase = 'playing';
 
-    // Assegna spawn points in modo casuale
-    const shuffledSpawns = [...SPAWN_POINTS].sort(() => Math.random() - 0.5);
+    // Assegna spawn distanziati: con offset casuale e passo uniforme i
+    // giocatori finiscono su cortili opposti (1v1 → case diverse).
+    const n = SPAWN_POINTS.length;
+    const offset = Math.floor(Math.random() * n);
+    const stride = Math.max(1, Math.floor(n / Math.max(1, lobby.players.length)));
 
     game.players = {};
     game.aliveCount = 0;
 
     lobby.players.forEach((color, i) => {
-        const spawn = shuffledSpawns[i % shuffledSpawns.length];
+        const spawn = SPAWN_POINTS[(offset + i * stride) % n];
         const weapon = WEAPONS[game.weaponChoices[color] || 'assault'];
 
         game.players[color] = {

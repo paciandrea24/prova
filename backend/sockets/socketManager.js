@@ -12,10 +12,8 @@ const spleefGameSocket = require('./games/spleefGameSocket')
 const fpsGameSocket = require('./games/fpsGameSocket');
 
 // IMPORTANTE: Importiamo lo store delle lobby per poterle modificare
-const { lobbies, users } = require('../store/lobbies');
-
-// [NUOVO] Mappa globale per tracciare i timer di distruzione delle lobby
-const destroyTimers = new Map();
+const { lobbies, users, destroyTimers } = require('../store/lobbies');
+const { activeGames } = require('../store/activeGames');
 
 module.exports = function (io) {
     io.on('connection', (socket) => {
@@ -106,6 +104,10 @@ module.exports = function (io) {
                 const lobby = lobbies.get(socket.lobbyId);
 
                 if (lobby) {
+                    // Se c'è una partita attiva non modificare lobby.players:
+                    // il giocatore si è spostato in-game, non ha lasciato la sessione.
+                    if (activeGames.has(socket.lobbyId)) return;
+
                     // Rimuoviamo il giocatore dalla lobby
                     lobby.players = lobby.players.filter(c => c !== socket.color);
                     users.delete(socket.color);
