@@ -13,6 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentSelectedGame = null;
     let isSetup = false; // <--- FLAG PER EVITARE CHE IL MENU SI RESETTI OGNI 3 SECONDI
+    let selectorsBound = false; // <--- FLAG: registra i listener dei giochi UNA VOLTA SOLA
+    let currentHost = null;     // <--- host attuale (letto live dai listener registrati una volta)
 
     let gameSettings = {
         drawing: { rounds: 3, time: 60, difficulty: 'medium' },
@@ -200,28 +202,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 6. Selezione Minigiochi e Settings
     function setupGameSelectors(hostColor) {
+        currentHost = hostColor; // aggiornato ad ogni lobbyUpdated: i listener lo leggono live
         const gameCards = document.querySelectorAll('.game-card');
-        const startGameBtn = document.getElementById('start-game-btn');
         const waitingMsg = document.getElementById('waiting-host-msg');
+        const amHost = (selectedColor === hostColor);
 
-        // SE NON SEI L'HOST
-        if (selectedColor !== hostColor) {
-            gameCards.forEach(card => card.classList.add('disabled'));
-            if (waitingMsg) waitingMsg.style.display = 'block'; // Mostra scritta attesa
-            return;
-        }
+        // --- STATO VISUALE (eseguito ad OGNI aggiornamento lobby) ---
+        gameCards.forEach(card => card.classList.toggle('disabled', !amHost));
+        if (waitingMsg) waitingMsg.style.display = amHost ? 'none' : 'block';
 
-        // SE SEI L'HOST
-        if (waitingMsg) waitingMsg.style.display = 'none';
+        // --- LISTENER: registrati UNA VOLTA SOLA ---
+        // (prima venivano riattaccati ad ogni lobbyUpdated, causando modali doppi e doppio startGame)
+        if (selectorsBound) return;
+        selectorsBound = true;
 
         gameCards.forEach(card => {
-            card.classList.remove('disabled');
-
             card.addEventListener('click', (e) => {
+                if (selectedColor !== currentHost) return; // solo l'host attuale può scegliere
                 if (e.target.closest('#leaderboard-mini-btn')) return;
-
-                const gameId = card.dataset.gameId;
-                showGameSettings(gameId); // Apre semplicemente il modale
+                showGameSettings(card.dataset.gameId); // Apre semplicemente il modale
             });
         });
 
@@ -240,8 +239,10 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
+        const startGameBtn = document.getElementById('start-game-btn');
         if (startGameBtn) {
             startGameBtn.addEventListener('click', () => {
+                if (selectedColor !== currentHost) return; // solo l'host attuale può avviare
                 if (!currentSelectedGame) return;
                 const settings = saveGameSettings(currentSelectedGame);
                 document.getElementById('settings-modal').style.display = 'none'; // Chiude il modale all'avvio
@@ -310,6 +311,18 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // 6b. Uscita pulita dalla lobby
+    // Reindirizza alla home: la chiusura del socket fa scattare il disconnect handler
+    // lato server, che rimuove il giocatore e riassegna l'host se necessario.
+    const leaveLobbyBtn = document.getElementById('leave-lobby-btn');
+    if (leaveLobbyBtn) {
+        leaveLobbyBtn.addEventListener('click', () => {
+            if (confirm('Sei sicuro di voler lasciare la lobby?')) {
+                window.location.href = '/';
+            }
+        });
+    }
+
     // 7. Chat System
     const chatInput = document.getElementById('chat-input');
     const sendChatBtn = document.getElementById('send-chat-btn');
@@ -327,6 +340,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (sendChatBtn) sendChatBtn.addEventListener('click', sendChat);
     if (chatInput) chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChat(); });
 
+    // Escape dei caratteri HTML: evita che un messaggio di chat venga interpretato come markup (XSS)
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
     socket.on('receiveChatMessage', (data) => {
         const { playerColor, message, timestamp } = data;
         const isMe = (playerColor === selectedColor);
@@ -334,13 +357,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const msgDiv = document.createElement('div');
         msgDiv.className = isMe ? 'msg-wrap me' : 'msg-wrap';
 
-        let avatarHtml = isMe ? '' : `<div class="avatar" style="background: ${playerColor}; width: 28px; height: 28px; flex-shrink:0;"></div>`;
+        let avatarHtml = isMe ? '' : `<div class="avatar" style="background: ${escapeHtml(playerColor)}; width: 28px; height: 28px; flex-shrink:0;"></div>`;
 
         msgDiv.innerHTML = `
             ${avatarHtml}
             <div style="display:flex; flex-direction:column; max-width:100%;">
-                <div class="msg-bubble">${message}</div>
-                <div class="chat-time" style="text-align:${isMe ? 'right' : 'left'};">${timestamp}</div>
+                <div class="msg-bubble">${escapeHtml(message)}</div>
+                <div class="chat-time" style="text-align:${isMe ? 'right' : 'left'};">${escapeHtml(timestamp)}</div>
             </div>
         `;
 

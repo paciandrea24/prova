@@ -112,6 +112,17 @@ module.exports = function (io) {
                     lobby.players = lobby.players.filter(c => c !== socket.color);
                     users.delete(socket.color);
 
+                    // Se a uscire era l'HOST, passiamo il ruolo al primo giocatore rimasto
+                    // (altrimenti la lobby resterebbe senza host e nessuno potrebbe avviare giochi)
+                    if (lobby.host === socket.color && lobby.players.length > 0) {
+                        lobby.host = lobby.players[0];
+                        console.log(`👑 Host disconnesso. Nuovo host della lobby ${socket.lobbyId}: ${lobby.host}`);
+                        io.to(socket.lobbyId).emit('message', {
+                            message: `👑 ${lobby.host} è il nuovo Host della stanza!`,
+                            type: 'system'
+                        });
+                    }
+
                     // Notifichiamo la chat (opzionale)
                     io.to(socket.lobbyId).emit('message', {
                         message: `Un giocatore ha abbandonato la stanza.`,

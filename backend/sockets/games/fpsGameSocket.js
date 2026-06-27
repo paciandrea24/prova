@@ -54,6 +54,7 @@ module.exports = function (io, socket) {
         socket.join(lobbyId);
         socket.data.lobbyId = lobbyId;
         socket.data.color = playerColor;
+        socket.data.joinedFPS = true;   // marca: questo socket è in partita FPS
 
         const lobby = lobbies.get(lobbyId);
         if (!lobby) return;
@@ -252,6 +253,62 @@ module.exports = function (io, socket) {
         if (!lobby || lobby.host !== socket.data.color) return;
         activeGames.delete(lobbyId);
         io.to(lobbyId).emit('redirectAllToLobby');
+    });
+
+    // ──────────────────────────────────────────
+    // DISCONNESSIONE DURANTE LA PARTITA
+    // (rimuove il "fantasma" e fa proseguire/chiudere il round)
+    // ──────────────────────────────────────────
+    socket.on('disconnect', () => {
+        if (!socket.data.joinedFPS) return;
+        const lobbyId = socket.data.lobbyId;
+        const color = socket.data.color;
+        const game = activeGames.get(lobbyId);
+        if (!game) return;
+        const lobby = lobbies.get(lobbyId);
+
+        // Notifica i client di rimuovere mesh/minimappa + pulisci i conteggi
+        io.to(lobbyId).emit('playerLeft', { color });
+        if (lobby) {
+            lobby.players = lobby.players.filter(c => c !== color);
+            if (lobby.host === color && lobby.players.length > 0) lobby.host = lobby.players[0];
+        }
+        if (game._confirmed) game._confirmed.delete(color);
+        delete game.weaponChoices[color];
+        delete game.scores[color];
+
+        // Nessuno rimasto → distruggi la partita
+        if (!lobby || lobby.players.length === 0) {
+            clearTimeout(game.selectTimer);
+            activeGames.delete(lobbyId);
+            return;
+        }
+
+        // Un solo giocatore rimasto → termina la partita (vince chi resta)
+        if (lobby.players.length < 2) {
+            clearTimeout(game.selectTimer);
+            if (game.phase !== 'game_over') endGame(io, lobbyId);
+            return;
+        }
+
+        if (game.phase === 'playing') {
+            const p = game.players[color];
+            if (p && !p.dead) {
+                p.dead = true;
+                game.aliveCount = Math.max(0, game.aliveCount - 1);
+            }
+            checkRoundEnd(io, lobbyId);
+        } else if (game.phase === 'weapon_select') {
+            io.to(lobbyId).emit('playerConfirmed', {
+                playerColor: color,
+                count: game._confirmed ? game._confirmed.size : 0,
+                total: lobby.players.length
+            });
+            if (game._confirmed && game._confirmed.size >= lobby.players.length) {
+                clearTimeout(game.selectTimer);
+                launchRound(io, lobbyId);
+            }
+        }
     });
 };
 
