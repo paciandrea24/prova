@@ -822,7 +822,48 @@ buildMap();
 // ══════════════════════════════════════════════════════
 const HIP_Y = 0.75;   // quota dei fianchi: pivot di gambe e busto
 
-function createPlayerMesh(color) {
+// Modello d'arma in TERZA PERSONA: silhouette compatta per-tipo, così gli
+// avversari vedono che arma impugni (montata nelle mani del modello, canna -z).
+function buildTPWeapon(weaponKey) {
+    const g = new THREE.Group();
+    const add = (mesh) => { mesh.castShadow = true; g.add(mesh); return mesh; };
+
+    if (weaponKey === 'smg') {
+        add(makeViewBox(0.06, 0.09, 0.24, 0, 0, -0.10, 0x2b2b2b, 'polymer'));   // corpo
+        add(makeViewCyl(0.02, 0.12, 0, 0, -0.28, 0x222222, 'metal'));          // canna
+        const mag = add(makeViewBox(0.045, 0.17, 0.05, 0, -0.13, -0.04, 0x1c1c1c, 'polymer')); mag.rotation.x = 0.12;
+        add(makeViewBox(0.05, 0.06, 0.10, 0, 0, 0.08, 0x232323, 'metal'));     // calcio
+    } else if (weaponKey === 'shotgun') {
+        add(makeViewBox(0.07, 0.10, 0.22, 0, 0, -0.08, 0x2a2a2a, 'metal'));    // ricevitore
+        add(makeViewCyl(0.026, 0.42, 0, 0.01, -0.34, 0x1a1a1a, 'metal'));      // canna
+        add(makeViewCyl(0.016, 0.38, 0, -0.03, -0.32, 0x222222, 'metal'));     // tubo
+        add(makeViewBox(0.06, 0.09, 0.16, 0, -0.01, 0.10, 0x5c3a1e, 'wood'));  // calcio
+        add(makeViewBox(0.06, 0.055, 0.08, 0, -0.035, -0.24, 0x6b4524, 'wood')); // pompa
+    } else if (weaponKey === 'sniper') {
+        add(makeViewBox(0.07, 0.10, 0.44, 0, 0, -0.16, 0x222222, 'metal'));    // corpo
+        add(makeViewCyl(0.018, 0.34, 0, 0, -0.52, 0x111111, 'metal'));         // canna
+        add(makeViewBox(0.07, 0.10, 0.16, 0, 0, 0.10, 0x1c1c1c, 'metal'));     // calcio
+        add(makeViewCyl(0.03, 0.22, 0, 0.10, -0.18, 0x2a2a2a, 'metal'));       // ottica
+        add(makeViewBox(0.02, 0.06, 0.02, 0, 0.06, -0.10, 0x111111, 'metal')); // supporto
+        add(makeViewBox(0.02, 0.06, 0.02, 0, 0.06, -0.26, 0x111111, 'metal'));
+    } else { // assault (default)
+        add(makeViewBox(0.07, 0.10, 0.34, 0, 0, -0.12, 0x2c2c2c, 'metal'));    // ricevitore
+        add(makeViewCyl(0.02, 0.20, 0, 0, -0.36, 0x111111, 'metal'));          // canna
+        const mag = add(makeViewBox(0.05, 0.16, 0.06, 0, -0.12, -0.06, 0x1c1c1c, 'polymer')); mag.rotation.x = 0.25;
+        add(makeViewBox(0.06, 0.085, 0.12, 0, 0, 0.10, 0x232323, 'polymer'));  // calcio
+    }
+    return g;
+}
+
+// Sostituisce l'arma in terza persona di un giocatore remoto (se cambia tipo)
+function setRemoteWeapon(rp, weaponKey) {
+    if (!rp.weaponMount || !weaponKey || rp.weaponKey === weaponKey) return;
+    while (rp.weaponMount.children.length) rp.weaponMount.remove(rp.weaponMount.children[0]);
+    rp.weaponMount.add(buildTPWeapon(weaponKey));
+    rp.weaponKey = weaponKey;
+}
+
+function createPlayerMesh(color, weaponKey) {
     const group = new THREE.Group();
     // Il modello guarda verso -Z (forward del gioco quando yaw = 0)
 
@@ -859,8 +900,12 @@ function createPlayerMesh(color) {
     const head = box(0.30, 0.32, 0.30, 0, 1.66 - HIP_Y, 0, matSkin, upper);
     box(0.36, 0.18, 0.36, 0, 1.82 - HIP_Y, 0, matDark, upper);          // casco
     box(0.34, 0.07, 0.10, 0, 1.74 - HIP_Y, -0.18, matGun, upper);       // visiera
-    box(0.09, 0.11, 0.65, 0.20, 1.02 - HIP_Y, -0.30, matGun, upper);    // arma
-    box(0.04, 0.10, 0.12, 0.20, 0.93 - HIP_Y, -0.18, matGun, upper);    // caricatore
+
+    // ── Arma in terza persona (silhouette per-tipo, sostituibile a runtime) ──
+    const weaponMount = new THREE.Group();
+    weaponMount.position.set(0.20, 1.02 - HIP_Y, -0.18);
+    upper.add(weaponMount);
+    weaponMount.add(buildTPWeapon(weaponKey || 'assault'));
 
     // ── Gambe: ogni gamba è un gruppo pivotato all'anca (per oscillare) ──
     const legL = new THREE.Group(); legL.position.set(-0.12, HIP_Y, 0); group.add(legL);
@@ -886,7 +931,7 @@ function createPlayerMesh(color) {
     hpBar.visible = false;
     group.add(hpBar);
 
-    return { group, head, upper, legL, legR, hpBar, hpFill };
+    return { group, head, upper, legL, legR, hpBar, hpFill, weaponMount, weaponKey: weaponKey || 'assault' };
 }
 
 // Healthbar: visibile solo se ferito, riempimento ancorato a sinistra, billboard verso la camera
@@ -951,6 +996,7 @@ function makeAnim() {
 function applyRemoteState(rp, d) {
     rp.group.position.set(d.x, d.y, d.z);
     rp.group.rotation.y = d.ry;
+    if (d.wk) setRemoteWeapon(rp, d.wk);
     if (rp.anim) {
         rp.anim.moving = !!d.mv;
         rp.anim.sprint = !!d.sp;
@@ -967,31 +1013,63 @@ camera.add(weaponGroup);
 
 const weaponModels = {};
 
+// Tutte le armi sono ancorate a destra (x≈0.08) e in basso (y≈-0.11),
+// con la canna che punta in avanti (-z). Stile voxel ma con forma riconoscibile.
+const GX = 0.085;
 function buildWeaponModels() {
-    // Assault Rifle
+    // ── Assault Rifle (stile carabina M4) ──
     const ar = new THREE.Group();
-    ar.add(makeViewBox(0.06, 0.08, 0.55, 0.08, -0.12, -0.35, 0x2c2c2c));
-    ar.add(makeViewBox(0.04, 0.04, 0.15, 0.08, -0.17, -0.18, 0x1a1a1a)); // mag
-    ar.add(makeViewBox(0.02, 0.02, 0.12, 0.08, -0.1, -0.6, 0x111111));  // barrel
+    ar.add(makeViewBox(0.05, 0.07, 0.40, GX, -0.11, -0.34, 0x2c2c2c, 'metal'));      // ricevitore
+    ar.add(makeViewBox(0.044, 0.055, 0.22, GX, -0.11, -0.60, 0x232323, 'polymer'));  // handguard
+    ar.add(makeViewCyl(0.012, 0.20, GX, -0.105, -0.80, 0x111111, 'metal'));          // canna
+    ar.add(makeViewBox(0.03, 0.03, 0.045, GX, -0.105, -0.91, 0x111111, 'metal'));    // freno di bocca
+    const arMag = makeViewBox(0.034, 0.14, 0.05, GX, -0.20, -0.30, 0x1c1c1c, 'polymer'); // caricatore curvo
+    arMag.rotation.x = 0.28; ar.add(arMag);
+    const arGrip = makeViewBox(0.033, 0.10, 0.04, GX, -0.185, -0.20, 0x1a1a1a, 'polymer'); // impugnatura
+    arGrip.rotation.x = -0.35; ar.add(arGrip);
+    ar.add(makeViewBox(0.045, 0.06, 0.15, GX, -0.10, -0.11, 0x232323, 'polymer'));   // calcio
+    ar.add(makeViewBox(0.02, 0.025, 0.30, GX, -0.055, -0.40, 0x1a1a1a, 'metal'));    // rail superiore
+    ar.add(makeViewBox(0.012, 0.03, 0.012, GX, -0.028, -0.54, 0x111111, 'metal'));   // mirino anteriore (sul rail)
     weaponModels.assault = ar;
 
-    // SMG
+    // ── SMG (stile MP5, compatta) ──
     const smg = new THREE.Group();
-    smg.add(makeViewBox(0.055, 0.07, 0.38, 0.08, -0.12, -0.28, 0x333333));
-    smg.add(makeViewBox(0.04, 0.1, 0.04, 0.08, -0.17, -0.16, 0x222222));
+    smg.add(makeViewBox(0.045, 0.06, 0.26, GX, -0.11, -0.30, 0x2b2b2b, 'polymer'));  // corpo
+    smg.add(makeViewCyl(0.018, 0.14, GX, -0.11, -0.50, 0x222222, 'metal'));          // tromba/canna
+    smg.add(makeViewBox(0.026, 0.026, 0.05, GX, -0.11, -0.59, 0x111111, 'metal'));   // bocca
+    const smgMag = makeViewBox(0.03, 0.15, 0.04, GX, -0.20, -0.27, 0x1c1c1c, 'polymer'); // caricatore lungo
+    smgMag.rotation.x = 0.12; smg.add(smgMag);
+    const smgGrip = makeViewBox(0.03, 0.09, 0.035, GX, -0.175, -0.18, 0x1a1a1a, 'polymer');
+    smgGrip.rotation.x = -0.30; smg.add(smgGrip);
+    smg.add(makeViewCyl(0.008, 0.14, GX, -0.095, -0.11, 0x2b2b2b, 'metal'));          // asta calcio
+    smg.add(makeViewBox(0.045, 0.05, 0.02, GX, -0.095, -0.04, 0x232323, 'metal'));    // calciolo
     weaponModels.smg = smg;
 
-    // Shotgun
+    // ── Shotgun (a pompa) ──
     const sg = new THREE.Group();
-    sg.add(makeViewBox(0.07, 0.09, 0.65, 0.08, -0.12, -0.4, 0x5c3a1e));
-    sg.add(makeViewBox(0.04, 0.04, 0.65, 0.08, -0.18, -0.4, 0x1a1a1a));
+    const sgStock = makeViewBox(0.045, 0.07, 0.22, GX, -0.125, -0.15, 0x5c3a1e, 'wood'); // calcio legno (sovrapposto al ricevitore)
+    sgStock.rotation.x = 0.06; sg.add(sgStock);
+    sg.add(makeViewBox(0.05, 0.075, 0.22, GX, -0.11, -0.34, 0x2a2a2a, 'metal'));      // ricevitore
+    sg.add(makeViewCyl(0.022, 0.46, GX, -0.10, -0.62, 0x1a1a1a, 'metal'));            // canna
+    sg.add(makeViewCyl(0.014, 0.40, GX, -0.135, -0.60, 0x222222, 'metal'));          // tubo serbatoio
+    sg.add(makeViewBox(0.045, 0.05, 0.11, GX, -0.125, -0.50, 0x6b4524, 'wood'));     // pompa/forend
     weaponModels.shotgun = sg;
 
-    // Sniper
+    // ── Sniper (bolt-action con ottica) ──
     const sn = new THREE.Group();
-    sn.add(makeViewBox(0.055, 0.07, 0.8, 0.08, -0.12, -0.5, 0x1a1a1a));
-    sn.add(makeViewBox(0.04, 0.06, 0.18, 0.08, -0.07, -0.38, 0x333333)); // scope
-    sn.add(makeViewBox(0.015, 0.015, 0.2, 0.08, -0.12, -0.9, 0x111111));
+    sn.add(makeViewBox(0.045, 0.07, 0.50, GX, -0.12, -0.46, 0x222222, 'metal'));     // corpo/stock
+    const snButt = makeViewBox(0.045, 0.085, 0.16, GX, -0.12, -0.12, 0x1c1c1c, 'metal');
+    sn.add(snButt);
+    sn.add(makeViewCyl(0.013, 0.36, GX, -0.11, -0.86, 0x111111, 'metal'));           // canna lunga
+    sn.add(makeViewBox(0.03, 0.03, 0.05, GX, -0.11, -1.05, 0x1a1a1a, 'metal'));      // freno di bocca
+    // ottica (cilindro + supporti + lenti)
+    sn.add(makeViewCyl(0.022, 0.22, GX, -0.05, -0.42, 0x2a2a2a, 'metal'));           // tubo ottica
+    sn.add(makeViewBox(0.018, 0.04, 0.02, GX, -0.075, -0.34, 0x111111, 'metal'));    // supporto ant.
+    sn.add(makeViewBox(0.018, 0.04, 0.02, GX, -0.075, -0.50, 0x111111, 'metal'));    // supporto post.
+    const snLens = makeViewCyl(0.020, 0.015, GX, -0.05, -0.53, 0x4060ff, 'metal');   // lente (riflesso blu)
+    sn.add(snLens);
+    const snBolt = makeViewBox(0.05, 0.015, 0.015, GX + 0.04, -0.115, -0.30, 0x333333, 'metal'); // otturatore
+    sn.add(snBolt);
     weaponModels.sniper = sn;
 
     Object.values(weaponModels).forEach(g => {
@@ -1000,11 +1078,95 @@ function buildWeaponModels() {
     });
 }
 
-function makeViewBox(w, h, d, x, y, z, color) {
+// ── Texture procedurali a 3 layer ──────────────────────────
+// Layer 1 = colore base, Layer 2 = grana del materiale,
+// Layer 3 = usura/graffi + bordi scuri (profondità).
+// Niente file esterni: tutto generato su <canvas> e usato come map.
+const _layeredTexCache = {};
+function makeLayeredTexture(baseColor, kind) {
+    const cacheKey = baseColor + '|' + kind;
+    if (_layeredTexCache[cacheKey]) return _layeredTexCache[cacheKey];
+
+    const S = 128;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const ctx = cv.getContext('2d');
+
+    const r = (baseColor >> 16) & 255, g = (baseColor >> 8) & 255, b = baseColor & 255;
+    const shade = (f) => `rgb(${Math.max(0, Math.min(255, r * f | 0))},${Math.max(0, Math.min(255, g * f | 0))},${Math.max(0, Math.min(255, b * f | 0))})`;
+
+    // ── Layer 1: base ──
+    ctx.fillStyle = shade(1);
+    ctx.fillRect(0, 0, S, S);
+
+    // ── Layer 2: grana del materiale ──
+    if (kind === 'wood') {
+        // venature verticali
+        for (let x = 0; x < S; x += 3) {
+            ctx.fillStyle = shade(0.8 + Math.random() * 0.35);
+            ctx.fillRect(x, 0, 2 + Math.random() * 2, S);
+        }
+    } else if (kind === 'metal') {
+        // spazzolatura orizzontale
+        for (let y = 0; y < S; y += 2) {
+            ctx.fillStyle = shade(0.85 + Math.random() * 0.3);
+            ctx.fillRect(0, y, S, 1);
+        }
+    } else { // polymer: grana fine puntinata
+        for (let i = 0; i < 1400; i++) {
+            ctx.fillStyle = shade(0.82 + Math.random() * 0.32);
+            ctx.fillRect(Math.random() * S, Math.random() * S, 1, 1);
+        }
+    }
+
+    // ── Layer 3: usura (graffi) + vignettatura bordi ──
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 7; i++) {
+        ctx.strokeStyle = shade(1.4 + Math.random() * 0.4);
+        ctx.globalAlpha = 0.25 + Math.random() * 0.3;
+        ctx.beginPath();
+        const x0 = Math.random() * S, y0 = Math.random() * S;
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x0 + (Math.random() - 0.5) * S * 0.6, y0 + (Math.random() - 0.5) * S * 0.6);
+        ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    // bordi scuri per dare volume ai box
+    const grad = ctx.createRadialGradient(S / 2, S / 2, S * 0.25, S / 2, S / 2, S * 0.7);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.45)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, S, S);
+
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.needsUpdate = true;
+    _layeredTexCache[cacheKey] = tex;
+    return tex;
+}
+
+function makeViewBox(w, h, d, x, y, z, color, kind) {
+    const matOpts = { color: 0xffffff };
+    if (kind) matOpts.map = makeLayeredTexture(color, kind);
+    else matOpts.color = color;
     const m = new THREE.Mesh(
         new THREE.BoxGeometry(w, h, d),
-        new THREE.MeshLambertMaterial({ color })
+        new THREE.MeshLambertMaterial(matOpts)
     );
+    m.position.set(x, y, z);
+    return m;
+}
+
+// Parte cilindrica orientata lungo l'asse Z (canne, ottica). r128: solo CylinderGeometry.
+function makeViewCyl(radius, len, x, y, z, color, kind) {
+    const matOpts = { color: 0xffffff };
+    if (kind) matOpts.map = makeLayeredTexture(color, kind);
+    else matOpts.color = color;
+    const m = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius, radius, len, 12),
+        new THREE.MeshLambertMaterial(matOpts)
+    );
+    m.rotation.x = Math.PI / 2; // asse Y → Z
     m.position.set(x, y, z);
     return m;
 }
@@ -1808,7 +1970,8 @@ function broadcastState() {
         y: playerRoot.position.y,
         z: playerRoot.position.z,
         ry: yaw,
-        mv: isMoving, sp: isSprinting, cr: isCrouching, sl: isSliding
+        mv: isMoving, sp: isSprinting, cr: isCrouching, sl: isSliding,
+        wk: gameState.myWeapon
     });
     for (const dc of Object.values(channels)) {
         if (dc.readyState === 'open') dc.send(msg);
@@ -1857,7 +2020,7 @@ socket.on('playerState', (data) => {
     if (gameState.phase !== 'playing') return;
     if (!gameState.players[data.color]) {
         // Crea mesh al volo se roundStart è arrivato tardi
-        const parts = createPlayerMesh(data.color);
+        const parts = createPlayerMesh(data.color, data.wk);
         scene.add(parts.group);
         gameState.players[data.color] = { ...parts, hp: 100, dead: false, anim: makeAnim() };
     }
@@ -2076,7 +2239,7 @@ function handleRoundStart(data) {
             updateHpHUD(100);
 
         } else {
-            const parts = createPlayerMesh(color);
+            const parts = createPlayerMesh(color, pState.weaponKey);
             parts.group.position.set(pState.x, pState.y, pState.z);
             scene.add(parts.group);
             gameState.players[color] = { ...parts, hp: 100, dead: false, anim: makeAnim() };
@@ -2226,7 +2389,8 @@ function sendStateHeartbeat() {
         y: playerRoot.position.y,
         z: playerRoot.position.z,
         ry: yaw,
-        mv: isMoving, sp: isSprinting, cr: isCrouching, sl: isSliding
+        mv: isMoving, sp: isSprinting, cr: isCrouching, sl: isSliding,
+        wk: gameState.myWeapon
     });
 }
 
