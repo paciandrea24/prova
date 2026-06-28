@@ -1,4 +1,4 @@
-/* styles/index.css */
+/* styles/index-preview.css */
 
 :root {
     /* Dinamico: parte neutro, diventa il colore scelto dal giocatore */
@@ -71,6 +71,7 @@ body::before {
 
 .logo-project {
     color: #FFFFFF;
+    /* Outline "inchiostro" ottenuto con text-shadow multipli */
     text-shadow:
         -2px -2px 0 var(--ink),
          2px -2px 0 var(--ink),
@@ -79,6 +80,7 @@ body::before {
 }
 
 .logo-w {
+    /* -W si tinge del colore scelto; parte bianco */
     color: var(--accent, #fff);
     transition: color 0.25s ease;
     text-shadow:
@@ -240,6 +242,7 @@ body::before {
 .btn-create {
     background: var(--accent);
     color: white;
+    /* Garantisce leggibilità su colori chiari */
     text-shadow: 1px 1px 0 rgba(0,0,0,0.25);
     transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.25s ease;
     margin-bottom: 12px;

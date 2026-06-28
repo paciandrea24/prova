@@ -5,13 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Project-W — Lobby</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles/lobby.css">
+    <link rel="stylesheet" href="styles/lobby-preview.css">
+    <!-- Icone Lucide (line icons, no emoji) -->
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 </head>
 <body>
 
+<script>
+    if (!new URLSearchParams(location.search).get('lobby')) {
+        history.replaceState(null, '', '?lobby=ARENA7X&color=%23E74C3C');
+    }
+    const _myColor = decodeURIComponent(
+        new URLSearchParams(location.search).get('color') || '#E74C3C'
+    );
+    document.documentElement.style.setProperty('--my-color', _myColor);
+
+    const _origFetch = window.fetch;
+    window.fetch = async (url, opts) => {
+        if (url.startsWith('/api/lobby/')) {
+            return {
+                ok: true,
+                json: async () => ({
+                    players: [_myColor, '#3498DB', '#2ECC71'],
+                    host: _myColor
+                })
+            };
+        }
+        return _origFetch(url, opts);
+    };
+</script>
+
 <div class="container">
 
+    <!-- ═══ HEADER — galleggia sul dark come il logo in index-preview ═══ -->
     <div class="header">
         <div class="logo-wrap">
             <span class="logo-project">PROJECT</span><span class="logo-w">-W</span>
@@ -19,19 +45,19 @@
 
         <div class="lobby-id" id="lobby-id-container" title="Click to copy">
             <span id="lobby-id-label">Room</span>
-            <span id="lobby-id-value" class="lobby-id-code">…</span>
+            <span id="lobby-id-value" class="lobby-id-code">ARENA7X</span>
         </div>
 
         <button id="leave-lobby-btn" class="btn-leave">Leave</button>
     </div>
 
-    <!-- PLAYERS -->
+    <!-- ═══ PLAYERS ═══ -->
     <div class="panel column-left">
         <h3 class="panel-title">Players</h3>
         <div class="players-list" id="players-list"></div>
     </div>
 
-    <!-- GAMES -->
+    <!-- ═══ GAMES ═══ -->
     <div class="panel column-center">
         <h3 class="panel-title" id="section-title">Select Game</h3>
 
@@ -85,11 +111,6 @@
                 <span class="g-title">FPS</span>
             </div>
 
-            <div class="game-card" data-game-id="f1">
-                <i data-lucide="gauge" class="g-icon"></i>
-                <span class="g-title">F1 3D</span>
-            </div>
-
         </div>
 
         <div id="waiting-host-msg" style="display:none; text-align:center; margin-top:auto;
@@ -98,7 +119,7 @@
         </div>
     </div>
 
-    <!-- CHAT -->
+    <!-- ═══ CHAT ═══ -->
     <div class="panel chat-box">
         <h3 class="panel-title">Chat</h3>
 
@@ -117,7 +138,7 @@
 
 </div>
 
-<!-- MODAL: SETTINGS -->
+<!-- ═══ MODAL: SETTINGS ═══ -->
 <div id="settings-modal" class="modal" style="display:none;">
     <div class="modal-content">
         <div class="modal-header">
@@ -163,17 +184,13 @@
             <div class="settings-section" id="fps-settings" style="display:none;">
                 <div class="setting-row"><span>Rounds</span><select id="fps-rounds"><option value="3">3</option><option value="5" selected>5</option><option value="7">7</option><option value="10">10</option></select></div>
             </div>
-            <div class="settings-section" id="f1-settings" style="display:none;">
-                <div class="setting-row"><span>Mode</span><select id="f1-mode"><option value="championship">Championship</option><option value="single">Single Race</option></select></div>
-                <div class="setting-row"><span>Laps</span><select id="f1-laps"><option value="3" selected>3</option><option value="5">5</option><option value="10">10</option></select></div>
-            </div>
         </div>
 
         <button id="start-game-btn" class="btn-start">START GAME</button>
     </div>
 </div>
 
-<!-- MODAL: LEADERBOARD -->
+<!-- ═══ MODAL: LEADERBOARD ═══ -->
 <div id="global-leaderboard-modal" class="modal" style="display:none;">
     <div class="modal-content" style="max-width:580px;">
         <div class="modal-header">
@@ -186,7 +203,7 @@
     </div>
 </div>
 
-<!-- MODAL: TRANSFER HOST -->
+<!-- ═══ MODAL: TRANSFER HOST ═══ -->
 <div id="transfer-host-modal" class="modal" style="display:none;">
     <div class="modal-content modal-sm">
         <div class="modal-header" style="justify-content:center; position:relative;">

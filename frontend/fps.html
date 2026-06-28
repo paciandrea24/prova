@@ -232,10 +232,40 @@
         <button id="ptr-btn">Click to Play</button>
     </div>
 
+    <!-- ═══════════ CONTROLLER PANEL ═══════════ -->
+    <div id="gp-panel">
+        <div id="gp-panel-box">
+            <div id="gp-panel-header">
+                <span>Configurazione Controller</span>
+                <span id="gp-status" class="gp-status ko">Nessun controller</span>
+            </div>
+
+            <div id="gp-sens-row">
+                <label for="gp-sens-slider">Sensibilità mira</label>
+                <input type="range" id="gp-sens-slider" min="0.5" max="6.0" step="0.1" value="2.5">
+                <span id="gp-sens-val">2.5</span>
+            </div>
+
+            <div id="gp-action-list">
+                <!-- Popolato da gamepad.js -->
+            </div>
+
+            <div id="gp-panel-footer">
+                <button id="gp-reset-btn">Ripristina default</button>
+                <button id="gp-close-btn">Chiudi &nbsp;[Tab]</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pulsante toggle controller (sempre visibile) -->
+    <button id="gp-toggle-btn" title="Controller [Tab]">🎮</button>
+
     <!-- Three.js CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <!-- Socket.io (per signaling WebRTC) -->
     <script src="/socket.io/socket.io.js"></script>
+    <!-- Supporto controller (deve precedere fps.js) -->
+    <script src="gamepad.js" defer></script>
     <!-- Logica di gioco -->
     <script src="fps.js" defer></script>
 

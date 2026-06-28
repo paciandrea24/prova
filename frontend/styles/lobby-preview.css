@@ -1,4 +1,10 @@
-/* styles/lobby.css */
+/* ═══════════════════════════════════════════════════════════════
+   lobby-preview.css
+   Coerente con index-preview.css:
+   stessa griglia di linee, stessi pannelli white-card,
+   stessa tipografia Space Mono + Fredoka,
+   stessa firma "shadow nel colore del giocatore".
+   ═══════════════════════════════════════════════════════════════ */
 
 :root {
     --bg:       #0D0C14;
@@ -6,7 +12,7 @@
     --card:     #FFFFFF;
     --surface:  #F2F1EF;
     --muted:    #6B6878;
-    --my-color: #E74C3C;   /* sovrascritta da lobby.js via CSS var */
+    --my-color: #E74C3C;   /* sovrascritta dallo script inline */
 
     --yellow:   #FFCC00;
     --green:    #2ECC71;
@@ -16,6 +22,9 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ─── SFONDO ─────────────────────────────────────────────────
+   Identico a index-preview: dark + griglia di linee sottili.
+   ─────────────────────────────────────────────────────────── */
 body {
     background: var(--bg);
     font-family: 'Fredoka', sans-serif;
@@ -38,7 +47,10 @@ body::before {
     z-index: 0;
 }
 
-/* ─── CONTAINER ──────────────────────────────────────────────── */
+/* ─── CONTAINER ──────────────────────────────────────────────
+   Il grid è qui (non su body).
+   3 colonne come l'originale, altezza piena.
+   ─────────────────────────────────────────────────────────── */
 .container {
     position: relative;
     z-index: 1;
@@ -51,7 +63,10 @@ body::before {
     gap: 16px;
 }
 
-/* ─── HEADER ─────────────────────────────────────────────────── */
+/* ─── HEADER ─────────────────────────────────────────────────
+   Come in index-preview: il logo galleggia sul buio,
+   non è racchiuso in un pannello bianco.
+   ─────────────────────────────────────────────────────────── */
 .header {
     grid-column: 1 / -1;
     display: flex;
@@ -60,6 +75,8 @@ body::before {
     padding: 2px 4px;
 }
 
+/* Logo — stessa tecnica di index-preview:
+   Space Mono + text-shadow a strati per l'effetto 3D cartoon */
 .logo-wrap {
     font-family: 'Space Mono', monospace;
     font-size: clamp(26px, 3vw, 34px);
@@ -78,6 +95,7 @@ body::before {
          4px  4px 0 var(--ink);
 }
 
+/* -W nel colore del giocatore — la stessa firma di index-preview */
 .logo-w {
     color: var(--my-color);
     transition: color 0.25s ease;
@@ -87,6 +105,7 @@ body::before {
          4px  4px 0 var(--ink);
 }
 
+/* Badge room — giallo, ink border + shadow, identico a btn-join in index-preview */
 .lobby-id {
     display: inline-flex;
     align-items: baseline;
@@ -122,6 +141,7 @@ body::before {
     color: var(--yellow);
 }
 
+/* Leave — outline rosso, stesso stile dei btn in index-preview */
 .btn-leave {
     margin-left: auto;
     font-family: 'Fredoka', sans-serif;
@@ -141,6 +161,7 @@ body::before {
 .btn-leave:hover  { background: var(--red); color: #fff; transform: translateY(-2px); box-shadow: 4px 6px 0 var(--red); }
 .btn-leave:active { transform: translate(4px,4px); box-shadow: none; }
 
+/* #invite-btn aggiunto da lobby.js per l'host */
 #invite-btn {
     font-family: 'Fredoka', sans-serif;
     font-weight: 700;
@@ -159,7 +180,10 @@ body::before {
 #invite-btn:hover  { transform: translateY(-2px); box-shadow: 4px 6px 0 var(--ink); }
 #invite-btn:active { transform: translate(4px,4px); box-shadow: none; }
 
-/* ─── PANNELLI ───────────────────────────────────────────────── */
+/* ─── PANNELLI ───────────────────────────────────────────────
+   Stesso stile del main-panel di index-preview:
+   white card, border 3px ink, radius 20px, hard shadow ink.
+   ─────────────────────────────────────────────────────────── */
 .panel {
     background: var(--card);
     border: 3px solid var(--ink);
@@ -186,7 +210,9 @@ body::before {
     flex-shrink: 0;
 }
 
-/* ─── PLAYERS ────────────────────────────────────────────────── */
+/* ─── COLONNA SINISTRA: PLAYERS ──────────────────────────── */
+.column-left  { /* auto-placed by grid */ }
+
 .players-list {
     display: flex;
     flex-direction: column;
@@ -198,6 +224,7 @@ body::before {
     scrollbar-color: #DDD transparent;
 }
 
+/* .player-row generato da lobby.js */
 .player-row {
     display: flex;
     align-items: center;
@@ -212,6 +239,7 @@ body::before {
 }
 .player-row:hover { transform: translateY(-1px); box-shadow: 3px 4px 0 var(--ink); }
 
+/* .avatar generato da lobby.js (background = colore giocatore) */
 .avatar {
     width: 38px; height: 38px;
     border-radius: 50%;
@@ -220,6 +248,7 @@ body::before {
     flex-shrink: 0;
 }
 
+/* .p-name / .player-name generati da lobby.js */
 .p-name, .player-name {
     font-weight: 700;
     font-size: 16px;
@@ -229,6 +258,7 @@ body::before {
     text-overflow: ellipsis;
 }
 
+/* .p-host / .host-badge generati da lobby.js */
 .p-host, .host-badge {
     font-size: 10px;
     font-weight: 700;
@@ -241,6 +271,7 @@ body::before {
     flex-shrink: 0;
 }
 
+/* .you-badge generato da lobby.js */
 .you-badge {
     font-size: 10px;
     font-weight: 700;
@@ -254,6 +285,7 @@ body::before {
     flex-shrink: 0;
 }
 
+/* .kick-btn generato da lobby.js */
 .kick-btn {
     font-family: 'Fredoka', sans-serif;
     font-size: 12px;
@@ -269,7 +301,9 @@ body::before {
 }
 .kick-btn:hover { background: var(--red); color: #fff; }
 
-/* ─── GAMES ──────────────────────────────────────────────────── */
+/* ─── COLONNA CENTRALE: GAMES ────────────────────────────── */
+.column-center { /* auto-placed */ }
+
 .games-grid {
     display: grid;
     grid-template-columns: repeat(2, 160px);
@@ -282,6 +316,7 @@ body::before {
     scrollbar-color: #DDD transparent;
 }
 
+/* Game card — compatto come l'originale */
 .game-card {
     background: var(--surface);
     border: 3px solid var(--ink);
@@ -296,6 +331,8 @@ body::before {
     transition: transform 0.12s ease, box-shadow 0.15s ease;
 }
 
+/* LA FIRMA: stessa di index-preview, al hover la shadow
+   diventa il colore del giocatore invece che ink. */
 .game-card:hover:not(.disabled) {
     transform: translateY(-4px);
     box-shadow: 4px 8px 0 var(--my-color);
@@ -318,8 +355,10 @@ body::before {
     filter: none;
 }
 
+/* Icone Lucide nelle card */
 .g-icon {
-    width: 36px; height: 36px;
+    width: 36px;
+    height: 36px;
     stroke: var(--ink);
     stroke-width: 2;
     fill: none;
@@ -334,6 +373,7 @@ body::before {
     letter-spacing: 0.02em;
 }
 
+/* Mini-bottone leaderboard sul card Racing */
 .btn-lb {
     position: absolute;
     top: -8px; right: -8px;
@@ -350,7 +390,9 @@ body::before {
 .btn-lb:hover  { transform: translateY(-1px); box-shadow: 2px 3px 0 var(--ink); }
 .btn-lb:active { transform: translate(2px,2px); box-shadow: none; }
 
-/* ─── CHAT ───────────────────────────────────────────────────── */
+/* ─── COLONNA DESTRA: CHAT ───────────────────────────────── */
+.chat-box { /* auto-placed */ }
+
 .chat-messages {
     flex: 1;
     overflow-y: auto;
@@ -372,6 +414,7 @@ body::before {
     padding: 2px 0 6px;
 }
 
+/* .msg-wrap / .msg-bubble generati da lobby.js */
 .msg-wrap {
     display: flex;
     align-items: flex-end;
@@ -392,6 +435,7 @@ body::before {
     word-break: break-word;
     box-shadow: 2px 2px 0 var(--ink);
 }
+/* I tuoi messaggi nel tuo colore */
 .msg-wrap.me .msg-bubble {
     background: var(--my-color);
     color: #fff;
@@ -437,6 +481,7 @@ body::before {
 .chat-input:focus { background: #fff; box-shadow: inset 2px 2px 0 rgba(0,0,0,0.06); }
 .chat-input::placeholder { color: var(--muted); }
 
+/* Send nel colore del giocatore */
 .btn-send {
     background: var(--my-color);
     color: #fff;
@@ -455,7 +500,7 @@ body::before {
 .btn-send:hover  { transform: translateY(-2px); box-shadow: 4px 6px 0 var(--ink); }
 .btn-send:active { transform: translate(4px,4px); box-shadow: none; }
 
-/* ─── BOTTONI GENERICI ───────────────────────────────────────── */
+/* ─── BOTTONI GENERICI ───────────────────────────────────── */
 .btn {
     font-family: 'Fredoka', sans-serif;
     font-weight: 700;
@@ -476,6 +521,7 @@ body::before {
 .btn-green { background: var(--green); color: #fff; text-shadow: 0 1px 0 rgba(0,0,0,0.15); }
 .btn-red   { background: var(--red);   color: #fff; text-shadow: 0 1px 0 rgba(0,0,0,0.15); }
 
+/* START GAME — colore del giocatore, grande */
 .btn-start {
     width: 100%;
     font-family: 'Fredoka', sans-serif;
@@ -498,7 +544,7 @@ body::before {
 .btn-start:hover  { transform: translateY(-2px); box-shadow: 5px 7px 0 var(--ink); }
 .btn-start:active { transform: translate(5px,5px); box-shadow: none; }
 
-/* ─── MODALI ─────────────────────────────────────────────────── */
+/* ─── MODALI ─────────────────────────────────────────────── */
 .modal {
     position: fixed;
     inset: 0;
@@ -518,6 +564,8 @@ body::before {
     padding: 24px;
     width: 100%;
     max-width: 500px;
+    /* Shadow nel colore del giocatore — stessa firma del main-panel
+       in index-preview quando è selezionato un colore */
     box-shadow: 7px 7px 0 var(--my-color);
     display: flex;
     flex-direction: column;
@@ -558,6 +606,7 @@ body::before {
 .btn-close:hover svg { stroke: #fff; }
 .btn-close:active { transform: translate(2px,2px); box-shadow: none; }
 
+/* Settings box */
 .settings-box {
     background: var(--surface);
     border: 3px solid var(--ink);
@@ -598,7 +647,7 @@ body::before {
     box-shadow: 2px 2px 0 var(--ink);
 }
 
-/* ─── TOAST ──────────────────────────────────────────────────── */
+/* ─── TOAST ──────────────────────────────────────────────── */
 .toast-container {
     position: fixed;
     top: 16px;
@@ -629,13 +678,13 @@ body::before {
 .toast.success { background: var(--green); color: #fff; }
 .toast.info    { background: var(--blue);  color: #fff; }
 
-/* ─── ANIMAZIONI ─────────────────────────────────────────────── */
+/* ─── ANIMAZIONI ─────────────────────────────────────────── */
 @keyframes slideIn  { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
 @keyframes fadeIn   { from { opacity:0 } to { opacity:1 } }
 @keyframes popIn    { from { opacity:0; transform:scale(0.94) translateY(14px) } to { opacity:1; transform:none } }
 @keyframes toastDown{ from { opacity:0; transform:translateY(-80%) } to { opacity:1; transform:none } }
 
-/* ─── RESPONSIVE ─────────────────────────────────────────────── */
+/* ─── RESPONSIVE ─────────────────────────────────────────── */
 @media (max-width: 960px) {
     body { overflow-y: auto; height: auto; }
     .container {
@@ -643,8 +692,8 @@ body::before {
         grid-template-rows: auto;
         height: auto;
     }
-    .chat-box   { height: 380px; }
-    .games-grid { grid-template-columns: repeat(3, 1fr); }
+    .chat-box  { height: 380px; }
+    .games-grid{ grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 500px) {
     .games-grid { grid-template-columns: 1fr; }

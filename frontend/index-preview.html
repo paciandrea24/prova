@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Project-W</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles/index.css" />
+    <link rel="stylesheet" href="styles/index-preview.css" />
 </head>
 
 <body>
@@ -67,6 +67,10 @@
         </div>
     </div>
 
+    <!--
+        Micro-script: aggiorna --accent al colore scelto.
+        Mantiene index.js invariato; lavora in parallelo con esso.
+    -->
     <script>
         document.addEventListener('click', e => {
             const c = e.target.closest('.color-circle');

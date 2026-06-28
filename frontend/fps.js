@@ -21,6 +21,7 @@ const JUMP_FORCE = 7;
 const STEP_HEIGHT = 0.6;  // altezza max di un gradino salibile automaticamente
 const MOUSE_SENS = 0.0015;
 const MAP_HALF = 40;      // mezza dimensione mappa (compatta, fedele a Nuketown)
+const INTERP_DELAY = 100; // ms di ritardo buffer per interpolazione giocatori remoti
 
 // Hitbox sfera per detection: raggio per ogni player remoto
 const HITBOX_RADIUS = 0.55;
@@ -959,8 +960,46 @@ const POSTURE = {
     slide: { upperY: HIP_Y - 0.45, tilt: -0.35 },
 };
 
-// Anima un giocatore remoto: ciclo di corsa delle gambe + postura
+// Anima un giocatore remoto: interpolazione posizione + ciclo gambe + postura
 function updateRemoteAnim(rp, dt) {
+    // ── Interpolazione posizione/rotazione dal buffer di snapshot ──
+    const snaps = rp.snapshots;
+    if (snaps && snaps.length > 0) {
+        if (snaps.length === 1) {
+            // Primo snapshot: applica subito in attesa del secondo
+            const s = snaps[0];
+            rp.group.position.set(s.x, s.y, s.z);
+            rp.group.rotation.y = s.ry;
+            if (rp.anim) {
+                rp.anim.moving = s.mv; rp.anim.sprint = s.sp;
+                rp.anim.crouch = s.cr; rp.anim.slide  = s.sl;
+            }
+        } else {
+            const renderTime = performance.now() - INTERP_DELAY;
+            // Mantieni il più recente snapshot ≤ renderTime + tutti i successivi
+            while (snaps.length > 2 && snaps[1].t <= renderTime) snaps.shift();
+
+            const s0 = snaps[0], s1 = snaps[1];
+            if (s0.t !== s1.t) {
+                const t = Math.max(0, Math.min(1, (renderTime - s0.t) / (s1.t - s0.t)));
+                rp.group.position.set(
+                    s0.x + (s1.x - s0.x) * t,
+                    s0.y + (s1.y - s0.y) * t,
+                    s0.z + (s1.z - s0.z) * t
+                );
+                // Rotazione: percorso angolare più breve (evita spin di 360°)
+                const da = (s1.ry - s0.ry + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+                rp.group.rotation.y = s0.ry + da * t;
+                // Stato animazione dall'ultimo snapshot "raggiunto"
+                const sAnim = t >= 1 ? s1 : s0;
+                if (rp.anim) {
+                    rp.anim.moving = sAnim.mv; rp.anim.sprint = sAnim.sp;
+                    rp.anim.crouch = sAnim.cr; rp.anim.slide  = sAnim.sl;
+                }
+            }
+        }
+    }
+
     const a = rp.anim;
     if (!a) return;
 
@@ -992,17 +1031,18 @@ function makeAnim() {
     return { phase: 0, moving: false, sprint: false, crouch: false, slide: false };
 }
 
-// Applica posizione/rotazione + stato d'animazione ricevuti da un client remoto
+// Riceve uno stato remoto e lo accoda nel buffer di interpolazione
 function applyRemoteState(rp, d) {
-    rp.group.position.set(d.x, d.y, d.z);
-    rp.group.rotation.y = d.ry;
+    if (!rp.snapshots) rp.snapshots = [];
+    rp.snapshots.push({
+        t: performance.now(),
+        x: d.x, y: d.y, z: d.z, ry: d.ry,
+        mv: !!d.mv, sp: !!d.sp, cr: !!d.cr, sl: !!d.sl
+    });
+    // Limita la coda (robustezza se la tab è in background a lungo)
+    if (rp.snapshots.length > 60) rp.snapshots.splice(0, rp.snapshots.length - 30);
+    // Arma: aggiorna subito (valore discreto, non interpolabile)
     if (d.wk) setRemoteWeapon(rp, d.wk);
-    if (rp.anim) {
-        rp.anim.moving = !!d.mv;
-        rp.anim.sprint = !!d.sp;
-        rp.anim.crouch = !!d.cr;
-        rp.anim.slide = !!d.sl;
-    }
 }
 
 // ══════════════════════════════════════════════════════
@@ -1202,7 +1242,7 @@ canvas.addEventListener('click', () => {
 
 document.addEventListener('pointerlockchange', () => {
     pointerLocked = document.pointerLockElement === canvas;
-    const shouldShow = !pointerLocked && gameState.phase === 'playing' && !gameState.isDead;
+    const shouldShow = !pointerLocked && gameState.phase === 'playing' && !gameState.isDead && !GamepadInput.isPanelOpen();
     document.getElementById('pointer-prompt').classList.toggle('active', shouldShow);
     if (!pointerLocked) exitADS();
 });
@@ -1245,7 +1285,7 @@ document.addEventListener('contextmenu', (e) => e.preventDefault());
 // (Ctrl+S/D/A, scroll con Space, ecc.) per non perdere il focus né i keyup.
 const GAME_KEYS = new Set([
     'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyC', 'KeyT', 'Space',
-    'ShiftLeft', 'ShiftRight'
+    'ShiftLeft', 'ShiftRight', 'Tab'
 ]);
 
 // Reset di tutti i tasti: evita movimenti "incollati" quando la finestra
@@ -1270,6 +1310,9 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'Space' && onGround && gameState.phase === 'playing' && !gameState.isDead) {
         velocityY = JUMP_FORCE;
         onGround = false;
+    }
+    if (e.code === 'Tab') {
+        GamepadInput.togglePanel();
     }
     // DEBUG (test da soli): T simula un colpo subìto da direzione casuale
     if (e.code === 'KeyT' && gameState.phase === 'playing' && !gameState.isDead) {
@@ -1639,11 +1682,18 @@ function updateMovement(dt) {
     _fwd.set(-Math.sin(yaw), 0, -Math.cos(yaw));
     _right.set(Math.cos(yaw), 0, -Math.sin(yaw));
 
+    // Gamepad: leggi stato movimento (additivato con tastiera, non esclusivo)
+    const gp = GamepadInput.getState();
+    const gpFwd = gp.moveY < -0.1;
+    const gpBck = gp.moveY >  0.1;
+    const gpRgt = gp.moveX >  0.1;
+    const gpLft = gp.moveX < -0.1;
+
     _moveDir.set(0, 0, 0);
-    if (keys['KeyW']) _moveDir.addScaledVector(_fwd, 1);
-    if (keys['KeyS']) _moveDir.addScaledVector(_fwd, -1);
-    if (keys['KeyD']) _moveDir.addScaledVector(_right, 1);
-    if (keys['KeyA']) _moveDir.addScaledVector(_right, -1);
+    if (keys['KeyW'] || gpFwd) _moveDir.addScaledVector(_fwd,   1);
+    if (keys['KeyS'] || gpBck) _moveDir.addScaledVector(_fwd,  -1);
+    if (keys['KeyD'] || gpRgt) _moveDir.addScaledVector(_right,  1);
+    if (keys['KeyA'] || gpLft) _moveDir.addScaledVector(_right, -1);
 
     if (_moveDir.lengthSq() > 0) _moveDir.normalize();
 
@@ -1651,13 +1701,14 @@ function updateMovement(dt) {
 
     // ── Determinazione stati: crouch, sprint, avvio slide ──
     const moving = _moveDir.lengthSq() > 0;
-    const wantCrouch = !!keys['KeyC'];   // crouch/slide solo con C (Ctrl liberato per il browser)
-    const wantSprintKey = !!(keys['ShiftLeft'] || keys['ShiftRight']);
-    isSprinting = wantSprintKey && keys['KeyW'] && moving && onGround && !wantCrouch && !isADS && !isSliding;
+    const movingFwd = !!(keys['KeyW'] || gpFwd);
+    const wantCrouch = !!(keys['KeyC'] || gp.crouch);
+    const wantSprintKey = !!(keys['ShiftLeft'] || keys['ShiftRight'] || gp.sprint);
+    isSprinting = wantSprintKey && movingFwd && moving && onGround && !wantCrouch && !isADS && !isSliding;
 
     // Avvio slide: stavo sprintando e premo crouch (fronte di salita del tasto)
     const crouchPressed = wantCrouch && !_prevCrouch;
-    if (crouchPressed && wantSprintKey && keys['KeyW'] && moving && onGround && !isSliding) {
+    if (crouchPressed && wantSprintKey && movingFwd && moving && onGround && !isSliding) {
         isSliding = true;
         slideTimer = 0;
         slideVX = _moveDir.x * SLIDE_BOOST;
@@ -2408,11 +2459,40 @@ try {
     bgHeartbeat.postMessage('start');
 } catch { /* Worker non disponibile: si resta col solo rAF */ }
 
+// ── Registra le callbacks del gamepad (funzioni già hoistate) ──
+GamepadInput.setCallbacks({
+    onFire:       tryShoot,
+    onADS:        enterADS,
+    onADSRelease: exitADS,
+    onReload:     () => { if (!isReloading && gameState.myAmmo < gameState.myMaxAmmo) startReload(); },
+    getWeapon:    () => gameState.weapons[gameState.myWeapon],
+    onPanelClose: () => {
+        if (gameState.phase === 'playing' && !gameState.isDead) {
+            document.getElementById('pointer-prompt').style.display = '';
+        }
+    }
+});
+
 function animate() {
     requestAnimationFrame(animate);
     const now = performance.now();
     const dt = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
+
+    // ── Gamepad: poll e applicazione look + jump ──
+    const { lookX, lookY, jumpPressed } = GamepadInput.poll(dt);
+    if (gameState.phase === 'playing' && !gameState.isDead) {
+        if (lookX !== 0 || lookY !== 0) {
+            const adsFactor = isADS ? (camera.fov / 75) : 1;
+            yaw   -= lookX * adsFactor;
+            pitch -= lookY * adsFactor;
+            pitch  = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, pitch));
+        }
+        if (jumpPressed && onGround) {
+            velocityY = JUMP_FORCE;
+            onGround  = false;
+        }
+    }
 
     updateMovement(dt);
     for (const rp of Object.values(gameState.players)) {

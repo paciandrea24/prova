@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
+    document.documentElement.style.setProperty('--my-color', decodeURIComponent(selectedColor));
+
     let currentSelectedGame = null;
     let isSetup = false; // <--- FLAG PER EVITARE CHE IL MENU SI RESETTI OGNI 3 SECONDI
     let selectorsBound = false; // <--- FLAG: registra i listener dei giochi UNA VOLTA SOLA
@@ -24,7 +26,8 @@ document.addEventListener('DOMContentLoaded', () => {
         deduction: { impostors: 1 },
         kart: { laps: 3 },
         spleef: { mapSize: 20 },
-        fps: { rounds: 5 }
+        fps: { rounds: 5 },
+        f1: { mode: 'championship', laps: 3 }
     };
 
     // 2. Interfaccia Header (ID e Copia)
@@ -62,6 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (gameId === 'kart') targetPage = '/kart.html';
         else if (gameId === 'spleef') targetPage = '/spleef.html';
         else if (gameId === 'fps') targetPage = '/fps.html';
+        else if (gameId === 'f1') targetPage = '/f1.html';
 
         window.location.href = `${targetPage}?lobby=${lobbyId}&color=${encodeURIComponent(selectedColor)}&game=${gameId}${settingsParam}`;
     });
@@ -152,10 +156,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (currentPlayerColor === hostColor && !isMe) {
                 const kickBtn = document.createElement('button');
-                kickBtn.className = 'btn small';
+                kickBtn.className = 'kick-btn';
                 kickBtn.textContent = 'Kick';
-                kickBtn.style.position = 'absolute';
-                kickBtn.style.right = '10px';
 
                 kickBtn.addEventListener('click', () => {
                     if (confirm('Are you sure you want to kick this player?')) {
@@ -266,7 +268,8 @@ document.addEventListener('DOMContentLoaded', () => {
             deduction: '🔪 Deduction Settings',
             kart: '🏎️ Kart 3D Settings',
             spleef: '⛏️ Spleef Settings',
-            fps: '🎯 FPS Settings'
+            fps: '🎯 FPS Settings',
+            f1: '🏎️ F1 3D Settings'
         };
         if (modalTitle) modalTitle.textContent = titles[gameId] || '⚙️ Settings';
 
