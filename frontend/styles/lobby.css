@@ -6,7 +6,8 @@
     --card:     #FFFFFF;
     --surface:  #F2F1EF;
     --muted:    #6B6878;
-    --my-color: #E74C3C;   /* sovrascritta da lobby.js via CSS var */
+    --my-color:   #E74C3C;   /* sovrascritta da lobby.js via CSS var */
+    --host-color: #16141E;   /* colore dell'host, sovrascritta da lobby.js */
 
     --yellow:   #FFCC00;
     --green:    #2ECC71;
@@ -165,7 +166,7 @@ body::before {
     border: 3px solid var(--ink);
     border-radius: 20px;
     padding: 20px;
-    box-shadow: 5px 5px 0 var(--ink);
+    box-shadow: 5px 5px 0 var(--host-color);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -325,6 +326,18 @@ body::before {
     fill: none;
     flex-shrink: 0;
 }
+
+/* ─── ICONE TEMATICHE ────────────────────────────────────────── */
+.game-card[data-game-id="drawing"]   .g-icon { stroke: #E84393; fill: rgba(232,  67, 147, 0.18); }
+.game-card[data-game-id="trivia"]    .g-icon { stroke: #F39C12; fill: rgba(243, 156,  18, 0.18); }
+.game-card[data-game-id="racing"]    .g-icon { stroke: #FF3B5C; fill: rgba(255,  59,  92, 0.18); }
+.game-card[data-game-id="bomb"]      .g-icon { stroke: #E67E22; fill: rgba(230, 126,  34, 0.18); }
+.game-card[data-game-id="football"]  .g-icon { stroke: #2ECC71; fill: rgba( 46, 204, 113, 0.18); }
+.game-card[data-game-id="deduction"] .g-icon { stroke: #6C5CE7; fill: rgba(108,  92, 231, 0.18); }
+.game-card[data-game-id="kart"]      .g-icon { stroke: #FF7F11; fill: rgba(255, 127,  17, 0.18); }
+.game-card[data-game-id="spleef"]    .g-icon { stroke: #17BEBB; fill: rgba( 23, 190, 187, 0.18); }
+.game-card[data-game-id="fps"]       .g-icon { stroke: #C0392B; fill: rgba(192,  57,  43, 0.18); }
+.game-card[data-game-id="f1"]        .g-icon { stroke: #2D6CDF; fill: rgba( 45, 108, 223, 0.18); }
 
 .g-title {
     font-weight: 700;

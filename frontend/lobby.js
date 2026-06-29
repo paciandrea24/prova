@@ -73,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 4. Caricamento Dati Lobby
     loadLobby();
     socket.on('lobbyUpdated', (data) => {
+        document.documentElement.style.setProperty('--host-color', data.host);
         updatePlayerList(data.players, selectedColor, data.host);
 
         // AGGIORNAMENTO DINAMICO DEI POTERI DA HOST
@@ -92,6 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error('Lobby not found');
             const lobby = await response.json();
 
+            document.documentElement.style.setProperty('--host-color', lobby.host);
             updatePlayerList(lobby.players, selectedColor, lobby.host);
 
             // ESEGUE IL SETUP DEI GIOCHI SOLO AL PRIMO CARICAMENTO
