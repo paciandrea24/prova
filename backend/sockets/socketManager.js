@@ -11,6 +11,7 @@ const kartGameSocket = require('./games/kartGameSocket');
 const spleefGameSocket = require('./games/spleefGameSocket')
 const fpsGameSocket = require('./games/fpsGameSocket');
 const f1GameSocket = require('./games/f1GameSocket');
+const playgroundGameSocket = require('./games/playgroundGameSocket');
 
 // IMPORTANTE: Importiamo lo store delle lobby per poterle modificare
 const { lobbies, users, destroyTimers } = require('../store/lobbies');
@@ -182,5 +183,6 @@ module.exports = function (io) {
         spleefGameSocket(io, socket);
         fpsGameSocket(io, socket);
         f1GameSocket(io, socket);
+        playgroundGameSocket(io, socket);
     });
 };

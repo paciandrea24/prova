@@ -61,7 +61,7 @@ Rotante, player-centric: il giocatore è sempre al centro come triangolo che pun
 
 ### Modello giocatore remoto (`createPlayerMesh(color)`)
 Umanoide a blocchi (gambe, stivali, busto con giubbotto colore-squadra, braccia, mani, testa, casco, fucile) + sotto-gruppi (upper, legL, legR, hpBar). Orientato verso -Z. Animazioni run/crouch/slide sincronizzate via rete (`updateRemoteAnim`, `applyRemoteState`).
-**NB**: `THREE.CapsuleGeometry` NON esiste in r128 — usare sempre `CylinderGeometry`/`BoxGeometry`. Three.js è r128 core-only da CDN: NO examples/jsm (niente GLTFLoader/RoomEnvironment).
+**NB**: `THREE.CapsuleGeometry` NON esiste in r128 — usare sempre `CylinderGeometry`/`BoxGeometry`. Three.js r128 core da CDN + `GLTFLoader` aggiunto via CDN separato (stesso pattern di kart/f1). `makeViewBox`/`makeViewCyl`/`makeLayeredTexture` sono ancora nel sorgente e necessari per il fallback di `buildTPWeapon` — non rimuoverli.
 
 ### Audio (procedurale) + game feel
 - `Sfx` IIFE: suoni sintetizzati con Web Audio API (oscillatori + rumore bianco filtrato), NESSUN file mp3. Funzioni: resume, shoot, hitConfirm, killConfirm, reload, footstep, slide, empty, hurt, death, roundStart.
@@ -80,7 +80,42 @@ Web Worker "heartbeat" per aggirare il throttling del requestAnimationFrame quan
 - **Bullet tracer invisibile**: `THREE.Line` rende 1px in WebGL → sostituito con `CylinderGeometry`, parte 0.4m davanti alla camera.
 - **Hit non registrati**: il raycast partiva dai piedi → ora da `camera.getWorldPosition()` + distanza punto-raggio.
 - **WebRTC double-offer**: rimosso `onnegotiationneeded` da `createPeer`.
-- **Grafica "G1" (PBR/tone mapping/env map)**: provata e poi **annullata** (troppo chiara/desaturata). Si usa `MeshLambertMaterial`. Per "grafica" l'utente intende gli **asset/modelli**, non luci/ombre.
+- **Grafica "G1" (PBR/tone mapping/env map)**: provata e poi **annullata** (troppo chiara/desaturata). Si usa `MeshLambertMaterial`. `renderer.outputEncoding`/`toneMapping` restano volutamente ai default (encoding lineare) per non slavare i colori — non toccarli.
+- **Grafica "G2" (texture superfici)**: applicato. Le superfici di mappa usano `CanvasTexture` procedurali stilizzate (stile Kenney): prato/asfalto/cemento/marciapiede/mattoni/casse/tetto/doghe/siding. Generate in JS (`drawGrass`, `drawAsphalt`, `drawConcrete`, `drawBrick`, `drawCrate`, `drawRoof`, `drawWoodFloor`, `drawSiding`) via l'helper `makeTex()` con `RepeatWrapping` + `anisotropy`. Veicoli/giocatori restano a colore piatto (step successivi). Sostituibili con PNG Kenney reali cambiando la sorgente in `makeTex`.
+- **Grafica "G3" (modelli arma GLB)**: applicato ma in fase di tuning. Dettagli nella sezione "Armi GLB — stato attuale" qui sotto.
+
+## Armi GLB — stato attuale (G3, in tuning)
+
+### Struttura del sistema (fps.js)
+- **`_glbSceneCache`** `{ assault, smg, shotgun, sniper }` — gltf.scene originali, clonati per ogni uso TP.
+- **`_WEAPON_GLB_CFG`** — configurazione per-arma (tunable):
+  ```
+  assault: targetLen 0.50, pos [GX, -0.19, -0.12], rot [0.08, π/2, 0]
+  smg:     targetLen 0.38, pos [GX, -0.18, -0.12], rot [0.08, π/2, 0]
+  shotgun: targetLen 0.45, pos [GX, -0.19, -0.12], rot [0.08, π/2, 0]
+  sniper:  targetLen 0.62, pos [GX, -0.19, -0.12], rot [0.08, π/2, 0]
+  ```
+- **`_glbScaleAndPivot(obj, targetLen)`** — scala, centra, poi sposta il pivot al calcio (bbox.min.x = 0) così l'intera arma si estende in avanti dalla posizione del gruppo. Questo evita il clipping nella near clip plane.
+- **`_glbApplyMaterials(obj)`** — converte `MeshStandardMaterial` → `MeshLambertMaterial` (Standard appare nero senza envmap/IBL).
+- **`buildWeaponModels()`** — carica i 4 GLB, clona per FP, popola `_glbSceneCache`.
+- **`buildTPWeapon(key)`** — usa il clone GLB se `_glbSceneCache[key]` disponibile (scala TP: assault 0.45, smg 0.32, shotgun 0.42, sniper 0.55); fallback a box geometry.
+
+### File GLB
+`frontend/assets/guns/` — "Ultimate Guns Pack" di Quaternius (Poly Pizza).
+File usati: `Assault Rifle.glb`, `Submachine Gun.glb`, `Shotgun.glb`, `Sniper Rifle.glb`.
+**Orientamento modelli**: barrel lungo asse **+X** locale → `rot.y = π/2` porta il barrel su camera **−Z** (forward).
+**Materiali**: i GLB usano `MeshStandardMaterial`; convertiti in Lambert per compatibilità con la nostra illuminazione senza envmap. I colori del pack sono quelli del modello originale (non è necessario impostare colori manualmente).
+
+### Feedback utente (ultima sessione, non ancora risolto)
+Al momento dell'interruzione della sessione l'utente aveva ricevuto questa versione e riportato:
+- ✅ **SMG**: OK come posizione/dimensioni.
+- ⚠️ **Assault rifle**: "leggermente troppo in avanti, sembra stretto e lungo." Provare a ridurre ulteriormente `targetLen` (es. 0.44) e/o aumentare `pos.z` verso 0 (avvicinare alla camera). "Stretto" può dipendere dall'angolo di vista: aggiungere un piccolo `rot.z` negativo (es. -0.08) per mostrare più superficie superiore.
+- ⚠️ **Shotgun e Sniper**: "si vede solo la canna". Con il pivot-al-calcio applicato nell'ultima modifica dovrebbe essere risolto — **da verificare** nella prossima sessione.
+- ✅ **Armi avversari (TP)**: ora usano GLB — **da verificare** nella prossima sessione.
+
+### Prossimi step grafici FPS (dopo tuning armi)
+1. Modello giocatore GLB (sostituire l'umanoide a scatole in `createPlayerMesh`).
+2. Veicoli/props GLB (bus, van, casse).
 
 ## Disconnessione in partita
 - **Server** (`fpsGameSocket.js`): handler `disconnect` guardato da `socket.data.joinedFPS`. Rimuove il player da lobby/scores, emette `playerLeft`, e gestisce: `playing` (segna morto + `checkRoundEnd`), `weapon_select` (ricontrolla i confermati), ultimo rimasto (`endGame`), lobby vuota (delete game), riassegna l'host se serve.

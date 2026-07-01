@@ -80,6 +80,15 @@
     <!-- Chat in-game -->
     <div id="fps-chat-wrap"></div>
 
+    <!-- ═══════════ INDICATORE FASE ROUND ═══════════ -->
+    <div id="phase-indicator"></div>
+
+    <!-- ═══════════ REVEAL MUTATORE ═══════════ -->
+    <div id="mutator-reveal"></div>
+
+    <!-- ═══════════ BANNER SUDDEN DEATH ═══════════ -->
+    <div id="sudden-death-banner"><span>SUDDEN DEATH</span></div>
+
     <!-- ═══════════ SCHERMO MORTO ═══════════ -->
     <div id="dead-screen">
         <h2>You Died</h2>
@@ -225,12 +234,6 @@
         </div>
     </div>
 
-    <!-- ═══════════ POINTER LOCK PROMPT ═══════════ -->
-    <div id="pointer-prompt">
-        <h2>FPS Mode</h2>
-        <p>Click to capture mouse and start playing</p>
-        <button id="ptr-btn">Click to Play</button>
-    </div>
 
     <!-- ═══════════ CONTROLLER PANEL ═══════════ -->
     <div id="gp-panel">
@@ -262,6 +265,7 @@
 
     <!-- Three.js CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <!-- Socket.io (per signaling WebRTC) -->
     <script src="/socket.io/socket.io.js"></script>
     <!-- Supporto controller (deve precedere fps.js) -->

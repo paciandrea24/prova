@@ -463,6 +463,122 @@ body.ads-sniper #scope-reticle { display: block; }
     letter-spacing: 0.1em;
 }
 
+/* ─── INDICATORE FASE (mischia / sudden death) ───── */
+#phase-indicator {
+    display: none;
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 250;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    border: 1px solid var(--col-border);
+    background: rgba(17,20,24,0.82);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    pointer-events: none;
+}
+#phase-indicator.melee {
+    color: var(--col-accent);
+    border-color: rgba(200,168,75,0.5);
+}
+#phase-indicator.suddendeath {
+    color: #fff;
+    background: rgba(214,48,49,0.9);
+    border-color: var(--col-danger);
+    animation: sd-pulse 0.8s ease-in-out infinite;
+}
+@keyframes sd-pulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(214,48,49,0.6); }
+    50%      { box-shadow: 0 0 22px rgba(214,48,49,1); }
+}
+
+/* ─── BANNER SUDDEN DEATH (flash a schermo) ───── */
+#sudden-death-banner {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 320;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+#sudden-death-banner.show { display: flex; }
+#sudden-death-banner span {
+    font-size: 76px;
+    font-weight: 700;
+    color: #fff;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    text-shadow: 0 0 30px rgba(214,48,49,0.95), 0 0 60px rgba(214,48,49,0.7);
+    animation: sd-banner 2.2s ease-out forwards;
+}
+@keyframes sd-banner {
+    0%   { transform: scale(0.6); opacity: 0; }
+    15%  { transform: scale(1.08); opacity: 1; }
+    30%  { transform: scale(1); opacity: 1; }
+    80%  { transform: scale(1); opacity: 1; }
+    100% { transform: scale(1.15); opacity: 0; }
+}
+
+/* ─── REVEAL MUTATORE (flash ~2s a inizio round) ───── */
+#mutator-reveal {
+    display: none;
+    position: fixed;
+    top: 22%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 315;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    pointer-events: none;
+    --mr-col: var(--col-accent);
+}
+#mutator-reveal.show {
+    display: flex;
+    animation: mr-in 2.2s ease-out forwards;
+}
+#mutator-reveal .mr-label {
+    font-size: 14px;
+    letter-spacing: 0.4em;
+    color: var(--col-muted);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+#mutator-reveal .mr-icon {
+    font-size: 72px;
+    line-height: 1;
+    filter: drop-shadow(0 0 22px var(--mr-col));
+}
+#mutator-reveal .mr-name {
+    font-size: 46px;
+    font-weight: 700;
+    color: var(--mr-col);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    text-shadow: 0 0 26px var(--mr-col);
+    margin-top: 6px;
+}
+#mutator-reveal .mr-desc {
+    font-size: 16px;
+    color: var(--col-text);
+    letter-spacing: 0.06em;
+    margin-top: 6px;
+    opacity: 0.85;
+}
+@keyframes mr-in {
+    0%   { transform: translateX(-50%) scale(0.7); opacity: 0; }
+    12%  { transform: translateX(-50%) scale(1.06); opacity: 1; }
+    24%  { transform: translateX(-50%) scale(1); opacity: 1; }
+    82%  { transform: translateX(-50%) scale(1); opacity: 1; }
+    100% { transform: translateX(-50%) scale(1.04); opacity: 0; }
+}
+
 /* ─── OVERLAY GENERICO (round end / game over) ───── */
 #overlay {
     display: none;
@@ -474,6 +590,20 @@ body.ads-sniper #scope-reticle { display: block; }
     justify-content: center;
 }
 #overlay.active { display: flex; }
+
+/* ─── PODIO FINALE (game over): il box scende in basso, la scena 3D resta visibile ─── */
+#overlay.podium {
+    background: linear-gradient(to bottom, rgba(0,0,0,0) 50%, rgba(0,0,0,0.85) 100%);
+    align-items: flex-end;
+}
+#overlay.podium #overlay-box {
+    background: rgba(17,20,24,0.92);
+    margin-bottom: 28px;
+}
+body.podium-mode #hud,
+body.podium-mode #minimap,
+body.podium-mode #crosshair { display: none !important; }
+
 #overlay-box {
     background: var(--col-surface);
     border: 1px solid var(--col-border);
@@ -703,44 +833,6 @@ body.ads-sniper #scope-reticle { display: block; }
     transition: opacity 0.2s;
 }
 .ws-ready-dot.on { opacity: 1; }
-
-/* ─── POINTER LOCK PROMPT ────────────────────────── */
-#pointer-prompt {
-    display: none;
-    position: fixed;
-    inset: 0;
-    z-index: 600;
-    background: rgba(0,0,0,0.9);
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    gap: 16px;
-}
-#pointer-prompt.active { display: flex; }
-#pointer-prompt h2 {
-    font-size: 22px;
-    color: var(--col-accent);
-    text-transform: uppercase;
-    letter-spacing: 0.15em;
-}
-#pointer-prompt p {
-    font-size: 13px;
-    color: var(--col-muted);
-    letter-spacing: 0.08em;
-}
-#ptr-btn {
-    margin-top: 8px;
-    background: var(--col-accent);
-    color: #000;
-    border: none;
-    padding: 12px 36px;
-    font-family: var(--font-ui);
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    cursor: pointer;
-    font-weight: bold;
-}
 
 /* ─── MINIMAP ────────────────────────────────────── */
 #minimap {

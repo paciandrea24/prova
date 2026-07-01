@@ -27,8 +27,20 @@ const SPAWN_POINTS = [
 ];
 
 const PLAYER_HP = 100;
-const WEAPON_SELECT_TIME = 20000; // 20 secondi per scegliere l'arma
-const ROUND_END_DELAY = 5000;
+const WEAPON_SELECT_TIME = 20000; // 20 secondi per scegliere l'arma (solo round 1)
+const ROUND_END_DELAY = 2500;     // pausa breve tra un round e l'altro (pacing "ancora una")
+const MELEE_DURATION = 60000;     // durata fase MISCHIA (respawn istantaneo) prima del sudden death
+const RESPAWN_DELAY = 1500;       // ritardo prima di rinascere in mischia
+
+// Mutatori v1: il server ne pesca uno a caso (senza ripetere l'ultimo) a ogni round.
+// Sono tutti effetti CLIENT-side: il server comunica solo l'id, il client applica l'effetto.
+const MUTATORS = ['moon_gravity', 'speed_x2', 'fog'];
+
+const MAX_TROPHIES = 60;          // cap teste-trofeo sul campo (rimuove la più vecchia oltre il limite)
+
+// Punteggio "a teste": ogni kill vale punti, vincere il sudden death dà un bonus.
+const POINTS_PER_KILL = 1;        // punti per ogni uccisione (mischia E sudden death)
+const SD_WIN_BONUS = 5;           // bonus punti per chi vince il sudden death del round
 
 module.exports = function (io, socket) {
 
@@ -76,23 +88,31 @@ module.exports = function (io, socket) {
         // Inizializza partita se non esiste
         if (!activeGames.has(lobbyId)) {
             const settings = lobby.gameSettings || {};
-            const totalRounds = parseInt(settings.rounds) || 5;
+            const totalRounds = parseInt(settings.rounds) || 8;
 
             const game = {
                 gameId: GAME_ID,
                 phase: 'weapon_select', // weapon_select | playing | round_end | game_over
+                subphase: null,          // in 'playing': 'melee' | 'suddendeath'
+                mutator: null,           // mutatore del round corrente
+                lastMutator: null,       // per evitare ripetizioni consecutive
+                trophyHeads: [],         // teste-trofeo persistenti (NON resettate tra i round)
                 totalRounds,
                 currentRound: 1,
-                scores: {},              // color -> wins
+                scores: {},              // color -> wins (vittorie sudden death del round)
+                points: {},              // color -> punti totali (teste): metrica principale
                 players: {},              // color -> playerState
                 weaponChoices: {},              // color -> weaponKey
                 confirmedCount: 0,
                 selectTimer: null,
+                phaseTimer: null,        // timer mischia -> sudden death
+                respawnTimers: {},       // color -> timeout di respawn (mischia)
                 aliveCount: 0
             };
 
             lobby.players.forEach(c => {
                 game.scores[c] = 0;
+                game.points[c] = 0;
                 game.weaponChoices[c] = 'assault';
             });
 
@@ -105,6 +125,7 @@ module.exports = function (io, socket) {
         // Giocatore entrato dopo la creazione del game: aggiunge scores/choices mancanti
         if (!game.scores.hasOwnProperty(playerColor)) {
             game.scores[playerColor] = 0;
+            game.points[playerColor] = 0;
             game.weaponChoices[playerColor] = 'assault';
         }
 
@@ -121,9 +142,13 @@ module.exports = function (io, socket) {
         // Invia stato attuale al giocatore appena connesso
         socket.emit('fpsInit', {
             phase: game.phase,
+            subphase: game.subphase,
+            mutator: game.mutator,
+            trophyHeads: game.trophyHeads,
             currentRound: game.currentRound,
             totalRounds: game.totalRounds,
             scores: game.scores,
+            points: game.points,
             players: game.players,
             weapons: WEAPONS,
             myColor: playerColor,
@@ -199,6 +224,17 @@ module.exports = function (io, socket) {
         // (i client useranno preferibilmente il data channel WebRTC)
         const { lobbyId } = data;
         socket.to(lobbyId).emit('playerState', data);
+
+        // Memorizza l'ultima posizione nota (autoritativa "abbastanza" per i trofei):
+        // così alla morte in sudden death sappiamo dove piantare la testa.
+        const game = activeGames.get(lobbyId);
+        if (game && game.players && data.color && game.players[data.color]) {
+            const p = game.players[data.color];
+            if (typeof data.x === 'number') p.x = data.x;
+            if (typeof data.y === 'number') p.y = data.y;
+            if (typeof data.z === 'number') p.z = data.z;
+            if (typeof data.ry === 'number') p.angle = data.ry;
+        }
     });
 
     // ──────────────────────────────────────────
@@ -226,15 +262,37 @@ module.exports = function (io, socket) {
 
         if (target.hp <= 0) {
             target.dead = true;
-            game.aliveCount--;
+
+            // Punti "a teste": ogni kill vale POINTS_PER_KILL al killer (no autogol)
+            if (shooterColor && shooterColor !== targetColor) {
+                game.points[shooterColor] = (game.points[shooterColor] || 0) + POINTS_PER_KILL;
+            }
 
             io.to(lobbyId).emit('playerKilled', {
                 killedColor: targetColor,
                 killerColor: shooterColor,
-                aliveCount: game.aliveCount
+                aliveCount: game.aliveCount,
+                subphase: game.subphase,
+                points: game.points
             });
 
-            checkRoundEnd(io, lobbyId);
+            if (game.subphase === 'melee') {
+                // MISCHIA: morte temporanea → respawn istantaneo, il round NON finisce
+                if (!game.respawnTimers) game.respawnTimers = {};
+                if (game.respawnTimers[targetColor]) clearTimeout(game.respawnTimers[targetColor]);
+                game.respawnTimers[targetColor] = setTimeout(() => {
+                    respawnPlayer(io, lobbyId, targetColor);
+                }, RESPAWN_DELAY);
+            } else {
+                // SUDDEN DEATH: eliminazione definitiva + testa-trofeo sul punto di morte
+                game.aliveCount--;
+                const pos = game.players[targetColor];
+                if (pos) {
+                    game.trophyHeads.push({ color: targetColor, x: pos.x, y: pos.y, z: pos.z });
+                    if (game.trophyHeads.length > MAX_TROPHIES) game.trophyHeads.shift();
+                }
+                checkRoundEnd(io, lobbyId);
+            }
         }
     });
 
@@ -276,17 +334,24 @@ module.exports = function (io, socket) {
         if (game._confirmed) game._confirmed.delete(color);
         delete game.weaponChoices[color];
         delete game.scores[color];
+        delete game.points[color];
+
+        // Annulla un eventuale respawn in coda per chi se n'è andato
+        if (game.respawnTimers && game.respawnTimers[color]) {
+            clearTimeout(game.respawnTimers[color]);
+            delete game.respawnTimers[color];
+        }
 
         // Nessuno rimasto → distruggi la partita
         if (!lobby || lobby.players.length === 0) {
-            clearTimeout(game.selectTimer);
+            clearAllTimers(game);
             activeGames.delete(lobbyId);
             return;
         }
 
         // Un solo giocatore rimasto → termina la partita (vince chi resta)
         if (lobby.players.length < 2) {
-            clearTimeout(game.selectTimer);
+            clearAllTimers(game);
             if (game.phase !== 'game_over') endGame(io, lobbyId);
             return;
         }
@@ -295,7 +360,7 @@ module.exports = function (io, socket) {
             const p = game.players[color];
             if (p && !p.dead) {
                 p.dead = true;
-                game.aliveCount = Math.max(0, game.aliveCount - 1);
+                if (game.subphase === 'suddendeath') game.aliveCount = Math.max(0, game.aliveCount - 1);
             }
             checkRoundEnd(io, lobbyId);
         } else if (game.phase === 'weapon_select') {
@@ -329,6 +394,7 @@ function startWeaponSelect(io, lobbyId) {
         currentRound: game.currentRound,
         totalRounds: game.totalRounds,
         scores: game.scores,
+        points: game.points,
         weapons: WEAPONS
     });
 
@@ -343,12 +409,22 @@ function launchRound(io, lobbyId) {
     if (!game || !lobby) return;
 
     game.phase = 'playing';
+    game.subphase = 'melee';
+
+    // Reset timer di fase/respawn del round precedente
+    clearAllTimers(game);
+    game.respawnTimers = {};
 
     // Assegna spawn distanziati: con offset casuale e passo uniforme i
     // giocatori finiscono su cortili opposti (1v1 → case diverse).
     const n = SPAWN_POINTS.length;
     const offset = Math.floor(Math.random() * n);
     const stride = Math.max(1, Math.floor(n / Math.max(1, lobby.players.length)));
+
+    // Pesca il mutatore del round, evitando di ripetere quello precedente
+    const pool = MUTATORS.filter(m => m !== game.lastMutator);
+    game.mutator = pool[Math.floor(Math.random() * pool.length)] || MUTATORS[0] || null;
+    game.lastMutator = game.mutator;
 
     game.players = {};
     game.aliveCount = 0;
@@ -376,8 +452,91 @@ function launchRound(io, lobbyId) {
         round: game.currentRound,
         totalRounds: game.totalRounds,
         players: game.players,
-        weapons: WEAPONS
+        weapons: WEAPONS,
+        subphase: 'melee',
+        meleeDuration: MELEE_DURATION,
+        mutator: game.mutator,
+        trophyHeads: game.trophyHeads,
+        points: game.points
     });
+
+    // Allo scadere della mischia parte il sudden death
+    game.phaseTimer = setTimeout(() => startSuddenDeath(io, lobbyId), MELEE_DURATION);
+}
+
+// Rinascita istantanea durante la fase MISCHIA
+function respawnPlayer(io, lobbyId, color) {
+    const game = activeGames.get(lobbyId);
+    if (!game) return;
+    if (game.phase !== 'playing' || game.subphase !== 'melee') return;
+    const p = game.players[color];
+    if (!p) return;
+
+    const spawn = SPAWN_POINTS[Math.floor(Math.random() * SPAWN_POINTS.length)];
+    p.hp = PLAYER_HP;
+    p.dead = false;
+    p.x = spawn.x; p.y = spawn.y; p.z = spawn.z; p.angle = spawn.angle;
+    if (game.respawnTimers) delete game.respawnTimers[color];
+
+    io.to(lobbyId).emit('playerRespawn', {
+        color,
+        x: spawn.x, y: spawn.y, z: spawn.z, angle: spawn.angle,
+        hp: PLAYER_HP,
+        weaponKey: p.weaponKey,
+        ammo: p.maxAmmo
+    });
+}
+
+// Passaggio MISCHIA → SUDDEN DEATH: respawn OFF, tutti vivi e a piena vita
+// per un duello equo. Chi era in respawn rientra su uno spawn point.
+function startSuddenDeath(io, lobbyId) {
+    const game = activeGames.get(lobbyId);
+    const lobby = lobbies.get(lobbyId);
+    if (!game || !lobby) return;
+    if (game.phase !== 'playing' || game.subphase !== 'melee') return;
+
+    game.subphase = 'suddendeath';
+
+    // Annulla i respawn ancora in coda dalla mischia
+    if (game.respawnTimers) {
+        for (const t of Object.values(game.respawnTimers)) clearTimeout(t);
+    }
+    game.respawnTimers = {};
+
+    const n = SPAWN_POINTS.length;
+    const offset = Math.floor(Math.random() * n);
+    let alive = 0;
+    lobby.players.forEach((color, i) => {
+        const p = game.players[color];
+        if (!p) return;
+        if (p.dead) {
+            const spawn = SPAWN_POINTS[(offset + i) % n];
+            p.x = spawn.x; p.y = spawn.y; p.z = spawn.z; p.angle = spawn.angle;
+        }
+        p.hp = PLAYER_HP;
+        p.dead = false;
+        alive++;
+    });
+    game.aliveCount = alive;
+
+    io.to(lobbyId).emit('suddenDeathStart', {
+        players: game.players,
+        aliveCount: game.aliveCount
+    });
+
+    // Caso limite: rimasto 1 solo giocatore → chiude subito il round
+    checkRoundEnd(io, lobbyId);
+}
+
+// Pulisce tutti i timer attivi del game (fase + respawn)
+function clearAllTimers(game) {
+    if (!game) return;
+    if (game.selectTimer) clearTimeout(game.selectTimer);
+    if (game.phaseTimer) clearTimeout(game.phaseTimer);
+    if (game.respawnTimers) {
+        for (const t of Object.values(game.respawnTimers)) clearTimeout(t);
+        game.respawnTimers = {};
+    }
 }
 
 function checkRoundEnd(io, lobbyId) {
@@ -385,21 +544,29 @@ function checkRoundEnd(io, lobbyId) {
     const lobby = lobbies.get(lobbyId);
     if (!game || !lobby) return;
 
+    // Il round può concludersi SOLO in sudden death (in mischia si respawna)
+    if (game.subphase !== 'suddendeath') return;
+
     const alive = Object.values(game.players).filter(p => !p.dead);
     if (alive.length > 1) return;
 
     game.phase = 'round_end';
+    clearAllTimers(game);
     const winner = alive.length === 1 ? alive[0].color : null;
 
     if (winner) {
         game.scores[winner] = (game.scores[winner] || 0) + 1;
+        game.points[winner] = (game.points[winner] || 0) + SD_WIN_BONUS;
     }
 
     io.to(lobbyId).emit('roundEnd', {
         winnerColor: winner,
         scores: game.scores,
+        points: game.points,
+        sdBonus: SD_WIN_BONUS,
         round: game.currentRound,
-        totalRounds: game.totalRounds
+        totalRounds: game.totalRounds,
+        nextInMs: ROUND_END_DELAY
     });
 
     game.currentRound++;
@@ -408,7 +575,7 @@ function checkRoundEnd(io, lobbyId) {
         // Partita finita
         setTimeout(() => endGame(io, lobbyId), ROUND_END_DELAY);
     } else {
-        // Prossimo round
+        // Prossimo round: scelta arma a inizio di OGNI round (l'utente può cambiare loadout)
         setTimeout(() => startWeaponSelect(io, lobbyId), ROUND_END_DELAY);
     }
 }
@@ -420,16 +587,18 @@ function endGame(io, lobbyId) {
 
     game.phase = 'game_over';
 
-    // Trova il vincitore assoluto
-    let topScore = -1;
+    // Campione = chi ha più PUNTI (teste) totali
+    let topPoints = -1;
     let champion = null;
-    for (const [color, wins] of Object.entries(game.scores)) {
-        if (wins > topScore) { topScore = wins; champion = color; }
+    for (const [color, pts] of Object.entries(game.points)) {
+        if (pts > topPoints) { topPoints = pts; champion = color; }
     }
 
     io.to(lobbyId).emit('gameOver', {
         champion,
         scores: game.scores,
+        points: game.points,
+        trophyHeads: game.trophyHeads,
         hostColor: lobby.host
     });
 }

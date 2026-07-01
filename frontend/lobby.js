@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
         deduction: { impostors: 1 },
         kart: { laps: 3 },
         spleef: { mapSize: 20 },
-        fps: { rounds: 5 },
+        fps: { rounds: 8 },
         f1: { mode: 'championship', laps: 3 }
     };
 
@@ -49,6 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 3. Setup Socket.io
     const socket = io();
+    window.lobbySocket = socket; // esposto per playground.js (stessa connessione, socket.color già impostato lato server)
     socket.emit('joinLobby', { lobbyId: lobbyId, color: selectedColor });
 
     socket.on('gameSelected', (data) => {

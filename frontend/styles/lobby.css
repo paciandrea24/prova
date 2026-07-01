@@ -123,8 +123,30 @@ body::before {
     color: var(--yellow);
 }
 
-.btn-leave {
+.btn-playground {
     margin-left: auto;
+    font-family: 'Fredoka', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: none;
+    color: var(--green);
+    border: 3px solid var(--green);
+    border-radius: 12px;
+    padding: 8px 18px;
+    cursor: pointer;
+    box-shadow: 4px 4px 0 var(--green);
+    transition: transform 0.1s, box-shadow 0.1s, background 0.1s, color 0.1s;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+.btn-playground:hover  { background: var(--green); color: #fff; transform: translateY(-2px); box-shadow: 4px 6px 0 var(--green); }
+.btn-playground:active { transform: translate(4px,4px); box-shadow: none; }
+
+.btn-leave {
+    margin-left: 0;
     font-family: 'Fredoka', sans-serif;
     font-weight: 700;
     font-size: 15px;
@@ -661,4 +683,60 @@ body::before {
 }
 @media (max-width: 500px) {
     .games-grid { grid-template-columns: 1fr; }
+}
+
+/* ─── PLAYGROUND OVERLAY ─────────────────────────────────────── */
+#playground-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: none;
+    background: #1a1a2e;
+}
+
+#playground-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+#playground-exit-btn {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    font-family: 'Fredoka', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: none;
+    color: var(--red);
+    border: 3px solid var(--red);
+    border-radius: 12px;
+    padding: 8px 18px;
+    cursor: pointer;
+    box-shadow: 4px 4px 0 var(--red);
+    transition: transform 0.1s, box-shadow 0.1s, background 0.1s, color 0.1s;
+    display: inline-flex;
+    align-items: center;
+    z-index: 2010;
+}
+#playground-exit-btn:hover  { background: var(--red); color: #fff; transform: translateY(-2px); box-shadow: 4px 6px 0 var(--red); }
+#playground-exit-btn:active { transform: translate(4px,4px); box-shadow: none; }
+
+#playground-hint {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: rgba(255, 255, 255, 0.55);
+    font-family: 'Fredoka', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 2010;
 }

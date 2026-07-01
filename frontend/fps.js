@@ -48,9 +48,12 @@ let gameState = {
     myMaxAmmo: 30,
     myWeapon: 'assault',
     isDead: false,
+    subphase: null,      // 'melee' | 'suddendeath' durante il round
+    mutator: null,       // mutatore attivo nel round corrente
     currentRound: 1,
-    totalRounds: 5,
-    scores: {},
+    totalRounds: 8,
+    scores: {},    // vittorie sudden death per round
+    points: {},    // punti totali (teste) — metrica principale
     players: {},   // color -> { mesh, hp, dead, ... }
     weapons: {},
     hostColor: null
@@ -62,6 +65,10 @@ let pitch = 0;   // rotazione verticale
 let velocityY = 0;
 let onGround = true;
 let isReloading = false;
+
+// ── Moltiplicatori runtime pilotati dai mutatori (resettati ogni round) ──
+let gravityMul = 1;
+let speedMul = 1;
 let lastFireTime = 0;
 let confirmed = false;
 
@@ -188,8 +195,26 @@ const Sfx = (() => {
         tone(440, 0.12, { type: 'square', gain: 0.18 });
         tone(660, 0.16, { type: 'square', gain: 0.2, delay: 0.13 });
     }
+    function respawn() {
+        tone(520, 0.08, { type: 'triangle', gain: 0.2, freqEnd: 880 });
+    }
+    // Stinger "reveal mutatore": whoosh + accordo ascendente
+    function revealStinger() {
+        ensure(); if (!ctx) return;
+        noise(0.4, { type: 'bandpass', freq: 1200, q: 0.6, gain: 0.3, attack: 0.15 });
+        tone(330, 0.5, { type: 'sawtooth', gain: 0.18, freqEnd: 660 });
+        tone(660, 0.35, { type: 'square', gain: 0.16, delay: 0.18 });
+        tone(990, 0.3, { type: 'square', gain: 0.14, delay: 0.32 });
+    }
+    // Sudden death: rintocco cupo e teso
+    function suddenDeath() {
+        ensure(); if (!ctx) return;
+        tone(160, 0.6, { type: 'sawtooth', gain: 0.32, freqEnd: 70 });
+        tone(240, 0.5, { type: 'square', gain: 0.16, delay: 0.05 });
+        noise(0.5, { type: 'lowpass', freq: 400, gain: 0.2 });
+    }
 
-    return { resume, shoot, hitConfirm, killConfirm, reload, footstep, slide, empty, hurt, death, roundStart };
+    return { resume, shoot, hitConfirm, killConfirm, reload, footstep, slide, empty, hurt, death, roundStart, respawn, revealStinger, suddenDeath };
 })();
 
 // ══════════════════════════════════════════════════════
@@ -200,13 +225,33 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.setClearColor(0x87ceeb);  // cielo
+const DEFAULT_SKY = 0x87ceeb;         // cielo/nebbia di default (ripristinati dai mutatori)
+const DEFAULT_FOG_DENSITY = 0.008;
+renderer.setClearColor(DEFAULT_SKY);  // cielo
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x87ceeb, 0.008);
+scene.fog = new THREE.FogExp2(DEFAULT_SKY, DEFAULT_FOG_DENSITY);
+
+// Teste-trofeo persistenti (fuori da gameState.players → il cleanup dei round non le tocca)
+const trophyGroup = new THREE.Group();
+scene.add(trophyGroup);
+let trophyMeshes = [];
+
+// Podio finale (game over): staged in alto sopra l'arena, con camera dedicata.
+const PODIUM_Y = 60;
+const podiumGroup = new THREE.Group();
+scene.add(podiumGroup);
+let podiumHeads = [];
+let podiumModels = [];
+let podiumAnim = null;
 
 const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 300);
 camera.position.set(0, PLAYER_HEIGHT, 0);
+
+// Camera dedicata al podio finale (game over): vive nella scena, coordinate mondo libere.
+const podiumCamera = new THREE.PerspectiveCamera(55, 1, 0.05, 500);
+scene.add(podiumCamera);
+let activeCamera = camera;   // swap sul podio in game_over
 
 // Root del player (usato per movimento)
 const playerRoot = new THREE.Object3D();
@@ -219,6 +264,8 @@ function onResize() {
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    podiumCamera.aspect = w / h;
+    podiumCamera.updateProjectionMatrix();
 }
 window.addEventListener('resize', onResize);
 onResize();
@@ -247,33 +294,206 @@ const hemi = new THREE.HemisphereLight(0x87ceeb, 0x6b7c3a, 0.4);
 scene.add(hemi);
 
 // ══════════════════════════════════════════════════════
+//  TEXTURE PROCEDURALI (stile low-poly stilizzato)
+//  Generate via CanvasTexture — nessun file da scaricare,
+//  coerente con l'audio procedurale del progetto.
+//  Sostituibili con PNG Kenney reali cambiando la sorgente.
+// ══════════════════════════════════════════════════════
+
+// Helper: crea una CanvasTexture da una funzione di disegno
+function makeTex(drawFn, rx, ry, size) {
+    rx = rx || 1; ry = ry || 1; size = size || 256;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    const ctx = cv.getContext('2d');
+    drawFn(ctx, size);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(rx, ry);
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return tex;
+}
+
+// Prato: base verde con ciuffi stilizzati
+function drawGrass(ctx, s) {
+    ctx.fillStyle = '#5d7a36';
+    ctx.fillRect(0, 0, s, s);
+    for (var i = 0; i < 55; i++) {
+        var x = Math.random() * s, y = Math.random() * s;
+        ctx.fillStyle = Math.random() > 0.5 ? '#6d9040' : '#4a6828';
+        ctx.beginPath();
+        ctx.moveTo(x, y + 6);
+        ctx.lineTo(x - 2, y + 13);
+        ctx.lineTo(x + 2, y + 13);
+        ctx.closePath();
+        ctx.fill();
+    }
+}
+
+// Asfalto: base scura con granulato chiaro
+function drawAsphalt(ctx, s) {
+    ctx.fillStyle = '#2c2c32';
+    ctx.fillRect(0, 0, s, s);
+    for (var i = 0; i < 130; i++) {
+        var b = Math.floor(Math.random() * 22 + 48);
+        ctx.fillStyle = 'rgb(' + b + ',' + b + ',' + b + ')';
+        ctx.beginPath();
+        ctx.arc(Math.random() * s, Math.random() * s, Math.random() * 1.4 + 0.4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(70,70,80,0.35)';
+    ctx.lineWidth = 1;
+    for (var j = 0; j < 5; j++) {
+        var y = Math.random() * s;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(s, y + (Math.random() * 8 - 4));
+        ctx.stroke();
+    }
+}
+
+// Cemento / marciapiede: overlay neutro con giunti — lascia passare il color del materiale
+function drawConcrete(ctx, s) {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, s, s);
+    for (var i = 0; i < 18; i++) {
+        ctx.fillStyle = 'rgba(0,0,0,' + (Math.random() * 0.045) + ')';
+        ctx.fillRect(Math.random() * s, Math.random() * s, Math.random() * 35 + 8, Math.random() * 35 + 8);
+    }
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, s / 2); ctx.lineTo(s, s / 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s / 2, 0); ctx.lineTo(s / 2, s); ctx.stroke();
+}
+
+// Pavimento in legno: doghe orizzontali con venatura
+function drawWoodFloor(ctx, s) {
+    var colors = ['#8a6a40', '#7a5e38', '#956f45', '#7e6035'];
+    var plankH = s / 6;
+    for (var row = 0; row < 7; row++) {
+        ctx.fillStyle = colors[row % colors.length];
+        ctx.fillRect(0, row * plankH, s, plankH - 1);
+        ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+        ctx.lineWidth = 1;
+        for (var v = 0; v < 3; v++) {
+            var x = Math.random() * s;
+            ctx.beginPath();
+            ctx.moveTo(x, row * plankH);
+            ctx.bezierCurveTo(x + 18, row * plankH + plankH * 0.35,
+                               x - 10, row * plankH + plankH * 0.65,
+                               x + 4,  row * plankH + plankH);
+            ctx.stroke();
+        }
+    }
+    ctx.strokeStyle = 'rgba(50,35,20,0.28)';
+    ctx.lineWidth = 1;
+    for (var r = 1; r < 7; r++) {
+        ctx.beginPath(); ctx.moveTo(0, r * plankH); ctx.lineTo(s, r * plankH); ctx.stroke();
+    }
+}
+
+// Cassa di legno: assi + cornice — stile Kenney classico
+function drawCrate(ctx, s, darkCol, lightCol) {
+    darkCol = darkCol || '#6c4a14'; lightCol = lightCol || '#9c7424';
+    ctx.fillStyle = lightCol;
+    ctx.fillRect(0, 0, s, s);
+    ctx.strokeStyle = 'rgba(60,35,10,0.3)';
+    ctx.lineWidth = 2;
+    var bW = s / 4;
+    for (var i = 1; i < 4; i++) {
+        ctx.beginPath(); ctx.moveTo(i * bW, 0); ctx.lineTo(i * bW, s); ctx.stroke();
+    }
+    ctx.strokeStyle = darkCol;
+    ctx.lineWidth = 7;
+    ctx.strokeRect(7, 7, s - 14, s - 14);
+    ctx.strokeStyle = 'rgba(60,35,10,0.28)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(7, 7); ctx.lineTo(s - 7, s - 7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s - 7, 7); ctx.lineTo(7, s - 7); ctx.stroke();
+}
+
+// Tetto a tegole
+function drawRoof(ctx, s) {
+    ctx.fillStyle = '#5a3825';
+    ctx.fillRect(0, 0, s, s);
+    var tH = s / 6, tW = s / 5;
+    ctx.fillStyle = '#4e2e1a';
+    ctx.strokeStyle = 'rgba(30,15,5,0.55)';
+    ctx.lineWidth = 1.5;
+    for (var row = 0; row < 7; row++) {
+        var offX = (row % 2) * (tW / 2);
+        for (var col = -1; col < 6; col++) {
+            var rx = col * tW + offX, ry = row * tH;
+            ctx.fillRect(rx + 2, ry + 1, tW - 4, tH - 2);
+            ctx.strokeRect(rx + 2, ry + 1, tW - 4, tH - 2);
+        }
+    }
+}
+
+// Siding (listelli orizzontali) in scala di grigi — si tinta col color del materiale
+function drawSiding(ctx, s) {
+    var bandH = s / 8;
+    for (var i = 0; i < 9; i++) {
+        var v = (i % 2 === 0) ? 230 : 200;
+        ctx.fillStyle = 'rgb(' + v + ',' + v + ',' + v + ')';
+        ctx.fillRect(0, i * bandH, s, bandH);
+        ctx.fillStyle = 'rgba(0,0,0,0.12)';
+        ctx.fillRect(0, (i + 1) * bandH - 2, s, 2);
+    }
+}
+
+// Muro / mattoni stilizzati
+function drawBrick(ctx, s) {
+    ctx.fillStyle = '#5c5040';
+    ctx.fillRect(0, 0, s, s);
+    var bH = s / 8, bW = s / 4;
+    ctx.fillStyle = '#4e4236';
+    ctx.strokeStyle = 'rgba(80,70,55,0.45)';
+    ctx.lineWidth = 1.5;
+    for (var row = 0; row < 8; row++) {
+        var offX = (row % 2) * (bW / 2);
+        for (var col = -1; col < 5; col++) {
+            var bx = col * bW + offX, by = row * bH;
+            ctx.fillRect(bx + 2, by + 2, bW - 4, bH - 4);
+            ctx.strokeRect(bx + 2, by + 2, bW - 4, bH - 4);
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════
 //  MATERIALI RIUTILIZZABILI
+//  Superfici di mappa: texture procedurale (stile Kenney)
+//  Veicoli/giocatori/armi: colore piatto (invariati)
 // ══════════════════════════════════════════════════════
 const MAT = {
-    ground: new THREE.MeshLambertMaterial({ color: 0x6b7c3a }),   // prato
-    concrete: new THREE.MeshLambertMaterial({ color: 0x8a8a82 }),   // cemento
-    asphalt: new THREE.MeshLambertMaterial({ color: 0x2c2c32 }),   // strada
-    sidewalk: new THREE.MeshLambertMaterial({ color: 0x9a9a90 }),   // marciapiede
-    wall: new THREE.MeshLambertMaterial({ color: 0x5c5040 }),   // muro perimetro
-    crate: new THREE.MeshLambertMaterial({ color: 0x9c7424 }),   // cassa legno
-    crateDark: new THREE.MeshLambertMaterial({ color: 0x6c4a14 }),
-    metal: new THREE.MeshLambertMaterial({ color: 0x4a5568 }),
-    // Case (Nuketown style)
-    houseYellow: new THREE.MeshLambertMaterial({ color: 0xd9b44a }),   // casa gialla
-    houseTeal: new THREE.MeshLambertMaterial({ color: 0x3a8f7e }),   // casa verde-acqua
-    roof: new THREE.MeshLambertMaterial({ color: 0x5a3825 }),   // tetto
-    trim: new THREE.MeshLambertMaterial({ color: 0xe8e4d8 }),   // cornici bianche
-    woodFloor: new THREE.MeshLambertMaterial({ color: 0x8a6a40 }),   // pavimento interno
-    fence: new THREE.MeshLambertMaterial({ color: 0xe8e4d8 }),   // staccionata bianca
-    // Veicoli
-    busYellow: new THREE.MeshLambertMaterial({ color: 0xf2c41d }),
-    vanRed: new THREE.MeshLambertMaterial({ color: 0xb0432f }),
-    tire: new THREE.MeshLambertMaterial({ color: 0x141414 }),
-    glass: new THREE.MeshLambertMaterial({ color: 0x9ec7d6, transparent: true, opacity: 0.45 }),
-    mannequin: new THREE.MeshLambertMaterial({ color: 0xc9a98a }),
-    sky: new THREE.MeshLambertMaterial({ color: 0x87ceeb, side: THREE.BackSide }),
+    // ── Superfici terreno/mappa ──────────────────────────
+    ground:      new THREE.MeshLambertMaterial({ map: makeTex(drawGrass, 26, 26) }),        // prato
+    asphalt:     new THREE.MeshLambertMaterial({ map: makeTex(drawAsphalt, 24, 4) }),       // strada
+    concrete:    new THREE.MeshLambertMaterial({ color: 0x8a8a82, map: makeTex(drawConcrete, 4, 4) }),   // cemento
+    sidewalk:    new THREE.MeshLambertMaterial({ color: 0x9a9a90, map: makeTex(drawConcrete, 24, 1) }),  // marciapiede
+    wall:        new THREE.MeshLambertMaterial({ map: makeTex(drawBrick, 4, 4) }),          // muro perimetro
+    crate:       new THREE.MeshLambertMaterial({ map: makeTex(function(c,s){ drawCrate(c,s,'#6c4a14','#9c7424'); }) }),
+    crateDark:   new THREE.MeshLambertMaterial({ map: makeTex(function(c,s){ drawCrate(c,s,'#3d2208','#6c4a14'); }) }),
+    woodFloor:   new THREE.MeshLambertMaterial({ map: makeTex(drawWoodFloor, 2, 2) }),      // pavimento interno
+    // ── Case (Nuketown style) ────────────────────────────
+    houseYellow: new THREE.MeshLambertMaterial({ color: 0xd9b44a, map: makeTex(drawSiding, 4, 4) }),  // casa gialla
+    houseTeal:   new THREE.MeshLambertMaterial({ color: 0x3a8f7e, map: makeTex(drawSiding, 4, 4) }),  // casa verde-acqua
+    roof:        new THREE.MeshLambertMaterial({ map: makeTex(drawRoof, 6, 4) }),           // tetto
+    trim:        new THREE.MeshLambertMaterial({ color: 0xe8e4d8 }),   // cornici bianche (invariato)
+    fence:       new THREE.MeshLambertMaterial({ color: 0xe8e4d8 }),   // staccionata bianca (invariato)
+    // ── Veicoli / props (colori piatti, prossimo step) ──
+    metal:       new THREE.MeshLambertMaterial({ color: 0x4a5568 }),
+    busYellow:   new THREE.MeshLambertMaterial({ color: 0xf2c41d }),
+    vanRed:      new THREE.MeshLambertMaterial({ color: 0xb0432f }),
+    tire:        new THREE.MeshLambertMaterial({ color: 0x141414 }),
+    glass:       new THREE.MeshLambertMaterial({ color: 0x9ec7d6, transparent: true, opacity: 0.45 }),
+    mannequin:   new THREE.MeshLambertMaterial({ color: 0xc9a98a }),
+    // Cielo: MeshBasic (non illuminato) → colore uniforme su tutte le facce del cubo-cielo.
+    // Con Lambert le facce interne prendevano luci diverse mostrando "strisce" alle giunzioni
+    // (evidenti sul podio finale, dove non c'è nebbia a mascherarle).
+    sky:         new THREE.MeshBasicMaterial({ color: 0x87ceeb, side: THREE.BackSide }),
 };
-// Materiali di dettaglio (props mappa)
+// Materiali di dettaglio (props mappa — invariati)
 MAT.chrome    = new THREE.MeshLambertMaterial({ color: 0xb9c0c8 });
 MAT.hubcap    = new THREE.MeshLambertMaterial({ color: 0x70757c });
 MAT.headlight = new THREE.MeshLambertMaterial({ color: 0xfff2b0 });
@@ -826,32 +1046,49 @@ const HIP_Y = 0.75;   // quota dei fianchi: pivot di gambe e busto
 // Modello d'arma in TERZA PERSONA: silhouette compatta per-tipo, così gli
 // avversari vedono che arma impugni (montata nelle mani del modello, canna -z).
 function buildTPWeapon(weaponKey) {
+    const cached = _glbSceneCache[weaponKey];
+    if (cached) {
+        // GLB disponibile: clona, scala per TP, pivot al grip (1/3 dal calcio).
+        // Il grip è alle mani del giocatore; il barrel si estende in avanti (-Z);
+        // il calcio è nascosto dentro il busto (non visibile = pulito).
+        const g = new THREE.Group();
+        g.rotation.set(0, Math.PI / 2, 0);   // barrel +X → -Z (forward del giocatore)
+        const model = cached.clone(true);
+        const tpLen = { assault: 0.50, smg: 0.35, shotgun: 0.48, sniper: 0.60 }[weaponKey] || 0.45;
+        _glbScaleAndPivot(model, tpLen);
+        model.position.x -= tpLen / 3;  // sposta al grip: calcio nascosto, barrel in avanti
+        _glbApplyMaterials(model);
+        g.add(model);
+        return g;
+    }
+
+    // Fallback a geometria box (solo se il GLB non è ancora caricato)
     const g = new THREE.Group();
     const add = (mesh) => { mesh.castShadow = true; g.add(mesh); return mesh; };
 
     if (weaponKey === 'smg') {
-        add(makeViewBox(0.06, 0.09, 0.24, 0, 0, -0.10, 0x2b2b2b, 'polymer'));   // corpo
-        add(makeViewCyl(0.02, 0.12, 0, 0, -0.28, 0x222222, 'metal'));          // canna
+        add(makeViewBox(0.06, 0.09, 0.24, 0, 0, -0.10, 0x2b2b2b, 'polymer'));
+        add(makeViewCyl(0.02, 0.12, 0, 0, -0.28, 0x222222, 'metal'));
         const mag = add(makeViewBox(0.045, 0.17, 0.05, 0, -0.13, -0.04, 0x1c1c1c, 'polymer')); mag.rotation.x = 0.12;
-        add(makeViewBox(0.05, 0.06, 0.10, 0, 0, 0.08, 0x232323, 'metal'));     // calcio
+        add(makeViewBox(0.05, 0.06, 0.10, 0, 0, 0.08, 0x232323, 'metal'));
     } else if (weaponKey === 'shotgun') {
-        add(makeViewBox(0.07, 0.10, 0.22, 0, 0, -0.08, 0x2a2a2a, 'metal'));    // ricevitore
-        add(makeViewCyl(0.026, 0.42, 0, 0.01, -0.34, 0x1a1a1a, 'metal'));      // canna
-        add(makeViewCyl(0.016, 0.38, 0, -0.03, -0.32, 0x222222, 'metal'));     // tubo
-        add(makeViewBox(0.06, 0.09, 0.16, 0, -0.01, 0.10, 0x5c3a1e, 'wood'));  // calcio
-        add(makeViewBox(0.06, 0.055, 0.08, 0, -0.035, -0.24, 0x6b4524, 'wood')); // pompa
+        add(makeViewBox(0.07, 0.10, 0.22, 0, 0, -0.08, 0x2a2a2a, 'metal'));
+        add(makeViewCyl(0.026, 0.42, 0, 0.01, -0.34, 0x1a1a1a, 'metal'));
+        add(makeViewCyl(0.016, 0.38, 0, -0.03, -0.32, 0x222222, 'metal'));
+        add(makeViewBox(0.06, 0.09, 0.16, 0, -0.01, 0.10, 0x5c3a1e, 'wood'));
+        add(makeViewBox(0.06, 0.055, 0.08, 0, -0.035, -0.24, 0x6b4524, 'wood'));
     } else if (weaponKey === 'sniper') {
-        add(makeViewBox(0.07, 0.10, 0.44, 0, 0, -0.16, 0x222222, 'metal'));    // corpo
-        add(makeViewCyl(0.018, 0.34, 0, 0, -0.52, 0x111111, 'metal'));         // canna
-        add(makeViewBox(0.07, 0.10, 0.16, 0, 0, 0.10, 0x1c1c1c, 'metal'));     // calcio
-        add(makeViewCyl(0.03, 0.22, 0, 0.10, -0.18, 0x2a2a2a, 'metal'));       // ottica
-        add(makeViewBox(0.02, 0.06, 0.02, 0, 0.06, -0.10, 0x111111, 'metal')); // supporto
+        add(makeViewBox(0.07, 0.10, 0.44, 0, 0, -0.16, 0x222222, 'metal'));
+        add(makeViewCyl(0.018, 0.34, 0, 0, -0.52, 0x111111, 'metal'));
+        add(makeViewBox(0.07, 0.10, 0.16, 0, 0, 0.10, 0x1c1c1c, 'metal'));
+        add(makeViewCyl(0.03, 0.22, 0, 0.10, -0.18, 0x2a2a2a, 'metal'));
+        add(makeViewBox(0.02, 0.06, 0.02, 0, 0.06, -0.10, 0x111111, 'metal'));
         add(makeViewBox(0.02, 0.06, 0.02, 0, 0.06, -0.26, 0x111111, 'metal'));
-    } else { // assault (default)
-        add(makeViewBox(0.07, 0.10, 0.34, 0, 0, -0.12, 0x2c2c2c, 'metal'));    // ricevitore
-        add(makeViewCyl(0.02, 0.20, 0, 0, -0.36, 0x111111, 'metal'));          // canna
+    } else {
+        add(makeViewBox(0.07, 0.10, 0.34, 0, 0, -0.12, 0x2c2c2c, 'metal'));
+        add(makeViewCyl(0.02, 0.20, 0, 0, -0.36, 0x111111, 'metal'));
         const mag = add(makeViewBox(0.05, 0.16, 0.06, 0, -0.12, -0.06, 0x1c1c1c, 'polymer')); mag.rotation.x = 0.25;
-        add(makeViewBox(0.06, 0.085, 0.12, 0, 0, 0.10, 0x232323, 'polymer'));  // calcio
+        add(makeViewBox(0.06, 0.085, 0.12, 0, 0, 0.10, 0x232323, 'polymer'));
     }
     return g;
 }
@@ -904,7 +1141,7 @@ function createPlayerMesh(color, weaponKey) {
 
     // ── Arma in terza persona (silhouette per-tipo, sostituibile a runtime) ──
     const weaponMount = new THREE.Group();
-    weaponMount.position.set(0.20, 1.02 - HIP_Y, -0.18);
+    weaponMount.position.set(0.34, 0.83 - HIP_Y, -0.02);
     upper.add(weaponMount);
     weaponMount.add(buildTPWeapon(weaponKey || 'assault'));
 
@@ -933,6 +1170,180 @@ function createPlayerMesh(color, weaponKey) {
     group.add(hpBar);
 
     return { group, head, upper, legL, legR, hpBar, hpFill, weaponMount, weaponKey: weaponKey || 'assault' };
+}
+
+// ── TROFEI-TESTE (Cimitero dei Trofei) ──────────────
+// Testa del caduto impalata su un'astina, nel colore-team per riconoscere chi è.
+function makeTrophyHead(color, x, y, z) {
+    const teamCol = new THREE.Color(color);
+    const darkCol = teamCol.clone().multiplyScalar(0.55);
+    const matSkin = new THREE.MeshLambertMaterial({ color: 0xd9a066 });
+    const matTeam = new THREE.MeshLambertMaterial({ color: darkCol });
+    const matGun  = new THREE.MeshLambertMaterial({ color: 0x1c1c1c });
+
+    const g = new THREE.Group();
+    const mk = (w, h, d, px, py, pz, mat) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+        m.position.set(px, py, pz);
+        m.castShadow = true;
+        g.add(m);
+    };
+    const spikeH = 0.34;
+    mk(0.05, spikeH, 0.05, 0, spikeH / 2, 0, matGun);                 // astina (0 → 0.34)
+    mk(0.32, 0.34, 0.32, 0, spikeH + 0.17, 0, matSkin);              // testa
+    mk(0.38, 0.20, 0.38, 0, spikeH + 0.36, 0, matTeam);              // casco (colore team)
+    mk(0.36, 0.08, 0.10, 0, spikeH + 0.15, -0.19, matGun);          // visiera
+
+    g.position.set(x, y || 0, z);
+    g.rotation.y = Math.random() * Math.PI * 2;   // orientamento casuale per varietà
+    return g;
+}
+
+// Aggiunge un singolo trofeo (feedback immediato alla morte in sudden death)
+function dropTrophyLive(color, x, y, z) {
+    const head = makeTrophyHead(color, x, y, z);
+    trophyGroup.add(head);
+    trophyMeshes.push(head);
+}
+
+// Ricostruisce TUTTI i trofei dalla lista autoritativa del server (a inizio round)
+function renderTrophies(list) {
+    for (const m of trophyMeshes) trophyGroup.remove(m);
+    trophyMeshes = [];
+    if (!Array.isArray(list)) return;
+    for (const t of list) {
+        dropTrophyLive(t.color, t.x, t.y, t.z);
+    }
+}
+
+// ── PODIO FINALE ────────────────────────────────────
+function _clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function _easeOutBack(x) {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+}
+
+// Testa "da impilare" nel colore-team (più leggibile della testa-trofeo a terra)
+function makePodiumHead(color) {
+    const g = new THREE.Group();
+    const teamCol = new THREE.Color(color);
+    const matSkin = new THREE.MeshLambertMaterial({ color: 0xd9a066 });
+    const matTeam = new THREE.MeshLambertMaterial({ color: teamCol.clone().multiplyScalar(0.7) });
+    const matGun  = new THREE.MeshLambertMaterial({ color: 0x1c1c1c });
+    const face = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.46, 0.46), matSkin);
+    face.castShadow = true; g.add(face);
+    const helm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.5), matTeam);
+    helm.position.y = 0.28; g.add(helm);
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.10, 0.04), matGun);
+    visor.position.set(0, 0.03, 0.24); g.add(visor);
+    return g;
+}
+
+// Etichetta punteggio (sprite canvas) sopra ogni colonna
+function makePointsLabel(pts, color) {
+    const cvs = document.createElement('canvas');
+    cvs.width = 256; cvs.height = 128;
+    const c = cvs.getContext('2d');
+    c.font = 'bold 76px Fredoka, Arial, sans-serif';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.lineWidth = 8; c.strokeStyle = 'rgba(0,0,0,0.85)';
+    c.strokeText('💀 ' + pts, 128, 66);
+    c.fillStyle = color;
+    c.fillText('💀 ' + pts, 128, 64);
+    const tex = new THREE.CanvasTexture(cvs);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    sp.scale.set(2.4, 1.2, 1);
+    return sp;
+}
+
+// Costruisce il podio: ogni giocatore su una TORRE di teste alta quanto i suoi punti.
+// Più teste = più in alto = vince (visualizza "chi ha la torre più alta").
+function buildPodium(pointsMap) {
+    while (podiumGroup.children.length) podiumGroup.remove(podiumGroup.children[0]);
+    podiumHeads = [];
+    podiumModels = [];
+
+    const entries = Object.entries(pointsMap || {}).sort((a, b) => b[1] - a[1]);
+    const n = entries.length;
+    if (n === 0) { podiumAnim = null; return; }
+
+    const SPACING = 3.2;
+    const HEAD_H = 0.5;
+    const HEAD_CAP = 14;            // teste max mostrate per torre (il numero esatto è nell'etichetta)
+    const rowW = (n - 1) * SPACING;
+
+    let maxTop = 0;
+    let headOrder = 0;
+    entries.forEach(([color, pts], i) => {
+        const x = i * SPACING - rowW / 2;
+
+        // Base/pedistallo
+        const base = new THREE.Mesh(
+            new THREE.BoxGeometry(1.5, 0.4, 1.5),
+            new THREE.MeshLambertMaterial({ color: 0x161a20 })
+        );
+        base.position.set(x, PODIUM_Y + 0.2, 0);
+        base.castShadow = true;
+        podiumGroup.add(base);
+
+        // Torre di teste (pop-in animato)
+        const shown = Math.max(0, Math.min(pts, HEAD_CAP));
+        for (let k = 0; k < shown; k++) {
+            const head = makePodiumHead(color);
+            head.position.set(x, PODIUM_Y + 0.4 + k * HEAD_H + HEAD_H / 2, 0);
+            head.scale.setScalar(0.0001);
+            head.userData.delay = 0.35 + headOrder * 0.05;
+            podiumGroup.add(head);
+            podiumHeads.push(head);
+            headOrder++;
+        }
+        const towerTop = PODIUM_Y + 0.4 + shown * HEAD_H;
+
+        // Modello del giocatore in cima alla torre
+        const parts = createPlayerMesh(color, 'assault');
+        parts.group.position.set(x, towerTop, 0);
+        parts.group.rotation.y = Math.PI;   // fronte verso la camera (che è a +Z)
+        parts.group.scale.setScalar(0.0001);
+        parts.group.userData.delay = 0.35 + shown * 0.05 + 0.15;
+        podiumGroup.add(parts.group);
+        podiumModels.push(parts.group);
+
+        // Etichetta punti
+        const label = makePointsLabel(pts, color);
+        label.position.set(x, towerTop + 2.5, 0);
+        podiumGroup.add(label);
+
+        maxTop = Math.max(maxTop, towerTop + 1.9);
+    });
+
+    // Inquadratura
+    const span = maxTop - PODIUM_Y;
+    const dist = Math.max(rowW * 0.8, span) + 7.5;
+    podiumAnim = {
+        start: performance.now(),
+        dist,
+        camY: PODIUM_Y + span * 0.55,
+        lookY: PODIUM_Y + span * 0.4
+    };
+    podiumCamera.position.set(0, podiumAnim.camY, dist);
+    podiumCamera.lookAt(0, podiumAnim.lookY, 0);
+}
+
+// Animazione del podio (chiamata dal loop in fase game_over)
+function updatePodium(now) {
+    const t = (now - podiumAnim.start) / 1000;
+    for (const h of podiumHeads) {
+        const p = _clamp01((t - h.userData.delay) / 0.28);
+        h.scale.setScalar(Math.max(0.0001, _easeOutBack(p)));
+    }
+    for (const m of podiumModels) {
+        const p = _clamp01((t - m.userData.delay) / 0.3);
+        m.scale.setScalar(Math.max(0.0001, _easeOutBack(p)));
+    }
+    // Leggera oscillazione della camera per dare vita alla scena
+    const ang = Math.sin(t * 0.28) * 0.5;
+    podiumCamera.position.set(Math.sin(ang) * podiumAnim.dist, podiumAnim.camY, Math.cos(ang) * podiumAnim.dist);
+    podiumCamera.lookAt(0, podiumAnim.lookY, 0);
 }
 
 // Healthbar: visibile solo se ferito, riempimento ancorato a sinistra, billboard verso la camera
@@ -1055,66 +1466,96 @@ const weaponModels = {};
 
 // Tutte le armi sono ancorate a destra (x≈0.08) e in basso (y≈-0.11),
 // con la canna che punta in avanti (-z). Stile voxel ma con forma riconoscibile.
-const GX = 0.085;
+// Offset X destro arma FP. In ADS (non-sniper) il weaponGroup viene lerpato verso il
+// centro (iron sights): offset 0.06-GX sul gruppo porta il totale a 0.06.
+const GX = 0.24;
+
+// Cache dei gltf.scene originali: riutilizzati (clonati) per le armi in terza persona
+const _glbSceneCache = {};
+
+// Barrel lungo +X nel modello Quaternius. ry=π/2 porta +X → -Z (forward in camera space).
+// pos = [X, Y, Z_calcio_da_camera]. rz=-0.08: roll CW mostra più superficie superiore.
+// Sniper: rz/rx ridotti (arma lunga già ben visibile con meno inclinazione).
+const _WEAPON_GLB_CFG = {
+    assault: { path: '/assets/guns/Assault Rifle.glb',  targetLen: 0.62, pos: [GX, -0.20, -0.18], rot: [0.08, Math.PI / 2, -0.08] },
+    smg:     { path: '/assets/guns/Submachine Gun.glb', targetLen: 0.48, pos: [GX, -0.18, -0.16], rot: [0.08, Math.PI / 2, -0.08] },
+    shotgun: { path: '/assets/guns/Shotgun.glb',        targetLen: 0.56, pos: [GX, -0.20, -0.18], rot: [0.08, Math.PI / 2, -0.08] },
+    sniper:  { path: '/assets/guns/Sniper Rifle.glb',   targetLen: 0.82, pos: [GX, -0.22, -0.18], rot: [0.06, Math.PI / 2, -0.06] },
+};
+
+// Scala il modello e sposta il pivot al CALCIO (min.x) così il barrel si estende
+// tutto in avanti (dalla posizione del gruppo verso -Z dopo la rotazione ry=π/2).
+function _glbScaleAndPivot(obj, targetLen) {
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (maxDim > 0) obj.scale.setScalar(targetLen / maxDim);
+    // Centra
+    box.setFromObject(obj);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    obj.position.sub(center);
+    // Sposta il pivot al calcio (min X = lato opposto alla canna che è a max X)
+    box.setFromObject(obj);
+    obj.position.x -= box.min.x;
+}
+
+// Converte i materiali GLB.
+// Il GLTF loader converte baseColor sRGB→linear; con outputEncoding=Linear il colore
+// appare scuro (manca la gamma correction in output). Invertiamo con pow(c, 1/2.2).
+// useBasic=true → MeshBasicMaterial (FP, no luce necessaria);
+// false → MeshLambertMaterial + emissive per TP.
+function _glbApplyMaterials(obj, useBasic = false) {
+    obj.traverse(child => {
+        if (!child.isMesh) return;
+        const mats = [].concat(child.material);
+        child.material = mats.map(m => {
+            const raw = m.color || new THREE.Color(0.5, 0.5, 0.5);
+            const col = new THREE.Color(
+                Math.pow(Math.max(0, raw.r), 1 / 2.2),
+                Math.pow(Math.max(0, raw.g), 1 / 2.2),
+                Math.pow(Math.max(0, raw.b), 1 / 2.2)
+            );
+            const params = {
+                color: col,
+                map: m.map || null,
+                vertexColors: m.vertexColors || false,
+                transparent: !!m.transparent,
+                opacity: m.opacity ?? 1,
+            };
+            if (useBasic) return new THREE.MeshBasicMaterial(params);
+            return new THREE.MeshLambertMaterial({
+                ...params,
+                emissive: col.clone().multiplyScalar(0.2),
+            });
+        });
+        if (child.material.length === 1) child.material = child.material[0];
+        if (!useBasic) child.castShadow = true;
+    });
+}
+
 function buildWeaponModels() {
-    // ── Assault Rifle (stile carabina M4) ──
-    const ar = new THREE.Group();
-    ar.add(makeViewBox(0.05, 0.07, 0.40, GX, -0.11, -0.34, 0x2c2c2c, 'metal'));      // ricevitore
-    ar.add(makeViewBox(0.044, 0.055, 0.22, GX, -0.11, -0.60, 0x232323, 'polymer'));  // handguard
-    ar.add(makeViewCyl(0.012, 0.20, GX, -0.105, -0.80, 0x111111, 'metal'));          // canna
-    ar.add(makeViewBox(0.03, 0.03, 0.045, GX, -0.105, -0.91, 0x111111, 'metal'));    // freno di bocca
-    const arMag = makeViewBox(0.034, 0.14, 0.05, GX, -0.20, -0.30, 0x1c1c1c, 'polymer'); // caricatore curvo
-    arMag.rotation.x = 0.28; ar.add(arMag);
-    const arGrip = makeViewBox(0.033, 0.10, 0.04, GX, -0.185, -0.20, 0x1a1a1a, 'polymer'); // impugnatura
-    arGrip.rotation.x = -0.35; ar.add(arGrip);
-    ar.add(makeViewBox(0.045, 0.06, 0.15, GX, -0.10, -0.11, 0x232323, 'polymer'));   // calcio
-    ar.add(makeViewBox(0.02, 0.025, 0.30, GX, -0.055, -0.40, 0x1a1a1a, 'metal'));    // rail superiore
-    ar.add(makeViewBox(0.012, 0.03, 0.012, GX, -0.028, -0.54, 0x111111, 'metal'));   // mirino anteriore (sul rail)
-    weaponModels.assault = ar;
+    const loader = new THREE.GLTFLoader();
 
-    // ── SMG (stile MP5, compatta) ──
-    const smg = new THREE.Group();
-    smg.add(makeViewBox(0.045, 0.06, 0.26, GX, -0.11, -0.30, 0x2b2b2b, 'polymer'));  // corpo
-    smg.add(makeViewCyl(0.018, 0.14, GX, -0.11, -0.50, 0x222222, 'metal'));          // tromba/canna
-    smg.add(makeViewBox(0.026, 0.026, 0.05, GX, -0.11, -0.59, 0x111111, 'metal'));   // bocca
-    const smgMag = makeViewBox(0.03, 0.15, 0.04, GX, -0.20, -0.27, 0x1c1c1c, 'polymer'); // caricatore lungo
-    smgMag.rotation.x = 0.12; smg.add(smgMag);
-    const smgGrip = makeViewBox(0.03, 0.09, 0.035, GX, -0.175, -0.18, 0x1a1a1a, 'polymer');
-    smgGrip.rotation.x = -0.30; smg.add(smgGrip);
-    smg.add(makeViewCyl(0.008, 0.14, GX, -0.095, -0.11, 0x2b2b2b, 'metal'));          // asta calcio
-    smg.add(makeViewBox(0.045, 0.05, 0.02, GX, -0.095, -0.04, 0x232323, 'metal'));    // calciolo
-    weaponModels.smg = smg;
+    Object.entries(_WEAPON_GLB_CFG).forEach(([key, cfg]) => {
+        const group = new THREE.Group();
+        group.visible = false;
+        weaponGroup.add(group);
+        weaponModels[key] = group;
 
-    // ── Shotgun (a pompa) ──
-    const sg = new THREE.Group();
-    const sgStock = makeViewBox(0.045, 0.07, 0.22, GX, -0.125, -0.15, 0x5c3a1e, 'wood'); // calcio legno (sovrapposto al ricevitore)
-    sgStock.rotation.x = 0.06; sg.add(sgStock);
-    sg.add(makeViewBox(0.05, 0.075, 0.22, GX, -0.11, -0.34, 0x2a2a2a, 'metal'));      // ricevitore
-    sg.add(makeViewCyl(0.022, 0.46, GX, -0.10, -0.62, 0x1a1a1a, 'metal'));            // canna
-    sg.add(makeViewCyl(0.014, 0.40, GX, -0.135, -0.60, 0x222222, 'metal'));          // tubo serbatoio
-    sg.add(makeViewBox(0.045, 0.05, 0.11, GX, -0.125, -0.50, 0x6b4524, 'wood'));     // pompa/forend
-    weaponModels.shotgun = sg;
+        loader.load(cfg.path, (gltf) => {
+            _glbSceneCache[key] = gltf.scene;        // cache per le armi TP avversari
 
-    // ── Sniper (bolt-action con ottica) ──
-    const sn = new THREE.Group();
-    sn.add(makeViewBox(0.045, 0.07, 0.50, GX, -0.12, -0.46, 0x222222, 'metal'));     // corpo/stock
-    const snButt = makeViewBox(0.045, 0.085, 0.16, GX, -0.12, -0.12, 0x1c1c1c, 'metal');
-    sn.add(snButt);
-    sn.add(makeViewCyl(0.013, 0.36, GX, -0.11, -0.86, 0x111111, 'metal'));           // canna lunga
-    sn.add(makeViewBox(0.03, 0.03, 0.05, GX, -0.11, -1.05, 0x1a1a1a, 'metal'));      // freno di bocca
-    // ottica (cilindro + supporti + lenti)
-    sn.add(makeViewCyl(0.022, 0.22, GX, -0.05, -0.42, 0x2a2a2a, 'metal'));           // tubo ottica
-    sn.add(makeViewBox(0.018, 0.04, 0.02, GX, -0.075, -0.34, 0x111111, 'metal'));    // supporto ant.
-    sn.add(makeViewBox(0.018, 0.04, 0.02, GX, -0.075, -0.50, 0x111111, 'metal'));    // supporto post.
-    const snLens = makeViewCyl(0.020, 0.015, GX, -0.05, -0.53, 0x4060ff, 'metal');   // lente (riflesso blu)
-    sn.add(snLens);
-    const snBolt = makeViewBox(0.05, 0.015, 0.015, GX + 0.04, -0.115, -0.30, 0x333333, 'metal'); // otturatore
-    sn.add(snBolt);
-    weaponModels.sniper = sn;
-
-    Object.values(weaponModels).forEach(g => {
-        g.visible = false;
-        weaponGroup.add(g);
+            const model = gltf.scene.clone(true);     // clone dedicato alla prima persona
+            _glbScaleAndPivot(model, cfg.targetLen);
+            _glbApplyMaterials(model, true);          // Basic: colori diretti senza luce
+            group.position.set(...cfg.pos);
+            group.rotation.set(...cfg.rot);
+            group.add(model);
+        }, undefined, err => {
+            console.warn('[FPS] Caricamento GLB fallito:', cfg.path, err);
+        });
     });
 }
 
@@ -1213,6 +1654,35 @@ function makeViewCyl(radius, len, x, y, z, color, kind) {
 
 buildWeaponModels();
 
+// ── Braccio destro FP ──────────────────────────────────────────────────────────
+// Figlio di weaponGroup → si muove automaticamente col bob e col lerp ADS iron sights.
+// Posizioni relative all'origine di weaponGroup (= camera); stock arma è a [GX, y, z].
+(function buildFPArm() {
+    // guanto tattico scuro (lo stesso stile del modello giocatore)
+    const matGlv  = new THREE.MeshBasicMaterial({ color: 0x1a1816 });
+    const matSkin = new THREE.MeshBasicMaterial({ color: 0xd9a066 });
+
+    // Mano destra all'impugnatura: centrata sul grip medio di tutte le armi
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.12), matGlv);
+    hand.position.set(GX, -0.22, -0.40);
+    hand.rotation.set(0.08, 0, -0.08);
+    weaponGroup.add(hand);
+
+    // Nocche/dorso mano leggermente a vista (striscia skin sopra il guanto)
+    const knuckles = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.025, 0.06), matSkin);
+    knuckles.position.set(GX, -0.185, -0.39);
+    knuckles.rotation.set(0.08, 0, -0.08);
+    weaponGroup.add(knuckles);
+
+    // Avambraccio destro: emerge da fuori schermo (basso-destra) verso l'impugnatura.
+    // rx=-0.40 → estremità -Z punta verso il grip (z≈-0.37), estremità +Z verso il basso
+    // (z≈+0.07 = fuori schermo in basso).
+    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.095, 0.50), matGlv);
+    forearm.position.set(GX + 0.03, -0.46, -0.15);
+    forearm.rotation.set(-0.40, 0, 0.08);
+    weaponGroup.add(forearm);
+})();
+
 function switchWeaponModel(key) {
     Object.values(weaponModels).forEach(g => g.visible = false);
     if (weaponModels[key]) weaponModels[key].visible = true;
@@ -1227,12 +1697,7 @@ let pointerLocked = false;
 let isADS = false;
 const ADS_FOV = { assault: 50, smg: 55, shotgun: 62, sniper: 15 };
 
-document.getElementById('ptr-btn').addEventListener('click', () => {
-    Sfx.resume();
-    canvas.requestPointerLock();
-});
-
-// Anche click diretto sul canvas lancia il pointer lock
+// Nessun prompt: la visuale resta libera. Un click sulla scena cattura il mouse.
 canvas.addEventListener('click', () => {
     Sfx.resume();
     if (!pointerLocked && gameState.phase === 'playing' && !gameState.isDead) {
@@ -1242,8 +1707,6 @@ canvas.addEventListener('click', () => {
 
 document.addEventListener('pointerlockchange', () => {
     pointerLocked = document.pointerLockElement === canvas;
-    const shouldShow = !pointerLocked && gameState.phase === 'playing' && !gameState.isDead && !GamepadInput.isPanelOpen();
-    document.getElementById('pointer-prompt').classList.toggle('active', shouldShow);
     if (!pointerLocked) exitADS();
 });
 
@@ -1665,6 +2128,7 @@ let recoilPitch = 0;   // offset verticale del rinculo (decade a 0)
 let recoilYaw = 0;     // offset orizzontale del rinculo
 let shakeTrauma = 0;   // 0..1, intensità screen shake
 let weaponKick = 0;    // 0..1, rinculo visivo dell'arma
+let _wadsX = 0, _wadsY = 0, _wadsZ = 0;  // lerp ADS iron-sights offset
 
 const RECOIL = {
     assault: { pitch: 0.013, yaw: 0.006, shake: 0.10 },
@@ -1735,16 +2199,17 @@ function updateMovement(dt) {
         } else {
             speed = wantCrouch ? CROUCH_SPEED : isSprinting ? SPRINT_SPEED : WALK_SPEED;
         }
+        speed *= speedMul;   // mutatore "Velocità x2"
         pos.x += _moveDir.x * speed * dt;
         pos.z += _moveDir.z * speed * dt;
     }
     isCrouching = wantCrouch && !isSliding;
     isMoving = moving;
 
-    // Gravità
+    // Gravità (gravityMul: mutatore "Gravità lunare")
     const prevY = pos.y;
-    velocityY -= GRAVITY * dt;
-    velocityY = Math.max(velocityY, -20); // terminal velocity
+    velocityY -= GRAVITY * gravityMul * dt;
+    velocityY = Math.max(velocityY, -20 * gravityMul); // terminal velocity (più lenta se gravità bassa)
     pos.y += velocityY * dt;
 
     onGround = false;
@@ -1811,14 +2276,22 @@ function updateMovement(dt) {
     camera.rotation.x = pitch + recoilPitch + shY;
     camera.rotation.z = shZ + cameraRoll;
 
-    // Weapon bob (più ampio/rapido in corsa) + kick del rinculo
+    // Weapon bob (più ampio/rapido in corsa) + kick del rinculo + lerp ADS iron sights
     const bobAmp = isSprinting ? 1.8 : 1;
     const bobRate = isSprinting ? 11 : 8;
     const speed = isMoving ? 1 : 0;
     const t = Date.now() / 1000;
-    weaponGroup.position.x = Math.sin(t * bobRate) * 0.008 * bobAmp * speed;
-    weaponGroup.position.y = Math.abs(Math.sin(t * bobRate)) * 0.006 * bobAmp * speed + weaponKick * 0.01;
-    weaponGroup.position.z = weaponKick * 0.06;
+    const bobFactor = isADS ? 0.1 : 1;   // quasi zero bob mentre si mira
+
+    // Iron sights: porta il viewmodel quasi al centro (non sniper → scope CSS)
+    const adsActive = isADS && gameState.myWeapon !== 'sniper';
+    _wadsX += ((adsActive ? 0.06 - GX : 0) - _wadsX) * 0.15;
+    _wadsY += ((adsActive ? 0.10    : 0) - _wadsY) * 0.15;
+    _wadsZ += ((adsActive ? -0.18   : 0) - _wadsZ) * 0.15;
+
+    weaponGroup.position.x = Math.sin(t * bobRate) * 0.008 * bobAmp * speed * bobFactor + _wadsX;
+    weaponGroup.position.y = Math.abs(Math.sin(t * bobRate)) * 0.006 * bobAmp * speed * bobFactor + weaponKick * 0.01 + _wadsY;
+    weaponGroup.position.z = weaponKick * 0.06 + _wadsZ;
     weaponGroup.rotation.x = weaponKick * 0.12;
 }
 
@@ -1865,9 +2338,11 @@ function drawMinimap() {
     ctx.moveTo(c, 0); ctx.lineTo(c, size);
     ctx.stroke();
 
-    // Giocatori remoti
+    // Giocatori remoti — nascosti dal radar durante la Nebbia Fitta
+    // (altrimenti la minimappa vanificherebbe la ridotta visibilità del mutatore)
+    const hideEnemyDots = gameState.mutator === 'fog';
     for (const [color, rp] of Object.entries(gameState.players)) {
-        if (rp.dead) continue;
+        if (rp.dead || hideEnemyDots) continue;
         const p = toMM(rp.group.position.x, rp.group.position.z);
         ctx.fillStyle = color;
         ctx.beginPath();
@@ -1913,13 +2388,16 @@ function updateRoundHUD() {
 function updateScoreHUD() {
     const el = document.getElementById('hud-scores');
     el.innerHTML = '';
-    for (const [color, wins] of Object.entries(gameState.scores)) {
+    // Ordina per punti (teste) decrescenti: la classifica live della partita
+    const rows = Object.entries(gameState.points);
+    rows.sort((a, b) => b[1] - a[1]);
+    for (const [color, pts] of rows) {
         const row = document.createElement('div');
-        row.className = 'hud-score-row';
+        row.className = 'hud-score-row' + (color === MY_COLOR ? ' me' : '');
         row.innerHTML = `
             <div class="hud-score-dot" style="background:${color}"></div>
             <span style="color:${color}">${color === MY_COLOR ? 'YOU' : ''}</span>
-            <span class="hud-score-wins">${wins}</span>`;
+            <span class="hud-score-wins">💀 ${pts}</span>`;
         el.appendChild(row);
     }
 }
@@ -2084,6 +2562,7 @@ socket.on('fpsInit', (data) => {
     gameState.totalRounds = data.totalRounds;
     gameState.currentRound = data.currentRound;
     gameState.scores = data.scores;
+    gameState.points = data.points || {};
     gameState.weapons = data.weapons;
     gameState.hostColor = data.hostColor;
     updateScoreHUD();
@@ -2097,6 +2576,7 @@ socket.on('phaseWeaponSelect', (data) => {
     gameState.currentRound = data.currentRound;
     gameState.totalRounds = data.totalRounds;
     gameState.scores = data.scores;
+    gameState.points = data.points || gameState.points;
     gameState.weapons = data.weapons || gameState.weapons;
     updateScoreHUD();
     updateRoundHUD();
@@ -2145,8 +2625,11 @@ socket.on('playerHit', ({ targetColor, hp, shooterColor, damage }) => {
     }
 });
 
-socket.on('playerKilled', ({ killedColor, killerColor, aliveCount }) => {
+socket.on('playerKilled', ({ killedColor, killerColor, aliveCount, subphase, points }) => {
     addKillfeed(killerColor, killedColor);
+
+    // Aggiorna i punti live (il +1 per kill compare subito in HUD)
+    if (points) { gameState.points = points; updateScoreHUD(); }
 
     // Hitmarker rosso "kill" se l'uccisione è mia
     if (killerColor === MY_COLOR && killedColor !== MY_COLOR) {
@@ -2154,12 +2637,29 @@ socket.on('playerKilled', ({ killedColor, killerColor, aliveCount }) => {
         Sfx.killConfirm();
     }
 
+    // In SUDDEN DEATH ogni caduto lascia la testa sul punto di morte (feedback immediato;
+    // sarà comunque ricostruita dalla lista autoritativa del server a inizio round).
+    if (subphase === 'suddendeath') {
+        if (killedColor === MY_COLOR) {
+            const p = playerRoot.position;
+            dropTrophyLive(MY_COLOR, p.x, p.y, p.z);
+        } else if (gameState.players[killedColor]) {
+            const p = gameState.players[killedColor].group.position;
+            dropTrophyLive(killedColor, p.x, p.y, p.z);
+        }
+    }
+
     if (killedColor === MY_COLOR) {
         gameState.isDead = true;
         Sfx.death();
         exitADS();
-        document.getElementById('dead-screen').classList.add('active');
-        document.exitPointerLock();
+        const ds = document.getElementById('dead-screen');
+        const sub = ds.querySelector('p');
+        if (sub) sub.textContent = (subphase === 'melee') ? 'Respawning…' : 'Waiting for round to end…';
+        ds.classList.add('active');
+        // In mischia si rinasce subito: si TIENE il pointer lock (niente click per rientrare).
+        // In sudden death la morte è definitiva: si rilascia il mouse.
+        if (subphase !== 'melee') document.exitPointerLock();
         if (weaponGroup) weaponGroup.visible = false;
     }
 
@@ -2167,6 +2667,92 @@ socket.on('playerKilled', ({ killedColor, killerColor, aliveCount }) => {
         gameState.players[killedColor].dead = true;
         gameState.players[killedColor].group.visible = false;
     }
+});
+
+// Rinascita in mischia: rientro istantaneo su uno spawn point
+socket.on('playerRespawn', ({ color, x, y, z, angle, hp, weaponKey, ammo }) => {
+    if (color === MY_COLOR) {
+        gameState.isDead = false;
+        gameState.myHp = hp;
+        playerRoot.position.set(x, y, z);
+        playerRoot.rotation.y = angle || 0;
+        yaw = angle || 0;
+        pitch = 0;
+        velocityY = 0;
+        onGround = true;
+
+        // Reset postura/stati movimento (come allo spawn di round)
+        isSliding = isCrouching = isSprinting = isMoving = airSprint = false;
+        slideTimer = 0;
+        currentEyeH = STAND_EYE;
+        camera.position.y = STAND_EYE;
+        cameraRoll = 0;
+        camera.rotation.z = 0;
+
+        isReloading = false;
+        if (ammo != null) { gameState.myAmmo = ammo; updateAmmoHUD(); }
+        updateHpHUD(hp);
+        document.getElementById('dead-screen').classList.remove('active');
+        if (weaponGroup) weaponGroup.visible = true;
+        Sfx.respawn ? Sfx.respawn() : Sfx.roundStart();
+    } else {
+        const rp = gameState.players[color];
+        if (rp) {
+            rp.dead = false;
+            rp.hp = hp;
+            rp.group.visible = true;
+            rp.group.position.set(x, y, z);
+            rp.snapshots = [];   // scarta i frame di posizione pre-morte
+        }
+    }
+});
+
+// Passaggio a SUDDEN DEATH: respawn OFF, tutti vivi e a piena vita
+socket.on('suddenDeathStart', (data) => {
+    gameState.subphase = 'suddendeath';
+
+    const me = data.players[MY_COLOR];
+    if (me) {
+        gameState.myHp = me.hp;
+        updateHpHUD(me.hp);
+        if (gameState.isDead) {
+            // Ero in respawn allo scoccare del sudden death → rientro un'ultima volta
+            gameState.isDead = false;
+            playerRoot.position.set(me.x, me.y, me.z);
+            playerRoot.rotation.y = me.angle || 0;
+            yaw = me.angle || 0;
+            pitch = 0;
+            velocityY = 0;
+            onGround = true;
+            isSliding = isCrouching = isSprinting = isMoving = airSprint = false;
+            slideTimer = 0;
+            currentEyeH = STAND_EYE;
+            camera.position.y = STAND_EYE;
+            cameraRoll = 0;
+            camera.rotation.z = 0;
+            document.getElementById('dead-screen').classList.remove('active');
+            if (weaponGroup) weaponGroup.visible = true;
+        }
+    }
+
+    // Riporta visibili gli avversari e cura tutti a piena vita
+    for (const [color, ps] of Object.entries(data.players)) {
+        if (color === MY_COLOR) continue;
+        const rp = gameState.players[color];
+        if (!rp) continue;
+        const wasDead = rp.dead;
+        rp.dead = false;
+        rp.hp = ps.hp;
+        rp.group.visible = true;
+        if (wasDead) {
+            // Era in respawn: riposiziona sullo spawn dato dal server
+            rp.group.position.set(ps.x, ps.y, ps.z);
+            rp.snapshots = [];
+        }
+    }
+
+    showSuddenDeathBanner();
+    Sfx.suddenDeath ? Sfx.suddenDeath() : Sfx.roundStart();
 });
 
 socket.on('playerLeft', ({ color }) => {
@@ -2177,12 +2763,14 @@ socket.on('playerLeft', ({ color }) => {
     }
     if (gameState.scores[color] !== undefined) {
         delete gameState.scores[color];
+        if (gameState.points) delete gameState.points[color];
         updateScoreHUD();
     }
 });
 
 socket.on('roundEnd', (data) => {
     gameState.scores = data.scores;
+    if (data.points) gameState.points = data.points;
     updateScoreHUD();
     showRoundEndOverlay(data);
 });
@@ -2215,7 +2803,6 @@ function showWeaponSelect(duration = 20000) {
     document.getElementById('weapon-select-screen').classList.add('active');
     document.getElementById('overlay').classList.remove('active');
     document.getElementById('dead-screen').classList.remove('active');
-    document.getElementById('pointer-prompt').classList.remove('active');
     document.exitPointerLock();
 
     confirmed = false;
@@ -2249,10 +2836,116 @@ function hideWeaponSelect() {
     document.getElementById('weapon-select-screen').classList.remove('active');
 }
 
+// ── Indicatore di fase del round (MISCHIA con countdown / SUDDEN DEATH) ──
+let meleeCountdownInterval = null;
+
+function showPhaseIndicator(kind, durationMs) {
+    const el = document.getElementById('phase-indicator');
+    if (!el) return;
+    clearInterval(meleeCountdownInterval);
+    if (kind === 'melee') {
+        let remaining = Math.ceil((durationMs || 60000) / 1000);
+        el.className = 'melee';
+        el.textContent = `⚔ MISCHIA · ${remaining}s`;
+        el.style.display = 'block';
+        meleeCountdownInterval = setInterval(() => {
+            remaining--;
+            el.textContent = `⚔ MISCHIA · ${Math.max(0, remaining)}s`;
+            if (remaining <= 0) clearInterval(meleeCountdownInterval);
+        }, 1000);
+    }
+}
+
+function hidePhaseIndicator() {
+    clearInterval(meleeCountdownInterval);
+    const el = document.getElementById('phase-indicator');
+    if (el) el.style.display = 'none';
+}
+
+function showSuddenDeathBanner() {
+    // Aggiorna la pill in alto
+    clearInterval(meleeCountdownInterval);
+    const el = document.getElementById('phase-indicator');
+    if (el) {
+        el.className = 'suddendeath';
+        el.textContent = '☠ SUDDEN DEATH';
+        el.style.display = 'block';
+    }
+    // Flash a schermo intero
+    const banner = document.getElementById('sudden-death-banner');
+    if (banner) {
+        banner.classList.remove('show');
+        void banner.offsetWidth; // forza il restart dell'animazione
+        banner.classList.add('show');
+        setTimeout(() => banner.classList.remove('show'), 2200);
+    }
+}
+
+// ── MUTATORI ────────────────────────────────────────
+// Metadati per il reveal a schermo (nome/icona/descrizione)
+const MUTATOR_INFO = {
+    moon_gravity: { name: 'Gravità Lunare', icon: '🌙', desc: 'Salti altissimi!',    col: '#8fb7ff' },
+    speed_x2:     { name: 'Velocità x2',    icon: '⚡', desc: 'Tutti velocissimi!',  col: '#ffd84b' },
+    fog:          { name: 'Nebbia Fitta',   icon: '🌫️', desc: 'Visibilità ridotta',  col: '#c3ccd6' }
+};
+
+// Applica l'effetto del mutatore. Chiamata a ogni inizio round: resetta SEMPRE
+// prima ai valori di default, poi applica quello attivo (null = round normale).
+function applyMutator(id) {
+    // Reset di tutti gli effetti
+    gravityMul = 1;
+    speedMul = 1;
+    scene.fog.color.setHex(DEFAULT_SKY);
+    scene.fog.density = DEFAULT_FOG_DENSITY;
+    renderer.setClearColor(DEFAULT_SKY);
+
+    switch (id) {
+        case 'moon_gravity':
+            gravityMul = 0.3;   // salti alti e cadute lente
+            break;
+        case 'speed_x2':
+            speedMul = 1.8;     // corsa frenetica (taratura in localhost)
+            break;
+        case 'fog':
+            scene.fog.color.setHex(0x9aa3ad);
+            scene.fog.density = 0.05;
+            renderer.setClearColor(0x9aa3ad);
+            break;
+    }
+}
+
+let mutatorRevealTimer = null;
+
+// Reveal a schermo ~2s (non bloccante) + stinger audio
+function showMutatorReveal(id) {
+    const info = MUTATOR_INFO[id];
+    const el = document.getElementById('mutator-reveal');
+    if (!info || !el) return;
+    el.style.setProperty('--mr-col', info.col);
+    el.innerHTML = `
+        <div class="mr-label">MUTATORE</div>
+        <div class="mr-icon">${info.icon}</div>
+        <div class="mr-name">${info.name}</div>
+        <div class="mr-desc">${info.desc}</div>`;
+    el.classList.remove('show');
+    void el.offsetWidth; // restart animazione
+    el.classList.add('show');
+    Sfx.revealStinger ? Sfx.revealStinger() : Sfx.roundStart();
+    clearTimeout(mutatorRevealTimer);
+    mutatorRevealTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
 function handleRoundStart(data) {
     gameState.phase = 'playing';
     gameState.currentRound = data.round || data.currentRound || gameState.currentRound;
     gameState.isDead = false;
+    gameState.subphase = data.subphase || 'melee';
+    gameState.mutator = data.mutator || null;
+    if (data.points) gameState.points = data.points;
+    applyMutator(gameState.mutator);   // resetta e applica l'effetto del round
+
+    // Trofei-teste: ricostruisce dal server la lista persistente (accumulata nei round)
+    renderTrophies(data.trophyHeads);
 
     // Pulisci mesh remote vecchie
     for (const rp of Object.values(gameState.players)) {
@@ -2301,20 +2994,29 @@ function handleRoundStart(data) {
     updateScoreHUD();
     Sfx.roundStart();
 
+    // Indicatore fase: la MISCHIA mostra un countdown, poi scatta il sudden death
+    if (gameState.subphase === 'melee') {
+        showPhaseIndicator('melee', data.meleeDuration || 60000);
+    } else {
+        hidePhaseIndicator();
+    }
+
+    // Reveal del mutatore del round
+    if (gameState.mutator) showMutatorReveal(gameState.mutator);
+
     document.getElementById('overlay').classList.remove('active');
     document.getElementById('dead-screen').classList.remove('active');
     if (weaponGroup) weaponGroup.visible = true;
-
-    // Mostra il prompt solo se il pointer non è già catturato
-    if (!pointerLocked) {
-        document.getElementById('pointer-prompt').classList.add('active');
-    }
 }
 
 let overlayCountdownInterval = null;
 
 function showRoundEndOverlay(data) {
     gameState.phase = 'round_end';
+    gameState.subphase = null;
+    gameState.mutator = null;
+    applyMutator(null);   // rimuove gli effetti (nebbia, gravità, velocità) tra un round e l'altro
+    hidePhaseIndicator();
     document.exitPointerLock();
 
     const box = document.getElementById('overlay-box');
@@ -2327,7 +3029,8 @@ function showRoundEndOverlay(data) {
     title.textContent = `Round ${data.round} of ${data.totalRounds} — Over`;
 
     if (data.winnerColor) {
-        main.textContent = data.winnerColor === MY_COLOR ? '🏆 You Win!' : 'Round Lost';
+        const bonusTxt = data.sdBonus ? ` (+${data.sdBonus} 💀)` : '';
+        main.textContent = data.winnerColor === MY_COLOR ? `🏆 You Win!${bonusTxt}` : 'Round Lost';
         main.style.color = data.winnerColor === MY_COLOR ? 'var(--col-accent)' : 'var(--col-danger)';
     } else {
         main.textContent = 'Draw';
@@ -2335,20 +3038,21 @@ function showRoundEndOverlay(data) {
     }
 
     scoresEl.innerHTML = '';
-    for (const [color, wins] of Object.entries(data.scores)) {
+    const ptsList = Object.entries(data.points || data.scores).sort((a, b) => b[1] - a[1]);
+    for (const [color, pts] of ptsList) {
         const row = document.createElement('div');
         row.className = 'overlay-score-row' + (color === data.winnerColor ? ' winner' : '');
         row.innerHTML = `
             <div class="overlay-score-color" style="background:${color}"></div>
             <span style="color:${color}">${color === MY_COLOR ? 'YOU' : color.slice(0, 7)}</span>
-            <span class="overlay-score-wins">${wins} wins</span>`;
+            <span class="overlay-score-wins">💀 ${pts}</span>`;
         scoresEl.appendChild(row);
     }
 
     btn.style.display = 'none';
     document.getElementById('overlay-countdown').style.display = 'block';
 
-    let sec = 5;
+    let sec = Math.max(1, Math.ceil((data.nextInMs || 2500) / 1000));
     cd.textContent = sec;
     clearInterval(overlayCountdownInterval);
     overlayCountdownInterval = setInterval(() => {
@@ -2362,7 +3066,17 @@ function showRoundEndOverlay(data) {
 
 function showGameOverOverlay(data) {
     gameState.phase = 'game_over';
+    gameState.subphase = null;
+    hidePhaseIndicator();
     document.exitPointerLock();
+
+    // ── Podio finale 3D: torri di teste + modelli, camera dedicata ──
+    buildPodium(data.points || {});
+    activeCamera = podiumCamera;
+    scene.fog.density = 0;                 // niente nebbia sul podio (la pagina si ricarica al ritorno lobby)
+    document.body.classList.add('podium-mode');
+    document.getElementById('overlay').classList.add('podium');
+    if (weaponGroup) weaponGroup.visible = false;
 
     document.getElementById('overlay-title').textContent = 'Game Over';
     const main = document.getElementById('overlay-main');
@@ -2377,14 +3091,14 @@ function showGameOverOverlay(data) {
 
     const scoresEl = document.getElementById('overlay-scores');
     scoresEl.innerHTML = '';
-    const sorted = Object.entries(data.scores).sort((a, b) => b[1] - a[1]);
-    for (const [color, wins] of sorted) {
+    const sorted = Object.entries(data.points || data.scores).sort((a, b) => b[1] - a[1]);
+    for (const [color, pts] of sorted) {
         const row = document.createElement('div');
         row.className = 'overlay-score-row' + (color === data.champion ? ' winner' : '');
         row.innerHTML = `
             <div class="overlay-score-color" style="background:${color}"></div>
             <span style="color:${color}">${color === MY_COLOR ? 'YOU' : color.slice(0, 7)}</span>
-            <span class="overlay-score-wins">${wins} wins</span>`;
+            <span class="overlay-score-wins">💀 ${pts}</span>`;
         scoresEl.appendChild(row);
     }
 
@@ -2431,7 +3145,7 @@ let stateThrottle = 0;
 
 // Invio posizione agli altri client (WebRTC + fallback socket)
 function sendStateHeartbeat() {
-    if (gameState.phase !== 'playing') return;
+    if (gameState.phase !== 'playing' || gameState.isDead) return;
     broadcastState();
     socket.emit('playerState', {
         lobbyId: LOBBY_ID,
@@ -2465,12 +3179,7 @@ GamepadInput.setCallbacks({
     onADS:        enterADS,
     onADSRelease: exitADS,
     onReload:     () => { if (!isReloading && gameState.myAmmo < gameState.myMaxAmmo) startReload(); },
-    getWeapon:    () => gameState.weapons[gameState.myWeapon],
-    onPanelClose: () => {
-        if (gameState.phase === 'playing' && !gameState.isDead) {
-            document.getElementById('pointer-prompt').style.display = '';
-        }
-    }
+    getWeapon:    () => gameState.weapons[gameState.myWeapon]
 });
 
 function animate() {
@@ -2507,7 +3216,9 @@ function animate() {
         sendStateHeartbeat();
     }
 
-    renderer.render(scene, camera);
+    if (gameState.phase === 'game_over' && podiumAnim) updatePodium(now);
+
+    renderer.render(scene, activeCamera);
 }
 
 animate();

@@ -22,6 +22,10 @@
             <span id="lobby-id-value" class="lobby-id-code">…</span>
         </div>
 
+        <button id="playground-btn" class="btn-playground">
+            <i data-lucide="gamepad-2" style="width:16px;height:16px;vertical-align:middle;stroke-width:2.5;"></i>
+            Playground
+        </button>
         <button id="leave-lobby-btn" class="btn-leave">Leave</button>
     </div>
 
@@ -209,8 +213,24 @@
     </div>
 </div>
 
+<!-- OVERLAY: PLAYGROUND 3D -->
+<div id="playground-overlay">
+    <canvas id="playground-canvas"></canvas>
+    <button id="playground-exit-btn">
+        <i data-lucide="door-open" style="width:16px;height:16px;vertical-align:middle;stroke-width:2.5;margin-right:6px;"></i>Esci
+    </button>
+    <div id="playground-hint">
+        <span>🖱️ Click per muovere la telecamera</span>
+        <span>·</span>
+        <span>WASD per rotolare</span>
+        <span>·</span>
+        <span>Scontrati con gli altri!</span>
+    </div>
+</div>
+
 <script src="/socket.io/socket.io.js"></script>
 <script>lucide.createIcons();</script>
 <script src="lobby.js" defer></script>
+<script src="playground.js" defer></script>
 </body>
 </html>
