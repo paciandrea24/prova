@@ -139,6 +139,10 @@ body.ads #crosshair { opacity: 0; }
 #hitmarker.kill::before,
 #hitmarker.kill::after { background: rgba(255, 60, 60, 0.98); }
 
+/* hitmarker giallo per headshot */
+#hitmarker.head::before,
+#hitmarker.head::after { background: rgba(255, 210, 60, 0.98); }
+
 /* ─── ADS — RED DOT (assault, smg, shotgun) ──────── */
 #ads-dot {
     display: none;

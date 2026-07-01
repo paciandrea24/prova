@@ -29,18 +29,26 @@ const SPAWN_POINTS = [
 const PLAYER_HP = 100;
 const WEAPON_SELECT_TIME = 20000; // 20 secondi per scegliere l'arma (solo round 1)
 const ROUND_END_DELAY = 2500;     // pausa breve tra un round e l'altro (pacing "ancora una")
-const MELEE_DURATION = 60000;     // durata fase MISCHIA (respawn istantaneo) prima del sudden death
+const MELEE_DURATION = 20000;     // ⚠️ TEST: abbassato a 20s per velocizzare. Valore vero = 60000.
 const RESPAWN_DELAY = 1500;       // ritardo prima di rinascere in mischia
 
 // Mutatori v1: il server ne pesca uno a caso (senza ripetere l'ultimo) a ogni round.
 // Sono tutti effetti CLIENT-side: il server comunica solo l'id, il client applica l'effetto.
-const MUTATORS = ['moon_gravity', 'speed_x2', 'fog'];
+// ⚠️ TEST TEMPORANEO: forzato ai mutatori in verifica.
+// Lista completa (14 id) da ripristinare dopo i test:
+// const MUTATORS = ['moon_gravity','speed_x2','fog','giant_heads','blackout','double_damage','one_in_chamber','mini_players',
+//                   'vampirism','headshot_only','flicker_invis','gun_game','blind_mode','sonar'];
+const MUTATORS = ['flicker_invis', 'blind_mode', 'sonar'];
+
+// Moltiplicatore danno per mutatore (server autoritativo)
+const DMG_MUL = { double_damage: 2, one_in_chamber: 100 };
 
 const MAX_TROPHIES = 60;          // cap teste-trofeo sul campo (rimuove la più vecchia oltre il limite)
 
 // Punteggio "a teste": ogni kill vale punti, vincere il sudden death dà un bonus.
 const POINTS_PER_KILL = 1;        // punti per ogni uccisione (mischia E sudden death)
 const SD_WIN_BONUS = 5;           // bonus punti per chi vince il sudden death del round
+const HEADSHOT_MUL = 2;           // moltiplicatore danno sulle headshot (taratura in localhost)
 
 module.exports = function (io, socket) {
 
@@ -88,7 +96,7 @@ module.exports = function (io, socket) {
         // Inizializza partita se non esiste
         if (!activeGames.has(lobbyId)) {
             const settings = lobby.gameSettings || {};
-            const totalRounds = parseInt(settings.rounds) || 8;
+            const totalRounds = parseInt(settings.rounds) || 2; // TEMP: 2 round per testare (rimettere 8)
 
             const game = {
                 gameId: GAME_ID,
@@ -241,7 +249,7 @@ module.exports = function (io, socket) {
     // HIT DETECTION (server autoritativo)
     // ──────────────────────────────────────────
     socket.on('reportHit', (data) => {
-        const { lobbyId, shooterColor, targetColor, weaponKey } = data;
+        const { lobbyId, shooterColor, targetColor, weaponKey, headshot } = data;
         const game = activeGames.get(lobbyId);
         if (!game || game.phase !== 'playing') return;
 
@@ -251,13 +259,20 @@ module.exports = function (io, socket) {
         const weapon = WEAPONS[weaponKey];
         if (!weapon) return;
 
-        target.hp -= weapon.damage;
+        // Solo Headshot: i colpi al corpo non fanno danno
+        if (game.mutator === 'headshot_only' && !headshot) return;
+
+        // Danno = base × moltiplicatore mutatore (double_damage / one_in_chamber) × headshot
+        const mutMul = DMG_MUL[game.mutator] || 1;
+        const damage = weapon.damage * mutMul * (headshot ? HEADSHOT_MUL : 1);
+        target.hp -= damage;
 
         io.to(lobbyId).emit('playerHit', {
             targetColor,
             hp: Math.max(0, target.hp),
             shooterColor,
-            damage: weapon.damage
+            damage,
+            headshot: !!headshot
         });
 
         if (target.hp <= 0) {
@@ -266,6 +281,17 @@ module.exports = function (io, socket) {
             // Punti "a teste": ogni kill vale POINTS_PER_KILL al killer (no autogol)
             if (shooterColor && shooterColor !== targetColor) {
                 game.points[shooterColor] = (game.points[shooterColor] || 0) + POINTS_PER_KILL;
+
+                // Vampirismo: il killer torna a vita piena
+                if (game.mutator === 'vampirism') {
+                    const sh = game.players[shooterColor];
+                    if (sh && !sh.dead) {
+                        sh.hp = PLAYER_HP;
+                        io.to(lobbyId).emit('playerHit', {
+                            targetColor: shooterColor, hp: sh.hp, shooterColor, damage: 0, heal: true
+                        });
+                    }
+                }
             }
 
             io.to(lobbyId).emit('playerKilled', {

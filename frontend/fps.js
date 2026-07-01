@@ -69,6 +69,9 @@ let isReloading = false;
 // ── Moltiplicatori runtime pilotati dai mutatori (resettati ogni round) ──
 let gravityMul = 1;
 let speedMul = 1;
+let headScale = 1;   // mutatore "Teste Giganti"
+let ammoCap = Infinity;   // mutatore "Un Colpo in Canna" (cap munizioni)
+let sizeMul = 1;          // mutatore "Mini Giocatori" (scala corpo/collisioni/camera)
 let lastFireTime = 0;
 let confirmed = false;
 
@@ -292,6 +295,19 @@ scene.add(sun);
 
 const hemi = new THREE.HemisphereLight(0x87ceeb, 0x6b7c3a, 0.4);
 scene.add(hemi);
+
+// Intensità di default (ripristinate dal mutatore "Blackout")
+const DEFAULT_LIGHTS = { ambient: ambient.intensity, sun: sun.intensity, hemi: hemi.intensity };
+
+// Torcia per il mutatore "Blackout": SpotLight agganciata alla camera (come muzzleLight),
+// spenta di default. Punta in avanti grazie a un target figlio della camera.
+const flashlight = new THREE.SpotLight(0xfff2cc, 0, 55, Math.PI / 5, 0.45, 1);
+flashlight.position.set(0, 0, 0.1);
+const flashlightTarget = new THREE.Object3D();
+flashlightTarget.position.set(0, -0.05, -1);
+camera.add(flashlightTarget);
+camera.add(flashlight);
+flashlight.target = flashlightTarget;
 
 // ══════════════════════════════════════════════════════
 //  TEXTURE PROCEDURALI (stile low-poly stilizzato)
@@ -1138,6 +1154,7 @@ function createPlayerMesh(color, weaponKey) {
     const head = box(0.30, 0.32, 0.30, 0, 1.66 - HIP_Y, 0, matSkin, upper);
     box(0.36, 0.18, 0.36, 0, 1.82 - HIP_Y, 0, matDark, upper);          // casco
     box(0.34, 0.07, 0.10, 0, 1.74 - HIP_Y, -0.18, matGun, upper);       // visiera
+    head.scale.setScalar(headScale);   // mutatore "Teste Giganti"
 
     // ── Arma in terza persona (silhouette per-tipo, sostituibile a runtime) ──
     const weaponMount = new THREE.Group();
@@ -1351,6 +1368,8 @@ const _camQuat = new THREE.Quaternion();
 const _grpQuat = new THREE.Quaternion();
 function updateHealthbar(rp) {
     if (!rp.hpBar) return;
+    // "Alla Cieca": nessuna barra vita nemica (non sai quanto è ferito)
+    if (gameState.mutator === 'blind_mode') { rp.hpBar.visible = false; return; }
     const hp = Math.max(0, Math.min(100, rp.hp ?? 100));
     const show = hp < 100 && !rp.dead;
     rp.hpBar.visible = show;
@@ -1853,8 +1872,13 @@ function tryShoot() {
     const wall = raycastSolids(origin, dir, maxDist);
     let tracerDist = wall ? wall.dist : maxDist;
 
+    // bestKey = criterio di scelta (con bias verso la testa nei casi di parità);
+    // bestDist = distanza reale del colpo scelto (serve al check muro).
+    const HEAD_BIAS = 0.2;      // la testa vince se entro 0.2m dal corpo lungo il raggio
+    let bestKey = Infinity;
     let bestDist = Infinity;
     let bestColor = null;
+    let bestHead = false;       // il colpo migliore ha centrato la testa?
 
     for (const [color, rp] of Object.entries(gameState.players)) {
         if (rp.dead) continue;
@@ -1866,8 +1890,12 @@ function tryShoot() {
         let y0 = 0.30, y1 = 1.75, r = 0.42;
         if (a && a.slide) { y0 = 0.20; y1 = 0.95; r = 0.42; }
         else if (a && a.crouch) { y0 = 0.30; y1 = 1.20; r = 0.44; }
+        // Mini Giocatori: il modello remoto è scalato, quindi scala anche la hitbox
+        if (sizeMul !== 1) { y0 *= sizeMul; y1 *= sizeMul; r *= sizeMul; }
 
         const px = rp.group.position.x, py = rp.group.position.y, pz = rp.group.position.z;
+
+        // ── Corpo: capsula a sfere (NON conta come headshot) ──
         const steps = Math.max(1, Math.ceil((y1 - y0) / r));
         for (let i = 0; i <= steps; i++) {
             const cy = py + y0 + (y1 - y0) * (i / steps);
@@ -1875,9 +1903,33 @@ function tryShoot() {
             const proj = tx * dir.x + ty * dir.y + tz * dir.z;
             if (proj <= 0 || proj > w.range) continue;     // dietro di noi o fuori range
             const perp2 = Math.max(0, (tx * tx + ty * ty + tz * tz) - proj * proj);
-            if (perp2 < r * r && proj < bestDist) {
+            if (perp2 < r * r && proj < bestKey) {
+                bestKey = proj;
                 bestDist = proj;
                 bestColor = color;
+                bestHead = false;
+            }
+        }
+
+        // ── Testa: sfera dedicata → headshot (più danno). Ingrandita col mutatore
+        // "Teste Giganti" così le headshot diventano facilissime. Con HEAD_BIAS la
+        // testa ha la priorità sulla sfera-corpo in cima, quasi sovrapposta.
+        const headBase = (gameState.mutator === 'giant_heads') ? 0.6
+                       : (gameState.mutator === 'headshot_only') ? 0.34   // un filo più permissiva
+                       : 0.28;
+        const headR = headBase * sizeMul;
+        const headCy = py + y1 - 0.10 * sizeMul;   // centro testa, segue postura e taglia
+        {
+            const tx = px - origin.x, ty = headCy - origin.y, tz = pz - origin.z;
+            const proj = tx * dir.x + ty * dir.y + tz * dir.z;
+            if (proj > 0 && proj <= w.range) {
+                const perp2 = Math.max(0, (tx * tx + ty * ty + tz * tz) - proj * proj);
+                if (perp2 < headR * headR && (proj - HEAD_BIAS) < bestKey) {
+                    bestKey = proj - HEAD_BIAS;
+                    bestDist = proj;
+                    bestColor = color;
+                    bestHead = true;
+                }
             }
         }
     }
@@ -1885,16 +1937,23 @@ function tryShoot() {
     // Colpo valido solo se il nemico è davanti al muro (niente colpi attraverso i muri)
     if (bestColor && bestDist <= tracerDist) {
         tracerDist = bestDist;
-        showHitmarker(false);
-        Sfx.hitConfirm();
-        // Schizzo di sangue sul punto colpito
-        spawnParticles(origin.clone().addScaledVector(dir, bestDist), 0xcc1111, 9,
-            { speed: 3.5, gravity: 11, size: 0.06, life: 380 });
+        // Niente feedback di colpo quando: "Solo Headshot" e colpo al corpo (0 danno),
+        // oppure "Alla Cieca" (non devi sapere se hai colpito)
+        const noConfirm = (gameState.mutator === 'headshot_only' && !bestHead)
+                       || gameState.mutator === 'blind_mode';
+        if (!noConfirm) {
+            showHitmarker(false, bestHead);
+            Sfx.hitConfirm();
+            // Schizzo di sangue sul punto colpito (più abbondante sulle headshot)
+            spawnParticles(origin.clone().addScaledVector(dir, bestDist), 0xcc1111, bestHead ? 14 : 9,
+                { speed: 3.5, gravity: 11, size: 0.06, life: 380 });
+        }
         socket.emit('reportHit', {
             lobbyId: LOBBY_ID,
             shooterColor: MY_COLOR,
             targetColor: bestColor,
-            weaponKey: gameState.myWeapon
+            weaponKey: gameState.myWeapon,
+            headshot: bestHead
         });
     } else if (wall) {
         // Polvere/detriti sull'impatto col muro
@@ -2003,14 +2062,15 @@ function spawnParticles(point, color, count, opts = {}) {
 
 // Hitmarker — feedback visivo quando colpisci un avversario
 let hitmarkerTimeout = null;
-function showHitmarker(isKill) {
+function showHitmarker(isKill, isHead) {
     const hm = document.getElementById('hitmarker');
-    hm.classList.remove('show', 'kill');
+    hm.classList.remove('show', 'kill', 'head');
     void hm.offsetWidth; // reflow per riavviare l'animazione
     if (isKill) hm.classList.add('kill');
+    else if (isHead) hm.classList.add('head');   // headshot: marker distinto
     hm.classList.add('show');
     clearTimeout(hitmarkerTimeout);
-    hitmarkerTimeout = setTimeout(() => hm.classList.remove('show', 'kill'), 260);
+    hitmarkerTimeout = setTimeout(() => hm.classList.remove('show', 'kill', 'head'), 260);
 }
 
 // Muzzle flash
@@ -2060,25 +2120,28 @@ function canStandAt(x, z, footY, ignoreBox) {
     // Ignora ostacoli bassi (entro STEP_HEIGHT dai piedi): sono i gradini stessi.
     // Blocca solo se qualcosa occupa lo spazio di testa/busto sopra il gradino.
     const bodyBottom = footY + STEP_HEIGHT;
-    const head = footY + PLAYER_HEIGHT;
+    const head = footY + PLAYER_HEIGHT * sizeMul;   // sizeMul: mutatore "Mini Giocatori"
+    const rad = PLAYER_RADIUS * sizeMul;
     for (const b of solidBoxes) {
         if (b === ignoreBox) continue;
-        if (x + PLAYER_RADIUS <= b.min.x || x - PLAYER_RADIUS >= b.max.x) continue;
-        if (z + PLAYER_RADIUS <= b.min.z || z - PLAYER_RADIUS >= b.max.z) continue;
+        if (x + rad <= b.min.x || x - rad >= b.max.x) continue;
+        if (z + rad <= b.min.z || z - rad >= b.max.z) continue;
         if (b.min.y < head - 0.05 && b.max.y > bodyBottom + 0.05) return false;
     }
     return true;
 }
 
 function resolveCollisions(pos) {
+    const H = PLAYER_HEIGHT * sizeMul;   // sizeMul: mutatore "Mini Giocatori"
+    const rad = PLAYER_RADIUS * sizeMul;
     for (const box of solidBoxes) {
         // Scarta box che non si sovrappongono verticalmente al player
-        if (pos.y >= box.max.y || pos.y + PLAYER_HEIGHT <= box.min.y) continue;
+        if (pos.y >= box.max.y || pos.y + H <= box.min.y) continue;
 
-        const overlapXL = (pos.x + PLAYER_RADIUS) - box.min.x;
-        const overlapXR = box.max.x - (pos.x - PLAYER_RADIUS);
-        const overlapZF = (pos.z + PLAYER_RADIUS) - box.min.z;
-        const overlapZB = box.max.z - (pos.z - PLAYER_RADIUS);
+        const overlapXL = (pos.x + rad) - box.min.x;
+        const overlapXR = box.max.x - (pos.x - rad);
+        const overlapZF = (pos.z + rad) - box.min.z;
+        const overlapZB = box.max.z - (pos.z - rad);
 
         if (overlapXL <= 0 || overlapXR <= 0 || overlapZF <= 0 || overlapZB <= 0) continue;
 
@@ -2220,9 +2283,10 @@ function updateMovement(dt) {
         onGround = true;
     } else if (velocityY <= 0) {
         // Atterraggio sulla superficie superiore dei box
+        const rad = PLAYER_RADIUS * sizeMul;   // sizeMul: mutatore "Mini Giocatori"
         for (const box of solidBoxes) {
-            if (pos.x + PLAYER_RADIUS <= box.min.x || pos.x - PLAYER_RADIUS >= box.max.x) continue;
-            if (pos.z + PLAYER_RADIUS <= box.min.z || pos.z - PLAYER_RADIUS >= box.max.z) continue;
+            if (pos.x + rad <= box.min.x || pos.x - rad >= box.max.x) continue;
+            if (pos.z + rad <= box.min.z || pos.z - rad >= box.max.z) continue;
             if (prevY >= box.max.y && pos.y <= box.max.y) {
                 pos.y = box.max.y;
                 velocityY = 0;
@@ -2263,7 +2327,7 @@ function updateMovement(dt) {
     const shZ = (Math.random() - 0.5) * 2 * 0.04 * shake;
 
     // Altezza occhi (crouch/slide) con smoothing
-    const targetEye = isSliding ? SLIDE_EYE : isCrouching ? CROUCH_EYE : STAND_EYE;
+    const targetEye = (isSliding ? SLIDE_EYE : isCrouching ? CROUCH_EYE : STAND_EYE) * sizeMul;
     currentEyeH += (targetEye - currentEyeH) * Math.min(1, dt * 12);
     camera.position.y = currentEyeH;
 
@@ -2338,11 +2402,15 @@ function drawMinimap() {
     ctx.moveTo(c, 0); ctx.lineTo(c, size);
     ctx.stroke();
 
-    // Giocatori remoti — nascosti dal radar durante la Nebbia Fitta
+    // Giocatori remoti — nascosti dal radar durante Nebbia Fitta e Blackout
     // (altrimenti la minimappa vanificherebbe la ridotta visibilità del mutatore)
-    const hideEnemyDots = gameState.mutator === 'fog';
+    const mut = gameState.mutator;
+    const hideEnemyDots = mut === 'fog' || mut === 'blackout';
     for (const [color, rp] of Object.entries(gameState.players)) {
         if (rp.dead || hideEnemyDots) continue;
+        // "Radar Sonar": appari sul radar SOLO se in movimento e NON accovacciato
+        // (fermo o in crouch = invisibile al radar)
+        if (mut === 'sonar' && !(rp.anim && rp.anim.moving && !rp.anim.crouch)) continue;
         const p = toMM(rp.group.position.x, rp.group.position.z);
         ctx.fillStyle = color;
         ctx.beginPath();
@@ -2550,6 +2618,7 @@ socket.on('playerState', (data) => {
     if (!gameState.players[data.color]) {
         // Crea mesh al volo se roundStart è arrivato tardi
         const parts = createPlayerMesh(data.color, data.wk);
+        parts.group.scale.setScalar(sizeMul);   // mutatore "Mini Giocatori"
         scene.add(parts.group);
         gameState.players[data.color] = { ...parts, hp: 100, dead: false, anim: makeAnim() };
     }
@@ -2610,14 +2679,19 @@ socket.on('roundStart', (data) => {
     handleRoundStart(data);
 });
 
-socket.on('playerHit', ({ targetColor, hp, shooterColor, damage }) => {
+socket.on('playerHit', ({ targetColor, hp, shooterColor, damage, heal }) => {
     if (targetColor === MY_COLOR) {
         gameState.myHp = hp;
         updateHpHUD(hp);
-        showDamageVignette();
-        showDamageDirection(shooterColor);
-        addShake(0.45);
-        Sfx.hurt();
+        if (heal) {
+            // Cura (es. Vampirismo): niente vignetta/suono di ferita
+            Sfx.respawn ? Sfx.respawn() : null;
+        } else {
+            showDamageVignette();
+            showDamageDirection(shooterColor);
+            addShake(0.45);
+            Sfx.hurt();
+        }
     }
     if (gameState.players[targetColor]) {
         // Aggiorna HP del giocatore remoto (per eventuale healthbar sopra la testa)
@@ -2684,13 +2758,13 @@ socket.on('playerRespawn', ({ color, x, y, z, angle, hp, weaponKey, ammo }) => {
         // Reset postura/stati movimento (come allo spawn di round)
         isSliding = isCrouching = isSprinting = isMoving = airSprint = false;
         slideTimer = 0;
-        currentEyeH = STAND_EYE;
-        camera.position.y = STAND_EYE;
+        currentEyeH = STAND_EYE * sizeMul;
+        camera.position.y = STAND_EYE * sizeMul;
         cameraRoll = 0;
         camera.rotation.z = 0;
 
         isReloading = false;
-        if (ammo != null) { gameState.myAmmo = ammo; updateAmmoHUD(); }
+        if (ammo != null) { gameState.myAmmo = ammo; applyAmmoCap(); }
         updateHpHUD(hp);
         document.getElementById('dead-screen').classList.remove('active');
         if (weaponGroup) weaponGroup.visible = true;
@@ -2726,8 +2800,8 @@ socket.on('suddenDeathStart', (data) => {
             onGround = true;
             isSliding = isCrouching = isSprinting = isMoving = airSprint = false;
             slideTimer = 0;
-            currentEyeH = STAND_EYE;
-            camera.position.y = STAND_EYE;
+            currentEyeH = STAND_EYE * sizeMul;
+            camera.position.y = STAND_EYE * sizeMul;
             cameraRoll = 0;
             camera.rotation.z = 0;
             document.getElementById('dead-screen').classList.remove('active');
@@ -2886,7 +2960,17 @@ function showSuddenDeathBanner() {
 const MUTATOR_INFO = {
     moon_gravity: { name: 'Gravità Lunare', icon: '🌙', desc: 'Salti altissimi!',    col: '#8fb7ff' },
     speed_x2:     { name: 'Velocità x2',    icon: '⚡', desc: 'Tutti velocissimi!',  col: '#ffd84b' },
-    fog:          { name: 'Nebbia Fitta',   icon: '🌫️', desc: 'Visibilità ridotta',  col: '#c3ccd6' }
+    fog:          { name: 'Nebbia Fitta',   icon: '🌫️', desc: 'Visibilità ridotta',  col: '#c3ccd6' },
+    giant_heads:  { name: 'Teste Giganti',  icon: '💀', desc: 'Mira alla testa!',    col: '#ff7bd0' },
+    blackout:     { name: 'Blackout',       icon: '🕶️', desc: 'Buio pesto, luce sull\'arma', col: '#3a3f52' },
+    double_damage:{ name: 'TTK Dimezzato',  icon: '🎯', desc: 'Danno raddoppiato!',  col: '#ff5a3c' },
+    one_in_chamber:{ name: 'Un Colpo in Canna', icon: '🔫', desc: '1 pallottola, uccide subito', col: '#e0c46a' },
+    mini_players: { name: 'Mini Giocatori', icon: '🐜', desc: 'Bersagli minuscoli',  col: '#7bd0ff' },
+    vampirism:    { name: 'Vampirismo',     icon: '🩸', desc: 'Uccidi per curarti',  col: '#a11d2e' },
+    headshot_only:{ name: 'Solo Headshot',  icon: '🎯', desc: 'Conta solo la testa', col: '#ff5a3c' },
+    flicker_invis:{ name: 'Fantasmi',       icon: '👻', desc: 'Nemici che lampeggiano', col: '#b9c6ff' },
+    blind_mode:   { name: 'Alla Cieca',     icon: '🕶️', desc: 'Nessun segnale di colpo', col: '#6b7280' },
+    sonar:        { name: 'Radar Sonar',    icon: '🛰️', desc: 'Fermo = invisibile al radar', col: '#54e0a0' }
 };
 
 // Applica l'effetto del mutatore. Chiamata a ogni inizio round: resetta SEMPRE
@@ -2895,9 +2979,17 @@ function applyMutator(id) {
     // Reset di tutti gli effetti
     gravityMul = 1;
     speedMul = 1;
+    headScale = 1;
+    ammoCap = Infinity;
+    sizeMul = 1;
     scene.fog.color.setHex(DEFAULT_SKY);
     scene.fog.density = DEFAULT_FOG_DENSITY;
     renderer.setClearColor(DEFAULT_SKY);
+    // Ripristina luci e spegni la torcia (usate da "Blackout")
+    ambient.intensity = DEFAULT_LIGHTS.ambient;
+    sun.intensity = DEFAULT_LIGHTS.sun;
+    hemi.intensity = DEFAULT_LIGHTS.hemi;
+    flashlight.intensity = 0;
 
     switch (id) {
         case 'moon_gravity':
@@ -2911,7 +3003,33 @@ function applyMutator(id) {
             scene.fog.density = 0.05;
             renderer.setClearColor(0x9aa3ad);
             break;
+        case 'giant_heads':
+            headScale = 2.5;    // teste enormi (taratura in localhost)
+            break;
+        case 'blackout':
+            ambient.intensity = 0.08;
+            hemi.intensity = 0.05;
+            sun.intensity = 0.15;
+            scene.fog.color.setHex(0x05070d);
+            scene.fog.density = 0.06;
+            renderer.setClearColor(0x05070d);
+            flashlight.intensity = 3.0;   // cono di luce dall'arma
+            break;
+        case 'one_in_chamber':
+            ammoCap = 1;   // 1 sola pallottola in canna → ricarica dopo ogni colpo
+            break;
+        case 'mini_players':
+            sizeMul = 0.5;   // tutti a metà taglia (taratura in localhost)
+            break;
+        // 'double_damage' non ha effetti client oltre al reveal (danno gestito dal server)
     }
+}
+
+// Applica il cap munizioni del mutatore (chiamata DOPO che lo spawn imposta myMaxAmmo)
+function applyAmmoCap() {
+    if (ammoCap < gameState.myMaxAmmo) gameState.myMaxAmmo = ammoCap;
+    if (gameState.myAmmo > gameState.myMaxAmmo) gameState.myAmmo = gameState.myMaxAmmo;
+    updateAmmoHUD();
 }
 
 let mutatorRevealTimer = null;
@@ -2965,8 +3083,8 @@ function handleRoundStart(data) {
             // Reset stati movimento (postura in piedi)
             isSliding = isCrouching = isSprinting = isMoving = airSprint = false;
             slideTimer = 0;
-            currentEyeH = STAND_EYE;
-            camera.position.y = STAND_EYE;
+            currentEyeH = STAND_EYE * sizeMul;
+            camera.position.y = STAND_EYE * sizeMul;
             cameraRoll = 0;
             camera.rotation.z = 0;
 
@@ -2974,6 +3092,7 @@ function handleRoundStart(data) {
             gameState.myWeapon = pState.weaponKey;
             gameState.myAmmo = pState.ammo;
             gameState.myMaxAmmo = pState.maxAmmo || (w ? w.ammo : 30);
+            applyAmmoCap();   // mutatore "Un Colpo in Canna"
             gameState.myHp = 100;
 
             switchWeaponModel(pState.weaponKey);
@@ -2985,6 +3104,7 @@ function handleRoundStart(data) {
         } else {
             const parts = createPlayerMesh(color, pState.weaponKey);
             parts.group.position.set(pState.x, pState.y, pState.z);
+            parts.group.scale.setScalar(sizeMul);   // mutatore "Mini Giocatori"
             scene.add(parts.group);
             gameState.players[color] = { ...parts, hp: 100, dead: false, anim: makeAnim() };
         }
@@ -3182,6 +3302,37 @@ GamepadInput.setCallbacks({
     getWeapon:    () => gameState.weapons[gameState.myWeapon]
 });
 
+// Mutatore "Fantasmi": i modelli remoti diventano semitrasparenti con opacità
+// pulsante, sfasata per colore (così non "respirano" all'unisono). Restano sempre
+// un filo visibili ma difficili da mirare. Fuori dal mutatore ripristina l'opacità.
+function _flickerPhase(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return (h % 1000) / 1000 * Math.PI * 2;   // [0, 2π)
+}
+function setGroupOpacity(group, op) {
+    group.traverse(o => {
+        if (!o.material) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) { m.transparent = op < 1; m.opacity = op; }
+    });
+}
+function applyFlicker() {
+    const flick = (gameState.mutator === 'flicker_invis');
+    const t = Date.now();
+    for (const [color, rp] of Object.entries(gameState.players)) {
+        if (rp.dead) continue;
+        if (flick) {
+            const op = 0.36 + 0.24 * Math.sin(t / 260 + _flickerPhase(color)); // ~0.12–0.60
+            setGroupOpacity(rp.group, op);
+            rp._ghosted = true;
+        } else if (rp._ghosted) {
+            setGroupOpacity(rp.group, 1);   // ripristino opacità quando non è attivo
+            rp._ghosted = false;
+        }
+    }
+}
+
 function animate() {
     requestAnimationFrame(animate);
     const now = performance.now();
@@ -3207,6 +3358,7 @@ function animate() {
     for (const rp of Object.values(gameState.players)) {
         if (!rp.dead) updateRemoteAnim(rp, dt);
     }
+    applyFlicker();   // mutatore "Fantasmi" (invisibilità intermittente)
     drawMinimap();
 
     // Broadcast stato (throttled a 20fps) quando la scheda è in primo piano
