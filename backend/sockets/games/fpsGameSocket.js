@@ -29,16 +29,19 @@ const SPAWN_POINTS = [
 const PLAYER_HP = 100;
 const WEAPON_SELECT_TIME = 20000; // 20 secondi per scegliere l'arma (solo round 1)
 const ROUND_END_DELAY = 2500;     // pausa breve tra un round e l'altro (pacing "ancora una")
-const MELEE_DURATION = 20000;     // ⚠️ TEST: abbassato a 20s per velocizzare. Valore vero = 60000.
+const ROUND_INTRO_TIME = 3500;    // fase INTRO a inizio round: gioco congelato, pannello di preparazione
+const MELEE_DURATION = 45000;     // durata fase MISCHIA (respawn istantaneo) prima del sudden death
+const FPS_ROUNDS = 1;             // ⚠️ TEST: 1 round per vedere subito il podio (ripristinare a 5)
 const RESPAWN_DELAY = 1500;       // ritardo prima di rinascere in mischia
 
 // Mutatori v1: il server ne pesca uno a caso (senza ripetere l'ultimo) a ogni round.
 // Sono tutti effetti CLIENT-side: il server comunica solo l'id, il client applica l'effetto.
-// ⚠️ TEST TEMPORANEO: forzato ai mutatori in verifica.
-// Lista completa (14 id) da ripristinare dopo i test:
-// const MUTATORS = ['moon_gravity','speed_x2','fog','giant_heads','blackout','double_damage','one_in_chamber','mini_players',
-//                   'vampirism','headshot_only','flicker_invis','gun_game','blind_mode','sonar'];
-const MUTATORS = ['flicker_invis', 'blind_mode', 'sonar'];
+// 14 mutatori attivi: 8 base + 6 dell'espansione (vampirism/headshot_only/flicker_invis/blind_mode/sonar/gun_game).
+const MUTATORS = ['moon_gravity', 'speed_x2', 'fog', 'giant_heads', 'blackout', 'double_damage', 'one_in_chamber', 'mini_players',
+    'vampirism', 'headshot_only', 'flicker_invis', 'blind_mode', 'sonar', 'gun_game'];
+
+// Gun Game: progressione armi. Ogni kill fa avanzare il killer al passo successivo (cicla).
+const GUN_GAME_LADDER = ['smg', 'assault', 'shotgun', 'sniper'];
 
 // Moltiplicatore danno per mutatore (server autoritativo)
 const DMG_MUL = { double_damage: 2, one_in_chamber: 100 };
@@ -95,8 +98,7 @@ module.exports = function (io, socket) {
 
         // Inizializza partita se non esiste
         if (!activeGames.has(lobbyId)) {
-            const settings = lobby.gameSettings || {};
-            const totalRounds = parseInt(settings.rounds) || 2; // TEMP: 2 round per testare (rimettere 8)
+            const totalRounds = FPS_ROUNDS; // valore fisso (5): la lobby non lo configura più
 
             const game = {
                 gameId: GAME_ID,
@@ -292,6 +294,24 @@ module.exports = function (io, socket) {
                         });
                     }
                 }
+
+                // Gun Game: ogni kill fa avanzare l'arma del killer lungo la progressione.
+                // Aggiorna weaponKey (usato dal respawn) E weaponChoices (persiste nel round).
+                if (game.mutator === 'gun_game') {
+                    const sh = game.players[shooterColor];
+                    if (sh) {
+                        const idx = GUN_GAME_LADDER.indexOf(sh.weaponKey);
+                        const next = GUN_GAME_LADDER[(idx + 1) % GUN_GAME_LADDER.length];
+                        const w = WEAPONS[next];
+                        sh.weaponKey = next;
+                        sh.ammo = w.ammo;
+                        sh.maxAmmo = w.ammo;
+                        game.weaponChoices[shooterColor] = next;
+                        io.to(lobbyId).emit('weaponSwitch', {
+                            color: shooterColor, weaponKey: next, ammo: w.ammo, maxAmmo: w.ammo
+                        });
+                    }
+                }
             }
 
             io.to(lobbyId).emit('playerKilled', {
@@ -480,14 +500,16 @@ function launchRound(io, lobbyId) {
         players: game.players,
         weapons: WEAPONS,
         subphase: 'melee',
+        introDuration: ROUND_INTRO_TIME,
         meleeDuration: MELEE_DURATION,
         mutator: game.mutator,
         trophyHeads: game.trophyHeads,
         points: game.points
     });
 
-    // Allo scadere della mischia parte il sudden death
-    game.phaseTimer = setTimeout(() => startSuddenDeath(io, lobbyId), MELEE_DURATION);
+    // La mischia inizia solo DOPO la fase intro (gioco congelato lato client):
+    // il sudden death scatta quindi a intro + mischia, sincronizzato con i client.
+    game.phaseTimer = setTimeout(() => startSuddenDeath(io, lobbyId), ROUND_INTRO_TIME + MELEE_DURATION);
 }
 
 // Rinascita istantanea durante la fase MISCHIA

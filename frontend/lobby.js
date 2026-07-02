@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
         deduction: { impostors: 1 },
         kart: { laps: 3 },
         spleef: { mapSize: 20 },
-        fps: { rounds: 2 }, // TEMP: 2 round per testare (rimettere 8)
+        fps: { rounds: 5 }, // round FISSI a 5 (il server ignora comunque questo valore)
         f1: { mode: 'championship', laps: 3 }
     };
 

@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Project-W — FPS</title>
-    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles/fps.css">
 </head>
 
@@ -36,15 +36,15 @@
 
         <!-- Round counter -->
         <div id="hud-round">
-            <div id="hud-round-text">Round</div>
+            <div id="hud-round-top">
+                <span id="hud-round-text">Round</span>
+                <span id="hud-phase-icon"></span>
+            </div>
             <div id="hud-round-num">1 / 5</div>
         </div>
 
         <!-- Score live -->
         <div id="hud-scores"></div>
-
-        <!-- Kill feed -->
-        <div id="hud-killfeed"></div>
 
         <!-- HP -->
         <div id="hud-hp">
@@ -80,14 +80,8 @@
     <!-- Chat in-game -->
     <div id="fps-chat-wrap"></div>
 
-    <!-- ═══════════ INDICATORE FASE ROUND ═══════════ -->
-    <div id="phase-indicator"></div>
-
-    <!-- ═══════════ REVEAL MUTATORE ═══════════ -->
-    <div id="mutator-reveal"></div>
-
-    <!-- ═══════════ BANNER SUDDEN DEATH ═══════════ -->
-    <div id="sudden-death-banner"><span>SUDDEN DEATH</span></div>
+    <!-- ═══════════ PANNELLO INTRO ROUND (gioco congelato ~3.5s, preparazione) ═══════════ -->
+    <div id="round-intro"></div>
 
     <!-- ═══════════ SCHERMO MORTO ═══════════ -->
     <div id="dead-screen">
@@ -111,13 +105,12 @@
         <div id="ws-header">
             <div id="ws-title">Choose Your Loadout</div>
             <div id="ws-round">Round 1 of 5</div>
-            <div id="ws-timer">⏱ 20s</div>
+            <div id="ws-timer">20s</div>
         </div>
 
         <div id="ws-grid">
 
             <div class="ws-card selected" data-weapon="assault">
-                <span class="ws-weapon-icon">🔫</span>
                 <div class="ws-weapon-name">Assault Rifle</div>
                 <div class="ws-weapon-stats">
                     <div class="ws-stat-row">
@@ -144,7 +137,6 @@
             </div>
 
             <div class="ws-card" data-weapon="smg">
-                <span class="ws-weapon-icon">🔫</span>
                 <div class="ws-weapon-name">SMG</div>
                 <div class="ws-weapon-stats">
                     <div class="ws-stat-row">
@@ -171,7 +163,6 @@
             </div>
 
             <div class="ws-card" data-weapon="shotgun">
-                <span class="ws-weapon-icon">🔫</span>
                 <div class="ws-weapon-name">Shotgun</div>
                 <div class="ws-weapon-stats">
                     <div class="ws-stat-row">
@@ -198,7 +189,6 @@
             </div>
 
             <div class="ws-card" data-weapon="sniper">
-                <span class="ws-weapon-icon">🎯</span>
                 <div class="ws-weapon-name">Sniper Rifle</div>
                 <div class="ws-weapon-stats">
                     <div class="ws-stat-row">
@@ -259,9 +249,6 @@
             </div>
         </div>
     </div>
-
-    <!-- Pulsante toggle controller (sempre visibile) -->
-    <button id="gp-toggle-btn" title="Controller [Tab]">🎮</button>
 
     <!-- Three.js CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>

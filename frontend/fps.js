@@ -51,7 +51,7 @@ let gameState = {
     subphase: null,      // 'melee' | 'suddendeath' durante il round
     mutator: null,       // mutatore attivo nel round corrente
     currentRound: 1,
-    totalRounds: 8,
+    totalRounds: 5,
     scores: {},    // vittorie sudden death per round
     points: {},    // punti totali (teste) — metrica principale
     players: {},   // color -> { mesh, hp, dead, ... }
@@ -1264,9 +1264,9 @@ function makePointsLabel(pts, color) {
     c.font = 'bold 76px Fredoka, Arial, sans-serif';
     c.textAlign = 'center'; c.textBaseline = 'middle';
     c.lineWidth = 8; c.strokeStyle = 'rgba(0,0,0,0.85)';
-    c.strokeText('💀 ' + pts, 128, 66);
+    c.strokeText('☠︎ ' + pts, 128, 66);
     c.fillStyle = color;
-    c.fillText('💀 ' + pts, 128, 64);
+    c.fillText('☠︎ ' + pts, 128, 64);
     const tex = new THREE.CanvasTexture(cvs);
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
     sp.scale.set(2.4, 1.2, 1);
@@ -1357,10 +1357,7 @@ function updatePodium(now) {
         const p = _clamp01((t - m.userData.delay) / 0.3);
         m.scale.setScalar(Math.max(0.0001, _easeOutBack(p)));
     }
-    // Leggera oscillazione della camera per dare vita alla scena
-    const ang = Math.sin(t * 0.28) * 0.5;
-    podiumCamera.position.set(Math.sin(ang) * podiumAnim.dist, podiumAnim.camY, Math.cos(ang) * podiumAnim.dist);
-    podiumCamera.lookAt(0, podiumAnim.lookY, 0);
+    // Camera fissa e frontale (impostata in buildPodium): nessuna oscillazione.
 }
 
 // Healthbar: visibile solo se ferito, riempimento ancorato a sinistra, billboard verso la camera
@@ -1719,7 +1716,10 @@ const ADS_FOV = { assault: 50, smg: 55, shotgun: 62, sniper: 15 };
 // Nessun prompt: la visuale resta libera. Un click sulla scena cattura il mouse.
 canvas.addEventListener('click', () => {
     Sfx.resume();
-    if (!pointerLocked && gameState.phase === 'playing' && !gameState.isDead) {
+    // Consenti l'aggancio anche durante l'intro (fallback se l'arma è stata
+    // auto-confermata allo scadere del timer, senza click su "Confirm").
+    const canLock = gameState.phase === 'playing' || gameState.phase === 'round_intro';
+    if (!pointerLocked && canLock && !gameState.isDead) {
         canvas.requestPointerLock();
     }
 });
@@ -2441,7 +2441,7 @@ function updateHpHUD(hp) {
     const pct = Math.max(0, hp) / 100;
     const bar = document.getElementById('hud-hp-bar');
     bar.style.width = (pct * 100) + '%';
-    bar.style.background = pct > 0.5 ? 'var(--col-safe)' : pct > 0.25 ? '#f39c12' : 'var(--col-danger)';
+    bar.style.background = pct > 0.5 ? 'var(--col-safe)' : pct > 0.25 ? 'var(--col-ammo)' : 'var(--col-danger)';
 }
 
 function updateAmmoHUD() {
@@ -2451,6 +2451,19 @@ function updateAmmoHUD() {
 
 function updateRoundHUD() {
     document.getElementById('hud-round-num').textContent = `${gameState.currentRound} / ${gameState.totalRounds}`;
+    // Etichetta del box: "Round" nei round normali, il nome del mutatore in quelli speciali
+    const label = document.getElementById('hud-round-text');
+    if (!label) return;
+    const info = gameState.mutator ? MUTATOR_INFO[gameState.mutator] : null;
+    if (info) {
+        label.textContent = info.name;
+        label.classList.add('mutator');
+        label.title = info.desc;
+    } else {
+        label.textContent = 'Round';
+        label.classList.remove('mutator');
+        label.removeAttribute('title');
+    }
 }
 
 function updateScoreHUD() {
@@ -2465,19 +2478,11 @@ function updateScoreHUD() {
         row.innerHTML = `
             <div class="hud-score-dot" style="background:${color}"></div>
             <span style="color:${color}">${color === MY_COLOR ? 'YOU' : ''}</span>
-            <span class="hud-score-wins">💀 ${pts}</span>`;
+            <span class="hud-score-wins">☠︎ ${pts}</span>`;
         el.appendChild(row);
     }
 }
 
-function addKillfeed(killer, killed) {
-    const el = document.getElementById('hud-killfeed');
-    const entry = document.createElement('div');
-    entry.className = 'killfeed-entry';
-    entry.innerHTML = `<span style="color:${killer}">${killer === MY_COLOR ? 'YOU' : '●'}</span> ☠ <span style="color:${killed}">${killed === MY_COLOR ? 'YOU' : '●'}</span>`;
-    el.appendChild(entry);
-    setTimeout(() => entry.remove(), 4000);
-}
 
 function showDamageVignette() {
     const v = document.getElementById('dmg-vignette');
@@ -2700,8 +2705,6 @@ socket.on('playerHit', ({ targetColor, hp, shooterColor, damage, heal }) => {
 });
 
 socket.on('playerKilled', ({ killedColor, killerColor, aliveCount, subphase, points }) => {
-    addKillfeed(killerColor, killedColor);
-
     // Aggiorna i punti live (il +1 per kill compare subito in HUD)
     if (points) { gameState.points = points; updateScoreHUD(); }
 
@@ -2778,6 +2781,27 @@ socket.on('playerRespawn', ({ color, x, y, z, angle, hp, weaponKey, ammo }) => {
             rp.group.position.set(x, y, z);
             rp.snapshots = [];   // scarta i frame di posizione pre-morte
         }
+    }
+});
+
+// Gun Game: dopo un kill il server fa avanzare l'arma del killer.
+socket.on('weaponSwitch', ({ color, weaponKey, ammo, maxAmmo }) => {
+    if (color === MY_COLOR) {
+        const w = gameState.weapons[weaponKey];
+        gameState.myWeapon = weaponKey;
+        gameState.myAmmo = ammo;
+        gameState.myMaxAmmo = maxAmmo != null ? maxAmmo : (w ? w.ammo : 30);
+        isReloading = false;
+        if (isADS) exitADS();          // il FOV/ADS dipende dall'arma → esci per coerenza
+        applyAmmoCap();                // rispetta eventuale "Un Colpo in Canna"
+        switchWeaponModel(weaponKey);
+        document.getElementById('hud-weapon-name').textContent = w ? w.name : weaponKey;
+        updateAmmoHUD();
+        Sfx.reload && Sfx.reload();     // feedback "cambio arma"
+    } else {
+        // Avversario: aggiorna subito il modello arma TP (comunque si allinea anche via stato)
+        const rp = gameState.players[color];
+        if (rp) setRemoteWeapon(rp, weaponKey);
     }
 });
 
@@ -2886,11 +2910,11 @@ function showWeaponSelect(duration = 20000) {
 
     // Timer countdown
     let remaining = Math.ceil(duration / 1000);
-    document.getElementById('ws-timer').textContent = `⏱ ${remaining}s`;
+    document.getElementById('ws-timer').textContent = `${remaining}s`;
     clearInterval(wsTimerInterval);
     wsTimerInterval = setInterval(() => {
         remaining--;
-        document.getElementById('ws-timer').textContent = `⏱ ${remaining}s`;
+        document.getElementById('ws-timer').textContent = `${remaining}s`;
         if (remaining <= 0) clearInterval(wsTimerInterval);
     }, 1000);
 
@@ -2913,18 +2937,22 @@ function hideWeaponSelect() {
 // ── Indicatore di fase del round (MISCHIA con countdown / SUDDEN DEATH) ──
 let meleeCountdownInterval = null;
 
+// Piccolo indicatore accanto a "Round": spade incrociate (mischia) con countdown,
+// teschio (sudden death). Glyph unicode text-presentation, niente emoji.
 function showPhaseIndicator(kind, durationMs) {
-    const el = document.getElementById('phase-indicator');
+    const el = document.getElementById('hud-phase-icon');
     if (!el) return;
     clearInterval(meleeCountdownInterval);
     if (kind === 'melee') {
         let remaining = Math.ceil((durationMs || 60000) / 1000);
         el.className = 'melee';
-        el.textContent = `⚔ MISCHIA · ${remaining}s`;
-        el.style.display = 'block';
+        el.textContent = `⚔︎ ${remaining}`;
+        el.title = `Mischia · ${remaining}s`;
         meleeCountdownInterval = setInterval(() => {
             remaining--;
-            el.textContent = `⚔ MISCHIA · ${Math.max(0, remaining)}s`;
+            const s = Math.max(0, remaining);
+            el.textContent = `⚔︎ ${s}`;
+            el.title = `Mischia · ${s}s`;
             if (remaining <= 0) clearInterval(meleeCountdownInterval);
         }, 1000);
     }
@@ -2932,46 +2960,80 @@ function showPhaseIndicator(kind, durationMs) {
 
 function hidePhaseIndicator() {
     clearInterval(meleeCountdownInterval);
-    const el = document.getElementById('phase-indicator');
-    if (el) el.style.display = 'none';
+    const el = document.getElementById('hud-phase-icon');
+    if (el) { el.className = ''; el.textContent = ''; el.removeAttribute('title'); }
 }
 
 function showSuddenDeathBanner() {
-    // Aggiorna la pill in alto
     clearInterval(meleeCountdownInterval);
-    const el = document.getElementById('phase-indicator');
+    const el = document.getElementById('hud-phase-icon');
     if (el) {
         el.className = 'suddendeath';
-        el.textContent = '☠ SUDDEN DEATH';
-        el.style.display = 'block';
-    }
-    // Flash a schermo intero
-    const banner = document.getElementById('sudden-death-banner');
-    if (banner) {
-        banner.classList.remove('show');
-        void banner.offsetWidth; // forza il restart dell'animazione
-        banner.classList.add('show');
-        setTimeout(() => banner.classList.remove('show'), 2200);
+        el.textContent = '☠︎';
+        el.title = 'Sudden Death';
     }
 }
 
 // ── MUTATORI ────────────────────────────────────────
-// Metadati per il reveal a schermo (nome/icona/descrizione)
+// Metadati mostrati nel box Round: nome (sostituisce "Round") + descrizione (title)
 const MUTATOR_INFO = {
-    moon_gravity: { name: 'Gravità Lunare', icon: '🌙', desc: 'Salti altissimi!',    col: '#8fb7ff' },
-    speed_x2:     { name: 'Velocità x2',    icon: '⚡', desc: 'Tutti velocissimi!',  col: '#ffd84b' },
-    fog:          { name: 'Nebbia Fitta',   icon: '🌫️', desc: 'Visibilità ridotta',  col: '#c3ccd6' },
-    giant_heads:  { name: 'Teste Giganti',  icon: '💀', desc: 'Mira alla testa!',    col: '#ff7bd0' },
-    blackout:     { name: 'Blackout',       icon: '🕶️', desc: 'Buio pesto, luce sull\'arma', col: '#3a3f52' },
-    double_damage:{ name: 'TTK Dimezzato',  icon: '🎯', desc: 'Danno raddoppiato!',  col: '#ff5a3c' },
-    one_in_chamber:{ name: 'Un Colpo in Canna', icon: '🔫', desc: '1 pallottola, uccide subito', col: '#e0c46a' },
-    mini_players: { name: 'Mini Giocatori', icon: '🐜', desc: 'Bersagli minuscoli',  col: '#7bd0ff' },
-    vampirism:    { name: 'Vampirismo',     icon: '🩸', desc: 'Uccidi per curarti',  col: '#a11d2e' },
-    headshot_only:{ name: 'Solo Headshot',  icon: '🎯', desc: 'Conta solo la testa', col: '#ff5a3c' },
-    flicker_invis:{ name: 'Fantasmi',       icon: '👻', desc: 'Nemici che lampeggiano', col: '#b9c6ff' },
-    blind_mode:   { name: 'Alla Cieca',     icon: '🕶️', desc: 'Nessun segnale di colpo', col: '#6b7280' },
-    sonar:        { name: 'Radar Sonar',    icon: '🛰️', desc: 'Fermo = invisibile al radar', col: '#54e0a0' }
+    moon_gravity:  { name: 'Gravità Lunare',   desc: 'Salti altissimi!' },
+    speed_x2:      { name: 'Velocità x2',      desc: 'Tutti velocissimi!' },
+    fog:           { name: 'Nebbia Fitta',     desc: 'Visibilità ridotta' },
+    giant_heads:   { name: 'Teste Giganti',    desc: 'Mira alla testa!' },
+    blackout:      { name: 'Blackout',         desc: 'Buio pesto, luce sull\'arma' },
+    double_damage: { name: 'TTK Dimezzato',    desc: 'Danno raddoppiato!' },
+    one_in_chamber:{ name: 'Un Colpo in Canna', desc: '1 pallottola, uccide subito' },
+    mini_players:  { name: 'Mini Giocatori',   desc: 'Bersagli minuscoli' },
+    vampirism:     { name: 'Vampirismo',       desc: 'Uccidi per curarti' },
+    headshot_only: { name: 'Solo Headshot',    desc: 'Conta solo la testa' },
+    flicker_invis: { name: 'Fantasmi',         desc: 'Nemici che lampeggiano' },
+    blind_mode:    { name: 'Alla Cieca',       desc: 'Nessun segnale di colpo' },
+    sonar:         { name: 'Radar Sonar',      desc: 'Fermo = invisibile al radar' },
+    gun_game:      { name: 'Gun Game',         desc: 'Ogni kill cambia arma' }
 };
+
+// Pannello di INTRO round: mostrato mentre il gioco è congelato (fase 'round_intro').
+// Round + eventuale mutatore + countdown. Il nome resta poi fisso nel box (updateRoundHUD).
+let roundIntroCdInterval = null;
+let roundIntroTimer = null;
+function showRoundIntro(introMs) {
+    const el = document.getElementById('round-intro');
+    if (!el) return;
+    const info = gameState.mutator ? MUTATOR_INFO[gameState.mutator] : null;
+    let remaining = Math.ceil(introMs / 1000);
+    el.innerHTML = `
+        <div class="ri-cell">
+            <span class="ri-label">Round</span>
+            <span class="ri-round-val">${gameState.currentRound} / ${gameState.totalRounds}</span>
+        </div>
+        ${info ? `<div class="ri-sep"></div>
+                  <div class="ri-cell">
+                      <span class="ri-label">Mutatore</span>
+                      <span class="ri-mut-name">${info.name}</span>
+                      <span class="ri-mut-desc">${info.desc}</span>
+                  </div>` : ''}
+        <div class="ri-sep"></div>
+        <div class="ri-cell">
+            <span class="ri-label">Preparati</span>
+            <span id="ri-cd" class="ri-cd-num">${remaining}</span>
+        </div>`;
+    el.classList.remove('show');
+    void el.offsetWidth; // restart animazione
+    el.classList.add('show');
+    const cdEl = el.querySelector('#ri-cd');
+    clearInterval(roundIntroCdInterval);
+    roundIntroCdInterval = setInterval(() => {
+        remaining--;
+        if (cdEl) cdEl.textContent = Math.max(0, remaining);
+        if (remaining <= 0) clearInterval(roundIntroCdInterval);
+    }, 1000);
+}
+function hideRoundIntro() {
+    clearInterval(roundIntroCdInterval);
+    const el = document.getElementById('round-intro');
+    if (el) el.classList.remove('show');
+}
 
 // Applica l'effetto del mutatore. Chiamata a ogni inizio round: resetta SEMPRE
 // prima ai valori di default, poi applica quello attivo (null = round normale).
@@ -3032,29 +3094,9 @@ function applyAmmoCap() {
     updateAmmoHUD();
 }
 
-let mutatorRevealTimer = null;
-
-// Reveal a schermo ~2s (non bloccante) + stinger audio
-function showMutatorReveal(id) {
-    const info = MUTATOR_INFO[id];
-    const el = document.getElementById('mutator-reveal');
-    if (!info || !el) return;
-    el.style.setProperty('--mr-col', info.col);
-    el.innerHTML = `
-        <div class="mr-label">MUTATORE</div>
-        <div class="mr-icon">${info.icon}</div>
-        <div class="mr-name">${info.name}</div>
-        <div class="mr-desc">${info.desc}</div>`;
-    el.classList.remove('show');
-    void el.offsetWidth; // restart animazione
-    el.classList.add('show');
-    Sfx.revealStinger ? Sfx.revealStinger() : Sfx.roundStart();
-    clearTimeout(mutatorRevealTimer);
-    mutatorRevealTimer = setTimeout(() => el.classList.remove('show'), 2200);
-}
-
 function handleRoundStart(data) {
-    gameState.phase = 'playing';
+    clearTimeout(roundIntroTimer);
+    gameState.phase = 'round_intro';   // gioco congelato: input/movimento/sparo bloccati fino a fine intro
     gameState.currentRound = data.round || data.currentRound || gameState.currentRound;
     gameState.isDead = false;
     gameState.subphase = data.subphase || 'melee';
@@ -3112,21 +3154,28 @@ function handleRoundStart(data) {
 
     updateRoundHUD();
     updateScoreHUD();
-    Sfx.roundStart();
-
-    // Indicatore fase: la MISCHIA mostra un countdown, poi scatta il sudden death
-    if (gameState.subphase === 'melee') {
-        showPhaseIndicator('melee', data.meleeDuration || 60000);
-    } else {
-        hidePhaseIndicator();
-    }
-
-    // Reveal del mutatore del round
-    if (gameState.mutator) showMutatorReveal(gameState.mutator);
 
     document.getElementById('overlay').classList.remove('active');
     document.getElementById('dead-screen').classList.remove('active');
     if (weaponGroup) weaponGroup.visible = true;
+
+    // ── Fase INTRO: pannello di preparazione, gioco congelato per introDuration ──
+    // Tutti i giocatori vedono la scena/lo spawn ma non possono agire finché non scade.
+    hidePhaseIndicator();
+    const introMs = data.introDuration || 3500;
+    if (gameState.mutator) { Sfx.revealStinger ? Sfx.revealStinger() : Sfx.roundStart(); }
+    showRoundIntro(introMs);
+
+    roundIntroTimer = setTimeout(() => {
+        hideRoundIntro();
+        if (gameState.phase !== 'round_intro') return;   // round già cambiato/finito: non sbloccare
+        gameState.phase = 'playing';                     // via! input/movimento/sparo abilitati
+        Sfx.roundStart();
+        // La MISCHIA mostra il countdown; poi (server sincronizzato) scatta il sudden death
+        if (gameState.subphase === 'melee') {
+            showPhaseIndicator('melee', data.meleeDuration || 60000);
+        }
+    }, introMs);
 }
 
 let overlayCountdownInterval = null;
@@ -3149,8 +3198,8 @@ function showRoundEndOverlay(data) {
     title.textContent = `Round ${data.round} of ${data.totalRounds} — Over`;
 
     if (data.winnerColor) {
-        const bonusTxt = data.sdBonus ? ` (+${data.sdBonus} 💀)` : '';
-        main.textContent = data.winnerColor === MY_COLOR ? `🏆 You Win!${bonusTxt}` : 'Round Lost';
+        const bonusTxt = data.sdBonus ? ` (+${data.sdBonus} ☠︎)` : '';
+        main.textContent = data.winnerColor === MY_COLOR ? `You Win!${bonusTxt}` : 'Round Lost';
         main.style.color = data.winnerColor === MY_COLOR ? 'var(--col-accent)' : 'var(--col-danger)';
     } else {
         main.textContent = 'Draw';
@@ -3165,7 +3214,7 @@ function showRoundEndOverlay(data) {
         row.innerHTML = `
             <div class="overlay-score-color" style="background:${color}"></div>
             <span style="color:${color}">${color === MY_COLOR ? 'YOU' : color.slice(0, 7)}</span>
-            <span class="overlay-score-wins">💀 ${pts}</span>`;
+            <span class="overlay-score-wins">☠︎ ${pts}</span>`;
         scoresEl.appendChild(row);
     }
 
@@ -3184,11 +3233,16 @@ function showRoundEndOverlay(data) {
     document.getElementById('overlay').classList.add('active');
 }
 
+let podiumPanelTimer = null;
 function showGameOverOverlay(data) {
     gameState.phase = 'game_over';
     gameState.subphase = null;
     hidePhaseIndicator();
     document.exitPointerLock();
+
+    // Nascondi subito il pannello di fine round: prima si vede l'animazione del podio,
+    // poi (col ritardo sotto) compare la card di vittoria.
+    document.getElementById('overlay').classList.remove('active');
 
     // ── Podio finale 3D: torri di teste + modelli, camera dedicata ──
     buildPodium(data.points || {});
@@ -3202,7 +3256,7 @@ function showGameOverOverlay(data) {
     const main = document.getElementById('overlay-main');
 
     if (data.champion === MY_COLOR) {
-        main.textContent = '🏆 VICTORY!';
+        main.textContent = 'VICTORY!';
         main.style.color = 'var(--col-accent)';
     } else {
         main.textContent = 'Defeated';
@@ -3218,7 +3272,7 @@ function showGameOverOverlay(data) {
         row.innerHTML = `
             <div class="overlay-score-color" style="background:${color}"></div>
             <span style="color:${color}">${color === MY_COLOR ? 'YOU' : color.slice(0, 7)}</span>
-            <span class="overlay-score-wins">💀 ${pts}</span>`;
+            <span class="overlay-score-wins">☠︎ ${pts}</span>`;
         scoresEl.appendChild(row);
     }
 
@@ -3233,7 +3287,11 @@ function showGameOverOverlay(data) {
         btn.style.display = 'none';
     }
 
-    document.getElementById('overlay').classList.add('active');
+    // Prima si gode l'animazione delle teste sul podio; poi si apre il pannello vittoria.
+    clearTimeout(podiumPanelTimer);
+    podiumPanelTimer = setTimeout(() => {
+        document.getElementById('overlay').classList.add('active');
+    }, 3500);
 }
 
 // ══════════════════════════════════════════════════════
@@ -3255,6 +3313,10 @@ document.getElementById('ws-confirm-btn').addEventListener('click', () => {
     confirmed = true;
     document.getElementById('ws-confirm-btn').disabled = true;
     socket.emit('confirmWeapon', { lobbyId: LOBBY_ID, playerColor: MY_COLOR });
+    // Aggancia subito il mouse su questo click (gesto utente): così resta catturato
+    // per tutta la fase intro e il round parte senza dover ri-cliccare.
+    Sfx.resume();
+    canvas.requestPointerLock();
 });
 
 // ══════════════════════════════════════════════════════

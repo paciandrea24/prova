@@ -1,0 +1,9 @@
+# Dipendenze (non vanno mai nel repo)
+node_modules/
+
+# Variabili d'ambiente / segreti
+.env
+*.env
+
+# graphify knowledge graph (rigenerabile con `graphify`)
+graphify-out/

@@ -325,7 +325,6 @@ const GamepadInput = (() => {
 
         document.getElementById('gp-close-btn').addEventListener('click', closePanel);
         document.getElementById('gp-reset-btn').addEventListener('click', resetMap);
-        document.getElementById('gp-toggle-btn').addEventListener('click', togglePanel);
     });
 
     return { poll, getState, setCallbacks, isPanelOpen, openPanel, closePanel, togglePanel };
