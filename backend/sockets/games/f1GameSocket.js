@@ -92,6 +92,7 @@ module.exports = function (io, socket) {
         if (!activeGames.has(lobbyId)) {
             const lobby = lobbies.get(lobbyId);
             activeGames.set(lobbyId, {
+                gameId:        'f1',   // marca il tipo: gli handler condivisi (disconnect) NON devono toccare partite di altri giochi
                 players:       {},
                 tick:          null,
                 raceStarted:   false,
@@ -173,6 +174,7 @@ module.exports = function (io, socket) {
 
     socket.on('f1ReturnToLobby', (lobbyId) => {
         const game = activeGames.get(lobbyId);
+        if (game && game.gameId !== 'f1') return;   // la partita attiva è di un altro gioco
         if (game) {
             clearInterval(game.tick);
             if (game.endTimeout) clearTimeout(game.endTimeout);
@@ -181,11 +183,16 @@ module.exports = function (io, socket) {
         io.to(lobbyId).emit('f1RedirectToLobby');
     });
 
+    // NB: questo handler scatta per OGNI socket che muore (anche i vecchi socket
+    // della pagina lobby, che il browser tiene congelati per minuti dopo la
+    // navigazione e hanno socket.lobbyId/color settati da joinLobby). Il guard
+    // sul gameId è INDISPENSABILE: senza, cancellava i giocatori delle partite
+    // di ALTRI giochi (bug storico: "danno morto" nell'FPS).
     socket.on('disconnect', () => {
         const { lobbyId, color } = socket;
         if (!lobbyId || !color) return;
         const game = activeGames.get(lobbyId);
-        if (!game) return;
+        if (!game || game.gameId !== 'f1') return;
         delete game.players[color];
         io.to(lobbyId).emit('f1PlayerLeft', color);
         if (Object.keys(game.players).length === 0) {

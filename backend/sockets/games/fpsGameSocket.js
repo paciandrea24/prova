@@ -12,27 +12,30 @@ const WEAPONS = {
     sniper: { name: 'Sniper Rifle', damage: 95, fireRate: 1500, range: 150, ammo: 5, reload: 3000, spread: 0.005, auto: false }
 };
 
-// Spawn points — Nuketown: cortili delle due case rivolti verso il centro.
-// Primi 4 = cortile NORD (casa gialla, guardano verso +Z → angle = PI)
-// Ultimi 4 = cortile SUD (casa verde, guardano verso -Z → angle = 0)
+// Spawn points — Cittadina Cartoon: 8 punti distribuiti sull'anello esterno
+// (strada nord, strada est, piazza sud, Via Lunga a ovest), tutti rivolti
+// verso il centro. Convenzione: forward = (-sin angle, -cos angle) →
+// angle = atan2(x, z) guarda l'origine. Coerenti con buildMap() in fps.js.
 const SPAWN_POINTS = [
-    { x: -8, y: 0, z: -22, angle: Math.PI },
-    { x:  8, y: 0, z: -22, angle: Math.PI },
-    { x: -19, y: 0, z: -16, angle: Math.PI },
-    { x:  19, y: 0, z: -16, angle: Math.PI },
-    { x:  8, y: 0, z:  22, angle: 0 },
-    { x: -8, y: 0, z:  22, angle: 0 },
-    { x:  19, y: 0, z:  16, angle: 0 },
-    { x: -19, y: 0, z:  16, angle: 0 }
+    { x: -14, y: 0, z: -21, angle: Math.atan2(-14, -21) },   // strada nord, lato gazebo
+    { x:  14, y: 0, z: -21, angle: Math.atan2(14, -21) },    // strada nord, lato furgone
+    { x:  21, y: 0, z: -10, angle: Math.atan2(21, -10) },    // strada est, nord
+    { x:  21, y: 0, z:  12, angle: Math.atan2(21, 12) },     // strada est, sud (FARMACIA)
+    { x:  12, y: 0, z:  21, angle: Math.atan2(12, 21) },     // piazza, lato est
+    { x: -12, y: 0, z:  21, angle: Math.atan2(-12, 21) },    // piazza, lato giardinetto
+    { x: -22, y: 0, z:  14, angle: Math.atan2(-22, 14) },    // Via Lunga, sud
+    { x: -22, y: 0, z: -14, angle: Math.atan2(-22, -14) }    // Via Lunga, nord
 ];
 
 const PLAYER_HP = 100;
 const WEAPON_SELECT_TIME = 20000; // 20 secondi per scegliere l'arma (solo round 1)
 const ROUND_END_DELAY = 2500;     // pausa breve tra un round e l'altro (pacing "ancora una")
 const ROUND_INTRO_TIME = 3500;    // fase INTRO a inizio round: gioco congelato, pannello di preparazione
-const MELEE_DURATION = 45000;     // durata fase MISCHIA (respawn istantaneo) prima del sudden death
-const FPS_ROUNDS = 1;             // ⚠️ TEST: 1 round per vedere subito il podio (ripristinare a 5)
+const MELEE_DURATION = 20000;     // ★TEST teste/podio★ RIPRISTINARE 45000 dopo la verifica
+const FPS_ROUNDS = 1;             // ★TEST teste/podio★ RIPRISTINARE 5 dopo la verifica
 const RESPAWN_DELAY = 1500;       // ritardo prima di rinascere in mischia
+const REJOIN_GRACE = 60000;       // finestra di riconnessione dopo un drop (schede in background
+                                  // congelate dal browser) prima della rimozione definitiva
 
 // Mutatori v1: il server ne pesca uno a caso (senza ripetere l'ultimo) a ogni round.
 // Sono tutti effetti CLIENT-side: il server comunica solo l'id, il client applica l'effetto.
@@ -132,11 +135,49 @@ module.exports = function (io, socket) {
 
         const game = activeGames.get(lobbyId);
 
+        // Riconnessione entro la grazia: annulla la rimozione definitiva
+        if (game.rejoinTimers && game.rejoinTimers[playerColor]) {
+            clearTimeout(game.rejoinTimers[playerColor]);
+            delete game.rejoinTimers[playerColor];
+            console.log(`♻️ [FPS] ${playerColor} riconnesso entro la grazia (phase=${game.phase})`);
+        }
+
         // Giocatore entrato dopo la creazione del game: aggiunge scores/choices mancanti
         if (!game.scores.hasOwnProperty(playerColor)) {
             game.scores[playerColor] = 0;
             game.points[playerColor] = 0;
             game.weaponChoices[playerColor] = 'assault';
+        }
+
+        // RIENTRO IN CORSA (riconnessione dopo un drop, es. scheda congelata dal
+        // browser): se il round è in corso e il player non ha più un'entry viva,
+        // lo si reintegra. In MISCHIA rientra subito vivo su uno spawn (come un
+        // respawn); in SUDDEN DEATH rientra da morto e aspetta il prossimo round.
+        if (game.phase === 'playing' && (!game.players[playerColor] || game.players[playerColor].dead)) {
+            const weaponKey = game.weaponChoices[playerColor] || 'assault';
+            const weapon = WEAPONS[weaponKey];
+            const spawn = SPAWN_POINTS[Math.floor(Math.random() * SPAWN_POINTS.length)];
+            const rientraVivo = game.subphase === 'melee';
+            game.players[playerColor] = {
+                color: playerColor,
+                hp: PLAYER_HP,
+                dead: !rientraVivo,
+                x: spawn.x, y: spawn.y, z: spawn.z,
+                angle: spawn.angle,
+                weaponKey,
+                ammo: weapon.ammo,
+                maxAmmo: weapon.ammo
+            };
+            if (rientraVivo) {
+                // Notifica gli altri client: fa rivivere/riposizionare la mesh remota
+                io.to(lobbyId).emit('playerRespawn', {
+                    color: playerColor,
+                    x: spawn.x, y: spawn.y, z: spawn.z, angle: spawn.angle,
+                    hp: PLAYER_HP,
+                    weaponKey,
+                    ammo: weapon.ammo
+                });
+            }
         }
 
         // Aggiorna tutti i client sul totale giocatori (conta corretta per il countdown armi)
@@ -253,13 +294,19 @@ module.exports = function (io, socket) {
     socket.on('reportHit', (data) => {
         const { lobbyId, shooterColor, targetColor, weaponKey, headshot } = data;
         const game = activeGames.get(lobbyId);
-        if (!game || game.phase !== 'playing') return;
+        // DIAGNOSTICA: ogni colpo rifiutato viene loggato col motivo (i colpi
+        // al corpo in "Solo Headshot" sono regola di gioco, non li logghiamo)
+        const rej = (motivo) => console.log(
+            `🚫 [FPS] hit rifiutato: ${shooterColor} → ${targetColor} (${weaponKey})` +
+            ` — ${motivo} [phase=${game ? game.phase : 'NO_GAME'} sub=${game ? game.subphase : '-'} mut=${game ? game.mutator : '-'}]`);
+        if (!game || game.phase !== 'playing') { rej(game ? 'fase non playing' : 'partita inesistente'); return; }
 
         const target = game.players[targetColor];
-        if (!target || target.dead) return;
+        if (!target) { rej('bersaglio ASSENTE dal game'); return; }
+        if (target.dead) { rej('bersaglio già morto lato server'); return; }
 
         const weapon = WEAPONS[weaponKey];
-        if (!weapon) return;
+        if (!weapon) { rej('arma sconosciuta'); return; }
 
         // Solo Headshot: i colpi al corpo non fanno danno
         if (game.mutator === 'headshot_only' && !headshot) return;
@@ -279,6 +326,7 @@ module.exports = function (io, socket) {
 
         if (target.hp <= 0) {
             target.dead = true;
+            console.log(`☠ [FPS] kill: ${shooterColor} → ${targetColor} (sub=${game.subphase}, mut=${game.mutator})`);
 
             // Punti "a teste": ogni kill vale POINTS_PER_KILL al killer (no autogol)
             if (shooterColor && shooterColor !== targetColor) {
@@ -369,39 +417,14 @@ module.exports = function (io, socket) {
         const color = socket.data.color;
         const game = activeGames.get(lobbyId);
         if (!game) return;
-        const lobby = lobbies.get(lobbyId);
 
-        // Notifica i client di rimuovere mesh/minimappa + pulisci i conteggi
+        // Effetto immediato: il player sparisce dal campo e, se il round è in
+        // corso, conta come morto (così il round può chiudersi normalmente).
         io.to(lobbyId).emit('playerLeft', { color });
-        if (lobby) {
-            lobby.players = lobby.players.filter(c => c !== color);
-            if (lobby.host === color && lobby.players.length > 0) lobby.host = lobby.players[0];
-        }
-        if (game._confirmed) game._confirmed.delete(color);
-        delete game.weaponChoices[color];
-        delete game.scores[color];
-        delete game.points[color];
-
-        // Annulla un eventuale respawn in coda per chi se n'è andato
         if (game.respawnTimers && game.respawnTimers[color]) {
             clearTimeout(game.respawnTimers[color]);
             delete game.respawnTimers[color];
         }
-
-        // Nessuno rimasto → distruggi la partita
-        if (!lobby || lobby.players.length === 0) {
-            clearAllTimers(game);
-            activeGames.delete(lobbyId);
-            return;
-        }
-
-        // Un solo giocatore rimasto → termina la partita (vince chi resta)
-        if (lobby.players.length < 2) {
-            clearAllTimers(game);
-            if (game.phase !== 'game_over') endGame(io, lobbyId);
-            return;
-        }
-
         if (game.phase === 'playing') {
             const p = game.players[color];
             if (p && !p.dead) {
@@ -409,23 +432,71 @@ module.exports = function (io, socket) {
                 if (game.subphase === 'suddendeath') game.aliveCount = Math.max(0, game.aliveCount - 1);
             }
             checkRoundEnd(io, lobbyId);
-        } else if (game.phase === 'weapon_select') {
-            io.to(lobbyId).emit('playerConfirmed', {
-                playerColor: color,
-                count: game._confirmed ? game._confirmed.size : 0,
-                total: lobby.players.length
-            });
-            if (game._confirmed && game._confirmed.size >= lobby.players.length) {
-                clearTimeout(game.selectTimer);
-                launchRound(io, lobbyId);
-            }
         }
+
+        // La RIMOZIONE definitiva (lobby/punteggi/endGame) è rimandata di una
+        // finestra di grazia: i browser congelano le schede in background e
+        // socket.io le disconnette, ma alla riattivazione il client si riconnette
+        // e ri-emette joinFPS (che annulla questo timer). Senza grazia, 3 schede
+        // congelate insieme facevano scattare endGame e il danno moriva per tutti.
+        if (!game.rejoinTimers) game.rejoinTimers = {};
+        clearTimeout(game.rejoinTimers[color]);
+        console.log(`🔌 [FPS] ${color} disconnesso in partita (phase=${game.phase}) — grazia ${REJOIN_GRACE / 1000}s`);
+        game.rejoinTimers[color] = setTimeout(() => {
+            delete game.rejoinTimers[color];
+            console.log(`🗑 [FPS] grazia scaduta per ${color} → rimozione definitiva`);
+            hardRemovePlayer(io, lobbyId, color);
+        }, REJOIN_GRACE);
     });
 };
 
 // ──────────────────────────────────────────
 // HELPERS SERVER-SIDE
 // ──────────────────────────────────────────
+
+// Rimozione definitiva di un giocatore che NON si è riconnesso entro REJOIN_GRACE.
+// (La sparizione dal campo è già avvenuta nel handler 'disconnect'.)
+function hardRemovePlayer(io, lobbyId, color) {
+    const game = activeGames.get(lobbyId);
+    if (!game) return;
+    const lobby = lobbies.get(lobbyId);
+
+    if (lobby) {
+        lobby.players = lobby.players.filter(c => c !== color);
+        if (lobby.host === color && lobby.players.length > 0) lobby.host = lobby.players[0];
+    }
+    if (game._confirmed) game._confirmed.delete(color);
+    delete game.weaponChoices[color];
+    delete game.scores[color];
+    delete game.points[color];
+
+    // Nessuno rimasto → distruggi la partita
+    if (!lobby || lobby.players.length === 0) {
+        clearAllTimers(game);
+        activeGames.delete(lobbyId);
+        return;
+    }
+
+    // Un solo giocatore rimasto → termina la partita (vince chi resta)
+    if (lobby.players.length < 2) {
+        clearAllTimers(game);
+        if (game.phase !== 'game_over') endGame(io, lobbyId);
+        return;
+    }
+
+    // In selezione armi: aggiorna i conteggi e lancia il round se ora sono tutti pronti
+    if (game.phase === 'weapon_select') {
+        io.to(lobbyId).emit('playerConfirmed', {
+            playerColor: color,
+            count: game._confirmed ? game._confirmed.size : 0,
+            total: lobby.players.length
+        });
+        if (game._confirmed && game._confirmed.size >= lobby.players.length) {
+            clearTimeout(game.selectTimer);
+            launchRound(io, lobbyId);
+        }
+    }
+}
 
 function startWeaponSelect(io, lobbyId) {
     const game = activeGames.get(lobbyId);
@@ -494,6 +565,8 @@ function launchRound(io, lobbyId) {
         game.aliveCount++;
     });
 
+    console.log(`🎯 [FPS] Round ${game.currentRound}/${game.totalRounds} avviato — mutatore=${game.mutator}, players=[${Object.keys(game.players).join(', ')}]`);
+
     io.to(lobbyId).emit('roundStart', {
         round: game.currentRound,
         totalRounds: game.totalRounds,
@@ -516,9 +589,13 @@ function launchRound(io, lobbyId) {
 function respawnPlayer(io, lobbyId, color) {
     const game = activeGames.get(lobbyId);
     if (!game) return;
-    if (game.phase !== 'playing' || game.subphase !== 'melee') return;
+    if (game.phase !== 'playing' || game.subphase !== 'melee') {
+        console.log(`⚠️ [FPS] respawn di ${color} ANNULLATO (phase=${game.phase} sub=${game.subphase}) — resterebbe morto!`);
+        return;
+    }
     const p = game.players[color];
-    if (!p) return;
+    if (!p) { console.log(`⚠️ [FPS] respawn di ${color} impossibile: entry assente`); return; }
+    console.log(`↻ [FPS] respawn ${color}`);
 
     const spawn = SPAWN_POINTS[Math.floor(Math.random() * SPAWN_POINTS.length)];
     p.hp = PLAYER_HP;
@@ -544,6 +621,7 @@ function startSuddenDeath(io, lobbyId) {
     if (game.phase !== 'playing' || game.subphase !== 'melee') return;
 
     game.subphase = 'suddendeath';
+    console.log(`⚔ [FPS] SUDDEN DEATH round ${game.currentRound}`);
 
     // Annulla i respawn ancora in coda dalla mischia
     if (game.respawnTimers) {
@@ -601,6 +679,7 @@ function checkRoundEnd(io, lobbyId) {
     game.phase = 'round_end';
     clearAllTimers(game);
     const winner = alive.length === 1 ? alive[0].color : null;
+    console.log(`🏁 [FPS] Round ${game.currentRound} chiuso — vincitore=${winner || 'pareggio'}`);
 
     if (winner) {
         game.scores[winner] = (game.scores[winner] || 0) + 1;
@@ -634,6 +713,7 @@ function endGame(io, lobbyId) {
     if (!game || !lobby) return;
 
     game.phase = 'game_over';
+    console.log(`🛑 [FPS] GAME OVER (round ${game.currentRound}/${game.totalRounds}) — da qui ogni reportHit viene rifiutato`);
 
     // Campione = chi ha più PUNTI (teste) totali
     let topPoints = -1;

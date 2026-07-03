@@ -20,7 +20,8 @@ const GRAVITY = 20;
 const JUMP_FORCE = 7;
 const STEP_HEIGHT = 0.6;  // altezza max di un gradino salibile automaticamente
 const MOUSE_SENS = 0.0015;
-const MAP_HALF = 40;      // mezza dimensione mappa (compatta, fedele a Nuketown)
+const MAP_HALF = 32;      // mezza dimensione mappa (cittadina compatta)
+const MAP_CEIL = 13;      // soffitto invisibile: anti-fuga con Gravità Lunare (tetto Emporio 5.6 + salto lunare ~4 → mai raggiunto in gioco normale)
 const INTERP_DELAY = 100; // ms di ritardo buffer per interpolazione giocatori remoti
 
 // Hitbox sfera per detection: raggio per ogni player remoto
@@ -346,18 +347,18 @@ function drawGrass(ctx, s) {
     }
 }
 
-// Asfalto: base scura con granulato chiaro
+// Asfalto: grigio caldo cartoon con granulato chiaro
 function drawAsphalt(ctx, s) {
-    ctx.fillStyle = '#2c2c32';
+    ctx.fillStyle = '#6e675e';
     ctx.fillRect(0, 0, s, s);
     for (var i = 0; i < 130; i++) {
-        var b = Math.floor(Math.random() * 22 + 48);
-        ctx.fillStyle = 'rgb(' + b + ',' + b + ',' + b + ')';
+        var b = Math.floor(Math.random() * 26 + 118);
+        ctx.fillStyle = 'rgb(' + b + ',' + (b - 6) + ',' + (b - 14) + ')';
         ctx.beginPath();
         ctx.arc(Math.random() * s, Math.random() * s, Math.random() * 1.4 + 0.4, 0, Math.PI * 2);
         ctx.fill();
     }
-    ctx.strokeStyle = 'rgba(70,70,80,0.35)';
+    ctx.strokeStyle = 'rgba(150,140,125,0.35)';
     ctx.lineWidth = 1;
     for (var j = 0; j < 5; j++) {
         var y = Math.random() * s;
@@ -428,13 +429,13 @@ function drawCrate(ctx, s, darkCol, lightCol) {
     ctx.beginPath(); ctx.moveTo(s - 7, 7); ctx.lineTo(7, s - 7); ctx.stroke();
 }
 
-// Tetto a tegole
+// Tetto a tegole (rosso mattone luminoso)
 function drawRoof(ctx, s) {
-    ctx.fillStyle = '#5a3825';
+    ctx.fillStyle = '#a04a30';
     ctx.fillRect(0, 0, s, s);
     var tH = s / 6, tW = s / 5;
-    ctx.fillStyle = '#4e2e1a';
-    ctx.strokeStyle = 'rgba(30,15,5,0.55)';
+    ctx.fillStyle = '#8e3d26';
+    ctx.strokeStyle = 'rgba(70,25,10,0.55)';
     ctx.lineWidth = 1.5;
     for (var row = 0; row < 7; row++) {
         var offX = (row % 2) * (tW / 2);
@@ -458,13 +459,13 @@ function drawSiding(ctx, s) {
     }
 }
 
-// Muro / mattoni stilizzati
+// Muro / mattoni caldi (terracotta cartoon)
 function drawBrick(ctx, s) {
-    ctx.fillStyle = '#5c5040';
+    ctx.fillStyle = '#c99873';
     ctx.fillRect(0, 0, s, s);
     var bH = s / 8, bW = s / 4;
-    ctx.fillStyle = '#4e4236';
-    ctx.strokeStyle = 'rgba(80,70,55,0.45)';
+    ctx.fillStyle = '#b3714c';
+    ctx.strokeStyle = 'rgba(140,85,55,0.45)';
     ctx.lineWidth = 1.5;
     for (var row = 0; row < 8; row++) {
         var offX = (row % 2) * (bW / 2);
@@ -476,48 +477,208 @@ function drawBrick(ctx, s) {
     }
 }
 
+// Acciottolato da piazza: sanpietrini tondeggianti su fondo sabbia
+function drawCobble(ctx, s) {
+    ctx.fillStyle = '#b3a284';
+    ctx.fillRect(0, 0, s, s);
+    const n = 6, cw = s / n;
+    const shades = ['#d3c2a0', '#c6b491', '#ddccaa', '#cbb997'];
+    for (let row = 0; row < n; row++) {
+        const off = (row % 2) * (cw / 2);
+        for (let col = -1; col < n; col++) {
+            ctx.fillStyle = shades[((row * 3 + col) % shades.length + shades.length) % shades.length];
+            ctx.beginPath();
+            ctx.ellipse(col * cw + off + cw / 2, row * cw + cw / 2,
+                        cw * 0.44, cw * 0.40, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+}
+
+// Tenda a strisce (rosso/crema di default) per i negozi
+function drawStripes(ctx, s, colA = '#c94f42', colB = '#f6efe0') {
+    const n = 8, w = s / n;
+    for (let i = 0; i < n; i++) {
+        ctx.fillStyle = i % 2 ? colB : colA;
+        ctx.fillRect(i * w, 0, w, s);
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.06)';
+    ctx.fillRect(0, s - 6, s, 6);
+}
+
+// Insegna retrò con testo (canvas → texture, sempre leggibile: MeshBasic)
+function makeSignTex(text, bg, fg) {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 128;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, 512, 128);
+    ctx.strokeStyle = fg;
+    ctx.lineWidth = 8;
+    ctx.strokeRect(6, 6, 500, 116);
+    ctx.fillStyle = fg;
+    ctx.font = 'bold 64px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 256, 68);
+    const t = new THREE.CanvasTexture(c);
+    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return t;
+}
+function addSign(text, w, h, x, y, z, ry, bg = '#f6efe0', fg = '#8a3c2e') {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+        new THREE.MeshBasicMaterial({ map: makeSignTex(text, bg, fg) }));
+    m.position.set(x, y, z);
+    m.rotation.y = ry;
+    scene.add(m);
+    return m;
+}
+
+// ══ STILE TOON (rubber-hose, validato nel prototipo fps-toon-proto) ══
+// Gradient map a fasce nette per il cel-shading (NearestFilter = bande dure)
+const _toonGradMap = (() => {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 1;
+    const ctx = c.getContext('2d');
+    const vals = [0.42, 0.73, 1.0];
+    const w = 256 / vals.length;
+    vals.forEach((v, i) => {
+        const g = Math.round(v * 255);
+        ctx.fillStyle = `rgb(${g},${g},${g})`;
+        ctx.fillRect(Math.floor(i * w), 0, Math.ceil(w), 1);
+    });
+    const tex = new THREE.CanvasTexture(c);
+    tex.minFilter = THREE.NearestFilter;
+    tex.magFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
+    return tex;
+})();
+
+// Grana vintage: base bianca puntinata, moltiplicata dal colore del materiale
+const _toonGrainTex = (() => {
+    const s = 256;
+    const c = document.createElement('canvas');
+    c.width = s; c.height = s;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 900; i++) {
+        ctx.fillStyle = `rgba(60,50,40,${0.03 + Math.random() * 0.04})`;
+        ctx.beginPath();
+        ctx.arc(Math.random() * s, Math.random() * s, 0.6 + Math.random() * 1.6, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return tex;
+})();
+
+function makeToonMat(color, useGrain = true) {
+    return new THREE.MeshToonMaterial({
+        color, gradientMap: _toonGradMap,
+        map: useGrain ? _toonGrainTex : null
+    });
+}
+
+// Contorni "inchiostro" (inverted hull), spessore fisso in metri
+const TOON_OUTLINE_T = 0.008;
+const UP_VEC = new THREE.Vector3(0, 1, 0);
+
+// Geometria clonata coi vertici spostati lungo le normali (hull gonfiato)
+function _toonDisplacedGeo(geo, t) {
+    const g = geo.clone();
+    if (!g.attributes.normal) g.computeVertexNormals();
+    const p = g.attributes.position, n = g.attributes.normal;
+    for (let i = 0; i < p.count; i++) {
+        p.setXYZ(i,
+            p.getX(i) + n.getX(i) * t,
+            p.getY(i) + n.getY(i) * t,
+            p.getZ(i) + n.getZ(i) * t);
+    }
+    p.needsUpdate = true;
+    return g;
+}
+
+// Aggiunge il contorno come FIGLIO della mesh: eredita pose e scale (incluso
+// head.scale del mutatore Teste Giganti). outMat è un'istanza per-personaggio
+// per i player (così "Fantasmi"/setGroupOpacity non tocca i contorni degli
+// altri); per i prop del mondo si usa il condiviso MAT.ink.
+function _addToonOutline(src, outMat, tMul = 1) {
+    let o;
+    if (src.geometry.type.indexOf('Box') === 0) {
+        // Sui box l'offset via normali apre fessure agli spigoli → scala per-asse
+        src.geometry.computeBoundingBox();
+        const bb = src.geometry.boundingBox;
+        const t = TOON_OUTLINE_T * tMul;
+        o = new THREE.Mesh(src.geometry, outMat);
+        o.scale.set(
+            1 + 2 * t / Math.max(bb.max.x - bb.min.x, 1e-3),
+            1 + 2 * t / Math.max(bb.max.y - bb.min.y, 1e-3),
+            1 + 2 * t / Math.max(bb.max.z - bb.min.z, 1e-3));
+    } else {
+        o = new THREE.Mesh(_toonDisplacedGeo(src.geometry, TOON_OUTLINE_T * tMul), outMat);
+    }
+    o.castShadow = false;
+    src.add(o);
+    return o;
+}
+
 // ══════════════════════════════════════════════════════
-//  MATERIALI RIUTILIZZABILI
-//  Superfici di mappa: texture procedurale (stile Kenney)
-//  Veicoli/giocatori/armi: colore piatto (invariati)
+//  MATERIALI RIUTILIZZABILI — mondo in stile TOON
+//  (cel-shading a fasce; superfici con texture procedurali)
 // ══════════════════════════════════════════════════════
+function worldToon(opts) {
+    return new THREE.MeshToonMaterial(Object.assign({ gradientMap: _toonGradMap }, opts));
+}
 const MAT = {
     // ── Superfici terreno/mappa ──────────────────────────
-    ground:      new THREE.MeshLambertMaterial({ map: makeTex(drawGrass, 26, 26) }),        // prato
-    asphalt:     new THREE.MeshLambertMaterial({ map: makeTex(drawAsphalt, 24, 4) }),       // strada
-    concrete:    new THREE.MeshLambertMaterial({ color: 0x8a8a82, map: makeTex(drawConcrete, 4, 4) }),   // cemento
-    sidewalk:    new THREE.MeshLambertMaterial({ color: 0x9a9a90, map: makeTex(drawConcrete, 24, 1) }),  // marciapiede
-    wall:        new THREE.MeshLambertMaterial({ map: makeTex(drawBrick, 4, 4) }),          // muro perimetro
-    crate:       new THREE.MeshLambertMaterial({ map: makeTex(function(c,s){ drawCrate(c,s,'#6c4a14','#9c7424'); }) }),
-    crateDark:   new THREE.MeshLambertMaterial({ map: makeTex(function(c,s){ drawCrate(c,s,'#3d2208','#6c4a14'); }) }),
-    woodFloor:   new THREE.MeshLambertMaterial({ map: makeTex(drawWoodFloor, 2, 2) }),      // pavimento interno
-    // ── Case (Nuketown style) ────────────────────────────
-    houseYellow: new THREE.MeshLambertMaterial({ color: 0xd9b44a, map: makeTex(drawSiding, 4, 4) }),  // casa gialla
-    houseTeal:   new THREE.MeshLambertMaterial({ color: 0x3a8f7e, map: makeTex(drawSiding, 4, 4) }),  // casa verde-acqua
-    roof:        new THREE.MeshLambertMaterial({ map: makeTex(drawRoof, 6, 4) }),           // tetto
-    trim:        new THREE.MeshLambertMaterial({ color: 0xe8e4d8 }),   // cornici bianche (invariato)
-    fence:       new THREE.MeshLambertMaterial({ color: 0xe8e4d8 }),   // staccionata bianca (invariato)
-    // ── Veicoli / props (colori piatti, prossimo step) ──
-    metal:       new THREE.MeshLambertMaterial({ color: 0x4a5568 }),
-    busYellow:   new THREE.MeshLambertMaterial({ color: 0xf2c41d }),
-    vanRed:      new THREE.MeshLambertMaterial({ color: 0xb0432f }),
-    tire:        new THREE.MeshLambertMaterial({ color: 0x141414 }),
-    glass:       new THREE.MeshLambertMaterial({ color: 0x9ec7d6, transparent: true, opacity: 0.45 }),
-    mannequin:   new THREE.MeshLambertMaterial({ color: 0xc9a98a }),
+    ground:      worldToon({ map: makeTex(drawCobble, 22, 22) }),                        // piazza acciottolata
+    grass:       worldToon({ map: makeTex(drawGrass, 6, 6) }),                           // aiuole/parco
+    asphalt:     worldToon({ map: makeTex(drawAsphalt, 20, 4) }),                        // strade
+    concrete:    worldToon({ color: 0xb9b3a2, map: makeTex(drawConcrete, 4, 4) }),       // cemento chiaro
+    sidewalk:    worldToon({ color: 0xd8d2c0, map: makeTex(drawConcrete, 24, 1) }),      // marciapiede crema
+    wall:        worldToon({ map: makeTex(drawBrick, 8, 3) }),                           // perimetro (mattoni caldi)
+    crate:       worldToon({ map: makeTex(function(c,s){ drawCrate(c,s,'#8a5a1e','#c8963c'); }) }),
+    crateDark:   worldToon({ map: makeTex(function(c,s){ drawCrate(c,s,'#5a3510','#8a5a1e'); }) }),
+    woodFloor:   worldToon({ map: makeTex(drawWoodFloor, 2, 2) }),                       // pavimento interno
+    roof:        worldToon({ map: makeTex(drawRoof, 6, 4) }),                            // tetto a tegole
+    // ── Facciate della cittadina (siding grigio tinto) ──
+    facadeCream:   worldToon({ color: 0xf2e3c2, map: makeTex(drawSiding, 4, 4) }),
+    facadeCoral:   worldToon({ color: 0xe8836f, map: makeTex(drawSiding, 4, 4) }),
+    facadeMint:    worldToon({ color: 0x7fc8a9, map: makeTex(drawSiding, 4, 4) }),
+    facadeMustard: worldToon({ color: 0xe9b64f, map: makeTex(drawSiding, 4, 4) }),
+    facadeBlue:    worldToon({ color: 0x86b8d6, map: makeTex(drawSiding, 4, 4) }),
+    awningRed:     worldToon({ map: makeTex(drawStripes, 2, 1) }),
+    awningBlue:    worldToon({ map: makeTex(function(c,s){ drawStripes(c,s,'#3f6fae','#f6efe0'); }, 2, 1) }),
+    trim:        worldToon({ color: 0xf4efe2 }),   // cornici bianche
+    fence:       worldToon({ color: 0xf4efe2 }),   // staccionata bianca
+    // ── Veicoli / props ──────────────────────────────────
+    metal:       worldToon({ color: 0x6a7686 }),
+    vanRed:      worldToon({ color: 0xd8574a }),
+    tire:        worldToon({ color: 0x23201d }),
+    glass:       worldToon({ color: 0xaed6e4, transparent: true, opacity: 0.45 }),
+    water:       worldToon({ color: 0x6fc3e8, transparent: true, opacity: 0.85 }),
+    stallWood:   worldToon({ color: 0xb07a3c }),
+    lamp:        new THREE.MeshBasicMaterial({ color: 0xffe9a8 }),   // globo lampione (sempre "acceso")
+    cloud:       new THREE.MeshBasicMaterial({ color: 0xffffff }),   // nuvolette cartoon
+    // Contorno "inchiostro" CONDIVISO dei prop del mondo (i personaggi
+    // usano un'istanza dedicata: vedi createPlayerMesh/outMat)
+    ink:         new THREE.MeshBasicMaterial({ color: 0x1a1a1a, side: THREE.BackSide }),
     // Cielo: MeshBasic (non illuminato) → colore uniforme su tutte le facce del cubo-cielo.
     // Con Lambert le facce interne prendevano luci diverse mostrando "strisce" alle giunzioni
     // (evidenti sul podio finale, dove non c'è nebbia a mascherarle).
-    sky:         new THREE.MeshBasicMaterial({ color: 0x87ceeb, side: THREE.BackSide }),
+    sky:         new THREE.MeshBasicMaterial({ color: 0x8fd3f0, side: THREE.BackSide }),
 };
-// Materiali di dettaglio (props mappa — invariati)
-MAT.chrome    = new THREE.MeshLambertMaterial({ color: 0xb9c0c8 });
-MAT.hubcap    = new THREE.MeshLambertMaterial({ color: 0x70757c });
-MAT.headlight = new THREE.MeshLambertMaterial({ color: 0xfff2b0 });
-MAT.taillight = new THREE.MeshLambertMaterial({ color: 0xaa2a1e });
-MAT.bark      = new THREE.MeshLambertMaterial({ color: 0x5c3a1e });
-MAT.leaf      = new THREE.MeshLambertMaterial({ color: 0x2d5a27 });
-MAT.leafDark  = new THREE.MeshLambertMaterial({ color: 0x244a1f });
-MAT.couch     = new THREE.MeshLambertMaterial({ color: 0x5a6e88 });  // tessuto divano
+// Materiali di dettaglio (props mappa)
+MAT.chrome    = worldToon({ color: 0xc9d0d8 });
+MAT.hubcap    = worldToon({ color: 0x8a8f96 });
+MAT.headlight = worldToon({ color: 0xfff2b0 });
+MAT.taillight = worldToon({ color: 0xd84a3a });
+MAT.bark      = worldToon({ color: 0x7a5028 });
+MAT.leaf      = worldToon({ color: 0x58a83c });
+MAT.leafDark  = worldToon({ color: 0x3f8a30 });
+MAT.couch     = worldToon({ color: 0x5a6e88 });  // tessuto
 
 // ══════════════════════════════════════════════════════
 //  HELPER: box con ombra
@@ -599,8 +760,8 @@ function buildBarrier(x, z, rotY = 0) {
 function buildSandbags(x, z, len = 2.4, rotY = 0) {
     const H = 0.95, W = 0.7;
     const g = new THREE.Group();
-    const matA = new THREE.MeshLambertMaterial({ color: 0x9a8a5c });
-    const matB = new THREE.MeshLambertMaterial({ color: 0x847552 });
+    const matA = worldToon({ color: 0xbfa96c });
+    const matB = worldToon({ color: 0xa38e5e });
     const rows = 3, perRow = Math.max(2, Math.round(len / 0.6));
     for (let r = 0; r < rows; r++) {
         const off = (r % 2) * 0.28;
@@ -625,10 +786,11 @@ function buildSandbags(x, z, len = 2.4, rotY = 0) {
 }
 
 // ── Barile metallico (riparo stretto e alto) ──
-function buildBarrel(x, z, color = 0x3a6b3a) {
+function buildBarrel(x, z, color = 0x4a8a4a) {
     const r = 0.36, H = 1.1;
-    const mat = new THREE.MeshLambertMaterial({ color });
-    makeCyl(r, r, H, mat, x, H / 2, z, 'y', 14);
+    const mat = worldToon({ color });
+    const body = makeCyl(r, r, H, mat, x, H / 2, z, 'y', 14);
+    _addToonOutline(body, MAT.ink, 0.8);
     // Cerchiature
     makeCyl(r + 0.02, r + 0.02, 0.06, MAT.crateDark, x, H * 0.28, z, 'y', 14);
     makeCyl(r + 0.02, r + 0.02, 0.06, MAT.crateDark, x, H * 0.72, z, 'y', 14);
@@ -639,14 +801,18 @@ function buildBarrel(x, z, color = 0x3a6b3a) {
 }
 
 // ══════════════════════════════════════════════════════
-//  MAPPA — "NUKETOWN" HOMAGE
-//  Due case suburbane simmetriche separate da una strada
-//  centrale con veicoli di copertura, cortili recintati e
-//  manichini da test nucleare.
+//  MAPPA — "CITTADINA CARTOON" (anni '30, luminosa)
+//  Grande Emporio centrale a 2 piani + tetto calpestabile;
+//  anello esterno: strada nord, Via Lunga a ovest (linea
+//  sniper), piazza a sud con fontana e mercatino, botteghe
+//  enterable sul perimetro con tetti raggiungibili.
+//  Confini blindati (muro 12 m + soffitto invisibile).
 // ══════════════════════════════════════════════════════
 function buildMap() {
 
-    // ── Terreno (prato) ──
+    MAT.iron = worldToon({ color: 0x33604a });   // ghisa verde dei lampioni
+
+    // ── Terreno: piazza acciottolata su tutta la mappa ──
     const ground = new THREE.Mesh(
         new THREE.PlaneGeometry(MAP_HALF * 2, MAP_HALF * 2), MAT.ground
     );
@@ -654,232 +820,431 @@ function buildMap() {
     ground.receiveShadow = true;
     scene.add(ground);
 
-    // ── Strada centrale (asfalto, est-ovest) ──
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(MAP_HALF * 2, 12), MAT.asphalt);
-    road.rotation.x = -Math.PI / 2;
-    road.position.y = 0.02;
-    road.receiveShadow = true;
-    scene.add(road);
-    // Linea di mezzeria tratteggiata
-    for (let x = -36; x <= 36; x += 8) {
-        const dash = new THREE.Mesh(new THREE.PlaneGeometry(3, 0.4), MAT.trim);
+    // ── Strade in asfalto attorno all'Emporio (nessuna sovrapposizione) ──
+    const mkRoad = (w, d, x, z) => {
+        const r = new THREE.Mesh(new THREE.PlaneGeometry(w, d), MAT.asphalt);
+        r.rotation.x = -Math.PI / 2;
+        r.position.set(x, 0.02, z);
+        r.receiveShadow = true;
+        scene.add(r);
+    };
+    mkRoad(42, 18, 11, -16);      // strada nord (est-ovest)
+    mkRoad(17, 64, -18.5, 0);     // Via Lunga (ovest, nord-sud: linea sniper)
+    mkRoad(15, 32, 17.5, 9);      // strada est
+    // Mezzeria tratteggiata della Via Lunga
+    for (let z = -28; z <= 28; z += 8) {
+        const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 3), MAT.trim);
         dash.rotation.x = -Math.PI / 2;
-        dash.position.set(x, 0.03, 0);
+        dash.position.set(-18, 0.035, z);
         scene.add(dash);
     }
-    // Marciapiedi
-    [-7, 7].forEach(z => {
-        const sw = new THREE.Mesh(new THREE.PlaneGeometry(MAP_HALF * 2, 2), MAT.sidewalk);
-        sw.rotation.x = -Math.PI / 2;
-        sw.position.set(0, 0.025, z);
-        scene.add(sw);
-    });
 
-    // ── Vialetti di accesso (cemento) ──
-    [-32, 32].forEach(hz => {
-        const sign = hz < 0 ? 1 : -1;
-        const drive = new THREE.Mesh(new THREE.PlaneGeometry(6, 20), MAT.concrete);
-        drive.rotation.x = -Math.PI / 2;
-        drive.position.set(0, 0.015, hz + sign * 13);
-        drive.receiveShadow = true;
-        scene.add(drive);
-    });
+    // ── Marciapiedi davanti alle botteghe ──
+    const mkSide = (w, d, x, z) => {
+        const s = new THREE.Mesh(new THREE.PlaneGeometry(w, d), MAT.sidewalk);
+        s.rotation.x = -Math.PI / 2;
+        s.position.set(x, 0.05, z);
+        s.receiveShadow = true;
+        scene.add(s);
+    };
+    mkSide(40, 2, 8, -24);      // fronte botteghe nord
+    mkSide(2, 36, 24, -1);      // fronte botteghe est
+    mkSide(36, 2, 0, 24);       // fronte botteghe sud
 
-    // ── Due case che si fronteggiano ──
-    buildHouse(0, -32, +1, MAT.houseYellow);   // casa gialla (nord, porta verso +Z)
-    buildHouse(0, 32, -1, MAT.houseTeal);      // casa verde-acqua (sud, porta verso -Z)
+    // ── EDIFICIO CENTRALE: il Grande Emporio ──
+    buildCentral();
 
-    // ── Veicoli sulla strada (copertura centrale) ──
-    buildBus(-16, -1);
-    buildVan(17, 2);
+    // ── BOTTEGHE dell'anello (enterable, tetto piano calpestabile) ──
+    // Nord (fronte a sud, verso la strada)
+    buildShop(-2, -28, 9, 6, 'S', MAT.facadeCoral, 'PANETTERIA', MAT.awningRed);
+    buildShop(10, -28, 8, 6, 'S', MAT.facadeMint, 'BARBIERE', MAT.awningBlue);
+    buildShop(22.5, -28, 9, 6, 'S', MAT.facadeCream, 'FERRAMENTA', MAT.awningRed);
+    // Est (fronte a ovest, verso la strada)
+    buildShop(28, -14, 8, 6, 'W', MAT.facadeBlue, 'RADIO', MAT.awningRed);
+    buildShop(28, -1, 8, 6, 'W', MAT.facadeCream, 'SARTORIA', MAT.awningBlue);
+    buildShop(28, 12, 8, 6, 'W', MAT.facadeCoral, 'FARMACIA', MAT.awningBlue);
+    // Sud (fronte a nord, sulla piazza)
+    buildShop(-11, 28, 9, 6, 'N', MAT.facadeMint, 'GELATERIA', MAT.awningRed);
+    buildShop(2, 28, 9, 6, 'N', MAT.facadeMustard, 'CAFFÈ', MAT.awningBlue);
+    buildShop(15, 28, 9, 6, 'N', MAT.facadeBlue, 'TEATRO', MAT.awningRed);
 
-    // ── Staccionate dei cortili (apertura per il vialetto) ──
-    fenceX(-24, -3, -7); fenceX(3, 24, -7);   // fronte nord
-    fenceZ(-7, -25, -24); fenceZ(-7, -25, 24); // lati nord
-    fenceX(-24, -3, 7); fenceX(3, 24, 7);      // fronte sud
-    fenceZ(7, 25, -24); fenceZ(7, 25, 24);     // lati sud
+    // ── Scale di servizio nei vicoli (accesso ai tetti delle botteghe) ──
+    buildStairs(4.25, -24.6, 2.8, 3.15, 0, -1);    // vicolo nord (PANETTERIA/BARBIERE)
+    buildStairs(24.6, -7.5, 4.2, 3.15, 1, 0);      // vicolo est (RADIO/SARTORIA)
+    buildStairs(-4.5, 24.6, 3.2, 3.15, 0, 1);      // vicolo sud (GELATERIA/CAFFÈ)
+    // Passerella in legno tra i tetti di BARBIERE e FERRAMENTA
+    addSolid(4.4, 0.15, 2.0, 16, 3.1, -28, MAT.woodFloor);
 
-    // ── Copertura nei cortili (casse basse, scalabili in un passo) ──
-    crate(1.8, 0.6, 1.8, -14, 0, -16);
-    crate(1.8, 0.6, 1.8, 15, 0, 16);
-    crate(2.6, 0.6, 1.2, 14, 0, -18);
-    crate(2.6, 0.6, 1.2, -14, 0, 18);
-    // Casse impilate (gradini per salire più in alto)
-    crate(1.6, 0.6, 1.6, -18.6, 0, -12);
-    crate(1.6, 1.2, 1.6, -20.0, 0, -12, true);
-    crate(1.6, 0.6, 1.6, 18.6, 0, 12);
-    crate(1.6, 1.2, 1.6, 20.0, 0, 12, true);
+    // ── PIAZZA sud: fontana, mercatino, giardinetto ──
+    buildFountain(0, 16);
+    buildStall(7, 11, true, MAT.awningRed);
+    buildStall(-5, 12, true, MAT.awningBlue);
+    buildStall(9, 19, false, MAT.awningBlue);
+    // Giardinetto recintato con albero
+    const g1 = new THREE.Mesh(new THREE.PlaneGeometry(6, 4), MAT.grass);
+    g1.rotation.x = -Math.PI / 2;
+    g1.position.set(-14, 0.04, 12);
+    g1.receiveShadow = true;
+    scene.add(g1);
+    fenceX(-17, -11, 10);
+    fenceX(-17, -11, 14);
+    fenceZ(10, 14, -17);
+    addTree(-14, 0, 12);
+    // Panchine (riparo bassissimo)
+    addSolid(2.2, 0.55, 0.6, -4, 0, 20, MAT.woodFloor);
+    addSolid(0.6, 0.55, 2.2, 4.5, 0, 16, MAT.woodFloor);
 
-    // ── Tettoie/garage aperti accanto alle case (riparo) ──
-    buildCarport(-26, -32);
-    buildCarport(26, 32);
+    // ── Strada nord: furgone dei gelati + coperture ──
+    buildVan(8, -16);
+    addSign('GELATI', 2.6, 0.8, 8, 3.3, -15.95, 0);
+    addSign('GELATI', 2.6, 0.8, 8, 3.3, -16.05, Math.PI);
+    buildBarrier(-4, -13, 0.2);
+    buildBarrier(20, -19, -0.3);
+    buildSandbags(-2, -20, 2.4, 0.1);
+    buildBarrel(15, -12);
+    buildBarrel(16.2, -12.6, 0xd8574a);
 
-    // ── Cabine/outhouse (copertura alta e stretta) ──
-    addSolid(1.4, 2.2, 1.4, 26, 0, -10, MAT.metal);
-    addSolid(1.4, 2.2, 1.4, -26, 0, 10, MAT.metal);
+    // ── Via Lunga: coperture RADE ai bordi (la linea di tiro resta libera) ──
+    buildSandbags(-12.5, -5, 2.2, Math.PI / 2);
+    buildBarrier(-12.5, 8, Math.PI / 2);
+    buildBarrel(-24.5, 6);
 
-    // ── Barriere/fioriere basse sulla strada ──
-    addSolid(3.0, 0.6, 1.0, 2, 0, -3, MAT.concrete);
-    addSolid(3.0, 0.6, 1.0, -3, 0, 3, MAT.concrete);
-    addSolid(1.0, 0.6, 3.0, 8, 0, 0, MAT.concrete);
+    // ── Portico ovest: colonnato coperto lungo il muro, tetto calpestabile ──
+    for (let z = -18; z <= 18; z += 6) {
+        const col = makeCyl(0.28, 0.34, 3.0, MAT.trim, -27, 1.5, z, 'y', 12);
+        _addToonOutline(col, MAT.ink, 0.8);
+        solidBoxes.push({
+            min: new THREE.Vector3(-27.35, 0, z - 0.35),
+            max: new THREE.Vector3(-26.65, 3.0, z + 0.35)
+        });
+    }
+    addSolid(5, 0.25, 40, -29.2, 3.0, 0, MAT.roof);       // tetto del portico
+    addSolid(0.25, 0.55, 40, -26.8, 3.25, 0, MAT.trim);   // parapetto basso sul bordo
+    buildStairs(-29.2, -24.4, 3.6, 3.25, 0, 1);           // scala all'estremità nord
 
-    // ── Manichini da test (atmosfera Nuketown) ──
-    buildMannequin(-8, -9, 0.4);
-    buildMannequin(9, 9, 3.4);
-    buildMannequin(-20, 4, 1.2);
-    buildMannequin(21, -5, -1.0);
+    // ── Angolo NW: palco della banda (gazebo) ──
+    buildGazebo(-14, -27);
+    addTree(-25, 0, -27);
 
-    // ── Ripari aggiuntivi nello spazio centrale (poca copertura prima) ──
-    buildBarrier(-6, -3.5, 0.25);
-    buildBarrier(6, 4, -0.25);
-    buildSandbags(-5, 6, 2.2, 0.15);
-    buildSandbags(5, -6, 2.2, -0.15);
-    buildBarrel(-9, 4);
-    buildBarrel(10, -4);
-    buildBarrel(-1, -6);
-    buildBarrel(1, 6);
-    // Ripari nei cortili
-    buildBarrier(-12, -19, Math.PI / 2);
-    buildBarrier(12, 19, Math.PI / 2);
-    buildBarrel(22, -20, 0xb0432f);
-    buildBarrel(-22, 20, 0xb0432f);
+    // ── Angolo SW: deposito con tettoia e casse ──
+    buildCarport(-24, 27);
+    crate(1.8, 0.6, 1.8, -23.5, 0, 26.5);
+    crate(1.6, 1.2, 1.6, -25, 0, 28.2, true);
+    crate(1.4, 0.6, 1.4, -20, 0, 29);
+    buildBarrel(-19, 25.5, 0xd8574a);
 
-    // ── Cespugli / alberi agli angoli (dentro il perimetro compatto) ──
-    addTree(-37, 0, -37); addTree(37, 0, 37);
-    addTree(-37, 0, 37); addTree(37, 0, -37);
+    // ── Angolo SE: verde + barili ──
+    addTree(25, 0, 22);
+    buildBarrel(28, 24);
+    crate(1.6, 0.6, 1.6, 28.5, 0, 20);
 
-    // ── Confini mappa (muri perimetrali) ──
-    addSolid(MAP_HALF * 2, 8, 1, 0, 0, -MAP_HALF, MAT.wall);
-    addSolid(MAP_HALF * 2, 8, 1, 0, 0, MAP_HALF, MAT.wall);
-    addSolid(1, 8, MAP_HALF * 2, MAP_HALF, 0, 0, MAT.wall);
-    addSolid(1, 8, MAP_HALF * 2, -MAP_HALF, 0, 0, MAT.wall);
+    // ── Angolo NE: pocket con casse impilate ──
+    addTree(29, 0, -22);
+    crate(1.7, 0.6, 1.7, 28, 0, -27);
+    crate(1.5, 1.2, 1.5, 29.3, 0, -28.6, true);
 
-    // ── Skybox ──
+    // ── Lampioni ──
+    buildLamppost(-13, -9);
+    buildLamppost(13, -9);
+    buildLamppost(13, 9);
+    buildLamppost(-13, 9);
+    buildLamppost(-6, 20.5);
+    buildLamppost(18, -22);
+
+    // ── Confini: muro perimetrale ALTO (niente fughe con Gravità Lunare) ──
+    addSolid(MAP_HALF * 2 + 2, 12, 1, 0, 0, -MAP_HALF, MAT.wall);
+    addSolid(MAP_HALF * 2 + 2, 12, 1, 0, 0, MAP_HALF, MAT.wall);
+    addSolid(1, 12, MAP_HALF * 2 + 2, MAP_HALF, 0, 0, MAT.wall);
+    addSolid(1, 12, MAP_HALF * 2 + 2, -MAP_HALF, 0, 0, MAT.wall);
+    // Cornice bianca in cima al muro
+    for (const [w, d, x, z] of [[66, 1.4, 0, -MAP_HALF], [66, 1.4, 0, MAP_HALF],
+                                [1.4, 66, MAP_HALF, 0], [1.4, 66, -MAP_HALF, 0]]) {
+        makeBox(w, 0.5, d, MAT.trim, x, 12.15, z);
+    }
+
+    // ── Fondale, nuvole e skybox ──
+    buildBackdrop();
+    buildClouds();
     const sky = new THREE.Mesh(new THREE.BoxGeometry(500, 500, 500), MAT.sky);
     scene.add(sky);
 }
 
-// ── Casa Nuketown a DUE PIANI (enterable, scala interna, finestre) ──
-function buildHouse(cx, cz, doorDir, wallMat) {
-    const W = 14, D = 12, t = 0.3;
-    const hw = W / 2, hd = D / 2;
-    const F2 = 2.8;          // quota calpestabile del secondo piano
-    const ROOF = 5.6;
-    const wallH1 = F2;       // altezza muri piano terra
-    const wallH2 = ROOF - F2; // altezza muri secondo piano
-    const doorW = 2.4, doorH = 2.2;
-    const fz = cz + doorDir * hd;   // parete frontale (verso il centro)
-    const bz = cz - doorDir * hd;   // parete posteriore
-    const floorMat = MAT.woodFloor;
-
-    // ── Fondamenta + pavimento piano terra ──
-    makeBox(W + 0.6, 0.4, D + 0.6, MAT.concrete, cx, -0.1, cz);
-    makeBox(W, 0.2, D, floorMat, cx, 0.1, cz);
-
-    // Parete laterale con finestra (base y0, altezza h)
-    function sideWall(wx, y0, h) {
-        const winLen = 2.6, winH = 1.4, sill = y0 + (h - winH) / 2;
-        const segLen = (D - winLen) / 2;
-        addSolid(t, h, segLen, wx, y0, cz - (winLen / 2 + segLen / 2), wallMat);
-        addSolid(t, h, segLen, wx, y0, cz + (winLen / 2 + segLen / 2), wallMat);
-        addSolid(t, sill - y0, winLen, wx, y0, cz, wallMat);
-        addSolid(t, (y0 + h) - (sill + winH), winLen, wx, sill + winH, cz, wallMat);
-        makeBox(t * 0.6, winH, winLen, MAT.glass, wx, sill + winH / 2, cz);
+// ══ HELPER MURI CON APERTURE (porte/finestre) ══
+// Muro lungo X con aperture. openings: [{c, w, b, t}] ordinati per centro —
+// c = centro-x, w = larghezza, b/t = quote assolute inferiore/superiore del buco.
+function punchWallX(zc, x0, x1, y0, h, openings, mat, t = 0.35) {
+    let cur = x0;
+    const top = y0 + h;
+    for (const o of openings) {
+        const oL = o.c - o.w / 2, oR = o.c + o.w / 2;
+        if (oL > cur + 0.01) addSolid(oL - cur, h, t, (cur + oL) / 2, y0, zc, mat);
+        if (o.b > y0 + 0.01) addSolid(o.w, o.b - y0, t, o.c, y0, zc, mat);
+        if (o.t < top - 0.01) addSolid(o.w, top - o.t, t, o.c, o.t, zc, mat);
+        cur = oR;
     }
-
-    // Parete frontale con apertura (porta o finestra) centrata.
-    // openBottom..openTop = estensione verticale del buco.
-    function frontWall(y0, h, openW, openBottom, openTop) {
-        const seg = (W - openW) / 2;
-        addSolid(seg, h, t, cx - (openW / 2 + seg / 2), y0, fz, wallMat);
-        addSolid(seg, h, t, cx + (openW / 2 + seg / 2), y0, fz, wallMat);
-        if (openBottom > y0 + 0.01) addSolid(openW, openBottom - y0, t, cx, y0, fz, wallMat);
-        if (openTop < y0 + h - 0.01) addSolid(openW, (y0 + h) - openTop, t, cx, openTop, fz, wallMat);
+    if (cur < x1 - 0.01) addSolid(x1 - cur, h, t, (cur + x1) / 2, y0, zc, mat);
+}
+// Come sopra, lungo Z (c = centro-z delle aperture)
+function punchWallZ(xc, z0, z1, y0, h, openings, mat, t = 0.35) {
+    let cur = z0;
+    const top = y0 + h;
+    for (const o of openings) {
+        const oL = o.c - o.w / 2, oR = o.c + o.w / 2;
+        if (oL > cur + 0.01) addSolid(t, h, oL - cur, xc, y0, (cur + oL) / 2, mat);
+        if (o.b > y0 + 0.01) addSolid(t, o.b - y0, o.w, xc, y0, o.c, mat);
+        if (o.t < top - 0.01) addSolid(t, top - o.t, o.w, xc, o.t, o.c, mat);
+        cur = oR;
     }
-
-    // ── PIANO TERRA ──
-    addSolid(W, wallH1, t, cx, 0, bz, wallMat);     // posteriore
-    sideWall(cx - hw, 0, wallH1);
-    sideWall(cx + hw, 0, wallH1);
-    frontWall(0, wallH1, doorW, 0, doorH);          // porta (buco dal pavimento)
-    // Stipiti porta
-    makeBox(0.25, doorH + 0.2, 0.36, MAT.trim, cx - doorW / 2, doorH / 2, fz);
-    makeBox(0.25, doorH + 0.2, 0.36, MAT.trim, cx + doorW / 2, doorH / 2, fz);
-    makeBox(doorW + 0.5, 0.3, 0.36, MAT.trim, cx, doorH + 0.15, fz);
-    // Gradino d'ingresso
-    addSolid(doorW + 1, 0.3, 1.0, cx, 0, fz + doorDir * 0.8, MAT.concrete);
-
-    // ── SOLAIO 2° piano con vano scala nell'angolo (minX, minZ) ──
-    const holeW = 3.4, holeD = 4.4;
-    const slabBase = F2 - 0.2;
-    // Rettangolo A (a destra del vano)
-    const aw = W - holeW;
-    addSolid(aw, 0.2, D, cx - hw + holeW + aw / 2, slabBase, cz, floorMat);
-    // Rettangolo B (colonna sinistra, davanti al vano)
-    const bd = D - holeD;
-    addSolid(holeW, 0.2, bd, cx - hw + holeW / 2, slabBase, cz - hd + holeD + bd / 2, floorMat);
-
-    // ── SCALA interna nel vano (gradini bassi → step-up automatico) ──
-    const nSteps = 7;
-    const stepH = F2 / nSteps;          // ~0.4 (< STEP_HEIGHT)
-    const stepDepth = holeD / nSteps;
-    const stairX = cx - hw + holeW / 2;
-    for (let i = 0; i < nSteps; i++) {
-        const top = (i + 1) * stepH;
-        const zc = (cz - hd) + (i + 0.5) * stepDepth;
-        addSolid(holeW - 0.6, top, stepDepth + 0.02, stairX, 0, zc, MAT.concrete);
-    }
-
-    // ── SECONDO PIANO ──
-    addSolid(W, wallH2, t, cx, F2, bz, wallMat);    // posteriore
-    sideWall(cx - hw, F2, wallH2);
-    sideWall(cx + hw, F2, wallH2);
-    // Grande finestra/balcone frontale verso la strada
-    frontWall(F2, wallH2, 5.0, F2 + 0.4, F2 + 2.0);
-    makeBox(5.2, 0.25, 0.4, MAT.trim, cx, F2 + 0.4, fz + doorDir * 0.08); // parapetto
-
-    // ── TETTO + colmo ──
-    addSolid(W + 1, 0.3, D + 1, cx, ROOF, cz, MAT.roof);
-    makeBox(W + 1, 0.6, 2.6, MAT.roof, cx, ROOF + 0.45, cz);
-
-    // ── Copertura interna piano terra (bassa, scalabile) ──
-    addSolid(1.6, 0.6, 1.6, cx + (hw - 2.6), 0, cz + doorDir * 1.5, MAT.crate);
-
-    // ── Arredamento minimal (solo visivo, nessuna collisione) ──
-    buildHouseFurniture(cx, cz, doorDir, F2);
+    if (cur < z1 - 0.01) addSolid(t, h, z1 - cur, xc, y0, (cur + z1) / 2, mat);
 }
 
-// Arredamento minimal: divano, tavolino+TV, tavolo da pranzo (piano terra);
-// letto + comodino (secondo piano). Tutto visivo, evita il vano scala.
-function buildHouseFurniture(cx, cz, doorDir, F2) {
-    const wood = MAT.woodFloor, dark = MAT.crateDark, fab = MAT.couch, white = MAT.trim;
-    const back = cz - doorDir * 6;     // parete posteriore
-    const dd = doorDir;
+// Scala esterna dritta: parte da (x0,z0), sale verso (dirX,dirZ) fino a hTop.
+// Gradini < STEP_HEIGHT → si sale camminando. w = larghezza della rampa.
+function buildStairs(x0, z0, w, hTop, dirX, dirZ, mat = MAT.concrete) {
+    const n = Math.max(2, Math.ceil(hTop / 0.5));
+    const stepH = hTop / n, depth = 0.62;
+    for (let i = 0; i < n; i++) {
+        addSolid(dirX ? depth + 0.04 : w, (i + 1) * stepH,
+                 dirZ ? depth + 0.04 : w,
+                 x0 + dirX * (i + 0.5) * depth, 0,
+                 z0 + dirZ * (i + 0.5) * depth, mat);
+    }
+}
 
-    // ── PIANO TERRA ──
-    // Divano contro la parete posteriore (lato destro, lontano dalle scale)
-    makeBox(2.4, 0.45, 0.95, fab, cx + 3, 0.33, back + dd * 0.7);
-    makeBox(2.4, 0.55, 0.25, fab, cx + 3, 0.62, back + dd * 0.25);   // schienale
-    makeBox(0.25, 0.5, 0.95, fab, cx + 3 - 1.2, 0.45, back + dd * 0.7); // bracciolo
-    makeBox(0.25, 0.5, 0.95, fab, cx + 3 + 1.2, 0.45, back + dd * 0.7);
-    // Tavolino basso davanti al divano
-    makeBox(1.3, 0.45, 0.7, wood, cx + 3, 0.22, back + dd * 2.4);
-    // Mobile TV + televisore (di fronte al divano)
-    makeBox(1.7, 0.5, 0.4, dark, cx + 3, 0.25, back + dd * 4.4);
-    makeBox(1.3, 0.8, 0.08, dark, cx + 3, 1.15, back + dd * 4.6);
-    // Tavolo da pranzo (lato sinistro-fronte, libero dal vano scala)
-    makeBox(1.6, 0.08, 1.0, wood, cx - 3.2, 0.85, cz + dd * 2.6);
-    makeBox(0.3, 0.85, 0.3, dark, cx - 3.2, 0.42, cz + dd * 2.6);    // gamba centrale
-    makeBox(0.45, 0.5, 0.45, wood, cx - 3.2, 0.25, cz + dd * 1.6);   // sedia
-    makeBox(0.45, 0.5, 0.45, wood, cx - 3.2, 0.25, cz + dd * 3.6);   // sedia
+// ── GRANDE EMPORIO centrale: 2 piani + tetto-terrazza calpestabile ──
+// Interni stretti (smg/shotgun/blackout), finestroni al 2° piano, scala A
+// (terra→2°, angolo NW) e scala B (2°→tetto, angolo SE), parapetto sul tetto.
+function buildCentral() {
+    const W = 20, D = 14, hw = W / 2, hd = D / 2;
+    const F2 = 2.8, ROOF = 5.6;
+    const FAC = MAT.facadeMustard;
+    const holeW = 3.4, holeD = 4.4;   // vani scala nei solai
 
-    // ── SECONDO PIANO (slab a F2) ──
-    const f = F2;
-    makeBox(2.0, 0.3, 1.5, wood, cx + 3.5, f + 0.15, cz + 1.8);      // struttura letto
-    makeBox(1.9, 0.25, 1.4, white, cx + 3.5, f + 0.42, cz + 1.8);    // materasso
-    makeBox(0.8, 0.18, 1.2, white, cx + 2.9, f + 0.6, cz + 1.8);     // cuscino
-    makeBox(0.2, 0.7, 1.5, dark, cx + 2.45, f + 0.35, cz + 1.8);     // testiera
-    makeBox(0.5, 0.5, 0.5, wood, cx + 2.2, f + 0.25, cz + 0.7);      // comodino
+    // Fondamenta + pavimento in legno
+    makeBox(W + 0.8, 0.3, D + 0.8, MAT.concrete, 0, -0.05, 0);
+    makeBox(W, 0.2, D, MAT.woodFloor, 0, 0.1, 0);
+
+    // ── PIANO TERRA: porte su tutti e 4 i lati + vetrine ──
+    const door = { w: 3.0, b: 0, t: 2.3 };
+    const win = { w: 2.6, b: 1.0, t: 2.4 };
+    for (const sz of [-1, 1]) {
+        punchWallX(sz * hd, -hw, hw, 0, F2,
+            [{ c: -6, ...win }, { c: 0, ...door }, { c: 6, ...win }], FAC);
+    }
+    punchWallZ(-hw, -hd, hd, 0, F2, [{ c: 3, w: 2.4, b: 0, t: 2.3 }], FAC);
+    punchWallZ(hw, -hd, hd, 0, F2, [{ c: -3, w: 2.4, b: 0, t: 2.3 }], FAC);
+    // Vetrine + cornici + gradini d'ingresso
+    for (const sz of [-1, 1]) {
+        for (const wx of [-6, 6]) makeBox(2.5, 1.4, 0.1, MAT.glass, wx, 1.7, sz * hd);
+        makeBox(3.4, 0.3, 0.55, MAT.trim, 0, 2.45, sz * hd);
+        addSolid(4.0, 0.28, 1.2, 0, 0, sz * (hd + 0.7), MAT.concrete);
+    }
+
+    // ── SOLAIO del 2° piano (vano scala A nell'angolo NW: x -10..-6.6, z -7..-2.6) ──
+    addSolid(W - holeW, 0.2, D, holeW / 2, F2 - 0.2, 0, MAT.woodFloor);   // lastra grande (x -6.6..10)
+    addSolid(holeW, 0.2, D - holeD, -hw + holeW / 2, F2 - 0.2, -hd + holeD + (D - holeD) / 2, MAT.woodFloor);
+
+    // ── SCALA A: terra → 2° piano (gradini bassi, step-up automatico) ──
+    const nA = 7, stepHA = F2 / nA, stepDA = holeD / nA;
+    for (let i = 0; i < nA; i++) {
+        addSolid(holeW - 0.6, (i + 1) * stepHA, stepDA + 0.02,
+                 -hw + holeW / 2, 0, -hd + (i + 0.5) * stepDA, MAT.concrete);
+    }
+
+    // ── SECONDO PIANO: finestroni bassi = postazioni di tiro su strada/piazza ──
+    const win2 = { w: 3.0, b: F2 + 0.5, t: F2 + 2.0 };
+    for (const sz of [-1, 1]) {
+        punchWallX(sz * hd, -hw, hw, F2, ROOF - F2,
+            [{ c: -6, ...win2 }, { c: 0, ...win2 }, { c: 6, ...win2 }], FAC);
+    }
+    const win2z = { w: 2.6, b: F2 + 0.5, t: F2 + 2.0 };
+    for (const sx of [-1, 1]) {
+        punchWallZ(sx * hw, -hd, hd, F2, ROOF - F2,
+            [{ c: -3.5, ...win2z }, { c: 3.5, ...win2z }], FAC);
+    }
+    // Copertura interna al 2° piano
+    crate(1.6, 0.6, 1.6, 5, F2, 3);
+    crate(1.4, 0.6, 1.4, -4, F2, -4);
+
+    // ── SCALA B: 2° piano → tetto (angolo SE; vano nel tetto x 6.6..10, z 2.6..7) ──
+    const nB = 7, stepHB = (ROOF - F2) / nB, stepDB = holeD / nB;
+    for (let i = 0; i < nB; i++) {
+        addSolid(holeW - 0.6, (i + 1) * stepHB, stepDB + 0.02,
+                 hw - holeW / 2, F2, hd - holeD + (i + 0.5) * stepDB, MAT.concrete);
+    }
+
+    // ── TETTO-TERRAZZA con vano scala B e parapetto (riparo basso in quota) ──
+    addSolid(W - holeW, 0.25, D, -holeW / 2, ROOF - 0.2, 0, MAT.concrete);
+    addSolid(holeW, 0.25, D - holeD, hw - holeW / 2, ROOF - 0.2, -holeD / 2, MAT.concrete);
+    const py = ROOF + 0.05;   // base parapetto = quota calpestio del tetto
+    addSolid(W + 0.3, 0.9, 0.3, 0, py, -hd, MAT.wall);
+    addSolid(W + 0.3, 0.9, 0.3, 0, py, hd, MAT.wall);
+    addSolid(0.3, 0.9, D + 0.3, -hw, py, 0, MAT.wall);
+    addSolid(0.3, 0.9, D + 0.3, hw, py, 0, MAT.wall);
+    // Cornicione bianco sotto la linea del tetto
+    for (const sz of [-1, 1]) makeBox(W + 0.7, 0.35, 0.25, MAT.trim, 0, ROOF - 0.1, sz * (hd + 0.25));
+    for (const sx of [-1, 1]) makeBox(0.25, 0.35, D + 0.7, MAT.trim, sx * (hw + 0.25), ROOF - 0.1, 0);
+    // Prop sul tetto (comignoli/casse = ripari)
+    addSolid(1.8, 1.1, 1.4, -5, py, -2, MAT.wall);
+    addSolid(1.2, 0.8, 1.2, 3, py, 4, MAT.wall);
+    crate(1.5, 0.9, 1.5, 2, py, -4);
+
+    // ── Insegne + tende sulle vetrine ──
+    // Insegna nella fascia cieca tra i due piani (non copre i finestroni)
+    addSign('EMPORIO', 6, 0.9, 0, 2.85, hd + 0.24, 0);
+    addSign('EMPORIO', 6, 0.9, 0, 2.85, -(hd + 0.24), Math.PI);
+    for (const sz of [-1, 1]) {
+        for (const wx of [-6, 6]) {
+            const aw = makeBox(2.9, 0.07, 1.1, sz > 0 ? MAT.awningRed : MAT.awningBlue,
+                               wx, 2.55, sz * (hd + 0.55));
+            aw.rotation.x = sz * 0.35;
+        }
+    }
+
+    // ── Interni piano terra: bancone a L + scaffalatura (corridoi stretti) ──
+    addSolid(5.0, 1.0, 0.8, 3.0, 0, 2.0, MAT.stallWood);
+    addSolid(0.8, 1.0, 3.0, 6.0, 0, 0.4, MAT.stallWood);
+    addSolid(6.0, 2.1, 0.5, -2.5, 0, -2.0, MAT.crateDark);
+    crate(1.4, 0.65, 1.4, -6, 0, 4);
+    crate(1.2, 0.6, 1.2, 7.5, 0, -4.5);
+}
+
+// ── Bottega dell'anello: guscio enterable, tetto piano calpestabile ──
+// face = direzione della vetrina ('N'|'S'|'E'|'W'), w = fronte, d = profondità.
+function buildShop(cx, cz, w, d, face, mat, name, awningMat) {
+    const H = 2.9, t = 0.3;
+    const door = { w: 1.7, b: 0, t: 2.2 };
+    const win = { w: Math.min(2.6, w - 4), b: 0.9, t: 2.3 };
+
+    if (face === 'S' || face === 'N') {
+        const s = (face === 'S') ? 1 : -1;
+        const zf = cz + s * d / 2, zb = cz - s * d / 2;
+        punchWallX(zf, cx - w / 2, cx + w / 2, 0, H,
+            [{ c: cx - w / 4, ...door }, { c: cx + w / 4, ...win }], mat, t);
+        punchWallX(zb, cx - w / 2, cx + w / 2, 0, H, [], mat, t);
+        punchWallZ(cx - w / 2, cz - d / 2, cz + d / 2, 0, H, [], mat, t);
+        punchWallZ(cx + w / 2, cz - d / 2, cz + d / 2, 0, H, [], mat, t);
+        makeBox(win.w, 1.35, 0.08, MAT.glass, cx + w / 4, 1.6, zf);   // vetrina
+        const aw = makeBox(win.w + 0.5, 0.06, 1.0, awningMat, cx + w / 4, 2.45, zf + s * 0.55);
+        aw.rotation.x = s * 0.4;
+        addSign(name, Math.min(w - 1.5, 5), 1.0, cx, H + 0.55, zf + s * 0.21,
+                (face === 'S') ? 0 : Math.PI);
+        addSolid(w - 2.4, 1.0, 0.9, cx, 0, cz - s * (d / 2 - 1.1), MAT.stallWood);  // banco
+    } else {
+        const s = (face === 'E') ? 1 : -1;
+        const xf = cx + s * d / 2, xb = cx - s * d / 2;
+        punchWallZ(xf, cz - w / 2, cz + w / 2, 0, H,
+            [{ c: cz - w / 4, ...door }, { c: cz + w / 4, ...win }], mat, t);
+        punchWallZ(xb, cz - w / 2, cz + w / 2, 0, H, [], mat, t);
+        punchWallX(cz - w / 2, cx - d / 2, cx + d / 2, 0, H, [], mat, t);
+        punchWallX(cz + w / 2, cx - d / 2, cx + d / 2, 0, H, [], mat, t);
+        makeBox(0.08, 1.35, win.w, MAT.glass, xf, 1.6, cz + w / 4);
+        const aw = makeBox(1.0, 0.06, win.w + 0.5, awningMat, xf + s * 0.55, 2.45, cz + w / 4);
+        aw.rotation.z = -s * 0.4;
+        addSign(name, Math.min(w - 1.5, 5), 1.0, xf + s * 0.21, H + 0.55, cz,
+                (face === 'E') ? Math.PI / 2 : -Math.PI / 2);
+        addSolid(0.9, 1.0, w - 2.4, cx - s * (d / 2 - 1.1), 0, cz, MAT.stallWood);
+    }
+    // Tetto piano calpestabile
+    addSolid(w + 0.3, 0.25, d + 0.3, cx, H, cz, MAT.roof);
+}
+
+// ── Bancarella del mercato: banco solido + montanti + tenda a strisce ──
+function buildStall(x, z, alongX, awningMat) {
+    const w = alongX ? 2.6 : 1.2, d = alongX ? 1.2 : 2.6;
+    const counter = addSolid(w, 1.0, d, x, 0, z, MAT.stallWood);
+    _addToonOutline(counter, MAT.ink);
+    // Merce sul banco (visiva)
+    makeBox(0.5, 0.28, 0.4, MAT.crate, x - (alongX ? 0.6 : 0), 1.14, z - (alongX ? 0 : 0.6));
+    makeBox(0.4, 0.22, 0.35, MAT.crateDark, x + (alongX ? 0.5 : 0.1), 1.11, z + (alongX ? 0.1 : 0.5));
+    // Montanti + tenda inclinata
+    for (const s1 of [-1, 1]) {
+        for (const s2 of [-1, 1]) {
+            makeBox(0.08, 2.1, 0.08, MAT.stallWood,
+                x + s1 * (w / 2 - 0.06), 1.05, z + s2 * (d / 2 - 0.06));
+        }
+    }
+    const aw = makeBox(alongX ? w + 0.5 : 1.8, 0.06, alongX ? 1.8 : d + 0.5, awningMat, x, 2.2, z);
+    aw.rotation[alongX ? 'x' : 'z'] = alongX ? 0.18 : -0.18;
+    _addToonOutline(aw, MAT.ink, 0.6);
+}
+
+// ── Fontana della piazza (riparo basso: le teste ci spuntano sopra) ──
+function buildFountain(x, z) {
+    const rim = makeCyl(2.4, 2.5, 0.85, MAT.concrete, x, 0.425, z, 'y', 22);
+    _addToonOutline(rim, MAT.ink, 0.8);
+    makeCyl(2.1, 2.1, 0.1, MAT.water, x, 0.72, z, 'y', 22);            // specchio d'acqua
+    const col = makeCyl(0.3, 0.42, 1.5, MAT.concrete, x, 1.6, z, 'y', 14);
+    _addToonOutline(col, MAT.ink, 0.7);
+    const bowl = makeCyl(0.85, 0.6, 0.28, MAT.concrete, x, 2.45, z, 'y', 18);
+    _addToonOutline(bowl, MAT.ink, 0.7);
+    makeCyl(0.1, 0.16, 0.5, MAT.water, x, 2.8, z, 'y', 10);            // zampillo
+    solidBoxes.push({
+        min: new THREE.Vector3(x - 2.4, 0, z - 2.4),
+        max: new THREE.Vector3(x + 2.4, 0.85, z + 2.4)
+    });
+}
+
+// ── Gazebo/palco della banda: pedana salibile + tetto conico ──
+function buildGazebo(x, z) {
+    const base = addSolid(5.2, 0.55, 5.2, x, 0, z, MAT.concrete);
+    _addToonOutline(base, MAT.ink, 1.4);
+    for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+            addSolid(0.22, 2.6, 0.22, x + sx * 2.2, 0.55, z + sz * 2.2, MAT.trim);
+        }
+    }
+    const cone = makeCyl(0.15, 3.6, 1.5, MAT.roof, x, 3.9, z, 'y', 8);
+    _addToonOutline(cone, MAT.ink, 1.2);
+    makeCyl(0.1, 0.1, 0.7, MAT.trim, x, 4.95, z, 'y', 8);   // pennone
+}
+
+// ── Lampione in ghisa (palo solido sottile + globo sempre acceso) ──
+function buildLamppost(x, z) {
+    const pole = makeCyl(0.045, 0.07, 3.0, MAT.iron, x, 1.5, z, 'y', 10);
+    _addToonOutline(pole, MAT.ink, 0.7);
+    const globe = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10), MAT.lamp);
+    globe.position.set(x, 3.15, z);
+    scene.add(globe);
+    solidBoxes.push({
+        min: new THREE.Vector3(x - 0.1, 0, z - 0.1),
+        max: new THREE.Vector3(x + 0.1, 3.0, z + 0.1)
+    });
+}
+
+// ── Fondale: sagome di palazzi colorati oltre il muro (solo visivi) ──
+function buildBackdrop() {
+    const cols = [MAT.facadeCoral, MAT.facadeCream, MAT.facadeBlue, MAT.facadeMint, MAT.facadeMustard];
+    const off = MAP_HALF + 2.4;
+    let k = 0;
+    for (let i = -3; i <= 3; i++) {
+        const p = i * 8.8;
+        for (const [x, z] of [[p, -off], [p, off], [-off, p], [off, p]]) {
+            const hgt = 13 + ((k * 3) % 5);   // 13..17: spuntano oltre il muro (12)
+            const m = cols[k % cols.length];
+            const side = Math.abs(x) > MAP_HALF;   // fondale est/ovest → box ruotato
+            makeBox(side ? 1.4 : 7.6, hgt, side ? 7.6 : 1.4, m, x, hgt / 2, z);
+            makeBox(side ? 1.8 : 8.0, 0.5, side ? 8.0 : 1.8, MAT.trim, x, hgt + 0.2, z);
+            k++;
+        }
+    }
+}
+
+// ── Nuvolette cartoon (MeshBasic: bianche piatte, da vignetta) ──
+function buildClouds() {
+    const spots = [[-30, 26, -50], [20, 32, -55], [45, 28, -10],
+                   [40, 30, 35], [-15, 34, 48], [-45, 27, 15]];
+    for (const [x, y, z] of spots) {
+        const g = new THREE.Group();
+        for (const [dx, dy, r] of [[-1.6, 0, 1.5], [0, 0.7, 2.1], [1.8, 0.1, 1.4], [0.4, -0.4, 1.6]]) {
+            const b = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 9), MAT.cloud);
+            b.scale.y = 0.62;
+            b.position.set(dx, dy, 0);
+            g.add(b);
+        }
+        g.position.set(x, y, z);
+        scene.add(g);
+    }
 }
 
 // ── Ruota a cilindro con cerchione (asse lungo Z, asse di rotolamento X) ──
@@ -890,45 +1255,7 @@ function addWheel(x, z, cz, radius = 0.55, width = 0.34) {
     makeCyl(radius * 0.42, radius * 0.42, width + 0.03, MAT.hubcap, x, radius, wz, 'z', 12);
 }
 
-// ── Bus = mini-rifugio percorribile (pareti solide + porta verso la strada) ──
-function buildBus(cx, cz) {
-    const L = 11, Wd = 3.4, H = 2.4, t = 0.22;
-    const hl = L / 2, hw = Wd / 2, doorW = 2.6;
-    const M = MAT.busYellow;
-
-    // Musi (pareti corte, +X e -X)
-    addSolid(t, H, Wd, cx + hl - t / 2, 0, cz, M);
-    addSolid(t, H, Wd, cx - hl + t / 2, 0, cz, M);
-    // Lato pieno (-Z)
-    addSolid(L, H, t, cx, 0, cz - hw + t / 2, M);
-    // Lato con PORTA (+Z, verso la strada): due segmenti con varco centrale percorribile
-    const seg = (L - doorW) / 2;
-    addSolid(seg, H, t, cx - (doorW / 2 + seg / 2), 0, cz + hw - t / 2, M);
-    addSolid(seg, H, t, cx + (doorW / 2 + seg / 2), 0, cz + hw - t / 2, M);
-    makeBox(doorW, 0.4, t, M, cx, H - 0.2, cz + hw - t / 2);   // architrave (sopra la testa)
-    // Tetto solido → struttura chiusa (ripara anche dall'alto)
-    addSolid(L + 0.2, 0.16, Wd + 0.2, cx, H, cz, M);
-    makeBox(L - 0.2, 0.1, Wd + 0.1, MAT.crateDark, cx, H + 0.2, cz);   // bordo tetto
-
-    // Dettagli (decorativi)
-    makeBox(L + 0.04, 0.12, Wd + 0.04, MAT.crateDark, cx, 0.55, cz);              // modanatura
-    makeBox(L - 1.0, 0.7, 0.03, MAT.glass, cx, 1.6, cz - hw - 0.02);              // finestrini -Z
-    makeBox(seg - 0.4, 0.7, 0.03, MAT.glass, cx - (doorW / 2 + seg / 2), 1.6, cz + hw + 0.02);
-    makeBox(seg - 0.4, 0.7, 0.03, MAT.glass, cx + (doorW / 2 + seg / 2), 1.6, cz + hw + 0.02);
-    makeBox(0.22, 0.42, Wd + 0.16, MAT.chrome, cx + hl + 0.06, 0.4, cz);          // paraurti ant
-    makeBox(0.22, 0.42, Wd + 0.16, MAT.chrome, cx - hl - 0.06, 0.4, cz);          // paraurti post
-    makeBox(0.1, 0.22, 0.22, MAT.headlight, cx + hl + 0.04, 0.75, cz - Wd / 3);
-    makeBox(0.1, 0.22, 0.22, MAT.headlight, cx + hl + 0.04, 0.75, cz + Wd / 3);
-    makeBox(0.08, 0.18, 0.18, MAT.taillight, cx - hl - 0.03, 0.75, cz - Wd / 3);
-    makeBox(0.08, 0.18, 0.18, MAT.taillight, cx - hl - 0.03, 0.75, cz + Wd / 3);
-    // Ruote
-    for (const wx of [cx - hl + 1.9, cx + hl - 1.9]) {
-        addWheel(wx, cz - hw, cz, 0.6);
-        addWheel(wx, cz + hw, cz, 0.6);
-    }
-}
-
-// ── Furgone (copertura centrale) ──
+// ── Furgone (copertura centrale — nella cittadina è il furgone dei gelati) ──
 function buildVan(cx, cz) {
     const L = 6, Wd = 2.4, H = 2.2, lift = 0.5;
     addSolid(L, H, Wd, cx, lift, cz, MAT.vanRed);                            // cassone (collisione)
@@ -1002,33 +1329,6 @@ function fenceZ(zStart, zEnd, x) {
     }
 }
 
-// ── Manichino da test (decorativo, senza collisione) ──
-function buildMannequin(x, z, ry) {
-    const g = new THREE.Group();
-    const cyl = (rt, rb, h, bx, by, bz, rot) => {
-        const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 10), MAT.mannequin);
-        m.position.set(bx, by, bz);
-        if (rot) m.rotation.z = rot;
-        m.castShadow = true;
-        g.add(m);
-    };
-    const sph = (r, bx, by, bz) => {
-        const m = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), MAT.mannequin);
-        m.position.set(bx, by, bz);
-        m.castShadow = true;
-        g.add(m);
-    };
-    cyl(0.1, 0.09, 0.75, -0.11, 0.4, 0); cyl(0.1, 0.09, 0.75, 0.11, 0.4, 0); // gambe
-    cyl(0.22, 0.15, 0.7, 0, 1.05, 0);                                          // busto conico
-    cyl(0.06, 0.06, 0.52, 0, 1.4, 0, Math.PI / 2);                            // spalle
-    cyl(0.07, 0.06, 0.55, -0.28, 1.12, 0); cyl(0.07, 0.06, 0.55, 0.28, 1.12, 0); // braccia
-    cyl(0.05, 0.05, 0.12, 0, 1.49, 0);                                        // collo
-    sph(0.16, 0, 1.63, 0);                                                     // testa
-    g.position.set(x, 0, z);
-    g.rotation.y = ry;
-    scene.add(g);
-}
-
 function addTree(x, y, z) {
     // Tronco (conico, più segmenti)
     makeCyl(0.26, 0.42, 3.2, MAT.bark, x, y + 1.6, z, 'y', 10);
@@ -1057,55 +1357,230 @@ buildMap();
 // ══════════════════════════════════════════════════════
 //  MODELLO GIOCATORE REMOTO
 // ══════════════════════════════════════════════════════
-const HIP_Y = 0.75;   // quota dei fianchi: pivot di gambe e busto
+const HIP_Y = 0.62;   // quota dei fianchi: pivot di gambe e busto (mascotte toon)
+// NB: gli helper toon (_toonGradMap, makeToonMat, _addToonOutline, ...) sono
+// definiti prima della sezione MATERIALI, perché usati anche dal mondo (MAT).
 
-// Modello d'arma in TERZA PERSONA: silhouette compatta per-tipo, così gli
-// avversari vedono che arma impugni (montata nelle mani del modello, canna -z).
-function buildTPWeapon(weaponKey) {
-    const cached = _glbSceneCache[weaponKey];
-    if (cached) {
-        // GLB disponibile: clona, scala per TP, pivot al grip (1/3 dal calcio).
-        // Il grip è alle mani del giocatore; il barrel si estende in avanti (-Z);
-        // il calcio è nascosto dentro il busto (non visibile = pulito).
-        const g = new THREE.Group();
-        g.rotation.set(0, Math.PI / 2, 0);   // barrel +X → -Z (forward del giocatore)
-        const model = cached.clone(true);
-        const tpLen = { assault: 0.50, smg: 0.35, shotgun: 0.48, sniper: 0.60 }[weaponKey] || 0.45;
-        _glbScaleAndPivot(model, tpLen);
-        model.position.x -= tpLen / 3;  // sposta al grip: calcio nascosto, barrel in avanti
-        _glbApplyMaterials(model);
-        g.add(model);
-        return g;
-    }
-
-    // Fallback a geometria box (solo se il GLB non è ancora caricato)
+// ══ ARMI CARTOON PROCEDURALI (stile rubber-hose anni '30) ══
+// Un solo builder per FP e TP: canna verso -Z, ORIGINE AL GRIP, calcio a +Z.
+// Materiali e contorni per-istanza (il mutatore "Fantasmi" fa setGroupOpacity
+// sul group del giocatore: nulla dev'essere condiviso col mondo o con altri).
+// Legno + canna blu-metallo + anelli d'ottone: palette da cartoon d'epoca.
+function buildToonWeaponModel(key) {
     const g = new THREE.Group();
-    const add = (mesh) => { mesh.castShadow = true; g.add(mesh); return mesh; };
+    const M = {
+        wood:  makeToonMat(0x9a6230),
+        wood2: makeToonMat(0x6e421c),
+        metal: makeToonMat(0x4d5560),
+        dark:  makeToonMat(0x2e3238),
+        brass: makeToonMat(0xe0a83c),
+    };
+    const ink = new THREE.MeshBasicMaterial({ color: 0x1a1a1a, side: THREE.BackSide });
+    // Pezzo con contorno inchiostro
+    const P = (geo, mat, x, y, z, opt = {}) => {
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(x, y, z);
+        m.castShadow = true;
+        g.add(m);
+        if (!opt.noInk) _addToonOutline(m, ink, opt.tMul || 0.5);
+        return m;
+    };
+    // Solido di rivoluzione con asse lungo Z: profilo = [[raggio, t], ...]
+    // con t=0 sul retro del pezzo e t crescente verso la volata (-Z).
+    // Posizionato con z = coordinata del RETRO del pezzo.
+    const latheZ = (pts, mat, x, y, z, opt = {}) => {
+        const v = pts.map(p => new THREE.Vector2(Math.max(p[0], 1e-4), p[1]));
+        const geo = new THREE.LatheGeometry(v, opt.seg || 14);
+        // opt.sx restringe lateralmente (baked in geometria + normali ricalcolate
+        // così il contorno inchiostro resta di spessore uniforme)
+        if (opt.sx) { geo.scale(opt.sx, 1, 1); geo.computeVertexNormals(); }
+        const m = P(geo, mat, x, y, z, opt);
+        m.rotation.x = -Math.PI / 2;   // +Y del lathe → -Z (verso la volata)
+        return m;
+    };
+    // Tubo curvo (impugnature a banana, caricatori, leve). Punti assoluti
+    // nello spazio dell'arma; opt.sx appiattisce lateralmente (x baked in
+    // geometria, così lo spessore del contorno resta in unità mondo).
+    const tube = (pts, r, mat, opt = {}) => {
+        const curve = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(p[0], p[1], p[2])));
+        const geo = new THREE.TubeGeometry(curve, 10, r, 10, false);
+        if (opt.sx) geo.scale(opt.sx, 1, 1);
+        return P(geo, mat, 0, 0, 0, opt);
+    };
+    // Ellissoide (raggi baked in geometria: contorno con spessore corretto)
+    const ell = (rx, ry, rz, mat, x, y, z, opt = {}) => {
+        const geo = new THREE.SphereGeometry(1, 14, 12);
+        geo.scale(rx, ry, rz);
+        return P(geo, mat, x, y, z, opt);
+    };
+    const sph = (r, mat, x, y, z, opt = {}) =>
+        P(new THREE.SphereGeometry(r, 12, 10), mat, x, y, z, opt);
 
-    if (weaponKey === 'smg') {
-        add(makeViewBox(0.06, 0.09, 0.24, 0, 0, -0.10, 0x2b2b2b, 'polymer'));
-        add(makeViewCyl(0.02, 0.12, 0, 0, -0.28, 0x222222, 'metal'));
-        const mag = add(makeViewBox(0.045, 0.17, 0.05, 0, -0.13, -0.04, 0x1c1c1c, 'polymer')); mag.rotation.x = 0.12;
-        add(makeViewBox(0.05, 0.06, 0.10, 0, 0, 0.08, 0x232323, 'metal'));
-    } else if (weaponKey === 'shotgun') {
-        add(makeViewBox(0.07, 0.10, 0.22, 0, 0, -0.08, 0x2a2a2a, 'metal'));
-        add(makeViewCyl(0.026, 0.42, 0, 0.01, -0.34, 0x1a1a1a, 'metal'));
-        add(makeViewCyl(0.016, 0.38, 0, -0.03, -0.32, 0x222222, 'metal'));
-        add(makeViewBox(0.06, 0.09, 0.16, 0, -0.01, 0.10, 0x5c3a1e, 'wood'));
-        add(makeViewBox(0.06, 0.055, 0.08, 0, -0.035, -0.24, 0x6b4524, 'wood'));
-    } else if (weaponKey === 'sniper') {
-        add(makeViewBox(0.07, 0.10, 0.44, 0, 0, -0.16, 0x222222, 'metal'));
-        add(makeViewCyl(0.018, 0.34, 0, 0, -0.52, 0x111111, 'metal'));
-        add(makeViewBox(0.07, 0.10, 0.16, 0, 0, 0.10, 0x1c1c1c, 'metal'));
-        add(makeViewCyl(0.03, 0.22, 0, 0.10, -0.18, 0x2a2a2a, 'metal'));
-        add(makeViewBox(0.02, 0.06, 0.02, 0, 0.06, -0.10, 0x111111, 'metal'));
-        add(makeViewBox(0.02, 0.06, 0.02, 0, 0.06, -0.26, 0x111111, 'metal'));
+    if (key === 'smg') {
+        // ── THOMPSON M1928 toon ─────────────────────────────────────
+        // Ricevitore a capsula, più stretto (radialmente e sui fianchi)
+        latheZ([[0.001, 0], [0.026, 0.008], [0.037, 0.045], [0.038, 0.09],
+                [0.035, 0.14], [0.028, 0.172], [0.001, 0.18]], M.metal, 0, 0.03, 0.07,
+               { sx: 0.8 });
+        // Pomello d'armamento in ottone, smussato e incassato nel dorso
+        ell(0.010, 0.008, 0.014, M.brass, 0, 0.07, 0.01, { noInk: true });
+        // Canna liscia affusolata (niente anelli di raffreddamento)
+        latheZ([[0.014, 0], [0.015, 0.02], [0.012, 0.10], [0.011, 0.17]],
+               M.dark, 0, 0.035, -0.11);
+        // Bocca a cilindretto d'ottone, dritta (non si apre)
+        latheZ([[0.011, 0], [0.0145, 0.004], [0.0145, 0.040], [0.011, 0.044],
+                [0.001, 0.046]], M.brass, 0, 0.035, -0.28);
+        // TAMBURO a DISCO PIATTO: asse lungo la canna, faccia circolare
+        // rivolta in avanti (da davanti si vede il disco, non il profilo)
+        latheZ([[0.001, 0], [0.052, 0.005], [0.061, 0.014], [0.061, 0.026],
+                [0.052, 0.035], [0.001, 0.040]], M.dark, 0, -0.045, -0.025, { seg: 18 });
+        // Perno d'ottone passante (spunta dalle due facce del disco)
+        const hub = P(new THREE.CylinderGeometry(0.012, 0.012, 0.052, 12),
+                      M.brass, 0, -0.045, -0.045, { noInk: true });
+        hub.rotation.x = Math.PI / 2;
+        // Pistol grip a banana con tallone piatto svasato
+        tube([[0, 0.015, 0.04], [0, -0.05, 0.062], [0, -0.095, 0.082]], 0.021, M.wood2);
+        const smgCap = ell(0.026, 0.012, 0.029, M.wood2, 0, -0.095, 0.082);
+        smgCap.rotation.x = -0.42;
+        // Ponticello e grilletto in ottone davanti al pistol grip
+        tube([[0, -0.002, 0.005], [0, -0.03, 0.012], [0, -0.032, 0.035],
+              [0, -0.008, 0.045]], 0.0045, M.brass, { noInk: true });
+        tube([[0, -0.008, 0.02], [0, -0.022, 0.025]], 0.0035, M.brass, { noInk: true });
+        // Foregrip verticale a banana con tallone piatto
+        tube([[0, 0.028, -0.155], [0, -0.045, -0.150], [0, -0.09, -0.135]], 0.019, M.wood);
+        const smgCap2 = ell(0.024, 0.011, 0.027, M.wood, 0, -0.09, -0.135);
+        smgCap2.rotation.x = -0.32;
+        // Calcio col DROP: pancia più contenuta
+        tube([[0, 0.03, 0.02], [0, 0.015, 0.13], [0, -0.012, 0.185]], 0.020, M.wood);
+        ell(0.023, 0.044, 0.043, M.wood, 0, -0.016, 0.198);
+        ell(0.018, 0.040, 0.011, M.brass, 0, -0.018, 0.235, { noInk: true });
+    } else if (key === 'shotgun') {
+        // ── DOPPIETTA ───────────────────────────────────────────────
+        // Castello tondo, COASSIALE con la canna (stesso asse y=0.03)
+        latheZ([[0.001, 0], [0.036, 0.01], [0.046, 0.05], [0.042, 0.10],
+                [0.032, 0.125], [0.028, 0.13]], M.metal, 0, 0.03, 0.075);
+        // Canna affusolata: parte da DENTRO il naso del castello
+        latheZ([[0.024, 0], [0.021, 0.12], [0.019, 0.25]], M.metal, 0, 0.03, -0.035);
+        // Anello d'ottone di raccordo castello→canna (copre lo snodo)
+        latheZ([[0.024, 0], [0.031, 0.005], [0.031, 0.028], [0.024, 0.033]],
+               M.brass, 0, 0.03, -0.045);
+        // Bocca: fascetta d'ottone dritta (niente tromba)
+        latheZ([[0.019, 0], [0.026, 0.006], [0.026, 0.055], [0.021, 0.062],
+                [0.001, 0.064]], M.brass, 0, 0.03, -0.285);
+        // Astina panciuta sotto la canna
+        ell(0.028, 0.030, 0.085, M.wood, 0, -0.002, -0.16);
+        // Impugnatura a banana con tallone piatto + ponticello e grilletto
+        tube([[0, 0.02, 0.055], [0, -0.03, 0.07], [0, -0.06, 0.085]], 0.018, M.wood2);
+        const sgCap = ell(0.023, 0.011, 0.026, M.wood2, 0, -0.06, 0.085);
+        sgCap.rotation.x = -0.46;
+        tube([[0, -0.005, 0.012], [0, -0.032, 0.02], [0, -0.034, 0.042],
+              [0, -0.008, 0.052]], 0.0045, M.brass, { noInk: true });   // ponticello
+        tube([[0, -0.010, 0.026], [0, -0.024, 0.031]], 0.0035, M.brass,
+             { noInk: true });                                          // grilletto
+        // Calcio a pera: pancia più contenuta
+        tube([[0, 0.025, 0.02], [0, 0.005, 0.14], [0, -0.012, 0.19]], 0.022, M.wood);
+        ell(0.026, 0.043, 0.064, M.wood, 0, -0.010, 0.20);
+        ell(0.021, 0.042, 0.013, M.wood2, 0, -0.012, 0.256);
+        // Cane a virgola in ottone
+        tube([[0, 0.055, 0.055], [0, 0.082, 0.045], [0, 0.09, 0.028]], 0.008, M.brass);
+        sph(0.011, M.brass, 0, 0.091, 0.026);
+    } else if (key === 'sniper') {
+        // ── FUCILE DI PRECISIONE ────────────────────────────────────
+        // Corpo in legno fluido: pancia-calcio, vita, avancorpo
+        latheZ([[0.001, 0], [0.034, 0.012], [0.046, 0.05], [0.036, 0.12],
+                [0.040, 0.20], [0.030, 0.26], [0.001, 0.29]], M.wood, 0, 0.01, 0.24);
+        // Calciolo: appoggiato contro la pancia del calcio (come le altre armi),
+        // copre anche la punta del lathe
+        ell(0.026, 0.040, 0.012, M.wood2, 0, 0.01, 0.232, { noInk: true });
+        // AZIONE in metallo coassiale con la canna: raccorda corpo→canna
+        latheZ([[0.001, 0], [0.024, 0.008], [0.030, 0.04], [0.030, 0.09],
+                [0.022, 0.125], [0.016, 0.14]], M.metal, 0, 0.028, 0.055);
+        // Ghiera d'ottone allo snodo azione→canna
+        latheZ([[0.015, 0], [0.019, 0.004], [0.019, 0.02], [0.015, 0.024]],
+               M.brass, 0, 0.028, -0.078);
+        // Canna quasi A SPILLO (continua il profilo dell'azione)
+        latheZ([[0.016, 0], [0.012, 0.22], [0.008, 0.49]], M.metal, 0, 0.028, -0.08);
+        // Bocca a cilindretto d'ottone, dritta (non si apre)
+        latheZ([[0.008, 0], [0.011, 0.003], [0.011, 0.030], [0.008, 0.033],
+                [0.001, 0.035]], M.brass, 0, 0.028, -0.57);
+        // Impugnatura a banana con tallone piatto svasato
+        tube([[0, 0.0, 0.13], [0, -0.045, 0.145], [0, -0.075, 0.16]], 0.019, M.wood2);
+        const snCap = ell(0.024, 0.011, 0.027, M.wood2, 0, -0.075, 0.16);
+        snCap.rotation.x = -0.46;
+        // Ponticello e grilletto in ottone davanti all'impugnatura
+        tube([[0, -0.012, 0.095], [0, -0.04, 0.102], [0, -0.042, 0.125],
+              [0, -0.018, 0.135]], 0.0045, M.brass, { noInk: true });
+        tube([[0, -0.018, 0.108], [0, -0.032, 0.113]], 0.0035, M.brass, { noInk: true });
+        // Supporti scopone
+        P(new THREE.CylinderGeometry(0.008, 0.008, 0.05, 10), M.metal, 0, 0.062, 0.04);
+        P(new THREE.CylinderGeometry(0.008, 0.008, 0.05, 10), M.metal, 0, 0.062, -0.04);
+        // SCOPONE a botte
+        latheZ([[0.001, 0], [0.034, 0.006], [0.040, 0.03], [0.047, 0.08],
+                [0.040, 0.13], [0.034, 0.154], [0.001, 0.16]], M.dark, 0, 0.095, 0.08);
+        // Ghiere in ottone
+        latheZ([[0.036, 0], [0.043, 0.004], [0.043, 0.016], [0.036, 0.02]],
+               M.brass, 0, 0.095, 0.075);
+        latheZ([[0.036, 0], [0.043, 0.004], [0.043, 0.016], [0.036, 0.02]],
+               M.brass, 0, 0.095, -0.055);
+        // Lente celeste
+        const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.030, 0.030, 0.006, 14),
+            new THREE.MeshBasicMaterial({ color: 0xbfe8ff }));
+        lens.rotation.x = Math.PI / 2;
+        lens.position.set(0, 0.095, -0.082);
+        g.add(lens);
+        // Otturatore a sferetta con levetta curva (incassato nel corpo)
+        sph(0.020, M.brass, 0.04, 0.04, 0.08, { noInk: true });
+        tube([[0.04, 0.04, 0.08], [0.07, 0.03, 0.085], [0.078, 0.008, 0.09]], 0.007, M.brass);
+        sph(0.010, M.brass, 0.078, 0.006, 0.09, { noInk: true });
     } else {
-        add(makeViewBox(0.07, 0.10, 0.34, 0, 0, -0.12, 0x2c2c2c, 'metal'));
-        add(makeViewCyl(0.02, 0.20, 0, 0, -0.36, 0x111111, 'metal'));
-        const mag = add(makeViewBox(0.05, 0.16, 0.06, 0, -0.12, -0.06, 0x1c1c1c, 'polymer')); mag.rotation.x = 0.25;
-        add(makeViewBox(0.06, 0.085, 0.12, 0, 0, 0.10, 0x232323, 'polymer'));
+        // ── FUCILE D'ASSALTO ────────────────────────────────────────
+        // Castello a capsula bombata
+        latheZ([[0.001, 0], [0.034, 0.01], [0.048, 0.06], [0.050, 0.12],
+                [0.044, 0.18], [0.030, 0.22], [0.001, 0.23]], M.metal, 0, 0.035, 0.07);
+        // Maniglia/dorso tondo
+        tube([[0, 0.088, 0.03], [0, 0.096, -0.03], [0, 0.088, -0.09]], 0.016, M.dark);
+        sph(0.018, M.dark, 0, 0.088, 0.03);
+        sph(0.018, M.dark, 0, 0.088, -0.09);
+        // Canna affusolata
+        latheZ([[0.018, 0], [0.015, 0.12], [0.013, 0.22]], M.metal, 0, 0.045, -0.16);
+        // Bocca a cilindro d'ottone, dritta (non si apre)
+        latheZ([[0.013, 0], [0.017, 0.004], [0.017, 0.042], [0.013, 0.046],
+                [0.001, 0.048]], M.brass, 0, 0.045, -0.38);
+        // Mirino dettagliato: base conica, gambo, collarino, perlina e puntina
+        P(new THREE.CylinderGeometry(0.006, 0.010, 0.018, 10),
+          M.dark, 0, 0.058, -0.36, { noInk: true });
+        P(new THREE.CylinderGeometry(0.004, 0.004, 0.020, 8),
+          M.brass, 0, 0.076, -0.36, { noInk: true });
+        ell(0.0075, 0.003, 0.0075, M.dark, 0, 0.0805, -0.36, { noInk: true });
+        sph(0.010, M.brass, 0, 0.091, -0.36);
+        sph(0.0045, M.dark, 0, 0.10, -0.36, { noInk: true });
+        // Paramano in legno gonfio attorno alla canna
+        ell(0.030, 0.034, 0.075, M.wood, 0, 0.038, -0.21);
+        // Caricatore a BANANA (appiattito in x, parte da DENTRO il castello)
+        tube([[0, 0.01, -0.06], [0, -0.075, -0.085], [0, -0.125, -0.13]],
+             0.030, M.dark, { sx: 0.55 });
+        ell(0.0165, 0.030, 0.030, M.dark, 0, -0.125, -0.13);
+        // Impugnatura a banana con tallone piatto svasato
+        tube([[0, 0.015, 0.03], [0, -0.055, 0.045], [0, -0.09, 0.062]], 0.021, M.wood2);
+        const arCap = ell(0.026, 0.012, 0.029, M.wood2, 0, -0.09, 0.062);
+        arCap.rotation.x = -0.45;
+        // Ponticello e grilletto in ottone davanti all'impugnatura
+        tube([[0, -0.005, -0.005], [0, -0.035, 0.003], [0, -0.037, 0.028],
+              [0, -0.012, 0.038]], 0.0045, M.brass, { noInk: true });
+        tube([[0, -0.012, 0.012], [0, -0.027, 0.017]], 0.0035, M.brass, { noInk: true });
+        // Calcio a pera: pancia più contenuta
+        tube([[0, 0.035, 0.02], [0, 0.01, 0.13], [0, -0.008, 0.19]], 0.021, M.wood);
+        ell(0.026, 0.046, 0.06, M.wood, 0, -0.008, 0.205);
+        ell(0.021, 0.043, 0.013, M.wood2, 0, -0.010, 0.252);
     }
+    return g;
+}
+
+// Modello d'arma in TERZA PERSONA: stesso builder cartoon, leggermente ridotto
+// (montato nelle mani del modello remoto, canna -z, grip nel guantone).
+function buildTPWeapon(weaponKey) {
+    const g = buildToonWeaponModel(weaponKey || 'assault');
+    g.scale.setScalar(0.95);   // le forme curve rendono meno del vecchio 0.8: quasi 1:1
     return g;
 }
 
@@ -1117,58 +1592,201 @@ function setRemoteWeapon(rp, weaponKey) {
     rp.weaponKey = weaponKey;
 }
 
+// ── TESTA-MASCOTTE riutilizzabile ──────────────────────────────────────────
+// Un'unica fonte per la testa toon (cranio crema, occhioni, naso, grin, elmetto
+// team): usata dal modello giocatore, dai trofei a terra e dal podio finale.
+// La faccia guarda verso -Z. Materiali e contorni per-istanza (Fantasmi ok).
+function buildMascotHead(color, s = 1) {
+    const teamCol = new THREE.Color(color);
+    const M = {
+        team: makeToonMat(teamCol),
+        dark: makeToonMat(teamCol.clone().multiplyScalar(0.55)),
+        skin: makeToonMat(0xf7ecd7),
+        pink: makeToonMat(0xe98a6f),
+        white: makeToonMat(0xffffff, false),
+        black: makeToonMat(0x141414, false),
+    };
+    const outMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a, side: THREE.BackSide });
+    const g = new THREE.Group();
+    const part = (geo, mat, parent, opt = {}) => {
+        const m = new THREE.Mesh(geo, mat);
+        m.castShadow = true;
+        (parent || g).add(m);
+        if (!opt.noOutline) _addToonOutline(m, outMat, opt.tMul || 1);
+        return m;
+    };
+
+    part(new THREE.SphereGeometry(0.28, 28, 20), M.skin);              // cranio
+
+    // Occhi espressivi: ovali bianchi, pupilloni con luccichio, sopracciglia
+    const eyeGeo = new THREE.SphereGeometry(0.075, 16, 12);
+    eyeGeo.scale(1, 1.55, 0.5);
+    const pupilGeo = new THREE.SphereGeometry(0.045, 14, 10);
+    pupilGeo.scale(1, 1.35, 0.6);
+    const browArc = Math.PI * 0.55;
+    for (const sx of [-1, 1]) {
+        part(eyeGeo, M.white, g, { noOutline: true })
+            .position.set(sx * 0.095, 0.035, -0.235);
+        part(pupilGeo, M.black, g, { noOutline: true })
+            .position.set(sx * 0.088, 0.012, -0.262);
+        part(new THREE.SphereGeometry(0.015, 8, 6), M.white, g, { noOutline: true })
+            .position.set(sx * 0.088 - 0.015, 0.042, -0.279);          // luccichio
+        const brow = part(new THREE.TorusGeometry(0.055, 0.012, 6, 14, browArc),
+            M.black, g, { noOutline: true });
+        brow.position.set(sx * 0.10, 0.105, -0.246);
+        brow.rotation.set(0.42, 0, Math.PI / 2 - browArc / 2 + sx * 0.16);
+    }
+    const noseGeo = new THREE.SphereGeometry(0.05, 14, 10);
+    noseGeo.scale(1, 0.8, 0.8);
+    part(noseGeo, M.pink, g, { tMul: 0.5 }).position.set(0, -0.07, -0.275);
+
+    // Sorriso "grin" con puntini agli angoli, inclinato sulla curvatura della faccia
+    const smileArc = Math.PI * 0.85;
+    const smile = part(new THREE.TorusGeometry(0.082, 0.015, 8, 24, smileArc),
+        M.black, g, { noOutline: true });
+    smile.position.set(0, -0.132, -0.238);
+    smile.rotation.set(-0.50, 0, -Math.PI / 2 - smileArc / 2);
+    for (const a of [0, smileArc]) {
+        part(new THREE.SphereGeometry(0.018, 10, 8), M.black, smile, { noOutline: true })
+            .position.set(0.082 * Math.cos(a), 0.082 * Math.sin(a), 0);
+    }
+
+    // Elmetto "indossato": calotta schiacciata inclinata all'indietro + bordino
+    const helmet = new THREE.Group();
+    helmet.position.set(0, 0.115, 0.015);
+    helmet.rotation.x = 0.16;
+    g.add(helmet);
+    const domeGeo = new THREE.SphereGeometry(0.30, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.5);
+    domeGeo.scale(1, 0.8, 1);
+    part(domeGeo, M.team, helmet);
+    const rim = part(new THREE.TorusGeometry(0.30, 0.022, 8, 26), M.dark, helmet, { tMul: 0.5 });
+    rim.rotation.x = Math.PI / 2;
+
+    g.scale.setScalar(s);
+    return g;
+}
+
 function createPlayerMesh(color, weaponKey) {
     const group = new THREE.Group();
-    // Il modello guarda verso -Z (forward del gioco quando yaw = 0)
+    // Il modello guarda verso -Z (forward del gioco quando yaw = 0).
+    // Mascotte "rubber-hose" (stile validato nel prototipo fps-toon-proto):
+    // testa tonda crema, elmetto colore-squadra, arti a tubo neri, guantoni.
 
     const teamCol = new THREE.Color(color);
     const darkCol = teamCol.clone().multiplyScalar(0.55);
-    const matSuit = new THREE.MeshLambertMaterial({ color: teamCol });
-    const matDark = new THREE.MeshLambertMaterial({ color: darkCol });
-    const matSkin = new THREE.MeshLambertMaterial({ color: 0xd9a066 });
-    const matGun = new THREE.MeshLambertMaterial({ color: 0x1c1c1c });
-    const matBoot = new THREE.MeshLambertMaterial({ color: 0x111111 });
+    const M = {
+        team: makeToonMat(teamCol),
+        dark: makeToonMat(darkCol),
+        skin: makeToonMat(0xf7ecd7),      // faccia crema
+        limb: makeToonMat(0x23201d),      // arti "a tubo" neri
+        glove: makeToonMat(0xf4f0e6),     // guantoni/ghette bianchi
+        boot: makeToonMat(0x6b4020),      // scarponi marroni
+        pink: makeToonMat(0xe98a6f),      // naso
+        white: makeToonMat(0xffffff, false),
+        black: makeToonMat(0x141414, false)
+    };
+    // Contorno per-personaggio: istanza dedicata per il mutatore "Fantasmi"
+    const outMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a, side: THREE.BackSide });
 
-    // box() aggiunge una mesh a un parent con coordinate locali al parent
-    function box(w, h, d, x, y, z, mat, parent) {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-        m.position.set(x, y, z);
+    const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+
+    // part() aggiunge una mesh (+ contorno inchiostro) a un parent
+    function part(geo, mat, parent, opt = {}) {
+        const m = new THREE.Mesh(geo, mat);
         m.castShadow = true;
         (parent || group).add(m);
+        if (!opt.noOutline) _addToonOutline(m, outMat, opt.tMul || 1);
+        return m;
+    }
+    // Cilindro "rubber-hose" tra due punti (arti a tubo)
+    function tube(a, b, r, mat, parent, opt = {}) {
+        const dir = new THREE.Vector3().subVectors(b, a);
+        const len = dir.length();
+        const m = part(new THREE.CylinderGeometry(r, r, len, 12, 1), mat, parent, opt);
+        m.position.copy(a).addScaledVector(dir, 0.5);
+        m.quaternion.setFromUnitVectors(UP_VEC, dir.normalize());
         return m;
     }
 
-    // ── Busto + braccia + testa + arma in un gruppo pivotato ai fianchi ──
-    // (così crouch/slide possono abbassarlo e inclinarlo). y locale = y_mondo - HIP_Y
+    // ── UPPER: busto + testa + braccia (pivot ai fianchi per crouch/slide) ──
     const upper = new THREE.Group();
     upper.position.y = HIP_Y;
     group.add(upper);
 
-    box(0.50, 0.62, 0.30, 0, 1.08 - HIP_Y, 0, matSuit, upper);          // busto
-    box(0.36, 0.42, 0.06, 0, 1.10 - HIP_Y, -0.16, matDark, upper);      // pettorina
-    box(0.15, 0.50, 0.18, -0.34, 1.12 - HIP_Y, 0, matSuit, upper);      // braccia
-    box(0.15, 0.50, 0.18, 0.34, 1.12 - HIP_Y, 0, matSuit, upper);
-    box(0.15, 0.16, 0.18, -0.34, 0.83 - HIP_Y, 0.04, matSkin, upper);   // mani
-    box(0.15, 0.16, 0.18, 0.34, 0.83 - HIP_Y, 0.04, matSkin, upper);
-    box(0.16, 0.10, 0.16, 0, 1.46 - HIP_Y, 0, matSkin, upper);          // collo
-    const head = box(0.30, 0.32, 0.30, 0, 1.66 - HIP_Y, 0, matSkin, upper);
-    box(0.36, 0.18, 0.36, 0, 1.82 - HIP_Y, 0, matDark, upper);          // casco
-    box(0.34, 0.07, 0.10, 0, 1.74 - HIP_Y, -0.18, matGun, upper);       // visiera
-    head.scale.setScalar(headScale);   // mutatore "Teste Giganti"
+    // Busto tondeggiante (salopette colore-squadra) + fascia in vita + bottoni
+    const torsoGeo = new THREE.SphereGeometry(0.25, 24, 18);
+    torsoGeo.scale(1.0, 1.16, 0.82);
+    part(torsoGeo, M.team, upper).position.set(0, 0.24, 0);
+    part(new THREE.CylinderGeometry(0.21, 0.22, 0.08, 20), M.dark, upper)
+        .position.set(0, 0.02, 0);
+    for (const [by, bz] of [[0.31, -0.195], [0.19, -0.222]]) {
+        part(new THREE.SphereGeometry(0.028, 10, 8), M.dark, upper, { noOutline: true })
+            .position.set(0, by, bz);
+    }
+    part(new THREE.CylinderGeometry(0.06, 0.06, 0.10, 12), M.skin, upper, { noOutline: true })
+        .position.set(0, 0.52, 0);                                     // collo
 
-    // ── Arma in terza persona (silhouette per-tipo, sostituibile a runtime) ──
+    // ── TESTA (gruppo separato → mutatore Teste Giganti via head.scale) ──
+    // Contenuto costruito da buildMascotHead: FONTE UNICA condivisa con
+    // trofei a terra e podio finale (niente più teste "vecchie" in giro).
+    const head = new THREE.Group();
+    head.position.set(0, 0.76, 0);
+    upper.add(head);
+    head.add(buildMascotHead(color));
+
+    // ── BRACCIA rubber-hose: spalla → gomito → guantone ──
+    const shR = V3(0.23, 0.40, 0), elR = V3(0.31, 0.17, -0.09), haR = V3(0.27, 0.23, -0.27);
+    const shL = V3(-0.23, 0.40, 0), elL = V3(-0.31, 0.15, 0.02), haL = V3(-0.31, -0.04, -0.05);
+    for (const [sh, el, ha, thumbOff] of [
+        [shR, elR, haR, V3(-0.07, 0.03, 0.01)],
+        [shL, elL, haL, V3(0.06, 0.03, -0.02)]
+    ]) {
+        part(new THREE.SphereGeometry(0.06, 12, 10), M.limb, upper, { noOutline: true })
+            .position.copy(sh);
+        tube(sh, el, 0.045, M.limb, upper);
+        part(new THREE.SphereGeometry(0.05, 12, 10), M.limb, upper, { noOutline: true })
+            .position.copy(el);
+        tube(el, ha, 0.045, M.limb, upper);
+        const dirBack = el.clone().sub(ha).normalize();
+        tube(ha.clone().addScaledVector(dirBack, 0.05),
+             ha.clone().addScaledVector(dirBack, 0.12), 0.065, M.dark, upper);  // polsino
+        part(new THREE.SphereGeometry(0.085, 16, 12), M.glove, upper).position.copy(ha);
+        part(new THREE.SphereGeometry(0.038, 10, 8), M.glove, upper, { noOutline: true })
+            .position.copy(ha.clone().add(thumbOff));                  // pollice
+    }
+
+    // ── Arma in terza persona (grip alla mano destra, canna verso -Z) ──
     const weaponMount = new THREE.Group();
-    weaponMount.position.set(0.34, 0.83 - HIP_Y, -0.02);
+    weaponMount.position.copy(haR);
     upper.add(weaponMount);
     weaponMount.add(buildTPWeapon(weaponKey || 'assault'));
 
-    // ── Gambe: ogni gamba è un gruppo pivotato all'anca (per oscillare) ──
-    const legL = new THREE.Group(); legL.position.set(-0.12, HIP_Y, 0); group.add(legL);
-    const legR = new THREE.Group(); legR.position.set(0.12, HIP_Y, 0); group.add(legR);
-    box(0.20, 0.70, 0.24, 0, 0.40 - HIP_Y, 0, matDark, legL);           // coscia/gamba
-    box(0.22, 0.14, 0.30, 0, 0.07 - HIP_Y, -0.03, matBoot, legL);       // stivale
-    box(0.20, 0.70, 0.24, 0, 0.40 - HIP_Y, 0, matDark, legR);
-    box(0.22, 0.14, 0.30, 0, 0.07 - HIP_Y, -0.03, matBoot, legR);
+    // ── Gambe: tubi neri + ghette + scarponi tondi (pivot all'anca) ──
+    function makeLeg(sx) {
+        const leg = new THREE.Group();
+        leg.position.set(sx * 0.10, HIP_Y, 0);
+        group.add(leg);
+        part(new THREE.SphereGeometry(0.052, 12, 10), M.limb, leg, { noOutline: true });
+        tube(V3(0, 0, 0), V3(0, -0.44, 0), 0.047, M.limb, leg);
+        part(new THREE.CylinderGeometry(0.062, 0.075, 0.055, 14), M.glove, leg)
+            .position.set(0, -0.435, 0);                               // ghetta
+        const boot = new THREE.Group();
+        boot.position.set(0, -0.52, -0.02);
+        leg.add(boot);
+        const bootGeo = new THREE.SphereGeometry(0.09, 18, 14);
+        bootGeo.scale(0.95, 0.72, 1.55);
+        part(bootGeo, M.boot, boot).position.set(0, -0.025, -0.045);
+        const toeGeo = new THREE.SphereGeometry(0.085, 16, 12);
+        toeGeo.scale(1, 0.8, 1.1);
+        part(toeGeo, M.boot, boot).position.set(0, -0.03, -0.13);      // punta bombata
+        part(new THREE.SphereGeometry(0.075, 14, 10), M.boot, boot, { noOutline: true })
+            .position.set(0, 0.03, 0.03);                              // tallone/caviglia
+        return leg;
+    }
+    const legL = makeLeg(-1);
+    const legR = makeLeg(1);
+
+    head.scale.setScalar(headScale);   // mutatore "Teste Giganti"
 
     // ── Healthbar sopra la testa (nascosta finché il nemico è a vita piena) ──
     const hpBar = new THREE.Group();
@@ -1191,25 +1809,22 @@ function createPlayerMesh(color, weaponKey) {
 
 // ── TROFEI-TESTE (Cimitero dei Trofei) ──────────────
 // Testa del caduto impalata su un'astina, nel colore-team per riconoscere chi è.
+// Usa la testa-mascotte vera (buildMascotHead), non più il vecchio box squadrato.
 function makeTrophyHead(color, x, y, z) {
-    const teamCol = new THREE.Color(color);
-    const darkCol = teamCol.clone().multiplyScalar(0.55);
-    const matSkin = new THREE.MeshLambertMaterial({ color: 0xd9a066 });
-    const matTeam = new THREE.MeshLambertMaterial({ color: darkCol });
-    const matGun  = new THREE.MeshLambertMaterial({ color: 0x1c1c1c });
-
     const g = new THREE.Group();
-    const mk = (w, h, d, px, py, pz, mat) => {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-        m.position.set(px, py, pz);
-        m.castShadow = true;
-        g.add(m);
-    };
     const spikeH = 0.34;
-    mk(0.05, spikeH, 0.05, 0, spikeH / 2, 0, matGun);                 // astina (0 → 0.34)
-    mk(0.32, 0.34, 0.32, 0, spikeH + 0.17, 0, matSkin);              // testa
-    mk(0.38, 0.20, 0.38, 0, spikeH + 0.36, 0, matTeam);              // casco (colore team)
-    mk(0.36, 0.08, 0.10, 0, spikeH + 0.15, -0.19, matGun);          // visiera
+    const spike = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.022, 0.03, spikeH, 10), makeToonMat(0x2e3238));
+    spike.position.y = spikeH / 2;
+    spike.castShadow = true;
+    g.add(spike);
+    _addToonOutline(spike,
+        new THREE.MeshBasicMaterial({ color: 0x1a1a1a, side: THREE.BackSide }), 1);
+
+    const HEAD_S = 0.8;   // un filo ridotta rispetto al vivo: è un trofeo
+    const head = buildMascotHead(color, HEAD_S);
+    head.position.y = spikeH + 0.28 * HEAD_S;   // cranio appoggiato sull'astina
+    g.add(head);
 
     g.position.set(x, y || 0, z);
     g.rotation.y = Math.random() * Math.PI * 2;   // orientamento casuale per varietà
@@ -1240,20 +1855,12 @@ function _easeOutBack(x) {
     return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
 }
 
-// Testa "da impilare" nel colore-team (più leggibile della testa-trofeo a terra)
+// Testa "da impilare" nel colore-team: la stessa testa-mascotte dei giocatori.
+// A scala 0.8 l'ingombro verticale (~0.51) combacia con HEAD_H=0.5 della torre.
 function makePodiumHead(color) {
-    const g = new THREE.Group();
-    const teamCol = new THREE.Color(color);
-    const matSkin = new THREE.MeshLambertMaterial({ color: 0xd9a066 });
-    const matTeam = new THREE.MeshLambertMaterial({ color: teamCol.clone().multiplyScalar(0.7) });
-    const matGun  = new THREE.MeshLambertMaterial({ color: 0x1c1c1c });
-    const face = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.46, 0.46), matSkin);
-    face.castShadow = true; g.add(face);
-    const helm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.5), matTeam);
-    helm.position.y = 0.28; g.add(helm);
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.10, 0.04), matGun);
-    visor.position.set(0, 0.03, 0.24); g.add(visor);
-    return g;
+    const head = buildMascotHead(color, 0.8);
+    head.rotation.y = Math.PI;   // la faccia guarda -Z → girata verso la camera (+Z)
+    return head;
 }
 
 // Etichetta punteggio (sprite canvas) sopra ogni colonna
@@ -1480,228 +2087,100 @@ camera.add(weaponGroup);
 
 const weaponModels = {};
 
-// Tutte le armi sono ancorate a destra (x≈0.08) e in basso (y≈-0.11),
-// con la canna che punta in avanti (-z). Stile voxel ma con forma riconoscibile.
+// Tutte le armi sono ancorate a destra e in basso, canna in avanti (-z).
 // Offset X destro arma FP. In ADS (non-sniper) il weaponGroup viene lerpato verso il
 // centro (iron sights): offset 0.06-GX sul gruppo porta il totale a 0.06.
 const GX = 0.24;
 
-// Cache dei gltf.scene originali: riutilizzati (clonati) per le armi in terza persona
-const _glbSceneCache = {};
-
-// Barrel lungo +X nel modello Quaternius. ry=π/2 porta +X → -Z (forward in camera space).
-// pos = [X, Y, Z_calcio_da_camera]. rz=-0.08: roll CW mostra più superficie superiore.
-// Sniper: rz/rx ridotti (arma lunga già ben visibile con meno inclinazione).
-const _WEAPON_GLB_CFG = {
-    assault: { path: '/assets/guns/Assault Rifle.glb',  targetLen: 0.62, pos: [GX, -0.20, -0.18], rot: [0.08, Math.PI / 2, -0.08] },
-    smg:     { path: '/assets/guns/Submachine Gun.glb', targetLen: 0.48, pos: [GX, -0.18, -0.16], rot: [0.08, Math.PI / 2, -0.08] },
-    shotgun: { path: '/assets/guns/Shotgun.glb',        targetLen: 0.56, pos: [GX, -0.20, -0.18], rot: [0.08, Math.PI / 2, -0.08] },
-    sniper:  { path: '/assets/guns/Sniper Rifle.glb',   targetLen: 0.82, pos: [GX, -0.22, -0.18], rot: [0.06, Math.PI / 2, -0.06] },
+// Posa FP per-arma: l'origine del modello è al GRIP → lo mettiamo nel guantone.
+// rz negativo = roll CW che mostra più superficie superiore.
+const _FP_CFG = {
+    assault: { pos: [GX, -0.215, -0.40], rot: [0.05, 0, -0.06] },
+    smg:     { pos: [GX, -0.215, -0.40], rot: [0.05, 0, -0.06] },
+    shotgun: { pos: [GX, -0.215, -0.40], rot: [0.05, 0, -0.06] },
+    sniper:  { pos: [GX, -0.225, -0.38], rot: [0.04, 0, -0.05] },
 };
 
-// Scala il modello e sposta il pivot al CALCIO (min.x) così il barrel si estende
-// tutto in avanti (dalla posizione del gruppo verso -Z dopo la rotazione ry=π/2).
-function _glbScaleAndPivot(obj, targetLen) {
-    const box = new THREE.Box3().setFromObject(obj);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    const maxDim = Math.max(size.x, size.y, size.z);
-    if (maxDim > 0) obj.scale.setScalar(targetLen / maxDim);
-    // Centra
-    box.setFromObject(obj);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
-    obj.position.sub(center);
-    // Sposta il pivot al calcio (min X = lato opposto alla canna che è a max X)
-    box.setFromObject(obj);
-    obj.position.x -= box.min.x;
-}
-
-// Converte i materiali GLB.
-// Il GLTF loader converte baseColor sRGB→linear; con outputEncoding=Linear il colore
-// appare scuro (manca la gamma correction in output). Invertiamo con pow(c, 1/2.2).
-// useBasic=true → MeshBasicMaterial (FP, no luce necessaria);
-// false → MeshLambertMaterial + emissive per TP.
-function _glbApplyMaterials(obj, useBasic = false) {
-    obj.traverse(child => {
-        if (!child.isMesh) return;
-        const mats = [].concat(child.material);
-        child.material = mats.map(m => {
-            const raw = m.color || new THREE.Color(0.5, 0.5, 0.5);
-            const col = new THREE.Color(
-                Math.pow(Math.max(0, raw.r), 1 / 2.2),
-                Math.pow(Math.max(0, raw.g), 1 / 2.2),
-                Math.pow(Math.max(0, raw.b), 1 / 2.2)
-            );
-            const params = {
-                color: col,
-                map: m.map || null,
-                vertexColors: m.vertexColors || false,
-                transparent: !!m.transparent,
-                opacity: m.opacity ?? 1,
-            };
-            if (useBasic) return new THREE.MeshBasicMaterial(params);
-            return new THREE.MeshLambertMaterial({
-                ...params,
-                emissive: col.clone().multiplyScalar(0.2),
-            });
-        });
-        if (child.material.length === 1) child.material = child.material[0];
-        if (!useBasic) child.castShadow = true;
-    });
-}
-
+// Viewmodel FP: armi cartoon procedurali (nessun caricamento asincrono).
+// I contorni inchiostro sui primitivi (sfere/cilindri/box) sono puliti anche
+// da vicino — il glitch nero riguardava solo gli hull dei vecchi GLB.
 function buildWeaponModels() {
-    const loader = new THREE.GLTFLoader();
-
-    Object.entries(_WEAPON_GLB_CFG).forEach(([key, cfg]) => {
+    Object.entries(_FP_CFG).forEach(([key, cfg]) => {
         const group = new THREE.Group();
         group.visible = false;
         weaponGroup.add(group);
         weaponModels[key] = group;
 
-        loader.load(cfg.path, (gltf) => {
-            _glbSceneCache[key] = gltf.scene;        // cache per le armi TP avversari
-
-            const model = gltf.scene.clone(true);     // clone dedicato alla prima persona
-            _glbScaleAndPivot(model, cfg.targetLen);
-            _glbApplyMaterials(model, true);          // Basic: colori diretti senza luce
-            group.position.set(...cfg.pos);
-            group.rotation.set(...cfg.rot);
-            group.add(model);
-        }, undefined, err => {
-            console.warn('[FPS] Caricamento GLB fallito:', cfg.path, err);
-        });
+        const model = buildToonWeaponModel(key);
+        model.traverse(o => { if (o.isMesh) o.castShadow = false; });
+        group.position.set(...cfg.pos);
+        group.rotation.set(...cfg.rot);
+        group.add(model);
     });
-}
-
-// ── Texture procedurali a 3 layer ──────────────────────────
-// Layer 1 = colore base, Layer 2 = grana del materiale,
-// Layer 3 = usura/graffi + bordi scuri (profondità).
-// Niente file esterni: tutto generato su <canvas> e usato come map.
-const _layeredTexCache = {};
-function makeLayeredTexture(baseColor, kind) {
-    const cacheKey = baseColor + '|' + kind;
-    if (_layeredTexCache[cacheKey]) return _layeredTexCache[cacheKey];
-
-    const S = 128;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = S;
-    const ctx = cv.getContext('2d');
-
-    const r = (baseColor >> 16) & 255, g = (baseColor >> 8) & 255, b = baseColor & 255;
-    const shade = (f) => `rgb(${Math.max(0, Math.min(255, r * f | 0))},${Math.max(0, Math.min(255, g * f | 0))},${Math.max(0, Math.min(255, b * f | 0))})`;
-
-    // ── Layer 1: base ──
-    ctx.fillStyle = shade(1);
-    ctx.fillRect(0, 0, S, S);
-
-    // ── Layer 2: grana del materiale ──
-    if (kind === 'wood') {
-        // venature verticali
-        for (let x = 0; x < S; x += 3) {
-            ctx.fillStyle = shade(0.8 + Math.random() * 0.35);
-            ctx.fillRect(x, 0, 2 + Math.random() * 2, S);
-        }
-    } else if (kind === 'metal') {
-        // spazzolatura orizzontale
-        for (let y = 0; y < S; y += 2) {
-            ctx.fillStyle = shade(0.85 + Math.random() * 0.3);
-            ctx.fillRect(0, y, S, 1);
-        }
-    } else { // polymer: grana fine puntinata
-        for (let i = 0; i < 1400; i++) {
-            ctx.fillStyle = shade(0.82 + Math.random() * 0.32);
-            ctx.fillRect(Math.random() * S, Math.random() * S, 1, 1);
-        }
-    }
-
-    // ── Layer 3: usura (graffi) + vignettatura bordi ──
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 7; i++) {
-        ctx.strokeStyle = shade(1.4 + Math.random() * 0.4);
-        ctx.globalAlpha = 0.25 + Math.random() * 0.3;
-        ctx.beginPath();
-        const x0 = Math.random() * S, y0 = Math.random() * S;
-        ctx.moveTo(x0, y0);
-        ctx.lineTo(x0 + (Math.random() - 0.5) * S * 0.6, y0 + (Math.random() - 0.5) * S * 0.6);
-        ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-    // bordi scuri per dare volume ai box
-    const grad = ctx.createRadialGradient(S / 2, S / 2, S * 0.25, S / 2, S / 2, S * 0.7);
-    grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.45)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, S, S);
-
-    const tex = new THREE.CanvasTexture(cv);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.needsUpdate = true;
-    _layeredTexCache[cacheKey] = tex;
-    return tex;
-}
-
-function makeViewBox(w, h, d, x, y, z, color, kind) {
-    const matOpts = { color: 0xffffff };
-    if (kind) matOpts.map = makeLayeredTexture(color, kind);
-    else matOpts.color = color;
-    const m = new THREE.Mesh(
-        new THREE.BoxGeometry(w, h, d),
-        new THREE.MeshLambertMaterial(matOpts)
-    );
-    m.position.set(x, y, z);
-    return m;
-}
-
-// Parte cilindrica orientata lungo l'asse Z (canne, ottica). r128: solo CylinderGeometry.
-function makeViewCyl(radius, len, x, y, z, color, kind) {
-    const matOpts = { color: 0xffffff };
-    if (kind) matOpts.map = makeLayeredTexture(color, kind);
-    else matOpts.color = color;
-    const m = new THREE.Mesh(
-        new THREE.CylinderGeometry(radius, radius, len, 12),
-        new THREE.MeshLambertMaterial(matOpts)
-    );
-    m.rotation.x = Math.PI / 2; // asse Y → Z
-    m.position.set(x, y, z);
-    return m;
 }
 
 buildWeaponModels();
 
-// ── Braccio destro FP ──────────────────────────────────────────────────────────
+// ── Braccio destro FP (stile mascotte rubber-hose) ────────────────────────────
 // Figlio di weaponGroup → si muove automaticamente col bob e col lerp ADS iron sights.
-// Posizioni relative all'origine di weaponGroup (= camera); stock arma è a [GX, y, z].
+// Tubo nero + polsino + guantone bianco, coerente col modello giocatore toon.
+// Le impugnature curve scendono sotto/dietro l'origine del modello (e quella del
+// cecchino è molto più arretrata): la mano vive in un gruppo riposizionato
+// per-arma sul CENTRO del grip, così il guantone avvolge l'impugnatura e non
+// ingloba più il corpo dell'arma.
+const FP_HAND_ANCHOR = {                    // pos del gruppo-mano in weaponGroup
+    assault: [GX, -0.255, -0.355],
+    smg:     [GX, -0.255, -0.345],
+    shotgun: [GX, -0.24,  -0.33],
+    // Il grip vero del cecchino (z -0.235) cade fuori schermo: mano avanzata
+    // sul legno, appena dentro il bordo inferiore → se ne vede solo un accenno
+    sniper:  [GX, -0.245, -0.31],
+};
+let fpHand = null;
 (function buildFPArm() {
-    // guanto tattico scuro (lo stesso stile del modello giocatore)
-    const matGlv  = new THREE.MeshBasicMaterial({ color: 0x1a1816 });
-    const matSkin = new THREE.MeshBasicMaterial({ color: 0xd9a066 });
+    const matLimb  = makeToonMat(0x23201d);   // braccio "a tubo" nero
+    const matGlove = makeToonMat(0xf4f0e6);   // guantone bianco (mitten)
+    fpHand = new THREE.Group();
+    fpHand.position.set(...FP_HAND_ANCHOR.assault);
+    weaponGroup.add(fpHand);
 
-    // Mano destra all'impugnatura: centrata sul grip medio di tutte le armi
-    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.12), matGlv);
-    hand.position.set(GX, -0.22, -0.40);
-    hand.rotation.set(0.08, 0, -0.08);
-    weaponGroup.add(hand);
+    // Guantone (mitten): palmo ovale che avvolge il grip + massa dita + pollice
+    // (contenuto: deve stringere l'impugnatura, non coprire l'arma)
+    const gloveGeo = new THREE.SphereGeometry(0.052, 16, 12);
+    gloveGeo.scale(1, 0.82, 1.22);
+    const glove = new THREE.Mesh(gloveGeo, matGlove);
+    glove.rotation.x = -0.25;
+    fpHand.add(glove);
+    const fingersGeo = new THREE.SphereGeometry(0.038, 12, 10);
+    fingersGeo.scale(1, 0.85, 1.1);
+    const fingers = new THREE.Mesh(fingersGeo, matGlove);
+    fingers.position.set(0, -0.025, -0.04);   // dita chiuse sul davanti del grip
+    fpHand.add(fingers);
+    const thumb = new THREE.Mesh(new THREE.SphereGeometry(0.026, 10, 8), matGlove);
+    thumb.position.set(-0.04, 0.012, 0.012);  // pollice sul lato interno
+    fpHand.add(thumb);
 
-    // Nocche/dorso mano leggermente a vista (striscia skin sopra il guanto)
-    const knuckles = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.025, 0.06), matSkin);
-    knuckles.position.set(GX, -0.185, -0.39);
-    knuckles.rotation.set(0.08, 0, -0.08);
-    weaponGroup.add(knuckles);
-
-    // Avambraccio destro: emerge da fuori schermo (basso-destra) verso l'impugnatura.
-    // rx=-0.40 → estremità -Z punta verso il grip (z≈-0.37), estremità +Z verso il basso
-    // (z≈+0.07 = fuori schermo in basso).
-    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.095, 0.50), matGlv);
-    forearm.position.set(GX + 0.03, -0.46, -0.15);
-    forearm.rotation.set(-0.40, 0, 0.08);
-    weaponGroup.add(forearm);
+    // Avambraccio a tubo: emerge da fuori schermo (basso-destra) verso il guanto.
+    // rx=-0.40 → estremità -Z verso il grip, estremità +Z fuori schermo in basso.
+    const arm = new THREE.Group();
+    arm.position.set(0.03, -0.245, 0.25);     // relativo al gruppo-mano
+    arm.rotation.set(-0.40, 0, 0.08);
+    fpHand.add(arm);
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.048, 0.55, 12), matLimb);
+    tube.rotation.x = Math.PI / 2;
+    arm.add(tube);
+    // Polsino BIANCO svasato (il classico bordo del guanto cartoon)
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.062, 0.055, 12), matGlove);
+    cuff.rotation.x = Math.PI / 2;
+    cuff.position.set(0, 0, -0.25);
+    arm.add(cuff);
 })();
 
 function switchWeaponModel(key) {
     Object.values(weaponModels).forEach(g => g.visible = false);
     if (weaponModels[key]) weaponModels[key].visible = true;
+    // La mano segue il grip dell'arma corrente
+    if (fpHand && FP_HAND_ANCHOR[key]) fpHand.position.set(...FP_HAND_ANCHOR[key]);
     document.getElementById('crosshair').className = key === 'assault' ? '' : key;
 }
 switchWeaponModel('assault');
@@ -1830,9 +2309,22 @@ document.addEventListener('mouseup', (e) => {
     clearInterval(autoFireInterval);
 });
 
+// ── DIAGNOSTICA (console F12): stato completo quando lo sparo è bloccato o parte.
+// Rate-limited a 1/s per non inondare la console con le armi automatiche.
+let _dbgLastLog = 0;
+function dbgShoot(msg) {
+    const now = Date.now();
+    if (now - _dbgLastLog < 1000) return;
+    _dbgLastLog = now;
+    const vivi = Object.entries(gameState.players).filter(([, rp]) => !rp.dead).map(([c]) => c);
+    console.log(`[FPS] ${msg} | phase=${gameState.phase} isDead=${gameState.isDead} lock=${pointerLocked}` +
+        ` reload=${isReloading} ammo=${gameState.myAmmo} arma=${gameState.myWeapon} mut=${gameState.mutator}` +
+        ` | remoti vivi: [${vivi.join(', ')}] su ${Object.keys(gameState.players).length}`);
+}
+
 function tryShoot() {
-    if (!pointerLocked || gameState.isDead || gameState.phase !== 'playing') return;
-    if (isReloading) return;
+    if (!pointerLocked || gameState.isDead || gameState.phase !== 'playing') { dbgShoot('sparo BLOCCATO'); return; }
+    if (isReloading) { dbgShoot('sparo BLOCCATO (ricarica)'); return; }
 
     const w = gameState.weapons[gameState.myWeapon];
     if (!w) return;
@@ -1886,12 +2378,14 @@ function tryShoot() {
         // Hitbox = CAPSULA VERTICALE (piedi→testa), campionata a sfere lungo il corpo:
         // così mirando a testa/gambe/torso da vicino si colpisce sempre.
         // L'altezza si abbassa in base alla postura (crouch/slide).
+        // Quote tarate sulla mascotte toon: testa sferica r 0.28 con centro a
+        // 1.38 (in piedi); headOff = distanza del centro-testa dal top capsula.
         const a = rp.anim;
-        let y0 = 0.30, y1 = 1.75, r = 0.42;
-        if (a && a.slide) { y0 = 0.20; y1 = 0.95; r = 0.42; }
-        else if (a && a.crouch) { y0 = 0.30; y1 = 1.20; r = 0.44; }
+        let y0 = 0.25, y1 = 1.70, r = 0.42, headOff = 0.32;
+        if (a && a.slide) { y0 = 0.20; y1 = 1.05; r = 0.42; headOff = 0.20; }
+        else if (a && a.crouch) { y0 = 0.30; y1 = 1.42; r = 0.44; headOff = 0.32; }
         // Mini Giocatori: il modello remoto è scalato, quindi scala anche la hitbox
-        if (sizeMul !== 1) { y0 *= sizeMul; y1 *= sizeMul; r *= sizeMul; }
+        if (sizeMul !== 1) { y0 *= sizeMul; y1 *= sizeMul; r *= sizeMul; headOff *= sizeMul; }
 
         const px = rp.group.position.x, py = rp.group.position.y, pz = rp.group.position.z;
 
@@ -1914,11 +2408,11 @@ function tryShoot() {
         // ── Testa: sfera dedicata → headshot (più danno). Ingrandita col mutatore
         // "Teste Giganti" così le headshot diventano facilissime. Con HEAD_BIAS la
         // testa ha la priorità sulla sfera-corpo in cima, quasi sovrapposta.
-        const headBase = (gameState.mutator === 'giant_heads') ? 0.6
+        const headBase = (gameState.mutator === 'giant_heads') ? 0.56   // r 0.28 × scala 2.0
                        : (gameState.mutator === 'headshot_only') ? 0.34   // un filo più permissiva
-                       : 0.28;
+                       : 0.28;                                            // = raggio visivo del cranio
         const headR = headBase * sizeMul;
-        const headCy = py + y1 - 0.10 * sizeMul;   // centro testa, segue postura e taglia
+        const headCy = py + y1 - headOff;   // centro testa, segue postura e taglia
         {
             const tx = px - origin.x, ty = headCy - origin.y, tz = pz - origin.z;
             const proj = tx * dir.x + ty * dir.y + tz * dir.z;
@@ -1955,11 +2449,14 @@ function tryShoot() {
             weaponKey: gameState.myWeapon,
             headshot: bestHead
         });
+        dbgShoot(`sparo → COLPITO ${bestColor}${bestHead ? ' (testa)' : ''}`);
     } else if (wall) {
         // Polvere/detriti sull'impatto col muro
         spawnParticles(wall.point, 0xbcb6a4, 6,
             { speed: 2.2, gravity: 5, size: 0.05, life: 320 });
     }
+
+    if (!bestColor) dbgShoot('sparo → nessun bersaglio nel raggio');
 
     spawnTracer(dir, tracerDist);
 
@@ -2299,9 +2796,10 @@ function updateMovement(dt) {
     // Mentre sei a terra, memorizza lo stato di sprint da portare nel prossimo salto
     if (onGround) airSprint = isSprinting;
 
-    // Clamp mappa
+    // Clamp mappa (+ soffitto invisibile per la Gravità Lunare)
     pos.x = Math.max(-MAP_HALF + 1, Math.min(MAP_HALF - 1, pos.x));
     pos.z = Math.max(-MAP_HALF + 1, Math.min(MAP_HALF - 1, pos.z));
+    if (pos.y > MAP_CEIL) { pos.y = MAP_CEIL; velocityY = Math.min(velocityY, 0); }
 
     resolveCollisions(pos);
 
@@ -2520,6 +3018,17 @@ function showDamageDirection(shooterColor) {
 const socket = io();
 socket.emit('joinFPS', { lobbyId: LOBBY_ID, playerColor: MY_COLOR });
 
+// ── Riconnessione silenziosa ──
+// Una scheda lasciata in background può essere congelata dal browser: il server
+// smette di ricevere i pong e disconnette il socket. Al ritorno socket.io si
+// riconnette DA SOLO, ma il nuovo socket non è più né nella room né in partita:
+// senza re-join il giocatore resta un "fantasma" immortale (il server rifiuta
+// ogni reportHit su di lui) e la partita si corrompe per tutti.
+// Il re-join fa rispondere il server con fpsInit, che risincronizza fase/round.
+socket.io.on('reconnect', () => {
+    socket.emit('joinFPS', { lobbyId: LOBBY_ID, playerColor: MY_COLOR });
+});
+
 // ── WebRTC peer connections ──────────────────────────
 const peers = {};   // socketId -> RTCPeerConnection
 const channels = {};   // socketId -> RTCDataChannel
@@ -2680,6 +3189,7 @@ socket.on('playerConfirmed', ({ playerColor, count, total }) => {
 });
 
 socket.on('roundStart', (data) => {
+    console.log(`[FPS] evento roundStart: round=${data.round} mutatore=${data.mutator} players=[${Object.keys(data.players).join(', ')}]`);
     hideWeaponSelect();
     handleRoundStart(data);
 });
@@ -2705,6 +3215,7 @@ socket.on('playerHit', ({ targetColor, hp, shooterColor, damage, heal }) => {
 });
 
 socket.on('playerKilled', ({ killedColor, killerColor, aliveCount, subphase, points }) => {
+    console.log(`[FPS] evento playerKilled: ${killerColor} → ${killedColor} (sub=${subphase})`);
     // Aggiorna i punti live (il +1 per kill compare subito in HUD)
     if (points) { gameState.points = points; updateScoreHUD(); }
 
@@ -2748,6 +3259,7 @@ socket.on('playerKilled', ({ killedColor, killerColor, aliveCount, subphase, poi
 
 // Rinascita in mischia: rientro istantaneo su uno spawn point
 socket.on('playerRespawn', ({ color, x, y, z, angle, hp, weaponKey, ammo }) => {
+    console.log(`[FPS] evento playerRespawn: ${color}`);
     if (color === MY_COLOR) {
         gameState.isDead = false;
         gameState.myHp = hp;
@@ -2807,6 +3319,7 @@ socket.on('weaponSwitch', ({ color, weaponKey, ammo, maxAmmo }) => {
 
 // Passaggio a SUDDEN DEATH: respawn OFF, tutti vivi e a piena vita
 socket.on('suddenDeathStart', (data) => {
+    console.log('[FPS] evento suddenDeathStart');
     gameState.subphase = 'suddendeath';
 
     const me = data.players[MY_COLOR];
@@ -2854,6 +3367,7 @@ socket.on('suddenDeathStart', (data) => {
 });
 
 socket.on('playerLeft', ({ color }) => {
+    console.log(`[FPS] evento playerLeft: ${color}`);
     const rp = gameState.players[color];
     if (rp) {
         scene.remove(rp.group);   // la healthbar è figlia del group → rimossa con esso
@@ -2867,6 +3381,7 @@ socket.on('playerLeft', ({ color }) => {
 });
 
 socket.on('roundEnd', (data) => {
+    console.log(`[FPS] evento roundEnd: round=${data.round} vincitore=${data.winnerColor}`);
     gameState.scores = data.scores;
     if (data.points) gameState.points = data.points;
     updateScoreHUD();
@@ -3066,7 +3581,7 @@ function applyMutator(id) {
             renderer.setClearColor(0x9aa3ad);
             break;
         case 'giant_heads':
-            headScale = 2.5;    // teste enormi (taratura in localhost)
+            headScale = 2.0;    // teste enormi (2.5 era troppo con la testa tonda della mascotte)
             break;
         case 'blackout':
             ambient.intensity = 0.08;
@@ -3148,7 +3663,15 @@ function handleRoundStart(data) {
             parts.group.position.set(pState.x, pState.y, pState.z);
             parts.group.scale.setScalar(sizeMul);   // mutatore "Mini Giocatori"
             scene.add(parts.group);
-            gameState.players[color] = { ...parts, hp: 100, dead: false, anim: makeAnim() };
+            // hp/dead dal server: a inizio round sono 100/vivo, ma su un RE-JOIN
+            // a round in corso (fpsInit → handleRoundStart) riflettono lo stato reale
+            gameState.players[color] = {
+                ...parts,
+                hp: pState.hp != null ? pState.hp : 100,
+                dead: !!pState.dead,
+                anim: makeAnim()
+            };
+            if (pState.dead) parts.group.visible = false;
         }
     }
 

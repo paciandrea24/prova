@@ -1,6 +1,7 @@
 # FPS — Note tecniche
 
-Riferimento per il gioco **FPS** (arena shooter in prima persona, omaggio a Nuketown di COD).
+Riferimento per il gioco **FPS** (arena shooter in prima persona, stile cartoon "rubber-hose"
+anni '30 — mappa "Cittadina Cartoon" + mascotte toon, overhaul G4).
 Leggi questo file **solo quando lavori sull'FPS**. Per il resto del progetto vedi `CLAUDE.md`.
 
 ## File chiave
@@ -13,7 +14,7 @@ Leggi questo file **solo quando lavori sull'FPS**. Per il resto del progetto ved
 - `backend/store/activeGames.js` — store `activeGames` (partite attive).
 
 ## Costanti/parametri (client, in cima a fps.js)
-`PLAYER_HEIGHT=1.7`, `PLAYER_RADIUS=0.4`, `GRAVITY=20`, `JUMP_FORCE=7`, `STEP_HEIGHT=0.6`, `MOUSE_SENS=0.0015`, `MAP_HALF=40`.
+`PLAYER_HEIGHT=1.7`, `PLAYER_RADIUS=0.4`, `GRAVITY=20`, `JUMP_FORCE=7`, `STEP_HEIGHT=0.6`, `MOUSE_SENS=0.0015`, `MAP_HALF=32`, `MAP_CEIL=13` (soffitto invisibile anti-fuga per Gravità Lunare).
 Movimento: `WALK_SPEED=8`, `SPRINT_SPEED=12`, `CROUCH_SPEED=4`, `AIR_SPRINT_BOOST≈1.18` (sprint-jump più veloce, stile Minecraft), più costanti `SLIDE_*` e altezze occhio `STAND_EYE/CROUCH_EYE/SLIDE_EYE`.
 NB: alcuni valori sono stati ritoccati nelle ultime sessioni — verifica sempre il sorgente prima di citarli.
 
@@ -41,15 +42,30 @@ ADS FOV (client): assault 50, smg 55, shotgun 62, sniper 15.
 ### Hit detection — hitbox a capsula
 In `tryShoot`, l'hitbox del nemico è una **capsula verticale** campionata come sfere dai piedi (y0) alla testa (y1), raggio ~0.42 (tarato sulla larghezza reale del modello). Posture-aware: crouch/slide abbassano y0/y1. Sostituisce la vecchia singola sfera al petto (che faceva mancare i colpi a testa/gambe da vicino). Raycast: `camera.getWorldPosition()` + distanza punto-raggio (proiezione).
 
-### Mappa (Nuketown homage, in `buildMap()`)
-- Due case simmetriche a due piani (gialla a nord z=-32, verde-acqua a sud z=+32) che si fronteggiano, separate da strada asfaltata est-ovest (z=0).
-- `buildHouse(cx,cz,doorDir,wallMat)`: piano terra con porta+finestre, solaio calpestabile a F2=2.8, secondo piano con grande finestra frontale, tetto. Scala interna in un vano d'angolo (gradini bassi, step-up). `buildHouseFurniture`: arredamento minimal.
-- `buildBus`: **autobus agibile** = piccola "casa" con muri solidi e un'apertura fisicamente percorribile (entri, ti ripari, esci). NON è più attraversabile/passante. `buildVan`, `buildCarport`, `fenceX`/`fenceZ`, `buildMannequin` (no collisione), `addTree`.
-- Mappa rimpicciolita (MAP_HALF 60→40); rimossi i capanni del backyard per poter stringere. Casse copertura a 0.6m (scalabili) + cataste come gradinate.
-- Tetti delle case: solidi ma NON raggiungibili col salto (scelta voluta, fedele a Nuketown).
+### Mappa ("Cittadina Cartoon", in `buildMap()`) — progettata attorno ai 14 mutatori
+- **Grande Emporio centrale** (20×14, centro mappa): 2 piani + **tetto-terrazza calpestabile** con parapetto.
+  Porte sui 4 lati, finestroni al 2° piano (postazioni di tiro), interni stretti con bancone/scaffali
+  (smg/shotgun, `blackout`/`fog`). Scala A terra→2° (angolo NW), scala B 2°→tetto (angolo SE) — entrambe
+  a gradini bassi (step-up).
+- **Anello esterno**: strada nord (furgone dei gelati + barriere), **Via Lunga a ovest** (linea di tiro
+  ~60 m per sniper/`gun_game`, coperture solo ai bordi), strada est, **piazza sud** con fontana (riparo
+  basso → `giant_heads`), bancarelle, giardinetto recintato, panchine.
+- **9 botteghe enterable** sul perimetro (nord/est/sud, `buildShop`): porta+vetrina+insegna+tenda, banco
+  interno, **tetto piano calpestabile** raggiungibile con scale di servizio nei vicoli (`buildStairs`) +
+  una passerella in legno tra due tetti. Portico coperto lungo il muro ovest (colonnato, tetto calpestabile).
+- Angoli: gazebo/palco NW (pedana salibile), deposito con tettoia SW, verde NE/SE. Lampioni, alberi.
+- Costruttori: `buildCentral`, `buildShop`, `buildStall`, `buildFountain`, `buildGazebo`, `buildLamppost`,
+  `buildStairs`, `punchWallX`/`punchWallZ` (muri con aperture porta/finestra), `buildBackdrop` (sagome di
+  palazzi oltre il muro), `buildClouds`. Riusati: `buildVan`, `buildCarport`, `fenceX/Z`, `crate`,
+  `buildBarrier`, `buildSandbags`, `buildBarrel`, `addTree`, `addSign` (insegne canvas).
+- **Confini**: muro perimetrale h 12 + clamp `MAP_CEIL=13` sull'asse Y in `updateMovement` → non si esce
+  nemmeno con `moon_gravity` dai tetti.
+- Tanti prop piccoli (casse, barili, bancarelle) → ripari per `mini_players`; volumi chiusi per `blackout`/`fog`.
 
 ### Spawn (server SPAWN_POINTS)
-8 punti: primi 4 = cortile nord (angle=PI, guardano +Z), ultimi 4 = sud (angle=0, guardano -Z). `launchRound` assegna con offset casuale + passo uniforme → in 1v1 i giocatori partono da case opposte.
+8 punti distribuiti sull'anello esterno (2 per lato: strada nord, strada est, piazza sud, Via Lunga),
+tutti rivolti verso il centro con `angle = Math.atan2(x, z)`. Devono restare coerenti con la geometria
+di `buildMap()` in fps.js: se sposti la mappa, aggiorna gli spawn.
 Convenzione angoli: forward = `(-sin yaw, -cos yaw)`. Guardare verso +Z → yaw=PI; verso -Z → yaw=0.
 
 ### Minimap (client `drawMinimap()`)
@@ -60,8 +76,15 @@ Rotante, player-centric: il giocatore è sempre al centro come triangolo che pun
 - Healthbar sopra il nemico (`createPlayerMesh` → hpBar/hpFill, `updateHealthbar`): **compare solo se HP < 100 e il nemico è vivo**, riempimento ancorato a sinistra, colore verde→giallo→rosso, billboard verso la camera. Nessun nameplate (i giocatori sono identificati solo dal colore).
 
 ### Modello giocatore remoto (`createPlayerMesh(color)`)
-Umanoide a blocchi (gambe, stivali, busto con giubbotto colore-squadra, braccia, mani, testa, casco, fucile) + sotto-gruppi (upper, legL, legR, hpBar). Orientato verso -Z. Animazioni run/crouch/slide sincronizzate via rete (`updateRemoteAnim`, `applyRemoteState`).
-**NB**: `THREE.CapsuleGeometry` NON esiste in r128 — usare sempre `CylinderGeometry`/`BoxGeometry`. Three.js r128 core da CDN + `GLTFLoader` aggiunto via CDN separato (stesso pattern di kart/f1). `makeViewBox`/`makeViewCyl`/`makeLayeredTexture` sono ancora nel sorgente e necessari per il fallback di `buildTPWeapon` — non rimuoverli.
+**Mascotte "rubber-hose"** (stile Cuphead, validata nel prototipo `fps-toon-proto.html/js`): testa tonda
+crema con occhioni/sorriso, elmetto in colore-squadra, busto tondeggiante, arti a tubo neri con guantoni
+bianchi e scarponi tondi. Cel-shading (`makeToonMat`) + **contorni inchiostro** inverted-hull
+(`_addToonOutline`, materiale contorno per-personaggio così "Fantasmi" non tocca gli altri).
+Handle invariato: `{ group, head, upper, legL, legR, hpBar, hpFill, weaponMount }` — `head.scale` per
+Teste Giganti, `group.scale` per Mini. `HIP_Y=0.62`. Hitbox capsula tarata sulla mascotte (headOff in
+`tryShoot`). Orientato verso -Z. Animazioni run/crouch/slide sincronizzate via rete (`updateRemoteAnim`,
+`applyRemoteState`).
+**NB**: `THREE.CapsuleGeometry` NON esiste in r128 — usare sempre `CylinderGeometry`/`BoxGeometry`. Three.js r128 core da CDN (il tag `GLTFLoader` è stato rimosso da fps.html: le armi sono procedurali, nessun GLB in uso).
 
 ### Audio (procedurale) + game feel
 - `Sfx` IIFE: suoni sintetizzati con Web Audio API (oscillatori + rumore bianco filtrato), NESSUN file mp3. Funzioni: resume, shoot, hitConfirm, killConfirm, reload, footstep, slide, empty, hurt, death, roundStart.
@@ -80,46 +103,87 @@ Web Worker "heartbeat" per aggirare il throttling del requestAnimationFrame quan
 - **Bullet tracer invisibile**: `THREE.Line` rende 1px in WebGL → sostituito con `CylinderGeometry`, parte 0.4m davanti alla camera.
 - **Hit non registrati**: il raycast partiva dai piedi → ora da `camera.getWorldPosition()` + distanza punto-raggio.
 - **WebRTC double-offer**: rimosso `onnegotiationneeded` da `createPeer`.
+- **"Danno morto" a metà partita — CAUSA PRIMARIA: handler disconnect di F1 senza guard.**
+  I vecchi socket della pagina LOBBY (con `socket.lobbyId/color` da `joinLobby`) restano
+  zombie per minuti dopo la navigazione verso fps.html; quando il browser li uccide, il
+  `disconnect` di `f1GameSocket` — registrato su OGNI socket da socketManager — prendeva
+  la partita FPS da `activeGames` SENZA controllare il tipo, faceva `delete game.players[color]`
+  (→ `🚫 bersaglio ASSENTE`, giocatore non più colpibile) e, svuotati i players, cancellava
+  l'intera partita (→ `NO_GAME`, danno azzerato per tutti). Fix: `gameId: 'f1'` nel game F1 +
+  guard `game.gameId !== 'f1'` nel suo disconnect e in `f1ReturnToLobby`. REGOLA GENERALE:
+  ogni handler condiviso che tocca `activeGames` deve verificare che la partita sia del suo
+  gioco (FPS usa `socket.data.joinedFPS` + `gameId: 'fps'`).
+  Fix di robustezza aggiuntivi della stessa caccia (restano validi): re-join su `reconnect`
+  (client) + `REJOIN_GRACE` 60s + rientro in corsa in `joinFPS` (server) — coprono i VERI
+  drop del socket di gioco (schede congelate, F5, blip di rete).
+  Diagnosi con harness headless che pilotano il vero `fpsGameSocket.js` con io/socket finti
+  (in `scratchpad`, sessione 2026-07-03): partita 5 round pulita = 0 anomalie; scenario
+  zombie-lobby = riproduzione esatta del log utente, rosso col codice vecchio e verde col fix.
 - **Grafica "G1" (PBR/tone mapping/env map)**: provata e poi **annullata** (troppo chiara/desaturata). Si usa `MeshLambertMaterial`. `renderer.outputEncoding`/`toneMapping` restano volutamente ai default (encoding lineare) per non slavare i colori — non toccarli.
 - **Grafica "G2" (texture superfici)**: applicato. Le superfici di mappa usano `CanvasTexture` procedurali stilizzate (stile Kenney): prato/asfalto/cemento/marciapiede/mattoni/casse/tetto/doghe/siding. Generate in JS (`drawGrass`, `drawAsphalt`, `drawConcrete`, `drawBrick`, `drawCrate`, `drawRoof`, `drawWoodFloor`, `drawSiding`) via l'helper `makeTex()` con `RepeatWrapping` + `anisotropy`. Veicoli/giocatori restano a colore piatto (step successivi). Sostituibili con PNG Kenney reali cambiando la sorgente in `makeTex`.
-- **Grafica "G3" (modelli arma GLB)**: applicato ma in fase di tuning. Dettagli nella sezione "Armi GLB — stato attuale" qui sotto.
+- **Grafica "G3" (modelli arma GLB)**: SUPERATA da G4 — i GLB Quaternius stonavano con lo stile toon e sono stati sostituiti dalle armi cartoon procedurali (vedi "Armi cartoon procedurali"). I file in `assets/guns/` restano ma non sono più caricati.
+- **Grafica "G4" (overhaul toon "rubber-hose")**: applicato — mondo+personaggio+armi in cel-shading.
+  Pipeline: `_toonGradMap` (gradient map a 3 fasce, NearestFilter), `_toonGrainTex` (grana vintage),
+  `makeToonMat(color)` per i personaggi, `worldToon(opts)` per il mondo (MAT), `_addToonOutline(mesh,
+  outMat, tMul)` contorni inverted-hull (per i Box usa scala per-asse, per il resto vertici spostati
+  lungo le normali). `TOON_OUTLINE_T=0.008`. I contorni del mondo condividono `MAT.ink`; personaggi e
+  armi TP usano istanze dedicate (per il mutatore Fantasmi/`setGroupOpacity`).
+  Il vincolo resta: **niente** `outputEncoding`/`toneMapping` (pipeline lineare).
 
-## Armi GLB — stato attuale (G3, in tuning)
+## Armi cartoon procedurali (G4.1 — armi CURVE, approvate nel viewer)
 
 ### Struttura del sistema (fps.js)
-- **`_glbSceneCache`** `{ assault, smg, shotgun, sniper }` — gltf.scene originali, clonati per ogni uso TP.
-- **`_WEAPON_GLB_CFG`** — configurazione per-arma (tunable):
-  ```
-  assault: targetLen 0.50, pos [GX, -0.19, -0.12], rot [0.08, π/2, 0]
-  smg:     targetLen 0.38, pos [GX, -0.18, -0.12], rot [0.08, π/2, 0]
-  shotgun: targetLen 0.45, pos [GX, -0.19, -0.12], rot [0.08, π/2, 0]
-  sniper:  targetLen 0.62, pos [GX, -0.19, -0.12], rot [0.08, π/2, 0]
-  ```
-- **`_glbScaleAndPivot(obj, targetLen)`** — scala, centra, poi sposta il pivot al calcio (bbox.min.x = 0) così l'intera arma si estende in avanti dalla posizione del gruppo. Questo evita il clipping nella near clip plane.
-- **`_glbApplyMaterials(obj)`** — converte `MeshStandardMaterial` → `MeshLambertMaterial` (Standard appare nero senza envmap/IBL).
-- **`buildWeaponModels()`** — carica i 4 GLB, clona per FP, popola `_glbSceneCache`.
-- **`buildTPWeapon(key)`** — usa il clone GLB se `_glbSceneCache[key]` disponibile (scala TP: assault 0.45, smg 0.32, shotgun 0.42, sniper 0.55); fallback a box geometry.
+- **`buildToonWeaponModel(key)`** — UNICO builder per FP e TP, ridisegnato in G4.1 con
+  linguaggio di forme CURVO anni '30 (spec: `docs/superpowers/specs/2026-07-03-armi-toon-curve-design.md`;
+  sviluppato e approvato arma per arma nel viewer `frontend/fps-armi-proto.html|js`, poi
+  trapiantato qui IDENTICO — se si ritoccano le armi, farlo prima nel viewer). Helper interni:
+  `latheZ` (solidi di rivoluzione asse-Z; `opt.sx` li restringe lateralmente ricalcolando le
+  normali), `tube` (TubeGeometry su CatmullRom: impugnature a banana, ponticelli), `ell`/`sph`.
+  Canna verso **-Z**, **origine al grip**, calcio a +Z. Materiali toon e contorno inchiostro
+  **per-istanza** (mai condivisi: il mutatore Fantasmi fa `setGroupOpacity` sul group).
+  Regole fissate dai feedback utente: bocche a cilindretto d'ottone MAI svasate; ogni pezzo
+  ancorato DENTRO il corpo (mai tangente); impugnature con tallone piatto svasato (MAI sfere
+  in punta); ponticello+grilletto d'ottone su tutte le armi; calci a pera con pancia contenuta.
+  - *assault*: castello a capsula, caricatore a banana curvo, mirino dettagliato a perlina.
+  - *smg*: Thompson M1928 — ricevitore stretto (`sx:0.8`), tamburo a DISCO piatto asse-Z
+    (faccia in avanti) con perno passante, doppia impugnatura (grilletto solo dietro).
+  - *shotgun*: doppietta con castello coassiale alla canna + anello di raccordo d'ottone.
+  - *sniper*: azione metallica coassiale che raccorda corpo→canna a spillo, scopone, otturatore.
+- **`buildTPWeapon(key)`** — `buildToonWeaponModel` scalato **0.95** (le forme curve rendono
+  meno dei vecchi box; 0.8 risultava troppo piccolo), montato nel `weaponMount` del remoto.
+- **`buildWeaponModels()`** — viewmodel FP: monta le stesse armi in `weaponGroup` con pose da
+  `_FP_CFG` (l'origine-grip a `[GX, -0.215, -0.40]`).
+- **Braccio FP** (`buildFPArm`): tubo nero rubber-hose + polsino svasato + guantone mitten in un
+  gruppo **`fpHand`** riposizionato per-arma su `FP_HAND_ANCHOR` (centro del grip curvo, che sta
+  sotto/dietro l'origine) da `switchWeaponModel` — così il guantone stringe l'impugnatura senza
+  inglobare l'arma. Il grip del cecchino cadrebbe fuori schermo: la sua àncora è avanzata sul
+  legno (si vede solo un accenno di mano, voluto).
+- **Contorni in FP**: sui primitivi smooth funzionano anche a 20 cm dalla camera. NON aggiungere
+  contorni inverted-hull a geometrie hard-edge (bug storico dei GLB: gusci neri glitchati).
+- I GLB in `frontend/assets/guns/` NON sono più usati (tenuti nel repo per riferimento).
 
-### File GLB
-`frontend/assets/guns/` — "Ultimate Guns Pack" di Quaternius (Poly Pizza).
-File usati: `Assault Rifle.glb`, `Submachine Gun.glb`, `Shotgun.glb`, `Sniper Rifle.glb`.
-**Orientamento modelli**: barrel lungo asse **+X** locale → `rot.y = π/2` porta il barrel su camera **−Z** (forward).
-**Materiali**: i GLB usano `MeshStandardMaterial`; convertiti in Lambert per compatibilità con la nostra illuminazione senza envmap. I colori del pack sono quelli del modello originale (non è necessario impostare colori manualmente).
+### Testa-mascotte condivisa
+**`buildMascotHead(color, s)`** — FONTE UNICA della testa toon (cranio crema, occhioni, naso,
+grin, elmetto team, faccia verso -Z): usata dal modello giocatore (`createPlayerMesh`), dai
+trofei a terra (`makeTrophyHead`: testa 0.8 su astina toon) e dal podio finale
+(`makePodiumHead`: 0.8, ruotata verso la camera; ingombro ~0.51 ≈ `HEAD_H` 0.5 della torre).
+Se si ritocca la faccia della mascotte, va toccato SOLO questo builder.
 
-### Feedback utente (ultima sessione, non ancora risolto)
-Al momento dell'interruzione della sessione l'utente aveva ricevuto questa versione e riportato:
-- ✅ **SMG**: OK come posizione/dimensioni.
-- ⚠️ **Assault rifle**: "leggermente troppo in avanti, sembra stretto e lungo." Provare a ridurre ulteriormente `targetLen` (es. 0.44) e/o aumentare `pos.z` verso 0 (avvicinare alla camera). "Stretto" può dipendere dall'angolo di vista: aggiungere un piccolo `rot.z` negativo (es. -0.08) per mostrare più superficie superiore.
-- ⚠️ **Shotgun e Sniper**: "si vede solo la canna". Con il pivot-al-calcio applicato nell'ultima modifica dovrebbe essere risolto — **da verificare** nella prossima sessione.
-- ✅ **Armi avversari (TP)**: ora usano GLB — **da verificare** nella prossima sessione.
-
-### Prossimi step grafici FPS (dopo tuning armi)
-1. Modello giocatore GLB (sostituire l'umanoide a scatole in `createPlayerMesh`).
-2. Veicoli/props GLB (bus, van, casse).
-
-## Disconnessione in partita
-- **Server** (`fpsGameSocket.js`): handler `disconnect` guardato da `socket.data.joinedFPS`. Rimuove il player da lobby/scores, emette `playerLeft`, e gestisce: `playing` (segna morto + `checkRoundEnd`), `weapon_select` (ricontrolla i confermati), ultimo rimasto (`endGame`), lobby vuota (delete game), riassegna l'host se serve.
-- **Client**: handler `playerLeft` → rimuove mesh + healthbar e toglie dalla lista punteggi.
+## Disconnessione in partita (con finestra di riconnessione)
+I browser CONGELANO le schede in background (Memory Saver/tab freezing): dopo ~45s senza
+pong socket.io disconnette il socket, e al ritorno in primo piano socket.io si riconnette
+da solo. Il flusso è quindi in due tempi:
+- **Server, `disconnect`** (guardato da `socket.data.joinedFPS`): effetto immediato = emette
+  `playerLeft`, cancella il respawn pendente e, se `playing`, segna morto + `checkRoundEnd`.
+  La rimozione DEFINITIVA (lobby/scores/points, riassegnazione host, `endGame` se resta 1,
+  delete game se vuota, ricontrollo confermati in `weapon_select`) è rimandata a
+  `hardRemovePlayer` dopo `REJOIN_GRACE` (60s), annullabile da un re-join.
+- **Server, `joinFPS`**: annulla il timer di grazia; se `phase==='playing'` e il player non ha
+  un'entry viva → RIENTRO IN CORSA: in mischia rientra subito vivo su uno spawn (emette
+  `playerRespawn`), in sudden death rientra morto (spettatore fino al prossimo round).
+- **Client** (`fps.js`): su `socket.io.on('reconnect')` ri-emette `joinFPS` → il server risponde
+  `fpsInit` che risincronizza fase/round (`handleRoundStart` rispetta `hp`/`dead` reali dei
+  player, non assume tutti vivi). Handler `playerLeft` → rimuove mesh + healthbar + punteggi.
 
 ## Possibili prossimi step (non ancora richiesti)
 - Tarare danni/TTK; interpolazione giocatori remoti; death animation; granate/melee; team; respawn; scoreboard TAB.
