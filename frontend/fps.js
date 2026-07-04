@@ -20,7 +20,8 @@ const GRAVITY = 20;
 const JUMP_FORCE = 7;
 const STEP_HEIGHT = 0.6;  // altezza max di un gradino salibile automaticamente
 const MOUSE_SENS = 0.0015;
-const MAP_HALF = 32;      // mezza dimensione mappa (cittadina compatta)
+const MAP_HALF = 32;      // mezza dimensione della cittadina (nord/sud/ovest)
+const MAP_X1 = 48;        // bordo EST: la mappa si estende oltre la cittadina col distretto del PORTO
 const MAP_CEIL = 13;      // soffitto invisibile: anti-fuga con Gravità Lunare (tetto Emporio 5.6 + salto lunare ~4 → mai raggiunto in gioco normale)
 const INTERP_DELAY = 100; // ms di ritardo buffer per interpolazione giocatori remoti
 
@@ -679,6 +680,8 @@ MAT.bark      = worldToon({ color: 0x7a5028 });
 MAT.leaf      = worldToon({ color: 0x58a83c });
 MAT.leafDark  = worldToon({ color: 0x3f8a30 });
 MAT.couch     = worldToon({ color: 0x5a6e88 });  // tessuto
+MAT.doorWood  = worldToon({ color: 0x6e4a26 });  // pannelli delle porte
+MAT.brass     = worldToon({ color: 0xd9a441 });  // maniglie/ottone
 
 // ══════════════════════════════════════════════════════
 //  HELPER: box con ombra
@@ -801,6 +804,420 @@ function buildBarrel(x, z, color = 0x4a8a4a) {
 }
 
 // ══════════════════════════════════════════════════════
+//  PORTE INTERATTIVE — pannello incernierato + AABB commutabile
+// ══════════════════════════════════════════════════════
+// Apertura per prossimità (giocatore locale + remoti, con isteresi) o a colpo
+// d'arma (forceUntil). Tutto client-side e deterministico: ogni client risolve
+// solo le PROPRIE collisioni, quindi stati leggermente diversi non desyncano.
+const doors = [];
+
+// Porta in un'apertura fatta con punchWallX/Z. (cx,cz) = centro apertura,
+// w/h = misure del pannello, axis = asse del muro ('x'|'z'),
+// openDir = verso della rotazione (+1/-1 per aprire "in dentro").
+function buildDoor(cx, cz, w, h, axis, openDir, mat) {
+    const g = new THREE.Group();
+    const baseYaw = (axis === 'x') ? 0 : Math.PI / 2;
+    // Cerniera sul bordo dell'apertura; il pannello si estende sul +X locale
+    if (axis === 'x') g.position.set(cx - w / 2, 0, cz);
+    else g.position.set(cx, 0, cz + w / 2);
+    g.rotation.y = baseYaw;
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(w - 0.06, h - 0.05, 0.08), mat || MAT.doorWood);
+    panel.position.set(w / 2, (h - 0.05) / 2 + 0.02, 0);
+    panel.castShadow = true;
+    panel.receiveShadow = true;
+    _addToonOutline(panel, MAT.ink, 0.7);
+    g.add(panel);
+    // Traverse decorative + maniglia d'ottone su entrambe le facce
+    for (const ty of [h * 0.3, h * 0.72]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(w - 0.2, 0.12, 0.1), MAT.crateDark);
+        bar.position.set(w / 2, ty, 0);
+        g.add(bar);
+    }
+    for (const s of [-1, 1]) {
+        const knob = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), MAT.brass);
+        knob.position.set(w - 0.16, h * 0.48, s * 0.09);
+        g.add(knob);
+    }
+    scene.add(g);
+    const box = {
+        min: new THREE.Vector3(cx - w / 2, 0, cz - w / 2),
+        max: new THREE.Vector3(cx + w / 2, h, cz + w / 2)
+    };
+    // AABB sottile nello spessore del muro (l'asse trasversale si restringe)
+    if (axis === 'x') { box.min.z = cz - 0.12; box.max.z = cz + 0.12; }
+    else { box.min.x = cx - 0.12; box.max.x = cx + 0.12; }
+    solidBoxes.push(box);
+    doors.push({ group: g, baseYaw, openDir, cx, cz, box, angle: 0, open: false, forceUntil: 0 });
+}
+
+function _doorSetSolid(d, on) {
+    const i = solidBoxes.indexOf(d.box);
+    if (on && i === -1) solidBoxes.push(d.box);
+    else if (!on && i !== -1) solidBoxes.splice(i, 1);
+}
+
+// Chiamata dal loop animate(): apre/chiude con isteresi (apre < 2.0 m,
+// richiude solo > 2.8 m così non si richiude addosso a chi la attraversa).
+function updateDoors(dt) {
+    const now = performance.now();
+    for (const d of doors) {
+        let minD2 = Infinity;
+        if (!gameState.isDead) {
+            const dx = playerRoot.position.x - d.cx, dz = playerRoot.position.z - d.cz;
+            minD2 = dx * dx + dz * dz;
+        }
+        for (const rp of Object.values(gameState.players)) {
+            if (rp.dead) continue;
+            const dx = rp.group.position.x - d.cx, dz = rp.group.position.z - d.cz;
+            minD2 = Math.min(minD2, dx * dx + dz * dz);
+        }
+        const soglia = d.open ? 2.8 : 2.0;
+        d.open = minD2 < soglia * soglia || now < d.forceUntil;
+        if (d.open) _doorSetSolid(d, false);   // via la collisione appena parte l'apertura
+        d.angle += ((d.open ? 1 : 0) - d.angle) * Math.min(1, dt * 7);
+        if (!d.open && d.angle < 0.04) { d.angle = 0; _doorSetSolid(d, true); }
+        d.group.rotation.y = d.baseYaw + d.openDir * d.angle * 1.85;   // ~106° a fine corsa
+    }
+}
+
+// ══════════════════════════════════════════════════════
+//  PROP DISTRUTTIBILI — solo estetica (non fermano il colpo,
+//  non fanno da riparo: mai registrati in solidBoxes)
+// ══════════════════════════════════════════════════════
+const breakables = [];
+
+function registerBreakable(meshes, min, max) {
+    breakables.push({ meshes, min, max, broken: false });
+}
+
+// Slab-test del raggio di sparo contro i breakable ancora interi:
+// tutto ciò che sta lungo la traiettoria (fino all'impatto) si rompe.
+function checkBreakables(origin, dir, maxDist) {
+    for (const b of breakables) {
+        if (b.broken) continue;
+        let tmin = -Infinity, tmax = Infinity, miss = false;
+        for (const ax of ['x', 'y', 'z']) {
+            const o = origin[ax], dd = dir[ax];
+            if (Math.abs(dd) < 1e-8) {
+                if (o < b.min[ax] || o > b.max[ax]) { miss = true; break; }
+            } else {
+                let t1 = (b.min[ax] - o) / dd, t2 = (b.max[ax] - o) / dd;
+                if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+                if (t1 > tmin) tmin = t1;
+                if (t2 < tmax) tmax = t2;
+            }
+        }
+        if (!miss && tmin <= tmax && tmin > 0 && tmin < maxDist + 0.2) {
+            b.broken = true;
+            for (const m of b.meshes) m.visible = false;
+            _fxSpawnPos.set(origin.x + dir.x * tmin, origin.y + dir.y * tmin, origin.z + dir.z * tmin);
+            spawnFxSprite(getFxTexture('puff'), _fxSpawnPos, { size: 0.22, life: 300, rise: 0.3, drift: 0.1 });
+            spawnFxSprite(getFxTexture('twinkle'), _fxSpawnPos, { size: 0.1, life: 260, rise: 0.4, spin: 3 });
+        }
+    }
+}
+
+// A inizio round i prop rotti tornano interi (la mappa non viene ricostruita)
+function resetBreakables() {
+    for (const b of breakables) {
+        b.broken = false;
+        for (const m of b.meshes) m.visible = true;
+    }
+}
+
+// Bottiglia di vetro colorato (breakable): corpo + collo
+function addBottle(x, y, z, color) {
+    const mat = worldToon({ color, transparent: true, opacity: 0.85 });
+    const body = makeCyl(0.07, 0.08, 0.3, mat, x, y + 0.15, z, 'y', 8);
+    const neck = makeCyl(0.028, 0.045, 0.16, mat, x, y + 0.37, z, 'y', 8);
+    registerBreakable([body, neck],
+        new THREE.Vector3(x - 0.09, y, z - 0.09),
+        new THREE.Vector3(x + 0.09, y + 0.46, z + 0.09));
+}
+
+// Cassetta leggera (breakable, NON solida — troppo piccola per far da riparo)
+function addLooseCrate(size, x, y, z, dark = false) {
+    const m = makeBox(size, size, size, dark ? MAT.crateDark : MAT.crate, x, y + size / 2, z);
+    registerBreakable([m],
+        new THREE.Vector3(x - size / 2, y, z - size / 2),
+        new THREE.Vector3(x + size / 2, y + size, z + size / 2));
+}
+
+// ══════════════════════════════════════════════════════
+//  SPEAKEASY (angolo SW) — volume chiuso su più stanze:
+//  sala bar (bancone + palco + tavolini) e retro/cantina.
+//  Ingressi SOLO da porte interattive → ideale per i
+//  mutatori blackout/fog e il combattimento ravvicinato.
+// ══════════════════════════════════════════════════════
+function buildSpeakeasy() {
+    const x0 = -30.5, x1 = -18.5, z0 = 21.5, z1 = 31.5, H = 3.2;
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;   // il retro sfrutta il muro perimetrale (z1)
+
+    // Pavimento in legno (piano visivo, come i marciapiedi)
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0), MAT.woodFloor);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(cx, 0.06, cz);
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // Guscio in mattoni (facciata "clandestina"): porta+finestrella alta a nord,
+    // porta a est, cieco a ovest; il lato sud è il muro perimetrale stesso.
+    const doorOpen = { w: 1.8, b: 0, t: 2.25 };
+    const winHigh = { w: 2.4, b: 1.9, t: 2.6 };
+    punchWallX(z0, x0, x1, 0, H, [{ c: -27.5, ...doorOpen }, { c: -22.5, ...winHigh }], MAT.wall);
+    punchWallZ(x1, z0, z1, 0, H, [{ c: 24.5, ...doorOpen }], MAT.wall);
+    punchWallZ(x0, z0, z1, 0, H, [], MAT.wall);
+    // Vetro della finestrella (breakable) + tende scure dietro
+    const wg = makeBox(2.3, 0.65, 0.08, MAT.glass, -22.5, 2.25, z0);
+    registerBreakable([wg],
+        new THREE.Vector3(-23.65, 1.9, z0 - 0.12),
+        new THREE.Vector3(-21.35, 2.6, z0 + 0.12));
+
+    // Tramezzo interno: sala (z 21.5→28) / retro-cantina (z 28→31.5)
+    punchWallX(28, x0, x1, 0, H, [{ c: -20.5, w: 1.6, b: 0, t: 2.2 }], MAT.facadeCream, 0.3);
+
+    // Tetto piano + cornicione (raggiungibile con un salto dal tetto del portico)
+    addSolid(x1 - x0 + 0.6, 0.25, z1 - z0 + 0.6, cx, H, cz, MAT.roof);
+    for (const zz of [z0 - 0.15, z1]) makeBox(x1 - x0 + 0.8, 0.3, 0.25, MAT.trim, cx, H - 0.05, zz);
+
+    // Le tre porte (aprono verso l'interno): ingresso nord, porta est, retro
+    buildDoor(-27.5, z0, 1.8, 2.25, 'x', -1);
+    buildDoor(x1, 24.5, 1.8, 2.25, 'z', 1);
+    buildDoor(-20.5, 28, 1.6, 2.2, 'x', -1, MAT.facadeCream);
+
+    // Insegna discreta + lampadina sopra l'ingresso (sul lato strada, -Z)
+    addSign('JAZZ CLUB', 3.2, 0.75, -27.5, 2.75, z0 - 0.21, Math.PI, '#2a2320', '#e8b64f');
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), MAT.lamp);
+    bulb.position.set(-27.5, 2.45, z0 - 0.35);
+    scene.add(bulb);
+
+    // ── Sala bar ──
+    // Bancone (riparo alto) + sgabelli
+    const bar = addSolid(4.6, 1.05, 0.9, -23, 0, 26.4, MAT.stallWood);
+    _addToonOutline(bar, MAT.ink);
+    for (const sx of [-24.4, -23, -21.6]) {
+        makeCyl(0.24, 0.24, 0.06, MAT.couch, sx, 0.62, 25.5, 'y', 10);
+        makeCyl(0.05, 0.07, 0.6, MAT.crateDark, sx, 0.3, 25.5, 'y', 8);
+    }
+    // Scaffale a muro dietro il bancone, con bottiglie (breakable)
+    for (const sy of [1.45, 2.0]) makeBox(4.4, 0.06, 0.32, MAT.crateDark, -23, sy, 27.6);
+    const bottleCols = [0x3f7a4e, 0x7a4a28, 0x4a6a8a, 0x8a3c2e];
+    let bi = 0;
+    for (const sy of [1.48, 2.03]) {
+        for (let bx = -24.7; bx <= -21.3; bx += 0.55) {
+            addBottle(bx + (bi % 2) * 0.12, sy, 27.6, bottleCols[bi % bottleCols.length]);
+            bi++;
+        }
+    }
+    // Bottiglie anche sul bancone
+    addBottle(-24.3, 1.05, 26.3, 0x3f7a4e);
+    addBottle(-21.8, 1.05, 26.5, 0x7a4a28);
+
+    // Palco con microfono lungo la parete ovest (arretrato: fuori dal
+    // raggio di apertura della porta d'ingresso)
+    const stage = addSolid(2.6, 0.45, 3.4, -29, 0, 25.2, MAT.woodFloor);
+    _addToonOutline(stage, MAT.ink, 1.2);
+    makeCyl(0.035, 0.05, 1.15, MAT.metal, -29, 1.02, 25.2, 'y', 8);
+    const mic = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), MAT.crateDark);
+    mic.position.set(-29, 1.68, 25.2);
+    scene.add(mic);
+    // Tenda scura di fondo palco
+    makeBox(0.1, 2.2, 3.6, worldToon({ color: 0x6e2a33 }), -30.25, 1.45, 25.2);
+
+    // Tavolini tondi (riparo basso) — AABB manuale sull'ingombro del piano
+    for (const [tx, tz] of [[-25.6, 23.3], [-20.6, 25.8]]) {
+        const top = makeCyl(0.55, 0.55, 0.07, MAT.stallWood, tx, 0.8, tz, 'y', 14);
+        _addToonOutline(top, MAT.ink, 0.7);
+        makeCyl(0.07, 0.11, 0.8, MAT.crateDark, tx, 0.4, tz, 'y', 8);
+        solidBoxes.push({
+            min: new THREE.Vector3(tx - 0.55, 0, tz - 0.55),
+            max: new THREE.Vector3(tx + 0.55, 0.84, tz + 0.55)
+        });
+    }
+
+    // ── Retro / cantina: casse e botti (ripari veri) ──
+    crate(1.5, 1.2, 1.5, -29.3, 0, 30.3, true);
+    crate(1.3, 0.6, 1.3, -27.6, 0, 29.6);
+    buildBarrel(-25.4, 30.4, 0x7a4a28);
+    buildBarrel(-24.2, 29.6, 0x7a4a28);
+    addLooseCrate(0.7, -22.5, 0, 30.6);
+}
+
+// ══════════════════════════════════════════════════════
+//  IL PORTO — distretto EST (x 31.5..MAP_X1, tutta la
+//  profondità della mappa): bacino d'acqua lungo il muro
+//  est, nave cargo col ponte calpestabile, magazzino
+//  enterable (porte interattive), gru, container, pontile.
+//  Si raggiunge da nord (dietro la FERRAMENTA), dal vicolo
+//  tra SARTORIA e FARMACIA, da sud (oltre il TEATRO) e
+//  attraverso le retro-porte di RADIO e FARMACIA.
+// ══════════════════════════════════════════════════════
+function buildPort() {
+    const x0 = 31.5;
+    MAT.crane = worldToon({ color: 0xe0a83a });
+    MAT.hull  = worldToon({ color: 0x4a5c6e });
+
+    // ── Pavimentazione della banchina (copre l'acciottolato) ──
+    const pav = (w, d, x, z) => {
+        const p = new THREE.Mesh(new THREE.PlaneGeometry(w, d), MAT.concrete);
+        p.rotation.x = -Math.PI / 2;
+        p.position.set(x, 0.03, z);
+        p.receiveShadow = true;
+        scene.add(p);
+    };
+    pav(10, 64, 36.5, 0);            // banchina principale (x 31.5..41.5)
+    pav(6.5, 12, 44.75, -26);        // piazzale container a NE
+
+    // ── Bacino d'acqua lungo il muro est (x 41.5..48, z -20..32) ──
+    // Il bordo è 0.45: in acqua si entra e si esce camminando (step-up).
+    const bed = new THREE.Mesh(new THREE.PlaneGeometry(6.5, 52), worldToon({ color: 0x2e5f70 }));
+    bed.rotation.x = -Math.PI / 2;
+    bed.position.set(44.75, 0.04, 6);
+    scene.add(bed);
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(6.5, 52), MAT.water);
+    water.rotation.x = -Math.PI / 2;
+    water.position.set(44.75, 0.3, 6);
+    scene.add(water);
+    // Bordo banchina a L (lato ovest del bacino + lato nord)
+    addSolid(0.8, 0.45, 52.4, 41.1, 0, 6.2, MAT.concrete);
+    addSolid(7.3, 0.45, 0.8, 44.85, 0, -20.4, MAT.concrete);
+    // Bitte d'ormeggio lungo il bordo
+    for (const bz of [-16, -8, 0, 8, 16, 24]) {
+        const bitta = makeCyl(0.09, 0.13, 0.42, MAT.iron, 41.1, 0.66, bz, 'y', 8);
+        _addToonOutline(bitta, MAT.ink, 0.6);
+    }
+
+    // ── NAVE CARGO ormeggiata: ponte calpestabile a 1.85, si sale
+    //    dalla passerella in legno; cabina solida = riparo in quota ──
+    addSolid(3.6, 1.7, 16, 45.3, 0.15, 4, MAT.hull);                 // scafo → ponte a 1.85
+    makeBox(3.7, 0.22, 16.2, MAT.trim, 45.3, 0.5, 4);                // linea di galleggiamento
+    for (const sx of [43.62, 46.98]) makeBox(0.1, 0.42, 15.6, MAT.vanRed, sx, 2.06, 4);  // murate (visive)
+    addSolid(3.0, 1.9, 2.8, 45.3, 1.85, 9.8, MAT.facadeCream);       // cabina di comando
+    makeBox(3.2, 0.18, 3.0, MAT.vanRed, 45.3, 3.85, 9.8);            // tetto cabina
+    makeBox(2.4, 0.55, 0.1, MAT.glass, 45.3, 3.2, 8.38);             // vetrata verso prua
+    const funnel = makeCyl(0.5, 0.62, 1.9, MAT.hull, 45.3, 2.9, 7.0, 'y', 12);
+    _addToonOutline(funnel, MAT.ink, 0.8);
+    makeCyl(0.53, 0.53, 0.4, MAT.vanRed, 45.3, 3.6, 7.0, 'y', 12);   // fascia rossa fumaiolo
+    const mast = makeCyl(0.06, 0.1, 3.6, MAT.bark, 45.3, 3.6, -1.5, 'y', 8);
+    _addToonOutline(mast, MAT.ink, 0.6);
+    // Prua a cuneo (visiva) + casse sul ponte (riparo)
+    const bow = makeBox(2.55, 1.7, 2.55, MAT.hull, 45.3, 1.0, -4.6);
+    bow.rotation.y = Math.PI / 4;
+    crate(1.4, 0.9, 1.4, 44.6, 1.85, 2);
+    crate(1.1, 0.6, 1.1, 46.1, 1.85, 0.6, true);
+    addSign('S.S. GAMBERETTO', 3.4, 0.55, 43.55, 1.15, 4, -Math.PI / 2, '#4a5c6e', '#f6efe0');
+    // Passerella d'imbarco: gradini dalla banchina fin sul ponte
+    buildStairs(40.9, 2.0, 1.6, 1.85, 1, 0, MAT.woodFloor);
+
+    // ── MAGAZZINO enterable (porte interattive, tetto-postazione) ──
+    const mx0 = 33, mx1 = 40, mz0 = -28, mz1 = -19.5, MH = 3.6;
+    const mcx = (mx0 + mx1) / 2, mcz = (mz0 + mz1) / 2;
+    const mfloor = new THREE.Mesh(new THREE.PlaneGeometry(mx1 - mx0, mz1 - mz0), MAT.woodFloor);
+    mfloor.rotation.x = -Math.PI / 2;
+    mfloor.position.set(mcx, 0.06, mcz);
+    scene.add(mfloor);
+    punchWallX(mz1, mx0, mx1, 0, MH, [{ c: 36.5, w: 2.6, b: 0, t: 2.6 }], MAT.facadeMustard);  // fronte sud
+    punchWallX(mz0, mx0, mx1, 0, MH, [], MAT.facadeMustard);
+    punchWallZ(mx0, mz0, mz1, 0, MH, [{ c: -23.5, w: 1.8, b: 0, t: 2.25 }], MAT.facadeMustard);
+    punchWallZ(mx1, mz0, mz1, 0, MH, [{ c: -26, w: 2.2, b: 2.2, t: 3.0 }], MAT.facadeMustard); // finestrone alto
+    addSolid(mx1 - mx0 + 0.6, 0.25, mz1 - mz0 + 0.6, mcx, MH, mcz, MAT.roof);
+    addSolid(mx1 - mx0 + 0.4, 0.6, 0.25, mcx, MH + 0.25, mz1, MAT.trim);   // parapetto sul fronte
+    buildDoor(36.5, mz1, 2.6, 2.6, 'x', -1);
+    buildDoor(mx0, -23.5, 1.8, 2.25, 'z', -1);
+    addSign('MAGAZZINO', 4.2, 0.85, 36.5, MH + 0.75, mz1 + 0.21, 0, '#8a5a1e', '#f6efe0');
+    // Interno: scaffalatura, casse, cassette rompibili
+    addSolid(4.5, 2.0, 0.5, 35.6, 0, mz0 + 0.6, MAT.crateDark);
+    crate(1.6, 1.2, 1.6, 38.8, 0, -26.5, true);
+    crate(1.4, 0.6, 1.4, 33.9, 0, -21.2);
+    addLooseCrate(0.7, 36.8, 0, -24.5);
+    addLooseCrate(0.6, 34.6, 0, -26.8, true);
+    // Scala esterna sul retro → tetto = postazione sul porto
+    buildStairs(41.1, -28.6, 2.0, 3.85, 0, 1);
+
+    // ── Piazzale container a NE (pile scalabili a gradoni) ──
+    const cont = (w, h, d, x, y, z, mat) => {
+        const c = addSolid(w, h, d, x, y, z, mat);
+        _addToonOutline(c, MAT.ink);
+        return c;
+    };
+    cont(2.2, 2.3, 5.5, 44, 0, -29, MAT.vanRed);
+    cont(2.2, 2.3, 5.5, 46.6, 0, -28.2, worldToon({ color: 0x4a8a4a }));
+    cont(2.2, 2.3, 5.5, 44, 2.3, -28.6, MAT.crane);   // container impilato
+    crate(1.5, 0.6, 1.5, 42.6, 0, -24.6);
+    crate(1.4, 1.2, 1.4, 43.9, 0, -25.2, true);
+    crate(1.3, 1.8, 1.3, 45.2, 0, -25.8);             // gradoni 0.6→1.2→1.8→2.3 (sul container)
+    buildBarrel(41.9, -21.8, 0x4a6a8a);
+    buildBarrel(42.9, -21.4, 0xd8574a);
+
+    // ── Gru portuale sulla banchina, braccio sopra la nave ──
+    addSolid(1.8, 0.5, 1.8, 39.8, 0, 13.5, MAT.metal);
+    const tower = addSolid(0.8, 6.8, 0.8, 39.8, 0.5, 13.5, MAT.crane);
+    _addToonOutline(tower, MAT.ink);
+    makeBox(1.3, 1.05, 1.15, MAT.crane, 39.8, 7.85, 13.5);            // cabina
+    makeBox(0.95, 0.55, 0.95, MAT.metal, 39.8, 7.35, 14.45);          // contrappeso
+    makeBox(7.2, 0.34, 0.55, MAT.crane, 43.2, 7.45, 13.5);            // braccio sul bacino
+    const tir = makeBox(6.4, 0.07, 0.07, MAT.metal, 43.1, 8.05, 13.5);
+    tir.rotation.z = -0.17;
+    makeCyl(0.03, 0.03, 3.4, MAT.tire, 46.2, 5.6, 13.5, 'y', 6);      // fune
+    const hangCrate = makeBox(1.15, 1.15, 1.15, MAT.crate, 46.2, 3.3, 13.5);
+    _addToonOutline(hangCrate, MAT.ink);
+
+    // ── Pontile basso nel bacino sud + barca a remi ──
+    addSolid(5.5, 0.55, 1.5, 44.2, 0, 24, MAT.woodFloor);
+    for (const [px, pz] of [[42.3, 23.3], [42.3, 24.7], [45.4, 23.3], [45.4, 24.7]]) {
+        const palo = makeCyl(0.09, 0.1, 0.95, MAT.bark, px, 0.48, pz, 'y', 8);
+        _addToonOutline(palo, MAT.ink, 0.6);
+    }
+    addSolid(1.7, 0.75, 3.2, 45, 0.1, 27.6, worldToon({ color: 0x8a3c2e }));   // scafo (riparo)
+    makeBox(1.75, 0.14, 3.3, MAT.trim, 45, 0.9, 27.6);
+    makeBox(1.3, 0.12, 0.4, MAT.woodFloor, 45, 0.62, 27.0);
+    makeBox(1.3, 0.12, 0.4, MAT.woodFloor, 45, 0.62, 28.3);
+    addLooseCrate(0.7, 43.2, 0.55, 24.2);
+    addLooseCrate(0.6, 45.9, 0.55, 23.8, true);
+
+    // ── Ripari sparsi sulla banchina principale + lampioni ──
+    buildSandbags(35, 8, 2.4, Math.PI / 2);
+    buildBarrier(34, -6, 0.15);
+    crate(1.7, 0.6, 1.7, 38.5, 0, 26.5);
+    crate(1.5, 1.2, 1.5, 38.5, 0, 28.1, true);
+    buildBarrel(33.5, 29.5, 0x4a8a4a);
+    buildLamppost(34, -16);
+    buildLamppost(34, 14);
+    buildLamppost(39, 22);
+    // Reti/salvagenti cartoon sul muro: anelli bianco-rossi (visivi)
+    for (const rz of [-2, 12]) {
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.13, 8, 18), MAT.vanRed);
+        ring.position.set(MAP_X1 - 0.55, 1.6, rz);
+        ring.rotation.y = Math.PI / 2;
+        scene.add(ring);
+    }
+
+    // Insegna del distretto sul muro perimetrale nord del piazzale
+    addSign('PORTO', 3.6, 1.0, 44.75, 4.5, -MAP_HALF + 0.56, 0, '#3f6fae', '#f6efe0');
+}
+
+// ── Chiosco dei giornali tondo (al posto del vecchio furgone dei gelati) ──
+function buildKiosk(x, z) {
+    const body = makeCyl(1.25, 1.25, 2.3, MAT.facadeMint, x, 1.15, z, 'y', 12);
+    _addToonOutline(body, MAT.ink);
+    solidBoxes.push({
+        min: new THREE.Vector3(x - 1.25, 0, z - 1.25),
+        max: new THREE.Vector3(x + 1.25, 2.3, z + 1.25)
+    });
+    // Sportello con mensola + giornali (breakable)
+    makeBox(1.3, 0.7, 0.12, worldToon({ color: 0x2a2320 }), x, 1.55, z - 1.22);
+    makeBox(1.5, 0.09, 0.5, MAT.trim, x, 1.12, z - 1.35);
+    addLooseCrate(0.4, x - 0.35, 1.17, z - 1.35);
+    // Tetto conico a strisce + pomello
+    const roof = makeCyl(0.12, 1.7, 0.95, MAT.awningRed, x, 2.78, z, 'y', 12);
+    _addToonOutline(roof, MAT.ink, 1.0);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), MAT.brass);
+    knob.position.set(x, 3.35, z);
+    scene.add(knob);
+    addSign('EDICOLA', 2.2, 0.6, x, 2.15, z - 1.28, Math.PI);
+}
+
+// ══════════════════════════════════════════════════════
 //  MAPPA — "CITTADINA CARTOON" (anni '30, luminosa)
 //  Grande Emporio centrale a 2 piani + tetto calpestabile;
 //  anello esterno: strada nord, Via Lunga a ovest (linea
@@ -812,11 +1229,12 @@ function buildMap() {
 
     MAT.iron = worldToon({ color: 0x33604a });   // ghisa verde dei lampioni
 
-    // ── Terreno: piazza acciottolata su tutta la mappa ──
+    // ── Terreno: acciottolato su tutta la mappa (estesa a est fino al porto) ──
     const ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(MAP_HALF * 2, MAP_HALF * 2), MAT.ground
+        new THREE.PlaneGeometry(MAP_X1 + MAP_HALF, MAP_HALF * 2), MAT.ground
     );
     ground.rotation.x = -Math.PI / 2;
+    ground.position.x = (MAP_X1 - MAP_HALF) / 2;
     ground.receiveShadow = true;
     scene.add(ground);
 
@@ -859,10 +1277,11 @@ function buildMap() {
     buildShop(-2, -28, 9, 6, 'S', MAT.facadeCoral, 'PANETTERIA', MAT.awningRed);
     buildShop(10, -28, 8, 6, 'S', MAT.facadeMint, 'BARBIERE', MAT.awningBlue);
     buildShop(22.5, -28, 9, 6, 'S', MAT.facadeCream, 'FERRAMENTA', MAT.awningRed);
-    // Est (fronte a ovest, verso la strada)
-    buildShop(28, -14, 8, 6, 'W', MAT.facadeBlue, 'RADIO', MAT.awningRed);
+    // Est (fronte a ovest, verso la strada; RADIO e FARMACIA hanno la
+    // retro-porta che sfonda sul PORTO)
+    buildShop(28, -14, 8, 6, 'W', MAT.facadeBlue, 'RADIO', MAT.awningRed, true);
     buildShop(28, -1, 8, 6, 'W', MAT.facadeCream, 'SARTORIA', MAT.awningBlue);
-    buildShop(28, 12, 8, 6, 'W', MAT.facadeCoral, 'FARMACIA', MAT.awningBlue);
+    buildShop(28, 12, 8, 6, 'W', MAT.facadeCoral, 'FARMACIA', MAT.awningBlue, true);
     // Sud (fronte a nord, sulla piazza)
     buildShop(-11, 28, 9, 6, 'N', MAT.facadeMint, 'GELATERIA', MAT.awningRed);
     buildShop(2, 28, 9, 6, 'N', MAT.facadeMustard, 'CAFFÈ', MAT.awningBlue);
@@ -894,10 +1313,8 @@ function buildMap() {
     addSolid(2.2, 0.55, 0.6, -4, 0, 20, MAT.woodFloor);
     addSolid(0.6, 0.55, 2.2, 4.5, 0, 16, MAT.woodFloor);
 
-    // ── Strada nord: furgone dei gelati + coperture ──
-    buildVan(8, -16);
-    addSign('GELATI', 2.6, 0.8, 8, 3.3, -15.95, 0);
-    addSign('GELATI', 2.6, 0.8, 8, 3.3, -16.05, Math.PI);
+    // ── Strada nord: chiosco dei giornali + coperture ──
+    buildKiosk(8, -16);
     buildBarrier(-4, -13, 0.2);
     buildBarrier(20, -19, -0.3);
     buildSandbags(-2, -20, 2.4, 0.1);
@@ -926,17 +1343,15 @@ function buildMap() {
     buildGazebo(-14, -27);
     addTree(-25, 0, -27);
 
-    // ── Angolo SW: deposito con tettoia e casse ──
-    buildCarport(-24, 27);
-    crate(1.8, 0.6, 1.8, -23.5, 0, 26.5);
-    crate(1.6, 1.2, 1.6, -25, 0, 28.2, true);
-    crate(1.4, 0.6, 1.4, -20, 0, 29);
-    buildBarrel(-19, 25.5, 0xd8574a);
+    // ── Angolo SW: lo SPEAKEASY (interno chiuso, porte interattive) ──
+    buildSpeakeasy();
 
-    // ── Angolo SE: verde + barili ──
-    addTree(25, 0, 22);
-    buildBarrel(28, 24);
-    crate(1.6, 0.6, 1.6, 28.5, 0, 20);
+    // ── Distretto EST: il PORTO (bacino, nave, magazzino, gru, container) ──
+    buildPort();
+    // Raccordo piazza→porto (angolo SE): qualche riparo sul varco
+    crate(1.7, 0.6, 1.7, 24, 0, 26);
+    crate(1.5, 1.2, 1.5, 24, 0, 24.4, true);
+    buildBarrel(28.5, 20.5);
 
     // ── Angolo NE: pocket con casse impilate ──
     addTree(29, 0, -22);
@@ -951,14 +1366,16 @@ function buildMap() {
     buildLamppost(-6, 20.5);
     buildLamppost(18, -22);
 
-    // ── Confini: muro perimetrale ALTO (niente fughe con Gravità Lunare) ──
-    addSolid(MAP_HALF * 2 + 2, 12, 1, 0, 0, -MAP_HALF, MAT.wall);
-    addSolid(MAP_HALF * 2 + 2, 12, 1, 0, 0, MAP_HALF, MAT.wall);
-    addSolid(1, 12, MAP_HALF * 2 + 2, MAP_HALF, 0, 0, MAT.wall);
+    // ── Confini: muro perimetrale ALTO (niente fughe con Gravità Lunare).
+    // Il lato est è arretrato a MAP_X1: dietro le botteghe est c'è il PORTO. ──
+    const wallCX = (MAP_X1 - MAP_HALF) / 2, wallLen = MAP_X1 + MAP_HALF + 2;
+    addSolid(wallLen, 12, 1, wallCX, 0, -MAP_HALF, MAT.wall);
+    addSolid(wallLen, 12, 1, wallCX, 0, MAP_HALF, MAT.wall);
+    addSolid(1, 12, MAP_HALF * 2 + 2, MAP_X1, 0, 0, MAT.wall);
     addSolid(1, 12, MAP_HALF * 2 + 2, -MAP_HALF, 0, 0, MAT.wall);
     // Cornice bianca in cima al muro
-    for (const [w, d, x, z] of [[66, 1.4, 0, -MAP_HALF], [66, 1.4, 0, MAP_HALF],
-                                [1.4, 66, MAP_HALF, 0], [1.4, 66, -MAP_HALF, 0]]) {
+    for (const [w, d, x, z] of [[wallLen + 0.4, 1.4, wallCX, -MAP_HALF], [wallLen + 0.4, 1.4, wallCX, MAP_HALF],
+                                [1.4, 66, MAP_X1, 0], [1.4, 66, -MAP_HALF, 0]]) {
         makeBox(w, 0.5, d, MAT.trim, x, 12.15, z);
     }
 
@@ -1111,7 +1528,8 @@ function buildCentral() {
 
 // ── Bottega dell'anello: guscio enterable, tetto piano calpestabile ──
 // face = direzione della vetrina ('N'|'S'|'E'|'W'), w = fronte, d = profondità.
-function buildShop(cx, cz, w, d, face, mat, name, awningMat) {
+// backDoor (solo facce E/W): retro-porta interattiva che sfonda verso il porto.
+function buildShop(cx, cz, w, d, face, mat, name, awningMat, backDoor = false) {
     const H = 2.9, t = 0.3;
     const door = { w: 1.7, b: 0, t: 2.2 };
     const win = { w: Math.min(2.6, w - 4), b: 0.9, t: 2.3 };
@@ -1135,7 +1553,16 @@ function buildShop(cx, cz, w, d, face, mat, name, awningMat) {
         const xf = cx + s * d / 2, xb = cx - s * d / 2;
         punchWallZ(xf, cz - w / 2, cz + w / 2, 0, H,
             [{ c: cz - w / 4, ...door }, { c: cz + w / 4, ...win }], mat, t);
-        punchWallZ(xb, cz - w / 2, cz + w / 2, 0, H, [], mat, t);
+        if (backDoor) {
+            // Retro-porta interattiva; il banco si accorcia sull'altra metà
+            punchWallZ(xb, cz - w / 2, cz + w / 2, 0, H,
+                [{ c: cz + w / 4, w: 1.5, b: 0, t: 2.2 }], mat, t);
+            buildDoor(xb, cz + w / 4, 1.5, 2.2, 'z', -s);
+            addSolid(0.9, 1.0, w / 2 - 1.6, cx - s * (d / 2 - 1.1), 0, cz - w / 4, MAT.stallWood);
+        } else {
+            punchWallZ(xb, cz - w / 2, cz + w / 2, 0, H, [], mat, t);
+            addSolid(0.9, 1.0, w - 2.4, cx - s * (d / 2 - 1.1), 0, cz, MAT.stallWood);
+        }
         punchWallX(cz - w / 2, cx - d / 2, cx + d / 2, 0, H, [], mat, t);
         punchWallX(cz + w / 2, cx - d / 2, cx + d / 2, 0, H, [], mat, t);
         makeBox(0.08, 1.35, win.w, MAT.glass, xf, 1.6, cz + w / 4);
@@ -1143,7 +1570,6 @@ function buildShop(cx, cz, w, d, face, mat, name, awningMat) {
         aw.rotation.z = -s * 0.4;
         addSign(name, Math.min(w - 1.5, 5), 1.0, xf + s * 0.21, H + 0.55, cz,
                 (face === 'E') ? Math.PI / 2 : -Math.PI / 2);
-        addSolid(0.9, 1.0, w - 2.4, cx - s * (d / 2 - 1.1), 0, cz, MAT.stallWood);
     }
     // Tetto piano calpestabile
     addSolid(w + 0.3, 0.25, d + 0.3, cx, H, cz, MAT.roof);
@@ -1216,13 +1642,15 @@ function buildLamppost(x, z) {
 function buildBackdrop() {
     const cols = [MAT.facadeCoral, MAT.facadeCream, MAT.facadeBlue, MAT.facadeMint, MAT.facadeMustard];
     const off = MAP_HALF + 2.4;
+    const cxMap = (MAP_X1 - MAP_HALF) / 2;   // i lati nord/sud sono centrati sulla mappa estesa
     let k = 0;
     for (let i = -3; i <= 3; i++) {
         const p = i * 8.8;
-        for (const [x, z] of [[p, -off], [p, off], [-off, p], [off, p]]) {
+        // [x, z, ruotato?] — est arretrato a MAP_X1 (oltre il porto)
+        for (const [x, z, side] of [[cxMap + p, -off, false], [cxMap + p, off, false],
+                                    [-off, p, true], [MAP_X1 + 2.4, p, true]]) {
             const hgt = 13 + ((k * 3) % 5);   // 13..17: spuntano oltre il muro (12)
             const m = cols[k % cols.length];
-            const side = Math.abs(x) > MAP_HALF;   // fondale est/ovest → box ruotato
             makeBox(side ? 1.4 : 7.6, hgt, side ? 7.6 : 1.4, m, x, hgt / 2, z);
             makeBox(side ? 1.8 : 8.0, 0.5, side ? 8.0 : 1.8, MAT.trim, x, hgt + 0.2, z);
             k++;
@@ -2438,9 +2866,22 @@ function tryShoot() {
         if (!noConfirm) {
             showHitmarker(false, bestHead);
             Sfx.hitConfirm();
-            // Schizzo di sangue sul punto colpito (più abbondante sulle headshot)
-            spawnParticles(origin.clone().addScaledVector(dir, bestDist), 0xcc1111, bestHead ? 14 : 9,
-                { speed: 3.5, gravity: 11, size: 0.06, life: 380 });
+            // Sbuffetto + stelline comiche sul punto colpito (niente sangue),
+            // un filo più marcato sulle headshot
+            const hitP = origin.clone().addScaledVector(dir, Math.max(bestDist - 0.15, 0.3));
+            spawnFxSprite(getFxTexture('puff'), hitP, {
+                size: bestHead ? 0.34 : 0.26, life: 300, rise: 0.25, drift: 0.08, spin: 0.7
+            });
+            const nTw = bestHead ? 3 : 2;
+            for (let i = 0; i < nTw; i++) {
+                _fxSpawnPos.set(hitP.x + (Math.random() - 0.5) * 0.35,
+                                hitP.y + (Math.random() - 0.5) * 0.35,
+                                hitP.z + (Math.random() - 0.5) * 0.35);
+                spawnFxSprite(getFxTexture(bestHead && i === 0 ? 'star' : 'twinkle'), _fxSpawnPos, {
+                    size: 0.10 + Math.random() * 0.07, life: 260 + Math.random() * 120,
+                    rise: 0.35, drift: 0.15, spin: 2.5
+                });
+            }
         }
         socket.emit('reportHit', {
             lobbyId: LOBBY_ID,
@@ -2451,12 +2892,30 @@ function tryShoot() {
         });
         dbgShoot(`sparo → COLPITO ${bestColor}${bestHead ? ' (testa)' : ''}`);
     } else if (wall) {
-        // Polvere/detriti sull'impatto col muro
-        spawnParticles(wall.point, 0xbcb6a4, 6,
-            { speed: 2.2, gravity: 5, size: 0.05, life: 320 });
+        // Sbuffi di fumo tondi grigio-panna sull'impatto, arretrati lungo il
+        // raggio per non compenetrare la superficie, più una scintilla
+        const puffs = 2 + (Math.random() < 0.5 ? 1 : 0);
+        for (let i = 0; i < puffs; i++) {
+            _fxSpawnPos.copy(wall.point).addScaledVector(dir, -0.08);
+            _fxSpawnPos.x += (Math.random() - 0.5) * 0.16;
+            _fxSpawnPos.y += (Math.random() - 0.5) * 0.16;
+            _fxSpawnPos.z += (Math.random() - 0.5) * 0.16;
+            spawnFxSprite(getFxTexture('puff'), _fxSpawnPos, {
+                size: 0.20 + Math.random() * 0.12, life: 340 + Math.random() * 140,
+                rise: 0.28, drift: 0.12, spin: 0.9, tint: 0xd8d2c4
+            });
+        }
+        _fxSpawnPos.copy(wall.point).addScaledVector(dir, -0.08);
+        spawnFxSprite(getFxTexture('twinkle'), _fxSpawnPos, { size: 0.09, life: 240, rise: 0.4, spin: 3 });
+        // Colpire una porta chiusa la spalanca per un attimo
+        const hitDoor = doors.find(dd => dd.box === wall.box);
+        if (hitDoor) hitDoor.forceUntil = performance.now() + 1600;
     }
 
     if (!bestColor) dbgShoot('sparo → nessun bersaglio nel raggio');
+
+    // Prop distruttibili cosmetici lungo la traiettoria (non fermano il colpo)
+    checkBreakables(origin, dir, tracerDist);
 
     spawnTracer(dir, tracerDist);
 
@@ -2476,24 +2935,32 @@ function getShootDir(spread) {
 
 // ── Bullet tracer ──────────────────────────────────
 const _tracerOrigin = new THREE.Vector3();
+const _tracerEnd = new THREE.Vector3();
 const _tracerUp = new THREE.Vector3(0, 1, 0);
 
 function spawnTracer(dir, dist) {
-    camera.getWorldPosition(_tracerOrigin);
-    // Parte 0.4 m davanti alla camera per evitare il near-plane clipping
-    _tracerOrigin.addScaledVector(dir, 0.4);
-    const len = Math.max(dist - 0.4, 0.5);
-    const mid = _tracerOrigin.clone().addScaledVector(dir, len * 0.5);
+    // Punto d'arrivo reale del colpo (il raggio parte dall'occhio/camera)
+    camera.getWorldPosition(_tracerEnd).addScaledVector(dir, dist);
+    // La scia parte dalla BOCCA dell'arma (stesso offset di muzzle light/stella):
+    // partendo dal centro-camera il cilindro si vedeva di punta e il suo tappo
+    // appariva come un quadratino giallo fisso al centro dello schermo.
+    _tracerOrigin.set(0.08, -0.1, -0.7);
+    camera.localToWorld(_tracerOrigin);
+    const axis = _tracerEnd.clone().sub(_tracerOrigin);
+    const full = axis.length();
+    if (full < 0.3) return;                     // bersaglio a bruciapelo: niente scia
+    axis.normalize();
+    const len = Math.max(full - 0.15, 0.2);     // si ferma un soffio prima dell'impatto
+    const mid = _tracerOrigin.clone().addScaledVector(axis, 0.15 + len * 0.5);
 
-    // Cylinder (webgl line è 1px, invisible): raggio 12mm
-    const geo = new THREE.CylinderGeometry(0.012, 0.012, len, 4);
+    // Cilindro rastremato verso il bersaglio (webgl line è 1px, invisibile)
+    const geo = new THREE.CylinderGeometry(0.006, 0.016, len, 6);
     const mat = new THREE.MeshBasicMaterial({ color: 0xffdd44, transparent: true, opacity: 0.85 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.copy(mid);
-    // CylinderGeometry è orientato sull'asse Y; ruotiamo verso la direzione di sparo
-    const d = dir.clone().normalize();
-    if (Math.abs(d.y) < 0.999) {
-        mesh.quaternion.setFromUnitVectors(_tracerUp, d);
+    // CylinderGeometry è orientato sull'asse Y; ruotiamo verso la direzione di volo
+    if (Math.abs(axis.y) < 0.999) {
+        mesh.quaternion.setFromUnitVectors(_tracerUp, axis);
     }
     scene.add(mesh);
 
@@ -2507,9 +2974,10 @@ function spawnTracer(dir, dist) {
 }
 
 // ── Raycast contro gli AABB solidi (slab method) ──
-// Ritorna { dist, point } del primo impatto entro maxDist, o null.
+// Ritorna { dist, point, box } del primo impatto entro maxDist, o null.
+// (box = riferimento all'AABB colpito: serve a riconoscere le porte)
 function raycastSolids(origin, dir, maxDist) {
-    let best = maxDist, point = null;
+    let best = maxDist, point = null, hitBox = null;
     for (const b of solidBoxes) {
         let tmin = -Infinity, tmax = Infinity, miss = false;
         for (const ax of ['x', 'y', 'z']) {
@@ -2527,34 +2995,179 @@ function raycastSolids(origin, dir, maxDist) {
         if (!miss && tmin <= tmax && tmin > 0 && tmin < best) {
             best = tmin;
             point = origin.clone().addScaledVector(dir, tmin);
+            hitBox = b;
         }
     }
-    return point ? { dist: best, point } : null;
+    return point ? { dist: best, point, box: hitBox } : null;
 }
 
-// ── Particelle d'impatto (sangue, polvere) ──
-const _particleGeo = new THREE.BoxGeometry(1, 1, 1);
-function spawnParticles(point, color, count, opts = {}) {
-    const { speed = 4, size = 0.06, life = 350, gravity = 8 } = opts;
-    for (let i = 0; i < count; i++) {
-        const mat = new THREE.MeshBasicMaterial({ color, transparent: true });
-        const m = new THREE.Mesh(_particleGeo, mat);
-        m.scale.setScalar(size);
-        m.position.copy(point);
-        const v = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
-            .normalize().multiplyScalar(speed * (0.4 + Math.random() * 0.8));
-        scene.add(m);
-        const t0 = performance.now();
-        (function step() {
-            const el = performance.now() - t0;
-            if (el >= life) { scene.remove(m); mat.dispose(); return; }
-            const d = 0.016;
-            v.y -= gravity * d;
-            m.position.addScaledVector(v, d);
-            mat.opacity = 1 - el / life;
-            requestAnimationFrame(step);
-        })();
+// ══════════════════════════════════════════════════════
+//  FX TOON — sprite procedurali (sbuffi, stelle, onomatopee)
+// ══════════════════════════════════════════════════════
+// Texture generate una volta su canvas e tenute in cache: ogni sprite
+// crea/distrugge solo il proprio materiale, mai la texture condivisa.
+const _fxTex = {};
+const FX_INK = '#221a12';
+const KILL_WORDS = ['POW!', 'BAM!', 'ZAP!', 'WHAM!'];
+
+function _fxCanvas(w, h) {
+    const cvs = document.createElement('canvas');
+    cvs.width = w; cvs.height = h;
+    return cvs;
+}
+
+// Nuvoletta a lobi color panna con bordo d'inchiostro (impatti/fumo)
+function _makePuffTexture() {
+    const cvs = _fxCanvas(128, 128);
+    const c = cvs.getContext('2d');
+    // Lobi della nuvoletta: [x, y, raggio]
+    const lobes = [
+        [64, 68, 30], [40, 58, 21], [88, 57, 20],
+        [49, 86, 18], [81, 86, 17], [64, 42, 19]
+    ];
+    // Passata 1: unione dei lobi ingranditi in inchiostro = contorno chiuso
+    c.fillStyle = FX_INK;
+    for (const [x, y, r] of lobes) {
+        c.beginPath(); c.arc(x, y, r + 6, 0, Math.PI * 2); c.fill();
     }
+    // Passata 2: riempimento panna (copre i bordi interni tra i lobi)
+    c.fillStyle = '#f2e7d3';
+    for (const [x, y, r] of lobes) {
+        c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+    }
+    // Ombra morbida sulla metà bassa, confinata dentro la sagoma
+    c.globalCompositeOperation = 'source-atop';
+    c.fillStyle = 'rgba(160,140,105,0.32)';
+    c.beginPath(); c.ellipse(64, 98, 52, 26, 0, 0, Math.PI * 2); c.fill();
+    return new THREE.CanvasTexture(cvs);
+}
+
+// Stella comica a punte (bocca di fuoco / impatto marcato)
+function _makeStarTexture() {
+    const cvs = _fxCanvas(128, 128);
+    const c = cvs.getContext('2d');
+    const cx = 64, cy = 64, points = 6, R = 58, r = 22;
+    c.beginPath();
+    for (let i = 0; i < points * 2; i++) {
+        const a = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
+        const rad = (i % 2 === 0) ? R : r;
+        const x = cx + Math.cos(a) * rad, y = cy + Math.sin(a) * rad;
+        if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+    }
+    c.closePath();
+    const g = c.createRadialGradient(cx, cy, 4, cx, cy, R);
+    g.addColorStop(0, '#fffbe8');
+    g.addColorStop(0.45, '#ffd84a');
+    g.addColorStop(1, '#ff9a2e');
+    c.fillStyle = g;
+    c.lineJoin = 'round';
+    c.lineWidth = 5; c.strokeStyle = FX_INK;
+    c.fill(); c.stroke();
+    return new THREE.CanvasTexture(cvs);
+}
+
+// Stellina-scintilla a 4 punte (lati concavi)
+function _makeTwinkleTexture() {
+    const cvs = _fxCanvas(64, 64);
+    const c = cvs.getContext('2d');
+    const cx = 32, cy = 32, R = 27, w = 7;
+    c.beginPath();
+    c.moveTo(cx, cy - R);
+    c.quadraticCurveTo(cx + w, cy - w, cx + R, cy);
+    c.quadraticCurveTo(cx + w, cy + w, cx, cy + R);
+    c.quadraticCurveTo(cx - w, cy + w, cx - R, cy);
+    c.quadraticCurveTo(cx - w, cy - w, cx, cy - R);
+    c.closePath();
+    c.fillStyle = '#fff6da';
+    c.lineJoin = 'round';
+    c.lineWidth = 3.5; c.strokeStyle = FX_INK;
+    c.fill(); c.stroke();
+    return new THREE.CanvasTexture(cvs);
+}
+
+// Onomatopea comica (Fredoka + tratto d'inchiostro), tilt fisso cotto in texture
+function _makeWordTexture(word) {
+    const cvs = _fxCanvas(512, 256);
+    const c = cvs.getContext('2d');
+    c.translate(256, 128);
+    c.rotate(-0.07);
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    let px = 150;
+    c.font = `700 ${px}px Fredoka, Arial, sans-serif`;
+    const tw = c.measureText(word).width;
+    if (tw > 420) { px = Math.floor(px * 420 / tw); c.font = `700 ${px}px Fredoka, Arial, sans-serif`; }
+    c.lineJoin = 'round';
+    c.lineWidth = 26; c.strokeStyle = FX_INK;
+    c.strokeText(word, 0, 8);
+    const g = c.createLinearGradient(0, -px * 0.5, 0, px * 0.5);
+    g.addColorStop(0, '#ffe98a');
+    g.addColorStop(1, '#ffab30');
+    c.fillStyle = g;
+    c.fillText(word, 0, 8);
+    return new THREE.CanvasTexture(cvs);
+}
+
+function getFxTexture(key) {
+    if (!_fxTex[key]) {
+        _fxTex[key] = key === 'puff' ? _makePuffTexture()
+                    : key === 'star' ? _makeStarTexture()
+                    : key === 'twinkle' ? _makeTwinkleTexture()
+                    : _makeWordTexture(key);
+    }
+    return _fxTex[key];
+}
+
+// Pre-genera le texture per evitare micro-scatti al primo sparo.
+// Le onomatopee aspettano il caricamento di Fredoka (altrimenti la cache
+// congelerebbe il fallback Arial).
+['puff', 'star', 'twinkle'].forEach(getFxTexture);
+if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => KILL_WORDS.forEach(getFxTexture));
+}
+
+// Spawna uno sprite FX billboardato: pop-in con easeOutBack, poi salita/
+// deriva + spin + fade. Stesso lifecycle rAF+dispose del tracer; la texture
+// (in cache) NON va mai distrutta. Le coordinate sono copiate subito, quindi
+// worldPos può essere un vettore riusato dal chiamante.
+const _fxSpawnPos = new THREE.Vector3();
+function spawnFxSprite(tex, worldPos, opts = {}) {
+    const {
+        size = 0.3,        // altezza finale (m)
+        aspect = 1,        // larghezza/altezza (onomatopee 2:1)
+        life = 380,        // durata totale (ms)
+        rise = 0.3,        // salita complessiva (m)
+        drift = 0.12,      // deriva orizzontale casuale max (m)
+        spin = 1.2,        // rotazione screen-space complessiva (rad)
+        popIn = 0.35,      // frazione di vita dedicata al pop-in
+        tint = 0xffffff,   // moltiplicatore colore (es. grigio per la polvere)
+        depthTest = true,  // false = sempre leggibile (onomatopee)
+    } = opts;
+    const mat = new THREE.SpriteMaterial({
+        map: tex, color: tint, transparent: true, depthTest, depthWrite: false,
+        rotation: spin > 0 ? Math.random() * Math.PI * 2 : 0
+    });
+    const sp = new THREE.Sprite(mat);
+    if (!depthTest) sp.renderOrder = 5;
+    const ox = worldPos.x, oy = worldPos.y, oz = worldPos.z;
+    sp.position.set(ox, oy, oz);
+    sp.scale.set(0.0001 * aspect, 0.0001, 1);
+    scene.add(sp);
+    const dx = (Math.random() - 0.5) * 2 * drift;
+    const dz = (Math.random() - 0.5) * 2 * drift;
+    const spinDir = Math.random() < 0.5 ? -1 : 1;
+    const rot0 = mat.rotation;
+    const t0 = performance.now();
+    (function step() {
+        const el = performance.now() - t0;
+        if (el >= life) { scene.remove(sp); mat.dispose(); return; }
+        const t = el / life;
+        const s = size * Math.max(0.0003, _easeOutBack(_clamp01(t / popIn)));
+        sp.scale.set(s * aspect, s, 1);
+        sp.position.set(ox + dx * t, oy + rise * t, oz + dz * t);
+        mat.rotation = rot0 + spinDir * spin * t;
+        mat.opacity = t < 0.55 ? 1 : 1 - (t - 0.55) / 0.45;
+        requestAnimationFrame(step);
+    })();
 }
 
 // Hitmarker — feedback visivo quando colpisci un avversario
@@ -2570,16 +3183,47 @@ function showHitmarker(isKill, isHead) {
     hitmarkerTimeout = setTimeout(() => hm.classList.remove('show', 'kill', 'head'), 260);
 }
 
-// Muzzle flash
+// Muzzle flash: lampo di luce + stella comica alla bocca, scalata per arma
 let muzzleLight = null;
+let muzzleStar = null;
+let _muzzleStarGen = 0;
+const MUZZLE_STAR_SIZE = { assault: 0.15, smg: 0.10, shotgun: 0.24, sniper: 0.19 };
 function playMuzzleFlash() {
     if (!muzzleLight) {
         muzzleLight = new THREE.PointLight(0xffa030, 0, 3);
         camera.add(muzzleLight);
         muzzleLight.position.set(0.08, -0.1, -0.7);
     }
+    if (!muzzleStar) {
+        muzzleStar = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: getFxTexture('star'), transparent: true,
+            depthTest: false, depthWrite: false
+        }));
+        muzzleStar.position.set(0.08, -0.1, -0.7);   // stesso offset-bocca della luce
+        muzzleStar.renderOrder = 6;
+        muzzleStar.visible = false;
+        camera.add(muzzleStar);
+    }
     muzzleLight.intensity = 3;
     setTimeout(() => { if (muzzleLight) muzzleLight.intensity = 0; }, 60);
+
+    // Pop della stella (~70ms). Il contatore annulla il loop precedente quando
+    // le armi automatiche sparano più in fretta della durata del pop.
+    const size = MUZZLE_STAR_SIZE[gameState.myWeapon] || MUZZLE_STAR_SIZE.assault;
+    muzzleStar.material.rotation = Math.random() * Math.PI * 2;
+    muzzleStar.visible = true;
+    const gen = ++_muzzleStarGen;
+    const t0 = performance.now();
+    (function pop() {
+        if (gen !== _muzzleStarGen) return;
+        const el = performance.now() - t0;
+        if (el >= 70) { muzzleStar.visible = false; return; }
+        const p = el / 70;
+        const s = size * (0.55 + 0.45 * _easeOutBack(_clamp01(p * 2.2)));
+        muzzleStar.scale.set(s, s, 1);
+        muzzleStar.material.opacity = p < 0.6 ? 1 : 1 - (p - 0.6) / 0.4;
+        requestAnimationFrame(pop);
+    })();
 }
 
 // ══════════════════════════════════════════════════════
@@ -2797,7 +3441,7 @@ function updateMovement(dt) {
     if (onGround) airSprint = isSprinting;
 
     // Clamp mappa (+ soffitto invisibile per la Gravità Lunare)
-    pos.x = Math.max(-MAP_HALF + 1, Math.min(MAP_HALF - 1, pos.x));
+    pos.x = Math.max(-MAP_HALF + 1, Math.min(MAP_X1 - 1, pos.x));
     pos.z = Math.max(-MAP_HALF + 1, Math.min(MAP_HALF - 1, pos.z));
     if (pos.y > MAP_CEIL) { pos.y = MAP_CEIL; velocityY = Math.min(velocityY, 0); }
 
@@ -3191,6 +3835,7 @@ socket.on('playerConfirmed', ({ playerColor, count, total }) => {
 socket.on('roundStart', (data) => {
     console.log(`[FPS] evento roundStart: round=${data.round} mutatore=${data.mutator} players=[${Object.keys(data.players).join(', ')}]`);
     hideWeaponSelect();
+    resetBreakables();   // i prop rotti (bottiglie/cassette) tornano interi
     handleRoundStart(data);
 });
 
@@ -3223,6 +3868,19 @@ socket.on('playerKilled', ({ killedColor, killerColor, aliveCount, subphase, poi
     if (killerColor === MY_COLOR && killedColor !== MY_COLOR) {
         showHitmarker(true);
         Sfx.killConfirm();
+        // Onomatopea comica sul punto di morte del nemico (solo mie uccisioni).
+        // Posizione catturata QUI, prima che il mesh venga nascosto più sotto;
+        // se il mesh non esiste, semplicemente nessun testo.
+        const victim = gameState.players[killedColor];
+        if (victim && victim.group) {
+            const p = victim.group.position;
+            _fxSpawnPos.set(p.x, p.y + 1.6, p.z);
+            spawnFxSprite(getFxTexture(KILL_WORDS[Math.floor(Math.random() * KILL_WORDS.length)]),
+                _fxSpawnPos, {
+                    size: 0.8, aspect: 2, life: 950, rise: 0.9, drift: 0, spin: 0,
+                    popIn: 0.22, depthTest: false
+                });
+        }
     }
 
     // In SUDDEN DEATH ogni caduto lascia la testa sul punto di morte (feedback immediato;
@@ -3940,6 +4598,7 @@ function animate() {
     }
 
     updateMovement(dt);
+    updateDoors(dt);
     for (const rp of Object.values(gameState.players)) {
         if (!rp.dead) updateRemoteAnim(rp, dt);
     }

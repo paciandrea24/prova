@@ -12,27 +12,29 @@ const WEAPONS = {
     sniper: { name: 'Sniper Rifle', damage: 95, fireRate: 1500, range: 150, ammo: 5, reload: 3000, spread: 0.005, auto: false }
 };
 
-// Spawn points — Cittadina Cartoon: 8 punti distribuiti sull'anello esterno
-// (strada nord, strada est, piazza sud, Via Lunga a ovest), tutti rivolti
-// verso il centro. Convenzione: forward = (-sin angle, -cos angle) →
-// angle = atan2(x, z) guarda l'origine. Coerenti con buildMap() in fps.js.
+// Spawn points — Cittadina Cartoon + distretto PORTO a est: 10 punti
+// distribuiti su anello esterno e banchina, tutti rivolti verso il centro.
+// Convenzione: forward = (-sin angle, -cos angle) → angle = atan2(x, z)
+// guarda l'origine. Coerenti con buildMap() in fps.js.
 const SPAWN_POINTS = [
     { x: -14, y: 0, z: -21, angle: Math.atan2(-14, -21) },   // strada nord, lato gazebo
-    { x:  14, y: 0, z: -21, angle: Math.atan2(14, -21) },    // strada nord, lato furgone
+    { x:  14, y: 0, z: -21, angle: Math.atan2(14, -21) },    // strada nord, lato chiosco
     { x:  21, y: 0, z: -10, angle: Math.atan2(21, -10) },    // strada est, nord
     { x:  21, y: 0, z:  12, angle: Math.atan2(21, 12) },     // strada est, sud (FARMACIA)
     { x:  12, y: 0, z:  21, angle: Math.atan2(12, 21) },     // piazza, lato est
     { x: -12, y: 0, z:  21, angle: Math.atan2(-12, 21) },    // piazza, lato giardinetto
     { x: -22, y: 0, z:  14, angle: Math.atan2(-22, 14) },    // Via Lunga, sud
-    { x: -22, y: 0, z: -14, angle: Math.atan2(-22, -14) }    // Via Lunga, nord
+    { x: -22, y: 0, z: -14, angle: Math.atan2(-22, -14) },   // Via Lunga, nord
+    { x:  35, y: 0, z: -12, angle: Math.atan2(35, -12) },    // PORTO, banchina nord (magazzino)
+    { x:  38, y: 0, z:  24, angle: Math.atan2(38, 24) }      // PORTO, banchina sud (pontile)
 ];
 
 const PLAYER_HP = 100;
 const WEAPON_SELECT_TIME = 20000; // 20 secondi per scegliere l'arma (solo round 1)
 const ROUND_END_DELAY = 2500;     // pausa breve tra un round e l'altro (pacing "ancora una")
 const ROUND_INTRO_TIME = 3500;    // fase INTRO a inizio round: gioco congelato, pannello di preparazione
-const MELEE_DURATION = 20000;     // ★TEST teste/podio★ RIPRISTINARE 45000 dopo la verifica
-const FPS_ROUNDS = 1;             // ★TEST teste/podio★ RIPRISTINARE 5 dopo la verifica
+const MELEE_DURATION = 45000;     // durata fase MISCHIA (respawn istantaneo) prima del sudden death
+const FPS_ROUNDS = 5;             // round fissi per partita
 const RESPAWN_DELAY = 1500;       // ritardo prima di rinascere in mischia
 const REJOIN_GRACE = 60000;       // finestra di riconnessione dopo un drop (schede in background
                                   // congelate dal browser) prima della rimozione definitiva

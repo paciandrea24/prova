@@ -53,7 +53,36 @@ In `tryShoot`, l'hitbox del nemico è una **capsula verticale** campionata come 
 - **9 botteghe enterable** sul perimetro (nord/est/sud, `buildShop`): porta+vetrina+insegna+tenda, banco
   interno, **tetto piano calpestabile** raggiungibile con scale di servizio nei vicoli (`buildStairs`) +
   una passerella in legno tra due tetti. Portico coperto lungo il muro ovest (colonnato, tetto calpestabile).
-- Angoli: gazebo/palco NW (pedana salibile), deposito con tettoia SW, verde NE/SE. Lampioni, alberi.
+- Angoli: gazebo/palco NW (pedana salibile), **SPEAKEASY** SW, verde NE. Lampioni, alberi.
+  Il chiosco EDICOLA (`buildKiosk`) sulla strada nord ha sostituito il furgone dei gelati.
+- **MAPPA ASIMMETRICA**: `MAP_HALF=32` per nord/sud/ovest, `MAP_X1=48` a est — la fascia
+  x 31.5..48 è il **distretto del PORTO** (`buildPort`). Terreno/muri/fondale/clamp movimento
+  usano MAP_X1 sul lato est; la minimap resta a viewRadius 32 (player-centric, solo zoom).
+- **Speakeasy "JAZZ CLUB"** (SW, x -30.5..-18.5, z 21.5..31.5, `buildSpeakeasy`): edificio in mattoni
+  appoggiato al muro perimetrale (che fa da parete sud), 2 stanze — sala bar (bancone, palco, tavolini,
+  sgabelli) e retro/cantina (casse, botti) — divise da un tramezzo. Ingressi SOLO da **porte
+  interattive** (nord, est, interna). Finestrella alta con vetro breakable. Volume chiuso ideale per
+  `blackout`/`fog`. Tetto piano raggiungibile con un salto dal tetto del portico ovest.
+- **PORTO** (est, x 31.5..48, z -32..32, `buildPort`): banchina in cemento su tutta la fascia +
+  bacino d'acqua x 41.5..48, z -20..32 (bordo 0.45: in acqua si entra/esce con lo step-up).
+  **Nave cargo** "S.S. GAMBERETTO" col **ponte calpestabile a 1.85** (passerella a gradini dalla
+  banchina), cabina solida, casse sul ponte. **Magazzino** enterable (porta grande sud + porta
+  ovest, entrambe interattive) con **tetto-postazione** raggiungibile da scala esterna sul retro.
+  Gru alta 7.5 col braccio sul bacino e cassa appesa (visiva), piazzale container NE con pile
+  scalabili 0.6→1.2→1.8→2.3, pontile+barca nel bacino sud, salvagenti sul muro est.
+  Accessi dalla cittadina: nord (dietro FERRAMENTA), vicolo SARTORIA/FARMACIA (z 3..8),
+  sud (oltre TEATRO) e **retro-porte interattive di RADIO e FARMACIA** (`buildShop` con
+  `backDoor=true`: banco accorciato sull'altra metà). La banchina è una seconda linea lunga
+  nord-sud per sniper.
+- **Porte interattive** (`doors[]`, `buildDoor`, `updateDoors` nel loop): pannello incernierato con
+  contorno toon; l'AABB sta in `solidBoxes` solo a porta chiusa (`_doorSetSolid`). Aprono per
+  prossimità (giocatore locale + remoti vivi, isteresi 2.0/2.8 m) o se colpite (`forceUntil`, il ramo
+  muro di `tryShoot` riconosce il box della porta via `raycastSolids(...).box`). Tutto client-side:
+  ogni client risolve solo le proprie collisioni → nessun problema di desync.
+- **Prop distruttibili cosmetici** (`breakables[]`, `registerBreakable`, `checkBreakables` in
+  `tryShoot`): bottiglie (`addBottle`), cassette leggere (`addLooseCrate`), vetri. MAI in `solidBoxes`
+  (niente riparo, non fermano il colpo): alla rottura mesh nascoste + sprite FX (puff+twinkle);
+  `resetBreakables()` li ripristina a ogni `roundStart`.
 - Costruttori: `buildCentral`, `buildShop`, `buildStall`, `buildFountain`, `buildGazebo`, `buildLamppost`,
   `buildStairs`, `punchWallX`/`punchWallZ` (muri con aperture porta/finestra), `buildBackdrop` (sagome di
   palazzi oltre il muro), `buildClouds`. Riusati: `buildVan`, `buildCarport`, `fenceX/Z`, `crate`,
@@ -63,9 +92,9 @@ In `tryShoot`, l'hitbox del nemico è una **capsula verticale** campionata come 
 - Tanti prop piccoli (casse, barili, bancarelle) → ripari per `mini_players`; volumi chiusi per `blackout`/`fog`.
 
 ### Spawn (server SPAWN_POINTS)
-8 punti distribuiti sull'anello esterno (2 per lato: strada nord, strada est, piazza sud, Via Lunga),
-tutti rivolti verso il centro con `angle = Math.atan2(x, z)`. Devono restare coerenti con la geometria
-di `buildMap()` in fps.js: se sposti la mappa, aggiorna gli spawn.
+10 punti: 8 sull'anello esterno della cittadina (2 per lato) + 2 sulla banchina del PORTO
+(nord al magazzino, sud al pontile), tutti rivolti verso il centro con `angle = Math.atan2(x, z)`.
+Devono restare coerenti con la geometria di `buildMap()` in fps.js: se sposti la mappa, aggiornali.
 Convenzione angoli: forward = `(-sin yaw, -cos yaw)`. Guardare verso +Z → yaw=PI; verso -Z → yaw=0.
 
 ### Minimap (client `drawMinimap()`)
