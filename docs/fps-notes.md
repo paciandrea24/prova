@@ -14,7 +14,7 @@ Leggi questo file **solo quando lavori sull'FPS**. Per il resto del progetto ved
 - `backend/store/activeGames.js` — store `activeGames` (partite attive).
 
 ## Costanti/parametri (client, in cima a fps.js)
-`PLAYER_HEIGHT=1.7`, `PLAYER_RADIUS=0.4`, `GRAVITY=20`, `JUMP_FORCE=7`, `STEP_HEIGHT=0.6`, `MOUSE_SENS=0.0015`, `MAP_HALF=32`, `MAP_CEIL=13` (soffitto invisibile anti-fuga per Gravità Lunare).
+`PLAYER_HEIGHT=1.7`, `PLAYER_RADIUS=0.4`, `GRAVITY=20`, `JUMP_FORCE=7`, `STEP_HEIGHT=0.6`, `MOUSE_SENS=0.0015`, `MAP_RADIUS=49` (clamp RADIALE sul disco r=52 della Zona Jazz), `MAP_CEIL=13` (soffitto invisibile anti-fuga per Gravità Lunare).
 Movimento: `WALK_SPEED=8`, `SPRINT_SPEED=12`, `CROUCH_SPEED=4`, `AIR_SPRINT_BOOST≈1.18` (sprint-jump più veloce, stile Minecraft), più costanti `SLIDE_*` e altezze occhio `STAND_EYE/CROUCH_EYE/SLIDE_EYE`.
 NB: alcuni valori sono stati ritoccati nelle ultime sessioni — verifica sempre il sorgente prima di citarli.
 
@@ -42,59 +42,49 @@ ADS FOV (client): assault 50, smg 55, shotgun 62, sniper 15.
 ### Hit detection — hitbox a capsula
 In `tryShoot`, l'hitbox del nemico è una **capsula verticale** campionata come sfere dai piedi (y0) alla testa (y1), raggio ~0.42 (tarato sulla larghezza reale del modello). Posture-aware: crouch/slide abbassano y0/y1. Sostituisce la vecchia singola sfera al petto (che faceva mancare i colpi a testa/gambe da vicino). Raycast: `camera.getWorldPosition()` + distanza punto-raggio (proiezione).
 
-### Mappa ("Cittadina Cartoon", in `buildMap()`) — progettata attorno ai 14 mutatori
-- **Grande Emporio centrale** (20×14, centro mappa): 2 piani + **tetto-terrazza calpestabile** con parapetto.
-  Porte sui 4 lati, finestroni al 2° piano (postazioni di tiro), interni stretti con bancone/scaffali
-  (smg/shotgun, `blackout`/`fog`). Scala A terra→2° (angolo NW), scala B 2°→tetto (angolo SE) — entrambe
-  a gradini bassi (step-up).
-- **Anello esterno**: strada nord (furgone dei gelati + barriere), **Via Lunga a ovest** (linea di tiro
-  ~60 m per sniper/`gun_game`, coperture solo ai bordi), strada est, **piazza sud** con fontana (riparo
-  basso → `giant_heads`), bancarelle, giardinetto recintato, panchine.
-- **9 botteghe enterable** sul perimetro (nord/est/sud, `buildShop`): porta+vetrina+insegna+tenda, banco
-  interno, **tetto piano calpestabile** raggiungibile con scale di servizio nei vicoli (`buildStairs`) +
-  una passerella in legno tra due tetti. Portico coperto lungo il muro ovest (colonnato, tetto calpestabile).
-- Angoli: gazebo/palco NW (pedana salibile), **SPEAKEASY** SW, verde NE. Lampioni, alberi.
-  Il chiosco EDICOLA (`buildKiosk`) sulla strada nord ha sostituito il furgone dei gelati.
-- **MAPPA ASIMMETRICA**: `MAP_HALF=32` per nord/sud/ovest, `MAP_X1=48` a est — la fascia
-  x 31.5..48 è il **distretto del PORTO** (`buildPort`). Terreno/muri/fondale/clamp movimento
-  usano MAP_X1 sul lato est; la minimap resta a viewRadius 32 (player-centric, solo zoom).
-- **Speakeasy "JAZZ CLUB"** (SW, x -30.5..-18.5, z 21.5..31.5, `buildSpeakeasy`): edificio in mattoni
-  appoggiato al muro perimetrale (che fa da parete sud), 2 stanze — sala bar (bancone, palco, tavolini,
-  sgabelli) e retro/cantina (casse, botti) — divise da un tramezzo. Ingressi SOLO da **porte
-  interattive** (nord, est, interna). Finestrella alta con vetro breakable. Volume chiuso ideale per
-  `blackout`/`fog`. Tetto piano raggiungibile con un salto dal tetto del portico ovest.
-- **PORTO** (est, x 31.5..48, z -32..32, `buildPort`): banchina in cemento su tutta la fascia +
-  bacino d'acqua x 41.5..48, z -20..32 (bordo 0.45: in acqua si entra/esce con lo step-up).
-  **Nave cargo** "S.S. GAMBERETTO" col **ponte calpestabile a 1.85** (passerella a gradini dalla
-  banchina), cabina solida, casse sul ponte. **Magazzino** enterable (porta grande sud + porta
-  ovest, entrambe interattive) con **tetto-postazione** raggiungibile da scala esterna sul retro.
-  Gru alta 7.5 col braccio sul bacino e cassa appesa (visiva), piazzale container NE con pile
-  scalabili 0.6→1.2→1.8→2.3, pontile+barca nel bacino sud, salvagenti sul muro est.
-  Accessi dalla cittadina: nord (dietro FERRAMENTA), vicolo SARTORIA/FARMACIA (z 3..8),
-  sud (oltre TEATRO) e **retro-porte interattive di RADIO e FARMACIA** (`buildShop` con
-  `backDoor=true`: banco accorciato sull'altra metà). La banchina è una seconda linea lunga
-  nord-sud per sniper.
-- **Porte interattive** (`doors[]`, `buildDoor`, `updateDoors` nel loop): pannello incernierato con
-  contorno toon; l'AABB sta in `solidBoxes` solo a porta chiusa (`_doorSetSolid`). Aprono per
-  prossimità (giocatore locale + remoti vivi, isteresi 2.0/2.8 m) o se colpite (`forceUntil`, il ramo
-  muro di `tryShoot` riconosce il box della porta via `raycastSolids(...).box`). Tutto client-side:
-  ogni client risolve solo le proprie collisioni → nessun problema di desync.
-- **Prop distruttibili cosmetici** (`breakables[]`, `registerBreakable`, `checkBreakables` in
-  `tryShoot`): bottiglie (`addBottle`), cassette leggere (`addLooseCrate`), vetri. MAI in `solidBoxes`
-  (niente riparo, non fermano il colpo): alla rottura mesh nascoste + sprite FX (puff+twinkle);
-  `resetBreakables()` li ripristina a ogni `roundStart`.
-- Costruttori: `buildCentral`, `buildShop`, `buildStall`, `buildFountain`, `buildGazebo`, `buildLamppost`,
-  `buildStairs`, `punchWallX`/`punchWallZ` (muri con aperture porta/finestra), `buildBackdrop` (sagome di
-  palazzi oltre il muro), `buildClouds`. Riusati: `buildVan`, `buildCarport`, `fenceX/Z`, `crate`,
-  `buildBarrier`, `buildSandbags`, `buildBarrel`, `addTree`, `addSign` (insegne canvas).
-- **Confini**: muro perimetrale h 12 + clamp `MAP_CEIL=13` sull'asse Y in `updateMovement` → non si esce
-  nemmeno con `moon_gravity` dai tetti.
-- Tanti prop piccoli (casse, barili, bancarelle) → ripari per `mini_players`; volumi chiusi per `blackout`/`fog`.
+### Mappa ("ZONA JAZZ", GLB Blender + `loadJazzZone()`)
+La mappa è la **Zona Jazz modellata in Blender** (sostituzione secca della vecchia
+"Cittadina Cartoon"+Porto, 2026-07-06): disco r=52 con **isolato centrale** (anello
+sigillato di palazzi bassi + club Scat Cat in diagonale all'angolo SO), due corsie
+anulari separate da 4 archi di **isolotti** (varchi ai cardinali), **perimetro
+circolare chiuso** di edifici (fronti quasi tutti verso l'interno, flip random).
+- **Asset** (`frontend/assets/models/jazz/`): 20 GLB modelli (`edificio_01..10a`,
+  `edificio13`, `club`, `props/*`), `pavimentazione.glb` (sanpietrini merged),
+  `zona-layout.json` (istanze: `modello, x, z, rotY°, y, s`; fronte non ruotato = +Z).
+  Sorgenti Blender in `docs/superpowers/plans/blender-scripts/` (jazz_lib + ricette).
+- **Caricamento** (`loadJazzZone()`, chiamato PRIMA di `joinFPS` con overlay
+  `#model-loading`): merge globale **per materiale** in 2 stadi (per modello →
+  per istanza con matrice T·R·S "cotta" nelle geometrie) → ~40 mesh statiche totali.
+  Merge indicizzato a mano (`_mergeGeos`, r128 non ha un merge affidabile).
+- **Toon-swap**: ogni materiale GLB → `worldToon({color})` (cache per NOME materiale
+  Blender, `_jazzMatCache`); materiali **Emission** (neon del club, vetri lampade) →
+  `MeshBasicMaterial` "sempre acceso". Pipeline lineare INVARIATA (no tone mapping).
+- **Quota**: tutta la zona a `JAZZ_Y_OFF=-0.10` → il top delle pietre (~0.09) sta a
+  y≈0 e il codice di movimento non è cambiato; il sagrato del lotto centrale è un
+  gradino basso (step-up).
+- **Collisioni**: le mesh `COL_*` dei GLB (mai renderizzate) diventano **OBB
+  verticali** per istanza via `addSolidOBB(cx, cz, hw, hd, y0, y1, rotY°)`.
+  `resolveCollisions`/`canStandAt`/`raycastSolids` gestiscono le entry ruotate nel
+  frame locale del box. ⚠️ CONVENZIONE SEGNO: `addSolidOBB` memorizza il **seno
+  negato** (mondo→locale = R(−rot), perché three.js `rotation.y=rot` manda (x,z)
+  in `(x·cos+z·sin, −x·sin+z·cos)`) — i consumer usano i campi così come sono.
+  I props (lampioni/festoni/insegna) per ora NON collidono.
+- **Confini**: clamp **radiale** `MAP_RADIUS=49` in `updateMovement` (niente più
+  muro quadrato/`MAP_X1`); il perimetro visivo è chiuso dagli edifici stessi.
+- **Bordi neri edifici**: tasto **B** (debug) toggla i gusci inverted-hull sulle
+  mesh merged (`toggleJazzOutlines`, lazy). Default SPENTO (stile Cuphead: fondali
+  senza china). Decisione definitiva → fissare e rimuovere il toggle.
+- **Trade-off accettato dall'utente**: niente interni enterable né tetti
+  calpestabili (interni club = step futuro). I SISTEMI porte interattive
+  (`doors[]` vuoto) e breakables (liste vuote) restano vivi per gli interni futuri.
+- **Storico**: la vecchia mappa procedurale (Grande Emporio, botteghe, speakeasy,
+  PORTO con nave/gru/container, ~25 builder) è stata RIMOSSA da fps.js il
+  2026-07-06 (−712 righe); recuperabile da git prima di quel punto.
 
 ### Spawn (server SPAWN_POINTS)
-10 punti: 8 sull'anello esterno della cittadina (2 per lato) + 2 sulla banchina del PORTO
-(nord al magazzino, sud al pontile), tutti rivolti verso il centro con `angle = Math.atan2(x, z)`.
-Devono restare coerenti con la geometria di `buildMap()` in fps.js: se sposti la mappa, aggiornali.
+10 punti Zona Jazz: 8 in corsia esterna (r≈38.5, cardinali+diagonali) + 2 in corsia
+interna (r≈20, N/S), tutti rivolti verso il centro con `angle = Math.atan2(x, z)`.
+Devono restare coerenti con `zona-layout.json`: se cambi il layout, aggiornali.
 Convenzione angoli: forward = `(-sin yaw, -cos yaw)`. Guardare verso +Z → yaw=PI; verso -Z → yaw=0.
 
 ### Minimap (client `drawMinimap()`)
@@ -113,7 +103,7 @@ Handle invariato: `{ group, head, upper, legL, legR, hpBar, hpFill, weaponMount 
 Teste Giganti, `group.scale` per Mini. `HIP_Y=0.62`. Hitbox capsula tarata sulla mascotte (headOff in
 `tryShoot`). Orientato verso -Z. Animazioni run/crouch/slide sincronizzate via rete (`updateRemoteAnim`,
 `applyRemoteState`).
-**NB**: `THREE.CapsuleGeometry` NON esiste in r128 — usare sempre `CylinderGeometry`/`BoxGeometry`. Three.js r128 core da CDN (il tag `GLTFLoader` è stato rimosso da fps.html: le armi sono procedurali, nessun GLB in uso).
+**NB**: `THREE.CapsuleGeometry` NON esiste in r128 — usare sempre `CylinderGeometry`/`BoxGeometry`. Three.js r128 core + `GLTFLoader` r128 da CDN (il loader serve alla MAPPA Zona Jazz; le armi restano procedurali).
 
 ### Audio (procedurale) + game feel
 - `Sfx` IIFE: suoni sintetizzati con Web Audio API (oscillatori + rumore bianco filtrato), NESSUN file mp3. Funzioni: resume, shoot, hitConfirm, killConfirm, reload, footstep, slide, empty, hurt, death, roundStart.

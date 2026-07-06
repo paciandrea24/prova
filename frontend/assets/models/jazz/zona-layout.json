@@ -1,0 +1,847 @@
+{
+  "edifici": [
+    {
+      "modello": "club",
+      "x": -3.88,
+      "z": 3.88,
+      "rotY": -45,
+      "y": 0.16,
+      "s": 1.0
+    },
+    {
+      "modello": "edificio_05",
+      "x": -5.3,
+      "z": -7.82,
+      "rotY": 180,
+      "y": 0.16,
+      "s": 1.011
+    },
+    {
+      "modello": "edificio_07a",
+      "x": 0.0,
+      "z": -7.82,
+      "rotY": 180,
+      "y": 0.16,
+      "s": 1.003
+    },
+    {
+      "modello": "edificio_05a",
+      "x": 5.3,
+      "z": -7.82,
+      "rotY": 180,
+      "y": 0.16,
+      "s": 0.986
+    },
+    {
+      "modello": "edificio13",
+      "x": -0.81,
+      "z": 7.57,
+      "rotY": 0,
+      "y": 0.16,
+      "s": 0.986
+    },
+    {
+      "modello": "edificio_06",
+      "x": 5.05,
+      "z": 7.82,
+      "rotY": 0,
+      "y": 0.16,
+      "s": 0.999
+    },
+    {
+      "modello": "edificio_10",
+      "x": -10.0,
+      "z": -2.12,
+      "rotY": -90,
+      "y": 0.16,
+      "s": 0.998
+    },
+    {
+      "modello": "edificio_01",
+      "x": 10.25,
+      "z": -2.37,
+      "rotY": 90,
+      "y": 0.16,
+      "s": 1.02
+    },
+    {
+      "modello": "edificio_07",
+      "x": 10.5,
+      "z": 2.62,
+      "rotY": 90,
+      "y": 0.16,
+      "s": 1.033
+    },
+    {
+      "modello": "edificio_02",
+      "x": -7.06,
+      "z": -7.06,
+      "rotY": -135,
+      "y": 0.16,
+      "s": 1.007
+    },
+    {
+      "modello": "edificio_02a",
+      "x": 7.06,
+      "z": -7.06,
+      "rotY": 135,
+      "y": 0.16,
+      "s": 1.032
+    },
+    {
+      "modello": "edificio_02",
+      "x": 7.06,
+      "z": 7.06,
+      "rotY": 45,
+      "y": 0.16,
+      "s": 1.034
+    },
+    {
+      "modello": "edificio_09",
+      "x": 12.04,
+      "z": -28.92,
+      "rotY": 154.6,
+      "y": 0.1,
+      "s": 1.033
+    },
+    {
+      "modello": "edificio_01",
+      "x": 19.83,
+      "z": -23.92,
+      "rotY": -39.4,
+      "y": 0.1,
+      "s": 1.003
+    },
+    {
+      "modello": "edificio_04",
+      "x": 25.48,
+      "z": -17.75,
+      "rotY": -55.1,
+      "y": 0.1,
+      "s": 0.996
+    },
+    {
+      "modello": "edificio_07a",
+      "x": 29.55,
+      "z": -10.72,
+      "rotY": -73.5,
+      "y": 0.1,
+      "s": 0.996
+    },
+    {
+      "modello": "edificio_04a",
+      "x": 29.25,
+      "z": 11.48,
+      "rotY": -108.8,
+      "y": 0.1,
+      "s": 0.995
+    },
+    {
+      "modello": "edificio_08",
+      "x": 24.7,
+      "z": 19.09,
+      "rotY": 53.3,
+      "y": 0.1,
+      "s": 0.995
+    },
+    {
+      "modello": "edificio_10",
+      "x": 18.57,
+      "z": 25.54,
+      "rotY": 35.2,
+      "y": 0.1,
+      "s": 1.016
+    },
+    {
+      "modello": "edificio_05",
+      "x": 10.77,
+      "z": 29.12,
+      "rotY": -156.8,
+      "y": 0.1,
+      "s": 1.03
+    },
+    {
+      "modello": "edificio_10a",
+      "x": -11.16,
+      "z": 29.08,
+      "rotY": 155.9,
+      "y": 0.1,
+      "s": 1.027
+    },
+    {
+      "modello": "edificio_06",
+      "x": -18.91,
+      "z": 25.59,
+      "rotY": -39.0,
+      "y": 0.1,
+      "s": 1.009
+    },
+    {
+      "modello": "edificio_09a",
+      "x": -25.44,
+      "z": 18.8,
+      "rotY": -54.6,
+      "y": 0.1,
+      "s": 1.018
+    },
+    {
+      "modello": "edificio_07",
+      "x": -29.2,
+      "z": 10.59,
+      "rotY": 106.4,
+      "y": 0.1,
+      "s": 1.025
+    },
+    {
+      "modello": "edificio_08a",
+      "x": -29.53,
+      "z": -11.47,
+      "rotY": 68.2,
+      "y": 0.1,
+      "s": 0.989
+    },
+    {
+      "modello": "edificio_09",
+      "x": -24.18,
+      "z": -20.33,
+      "rotY": 49.6,
+      "y": 0.1,
+      "s": 1.018
+    },
+    {
+      "modello": "edificio_03a",
+      "x": -17.97,
+      "z": -26.23,
+      "rotY": 36.0,
+      "y": 0.1,
+      "s": 1.03
+    },
+    {
+      "modello": "edificio_06",
+      "x": -11.44,
+      "z": -29.43,
+      "rotY": -158.6,
+      "y": 0.1,
+      "s": 1.024
+    },
+    {
+      "modello": "edificio_09",
+      "x": 4.42,
+      "z": -45.28,
+      "rotY": -5.6,
+      "y": 0.1,
+      "s": 1.023
+    },
+    {
+      "modello": "edificio_03",
+      "x": 10.65,
+      "z": -44.24,
+      "rotY": -13.5,
+      "y": 0.1,
+      "s": 1.009
+    },
+    {
+      "modello": "edificio_10",
+      "x": 15.94,
+      "z": -42.62,
+      "rotY": 159.5,
+      "y": 0.1,
+      "s": 0.994
+    },
+    {
+      "modello": "edificio_05a",
+      "x": 22.06,
+      "z": -39.79,
+      "rotY": -29.0,
+      "y": 0.1,
+      "s": 1.024
+    },
+    {
+      "modello": "edificio_01",
+      "x": 27.49,
+      "z": -36.26,
+      "rotY": -37.2,
+      "y": 0.1,
+      "s": 1.002
+    },
+    {
+      "modello": "edificio_08",
+      "x": 32.54,
+      "z": -31.8,
+      "rotY": -45.7,
+      "y": 0.1,
+      "s": 1.025
+    },
+    {
+      "modello": "edificio_04a",
+      "x": 37.04,
+      "z": -26.43,
+      "rotY": -54.5,
+      "y": 0.1,
+      "s": 1.034
+    },
+    {
+      "modello": "edificio_06",
+      "x": 40.66,
+      "z": -20.43,
+      "rotY": -63.3,
+      "y": 0.1,
+      "s": 1.005
+    },
+    {
+      "modello": "edificio_05",
+      "x": 43.14,
+      "z": -14.45,
+      "rotY": -71.5,
+      "y": 0.1,
+      "s": 1.005
+    },
+    {
+      "modello": "edificio_10a",
+      "x": 44.81,
+      "z": -7.92,
+      "rotY": -80.0,
+      "y": 0.1,
+      "s": 1.032
+    },
+    {
+      "modello": "edificio_07",
+      "x": 45.48,
+      "z": -1.21,
+      "rotY": -88.5,
+      "y": 0.1,
+      "s": 1.021
+    },
+    {
+      "modello": "edificio_09a",
+      "x": 45.06,
+      "z": 6.3,
+      "rotY": -98.0,
+      "y": 0.1,
+      "s": 0.994
+    },
+    {
+      "modello": "edificio_03a",
+      "x": 43.75,
+      "z": 12.49,
+      "rotY": -105.9,
+      "y": 0.1,
+      "s": 0.991
+    },
+    {
+      "modello": "edificio_04",
+      "x": 41.91,
+      "z": 17.7,
+      "rotY": -112.9,
+      "y": 0.1,
+      "s": 0.993
+    },
+    {
+      "modello": "edificio_08a",
+      "x": 38.7,
+      "z": 23.93,
+      "rotY": -121.7,
+      "y": 0.1,
+      "s": 1.03
+    },
+    {
+      "modello": "edificio_07a",
+      "x": 34.91,
+      "z": 29.18,
+      "rotY": -129.9,
+      "y": 0.1,
+      "s": 1.025
+    },
+    {
+      "modello": "edificio_09",
+      "x": 29.62,
+      "z": 34.54,
+      "rotY": -139.4,
+      "y": 0.1,
+      "s": 0.992
+    },
+    {
+      "modello": "edificio_03",
+      "x": 24.55,
+      "z": 38.31,
+      "rotY": -147.3,
+      "y": 0.1,
+      "s": 1.026
+    },
+    {
+      "modello": "edificio_10",
+      "x": 19.72,
+      "z": 41.0,
+      "rotY": -154.3,
+      "y": 0.1,
+      "s": 1.034
+    },
+    {
+      "modello": "edificio_05a",
+      "x": 13.45,
+      "z": 43.47,
+      "rotY": -162.8,
+      "y": 0.1,
+      "s": 1.018
+    },
+    {
+      "modello": "edificio_01",
+      "x": 7.14,
+      "z": 44.94,
+      "rotY": -171.0,
+      "y": 0.1,
+      "s": 1.003
+    },
+    {
+      "modello": "edificio_08",
+      "x": 0.42,
+      "z": 45.5,
+      "rotY": -179.5,
+      "y": 0.1,
+      "s": 1.012
+    },
+    {
+      "modello": "edificio_04a",
+      "x": -6.57,
+      "z": 45.02,
+      "rotY": 171.7,
+      "y": 0.1,
+      "s": 0.992
+    },
+    {
+      "modello": "edificio_06",
+      "x": -13.4,
+      "z": 43.48,
+      "rotY": 162.9,
+      "y": 0.1,
+      "s": 0.986
+    },
+    {
+      "modello": "edificio_05",
+      "x": -19.44,
+      "z": 41.14,
+      "rotY": -25.3,
+      "y": 0.1,
+      "s": 1.034
+    },
+    {
+      "modello": "edificio_10a",
+      "x": -25.3,
+      "z": 37.82,
+      "rotY": -33.8,
+      "y": 0.1,
+      "s": 1.017
+    },
+    {
+      "modello": "edificio_07",
+      "x": -30.61,
+      "z": 33.66,
+      "rotY": 137.7,
+      "y": 0.1,
+      "s": 1.011
+    },
+    {
+      "modello": "edificio_09a",
+      "x": -35.74,
+      "z": 28.16,
+      "rotY": 128.2,
+      "y": 0.1,
+      "s": 1.032
+    },
+    {
+      "modello": "edificio_03a",
+      "x": -39.3,
+      "z": 22.93,
+      "rotY": -59.7,
+      "y": 0.1,
+      "s": 1.007
+    },
+    {
+      "modello": "edificio_04",
+      "x": -41.79,
+      "z": 17.99,
+      "rotY": 113.3,
+      "y": 0.1,
+      "s": 1.029
+    },
+    {
+      "modello": "edificio_08a",
+      "x": -44.06,
+      "z": 11.37,
+      "rotY": 104.5,
+      "y": 0.1,
+      "s": 1.026
+    },
+    {
+      "modello": "edificio_07a",
+      "x": -45.22,
+      "z": 5.0,
+      "rotY": 96.3,
+      "y": 0.1,
+      "s": 0.996
+    },
+    {
+      "modello": "edificio_09",
+      "x": -45.43,
+      "z": -2.53,
+      "rotY": -93.2,
+      "y": 0.1,
+      "s": 0.998
+    },
+    {
+      "modello": "edificio_03",
+      "x": -44.64,
+      "z": -8.8,
+      "rotY": 78.8,
+      "y": 0.1,
+      "s": 1.0
+    },
+    {
+      "modello": "edificio_10",
+      "x": -43.24,
+      "z": -14.15,
+      "rotY": -108.1,
+      "y": 0.1,
+      "s": 0.997
+    },
+    {
+      "modello": "edificio_05a",
+      "x": -40.68,
+      "z": -20.38,
+      "rotY": 63.4,
+      "y": 0.1,
+      "s": 1.014
+    },
+    {
+      "modello": "edificio_01",
+      "x": -37.37,
+      "z": -25.95,
+      "rotY": 55.2,
+      "y": 0.1,
+      "s": 0.998
+    },
+    {
+      "modello": "edificio_08",
+      "x": -33.13,
+      "z": -31.19,
+      "rotY": 46.7,
+      "y": 0.1,
+      "s": 1.006
+    },
+    {
+      "modello": "edificio_04a",
+      "x": -27.95,
+      "z": -35.9,
+      "rotY": 37.9,
+      "y": 0.1,
+      "s": 0.992
+    },
+    {
+      "modello": "edificio_06",
+      "x": -22.11,
+      "z": -39.77,
+      "rotY": 29.1,
+      "y": 0.1,
+      "s": 1.031
+    },
+    {
+      "modello": "edificio_05",
+      "x": -16.24,
+      "z": -42.5,
+      "rotY": 20.9,
+      "y": 0.1,
+      "s": 1.003
+    },
+    {
+      "modello": "edificio_10a",
+      "x": -9.78,
+      "z": -44.44,
+      "rotY": 12.4,
+      "y": 0.1,
+      "s": 1.008
+    },
+    {
+      "modello": "edificio_07",
+      "x": -3.11,
+      "z": -45.39,
+      "rotY": 3.9,
+      "y": 0.1,
+      "s": 1.014
+    }
+  ],
+  "props": [
+    {
+      "modello": "props/lampione",
+      "x": 5.0,
+      "z": -13.4,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": -5.0,
+      "z": -13.4,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": 5.0,
+      "z": 13.4,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": -5.0,
+      "z": 13.4,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": 15.9,
+      "z": -5.0,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": 15.9,
+      "z": 5.0,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": -15.9,
+      "z": -5.0,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": -15.9,
+      "z": 5.0,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": -6.97,
+      "z": -30.21,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": 6.97,
+      "z": -30.21,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": 30.21,
+      "z": -6.97,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": 30.21,
+      "z": 6.97,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": 6.97,
+      "z": 30.21,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": -6.97,
+      "z": 30.21,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": -30.21,
+      "z": 6.97,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": -30.21,
+      "z": -6.97,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": 0.0,
+      "z": -41.5,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": 41.5,
+      "z": -0.0,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": 0.0,
+      "z": 41.5,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/lampione",
+      "x": -41.5,
+      "z": 0.0,
+      "rotY": 0,
+      "y": 0.0
+    },
+    {
+      "modello": "props/festone_10m",
+      "x": 27.22,
+      "z": -27.22,
+      "rotY": 45.0,
+      "y": 4.2
+    },
+    {
+      "modello": "props/festone_10m",
+      "x": 27.22,
+      "z": 27.22,
+      "rotY": -45.0,
+      "y": 4.2
+    },
+    {
+      "modello": "props/festone_10m",
+      "x": -27.22,
+      "z": 27.22,
+      "rotY": -135.0,
+      "y": 4.2
+    },
+    {
+      "modello": "props/festone_10m",
+      "x": -27.22,
+      "z": -27.22,
+      "rotY": 135.0,
+      "y": 4.2
+    },
+    {
+      "modello": "props/insegna_verticale",
+      "x": -20.74,
+      "z": 27.84,
+      "rotY": -39.0,
+      "y": 0.0
+    }
+  ],
+  "vie": [
+    {
+      "nome": "corsia1_nord",
+      "asse": "x",
+      "da": -20,
+      "a": 20,
+      "centro": -20,
+      "larghezza": 13
+    },
+    {
+      "nome": "corsia1_sud",
+      "asse": "x",
+      "da": -20,
+      "a": 20,
+      "centro": 20,
+      "larghezza": 13
+    },
+    {
+      "nome": "corsia1_ovest",
+      "asse": "z",
+      "da": -20,
+      "a": 20,
+      "centro": -21,
+      "larghezza": 11
+    },
+    {
+      "nome": "corsia1_est",
+      "asse": "z",
+      "da": -20,
+      "a": 20,
+      "centro": 21,
+      "larghezza": 11
+    },
+    {
+      "nome": "corsia2_nord",
+      "asse": "x",
+      "da": -27,
+      "a": 27,
+      "centro": -38.5,
+      "larghezza": 7
+    },
+    {
+      "nome": "corsia2_sud",
+      "asse": "x",
+      "da": -27,
+      "a": 27,
+      "centro": 38.5,
+      "larghezza": 7
+    },
+    {
+      "nome": "corsia2_ovest",
+      "asse": "z",
+      "da": -27,
+      "a": 27,
+      "centro": -38.5,
+      "larghezza": 7
+    },
+    {
+      "nome": "corsia2_est",
+      "asse": "z",
+      "da": -27,
+      "a": 27,
+      "centro": 38.5,
+      "larghezza": 7
+    },
+    {
+      "nome": "varco_nord",
+      "asse": "z",
+      "da": -35,
+      "a": -27,
+      "centro": 0,
+      "larghezza": 11
+    },
+    {
+      "nome": "varco_sud",
+      "asse": "z",
+      "da": 27,
+      "a": 35,
+      "centro": 0,
+      "larghezza": 11
+    },
+    {
+      "nome": "varco_ovest",
+      "asse": "x",
+      "da": -35,
+      "a": -27,
+      "centro": 0,
+      "larghezza": 11
+    },
+    {
+      "nome": "varco_est",
+      "asse": "x",
+      "da": 27,
+      "a": 35,
+      "centro": 0,
+      "larghezza": 11
+    }
+  ]
+}

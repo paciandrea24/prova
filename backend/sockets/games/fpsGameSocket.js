@@ -12,21 +12,21 @@ const WEAPONS = {
     sniper: { name: 'Sniper Rifle', damage: 95, fireRate: 1500, range: 150, ammo: 5, reload: 3000, spread: 0.005, auto: false }
 };
 
-// Spawn points — Cittadina Cartoon + distretto PORTO a est: 10 punti
-// distribuiti su anello esterno e banchina, tutti rivolti verso il centro.
-// Convenzione: forward = (-sin angle, -cos angle) → angle = atan2(x, z)
-// guarda l'origine. Coerenti con buildMap() in fps.js.
+// Spawn points — ZONA JAZZ (disco r=52): 8 in corsia esterna (r≈38.5,
+// cardinali + diagonali) + 2 in corsia interna (r≈20), tutti rivolti verso
+// il centro. Convenzione: forward = (-sin angle, -cos angle) → angle =
+// atan2(x, z) guarda l'origine. Coerenti con zona-layout.json (fps.js).
 const SPAWN_POINTS = [
-    { x: -14, y: 0, z: -21, angle: Math.atan2(-14, -21) },   // strada nord, lato gazebo
-    { x:  14, y: 0, z: -21, angle: Math.atan2(14, -21) },    // strada nord, lato chiosco
-    { x:  21, y: 0, z: -10, angle: Math.atan2(21, -10) },    // strada est, nord
-    { x:  21, y: 0, z:  12, angle: Math.atan2(21, 12) },     // strada est, sud (FARMACIA)
-    { x:  12, y: 0, z:  21, angle: Math.atan2(12, 21) },     // piazza, lato est
-    { x: -12, y: 0, z:  21, angle: Math.atan2(-12, 21) },    // piazza, lato giardinetto
-    { x: -22, y: 0, z:  14, angle: Math.atan2(-22, 14) },    // Via Lunga, sud
-    { x: -22, y: 0, z: -14, angle: Math.atan2(-22, -14) },   // Via Lunga, nord
-    { x:  35, y: 0, z: -12, angle: Math.atan2(35, -12) },    // PORTO, banchina nord (magazzino)
-    { x:  38, y: 0, z:  24, angle: Math.atan2(38, 24) }      // PORTO, banchina sud (pontile)
+    { x:     0, y: 0, z: -38.5, angle: Math.atan2(0, -38.5) },     // corsia 2, nord
+    { x:  27.2, y: 0, z: -27.2, angle: Math.atan2(27.2, -27.2) },  // corsia 2, NE
+    { x:  38.5, y: 0, z:     0, angle: Math.atan2(38.5, 0) },      // corsia 2, est
+    { x:  27.2, y: 0, z:  27.2, angle: Math.atan2(27.2, 27.2) },   // corsia 2, SE
+    { x:     0, y: 0, z:  38.5, angle: Math.atan2(0, 38.5) },      // corsia 2, sud
+    { x: -27.2, y: 0, z:  27.2, angle: Math.atan2(-27.2, 27.2) },  // corsia 2, SO
+    { x: -38.5, y: 0, z:     0, angle: Math.atan2(-38.5, 0) },     // corsia 2, ovest
+    { x: -27.2, y: 0, z: -27.2, angle: Math.atan2(-27.2, -27.2) }, // corsia 2, NO
+    { x:     0, y: 0, z: -20,   angle: Math.atan2(0, -20) },       // corsia 1, nord
+    { x:     0, y: 0, z:  20,   angle: Math.atan2(0, 20) }         // corsia 1, sud
 ];
 
 const PLAYER_HP = 100;
