@@ -100,6 +100,13 @@
         </div>
     </div>
 
+    <!-- ═══════════ LOADING PROP GLB ═══════════ -->
+    <div id="model-loading" style="display:none;">
+        <div id="model-loading-box">
+            <div id="model-loading-text">Caricamento scenario…</div>
+        </div>
+    </div>
+
     <!-- ═══════════ SELEZIONE ARMA ═══════════ -->
     <div id="weapon-select-screen">
         <div id="ws-header">
@@ -250,8 +257,9 @@
         </div>
     </div>
 
-    <!-- Three.js CDN (niente GLTFLoader: le armi sono procedurali cartoon) -->
+    <!-- Three.js CDN (GLTFLoader per i prop mappa modellati in Blender) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <!-- Socket.io (per signaling WebRTC) -->
     <script src="/socket.io/socket.io.js"></script>
     <!-- Supporto controller (deve precedere fps.js) -->
