@@ -20,9 +20,8 @@ const GRAVITY = 20;
 const JUMP_FORCE = 7;
 const STEP_HEIGHT = 0.6;  // altezza max di un gradino salibile automaticamente
 const MOUSE_SENS = 0.0015;
-const MAP_HALF = 32;      // mezza dimensione della cittadina (nord/sud/ovest)
-const MAP_X1 = 48;        // bordo EST: la mappa si estende oltre la cittadina col distretto del PORTO
-const MAP_CEIL = 13;      // soffitto invisibile: anti-fuga con Gravità Lunare (tetto Emporio 5.6 + salto lunare ~4 → mai raggiunto in gioco normale)
+const MAP_RADIUS = 49;    // clamp RADIALE sul disco r=52 della Zona Jazz (rete di sicurezza dietro il perimetro di edifici)
+const MAP_CEIL = 13;      // soffitto invisibile: anti-fuga con Gravità Lunare (cresta club 14 m solo visiva)
 const INTERP_DELAY = 100; // ms di ritardo buffer per interpolazione giocatori remoti
 
 // Hitbox sfera per detection: raggio per ogni player remoto
@@ -508,32 +507,6 @@ function drawStripes(ctx, s, colA = '#c94f42', colB = '#f6efe0') {
 }
 
 // Insegna retrò con testo (canvas → texture, sempre leggibile: MeshBasic)
-function makeSignTex(text, bg, fg) {
-    const c = document.createElement('canvas');
-    c.width = 512; c.height = 128;
-    const ctx = c.getContext('2d');
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, 512, 128);
-    ctx.strokeStyle = fg;
-    ctx.lineWidth = 8;
-    ctx.strokeRect(6, 6, 500, 116);
-    ctx.fillStyle = fg;
-    ctx.font = 'bold 64px Georgia, serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, 256, 68);
-    const t = new THREE.CanvasTexture(c);
-    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    return t;
-}
-function addSign(text, w, h, x, y, z, ry, bg = '#f6efe0', fg = '#8a3c2e') {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
-        new THREE.MeshBasicMaterial({ map: makeSignTex(text, bg, fg) }));
-    m.position.set(x, y, z);
-    m.rotation.y = ry;
-    scene.add(m);
-    return m;
-}
 
 // ══ STILE TOON (rubber-hose, validato nel prototipo fps-toon-proto) ══
 // Gradient map a fasce nette per il cel-shading (NearestFilter = bande dure)
@@ -684,6 +657,169 @@ MAT.doorWood  = worldToon({ color: 0x6e4a26 });  // pannelli delle porte
 MAT.brass     = worldToon({ color: 0xd9a441 });  // maniglie/ottone
 
 // ══════════════════════════════════════════════════════
+//  ZONA JAZZ — caricamento GLB + merge per materiale
+//  (mappa modellata in Blender; layout in zona-layout.json)
+// ══════════════════════════════════════════════════════
+const JAZZ_DIR = 'assets/models/jazz/';
+const JAZZ_Y_OFF = -0.10;   // top pietre (~0.09) → y≈0: il movimento resta com'è
+const jazzZoneGroup = new THREE.Group();
+const jazzMergedMeshes = [];   // per il toggle bordi (tasto B)
+
+// Toon-swap: un materiale toon per NOME materiale Blender (condiviso tra modelli).
+// I materiali Emission (neon del club, vetri lampade) diventano Basic "sempre accesi".
+const _jazzMatCache = {};
+function _jazzToonMat(srcMat) {
+    const name = (srcMat && srcMat.name) || 'mat';
+    if (_jazzMatCache[name]) return _jazzMatCache[name];
+    let m;
+    const e = srcMat && srcMat.emissive;
+    if (e && (e.r + e.g + e.b) > 0.3) {
+        m = new THREE.MeshBasicMaterial({ color: e.clone() });
+    } else {
+        m = worldToon({ color: srcMat && srcMat.color ? srcMat.color.clone() : new THREE.Color(0xcccccc) });
+    }
+    _jazzMatCache[name] = m;
+    return m;
+}
+
+// Merge indicizzato di una lista di BufferGeometry (solo position+normal).
+// r128 non ha un merge affidabile per questo caso: si fa a mano.
+function _mergeGeos(geos) {
+    let nv = 0, ni = 0;
+    for (const g of geos) {
+        nv += g.attributes.position.count;
+        ni += g.index ? g.index.count : g.attributes.position.count;
+    }
+    const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3);
+    const idx = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+    let vo = 0, io = 0;
+    for (const g of geos) {
+        pos.set(g.attributes.position.array, vo * 3);
+        nor.set(g.attributes.normal.array, vo * 3);
+        const c = g.attributes.position.count;
+        if (g.index) {
+            const a = g.index.array;
+            for (let i = 0; i < a.length; i++) idx[io + i] = a[i] + vo;
+            io += a.length;
+        } else {
+            for (let i = 0; i < c; i++) idx[io + i] = vo + i;
+            io += c;
+        }
+        vo += c;
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    out.setIndex(new THREE.BufferAttribute(idx, 1));
+    return out;
+}
+
+function _gltfLoad(loader, url) {
+    return new Promise((res, rej) => loader.load(url, res, undefined, rej));
+}
+
+function loadJazzZone() {
+    const loader = new THREE.GLTFLoader();
+    return fetch(JAZZ_DIR + 'zona-layout.json').then(r => r.json()).then(layout => {
+        const modelNames = [...new Set([
+            ...layout.edifici.map(e => e.modello),
+            ...layout.props.map(p => p.modello)
+        ])];
+        const urls = ['pavimentazione', ...modelNames];
+        return Promise.all(urls.map(n => _gltfLoad(loader, JAZZ_DIR + n + '.glb')))
+            .then(gltfs => ({ layout, modelNames, gltfs }));
+    }).then(({ layout, modelNames, gltfs }) => {
+        // ── Pavimentazione: già poche mesh, entra diretta (toon-swap e basta) ──
+        const pav = gltfs[0].scene;
+        pav.updateMatrixWorld(true);
+        pav.traverse(o => { if (o.isMesh) o.material = _jazzToonMat(o.material); });
+        pav.position.y = JAZZ_Y_OFF;
+        jazzZoneGroup.add(pav);
+
+        // ── Stage 1: per MODELLO, geometrie fuse per materiale + lista COL ──
+        const models = {};
+        modelNames.forEach((name, i) => {
+            const sceneRoot = gltfs[i + 1].scene;
+            sceneRoot.updateMatrixWorld(true);
+            const byMat = {}, cols = [];
+            sceneRoot.traverse(o => {
+                if (!o.isMesh) return;
+                if (o.name.indexOf('COL_') === 0) {
+                    cols.push(new THREE.Box3().setFromObject(o));
+                    return;
+                }
+                const g = o.geometry.clone().applyMatrix4(o.matrixWorld);
+                const mn = (o.material && o.material.name) || 'mat';
+                (byMat[mn] = byMat[mn] || []).push(g);
+                if (!_jazzMatCache[mn]) _jazzToonMat(o.material);
+            });
+            const merged = {};
+            for (const mn in byMat) merged[mn] = _mergeGeos(byMat[mn]);
+            models[name] = { byMat: merged, cols };
+        });
+
+        // ── Stage 2: istanze → accumulo globale per materiale + collisioni ──
+        const globalByMat = {};
+        const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0);
+        const place = (inst, isProp) => {
+            const mdl = models[inst.modello];
+            const s = inst.s || 1.0;
+            const y = (inst.y || 0) + JAZZ_Y_OFF;
+            const rot = (inst.rotY || 0) * Math.PI / 180;
+            Q.setFromAxisAngle(UP, rot);
+            M.compose(new THREE.Vector3(inst.x, y, inst.z), Q, new THREE.Vector3(s, s, s));
+            for (const mn in mdl.byMat) {
+                const g = mdl.byMat[mn].clone().applyMatrix4(M);
+                (globalByMat[mn] = globalByMat[mn] || []).push(g);
+            }
+            if (!isProp) {
+                // COL locali → OBB nel mondo (stessa matrice del piazzamento:
+                // rotation.y manda il punto locale (x,z) in (x·cos+z·sin, −x·sin+z·cos))
+                for (const bb of mdl.cols) {
+                    const cxL = (bb.min.x + bb.max.x) / 2, czL = (bb.min.z + bb.max.z) / 2;
+                    const wx = inst.x + s * (cxL * Math.cos(rot) + czL * Math.sin(rot));
+                    const wz = inst.z + s * (-cxL * Math.sin(rot) + czL * Math.cos(rot));
+                    addSolidOBB(wx, wz,
+                        s * (bb.max.x - bb.min.x) / 2, s * (bb.max.z - bb.min.z) / 2,
+                        y + s * bb.min.y, y + s * bb.max.y, inst.rotY || 0);
+                }
+            }
+        };
+        layout.edifici.forEach(e => place(e, false));
+        layout.props.forEach(p => place(p, true));
+
+        // ── Mesh finali: una per materiale ──
+        for (const mn in globalByMat) {
+            const mesh = new THREE.Mesh(_mergeGeos(globalByMat[mn]), _jazzMatCache[mn]);
+            mesh.matrixAutoUpdate = false;
+            jazzMergedMeshes.push(mesh);
+            jazzZoneGroup.add(mesh);
+        }
+        scene.add(jazzZoneGroup);
+        console.log(`🏙 Zona Jazz: ${jazzMergedMeshes.length} mesh merged, ${solidBoxes.length} solidi`);
+    });
+}
+
+// ── Bordi neri sugli edifici: toggle di valutazione (tasto B) ──
+// Default SPENTO (stile Cuphead: fondali senza china; personaggi/armi/prop
+// restano inchiostrati). Gusci inverted-hull costruiti lazy alla prima pressione.
+let _jazzOutlines = null;
+function toggleJazzOutlines() {
+    if (!_jazzOutlines) {
+        _jazzOutlines = jazzMergedMeshes.map(m => {
+            const o = new THREE.Mesh(_toonDisplacedGeo(m.geometry, TOON_OUTLINE_T * 1.2), MAT.ink);
+            o.matrixAutoUpdate = false;
+            jazzZoneGroup.add(o);
+            return o;
+        });
+        console.log('🖋 Contorni zona costruiti:', _jazzOutlines.length);
+        return;   // prima pressione = accendi
+    }
+    const on = !_jazzOutlines[0].visible;
+    _jazzOutlines.forEach(o => { o.visible = on; });
+}
+
+// ══════════════════════════════════════════════════════
 //  HELPER: box con ombra
 // ══════════════════════════════════════════════════════
 function makeBox(w, h, d, mat, x, y, z) {
@@ -719,89 +855,32 @@ function addSolid(w, h, d, x, y, z, mat) {
     return mesh;
 }
 
-// ── Cassa di legno dettagliata (assi/battute) — collisione identica ad addSolid ──
-function crate(w, h, d, x, y, z, dark = false) {
-    const base = dark ? MAT.crateDark : MAT.crate;
-    const edge = dark ? MAT.crate : MAT.crateDark;
-    const mesh = addSolid(w, h, d, x, y, z, base);
-    const t = 0.07;
-    // Montanti agli angoli
-    for (const sx of [-1, 1]) {
-        for (const sz of [-1, 1]) {
-            makeBox(t * 2, h, t * 2, edge, x + sx * (w / 2 - t), y + h / 2, z + sz * (d / 2 - t));
-        }
-    }
-    // Bande orizzontali alta/bassa
-    makeBox(w + 0.02, t * 2, d + 0.02, edge, x, y + h - t, z);
-    makeBox(w + 0.02, t * 2, d + 0.02, edge, x, y + t, z);
-    return mesh;
+// ── Solido RUOTATO attorno a Y (edifici GLB della Zona Jazz) ──
+// min/max = inviluppo AABB in coordinate mondo (per minimap/consumer generici);
+// il test di collisione vero usa il frame LOCALE (cx,cz,hw,hd,rot).
+function addSolidOBB(cx, cz, hw, hd, y0, y1, rotYdeg) {
+    const rot = rotYdeg * Math.PI / 180;
+    const c = Math.cos(rot), s = Math.sin(rot);
+    const ex = Math.abs(c) * hw + Math.abs(s) * hd;   // inviluppo
+    const ez = Math.abs(s) * hw + Math.abs(c) * hd;
+    // NB: cos/sin memorizzati per il passaggio MONDO→LOCALE, cioè R(−rot):
+    // three.js (rotation.y=rot) manda il locale (x,z) in (x·cos+z·sin, −x·sin+z·cos),
+    // quindi l'inversa richiede il seno NEGATO. I tre consumer (resolveCollisions,
+    // canStandAt, raycastSolids) usano questi campi così come sono.
+    solidBoxes.push({
+        min: new THREE.Vector3(cx - ex, y0, cz - ez),
+        max: new THREE.Vector3(cx + ex, y1, cz + ez),
+        rot, cos: c, sin: -s, cx, cz, hw, hd
+    });
 }
+
+// ── Cassa di legno dettagliata (assi/battute) — collisione identica ad addSolid ──
 
 // ── Barriera New Jersey in cemento (riparo basso, da accovacciati) ──
-function buildBarrier(x, z, rotY = 0) {
-    const L = 2.2, H = 1.0, W = 0.7;
-    const g = new THREE.Group();
-    // Profilo trapezoidale approssimato con due box sovrapposti
-    const b1 = new THREE.Mesh(new THREE.BoxGeometry(L, 0.45, W), MAT.concrete);
-    b1.position.set(0, 0.225, 0);
-    const b2 = new THREE.Mesh(new THREE.BoxGeometry(L, 0.55, W * 0.5), MAT.concrete);
-    b2.position.set(0, 0.45 + 0.275, 0);
-    [b1, b2].forEach(m => { m.castShadow = true; m.receiveShadow = true; g.add(m); });
-    g.position.set(x, 0, z);
-    g.rotation.y = rotY;
-    scene.add(g);
-    // AABB di collisione orientata sugli assi (approssima l'ingombro ruotato)
-    const c = Math.abs(Math.cos(rotY)), s = Math.abs(Math.sin(rotY));
-    const hx = (L * c + W * s) / 2, hz = (L * s + W * c) / 2;
-    solidBoxes.push({
-        min: new THREE.Vector3(x - hx, 0, z - hz),
-        max: new THREE.Vector3(x + hx, H, z + hz)
-    });
-}
 
 // ── Pila di sacchi di sabbia (riparo basso) ──
-function buildSandbags(x, z, len = 2.4, rotY = 0) {
-    const H = 0.95, W = 0.7;
-    const g = new THREE.Group();
-    const matA = worldToon({ color: 0xbfa96c });
-    const matB = worldToon({ color: 0xa38e5e });
-    const rows = 3, perRow = Math.max(2, Math.round(len / 0.6));
-    for (let r = 0; r < rows; r++) {
-        const off = (r % 2) * 0.28;
-        for (let i = 0; i < perRow; i++) {
-            const bx = -len / 2 + 0.3 + i * (len / perRow) + off * 0;
-            const bag = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6), (i + r) % 2 ? matA : matB);
-            bag.scale.set(1.0, 0.6, 0.85);
-            bag.position.set(bx, 0.18 + r * 0.3, (r % 2 ? 0.08 : -0.08));
-            bag.castShadow = true;
-            g.add(bag);
-        }
-    }
-    g.position.set(x, 0, z);
-    g.rotation.y = rotY;
-    scene.add(g);
-    const c = Math.abs(Math.cos(rotY)), s = Math.abs(Math.sin(rotY));
-    const hx = (len * c + W * s) / 2, hz = (len * s + W * c) / 2;
-    solidBoxes.push({
-        min: new THREE.Vector3(x - hx, 0, z - hz),
-        max: new THREE.Vector3(x + hx, H, z + hz)
-    });
-}
 
 // ── Barile metallico (riparo stretto e alto) ──
-function buildBarrel(x, z, color = 0x4a8a4a) {
-    const r = 0.36, H = 1.1;
-    const mat = worldToon({ color });
-    const body = makeCyl(r, r, H, mat, x, H / 2, z, 'y', 14);
-    _addToonOutline(body, MAT.ink, 0.8);
-    // Cerchiature
-    makeCyl(r + 0.02, r + 0.02, 0.06, MAT.crateDark, x, H * 0.28, z, 'y', 14);
-    makeCyl(r + 0.02, r + 0.02, 0.06, MAT.crateDark, x, H * 0.72, z, 'y', 14);
-    solidBoxes.push({
-        min: new THREE.Vector3(x - r, 0, z - r),
-        max: new THREE.Vector3(x + r, H, z + r)
-    });
-}
 
 // ══════════════════════════════════════════════════════
 //  PORTE INTERATTIVE — pannello incernierato + AABB commutabile
@@ -811,9 +890,10 @@ function buildBarrel(x, z, color = 0x4a8a4a) {
 // solo le PROPRIE collisioni, quindi stati leggermente diversi non desyncano.
 const doors = [];
 
-// Porta in un'apertura fatta con punchWallX/Z. (cx,cz) = centro apertura,
+// Porta in un'apertura di muro. (cx,cz) = centro apertura,
 // w/h = misure del pannello, axis = asse del muro ('x'|'z'),
 // openDir = verso della rotazione (+1/-1 per aprire "in dentro").
+// (Sistema tenuto per gli interni futuri della Zona Jazz: doors[] oggi è vuoto.)
 function buildDoor(cx, cz, w, h, axis, openDir, mat) {
     const g = new THREE.Group();
     const baseYaw = (axis === 'x') ? 0 : Math.PI / 2;
@@ -926,737 +1006,56 @@ function resetBreakables() {
 }
 
 // Bottiglia di vetro colorato (breakable): corpo + collo
-function addBottle(x, y, z, color) {
-    const mat = worldToon({ color, transparent: true, opacity: 0.85 });
-    const body = makeCyl(0.07, 0.08, 0.3, mat, x, y + 0.15, z, 'y', 8);
-    const neck = makeCyl(0.028, 0.045, 0.16, mat, x, y + 0.37, z, 'y', 8);
-    registerBreakable([body, neck],
-        new THREE.Vector3(x - 0.09, y, z - 0.09),
-        new THREE.Vector3(x + 0.09, y + 0.46, z + 0.09));
-}
-
-// Cassetta leggera (breakable, NON solida — troppo piccola per far da riparo)
-function addLooseCrate(size, x, y, z, dark = false) {
-    const m = makeBox(size, size, size, dark ? MAT.crateDark : MAT.crate, x, y + size / 2, z);
-    registerBreakable([m],
-        new THREE.Vector3(x - size / 2, y, z - size / 2),
-        new THREE.Vector3(x + size / 2, y + size, z + size / 2));
-}
 
 // ══════════════════════════════════════════════════════
-//  SPEAKEASY (angolo SW) — volume chiuso su più stanze:
-//  sala bar (bancone + palco + tavolini) e retro/cantina.
-//  Ingressi SOLO da porte interattive → ideale per i
-//  mutatori blackout/fog e il combattimento ravvicinato.
-// ══════════════════════════════════════════════════════
-function buildSpeakeasy() {
-    const x0 = -30.5, x1 = -18.5, z0 = 21.5, z1 = 31.5, H = 3.2;
-    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;   // il retro sfrutta il muro perimetrale (z1)
-
-    // Pavimento in legno (piano visivo, come i marciapiedi)
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0), MAT.woodFloor);
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.set(cx, 0.06, cz);
-    floor.receiveShadow = true;
-    scene.add(floor);
-
-    // Guscio in mattoni (facciata "clandestina"): porta+finestrella alta a nord,
-    // porta a est, cieco a ovest; il lato sud è il muro perimetrale stesso.
-    const doorOpen = { w: 1.8, b: 0, t: 2.25 };
-    const winHigh = { w: 2.4, b: 1.9, t: 2.6 };
-    punchWallX(z0, x0, x1, 0, H, [{ c: -27.5, ...doorOpen }, { c: -22.5, ...winHigh }], MAT.wall);
-    punchWallZ(x1, z0, z1, 0, H, [{ c: 24.5, ...doorOpen }], MAT.wall);
-    punchWallZ(x0, z0, z1, 0, H, [], MAT.wall);
-    // Vetro della finestrella (breakable) + tende scure dietro
-    const wg = makeBox(2.3, 0.65, 0.08, MAT.glass, -22.5, 2.25, z0);
-    registerBreakable([wg],
-        new THREE.Vector3(-23.65, 1.9, z0 - 0.12),
-        new THREE.Vector3(-21.35, 2.6, z0 + 0.12));
-
-    // Tramezzo interno: sala (z 21.5→28) / retro-cantina (z 28→31.5)
-    punchWallX(28, x0, x1, 0, H, [{ c: -20.5, w: 1.6, b: 0, t: 2.2 }], MAT.facadeCream, 0.3);
-
-    // Tetto piano + cornicione (raggiungibile con un salto dal tetto del portico)
-    addSolid(x1 - x0 + 0.6, 0.25, z1 - z0 + 0.6, cx, H, cz, MAT.roof);
-    for (const zz of [z0 - 0.15, z1]) makeBox(x1 - x0 + 0.8, 0.3, 0.25, MAT.trim, cx, H - 0.05, zz);
-
-    // Le tre porte (aprono verso l'interno): ingresso nord, porta est, retro
-    buildDoor(-27.5, z0, 1.8, 2.25, 'x', -1);
-    buildDoor(x1, 24.5, 1.8, 2.25, 'z', 1);
-    buildDoor(-20.5, 28, 1.6, 2.2, 'x', -1, MAT.facadeCream);
-
-    // Insegna discreta + lampadina sopra l'ingresso (sul lato strada, -Z)
-    addSign('JAZZ CLUB', 3.2, 0.75, -27.5, 2.75, z0 - 0.21, Math.PI, '#2a2320', '#e8b64f');
-    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), MAT.lamp);
-    bulb.position.set(-27.5, 2.45, z0 - 0.35);
-    scene.add(bulb);
-
-    // ── Sala bar ──
-    // Bancone (riparo alto) + sgabelli
-    const bar = addSolid(4.6, 1.05, 0.9, -23, 0, 26.4, MAT.stallWood);
-    _addToonOutline(bar, MAT.ink);
-    for (const sx of [-24.4, -23, -21.6]) {
-        makeCyl(0.24, 0.24, 0.06, MAT.couch, sx, 0.62, 25.5, 'y', 10);
-        makeCyl(0.05, 0.07, 0.6, MAT.crateDark, sx, 0.3, 25.5, 'y', 8);
-    }
-    // Scaffale a muro dietro il bancone, con bottiglie (breakable)
-    for (const sy of [1.45, 2.0]) makeBox(4.4, 0.06, 0.32, MAT.crateDark, -23, sy, 27.6);
-    const bottleCols = [0x3f7a4e, 0x7a4a28, 0x4a6a8a, 0x8a3c2e];
-    let bi = 0;
-    for (const sy of [1.48, 2.03]) {
-        for (let bx = -24.7; bx <= -21.3; bx += 0.55) {
-            addBottle(bx + (bi % 2) * 0.12, sy, 27.6, bottleCols[bi % bottleCols.length]);
-            bi++;
-        }
-    }
-    // Bottiglie anche sul bancone
-    addBottle(-24.3, 1.05, 26.3, 0x3f7a4e);
-    addBottle(-21.8, 1.05, 26.5, 0x7a4a28);
-
-    // Palco con microfono lungo la parete ovest (arretrato: fuori dal
-    // raggio di apertura della porta d'ingresso)
-    const stage = addSolid(2.6, 0.45, 3.4, -29, 0, 25.2, MAT.woodFloor);
-    _addToonOutline(stage, MAT.ink, 1.2);
-    makeCyl(0.035, 0.05, 1.15, MAT.metal, -29, 1.02, 25.2, 'y', 8);
-    const mic = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), MAT.crateDark);
-    mic.position.set(-29, 1.68, 25.2);
-    scene.add(mic);
-    // Tenda scura di fondo palco
-    makeBox(0.1, 2.2, 3.6, worldToon({ color: 0x6e2a33 }), -30.25, 1.45, 25.2);
-
-    // Tavolini tondi (riparo basso) — AABB manuale sull'ingombro del piano
-    for (const [tx, tz] of [[-25.6, 23.3], [-20.6, 25.8]]) {
-        const top = makeCyl(0.55, 0.55, 0.07, MAT.stallWood, tx, 0.8, tz, 'y', 14);
-        _addToonOutline(top, MAT.ink, 0.7);
-        makeCyl(0.07, 0.11, 0.8, MAT.crateDark, tx, 0.4, tz, 'y', 8);
-        solidBoxes.push({
-            min: new THREE.Vector3(tx - 0.55, 0, tz - 0.55),
-            max: new THREE.Vector3(tx + 0.55, 0.84, tz + 0.55)
-        });
-    }
-
-    // ── Retro / cantina: casse e botti (ripari veri) ──
-    crate(1.5, 1.2, 1.5, -29.3, 0, 30.3, true);
-    crate(1.3, 0.6, 1.3, -27.6, 0, 29.6);
-    buildBarrel(-25.4, 30.4, 0x7a4a28);
-    buildBarrel(-24.2, 29.6, 0x7a4a28);
-    addLooseCrate(0.7, -22.5, 0, 30.6);
-}
-
-// ══════════════════════════════════════════════════════
-//  IL PORTO — distretto EST (x 31.5..MAP_X1, tutta la
-//  profondità della mappa): bacino d'acqua lungo il muro
-//  est, nave cargo col ponte calpestabile, magazzino
-//  enterable (porte interattive), gru, container, pontile.
-//  Si raggiunge da nord (dietro la FERRAMENTA), dal vicolo
-//  tra SARTORIA e FARMACIA, da sud (oltre il TEATRO) e
-//  attraverso le retro-porte di RADIO e FARMACIA.
-// ══════════════════════════════════════════════════════
-function buildPort() {
-    const x0 = 31.5;
-    MAT.crane = worldToon({ color: 0xe0a83a });
-    MAT.hull  = worldToon({ color: 0x4a5c6e });
-
-    // ── Pavimentazione della banchina (copre l'acciottolato) ──
-    const pav = (w, d, x, z) => {
-        const p = new THREE.Mesh(new THREE.PlaneGeometry(w, d), MAT.concrete);
-        p.rotation.x = -Math.PI / 2;
-        p.position.set(x, 0.03, z);
-        p.receiveShadow = true;
-        scene.add(p);
-    };
-    pav(10, 64, 36.5, 0);            // banchina principale (x 31.5..41.5)
-    pav(6.5, 12, 44.75, -26);        // piazzale container a NE
-
-    // ── Bacino d'acqua lungo il muro est (x 41.5..48, z -20..32) ──
-    // Il bordo è 0.45: in acqua si entra e si esce camminando (step-up).
-    const bed = new THREE.Mesh(new THREE.PlaneGeometry(6.5, 52), worldToon({ color: 0x2e5f70 }));
-    bed.rotation.x = -Math.PI / 2;
-    bed.position.set(44.75, 0.04, 6);
-    scene.add(bed);
-    const water = new THREE.Mesh(new THREE.PlaneGeometry(6.5, 52), MAT.water);
-    water.rotation.x = -Math.PI / 2;
-    water.position.set(44.75, 0.3, 6);
-    scene.add(water);
-    // Bordo banchina a L (lato ovest del bacino + lato nord)
-    addSolid(0.8, 0.45, 52.4, 41.1, 0, 6.2, MAT.concrete);
-    addSolid(7.3, 0.45, 0.8, 44.85, 0, -20.4, MAT.concrete);
-    // Bitte d'ormeggio lungo il bordo
-    for (const bz of [-16, -8, 0, 8, 16, 24]) {
-        const bitta = makeCyl(0.09, 0.13, 0.42, MAT.iron, 41.1, 0.66, bz, 'y', 8);
-        _addToonOutline(bitta, MAT.ink, 0.6);
-    }
-
-    // ── NAVE CARGO ormeggiata: ponte calpestabile a 1.85, si sale
-    //    dalla passerella in legno; cabina solida = riparo in quota ──
-    addSolid(3.6, 1.7, 16, 45.3, 0.15, 4, MAT.hull);                 // scafo → ponte a 1.85
-    makeBox(3.7, 0.22, 16.2, MAT.trim, 45.3, 0.5, 4);                // linea di galleggiamento
-    for (const sx of [43.62, 46.98]) makeBox(0.1, 0.42, 15.6, MAT.vanRed, sx, 2.06, 4);  // murate (visive)
-    addSolid(3.0, 1.9, 2.8, 45.3, 1.85, 9.8, MAT.facadeCream);       // cabina di comando
-    makeBox(3.2, 0.18, 3.0, MAT.vanRed, 45.3, 3.85, 9.8);            // tetto cabina
-    makeBox(2.4, 0.55, 0.1, MAT.glass, 45.3, 3.2, 8.38);             // vetrata verso prua
-    const funnel = makeCyl(0.5, 0.62, 1.9, MAT.hull, 45.3, 2.9, 7.0, 'y', 12);
-    _addToonOutline(funnel, MAT.ink, 0.8);
-    makeCyl(0.53, 0.53, 0.4, MAT.vanRed, 45.3, 3.6, 7.0, 'y', 12);   // fascia rossa fumaiolo
-    const mast = makeCyl(0.06, 0.1, 3.6, MAT.bark, 45.3, 3.6, -1.5, 'y', 8);
-    _addToonOutline(mast, MAT.ink, 0.6);
-    // Prua a cuneo (visiva) + casse sul ponte (riparo)
-    const bow = makeBox(2.55, 1.7, 2.55, MAT.hull, 45.3, 1.0, -4.6);
-    bow.rotation.y = Math.PI / 4;
-    crate(1.4, 0.9, 1.4, 44.6, 1.85, 2);
-    crate(1.1, 0.6, 1.1, 46.1, 1.85, 0.6, true);
-    addSign('S.S. GAMBERETTO', 3.4, 0.55, 43.55, 1.15, 4, -Math.PI / 2, '#4a5c6e', '#f6efe0');
-    // Passerella d'imbarco: gradini dalla banchina fin sul ponte
-    buildStairs(40.9, 2.0, 1.6, 1.85, 1, 0, MAT.woodFloor);
-
-    // ── MAGAZZINO enterable (porte interattive, tetto-postazione) ──
-    const mx0 = 33, mx1 = 40, mz0 = -28, mz1 = -19.5, MH = 3.6;
-    const mcx = (mx0 + mx1) / 2, mcz = (mz0 + mz1) / 2;
-    const mfloor = new THREE.Mesh(new THREE.PlaneGeometry(mx1 - mx0, mz1 - mz0), MAT.woodFloor);
-    mfloor.rotation.x = -Math.PI / 2;
-    mfloor.position.set(mcx, 0.06, mcz);
-    scene.add(mfloor);
-    punchWallX(mz1, mx0, mx1, 0, MH, [{ c: 36.5, w: 2.6, b: 0, t: 2.6 }], MAT.facadeMustard);  // fronte sud
-    punchWallX(mz0, mx0, mx1, 0, MH, [], MAT.facadeMustard);
-    punchWallZ(mx0, mz0, mz1, 0, MH, [{ c: -23.5, w: 1.8, b: 0, t: 2.25 }], MAT.facadeMustard);
-    punchWallZ(mx1, mz0, mz1, 0, MH, [{ c: -26, w: 2.2, b: 2.2, t: 3.0 }], MAT.facadeMustard); // finestrone alto
-    addSolid(mx1 - mx0 + 0.6, 0.25, mz1 - mz0 + 0.6, mcx, MH, mcz, MAT.roof);
-    addSolid(mx1 - mx0 + 0.4, 0.6, 0.25, mcx, MH + 0.25, mz1, MAT.trim);   // parapetto sul fronte
-    buildDoor(36.5, mz1, 2.6, 2.6, 'x', -1);
-    buildDoor(mx0, -23.5, 1.8, 2.25, 'z', -1);
-    addSign('MAGAZZINO', 4.2, 0.85, 36.5, MH + 0.75, mz1 + 0.21, 0, '#8a5a1e', '#f6efe0');
-    // Interno: scaffalatura, casse, cassette rompibili
-    addSolid(4.5, 2.0, 0.5, 35.6, 0, mz0 + 0.6, MAT.crateDark);
-    crate(1.6, 1.2, 1.6, 38.8, 0, -26.5, true);
-    crate(1.4, 0.6, 1.4, 33.9, 0, -21.2);
-    addLooseCrate(0.7, 36.8, 0, -24.5);
-    addLooseCrate(0.6, 34.6, 0, -26.8, true);
-    // Scala esterna sul retro → tetto = postazione sul porto
-    buildStairs(41.1, -28.6, 2.0, 3.85, 0, 1);
-
-    // ── Piazzale container a NE (pile scalabili a gradoni) ──
-    const cont = (w, h, d, x, y, z, mat) => {
-        const c = addSolid(w, h, d, x, y, z, mat);
-        _addToonOutline(c, MAT.ink);
-        return c;
-    };
-    cont(2.2, 2.3, 5.5, 44, 0, -29, MAT.vanRed);
-    cont(2.2, 2.3, 5.5, 46.6, 0, -28.2, worldToon({ color: 0x4a8a4a }));
-    cont(2.2, 2.3, 5.5, 44, 2.3, -28.6, MAT.crane);   // container impilato
-    crate(1.5, 0.6, 1.5, 42.6, 0, -24.6);
-    crate(1.4, 1.2, 1.4, 43.9, 0, -25.2, true);
-    crate(1.3, 1.8, 1.3, 45.2, 0, -25.8);             // gradoni 0.6→1.2→1.8→2.3 (sul container)
-    buildBarrel(41.9, -21.8, 0x4a6a8a);
-    buildBarrel(42.9, -21.4, 0xd8574a);
-
-    // ── Gru portuale sulla banchina, braccio sopra la nave ──
-    addSolid(1.8, 0.5, 1.8, 39.8, 0, 13.5, MAT.metal);
-    const tower = addSolid(0.8, 6.8, 0.8, 39.8, 0.5, 13.5, MAT.crane);
-    _addToonOutline(tower, MAT.ink);
-    makeBox(1.3, 1.05, 1.15, MAT.crane, 39.8, 7.85, 13.5);            // cabina
-    makeBox(0.95, 0.55, 0.95, MAT.metal, 39.8, 7.35, 14.45);          // contrappeso
-    makeBox(7.2, 0.34, 0.55, MAT.crane, 43.2, 7.45, 13.5);            // braccio sul bacino
-    const tir = makeBox(6.4, 0.07, 0.07, MAT.metal, 43.1, 8.05, 13.5);
-    tir.rotation.z = -0.17;
-    makeCyl(0.03, 0.03, 3.4, MAT.tire, 46.2, 5.6, 13.5, 'y', 6);      // fune
-    const hangCrate = makeBox(1.15, 1.15, 1.15, MAT.crate, 46.2, 3.3, 13.5);
-    _addToonOutline(hangCrate, MAT.ink);
-
-    // ── Pontile basso nel bacino sud + barca a remi ──
-    addSolid(5.5, 0.55, 1.5, 44.2, 0, 24, MAT.woodFloor);
-    for (const [px, pz] of [[42.3, 23.3], [42.3, 24.7], [45.4, 23.3], [45.4, 24.7]]) {
-        const palo = makeCyl(0.09, 0.1, 0.95, MAT.bark, px, 0.48, pz, 'y', 8);
-        _addToonOutline(palo, MAT.ink, 0.6);
-    }
-    addSolid(1.7, 0.75, 3.2, 45, 0.1, 27.6, worldToon({ color: 0x8a3c2e }));   // scafo (riparo)
-    makeBox(1.75, 0.14, 3.3, MAT.trim, 45, 0.9, 27.6);
-    makeBox(1.3, 0.12, 0.4, MAT.woodFloor, 45, 0.62, 27.0);
-    makeBox(1.3, 0.12, 0.4, MAT.woodFloor, 45, 0.62, 28.3);
-    addLooseCrate(0.7, 43.2, 0.55, 24.2);
-    addLooseCrate(0.6, 45.9, 0.55, 23.8, true);
-
-    // ── Ripari sparsi sulla banchina principale + lampioni ──
-    buildSandbags(35, 8, 2.4, Math.PI / 2);
-    buildBarrier(34, -6, 0.15);
-    crate(1.7, 0.6, 1.7, 38.5, 0, 26.5);
-    crate(1.5, 1.2, 1.5, 38.5, 0, 28.1, true);
-    buildBarrel(33.5, 29.5, 0x4a8a4a);
-    buildLamppost(34, -16);
-    buildLamppost(34, 14);
-    buildLamppost(39, 22);
-    // Reti/salvagenti cartoon sul muro: anelli bianco-rossi (visivi)
-    for (const rz of [-2, 12]) {
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.13, 8, 18), MAT.vanRed);
-        ring.position.set(MAP_X1 - 0.55, 1.6, rz);
-        ring.rotation.y = Math.PI / 2;
-        scene.add(ring);
-    }
-
-    // Insegna del distretto sul muro perimetrale nord del piazzale
-    addSign('PORTO', 3.6, 1.0, 44.75, 4.5, -MAP_HALF + 0.56, 0, '#3f6fae', '#f6efe0');
-}
-
-// ── Chiosco dei giornali tondo (al posto del vecchio furgone dei gelati) ──
-function buildKiosk(x, z) {
-    const body = makeCyl(1.25, 1.25, 2.3, MAT.facadeMint, x, 1.15, z, 'y', 12);
-    _addToonOutline(body, MAT.ink);
-    solidBoxes.push({
-        min: new THREE.Vector3(x - 1.25, 0, z - 1.25),
-        max: new THREE.Vector3(x + 1.25, 2.3, z + 1.25)
-    });
-    // Sportello con mensola + giornali (breakable)
-    makeBox(1.3, 0.7, 0.12, worldToon({ color: 0x2a2320 }), x, 1.55, z - 1.22);
-    makeBox(1.5, 0.09, 0.5, MAT.trim, x, 1.12, z - 1.35);
-    addLooseCrate(0.4, x - 0.35, 1.17, z - 1.35);
-    // Tetto conico a strisce + pomello
-    const roof = makeCyl(0.12, 1.7, 0.95, MAT.awningRed, x, 2.78, z, 'y', 12);
-    _addToonOutline(roof, MAT.ink, 1.0);
-    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), MAT.brass);
-    knob.position.set(x, 3.35, z);
-    scene.add(knob);
-    addSign('EDICOLA', 2.2, 0.6, x, 2.15, z - 1.28, Math.PI);
-}
-
-// ══════════════════════════════════════════════════════
-//  MAPPA — "CITTADINA CARTOON" (anni '30, luminosa)
-//  Grande Emporio centrale a 2 piani + tetto calpestabile;
-//  anello esterno: strada nord, Via Lunga a ovest (linea
-//  sniper), piazza a sud con fontana e mercatino, botteghe
-//  enterable sul perimetro con tetti raggiungibili.
-//  Confini blindati (muro 12 m + soffitto invisibile).
+//  MAPPA — "ZONA JAZZ" (Blender, disco r=52)
+//  Isolato centrale col club Scat Cat + due corsie anulari
+//  separate da 4 archi di isolotti (varchi ai cardinali),
+//  perimetro circolare chiuso di edifici. Geometria dai GLB
+//  (loadJazzZone); qui solo fondo, nuvole e skybox.
+//  Confini: perimetro edifici + clamp radiale MAP_RADIUS.
 // ══════════════════════════════════════════════════════
 function buildMap() {
+    // ── Fondo di sicurezza sotto/oltre il disco della pavimentazione GLB ──
+    const under = new THREE.Mesh(new THREE.CircleGeometry(80, 48),
+                                 worldToon({ color: 0x4a4640 }));
+    under.rotation.x = -Math.PI / 2;
+    under.position.y = -0.14;
+    scene.add(under);
 
-    MAT.iron = worldToon({ color: 0x33604a });   // ghisa verde dei lampioni
-
-    // ── Terreno: acciottolato su tutta la mappa (estesa a est fino al porto) ──
-    const ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(MAP_X1 + MAP_HALF, MAP_HALF * 2), MAT.ground
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.x = (MAP_X1 - MAP_HALF) / 2;
-    ground.receiveShadow = true;
-    scene.add(ground);
-
-    // ── Strade in asfalto attorno all'Emporio (nessuna sovrapposizione) ──
-    const mkRoad = (w, d, x, z) => {
-        const r = new THREE.Mesh(new THREE.PlaneGeometry(w, d), MAT.asphalt);
-        r.rotation.x = -Math.PI / 2;
-        r.position.set(x, 0.02, z);
-        r.receiveShadow = true;
-        scene.add(r);
-    };
-    mkRoad(42, 18, 11, -16);      // strada nord (est-ovest)
-    mkRoad(17, 64, -18.5, 0);     // Via Lunga (ovest, nord-sud: linea sniper)
-    mkRoad(15, 32, 17.5, 9);      // strada est
-    // Mezzeria tratteggiata della Via Lunga
-    for (let z = -28; z <= 28; z += 8) {
-        const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 3), MAT.trim);
-        dash.rotation.x = -Math.PI / 2;
-        dash.position.set(-18, 0.035, z);
-        scene.add(dash);
-    }
-
-    // ── Marciapiedi davanti alle botteghe ──
-    const mkSide = (w, d, x, z) => {
-        const s = new THREE.Mesh(new THREE.PlaneGeometry(w, d), MAT.sidewalk);
-        s.rotation.x = -Math.PI / 2;
-        s.position.set(x, 0.05, z);
-        s.receiveShadow = true;
-        scene.add(s);
-    };
-    mkSide(40, 2, 8, -24);      // fronte botteghe nord
-    mkSide(2, 36, 24, -1);      // fronte botteghe est
-    mkSide(36, 2, 0, 24);       // fronte botteghe sud
-
-    // ── EDIFICIO CENTRALE: il Grande Emporio ──
-    buildCentral();
-
-    // ── BOTTEGHE dell'anello (enterable, tetto piano calpestabile) ──
-    // Nord (fronte a sud, verso la strada)
-    buildShop(-2, -28, 9, 6, 'S', MAT.facadeCoral, 'PANETTERIA', MAT.awningRed);
-    buildShop(10, -28, 8, 6, 'S', MAT.facadeMint, 'BARBIERE', MAT.awningBlue);
-    buildShop(22.5, -28, 9, 6, 'S', MAT.facadeCream, 'FERRAMENTA', MAT.awningRed);
-    // Est (fronte a ovest, verso la strada; RADIO e FARMACIA hanno la
-    // retro-porta che sfonda sul PORTO)
-    buildShop(28, -14, 8, 6, 'W', MAT.facadeBlue, 'RADIO', MAT.awningRed, true);
-    buildShop(28, -1, 8, 6, 'W', MAT.facadeCream, 'SARTORIA', MAT.awningBlue);
-    buildShop(28, 12, 8, 6, 'W', MAT.facadeCoral, 'FARMACIA', MAT.awningBlue, true);
-    // Sud (fronte a nord, sulla piazza)
-    buildShop(-11, 28, 9, 6, 'N', MAT.facadeMint, 'GELATERIA', MAT.awningRed);
-    buildShop(2, 28, 9, 6, 'N', MAT.facadeMustard, 'CAFFÈ', MAT.awningBlue);
-    buildShop(15, 28, 9, 6, 'N', MAT.facadeBlue, 'TEATRO', MAT.awningRed);
-
-    // ── Scale di servizio nei vicoli (accesso ai tetti delle botteghe) ──
-    buildStairs(4.25, -24.6, 2.8, 3.15, 0, -1);    // vicolo nord (PANETTERIA/BARBIERE)
-    buildStairs(24.6, -7.5, 4.2, 3.15, 1, 0);      // vicolo est (RADIO/SARTORIA)
-    buildStairs(-4.5, 24.6, 3.2, 3.15, 0, 1);      // vicolo sud (GELATERIA/CAFFÈ)
-    // Passerella in legno tra i tetti di BARBIERE e FERRAMENTA
-    addSolid(4.4, 0.15, 2.0, 16, 3.1, -28, MAT.woodFloor);
-
-    // ── PIAZZA sud: fontana, mercatino, giardinetto ──
-    buildFountain(0, 16);
-    buildStall(7, 11, true, MAT.awningRed);
-    buildStall(-5, 12, true, MAT.awningBlue);
-    buildStall(9, 19, false, MAT.awningBlue);
-    // Giardinetto recintato con albero
-    const g1 = new THREE.Mesh(new THREE.PlaneGeometry(6, 4), MAT.grass);
-    g1.rotation.x = -Math.PI / 2;
-    g1.position.set(-14, 0.04, 12);
-    g1.receiveShadow = true;
-    scene.add(g1);
-    fenceX(-17, -11, 10);
-    fenceX(-17, -11, 14);
-    fenceZ(10, 14, -17);
-    addTree(-14, 0, 12);
-    // Panchine (riparo bassissimo)
-    addSolid(2.2, 0.55, 0.6, -4, 0, 20, MAT.woodFloor);
-    addSolid(0.6, 0.55, 2.2, 4.5, 0, 16, MAT.woodFloor);
-
-    // ── Strada nord: chiosco dei giornali + coperture ──
-    buildKiosk(8, -16);
-    buildBarrier(-4, -13, 0.2);
-    buildBarrier(20, -19, -0.3);
-    buildSandbags(-2, -20, 2.4, 0.1);
-    buildBarrel(15, -12);
-    buildBarrel(16.2, -12.6, 0xd8574a);
-
-    // ── Via Lunga: coperture RADE ai bordi (la linea di tiro resta libera) ──
-    buildSandbags(-12.5, -5, 2.2, Math.PI / 2);
-    buildBarrier(-12.5, 8, Math.PI / 2);
-    buildBarrel(-24.5, 6);
-
-    // ── Portico ovest: colonnato coperto lungo il muro, tetto calpestabile ──
-    for (let z = -18; z <= 18; z += 6) {
-        const col = makeCyl(0.28, 0.34, 3.0, MAT.trim, -27, 1.5, z, 'y', 12);
-        _addToonOutline(col, MAT.ink, 0.8);
-        solidBoxes.push({
-            min: new THREE.Vector3(-27.35, 0, z - 0.35),
-            max: new THREE.Vector3(-26.65, 3.0, z + 0.35)
-        });
-    }
-    addSolid(5, 0.25, 40, -29.2, 3.0, 0, MAT.roof);       // tetto del portico
-    addSolid(0.25, 0.55, 40, -26.8, 3.25, 0, MAT.trim);   // parapetto basso sul bordo
-    buildStairs(-29.2, -24.4, 3.6, 3.25, 0, 1);           // scala all'estremità nord
-
-    // ── Angolo NW: palco della banda (gazebo) ──
-    buildGazebo(-14, -27);
-    addTree(-25, 0, -27);
-
-    // ── Angolo SW: lo SPEAKEASY (interno chiuso, porte interattive) ──
-    buildSpeakeasy();
-
-    // ── Distretto EST: il PORTO (bacino, nave, magazzino, gru, container) ──
-    buildPort();
-    // Raccordo piazza→porto (angolo SE): qualche riparo sul varco
-    crate(1.7, 0.6, 1.7, 24, 0, 26);
-    crate(1.5, 1.2, 1.5, 24, 0, 24.4, true);
-    buildBarrel(28.5, 20.5);
-
-    // ── Angolo NE: pocket con casse impilate ──
-    addTree(29, 0, -22);
-    crate(1.7, 0.6, 1.7, 28, 0, -27);
-    crate(1.5, 1.2, 1.5, 29.3, 0, -28.6, true);
-
-    // ── Lampioni ──
-    buildLamppost(-13, -9);
-    buildLamppost(13, -9);
-    buildLamppost(13, 9);
-    buildLamppost(-13, 9);
-    buildLamppost(-6, 20.5);
-    buildLamppost(18, -22);
-
-    // ── Confini: muro perimetrale ALTO (niente fughe con Gravità Lunare).
-    // Il lato est è arretrato a MAP_X1: dietro le botteghe est c'è il PORTO. ──
-    const wallCX = (MAP_X1 - MAP_HALF) / 2, wallLen = MAP_X1 + MAP_HALF + 2;
-    addSolid(wallLen, 12, 1, wallCX, 0, -MAP_HALF, MAT.wall);
-    addSolid(wallLen, 12, 1, wallCX, 0, MAP_HALF, MAT.wall);
-    addSolid(1, 12, MAP_HALF * 2 + 2, MAP_X1, 0, 0, MAT.wall);
-    addSolid(1, 12, MAP_HALF * 2 + 2, -MAP_HALF, 0, 0, MAT.wall);
-    // Cornice bianca in cima al muro
-    for (const [w, d, x, z] of [[wallLen + 0.4, 1.4, wallCX, -MAP_HALF], [wallLen + 0.4, 1.4, wallCX, MAP_HALF],
-                                [1.4, 66, MAP_X1, 0], [1.4, 66, -MAP_HALF, 0]]) {
-        makeBox(w, 0.5, d, MAT.trim, x, 12.15, z);
-    }
-
-    // ── Fondale, nuvole e skybox ──
-    buildBackdrop();
+    // ── Nuvole e skybox ──
     buildClouds();
     const sky = new THREE.Mesh(new THREE.BoxGeometry(500, 500, 500), MAT.sky);
     scene.add(sky);
+
+    // La geometria vera (edifici/pavimento/props GLB) arriva da loadJazzZone().
 }
 
 // ══ HELPER MURI CON APERTURE (porte/finestre) ══
 // Muro lungo X con aperture. openings: [{c, w, b, t}] ordinati per centro —
 // c = centro-x, w = larghezza, b/t = quote assolute inferiore/superiore del buco.
-function punchWallX(zc, x0, x1, y0, h, openings, mat, t = 0.35) {
-    let cur = x0;
-    const top = y0 + h;
-    for (const o of openings) {
-        const oL = o.c - o.w / 2, oR = o.c + o.w / 2;
-        if (oL > cur + 0.01) addSolid(oL - cur, h, t, (cur + oL) / 2, y0, zc, mat);
-        if (o.b > y0 + 0.01) addSolid(o.w, o.b - y0, t, o.c, y0, zc, mat);
-        if (o.t < top - 0.01) addSolid(o.w, top - o.t, t, o.c, o.t, zc, mat);
-        cur = oR;
-    }
-    if (cur < x1 - 0.01) addSolid(x1 - cur, h, t, (cur + x1) / 2, y0, zc, mat);
-}
 // Come sopra, lungo Z (c = centro-z delle aperture)
-function punchWallZ(xc, z0, z1, y0, h, openings, mat, t = 0.35) {
-    let cur = z0;
-    const top = y0 + h;
-    for (const o of openings) {
-        const oL = o.c - o.w / 2, oR = o.c + o.w / 2;
-        if (oL > cur + 0.01) addSolid(t, h, oL - cur, xc, y0, (cur + oL) / 2, mat);
-        if (o.b > y0 + 0.01) addSolid(t, o.b - y0, o.w, xc, y0, o.c, mat);
-        if (o.t < top - 0.01) addSolid(t, top - o.t, o.w, xc, o.t, o.c, mat);
-        cur = oR;
-    }
-    if (cur < z1 - 0.01) addSolid(t, h, z1 - cur, xc, y0, (cur + z1) / 2, mat);
-}
 
 // Scala esterna dritta: parte da (x0,z0), sale verso (dirX,dirZ) fino a hTop.
 // Gradini < STEP_HEIGHT → si sale camminando. w = larghezza della rampa.
-function buildStairs(x0, z0, w, hTop, dirX, dirZ, mat = MAT.concrete) {
-    const n = Math.max(2, Math.ceil(hTop / 0.5));
-    const stepH = hTop / n, depth = 0.62;
-    for (let i = 0; i < n; i++) {
-        addSolid(dirX ? depth + 0.04 : w, (i + 1) * stepH,
-                 dirZ ? depth + 0.04 : w,
-                 x0 + dirX * (i + 0.5) * depth, 0,
-                 z0 + dirZ * (i + 0.5) * depth, mat);
-    }
-}
 
 // ── GRANDE EMPORIO centrale: 2 piani + tetto-terrazza calpestabile ──
 // Interni stretti (smg/shotgun/blackout), finestroni al 2° piano, scala A
 // (terra→2°, angolo NW) e scala B (2°→tetto, angolo SE), parapetto sul tetto.
-function buildCentral() {
-    const W = 20, D = 14, hw = W / 2, hd = D / 2;
-    const F2 = 2.8, ROOF = 5.6;
-    const FAC = MAT.facadeMustard;
-    const holeW = 3.4, holeD = 4.4;   // vani scala nei solai
-
-    // Fondamenta + pavimento in legno
-    makeBox(W + 0.8, 0.3, D + 0.8, MAT.concrete, 0, -0.05, 0);
-    makeBox(W, 0.2, D, MAT.woodFloor, 0, 0.1, 0);
-
-    // ── PIANO TERRA: porte su tutti e 4 i lati + vetrine ──
-    const door = { w: 3.0, b: 0, t: 2.3 };
-    const win = { w: 2.6, b: 1.0, t: 2.4 };
-    for (const sz of [-1, 1]) {
-        punchWallX(sz * hd, -hw, hw, 0, F2,
-            [{ c: -6, ...win }, { c: 0, ...door }, { c: 6, ...win }], FAC);
-    }
-    punchWallZ(-hw, -hd, hd, 0, F2, [{ c: 3, w: 2.4, b: 0, t: 2.3 }], FAC);
-    punchWallZ(hw, -hd, hd, 0, F2, [{ c: -3, w: 2.4, b: 0, t: 2.3 }], FAC);
-    // Vetrine + cornici + gradini d'ingresso
-    for (const sz of [-1, 1]) {
-        for (const wx of [-6, 6]) makeBox(2.5, 1.4, 0.1, MAT.glass, wx, 1.7, sz * hd);
-        makeBox(3.4, 0.3, 0.55, MAT.trim, 0, 2.45, sz * hd);
-        addSolid(4.0, 0.28, 1.2, 0, 0, sz * (hd + 0.7), MAT.concrete);
-    }
-
-    // ── SOLAIO del 2° piano (vano scala A nell'angolo NW: x -10..-6.6, z -7..-2.6) ──
-    addSolid(W - holeW, 0.2, D, holeW / 2, F2 - 0.2, 0, MAT.woodFloor);   // lastra grande (x -6.6..10)
-    addSolid(holeW, 0.2, D - holeD, -hw + holeW / 2, F2 - 0.2, -hd + holeD + (D - holeD) / 2, MAT.woodFloor);
-
-    // ── SCALA A: terra → 2° piano (gradini bassi, step-up automatico) ──
-    const nA = 7, stepHA = F2 / nA, stepDA = holeD / nA;
-    for (let i = 0; i < nA; i++) {
-        addSolid(holeW - 0.6, (i + 1) * stepHA, stepDA + 0.02,
-                 -hw + holeW / 2, 0, -hd + (i + 0.5) * stepDA, MAT.concrete);
-    }
-
-    // ── SECONDO PIANO: finestroni bassi = postazioni di tiro su strada/piazza ──
-    const win2 = { w: 3.0, b: F2 + 0.5, t: F2 + 2.0 };
-    for (const sz of [-1, 1]) {
-        punchWallX(sz * hd, -hw, hw, F2, ROOF - F2,
-            [{ c: -6, ...win2 }, { c: 0, ...win2 }, { c: 6, ...win2 }], FAC);
-    }
-    const win2z = { w: 2.6, b: F2 + 0.5, t: F2 + 2.0 };
-    for (const sx of [-1, 1]) {
-        punchWallZ(sx * hw, -hd, hd, F2, ROOF - F2,
-            [{ c: -3.5, ...win2z }, { c: 3.5, ...win2z }], FAC);
-    }
-    // Copertura interna al 2° piano
-    crate(1.6, 0.6, 1.6, 5, F2, 3);
-    crate(1.4, 0.6, 1.4, -4, F2, -4);
-
-    // ── SCALA B: 2° piano → tetto (angolo SE; vano nel tetto x 6.6..10, z 2.6..7) ──
-    const nB = 7, stepHB = (ROOF - F2) / nB, stepDB = holeD / nB;
-    for (let i = 0; i < nB; i++) {
-        addSolid(holeW - 0.6, (i + 1) * stepHB, stepDB + 0.02,
-                 hw - holeW / 2, F2, hd - holeD + (i + 0.5) * stepDB, MAT.concrete);
-    }
-
-    // ── TETTO-TERRAZZA con vano scala B e parapetto (riparo basso in quota) ──
-    addSolid(W - holeW, 0.25, D, -holeW / 2, ROOF - 0.2, 0, MAT.concrete);
-    addSolid(holeW, 0.25, D - holeD, hw - holeW / 2, ROOF - 0.2, -holeD / 2, MAT.concrete);
-    const py = ROOF + 0.05;   // base parapetto = quota calpestio del tetto
-    addSolid(W + 0.3, 0.9, 0.3, 0, py, -hd, MAT.wall);
-    addSolid(W + 0.3, 0.9, 0.3, 0, py, hd, MAT.wall);
-    addSolid(0.3, 0.9, D + 0.3, -hw, py, 0, MAT.wall);
-    addSolid(0.3, 0.9, D + 0.3, hw, py, 0, MAT.wall);
-    // Cornicione bianco sotto la linea del tetto
-    for (const sz of [-1, 1]) makeBox(W + 0.7, 0.35, 0.25, MAT.trim, 0, ROOF - 0.1, sz * (hd + 0.25));
-    for (const sx of [-1, 1]) makeBox(0.25, 0.35, D + 0.7, MAT.trim, sx * (hw + 0.25), ROOF - 0.1, 0);
-    // Prop sul tetto (comignoli/casse = ripari)
-    addSolid(1.8, 1.1, 1.4, -5, py, -2, MAT.wall);
-    addSolid(1.2, 0.8, 1.2, 3, py, 4, MAT.wall);
-    crate(1.5, 0.9, 1.5, 2, py, -4);
-
-    // ── Insegne + tende sulle vetrine ──
-    // Insegna nella fascia cieca tra i due piani (non copre i finestroni)
-    addSign('EMPORIO', 6, 0.9, 0, 2.85, hd + 0.24, 0);
-    addSign('EMPORIO', 6, 0.9, 0, 2.85, -(hd + 0.24), Math.PI);
-    for (const sz of [-1, 1]) {
-        for (const wx of [-6, 6]) {
-            const aw = makeBox(2.9, 0.07, 1.1, sz > 0 ? MAT.awningRed : MAT.awningBlue,
-                               wx, 2.55, sz * (hd + 0.55));
-            aw.rotation.x = sz * 0.35;
-        }
-    }
-
-    // ── Interni piano terra: bancone a L + scaffalatura (corridoi stretti) ──
-    addSolid(5.0, 1.0, 0.8, 3.0, 0, 2.0, MAT.stallWood);
-    addSolid(0.8, 1.0, 3.0, 6.0, 0, 0.4, MAT.stallWood);
-    addSolid(6.0, 2.1, 0.5, -2.5, 0, -2.0, MAT.crateDark);
-    crate(1.4, 0.65, 1.4, -6, 0, 4);
-    crate(1.2, 0.6, 1.2, 7.5, 0, -4.5);
-}
 
 // ── Bottega dell'anello: guscio enterable, tetto piano calpestabile ──
 // face = direzione della vetrina ('N'|'S'|'E'|'W'), w = fronte, d = profondità.
 // backDoor (solo facce E/W): retro-porta interattiva che sfonda verso il porto.
-function buildShop(cx, cz, w, d, face, mat, name, awningMat, backDoor = false) {
-    const H = 2.9, t = 0.3;
-    const door = { w: 1.7, b: 0, t: 2.2 };
-    const win = { w: Math.min(2.6, w - 4), b: 0.9, t: 2.3 };
-
-    if (face === 'S' || face === 'N') {
-        const s = (face === 'S') ? 1 : -1;
-        const zf = cz + s * d / 2, zb = cz - s * d / 2;
-        punchWallX(zf, cx - w / 2, cx + w / 2, 0, H,
-            [{ c: cx - w / 4, ...door }, { c: cx + w / 4, ...win }], mat, t);
-        punchWallX(zb, cx - w / 2, cx + w / 2, 0, H, [], mat, t);
-        punchWallZ(cx - w / 2, cz - d / 2, cz + d / 2, 0, H, [], mat, t);
-        punchWallZ(cx + w / 2, cz - d / 2, cz + d / 2, 0, H, [], mat, t);
-        makeBox(win.w, 1.35, 0.08, MAT.glass, cx + w / 4, 1.6, zf);   // vetrina
-        const aw = makeBox(win.w + 0.5, 0.06, 1.0, awningMat, cx + w / 4, 2.45, zf + s * 0.55);
-        aw.rotation.x = s * 0.4;
-        addSign(name, Math.min(w - 1.5, 5), 1.0, cx, H + 0.55, zf + s * 0.21,
-                (face === 'S') ? 0 : Math.PI);
-        addSolid(w - 2.4, 1.0, 0.9, cx, 0, cz - s * (d / 2 - 1.1), MAT.stallWood);  // banco
-    } else {
-        const s = (face === 'E') ? 1 : -1;
-        const xf = cx + s * d / 2, xb = cx - s * d / 2;
-        punchWallZ(xf, cz - w / 2, cz + w / 2, 0, H,
-            [{ c: cz - w / 4, ...door }, { c: cz + w / 4, ...win }], mat, t);
-        if (backDoor) {
-            // Retro-porta interattiva; il banco si accorcia sull'altra metà
-            punchWallZ(xb, cz - w / 2, cz + w / 2, 0, H,
-                [{ c: cz + w / 4, w: 1.5, b: 0, t: 2.2 }], mat, t);
-            buildDoor(xb, cz + w / 4, 1.5, 2.2, 'z', -s);
-            addSolid(0.9, 1.0, w / 2 - 1.6, cx - s * (d / 2 - 1.1), 0, cz - w / 4, MAT.stallWood);
-        } else {
-            punchWallZ(xb, cz - w / 2, cz + w / 2, 0, H, [], mat, t);
-            addSolid(0.9, 1.0, w - 2.4, cx - s * (d / 2 - 1.1), 0, cz, MAT.stallWood);
-        }
-        punchWallX(cz - w / 2, cx - d / 2, cx + d / 2, 0, H, [], mat, t);
-        punchWallX(cz + w / 2, cx - d / 2, cx + d / 2, 0, H, [], mat, t);
-        makeBox(0.08, 1.35, win.w, MAT.glass, xf, 1.6, cz + w / 4);
-        const aw = makeBox(1.0, 0.06, win.w + 0.5, awningMat, xf + s * 0.55, 2.45, cz + w / 4);
-        aw.rotation.z = -s * 0.4;
-        addSign(name, Math.min(w - 1.5, 5), 1.0, xf + s * 0.21, H + 0.55, cz,
-                (face === 'E') ? Math.PI / 2 : -Math.PI / 2);
-    }
-    // Tetto piano calpestabile
-    addSolid(w + 0.3, 0.25, d + 0.3, cx, H, cz, MAT.roof);
-}
 
 // ── Bancarella del mercato: banco solido + montanti + tenda a strisce ──
-function buildStall(x, z, alongX, awningMat) {
-    const w = alongX ? 2.6 : 1.2, d = alongX ? 1.2 : 2.6;
-    const counter = addSolid(w, 1.0, d, x, 0, z, MAT.stallWood);
-    _addToonOutline(counter, MAT.ink);
-    // Merce sul banco (visiva)
-    makeBox(0.5, 0.28, 0.4, MAT.crate, x - (alongX ? 0.6 : 0), 1.14, z - (alongX ? 0 : 0.6));
-    makeBox(0.4, 0.22, 0.35, MAT.crateDark, x + (alongX ? 0.5 : 0.1), 1.11, z + (alongX ? 0.1 : 0.5));
-    // Montanti + tenda inclinata
-    for (const s1 of [-1, 1]) {
-        for (const s2 of [-1, 1]) {
-            makeBox(0.08, 2.1, 0.08, MAT.stallWood,
-                x + s1 * (w / 2 - 0.06), 1.05, z + s2 * (d / 2 - 0.06));
-        }
-    }
-    const aw = makeBox(alongX ? w + 0.5 : 1.8, 0.06, alongX ? 1.8 : d + 0.5, awningMat, x, 2.2, z);
-    aw.rotation[alongX ? 'x' : 'z'] = alongX ? 0.18 : -0.18;
-    _addToonOutline(aw, MAT.ink, 0.6);
-}
 
 // ── Fontana della piazza (riparo basso: le teste ci spuntano sopra) ──
-function buildFountain(x, z) {
-    const rim = makeCyl(2.4, 2.5, 0.85, MAT.concrete, x, 0.425, z, 'y', 22);
-    _addToonOutline(rim, MAT.ink, 0.8);
-    makeCyl(2.1, 2.1, 0.1, MAT.water, x, 0.72, z, 'y', 22);            // specchio d'acqua
-    const col = makeCyl(0.3, 0.42, 1.5, MAT.concrete, x, 1.6, z, 'y', 14);
-    _addToonOutline(col, MAT.ink, 0.7);
-    const bowl = makeCyl(0.85, 0.6, 0.28, MAT.concrete, x, 2.45, z, 'y', 18);
-    _addToonOutline(bowl, MAT.ink, 0.7);
-    makeCyl(0.1, 0.16, 0.5, MAT.water, x, 2.8, z, 'y', 10);            // zampillo
-    solidBoxes.push({
-        min: new THREE.Vector3(x - 2.4, 0, z - 2.4),
-        max: new THREE.Vector3(x + 2.4, 0.85, z + 2.4)
-    });
-}
 
 // ── Gazebo/palco della banda: pedana salibile + tetto conico ──
-function buildGazebo(x, z) {
-    const base = addSolid(5.2, 0.55, 5.2, x, 0, z, MAT.concrete);
-    _addToonOutline(base, MAT.ink, 1.4);
-    for (const sx of [-1, 1]) {
-        for (const sz of [-1, 1]) {
-            addSolid(0.22, 2.6, 0.22, x + sx * 2.2, 0.55, z + sz * 2.2, MAT.trim);
-        }
-    }
-    const cone = makeCyl(0.15, 3.6, 1.5, MAT.roof, x, 3.9, z, 'y', 8);
-    _addToonOutline(cone, MAT.ink, 1.2);
-    makeCyl(0.1, 0.1, 0.7, MAT.trim, x, 4.95, z, 'y', 8);   // pennone
-}
 
 // ── Lampione in ghisa (palo solido sottile + globo sempre acceso) ──
-function buildLamppost(x, z) {
-    const pole = makeCyl(0.045, 0.07, 3.0, MAT.iron, x, 1.5, z, 'y', 10);
-    _addToonOutline(pole, MAT.ink, 0.7);
-    const globe = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10), MAT.lamp);
-    globe.position.set(x, 3.15, z);
-    scene.add(globe);
-    solidBoxes.push({
-        min: new THREE.Vector3(x - 0.1, 0, z - 0.1),
-        max: new THREE.Vector3(x + 0.1, 3.0, z + 0.1)
-    });
-}
 
 // ── Fondale: sagome di palazzi colorati oltre il muro (solo visivi) ──
-function buildBackdrop() {
-    const cols = [MAT.facadeCoral, MAT.facadeCream, MAT.facadeBlue, MAT.facadeMint, MAT.facadeMustard];
-    const off = MAP_HALF + 2.4;
-    const cxMap = (MAP_X1 - MAP_HALF) / 2;   // i lati nord/sud sono centrati sulla mappa estesa
-    let k = 0;
-    for (let i = -3; i <= 3; i++) {
-        const p = i * 8.8;
-        // [x, z, ruotato?] — est arretrato a MAP_X1 (oltre il porto)
-        for (const [x, z, side] of [[cxMap + p, -off, false], [cxMap + p, off, false],
-                                    [-off, p, true], [MAP_X1 + 2.4, p, true]]) {
-            const hgt = 13 + ((k * 3) % 5);   // 13..17: spuntano oltre il muro (12)
-            const m = cols[k % cols.length];
-            makeBox(side ? 1.4 : 7.6, hgt, side ? 7.6 : 1.4, m, x, hgt / 2, z);
-            makeBox(side ? 1.8 : 8.0, 0.5, side ? 8.0 : 1.8, MAT.trim, x, hgt + 0.2, z);
-            k++;
-        }
-    }
-}
 
 // ── Nuvolette cartoon (MeshBasic: bianche piatte, da vignetta) ──
 function buildClouds() {
@@ -1676,109 +1075,14 @@ function buildClouds() {
 }
 
 // ── Ruota a cilindro con cerchione (asse lungo Z, asse di rotolamento X) ──
-function addWheel(x, z, cz, radius = 0.55, width = 0.34) {
-    const off = Math.sign(z - cz) * (width / 2 - 0.02);
-    const wz = z + off;
-    makeCyl(radius, radius, width, MAT.tire, x, radius, wz, 'z', 18);
-    makeCyl(radius * 0.42, radius * 0.42, width + 0.03, MAT.hubcap, x, radius, wz, 'z', 12);
-}
 
 // ── Furgone (copertura centrale — nella cittadina è il furgone dei gelati) ──
-function buildVan(cx, cz) {
-    const L = 6, Wd = 2.4, H = 2.2, lift = 0.5;
-    addSolid(L, H, Wd, cx, lift, cz, MAT.vanRed);                            // cassone (collisione)
-    makeBox(L + 0.06, 0.18, Wd + 0.04, MAT.vanRed, cx, lift + H, cz);        // tetto cassone
-    makeBox(2.2, 1.5, Wd - 0.05, MAT.vanRed, cx + L / 2 - 0.5, lift, cz);    // cabina
-    makeBox(1.6, 0.7, Wd + 0.05, MAT.glass, cx + L / 2 - 0.4, lift + 1.05, cz); // parabrezza
-    makeBox(0.05, 0.7, Wd - 0.1, MAT.glass, cx + L / 2 + 0.02, lift + 1.0, cz); // finestrino frontale
-    makeBox(L - 1.4, 0.55, Wd + 0.06, MAT.glass, cx - 0.6, lift + H - 0.45, cz); // finestrini laterali
-    makeBox(L + 0.06, 0.12, Wd + 0.08, MAT.crateDark, cx, lift + 0.5, cz);   // modanatura
-    // Paraurti + sottoscocca
-    makeBox(L + 0.06, 0.35, Wd + 0.04, MAT.crateDark, cx, lift - 0.12, cz);
-    makeBox(0.22, 0.4, Wd + 0.16, MAT.chrome, cx + L / 2 + 0.06, lift - 0.05, cz);  // ant
-    makeBox(0.22, 0.4, Wd + 0.16, MAT.chrome, cx - L / 2 - 0.06, lift - 0.05, cz);  // post
-    // Fari / stop
-    makeBox(0.1, 0.2, 0.2, MAT.headlight, cx + L / 2 + 0.04, lift + 0.45, cz - Wd / 3);
-    makeBox(0.1, 0.2, 0.2, MAT.headlight, cx + L / 2 + 0.04, lift + 0.45, cz + Wd / 3);
-    makeBox(0.07, 0.3, 0.18, MAT.taillight, cx - L / 2 - 0.03, lift + 0.7, cz - Wd / 2 + 0.2);
-    makeBox(0.07, 0.3, 0.18, MAT.taillight, cx - L / 2 - 0.03, lift + 0.7, cz + Wd / 2 - 0.2);
-    // Specchietti
-    makeBox(0.08, 0.18, 0.1, MAT.crateDark, cx + L / 2 - 0.2, lift + 1.35, cz - Wd / 2 - 0.14);
-    makeBox(0.08, 0.18, 0.1, MAT.crateDark, cx + L / 2 - 0.2, lift + 1.35, cz + Wd / 2 + 0.14);
-    // Ruote
-    for (const wx of [cx - L / 2 + 1.3, cx + L / 2 - 1.3]) {
-        addWheel(wx, cz - Wd / 2, cz, 0.52);
-        addWheel(wx, cz + Wd / 2, cz, 0.52);
-    }
-}
 
 // ── Tettoia/garage aperto (4 pali + tetto, riparo dall'alto) ──
-function buildCarport(cx, cz) {
-    const W = 6.5, D = 5.5, H = 2.6, t = 0.25;
-    for (const sx of [-1, 1]) {
-        for (const sz of [-1, 1]) {
-            addSolid(t, H, t, cx + sx * (W / 2 - 0.2), 0, cz + sz * (D / 2 - 0.2), MAT.metal);
-        }
-    }
-    addSolid(W, 0.2, D, cx, H, cz, MAT.roof);   // tetto piano
-}
 
 // ── Staccionata bianca lungo X ──
-function fenceX(xStart, xEnd, z) {
-    const H = 1.0;
-    const lo = Math.min(xStart, xEnd), hi = Math.max(xStart, xEnd);
-    const len = hi - lo, cx = (lo + hi) / 2;
-    solidBoxes.push({
-        min: new THREE.Vector3(lo, 0, z - 0.1),
-        max: new THREE.Vector3(hi, H, z + 0.1)
-    });
-    makeBox(len, 0.07, 0.05, MAT.fence, cx, 0.35, z);
-    makeBox(len, 0.07, 0.05, MAT.fence, cx, 0.8, z);
-    const n = Math.max(1, Math.round(len / 0.5));
-    for (let i = 0; i <= n; i++) {
-        makeBox(0.09, H, 0.05, MAT.fence, lo + len * (i / n), H / 2, z);
-    }
-}
 
 // ── Staccionata bianca lungo Z ──
-function fenceZ(zStart, zEnd, x) {
-    const H = 1.0;
-    const lo = Math.min(zStart, zEnd), hi = Math.max(zStart, zEnd);
-    const len = hi - lo, cz = (lo + hi) / 2;
-    solidBoxes.push({
-        min: new THREE.Vector3(x - 0.1, 0, lo),
-        max: new THREE.Vector3(x + 0.1, H, hi)
-    });
-    makeBox(0.05, 0.07, len, MAT.fence, x, 0.35, cz);
-    makeBox(0.05, 0.07, len, MAT.fence, x, 0.8, cz);
-    const n = Math.max(1, Math.round(len / 0.5));
-    for (let i = 0; i <= n; i++) {
-        makeBox(0.05, H, 0.09, MAT.fence, x, H / 2, lo + len * (i / n));
-    }
-}
-
-function addTree(x, y, z) {
-    // Tronco (conico, più segmenti)
-    makeCyl(0.26, 0.42, 3.2, MAT.bark, x, y + 1.6, z, 'y', 10);
-    // Chioma: più sfere sovrapposte di tonalità diverse → più piena e tonda
-    const blobs = [
-        { r: 2.3, dx: 0, dy: 4.2, dz: 0, m: MAT.leaf },
-        { r: 1.7, dx: 1.4, dy: 3.7, dz: 0.5, m: MAT.leafDark },
-        { r: 1.7, dx: -1.3, dy: 3.9, dz: -0.6, m: MAT.leafDark },
-        { r: 1.6, dx: 0.2, dy: 5.3, dz: -0.3, m: MAT.leaf },
-    ];
-    for (const b of blobs) {
-        const f = new THREE.Mesh(new THREE.SphereGeometry(b.r, 8, 7), b.m);
-        f.position.set(x + b.dx, y + b.dy, z + b.dz);
-        f.castShadow = true;
-        scene.add(f);
-    }
-    // Collisione tronco (invariata)
-    solidBoxes.push({
-        min: new THREE.Vector3(x - 0.4, y, z - 0.4),
-        max: new THREE.Vector3(x + 0.4, y + 3, z + 0.4)
-    });
-}
 
 buildMap();
 
@@ -2710,6 +2014,10 @@ document.addEventListener('keydown', (e) => {
         addShake(0.5);
         Sfx.hurt();
     }
+    // DEBUG (valutazione stile): B accende/spegne i bordi neri sugli edifici
+    if (e.code === 'KeyB') {
+        toggleJazzOutlines();
+    }
     // ESC: rilascia pointer lock (browser gestisce)
 });
 document.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -2979,10 +2287,22 @@ function spawnTracer(dir, dist) {
 function raycastSolids(origin, dir, maxDist) {
     let best = maxDist, point = null, hitBox = null;
     for (const b of solidBoxes) {
+        // Box RUOTATI (Zona Jazz): origine e direzione portate nel frame locale
+        // (t è invariante per rotazione: il punto d'impatto si calcola nel mondo)
+        let ox = origin.x, oz = origin.z, dx = dir.x, dz = dir.z;
+        let mnx = b.min.x, mxx = b.max.x, mnz = b.min.z, mxz = b.max.z;
+        if (b.rot) {
+            const rx = origin.x - b.cx, rz = origin.z - b.cz;
+            ox = b.cos * rx + b.sin * rz;
+            oz = -b.sin * rx + b.cos * rz;
+            dx = b.cos * dir.x + b.sin * dir.z;
+            dz = -b.sin * dir.x + b.cos * dir.z;
+            mnx = -b.hw; mxx = b.hw; mnz = -b.hd; mxz = b.hd;
+        }
         let tmin = -Infinity, tmax = Infinity, miss = false;
-        for (const ax of ['x', 'y', 'z']) {
-            const o = origin[ax], d = dir[ax];
-            const mn = b.min[ax], mx = b.max[ax];
+        for (const [o, d, mn, mx] of [[ox, dx, mnx, mxx],
+                                      [origin.y, dir.y, b.min.y, b.max.y],
+                                      [oz, dz, mnz, mxz]]) {
             if (Math.abs(d) < 1e-8) {
                 if (o < mn || o > mx) { miss = true; break; }
             } else {
@@ -3265,8 +2585,17 @@ function canStandAt(x, z, footY, ignoreBox) {
     const rad = PLAYER_RADIUS * sizeMul;
     for (const b of solidBoxes) {
         if (b === ignoreBox) continue;
-        if (x + rad <= b.min.x || x - rad >= b.max.x) continue;
-        if (z + rad <= b.min.z || z - rad >= b.max.z) continue;
+        // Box RUOTATI (Zona Jazz): test nel frame locale del box
+        let qx = x, qz = z;
+        let bMinX = b.min.x, bMaxX = b.max.x, bMinZ = b.min.z, bMaxZ = b.max.z;
+        if (b.rot) {
+            const dx = x - b.cx, dz = z - b.cz;
+            qx = b.cos * dx + b.sin * dz;
+            qz = -b.sin * dx + b.cos * dz;
+            bMinX = -b.hw; bMaxX = b.hw; bMinZ = -b.hd; bMaxZ = b.hd;
+        }
+        if (qx + rad <= bMinX || qx - rad >= bMaxX) continue;
+        if (qz + rad <= bMinZ || qz - rad >= bMaxZ) continue;
         if (b.min.y < head - 0.05 && b.max.y > bodyBottom + 0.05) return false;
     }
     return true;
@@ -3279,10 +2608,20 @@ function resolveCollisions(pos) {
         // Scarta box che non si sovrappongono verticalmente al player
         if (pos.y >= box.max.y || pos.y + H <= box.min.y) continue;
 
-        const overlapXL = (pos.x + rad) - box.min.x;
-        const overlapXR = box.max.x - (pos.x - rad);
-        const overlapZF = (pos.z + rad) - box.min.z;
-        const overlapZB = box.max.z - (pos.z - rad);
+        // Box RUOTATI (Zona Jazz): overlap calcolati nel frame locale del box
+        let px = pos.x, pz = pos.z;
+        if (box.rot) {
+            const dx = pos.x - box.cx, dz = pos.z - box.cz;
+            px = box.cos * dx + box.sin * dz;
+            pz = -box.sin * dx + box.cos * dz;
+        }
+        const bMinX = box.rot ? -box.hw : box.min.x, bMaxX = box.rot ? box.hw : box.max.x;
+        const bMinZ = box.rot ? -box.hd : box.min.z, bMaxZ = box.rot ? box.hd : box.max.z;
+
+        const overlapXL = (px + rad) - bMinX;
+        const overlapXR = bMaxX - (px - rad);
+        const overlapZF = (pz + rad) - bMinZ;
+        const overlapZB = bMaxZ - (pz - rad);
 
         if (overlapXL <= 0 || overlapXR <= 0 || overlapZF <= 0 || overlapZB <= 0) continue;
 
@@ -3295,13 +2634,19 @@ function resolveCollisions(pos) {
             continue;
         }
 
-        // Altrimenti risolvi sull'asse con penetrazione minima (sliding sui muri)
+        // Altrimenti risolvi sull'asse con penetrazione minima (sliding sui muri);
+        // per i box ruotati la spinta è calcolata in locale e riportata nel mondo
         const minX = Math.min(overlapXL, overlapXR);
         const minZ = Math.min(overlapZF, overlapZB);
-        if (minX <= minZ) {
-            pos.x += overlapXL < overlapXR ? -overlapXL : overlapXR;
+        let pushX = 0, pushZ = 0;
+        if (minX <= minZ) pushX = overlapXL < overlapXR ? -overlapXL : overlapXR;
+        else              pushZ = overlapZF < overlapZB ? -overlapZF : overlapZB;
+        if (box.rot) {
+            pos.x += box.cos * pushX - box.sin * pushZ;
+            pos.z += box.sin * pushX + box.cos * pushZ;
         } else {
-            pos.z += overlapZF < overlapZB ? -overlapZF : overlapZB;
+            pos.x += pushX;
+            pos.z += pushZ;
         }
     }
 }
@@ -3440,9 +2785,9 @@ function updateMovement(dt) {
     // Mentre sei a terra, memorizza lo stato di sprint da portare nel prossimo salto
     if (onGround) airSprint = isSprinting;
 
-    // Clamp mappa (+ soffitto invisibile per la Gravità Lunare)
-    pos.x = Math.max(-MAP_HALF + 1, Math.min(MAP_X1 - 1, pos.x));
-    pos.z = Math.max(-MAP_HALF + 1, Math.min(MAP_HALF - 1, pos.z));
+    // Clamp RADIALE (mappa a disco) + soffitto invisibile per la Gravità Lunare
+    const rr = Math.hypot(pos.x, pos.z);
+    if (rr > MAP_RADIUS) { const k = MAP_RADIUS / rr; pos.x *= k; pos.z *= k; }
     if (pos.y > MAP_CEIL) { pos.y = MAP_CEIL; velocityY = Math.min(velocityY, 0); }
 
     resolveCollisions(pos);
@@ -3510,7 +2855,7 @@ function drawMinimap() {
     const ctx = minimapCtx;
     const size = 130;
     const c = size / 2;                 // centro
-    const viewRadius = MAP_HALF;        // unità di mondo dal centro al bordo
+    const viewRadius = 32;              // unità di mondo dal centro al bordo (zoom fisso)
     const s = c / viewRadius;           // scala mondo → pixel
 
     const px = playerRoot.position.x;
@@ -3660,7 +3005,16 @@ function showDamageDirection(shooterColor) {
 //  SOCKET.IO — connessione + WebRTC signaling
 // ══════════════════════════════════════════════════════
 const socket = io();
-socket.emit('joinFPS', { lobbyId: LOBBY_ID, playerColor: MY_COLOR });
+// Il join parte SOLO a zona caricata: lo spawn dentro la geometria richiede i solidi.
+const _loadingEl = document.getElementById('model-loading');
+if (_loadingEl) _loadingEl.style.display = 'flex';
+loadJazzZone().then(() => {
+    if (_loadingEl) _loadingEl.style.display = 'none';
+    socket.emit('joinFPS', { lobbyId: LOBBY_ID, playerColor: MY_COLOR });
+}).catch(err => {
+    console.error('Zona Jazz: caricamento fallito', err);
+    if (_loadingEl) _loadingEl.textContent = 'Errore caricamento scenario';
+});
 
 // ── Riconnessione silenziosa ──
 // Una scheda lasciata in background può essere congelata dal browser: il server
