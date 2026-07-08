@@ -67,6 +67,23 @@ const POINTS_PER_KILL = 1;        // punti per ogni uccisione (mischia E sudden 
 const SD_WIN_BONUS = 5;           // bonus punti per chi vince il sudden death del round
 const HEADSHOT_MUL = 2;           // moltiplicatore danno sulle headshot (taratura in localhost)
 
+// Vita bonus temporanea (overheal): ogni kill dà un cuscinetto di vita SEPARATO
+// dalla vita reale, consumato PRIMA di essa e decaduto nel tempo. Taratura sul
+// danno al corpo (assault 25 / smg 18): ~30 = un colpo in più contro i fucili
+// standard, ininfluente su shotgun/sniper (80/95 sfondano comunque il bonus).
+const BONUS_MAX = 30;             // valore a cui la kill riporta il bonus (mai accumulo)
+const HP_CAP_TOTAL = 130;         // tetto alla vita totale (reale + bonus)
+const BONUS_DECAY = 6;            // HP/secondo di decadimento (30 → 0 in ~5s)
+
+// Decadimento "lazy" del bonus: lo assesta al tempo `now` senza bisogno di un tick.
+// Va chiamata prima di leggere/modificare p.bonusHp.
+function settleBonus(p, now) {
+    if (!p || !p.bonusHp) { if (p) p.bonusUpdatedAt = now; return; }
+    const dt = Math.max(0, now - (p.bonusUpdatedAt || now)) / 1000;
+    p.bonusHp = Math.max(0, p.bonusHp - BONUS_DECAY * dt);
+    p.bonusUpdatedAt = now;
+}
+
 module.exports = function (io, socket) {
 
     // ──────────────────────────────────────────
@@ -172,6 +189,8 @@ module.exports = function (io, socket) {
             game.players[playerColor] = {
                 color: playerColor,
                 hp: PLAYER_HP,
+                bonusHp: 0,
+                bonusUpdatedAt: 0,
                 dead: !rientraVivo,
                 x: spawn.x, y: spawn.y, z: spawn.z,
                 angle: spawn.angle,
@@ -277,6 +296,21 @@ module.exports = function (io, socket) {
     });
 
     // ──────────────────────────────────────────
+    // CAMBIO ARMA DURANTE IL ROUND (feature "loadout")
+    // La richiesta ha effetto al PROSSIMO respawn: aggiorna solo la scelta
+    // persistente (weaponChoices), non l'arma della vita in corso. Consentito
+    // solo in MISCHIA (in sudden death non c'è respawn).
+    // ──────────────────────────────────────────
+    socket.on('requestWeaponChange', ({ lobbyId, playerColor, weaponKey }) => {
+        const game = activeGames.get(lobbyId);
+        if (!game || game.phase !== 'playing' || game.subphase !== 'melee') return;
+        if (!WEAPONS[weaponKey]) return;
+
+        game.weaponChoices[playerColor] = weaponKey;
+        // L'arma comparirà al prossimo respawn (respawnPlayer rilegge weaponChoices).
+    });
+
+    // ──────────────────────────────────────────
     // STATO GIOCATORE (autoritativo lato client,
     // broadcast agli altri tramite WebRTC data channel.
     // Il server riceve solo eventi critici)
@@ -325,11 +359,23 @@ module.exports = function (io, socket) {
         // Danno = base × moltiplicatore mutatore (double_damage / one_in_chamber) × headshot
         const mutMul = DMG_MUL[game.mutator] || 1;
         const damage = weapon.damage * mutMul * (headshot ? HEADSHOT_MUL : 1);
-        target.hp -= damage;
+
+        // Overheal: il danno consuma PRIMA la vita bonus (assestata al tempo attuale),
+        // poi l'eccedenza intacca la vita reale.
+        const now = Date.now();
+        settleBonus(target, now);
+        let remaining = damage;
+        if (target.bonusHp > 0) {
+            const absorbed = Math.min(target.bonusHp, remaining);
+            target.bonusHp -= absorbed;
+            remaining -= absorbed;
+        }
+        target.hp -= remaining;
 
         io.to(lobbyId).emit('playerHit', {
             targetColor,
             hp: Math.max(0, target.hp),
+            bonus: Math.max(0, target.bonusHp),
             shooterColor,
             damage,
             headshot: !!headshot
@@ -343,15 +389,23 @@ module.exports = function (io, socket) {
             if (shooterColor && shooterColor !== targetColor) {
                 game.points[shooterColor] = (game.points[shooterColor] || 0) + POINTS_PER_KILL;
 
-                // Vampirismo: il killer torna a vita piena
-                if (game.mutator === 'vampirism') {
-                    const sh = game.players[shooterColor];
-                    if (sh && !sh.dead) {
-                        sh.hp = PLAYER_HP;
-                        io.to(lobbyId).emit('playerHit', {
-                            targetColor: shooterColor, hp: sh.hp, shooterColor, damage: 0, heal: true
-                        });
-                    }
+                // Ricompensa in vita per il killer (se vivo):
+                //  - Vampirismo: RECUPERO REALE della vita a pieno (resta il metodo
+                //    principale per curarsi davvero).
+                //  - Overheal (sempre): la vita bonus viene riportata al massimo
+                //    (min(BONUS_MAX, tetto - vita reale); mai accumulo). Applicato
+                //    DOPO l'eventuale cura vampirismo.
+                const sh = game.players[shooterColor];
+                if (sh && !sh.dead) {
+                    const now = Date.now();
+                    if (game.mutator === 'vampirism') sh.hp = PLAYER_HP;
+                    settleBonus(sh, now);
+                    sh.bonusHp = Math.min(BONUS_MAX, Math.max(0, HP_CAP_TOTAL - sh.hp));
+                    sh.bonusUpdatedAt = now;
+                    io.to(lobbyId).emit('playerHit', {
+                        targetColor: shooterColor, hp: sh.hp, bonus: sh.bonusHp,
+                        shooterColor, damage: 0, heal: true
+                    });
                 }
 
                 // Gun Game: ogni kill fa avanzare l'arma del killer lungo la progressione.
@@ -564,6 +618,8 @@ function launchRound(io, lobbyId) {
         game.players[color] = {
             color,
             hp: PLAYER_HP,
+            bonusHp: 0,
+            bonusUpdatedAt: 0,
             dead: false,
             x: spawn.x,
             y: spawn.y,
@@ -612,14 +668,24 @@ function respawnPlayer(io, lobbyId, color) {
     p.hp = PLAYER_HP;
     p.dead = false;
     p.x = spawn.x; p.y = spawn.y; p.z = spawn.z; p.angle = spawn.angle;
+    // Cambio arma in-round: al respawn si rilegge la scelta persistente, così
+    // l'arma richiesta con "L" durante la mischia entra in gioco solo ora.
+    const weaponKey = game.weaponChoices[color] || p.weaponKey || 'assault';
+    const weapon = WEAPONS[weaponKey];
+    p.weaponKey = weaponKey;
+    p.ammo = weapon.ammo;
+    p.maxAmmo = weapon.ammo;
+    // Overheal: il bonus è protezione temporanea legata alla vita in corso →
+    // azzerato al respawn.
+    p.bonusHp = 0;
     if (game.respawnTimers) delete game.respawnTimers[color];
 
     io.to(lobbyId).emit('playerRespawn', {
         color,
         x: spawn.x, y: spawn.y, z: spawn.z, angle: spawn.angle,
         hp: PLAYER_HP,
-        weaponKey: p.weaponKey,
-        ammo: p.maxAmmo
+        weaponKey,
+        ammo: weapon.ammo
     });
 }
 
@@ -651,6 +717,7 @@ function startSuddenDeath(io, lobbyId) {
             p.x = spawn.x; p.y = spawn.y; p.z = spawn.z; p.angle = spawn.angle;
         }
         p.hp = PLAYER_HP;
+        p.bonusHp = 0;   // il bonus non passa al sudden death (tutti a vita reale piena)
         p.dead = false;
         alive++;
     });

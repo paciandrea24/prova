@@ -56,6 +56,8 @@ const SLIDE_MAX_TIME = 0.85;       // durata massima slide (s)
 let gameState = {
     phase: 'weapon_select',
     myHp: 100,
+    myBonus: 0,          // vita bonus temporanea (overheal) — valore "ancora" al momento _bonusAt
+    _bonusAt: 0,         // performance.now() dell'ultimo aggiornamento del bonus
     myAmmo: 30,
     myMaxAmmo: 30,
     myWeapon: 'assault',
@@ -2090,7 +2092,7 @@ document.addEventListener('contextmenu', (e) => e.preventDefault());
 // Tasti usati dal gioco: ne blocchiamo il comportamento di default del browser
 // (Ctrl+S/D/A, scroll con Space, ecc.) per non perdere il focus né i keyup.
 const GAME_KEYS = new Set([
-    'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyC', 'KeyT', 'Space',
+    'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyC', 'KeyT', 'KeyL', 'Space',
     'ShiftLeft', 'ShiftRight', 'Tab'
 ]);
 
@@ -2130,6 +2132,12 @@ document.addEventListener('keydown', (e) => {
     // DEBUG (valutazione stile): B accende/spegne i bordi neri sugli edifici
     if (e.code === 'KeyB') {
         toggleJazzOutlines();
+    }
+    // L: cambio arma in-round. Apre il menu di selezione (modalità "cambio");
+    // la nuova arma entra in gioco al prossimo respawn. Solo in mischia, da vivi.
+    if (e.code === 'KeyL' && gameState.phase === 'playing'
+        && gameState.subphase === 'melee' && !gameState.isDead) {
+        openWeaponChange();
     }
     // ESC: rilascia pointer lock (browser gestisce)
 });
@@ -3079,12 +3087,51 @@ function drawMinimap() {
 // ══════════════════════════════════════════════════════
 //  HUD HELPERS
 // ══════════════════════════════════════════════════════
+// Vita bonus (overheal): deve combaciare col server (BONUS_DECAY).
+const CLIENT_BONUS_DECAY = 6;   // HP/s
+let _bonusTicker = null;
+
+// Valore attuale del bonus, decaduto a partire dall'ancora (_bonusAt).
+function currentBonus() {
+    if (!gameState.myBonus) return 0;
+    const dt = (performance.now() - (gameState._bonusAt || 0)) / 1000;
+    return Math.max(0, gameState.myBonus - CLIENT_BONUS_DECAY * dt);
+}
+
+// Imposta il bonus (autoritativo dal server) e avvia l'animazione locale di calo.
+function setMyBonus(bonus) {
+    gameState.myBonus = Math.max(0, bonus || 0);
+    gameState._bonusAt = performance.now();
+    updateHpHUD(gameState.myHp);
+    clearInterval(_bonusTicker);
+    if (gameState.myBonus > 0) {
+        _bonusTicker = setInterval(() => {
+            updateHpHUD(gameState.myHp);
+            if (currentBonus() <= 0) { clearInterval(_bonusTicker); gameState.myBonus = 0; }
+        }, 100);
+    }
+}
+
 function updateHpHUD(hp) {
-    document.getElementById('hud-hp-val').textContent = Math.max(0, hp);
-    const pct = Math.max(0, hp) / 100;
+    const real = Math.max(0, hp);
+    const bonus = currentBonus();
+    const total = real + bonus;
+    // Scala dinamica: la barra è piena a 100 quando non c'è bonus; con il bonus
+    // il fondoscala sale (max 130) e il segmento cyan compare a destra.
+    const denom = Math.max(100, total);
+
+    const valEl = document.getElementById('hud-hp-val');
+    valEl.textContent = Math.round(total);
+    valEl.style.color = bonus > 0.5 ? 'var(--col-bonus)' : '#fff';
+
     const bar = document.getElementById('hud-hp-bar');
-    bar.style.width = (pct * 100) + '%';
-    bar.style.background = pct > 0.5 ? 'var(--col-safe)' : pct > 0.25 ? 'var(--col-ammo)' : 'var(--col-danger)';
+    bar.style.width = (real / denom * 100) + '%';
+    // Colore in base alla vita REALE (così il rosso avvisa del pericolo vero)
+    const rp = real / 100;
+    bar.style.background = rp > 0.5 ? 'var(--col-safe)' : rp > 0.25 ? 'var(--col-ammo)' : 'var(--col-danger)';
+
+    const bonusBar = document.getElementById('hud-hp-bonus');
+    if (bonusBar) bonusBar.style.width = (bonus / denom * 100) + '%';
 }
 
 function updateAmmoHUD() {
@@ -3357,12 +3404,13 @@ socket.on('roundStart', (data) => {
     handleRoundStart(data);
 });
 
-socket.on('playerHit', ({ targetColor, hp, shooterColor, damage, heal }) => {
+socket.on('playerHit', ({ targetColor, hp, bonus, shooterColor, damage, heal }) => {
     if (targetColor === MY_COLOR) {
         gameState.myHp = hp;
-        updateHpHUD(hp);
+        // Overheal: il server manda anche la vita bonus corrente (assestata)
+        if (bonus !== undefined) setMyBonus(bonus); else updateHpHUD(hp);
         if (heal) {
-            // Cura (es. Vampirismo): niente vignetta/suono di ferita
+            // Cura (es. Vampirismo) o rinnovo del bonus a una kill: niente vignetta/suono di ferita
             Sfx.respawn ? Sfx.respawn() : null;
         } else {
             showDamageVignette();
@@ -3415,6 +3463,16 @@ socket.on('playerKilled', ({ killedColor, killerColor, aliveCount, subphase, poi
 
     if (killedColor === MY_COLOR) {
         gameState.isDead = true;
+        // Se stavo scegliendo un'arma quando sono morto, chiudo il menu (senza
+        // ri-catturare il mouse: ci pensa il flusso di respawn/dead-screen).
+        if (weaponChangeMode) {
+            weaponChangeMode = false;
+            document.getElementById('weapon-select-screen').classList.remove('active');
+            document.getElementById('ws-title').textContent = 'Choose Your Loadout';
+            document.getElementById('ws-timer').style.display = '';
+            document.getElementById('ws-players-ready').style.display = '';
+            document.getElementById('ws-confirm-btn').textContent = 'Confirm Loadout';
+        }
         Sfx.death();
         exitADS();
         const ds = document.getElementById('dead-screen');
@@ -3439,6 +3497,7 @@ socket.on('playerRespawn', ({ color, x, y, z, angle, hp, weaponKey, ammo }) => {
     if (color === MY_COLOR) {
         gameState.isDead = false;
         gameState.myHp = hp;
+        setMyBonus(0);   // il bonus non sopravvive alla morte/respawn
         playerRoot.position.set(x, y, z);
         playerRoot.rotation.y = angle || 0;
         yaw = angle || 0;
@@ -3455,7 +3514,18 @@ socket.on('playerRespawn', ({ color, x, y, z, angle, hp, weaponKey, ammo }) => {
         camera.rotation.z = 0;
 
         isReloading = false;
-        if (ammo != null) { gameState.myAmmo = ammo; applyAmmoCap(); }
+        // Cambio arma in-round: il server può mandare un'arma diversa al respawn
+        // (richiesta con "L" durante la mischia). La applico ora.
+        if (weaponKey && gameState.weapons[weaponKey]) {
+            const w = gameState.weapons[weaponKey];
+            gameState.myWeapon = weaponKey;
+            gameState.myMaxAmmo = w.ammo;
+            switchWeaponModel(weaponKey);
+            document.getElementById('hud-weapon-name').textContent = w.name || weaponKey;
+        }
+        if (ammo != null) { gameState.myAmmo = ammo; }
+        applyAmmoCap();
+        updateAmmoHUD();
         updateHpHUD(hp);
         document.getElementById('dead-screen').classList.remove('active');
         if (weaponGroup) weaponGroup.visible = true;
@@ -3468,6 +3538,8 @@ socket.on('playerRespawn', ({ color, x, y, z, angle, hp, weaponKey, ammo }) => {
             rp.group.visible = true;
             rp.group.position.set(x, y, z);
             rp.snapshots = [];   // scarta i frame di posizione pre-morte
+            // Cambio arma in-round: aggiorna l'arma TP se il remoto è rinato con un'altra
+            if (weaponKey) setRemoteWeapon(rp, weaponKey);
         }
     }
 });
@@ -3497,11 +3569,13 @@ socket.on('weaponSwitch', ({ color, weaponKey, ammo, maxAmmo }) => {
 socket.on('suddenDeathStart', (data) => {
     console.log('[FPS] evento suddenDeathStart');
     gameState.subphase = 'suddendeath';
+    // Se stavo cambiando arma, chiudo il menu: in sudden death non c'è respawn
+    if (weaponChangeMode) closeWeaponChange();
 
     const me = data.players[MY_COLOR];
     if (me) {
         gameState.myHp = me.hp;
-        updateHpHUD(me.hp);
+        setMyBonus(0);   // nessun bonus nel sudden death (tutti a vita reale piena)
         if (gameState.isDead) {
             // Ero in respawn allo scoccare del sudden death → rientro un'ultima volta
             gameState.isDead = false;
@@ -3587,8 +3661,19 @@ socket.on('fpsChat', ({ playerColor, message }) => {
 //  GESTIONE FASI UI
 // ══════════════════════════════════════════════════════
 let wsTimerInterval = null;
+// true quando l'overlay di selezione è aperto in modalità "cambio arma in-round"
+// (tasto L): niente timer/ready/lancio round, la scelta si applica al respawn.
+let weaponChangeMode = false;
 
 function showWeaponSelect(duration = 20000) {
+    weaponChangeMode = false;
+    // Ripristina la UI di selezione a inizio round (potrebbe essere stata
+    // alterata dalla modalità "cambio")
+    document.getElementById('ws-title').textContent = 'Choose Your Loadout';
+    document.getElementById('ws-timer').style.display = '';
+    document.getElementById('ws-players-ready').style.display = '';
+    document.getElementById('ws-confirm-btn').textContent = 'Confirm Loadout';
+
     document.getElementById('weapon-select-screen').classList.add('active');
     document.getElementById('overlay').classList.remove('active');
     document.getElementById('dead-screen').classList.remove('active');
@@ -3623,6 +3708,45 @@ function showWeaponSelect(duration = 20000) {
 function hideWeaponSelect() {
     clearInterval(wsTimerInterval);
     document.getElementById('weapon-select-screen').classList.remove('active');
+}
+
+// ── Cambio arma in-round (tasto L) ──
+// Riusa l'overlay di selezione ma senza il flusso di lancio round: niente
+// timer/ready, il pulsante applica e chiude. La scelta ha effetto al respawn.
+function openWeaponChange() {
+    if (weaponChangeMode) return;
+    weaponChangeMode = true;
+    clearInterval(wsTimerInterval);
+
+    document.getElementById('ws-title').textContent = 'Cambia Arma (al prossimo respawn)';
+    document.getElementById('ws-timer').style.display = 'none';
+    document.getElementById('ws-players-ready').style.display = 'none';
+    document.getElementById('ws-confirm-btn').textContent = 'Applica';
+    document.getElementById('ws-confirm-btn').disabled = false;
+    document.getElementById('ws-round').textContent =
+        `Round ${gameState.currentRound} of ${gameState.totalRounds}`;
+
+    // Evidenzia l'arma attualmente in uso come punto di partenza
+    document.querySelectorAll('.ws-card').forEach(c =>
+        c.classList.toggle('selected', c.dataset.weapon === gameState.myWeapon));
+
+    document.getElementById('overlay').classList.remove('active');
+    document.getElementById('dead-screen').classList.remove('active');
+    document.getElementById('weapon-select-screen').classList.add('active');
+    document.exitPointerLock();
+}
+
+function closeWeaponChange() {
+    if (!weaponChangeMode) return;
+    weaponChangeMode = false;
+    document.getElementById('weapon-select-screen').classList.remove('active');
+    // Ripristina i default della UI di selezione a inizio round
+    document.getElementById('ws-title').textContent = 'Choose Your Loadout';
+    document.getElementById('ws-timer').style.display = '';
+    document.getElementById('ws-players-ready').style.display = '';
+    document.getElementById('ws-confirm-btn').textContent = 'Confirm Loadout';
+    // Ri-cattura il mouse per tornare a giocare (gesto utente: click su "Applica")
+    if (gameState.phase === 'playing' && !gameState.isDead) canvas.requestPointerLock();
 }
 
 // ── Indicatore di fase del round (MISCHIA con countdown / SUDDEN DEATH) ──
@@ -3832,7 +3956,7 @@ function handleRoundStart(data) {
             document.getElementById('hud-weapon-name').textContent =
                 w ? w.name : pState.weaponKey;
             updateAmmoHUD();
-            updateHpHUD(100);
+            setMyBonus(0);   // nuovo round: nessun bonus (aggiorna anche l'HUD HP)
 
         } else {
             const parts = createPlayerMesh(color, pState.weaponKey);
@@ -4001,13 +4125,26 @@ document.querySelectorAll('.ws-card').forEach(card => {
         document.querySelectorAll('.ws-card').forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
         const wk = card.dataset.weapon;
-        gameState.myWeapon = wk;
-        switchWeaponModel(wk);
-        socket.emit('chooseWeapon', { lobbyId: LOBBY_ID, playerColor: MY_COLOR, weaponKey: wk });
+        if (weaponChangeMode) {
+            // Cambio in-round: NON cambia l'arma in mano; la richiesta si applica
+            // al prossimo respawn (server: requestWeaponChange → weaponChoices).
+            socket.emit('requestWeaponChange', { lobbyId: LOBBY_ID, playerColor: MY_COLOR, weaponKey: wk });
+        } else {
+            gameState.myWeapon = wk;
+            switchWeaponModel(wk);
+            socket.emit('chooseWeapon', { lobbyId: LOBBY_ID, playerColor: MY_COLOR, weaponKey: wk });
+        }
     });
 });
 
 document.getElementById('ws-confirm-btn').addEventListener('click', () => {
+    // Modalità cambio in-round: "Applica" chiude e torna al gioco (l'arma
+    // è già stata messa in coda al click sulla carta).
+    if (weaponChangeMode) {
+        Sfx.resume();
+        closeWeaponChange();
+        return;
+    }
     if (confirmed) return;
     confirmed = true;
     document.getElementById('ws-confirm-btn').disabled = true;

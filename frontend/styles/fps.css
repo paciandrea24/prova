@@ -14,6 +14,7 @@
     --col-danger:   #FF3B5C;      /* danno / kill */
     --col-safe:     #2ECC71;      /* vita */
     --col-ammo:     #FFCC00;      /* munizioni */
+    --col-bonus:    #4FD1E0;      /* vita bonus temporanea (overheal) */
     --col-text:     #FFFFFF;
     --col-muted:    #9a97a8;
 
@@ -276,12 +277,23 @@ body.ads-sniper #scope-reticle { display: block; }
     border: 1px solid rgba(255,255,255,0.15);
     border-radius: 5px;
     overflow: hidden;
+    display: flex;            /* vita reale + segmento bonus affiancati */
 }
 #hud-hp-bar {
     height: 100%;
     background: var(--col-safe);
-    border-radius: 5px;
+    border-radius: 5px 0 0 5px;
     transition: width 0.2s ease, background 0.3s ease;
+    flex: 0 0 auto;
+}
+/* Vita bonus (overheal): segmento cyan a destra, consumato per primo */
+#hud-hp-bonus {
+    height: 100%;
+    background: var(--col-bonus, #4fd1e0);
+    box-shadow: 0 0 6px var(--col-bonus, #4fd1e0);
+    border-radius: 0 5px 5px 0;
+    transition: width 0.1s linear;
+    flex: 0 0 auto;
 }
 #hud-hp-val {
     font-family: var(--font-data);
