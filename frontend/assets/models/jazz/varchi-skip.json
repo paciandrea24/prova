@@ -1,0 +1,10 @@
+{
+  "_nota": "Mondo esteso. 'skip' rimuove: SOLO il palazzo centrale dell'ingresso principale EST (i due vicini restano a chiudere i buchi) + 1 edificio per flank (la porticina della testata collegamenti fa da accesso) + il lampione al centro dell'ingresso principale (prop). Match per prossimita' (<1 m) su (x,z) locali di zona-layout.json. Sorgente Jazz INTATTA.",
+  "skip": [
+    { "x": 45.48, "z": -1.21, "_slot": "ingresso principale EST (palazzo centrale)" },
+    { "x": 32.54, "z": -31.80, "_slot": "flank nord NE" },
+    { "x": 34.91, "z": 29.18,  "_slot": "flank sud SE" },
+    { "x": 41.50, "z": 0.0,    "_prop": "lampione al centro dell'ingresso" }
+  ],
+  "passthrough": []
+}

@@ -12,21 +12,30 @@ const WEAPONS = {
     sniper: { name: 'Sniper Rifle', damage: 95, fireRate: 1500, range: 150, ammo: 5, reload: 3000, spread: 0.005, auto: false }
 };
 
-// Spawn points — ZONA JAZZ (disco r=52): 8 in corsia esterna (r≈38.5,
-// cardinali + diagonali) + 2 in corsia interna (r≈20), tutti rivolti verso
-// il centro. Convenzione: forward = (-sin angle, -cos angle) → angle =
-// atan2(x, z) guarda l'origine. Coerenti con zona-layout.json (fps.js).
+// Spawn points — MONDO ESTESO (Jazz + Galleria cuciti). Jazz: 8 in corsia
+// esterna (r≈38.5) + 2 interna (r≈20), rivolti verso l'origine. Galleria: 7 lungo
+// i bracci della croce (offset mondo x+97), rivolti verso il centro Galleria (97,0).
+// Convenzione: forward = (-sin angle, -cos angle) → angle = atan2(x-cx, z-cz)
+// guarda il centro (cx,cz). Con ?map=jazz (debug) valgono solo i primi 10.
 const SPAWN_POINTS = [
-    { x:     0, y: 0, z: -38.5, angle: Math.atan2(0, -38.5) },     // corsia 2, nord
-    { x:  27.2, y: 0, z: -27.2, angle: Math.atan2(27.2, -27.2) },  // corsia 2, NE
-    { x:  38.5, y: 0, z:     0, angle: Math.atan2(38.5, 0) },      // corsia 2, est
-    { x:  27.2, y: 0, z:  27.2, angle: Math.atan2(27.2, 27.2) },   // corsia 2, SE
-    { x:     0, y: 0, z:  38.5, angle: Math.atan2(0, 38.5) },      // corsia 2, sud
-    { x: -27.2, y: 0, z:  27.2, angle: Math.atan2(-27.2, 27.2) },  // corsia 2, SO
-    { x: -38.5, y: 0, z:     0, angle: Math.atan2(-38.5, 0) },     // corsia 2, ovest
-    { x: -27.2, y: 0, z: -27.2, angle: Math.atan2(-27.2, -27.2) }, // corsia 2, NO
-    { x:     0, y: 0, z: -20,   angle: Math.atan2(0, -20) },       // corsia 1, nord
-    { x:     0, y: 0, z:  20,   angle: Math.atan2(0, 20) }         // corsia 1, sud
+    { x:     0, y: 0, z: -38.5, angle: Math.atan2(0, -38.5) },     // Jazz corsia 2, nord
+    { x:  27.2, y: 0, z: -27.2, angle: Math.atan2(27.2, -27.2) },  // Jazz corsia 2, NE
+    { x:  38.5, y: 0, z:     0, angle: Math.atan2(38.5, 0) },      // Jazz corsia 2, est
+    { x:  27.2, y: 0, z:  27.2, angle: Math.atan2(27.2, 27.2) },   // Jazz corsia 2, SE
+    { x:     0, y: 0, z:  38.5, angle: Math.atan2(0, 38.5) },      // Jazz corsia 2, sud
+    { x: -27.2, y: 0, z:  27.2, angle: Math.atan2(-27.2, 27.2) },  // Jazz corsia 2, SO
+    { x: -38.5, y: 0, z:     0, angle: Math.atan2(-38.5, 0) },     // Jazz corsia 2, ovest
+    { x: -27.2, y: 0, z: -27.2, angle: Math.atan2(-27.2, -27.2) }, // Jazz corsia 2, NO
+    { x:     0, y: 0, z: -20,   angle: Math.atan2(0, -20) },       // Jazz corsia 1, nord
+    { x:     0, y: 0, z:  20,   angle: Math.atan2(0, 20) },        // Jazz corsia 1, sud
+    // — GALLERIA (centro a 97,0) —
+    { x:  97, y: 0, z: -18, angle: Math.atan2(97 - 97, -18) },     // braccio nord
+    { x:  97, y: 0, z: -26, angle: Math.atan2(97 - 97, -26) },     // braccio nord (fondo)
+    { x:  97, y: 0, z:  18, angle: Math.atan2(97 - 97,  18) },     // braccio sud
+    { x:  97, y: 0, z:  26, angle: Math.atan2(97 - 97,  26) },     // braccio sud (fondo)
+    { x:  79, y: 0, z:   0, angle: Math.atan2(79 - 97,   0) },     // braccio ovest (verso i corridoi)
+    { x:  85, y: 0, z:   0, angle: Math.atan2(85 - 97,   0) },     // braccio ovest (interno)
+    { x: 115, y: 0, z:   0, angle: Math.atan2(115 - 97,  0) }      // braccio est (fondo sigillato)
 ];
 
 const PLAYER_HP = 100;

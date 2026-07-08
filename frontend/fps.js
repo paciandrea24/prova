@@ -22,6 +22,17 @@ const STEP_HEIGHT = 0.6;  // altezza max di un gradino salibile automaticamente
 const MOUSE_SENS = 0.0015;
 const MAP_RADIUS = 49;    // clamp RADIALE sul disco r=52 della Zona Jazz (rete di sicurezza dietro il perimetro di edifici)
 const MAP_CEIL = 13;      // soffitto invisibile: anti-fuga con Gravità Lunare (cresta club 14 m solo visiva)
+// Mondo esteso = Jazz + corridoi + Galleria cuciti. ?map=jazz carica solo la Jazz classica.
+const EXTENDED = new URLSearchParams(location.search).get('map') !== 'jazz';
+const GALLERIA_OFF = { x: 97, z: 0 };   // offset mondo della Galleria (combacia con collegamenti-layout.py)
+const GALLERIA_CEIL = 8.5;              // ceilingY della Galleria (sotto la cupola)
+const CORR_CEIL = 6.0;                  // volta dei corridoi di collegamento
+// Soffitto per-zona (mondo esteso): Galleria attorno all'offset, Jazz attorno all'origine, corridoi in mezzo.
+function ceilingAt(x, z) {
+    if (Math.hypot(x - GALLERIA_OFF.x, z - GALLERIA_OFF.z) < 34) return GALLERIA_CEIL;
+    if (Math.hypot(x, z) < 50) return MAP_CEIL;
+    return CORR_CEIL;
+}
 const INTERP_DELAY = 100; // ms di ritardo buffer per interpolazione giocatori remoti
 
 // Hitbox sfera per detection: raggio per ogni player remoto
@@ -64,6 +75,7 @@ let keys = {};
 let yaw = 0;   // rotazione orizzontale
 let pitch = 0;   // rotazione verticale
 let velocityY = 0;
+let _onLadder = false;   // vero mentre si è aggrappati a una scala a pioli (blocca il salto)
 let onGround = true;
 let isReloading = false;
 
@@ -277,10 +289,10 @@ onResize();
 // ══════════════════════════════════════════════════════
 //  ILLUMINAZIONE
 // ══════════════════════════════════════════════════════
-const ambient = new THREE.AmbientLight(0xffeedd, 0.5);
+const ambient = new THREE.AmbientLight(0xffeedd, 0.40);
 scene.add(ambient);
 
-const sun = new THREE.DirectionalLight(0xfff5e0, 1.2);
+const sun = new THREE.DirectionalLight(0xfff5e0, 1.05);
 sun.position.set(30, 60, 20);
 sun.castShadow = true;
 sun.shadow.camera.near = 1;
@@ -294,7 +306,7 @@ sun.shadow.mapSize.height = 2048;
 sun.shadow.bias = -0.001;
 scene.add(sun);
 
-const hemi = new THREE.HemisphereLight(0x87ceeb, 0x6b7c3a, 0.4);
+const hemi = new THREE.HemisphereLight(0x87ceeb, 0x6b7c3a, 0.38);
 scene.add(hemi);
 
 // Intensità di default (ripristinate dal mutatore "Blackout")
@@ -514,7 +526,9 @@ const _toonGradMap = (() => {
     const c = document.createElement('canvas');
     c.width = 256; c.height = 1;
     const ctx = c.getContext('2d');
-    const vals = [0.42, 0.73, 1.0];
+    // Cel-shading a contrasto pieno (pop toon) ma con tetto appena sotto il bianco
+    // puro (0.92): mantiene le fasce nette ed evita il clipping/bagliore sui chiari.
+    const vals = [0.44, 0.70, 0.92];
     const w = 256 / vals.length;
     vals.forEach((v, i) => {
         const g = Math.round(v * 255);
@@ -602,7 +616,28 @@ function _addToonOutline(src, outMat, tMul = 1) {
 //  MATERIALI RIUTILIZZABILI — mondo in stile TOON
 //  (cel-shading a fasce; superfici con texture procedurali)
 // ══════════════════════════════════════════════════════
+// Grade "Cuphead": leggera desaturazione calda + tetto crema sui bianchi.
+// Applicato ai colori ESPLICITI dei materiali del mondo (non alle texture né ai
+// personaggi) così Jazz e Galleria condividono lo stesso mood. Accetta hex o Color.
+function _cupheadGrade(col) {
+    const c = (col instanceof THREE.Color) ? col.clone() : new THREE.Color(col);
+    // desatura ~14% verso il proprio luma (toglie l'acidità dai saturi)
+    const l = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+    const DESAT = 0.08;
+    c.r += (l - c.r) * DESAT;
+    c.g += (l - c.g) * DESAT;
+    c.b += (l - c.b) * DESAT;
+    // tetto crema per-canale: i quasi-bianchi diventano crema caldo, gli scuri
+    // restano intatti (il min non li tocca); blu più basso = tinta calda.
+    c.r = Math.min(c.r, 0.92);
+    c.g = Math.min(c.g, 0.905);
+    c.b = Math.min(c.b, 0.865);
+    return c;
+}
+
 function worldToon(opts) {
+    // copia superficiale + grade sul colore esplicito (non muta l'opts del chiamante)
+    if (opts && opts.color != null) opts = Object.assign({}, opts, { color: _cupheadGrade(opts.color) });
     return new THREE.MeshToonMaterial(Object.assign({ gradientMap: _toonGradMap }, opts));
 }
 const MAT = {
@@ -664,6 +699,15 @@ const JAZZ_DIR = 'assets/models/jazz/';
 const JAZZ_Y_OFF = -0.10;   // top pietre (~0.09) → y≈0: il movimento resta com'è
 const jazzZoneGroup = new THREE.Group();
 const jazzMergedMeshes = [];   // per il toggle bordi (tasto B)
+const climbZones = [];         // zone di arrampicata (scale a pioli), in coordinate mondo
+const CLIMB_SPEED = 4.0;       // m/s verticali sulle scale a pioli
+function climbZoneAt(x, z) {
+    // Margine generoso: aggrapparsi alla scala dev'essere facile (avvicinandosi).
+    for (const c of climbZones) {
+        if (Math.abs(x - c.x) <= c.w / 2 + 0.6 && Math.abs(z - c.z) <= c.d / 2 + 0.6) return c;
+    }
+    return null;
+}
 
 // Toon-swap: un materiale toon per NOME materiale Blender (condiviso tra modelli).
 // I materiali Emission (neon del club, vetri lampade) diventano Basic "sempre accesi".
@@ -677,6 +721,15 @@ function _jazzToonMat(srcMat) {
         m = new THREE.MeshBasicMaterial({ color: e.clone() });
     } else {
         m = worldToon({ color: srcMat && srcMat.color ? srcMat.color.clone() : new THREE.Color(0xcccccc) });
+    }
+    // Anti z-fighting: i decori metallici (oro/ottone) sono spesso complanari alle
+    // facciate/parapetti → li spingo leggermente davanti col polygon offset.
+    if (/oro|ottone|brass|marmo/i.test(name)) {
+        // decori metallici + piano marmo del ballatoio: renderizzati leggermente
+        // davanti per non sfarfallare con le superfici complanari sotto.
+        m.polygonOffset = true;
+        m.polygonOffsetFactor = -2;
+        m.polygonOffsetUnits = -2;
     }
     _jazzMatCache[name] = m;
     return m;
@@ -718,28 +771,72 @@ function _gltfLoad(loader, url) {
     return new Promise((res, rej) => loader.load(url, res, undefined, rej));
 }
 
-function loadJazzZone() {
+// Carica UNA zona (Jazz, corridoi, Galleria) modellata in Blender.
+//  opts.offset {x,z}  → traslazione mondo dell'intera zona (default 0,0)
+//  opts.skip  [{x,z}] → istanze (coord LOCALI del layout) da OMETTERE (varchi Jazz)
+//  opts.pav   bool    → se false, la zona non ha 'pavimentazione.glb' separata (corridoi)
+function loadZone(dir, jsonName, opts = {}) {
+    const off = opts.offset || { x: 0, z: 0 };
+    const skip = opts.skip || [];
+    const passthrough = opts.passthrough || [];   // istanze visibili ma SENZA COL (edifici attraversabili → passaggi segreti)
+    const hasPav = opts.pav !== false;
     const loader = new THREE.GLTFLoader();
-    return fetch(JAZZ_DIR + 'zona-layout.json').then(r => r.json()).then(layout => {
+    // Cache-buster di sviluppo: il browser (e GLTFLoader) altrimenti servono i .glb dalla
+    // cache anche dopo la rigenerazione. _CB cambia a ogni ricaricamento pagina → fetch fresco.
+    // TODO: rimuovere quando le -wip vengono promosse/committate.
+    const _CB = '?v=' + Date.now();
+    return fetch(dir + jsonName + _CB).then(r => r.json()).then(layout => {
         const modelNames = [...new Set([
             ...layout.edifici.map(e => e.modello),
             ...layout.props.map(p => p.modello)
         ])];
-        const urls = ['pavimentazione', ...modelNames];
-        return Promise.all(urls.map(n => _gltfLoad(loader, JAZZ_DIR + n + '.glb')))
+        const urls = hasPav ? ['pavimentazione', ...modelNames] : [...modelNames];
+        return Promise.all(urls.map(n => _gltfLoad(loader, dir + n + '.glb' + _CB)))
             .then(gltfs => ({ layout, modelNames, gltfs }));
     }).then(({ layout, modelNames, gltfs }) => {
-        // ── Pavimentazione: già poche mesh, entra diretta (toon-swap e basta) ──
-        const pav = gltfs[0].scene;
-        pav.updateMatrixWorld(true);
-        pav.traverse(o => { if (o.isMesh) o.material = _jazzToonMat(o.material); });
-        pav.position.y = JAZZ_Y_OFF;
-        jazzZoneGroup.add(pav);
+        const modelStart = hasPav ? 1 : 0;
+        // ── Pavimentazione (se presente): già poche mesh, entra diretta (toon-swap) ──
+        if (hasPav) {
+            const pav = gltfs[0].scene;
+            pav.position.set(off.x, JAZZ_Y_OFF, off.z);
+            pav.updateMatrixWorld(true);
+            // Le mesh COL_ dentro la pavimentazione (Galleria: piani del mezzanino,
+            // retro-corridoi, panche, urne) → SOLIDI (AABB mondo) e NON renderizzate,
+            // come già fa il percorso per-modello. (La pav di Jazz non ha COL_ → no-op.)
+            const _pavCols = [];
+            pav.traverse(o => {
+                if (!o.isMesh) return;
+                if (o.name.indexOf('COL_') === 0) { _pavCols.push(o); return; }
+                o.material = _jazzToonMat(o.material);
+            });
+            // Le COL della pav possono essere RUOTATE attorno a Y (deck e parapetti d'angolo
+            // a ±45°, retro-corridoi a multipli di 90°). Un AABB mondo (setFromObject) di un
+            // muro sottile ruotato di 45° diventa uno SCATOLONE quadrato → muri invisibili che
+            // bloccano il giro del mezzanino. Ricostruisco l'OBB reale dal node-transform
+            // (quaternione puro-Y verificato sul GLB), come fa lo Stage 2 per gli edifici.
+            const _bb = new THREE.Box3(), _pos = new THREE.Vector3(),
+                  _quat = new THREE.Quaternion(), _scl = new THREE.Vector3(),
+                  _eul = new THREE.Euler(), _ctr = new THREE.Vector3();
+            for (const o of _pavCols) {
+                o.geometry.computeBoundingBox();
+                _bb.copy(o.geometry.boundingBox);                    // box LOCALE (assi mesh, non ruotato)
+                o.matrixWorld.decompose(_pos, _quat, _scl);
+                _eul.setFromQuaternion(_quat, 'YXZ');
+                const rotDeg = _eul.y * 180 / Math.PI;
+                const hw = (_bb.max.x - _bb.min.x) / 2 * Math.abs(_scl.x);   // semi-estensioni LOCALI
+                const hd = (_bb.max.z - _bb.min.z) / 2 * Math.abs(_scl.z);
+                const hy = (_bb.max.y - _bb.min.y) / 2 * Math.abs(_scl.y);
+                _ctr.copy(_bb.min).add(_bb.max).multiplyScalar(0.5).applyMatrix4(o.matrixWorld);  // centro mondo
+                addSolidOBB(_ctr.x, _ctr.z, hw, hd, _ctr.y - hy, _ctr.y + hy, rotDeg);
+                o.parent.remove(o);
+            }
+            jazzZoneGroup.add(pav);
+        }
 
         // ── Stage 1: per MODELLO, geometrie fuse per materiale + lista COL ──
         const models = {};
         modelNames.forEach((name, i) => {
-            const sceneRoot = gltfs[i + 1].scene;
+            const sceneRoot = gltfs[i + modelStart].scene;
             sceneRoot.updateMatrixWorld(true);
             const byMat = {}, cols = [];
             sceneRoot.traverse(o => {
@@ -761,32 +858,48 @@ function loadJazzZone() {
         // ── Stage 2: istanze → accumulo globale per materiale + collisioni ──
         const globalByMat = {};
         const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0);
-        const place = (inst, isProp) => {
+        const place = (inst, isProp, noCol) => {
             const mdl = models[inst.modello];
             const s = inst.s || 1.0;
             const y = (inst.y || 0) + JAZZ_Y_OFF;
+            const ix = inst.x + off.x, iz = inst.z + off.z;   // posizione mondo (con offset zona)
             const rot = (inst.rotY || 0) * Math.PI / 180;
             Q.setFromAxisAngle(UP, rot);
-            M.compose(new THREE.Vector3(inst.x, y, inst.z), Q, new THREE.Vector3(s, s, s));
+            M.compose(new THREE.Vector3(ix, y, iz), Q, new THREE.Vector3(s, s, s));
             for (const mn in mdl.byMat) {
                 const g = mdl.byMat[mn].clone().applyMatrix4(M);
                 (globalByMat[mn] = globalByMat[mn] || []).push(g);
             }
-            if (!isProp) {
+            if (!isProp && !noCol) {
                 // COL locali → OBB nel mondo (stessa matrice del piazzamento:
                 // rotation.y manda il punto locale (x,z) in (x·cos+z·sin, −x·sin+z·cos))
                 for (const bb of mdl.cols) {
                     const cxL = (bb.min.x + bb.max.x) / 2, czL = (bb.min.z + bb.max.z) / 2;
-                    const wx = inst.x + s * (cxL * Math.cos(rot) + czL * Math.sin(rot));
-                    const wz = inst.z + s * (-cxL * Math.sin(rot) + czL * Math.cos(rot));
+                    const wx = ix + s * (cxL * Math.cos(rot) + czL * Math.sin(rot));
+                    const wz = iz + s * (-cxL * Math.sin(rot) + czL * Math.cos(rot));
                     addSolidOBB(wx, wz,
                         s * (bb.max.x - bb.min.x) / 2, s * (bb.max.z - bb.min.z) / 2,
                         y + s * bb.min.y, y + s * bb.max.y, inst.rotY || 0);
                 }
             }
         };
-        layout.edifici.forEach(e => place(e, false));
-        layout.props.forEach(p => place(p, true));
+        // Skip-list (varco aperto: niente mesh né COL) e passthrough (visibile ma senza COL).
+        // Match su coordinate LOCALI del layout (prima dell'offset).
+        const near = (e, list) => list.some(s => Math.hypot(e.x - s.x, e.z - s.z) < 1.0);
+        layout.edifici.forEach(e => {
+            if (near(e, skip)) return;
+            place(e, false, near(e, passthrough));
+        });
+        layout.props.forEach(p => {
+            if (near(p, skip)) return;   // skip vale anche per i props (es. lampione nell'ingresso)
+            place(p, true);
+        });
+
+        // ── Zone di arrampicata (scale a pioli) in coordinate mondo ──
+        (layout.climb || []).forEach(c => climbZones.push({
+            x: c.x + off.x, z: c.z + off.z, w: c.w, d: c.d,
+            y0: c.y0, y1: c.y1, faceRot: c.faceRot
+        }));
 
         // ── Mesh finali: una per materiale ──
         for (const mn in globalByMat) {
@@ -795,8 +908,8 @@ function loadJazzZone() {
             jazzMergedMeshes.push(mesh);
             jazzZoneGroup.add(mesh);
         }
-        scene.add(jazzZoneGroup);
-        console.log(`🏙 Zona Jazz: ${jazzMergedMeshes.length} mesh merged, ${solidBoxes.length} solidi`);
+        if (!jazzZoneGroup.parent) scene.add(jazzZoneGroup);
+        console.log(`🏙 Zona ${dir}: ${Object.keys(globalByMat).length} mat, ${solidBoxes.length} solidi tot, ${climbZones.length} climb tot`);
     });
 }
 
@@ -2000,7 +2113,7 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'KeyR' && !isReloading && gameState.myAmmo < gameState.myMaxAmmo) {
         startReload();
     }
-    if (e.code === 'Space' && onGround && gameState.phase === 'playing' && !gameState.isDead) {
+    if (e.code === 'Space' && onGround && !_onLadder && gameState.phase === 'playing' && !gameState.isDead) {
         velocityY = JUMP_FORCE;
         onGround = false;
     }
@@ -2604,6 +2717,7 @@ function canStandAt(x, z, footY, ignoreBox) {
 function resolveCollisions(pos) {
     const H = PLAYER_HEIGHT * sizeMul;   // sizeMul: mutatore "Mini Giocatori"
     const rad = PLAYER_RADIUS * sizeMul;
+    const _sx0 = pos.x, _sz0 = pos.z; let _nHit = 0, _lastBox = null;   // DEBUG teletrasporto negozi
     for (const box of solidBoxes) {
         // Scarta box che non si sovrappongono verticalmente al player
         if (pos.y >= box.max.y || pos.y + H <= box.min.y) continue;
@@ -2625,9 +2739,15 @@ function resolveCollisions(pos) {
 
         if (overlapXL <= 0 || overlapXR <= 0 || overlapZF <= 0 || overlapZB <= 0) continue;
 
-        // ── STEP-UP: se il gradino è basso e c'è spazio sopra, salgo invece di bloccare ──
+        // ── PAVIMENTO / STEP-UP ──
         const stepUp = box.max.y - pos.y;
-        if (stepUp > 0 && stepUp <= STEP_HEIGHT && canStandAt(pos.x, pos.z, box.max.y, box)) {
+        // Box il cui TOP è alla quota dei piedi (entro tolleranza) = PAVIMENTO su cui il player
+        // sta già → MAI spinta orizzontale. Fix "teletrasporto negozi": il COL pavimento interno
+        // dei negozi (top ~0), per un ε di quota, veniva risolto come un muro e sparava fuori il
+        // player. Vale anche per il calpestio del mezzanino (top a 4.5).
+        if (stepUp <= 0.12) continue;
+        // Gradino basso con spazio sopra la testa: salgo invece di bloccare.
+        if (stepUp <= STEP_HEIGHT && canStandAt(pos.x, pos.z, box.max.y, box)) {
             pos.y = box.max.y;
             velocityY = 0;
             onGround = true;
@@ -2648,6 +2768,17 @@ function resolveCollisions(pos) {
             pos.x += pushX;
             pos.z += pushZ;
         }
+        _nHit++; _lastBox = box;   // DEBUG teletrasporto negozi
+    }
+    // DEBUG teletrasporto negozi: logga se UNA risoluzione sposta il player di molto (>0.6 m)
+    const _disp = Math.hypot(pos.x - _sx0, pos.z - _sz0);
+    if (_disp > 0.6 && _lastBox) {
+        const b = _lastBox;
+        const ext = b.rot ? ('hw=' + b.hw.toFixed(2) + ' hd=' + b.hd.toFixed(2) + ' c=' + b.cx.toFixed(1) + ',' + b.cz.toFixed(1))
+                          : ('x=' + b.min.x.toFixed(1) + '..' + b.max.x.toFixed(1) + ' z=' + b.min.z.toFixed(1) + '..' + b.max.z.toFixed(1));
+        console.log('TELEPORT disp=' + _disp.toFixed(2), 'nHit=' + _nHit,
+            'da', _sx0.toFixed(1) + ',' + _sz0.toFixed(1), '→', pos.x.toFixed(1) + ',' + pos.z.toFixed(1),
+            '| box y=' + b.min.y.toFixed(2) + '..' + b.max.y.toFixed(2), ext, 'rot=' + (b.rot ? ((b.rot * 180 / Math.PI) | 0) : 0));
     }
 }
 
@@ -2755,29 +2886,45 @@ function updateMovement(dt) {
     isCrouching = wantCrouch && !isSliding;
     isMoving = moving;
 
-    // Gravità (gravityMul: mutatore "Gravità lunare")
-    const prevY = pos.y;
-    velocityY -= GRAVITY * gravityMul * dt;
-    velocityY = Math.max(velocityY, -20 * gravityMul); // terminal velocity (più lenta se gravità bassa)
-    pos.y += velocityY * dt;
-
-    onGround = false;
-
-    if (pos.y <= 0) {
-        pos.y = 0;
+    // ── Scala a pioli: dentro una zona climb niente gravità; W sale / S scende.
+    // Il movimento orizzontale WASD (già applicato sopra) serve a sbarcare sul
+    // ballatoio in cima e a uscire lateralmente dalla scala. ──
+    const _lad = climbZones.length ? climbZoneAt(pos.x, pos.z) : null;
+    const onLadder = !!_lad && pos.y >= _lad.y0 - 0.15 && pos.y <= _lad.y1 + 0.6;
+    _onLadder = onLadder;   // esposto al gestore del salto (Space non deve far saltare sulla scala)
+    if (onLadder) {
+        // Gravità sospesa: SPAZIO sale, C scende. In cima si cammina sul ballatoio
+        // (uscendo dalla zona la gravità riprende e si atterra sul soppalco).
         velocityY = 0;
+        if (keys['Space']) pos.y += CLIMB_SPEED * dt;
+        if (keys['KeyC'])  pos.y -= CLIMB_SPEED * dt;
+        pos.y = Math.max(_lad.y0, Math.min(_lad.y1 + 0.4, pos.y));
         onGround = true;
-    } else if (velocityY <= 0) {
-        // Atterraggio sulla superficie superiore dei box
-        const rad = PLAYER_RADIUS * sizeMul;   // sizeMul: mutatore "Mini Giocatori"
-        for (const box of solidBoxes) {
-            if (pos.x + rad <= box.min.x || pos.x - rad >= box.max.x) continue;
-            if (pos.z + rad <= box.min.z || pos.z - rad >= box.max.z) continue;
-            if (prevY >= box.max.y && pos.y <= box.max.y) {
-                pos.y = box.max.y;
-                velocityY = 0;
-                onGround = true;
-                break;
+    } else {
+        // Gravità (gravityMul: mutatore "Gravità lunare")
+        const prevY = pos.y;
+        velocityY -= GRAVITY * gravityMul * dt;
+        velocityY = Math.max(velocityY, -20 * gravityMul); // terminal velocity (più lenta se gravità bassa)
+        pos.y += velocityY * dt;
+
+        onGround = false;
+
+        if (pos.y <= 0) {
+            pos.y = 0;
+            velocityY = 0;
+            onGround = true;
+        } else if (velocityY <= 0) {
+            // Atterraggio sulla superficie superiore dei box
+            const rad = PLAYER_RADIUS * sizeMul;   // sizeMul: mutatore "Mini Giocatori"
+            for (const box of solidBoxes) {
+                if (pos.x + rad <= box.min.x || pos.x - rad >= box.max.x) continue;
+                if (pos.z + rad <= box.min.z || pos.z - rad >= box.max.z) continue;
+                if (prevY >= box.max.y && pos.y <= box.max.y) {
+                    pos.y = box.max.y;
+                    velocityY = 0;
+                    onGround = true;
+                    break;
+                }
             }
         }
     }
@@ -2785,10 +2932,19 @@ function updateMovement(dt) {
     // Mentre sei a terra, memorizza lo stato di sprint da portare nel prossimo salto
     if (onGround) airSprint = isSprinting;
 
-    // Clamp RADIALE (mappa a disco) + soffitto invisibile per la Gravità Lunare
-    const rr = Math.hypot(pos.x, pos.z);
-    if (rr > MAP_RADIUS) { const k = MAP_RADIUS / rr; pos.x *= k; pos.z *= k; }
-    if (pos.y > MAP_CEIL) { pos.y = MAP_CEIL; velocityY = Math.min(velocityY, 0); }
+    // Confini: mondo esteso = rete di sicurezza AABB (i muri veri sono le COL) +
+    // soffitto per-zona. Jazz classico (?map=jazz) = clamp radiale sul disco.
+    if (EXTENDED) {
+        // Rete di sicurezza globale (anti-fuga se manca una COL): racchiude Jazz+corridoi+Galleria
+        pos.x = Math.max(-50, Math.min(131, pos.x));
+        pos.z = Math.max(-50, Math.min(50, pos.z));
+        const ceil = ceilingAt(pos.x, pos.z);
+        if (pos.y > ceil) { pos.y = ceil; velocityY = Math.min(velocityY, 0); }
+    } else {
+        const rr = Math.hypot(pos.x, pos.z);
+        if (rr > MAP_RADIUS) { const k = MAP_RADIUS / rr; pos.x *= k; pos.z *= k; }
+        if (pos.y > MAP_CEIL) { pos.y = MAP_CEIL; velocityY = Math.min(velocityY, 0); }
+    }
 
     resolveCollisions(pos);
 
@@ -3008,11 +3164,19 @@ const socket = io();
 // Il join parte SOLO a zona caricata: lo spawn dentro la geometria richiede i solidi.
 const _loadingEl = document.getElementById('model-loading');
 if (_loadingEl) _loadingEl.style.display = 'flex';
-loadJazzZone().then(() => {
+const _boot = EXTENDED
+    ? fetch('assets/models/jazz/varchi-skip.json').then(r => r.json()).then(v =>
+        Promise.all([
+            loadZone('assets/models/jazz/', 'zona-layout.json', { skip: v.skip, passthrough: v.passthrough || [] }),
+            loadZone('assets/models/collegamenti-wip/', 'collegamenti-layout.json', { pav: false }),
+            loadZone('assets/models/galleria-wip/', 'galleria-layout.json', { offset: GALLERIA_OFF }),
+        ]))
+    : loadZone('assets/models/jazz/', 'zona-layout.json', {});
+_boot.then(() => {
     if (_loadingEl) _loadingEl.style.display = 'none';
     socket.emit('joinFPS', { lobbyId: LOBBY_ID, playerColor: MY_COLOR });
 }).catch(err => {
-    console.error('Zona Jazz: caricamento fallito', err);
+    console.error('Caricamento scenario fallito', err);
     if (_loadingEl) _loadingEl.textContent = 'Errore caricamento scenario';
 });
 
