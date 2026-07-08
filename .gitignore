@@ -7,3 +7,9 @@ node_modules/
 
 # graphify knowledge graph (rigenerabile con `graphify`)
 graphify-out/
+
+# Worktree git di lavoro (non fanno parte del repo)
+.claude/worktrees/
+
+# Cache plugin (superpowers)
+.superpowers/
