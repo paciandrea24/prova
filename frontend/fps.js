@@ -3982,7 +3982,16 @@ socket.on('roundEnd', (data) => {
     if (data.points) gameState.points = data.points;
     updateScoreHUD();
     PovController.exit();
-    showRoundEndOverlay(data);
+
+    // Play of the Round: il replay va in scena PRIMA dell'overlay punteggi
+    // (che parte, col suo countdown, solo a clip finita). Se manca il dato o
+    // il mio buffer locale non copre la finestra richiesta (es. sono appena
+    // rientrato in partita), niente replay — direttamente all'overlay.
+    if (data.playOfRound) {
+        PovController.enterReplay(data.playOfRound, () => showRoundEndOverlay(data));
+    } else {
+        showRoundEndOverlay(data);
+    }
 });
 
 socket.on('gameOver', (data) => {
