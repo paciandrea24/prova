@@ -4730,6 +4730,7 @@ const PovController = {
         this.source = 'live';
         this.targetColor = null;
         this._replay = null;
+        this._recoilPitch = this._recoilYaw = this._shake = 0;
         document.getElementById('crosshair').style.display = '';
         hidePlayOfRoundBanner();
         if (weaponGroup) weaponGroup.visible = false;
