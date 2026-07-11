@@ -2126,9 +2126,21 @@ function applyRemoteState(rp, d) {
         x: d.x, y: d.y, z: d.z, ry: d.ry, rx: d.rx || 0,
         mv: !!d.mv, sp: !!d.sp, cr: !!d.cr, sl: !!d.sl, ad: !!d.ad
     });
-    // Nota: NON più troncato — il buffer copre l'intero round (serve al replay
-    // "Play of the Round"), azzerato ad ogni round perché gameState.players
-    // viene ricreato da zero in handleRoundStart.
+    // rp.snapshots resta soggetto al reset "rp.snapshots = []" sui respawn
+    // (serve all'interpolazione LIVE, per evitare uno scivolamento visivo tra
+    // punto di morte e nuovo spawn — comportamento preesistente, invariato).
+    //
+    // rp.replayLog è un buffer GEMELLO ma indipendente, mai azzerato durante
+    // il round (nemmeno ai respawn in mischia): è quello che il replay "Play
+    // of the Round" legge, perché la storia dei respawn è esattamente ciò che
+    // serve per rigiocare le serie di kill in mischia. Azzerato solo a inizio
+    // round (gameState.players ricreato da zero in handleRoundStart).
+    if (!rp.replayLog) rp.replayLog = [];
+    rp.replayLog.push({
+        t: performance.now(),
+        x: d.x, y: d.y, z: d.z, ry: d.ry, rx: d.rx || 0,
+        mv: !!d.mv, sp: !!d.sp, cr: !!d.cr, sl: !!d.sl, ad: !!d.ad
+    });
     // Arma/munizioni: aggiornate subito (valori discreti, non interpolabili)
     if (d.wk) setRemoteWeapon(rp, d.wk);
     if (d.am != null) rp.ammo = d.am;
@@ -3983,14 +3995,27 @@ socket.on('roundEnd', (data) => {
     updateScoreHUD();
     PovController.exit();
 
+    // data.nextInMs è il ritardo TOTALE (replay + pausa) che il server ha
+    // riservato, misurato dal SUO istante di emissione. Se il replay va in
+    // scena, consuma parte di quel tempo prima che l'overlay compaia: il
+    // countdown mostrato deve riflettere quanto resta DAVVERO, non ripartire
+    // da capo con la durata piena (altrimenti il countdown mostrato è quasi
+    // il doppio dell'attesa reale prima del round successivo).
+    const roundEndAt = performance.now();
+    const proceed = () => {
+        const elapsed = performance.now() - roundEndAt;
+        const remainingMs = Math.max(0, (data.nextInMs || 2500) - elapsed);
+        showRoundEndOverlay(data, remainingMs);
+    };
+
     // Play of the Round: il replay va in scena PRIMA dell'overlay punteggi
     // (che parte, col suo countdown, solo a clip finita). Se manca il dato o
     // il mio buffer locale non copre la finestra richiesta (es. sono appena
     // rientrato in partita), niente replay — direttamente all'overlay.
     if (data.playOfRound) {
-        PovController.enterReplay(data.playOfRound, () => showRoundEndOverlay(data));
+        PovController.enterReplay(data.playOfRound, proceed);
     } else {
-        showRoundEndOverlay(data);
+        proceed();
     }
 });
 
@@ -4364,7 +4389,7 @@ function handleRoundStart(data) {
 
 let overlayCountdownInterval = null;
 
-function showRoundEndOverlay(data) {
+function showRoundEndOverlay(data, remainingMs) {
     gameState.phase = 'round_end';
     gameState.subphase = null;
     gameState.mutator = null;
@@ -4405,7 +4430,7 @@ function showRoundEndOverlay(data) {
     btn.style.display = 'none';
     document.getElementById('overlay-countdown').style.display = 'block';
 
-    let sec = Math.max(1, Math.ceil((data.nextInMs || 2500) / 1000));
+    let sec = Math.max(1, Math.ceil((remainingMs != null ? remainingMs : (data.nextInMs || 2500)) / 1000));
     cd.textContent = sec;
     clearInterval(overlayCountdownInterval);
     overlayCountdownInterval = setInterval(() => {
@@ -4637,7 +4662,7 @@ const PovController = {
     _bufferFor(color) {
         if (color === MY_COLOR) return mySnapshots;
         const rp = gameState.players[color];
-        return rp ? rp.snapshots : null;
+        return rp ? rp.replayLog : null;
     },
 
     // Ritorna il log spari con timestamp del colore dato (Task 2).
