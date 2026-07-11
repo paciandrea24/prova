@@ -828,6 +828,18 @@ function pickPlayOfRound(game) {
 
     const span = best.kill.timestamp - best.firstTimestamp;
     const preRollMs = Math.min(REPLAY_PREROLL_MAX, Math.max(REPLAY_PREROLL_BASE, span + 2000));
+    const postRollMs = REPLAY_POSTROLL;
+
+    // Elenco di TUTTE le kill (qualunque killer, non solo quello premiato) cadute
+    // nella finestra della clip — serve al client (Task 10) per nascondere ogni
+    // vittima nell'istante esatto in cui è morta davvero, non solo quella del
+    // kill "vincitore" dello scoring. Copre anche vittime "di contorno" morte
+    // per mano di un altro giocatore nello stesso arco di tempo.
+    const windowStart = best.kill.timestamp - preRollMs;
+    const windowEnd = best.kill.timestamp + postRollMs;
+    const kills = log
+        .filter(k => k.timestamp >= windowStart && k.timestamp <= windowEnd)
+        .map(k => ({ targetColor: k.targetColor, timestamp: k.timestamp }));
 
     return {
         killerColor: best.kill.killerColor,
@@ -837,7 +849,8 @@ function pickPlayOfRound(game) {
         streakCount: best.streakSize,
         timestamp: best.kill.timestamp,
         preRollMs,
-        postRollMs: REPLAY_POSTROLL
+        postRollMs,
+        kills
     };
 }
 
