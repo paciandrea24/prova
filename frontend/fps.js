@@ -2124,7 +2124,7 @@ function applyRemoteState(rp, d) {
     rp.snapshots.push({
         t: performance.now(),
         x: d.x, y: d.y, z: d.z, ry: d.ry, rx: d.rx || 0,
-        mv: !!d.mv, sp: !!d.sp, cr: !!d.cr, sl: !!d.sl
+        mv: !!d.mv, sp: !!d.sp, cr: !!d.cr, sl: !!d.sl, ad: !!d.ad
     });
     // Nota: NON più troncato — il buffer copre l'intero round (serve al replay
     // "Play of the Round"), azzerato ad ogni round perché gameState.players
@@ -3579,7 +3579,7 @@ function broadcastState() {
         y: playerRoot.position.y,
         z: playerRoot.position.z,
         ry: yaw, rx: pitch,
-        mv: isMoving, sp: isSprinting, cr: isCrouching, sl: isSliding,
+        mv: isMoving, sp: isSprinting, cr: isCrouching, sl: isSliding, ad: isADS,
         wk: gameState.myWeapon, am: gameState.myAmmo
     });
     for (const dc of Object.values(channels)) {
@@ -4536,7 +4536,7 @@ function sendStateHeartbeat() {
         t: performance.now(),
         x: playerRoot.position.x, y: playerRoot.position.y, z: playerRoot.position.z,
         ry: yaw, rx: pitch,
-        mv: isMoving, sp: isSprinting, cr: isCrouching, sl: isSliding
+        mv: isMoving, sp: isSprinting, cr: isCrouching, sl: isSliding, ad: isADS
     });
     broadcastState();
     socket.emit('playerState', {
@@ -4546,7 +4546,7 @@ function sendStateHeartbeat() {
         y: playerRoot.position.y,
         z: playerRoot.position.z,
         ry: yaw, rx: pitch,
-        mv: isMoving, sp: isSprinting, cr: isCrouching, sl: isSliding,
+        mv: isMoving, sp: isSprinting, cr: isCrouching, sl: isSliding, ad: isADS,
         wk: gameState.myWeapon, am: gameState.myAmmo
     });
 }
@@ -4668,7 +4668,7 @@ const PovController = {
         // startedAt ancora l'orologio di replay: il cursore di riproduzione avanza
         // da clipStartLocal in tempo reale a partire da questo istante, NON legge
         // performance.now() direttamente (che è già ben oltre la finestra passata).
-        this._replay = { killerColor: data.killerColor, clipStartLocal, clipEndLocal, startedAt: performance.now(), onDone };
+        this._replay = { killerColor: data.killerColor, weaponKey: data.weaponKey, clipStartLocal, clipEndLocal, startedAt: performance.now(), onDone };
         this._lastSeenShotSeq = {};
         this._replayShotIdx = 0;
         this._recoilPitch = this._recoilYaw = this._shake = 0;
@@ -4703,7 +4703,8 @@ const PovController = {
                     ry: s0.ry + da * f,
                     rx: (s0.rx || 0) + ((s1.rx || 0) - (s0.rx || 0)) * f,
                     mv: f < 0.5 ? s0.mv : s1.mv, sp: f < 0.5 ? s0.sp : s1.sp,
-                    cr: f < 0.5 ? s0.cr : s1.cr, sl: f < 0.5 ? s0.sl : s1.sl
+                    cr: f < 0.5 ? s0.cr : s1.cr, sl: f < 0.5 ? s0.sl : s1.sl,
+                    ad: f < 0.5 ? s0.ad : s1.ad
                 };
             }
         }
@@ -4731,6 +4732,23 @@ const PovController = {
         camera.position.y = eyeH;
         camera.rotation.x = pitch;
         camera.rotation.z = 0;
+
+        // Riflette lo stato di mira (ADS) bufferizzato del killer: stesso zoom FOV
+        // e stesso lerp del viewmodel verso il centro (iron sights) del ramo live
+        // (updateMovement), stessa classe CSS body per lo scope del cecchino.
+        const adsActive = !!frame.ad && r.weaponKey !== 'sniper';
+        _wadsX += ((adsActive ? 0.06 - GX : 0) - _wadsX) * 0.15;
+        _wadsY += ((adsActive ? 0.10    : 0) - _wadsY) * 0.15;
+        _wadsZ += ((adsActive ? -0.18   : 0) - _wadsZ) * 0.15;
+        weaponGroup.position.x = _wadsX;
+        weaponGroup.position.y = _wadsY;
+        weaponGroup.position.z = _wadsZ;
+        camera.fov = frame.ad ? (ADS_FOV[r.weaponKey] ?? 50) : 75;
+        camera.updateProjectionMatrix();
+        document.body.classList.toggle('ads', !!frame.ad);
+        for (const wk of ['assault', 'smg', 'shotgun', 'sniper']) {
+            document.body.classList.toggle('ads-' + wk, !!frame.ad && r.weaponKey === wk);
+        }
 
         // Riproduce, in ordine, gli spari bufferizzati fino all'istante corrente della clip.
         const shots = this._shotLogFor(r.killerColor) || [];
@@ -4782,6 +4800,16 @@ const PovController = {
         this.targetColor = null;
         this._replay = null;
         this._recoilPitch = this._recoilYaw = this._shake = 0;
+        // Ripristina FOV/iron-sights/classi ADS esattamente come exitADS(), per non
+        // farli "trapelare" nella prossima vista live (stesso rischio già corretto
+        // per il rinculo nel Task 3 — qui è lo stesso identico bug per lo zoom/scope).
+        camera.fov = 75;
+        camera.updateProjectionMatrix();
+        _wadsX = _wadsY = _wadsZ = 0;
+        weaponGroup.position.x = 0;
+        weaponGroup.position.y = 0;
+        weaponGroup.position.z = 0;
+        document.body.classList.remove('ads', 'ads-assault', 'ads-smg', 'ads-shotgun', 'ads-sniper');
         document.getElementById('crosshair').style.display = '';
         hidePlayOfRoundBanner();
         if (weaponGroup) weaponGroup.visible = false;
