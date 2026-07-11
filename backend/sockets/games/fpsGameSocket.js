@@ -785,42 +785,43 @@ function streakBonus(size) {
 
 // Sceglie il kill "migliore" del round appena concluso, tra TUTTO il killLog
 // (mischia + sudden death). Ritorna null solo se il round non ha avuto kill
-// (non dovrebbe mai succedere: checkRoundEnd chiama questa funzione solo
-// quando il round sta davvero per chiudersi).
+// (caso limite: round chiuso da una disconnessione senza kill).
 function pickPlayOfRound(game) {
     const log = game.killLog;
     if (!log || log.length === 0) return null;
 
+    // Raggruppa i kill per killer (ordine cronologico preservato, il log lo è già).
+    const byKiller = new Map();
+    for (const kill of log) {
+        if (!byKiller.has(kill.killerColor)) byKiller.set(kill.killerColor, []);
+        byKiller.get(kill.killerColor).push(kill);
+    }
+
     let best = null;
     let bestScore = -1;
-    for (let i = 0; i < log.length; i++) {
-        const kill = log[i];
+    for (const kills of byKiller.values()) {
+        // Dimensione/estremi di ogni serie DI QUESTO killer: il gap si misura tra
+        // i suoi kill consecutivi, ignorando kill di altri giocatori intercalati
+        // nel log globale.
+        let streakStart = 0;
+        for (let i = 0; i < kills.length; i++) {
+            const next = kills[i + 1];
+            const isLastOfStreak = !next || next.timestamp - kills[i].timestamp > MULTI_KILL_WINDOW;
+            if (!isLastOfStreak) continue;
 
-        // Dimensione della serie: quanti kill consecutivi dello stesso killer
-        // precedono (inclusa) questa, con gap <= MULTI_KILL_WINDOW dal precedente.
-        let streakStart = i;
-        while (streakStart > 0 &&
-               log[streakStart - 1].killerColor === kill.killerColor &&
-               log[streakStart].timestamp - log[streakStart - 1].timestamp <= MULTI_KILL_WINDOW) {
-            streakStart--;
-        }
+            const kill = kills[i];
+            const streakSize = i - streakStart + 1;
+            const score = streakBonus(streakSize) +
+                (kill.headshot ? HEADSHOT_BONUS : 0) +
+                (kill.endsRound ? ENDS_ROUND_BONUS : 0);
 
-        // Questo kill va valutato solo se è l'ULTIMO della sua serie — altrimenti
-        // la stessa serie verrebbe contata (e mostrata come replay) più volte.
-        const next = log[i + 1];
-        const isLastOfStreak = !next || next.killerColor !== kill.killerColor ||
-            next.timestamp - kill.timestamp > MULTI_KILL_WINDOW;
-        if (!isLastOfStreak) continue;
-
-        const streakSize = i - streakStart + 1;
-        const score = streakBonus(streakSize) +
-            (kill.headshot ? HEADSHOT_BONUS : 0) +
-            (kill.endsRound ? ENDS_ROUND_BONUS : 0);
-
-        // >= così, a parità di punteggio, vince il kill più recente (i cresce nel tempo).
-        if (score >= bestScore) {
-            bestScore = score;
-            best = { kill, streakSize, firstTimestamp: log[streakStart].timestamp };
+            // A parità di punteggio vince il kill più recente in senso assoluto
+            // (l'ordine di iterazione qui è per-killer, non cronologico globale).
+            if (score > bestScore || (score === bestScore && best && kill.timestamp > best.kill.timestamp)) {
+                bestScore = score;
+                best = { kill, streakSize, firstTimestamp: kills[streakStart].timestamp };
+            }
+            streakStart = i + 1;
         }
     }
     if (!best) return null;
