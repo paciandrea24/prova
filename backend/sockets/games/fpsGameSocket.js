@@ -341,6 +341,13 @@ module.exports = function (io, socket) {
         }
     });
 
+    // Relay fallback "colpo sparato" (stesso schema di playerState): serve solo
+    // al feedback visivo/sonoro lato client, nessun ruolo nell'hit detection.
+    socket.on('fpsShotFired', (data) => {
+        const { lobbyId } = data;
+        socket.to(lobbyId).emit('fpsShotFired', data);
+    });
+
     // ──────────────────────────────────────────
     // HIT DETECTION (server autoritativo)
     // ──────────────────────────────────────────

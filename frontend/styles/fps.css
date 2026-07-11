@@ -549,6 +549,36 @@ body.ads-sniper #scope-reticle { display: block; }
     letter-spacing: 0.1em;
 }
 
+/* ─── BANNER SPETTATORE ──────────────────────────── */
+#spectator-banner {
+    display: none;
+    position: fixed;
+    top: 20px; left: 50%;
+    transform: translateX(-50%);
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--chip-bg);
+    border: 2px solid rgba(255,255,255,0.12);
+    border-radius: var(--chip-radius);
+    box-shadow: var(--chip-shadow);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--col-text);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    z-index: 210;
+    pointer-events: none;
+}
+#spectator-banner.active { display: flex; }
+#spectator-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--ink);
+    flex-shrink: 0;
+}
+
 /* ─── BARRA INTRO ROUND (gioco congelato: barra orizzontale in alto con celle) ───── */
 #round-intro {
     display: none;

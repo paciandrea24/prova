@@ -2055,6 +2055,7 @@ function updateRemoteAnim(rp, dt) {
             const s = snaps[0];
             rp.group.position.set(s.x, s.y, s.z);
             rp.group.rotation.y = s.ry;
+            rp.pitch = s.rx;
             if (rp.anim) {
                 rp.anim.moving = s.mv; rp.anim.sprint = s.sp;
                 rp.anim.crouch = s.cr; rp.anim.slide  = s.sl;
@@ -2075,6 +2076,7 @@ function updateRemoteAnim(rp, dt) {
                 // Rotazione: percorso angolare più breve (evita spin di 360°)
                 const da = (s1.ry - s0.ry + Math.PI * 3) % (Math.PI * 2) - Math.PI;
                 rp.group.rotation.y = s0.ry + da * t;
+                rp.pitch = s0.rx + (s1.rx - s0.rx) * t;
                 // Stato animazione dall'ultimo snapshot "raggiunto"
                 const sAnim = t >= 1 ? s1 : s0;
                 if (rp.anim) {
@@ -2121,13 +2123,14 @@ function applyRemoteState(rp, d) {
     if (!rp.snapshots) rp.snapshots = [];
     rp.snapshots.push({
         t: performance.now(),
-        x: d.x, y: d.y, z: d.z, ry: d.ry,
+        x: d.x, y: d.y, z: d.z, ry: d.ry, rx: d.rx || 0,
         mv: !!d.mv, sp: !!d.sp, cr: !!d.cr, sl: !!d.sl
     });
     // Limita la coda (robustezza se la tab è in background a lungo)
     if (rp.snapshots.length > 60) rp.snapshots.splice(0, rp.snapshots.length - 30);
-    // Arma: aggiorna subito (valore discreto, non interpolabile)
+    // Arma/munizioni: aggiornate subito (valori discreti, non interpolabili)
     if (d.wk) setRemoteWeapon(rp, d.wk);
+    if (d.am != null) rp.ammo = d.am;
 }
 
 // ══════════════════════════════════════════════════════
@@ -2270,7 +2273,7 @@ document.addEventListener('mousemove', (e) => {
 
 // ── ADS (tasto destro) ──────────────────────────────
 function enterADS() {
-    if (isADS || !pointerLocked || gameState.isDead || gameState.phase !== 'playing') return;
+    if (PovController.active || isADS || !pointerLocked || gameState.isDead || gameState.phase !== 'playing') return;
     isADS = true;
     const w = gameState.myWeapon;
     camera.fov = ADS_FOV[w] ?? 50;
@@ -2279,7 +2282,7 @@ function enterADS() {
 }
 
 function exitADS() {
-    if (!isADS) return;
+    if (PovController.active || !isADS) return;
     isADS = false;
     camera.fov = 75;
     camera.updateProjectionMatrix();
@@ -2350,6 +2353,11 @@ document.addEventListener('keydown', (e) => {
         && gameState.subphase === 'melee' && !gameState.isDead) {
         openWeaponChange();
     }
+    // Modalità spettatore: frecce per cambiare il vivo osservato
+    if ((e.code === 'ArrowLeft' || e.code === 'ArrowRight') && PovController.active) {
+        e.preventDefault();
+        PovController.cycleTarget(e.code === 'ArrowRight' ? 1 : -1);
+    }
     // ESC: rilascia pointer lock (browser gestisce)
 });
 document.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -2391,7 +2399,7 @@ function dbgShoot(msg) {
 }
 
 function tryShoot() {
-    if (!pointerLocked || gameState.isDead || gameState.phase !== 'playing') { dbgShoot('sparo BLOCCATO'); return; }
+    if (PovController.active || !pointerLocked || gameState.isDead || gameState.phase !== 'playing') { dbgShoot('sparo BLOCCATO'); return; }
     if (isReloading) { dbgShoot('sparo BLOCCATO (ricarica)'); return; }
 
     const w = gameState.weapons[gameState.myWeapon];
@@ -2411,6 +2419,7 @@ function tryShoot() {
     updateAmmoHUD();
     playMuzzleFlash();
     Sfx.shoot(gameState.myWeapon);
+    broadcastShotFired(gameState.myWeapon);
 
     // ── Rinculo: kick della vista + shake + scossone del viewmodel ──
     const rc = RECOIL[gameState.myWeapon] || RECOIL.assault;
@@ -2840,7 +2849,7 @@ let muzzleLight = null;
 let muzzleStar = null;
 let _muzzleStarGen = 0;
 const MUZZLE_STAR_SIZE = { assault: 0.15, smg: 0.10, shotgun: 0.24, sniper: 0.19 };
-function playMuzzleFlash() {
+function playMuzzleFlash(weaponKey) {
     if (!muzzleLight) {
         muzzleLight = new THREE.PointLight(0xffa030, 0, 3);
         camera.add(muzzleLight);
@@ -2861,7 +2870,7 @@ function playMuzzleFlash() {
 
     // Pop della stella (~70ms). Il contatore annulla il loop precedente quando
     // le armi automatiche sparano più in fretta della durata del pop.
-    const size = MUZZLE_STAR_SIZE[gameState.myWeapon] || MUZZLE_STAR_SIZE.assault;
+    const size = MUZZLE_STAR_SIZE[weaponKey || gameState.myWeapon] || MUZZLE_STAR_SIZE.assault;
     muzzleStar.material.rotation = Math.random() * Math.PI * 2;
     muzzleStar.visible = true;
     const gen = ++_muzzleStarGen;
@@ -3039,7 +3048,7 @@ const RECOIL = {
 function addShake(amount) { shakeTrauma = Math.min(1, shakeTrauma + amount); }
 
 function updateMovement(dt) {
-    if (gameState.isDead || gameState.phase !== 'playing') return;
+    if (PovController.active || gameState.isDead || gameState.phase !== 'playing') return;
 
     // Calcola direzione camera (solo yaw)
     _fwd.set(-Math.sin(yaw), 0, -Math.cos(yaw));
@@ -3555,6 +3564,8 @@ function setupDataChannel(dc, fromId) {
 function handlePeerData(data) {
     if (data.type === 'state' && gameState.players[data.color]) {
         applyRemoteState(gameState.players[data.color], data);
+    } else if (data.type === 'shot') {
+        handleRemoteShot(data.color, data.weaponKey, data.seq);
     }
 }
 
@@ -3565,13 +3576,40 @@ function broadcastState() {
         x: playerRoot.position.x,
         y: playerRoot.position.y,
         z: playerRoot.position.z,
-        ry: yaw,
+        ry: yaw, rx: pitch,
         mv: isMoving, sp: isSprinting, cr: isCrouching, sl: isSliding,
-        wk: gameState.myWeapon
+        wk: gameState.myWeapon, am: gameState.myAmmo
     });
     for (const dc of Object.values(channels)) {
         if (dc.readyState === 'open') dc.send(msg);
     }
+}
+
+// Evento leggero "ho sparato": broadcast ad OGNI colpo (anche a vuoto), a differenza
+// di reportHit che va al server solo sui colpi confermati. Serve solo al feedback
+// visivo/sonoro di chi osserva (spettatore/replay futuro) — nessun ruolo nell'hit
+// detection autoritativa.
+let _myShotSeq = 0;   // contatore locale per-sparo: dedup lato ricevente se lo stesso
+                       // colpo arriva sia via P2P sia via socket.io (fallback sempre attivo)
+function broadcastShotFired(weaponKey) {
+    const seq = ++_myShotSeq;
+    const msg = JSON.stringify({ type: 'shot', color: MY_COLOR, weaponKey, seq });
+    for (const dc of Object.values(channels)) {
+        if (dc.readyState === 'open') dc.send(msg);
+    }
+    socket.emit('fpsShotFired', { lobbyId: LOBBY_ID, color: MY_COLOR, weaponKey, seq });
+}
+
+function handleRemoteShot(color, weaponKey, seq) {
+    if (color === MY_COLOR) return;
+    const rp = gameState.players[color];
+    if (!rp) return;
+    if (seq != null) {
+        if (rp._lastRecvShotSeq != null && seq <= rp._lastRecvShotSeq) return;   // duplicato (P2P + socket.io fallback)
+        rp._lastRecvShotSeq = seq;
+    }
+    rp._shotSeq = (rp._shotSeq || 0) + 1;
+    rp._shotWeapon = weaponKey;
 }
 
 // Signaling
@@ -3610,6 +3648,12 @@ socket.on('rtcIceCandidate', async ({ fromSocketId, candidate }) => {
     if (pc) await pc.addIceCandidate(candidate);
 });
 
+// Fallback "shot fired" via socket (stesso schema di playerState)
+socket.on('fpsShotFired', ({ color, weaponKey, seq }) => {
+    if (gameState.phase !== 'playing') return;
+    handleRemoteShot(color, weaponKey, seq);
+});
+
 // Fallback stato via socket per player remoti
 socket.on('playerState', (data) => {
     if (data.color === MY_COLOR) return;
@@ -3619,7 +3663,7 @@ socket.on('playerState', (data) => {
         const parts = createPlayerMesh(data.color, data.wk);
         parts.group.scale.setScalar(sizeMul);   // mutatore "Mini Giocatori"
         scene.add(parts.group);
-        gameState.players[data.color] = { ...parts, hp: 100, dead: false, anim: makeAnim() };
+        gameState.players[data.color] = { ...parts, hp: 100, dead: false, anim: makeAnim(), pitch: 0, ammo: null };
     }
     applyRemoteState(gameState.players[data.color], data);
 });
@@ -3751,19 +3795,39 @@ socket.on('playerKilled', ({ killedColor, killerColor, aliveCount, subphase, poi
         }
         Sfx.death();
         exitADS();
-        const ds = document.getElementById('dead-screen');
-        const sub = ds.querySelector('p');
-        if (sub) sub.textContent = (subphase === 'melee') ? 'Respawning…' : 'Waiting for round to end…';
-        ds.classList.add('active');
-        // In mischia si rinasce subito: si TIENE il pointer lock (niente click per rientrare).
-        // In sudden death la morte è definitiva: si rilascia il mouse.
-        if (subphase !== 'melee') document.exitPointerLock();
-        if (weaponGroup) weaponGroup.visible = false;
+        if (subphase === 'melee') {
+            // In mischia si rinasce subito: si TIENE il pointer lock (niente click per rientrare).
+            const ds = document.getElementById('dead-screen');
+            const sub = ds.querySelector('p');
+            if (sub) sub.textContent = 'Respawning…';
+            ds.classList.add('active');
+        } else {
+            // Sudden death: morte definitiva → modalità spettatore invece della dead-screen.
+            document.exitPointerLock();
+            const initial = (gameState.players[killerColor] && !gameState.players[killerColor].dead)
+                ? killerColor
+                : Object.keys(gameState.players).find(c => !gameState.players[c].dead);
+            if (initial) {
+                PovController.enter(initial);
+            } else {
+                // Nessun vivo trovato (caso limite: tutti morti nello stesso istante):
+                // il round finisce comunque a breve, fallback sulla vecchia dead-screen.
+                const ds = document.getElementById('dead-screen');
+                const sub = ds.querySelector('p');
+                if (sub) sub.textContent = 'Waiting for round to end…';
+                ds.classList.add('active');
+                if (weaponGroup) weaponGroup.visible = false;
+            }
+        }
     }
 
     if (gameState.players[killedColor]) {
         gameState.players[killedColor].dead = true;
         gameState.players[killedColor].group.visible = false;
+    }
+
+    if (PovController.active && PovController.targetColor === killedColor) {
+        PovController.onTargetLost();
     }
 });
 
@@ -3894,6 +3958,7 @@ socket.on('suddenDeathStart', (data) => {
 
 socket.on('playerLeft', ({ color }) => {
     console.log(`[FPS] evento playerLeft: ${color}`);
+    const wasTarget = PovController.active && PovController.targetColor === color;
     const rp = gameState.players[color];
     if (rp) {
         scene.remove(rp.group);   // la healthbar è figlia del group → rimossa con esso
@@ -3904,6 +3969,7 @@ socket.on('playerLeft', ({ color }) => {
         if (gameState.points) delete gameState.points[color];
         updateScoreHUD();
     }
+    if (wasTarget) PovController.onTargetLost();
 });
 
 socket.on('roundEnd', (data) => {
@@ -3911,6 +3977,7 @@ socket.on('roundEnd', (data) => {
     gameState.scores = data.scores;
     if (data.points) gameState.points = data.points;
     updateScoreHUD();
+    PovController.exit();
     showRoundEndOverlay(data);
 });
 
@@ -4187,6 +4254,7 @@ function applyAmmoCap() {
 
 function handleRoundStart(data) {
     clearTimeout(roundIntroTimer);
+    PovController.exit();   // difensivo: copre resync via fpsInit senza un roundEnd intermedio
     gameState.phase = 'round_intro';   // gioco congelato: input/movimento/sparo bloccati fino a fine intro
     gameState.currentRound = data.round || data.currentRound || gameState.currentRound;
     gameState.isDead = false;
@@ -4245,7 +4313,9 @@ function handleRoundStart(data) {
                 ...parts,
                 hp: pState.hp != null ? pState.hp : 100,
                 dead: !!pState.dead,
-                anim: makeAnim()
+                anim: makeAnim(),
+                pitch: 0,
+                ammo: null
             };
             if (pState.dead) parts.group.visible = false;
         }
@@ -4447,9 +4517,9 @@ function sendStateHeartbeat() {
         x: playerRoot.position.x,
         y: playerRoot.position.y,
         z: playerRoot.position.z,
-        ry: yaw,
+        ry: yaw, rx: pitch,
         mv: isMoving, sp: isSprinting, cr: isCrouching, sl: isSliding,
-        wk: gameState.myWeapon
+        wk: gameState.myWeapon, am: gameState.myAmmo
     });
 }
 
@@ -4475,6 +4545,149 @@ GamepadInput.setCallbacks({
     onReload:     () => { if (!isReloading && gameState.myAmmo < gameState.myMaxAmmo) startReload(); },
     getWeapon:    () => gameState.weapons[gameState.myWeapon]
 });
+
+// ══════════════════════════════════════════════════════
+//  MODALITÀ SPETTATORE — camera POV condivisa
+//  Nucleo pensato per essere riusato dal futuro "Play of the Round":
+//  qui `source` è sempre 'live' (stream di rete); un domani un buffer
+//  registrato potrà alimentare update() senza cambiarne la firma.
+// ══════════════════════════════════════════════════════
+const PovController = {
+    active: false,
+    targetColor: null,
+    source: 'live',   // oggi update() legge sempre gameState.players dal vivo; il valore non è
+                       // ancora letto da nessuno. Un domani 'source: buffer' per il Play of the
+                       // Round richiederà un refactor di update() per leggere da un frame-source
+                       // astratto (live o registrato), non solo cambiare questo flag.
+    _lastSeenShotSeq: {},
+    _recoilPitch: 0, _recoilYaw: 0, _shake: 0,
+
+    enter(color) {
+        if (!gameState.players[color]) return;
+        this.active = true;
+        this.setTarget(color);
+        document.getElementById('crosshair').style.display = 'none';
+        document.getElementById('spectator-banner').classList.add('active');
+    },
+
+    exit() {
+        if (!this.active) return;
+        this.active = false;
+        this.targetColor = null;
+        this._lastSeenShotSeq = {};
+        this._recoilPitch = this._recoilYaw = this._shake = 0;
+        document.getElementById('crosshair').style.display = '';
+        document.getElementById('spectator-banner').classList.remove('active');
+        if (weaponGroup) weaponGroup.visible = false;
+    },
+
+    setTarget(color) {
+        const rp = gameState.players[color];
+        if (!rp) return;
+        // Ripristina visibile il vecchio target (se diverso e ancora vivo)
+        if (this.targetColor && this.targetColor !== color) {
+            const old = gameState.players[this.targetColor];
+            if (old) old.group.visible = !old.dead;
+        }
+        this.targetColor = color;
+        rp.group.visible = false;   // non vogliamo vedere il proprio modello dall'interno
+        switchWeaponModel(rp.weaponKey);
+        // Non "sparare" retroattivamente l'ultimo colpo del nuovo target al momento dello switch.
+        this._lastSeenShotSeq[color] = rp._shotSeq || 0;
+        if (weaponGroup) weaponGroup.visible = true;
+        const dot = document.getElementById('spectator-dot');
+        if (dot) dot.style.background = color;
+    },
+
+    _aliveColors() {
+        return Object.keys(gameState.players)
+            .filter(c => !gameState.players[c].dead)
+            .sort();
+    },
+
+    // Switch manuale (frecce): nessun effetto con 0 o 1 sopravvissuto.
+    cycleTarget(direction) {
+        const alive = this._aliveColors();
+        if (alive.length <= 1) return;
+        const i = alive.indexOf(this.targetColor);
+        const next = alive[(i + direction + alive.length) % alive.length];
+        this.setTarget(next);
+    },
+
+    // Il giocatore osservato è morto/disconnesso: passa automaticamente al
+    // prossimo vivo. Se resta un solo vivo, tutti gli spettatori vi confluiscono
+    // naturalmente (ognuno lo riceve come "prossimo" quando il proprio target cade).
+    onTargetLost() {
+        if (!this.active) return;
+        const alive = this._aliveColors();
+        if (alive.length === 0) return;   // il round sta per finire comunque
+        this.setTarget(alive[0]);
+    },
+
+    update(dt) {
+        if (!this.active) return;
+        const rp = gameState.players[this.targetColor];
+        if (!rp || rp.dead) return;   // lo switch al prossimo vivo lo gestisce il chiamante (Task 3)
+
+        playerRoot.position.set(rp.group.position.x, rp.group.position.y, rp.group.position.z);
+        yaw = rp.group.rotation.y;
+        pitch = rp.pitch || 0;
+        const a = rp.anim;
+        const eyeH = (a && a.slide ? SLIDE_EYE : a && a.crouch ? CROUCH_EYE : STAND_EYE) * sizeMul;
+        camera.position.y = eyeH;
+
+        // Decadimento rinculo/shake dello SPETTATORE, indipendente da
+        // recoilPitch/recoilYaw/shakeTrauma del giocatore reale: updateMovement
+        // (che decade quelle variabili) non gira mentre sei morto in sudden
+        // death, quindi riusarle qui le farebbe accumulare senza limite e
+        // "scaricarsi" sulla camera vera al respawn del round successivo.
+        const recover = Math.min(1, dt * 11);
+        this._recoilPitch += (0 - this._recoilPitch) * recover;
+        this._recoilYaw += (0 - this._recoilYaw) * recover;
+        this._shake = Math.max(0, this._shake - dt * 1.6);
+        const shakeSq = this._shake * this._shake;
+        const shX = (Math.random() - 0.5) * 2 * 0.05 * shakeSq;
+        const shY = (Math.random() - 0.5) * 2 * 0.05 * shakeSq;
+        const shZ = (Math.random() - 0.5) * 2 * 0.04 * shakeSq;
+
+        playerRoot.rotation.y = yaw + this._recoilYaw + shX;
+        camera.rotation.x = pitch + this._recoilPitch + shY;
+        camera.rotation.z = shZ;
+
+        const seenSeq = this._lastSeenShotSeq[this.targetColor] || 0;
+        if (rp._shotSeq && rp._shotSeq !== seenSeq) {
+            this._lastSeenShotSeq[this.targetColor] = rp._shotSeq;
+            this._playShotFeedback(rp._shotWeapon);
+        }
+
+        this._updateHud(rp);
+    },
+
+    _playShotFeedback(weaponKey) {
+        playMuzzleFlash(weaponKey);
+        Sfx.shoot(weaponKey);
+        const rc = RECOIL[weaponKey] || RECOIL.assault;
+        this._recoilPitch += rc.pitch;
+        this._recoilYaw += (Math.random() - 0.5) * 2 * rc.yaw;
+        this._shake = Math.min(1, this._shake + rc.shake);
+    },
+
+    _updateHud(rp) {
+        const w = gameState.weapons[rp.weaponKey];
+        document.getElementById('hud-weapon-name').textContent = w ? w.name : (rp.weaponKey || '');
+        const maxAmmo = w ? w.ammo : 30;
+        const ammo = rp.ammo != null ? rp.ammo : maxAmmo;
+        document.getElementById('hud-ammo-count').innerHTML = `${ammo}<span> / ${maxAmmo}</span>`;
+
+        const hp = Math.max(0, Math.min(100, rp.hp ?? 100));
+        document.getElementById('hud-hp-val').textContent = Math.round(hp);
+        const bar = document.getElementById('hud-hp-bar');
+        bar.style.width = hp + '%';
+        bar.style.background = hp > 50 ? 'var(--col-safe)' : hp > 25 ? 'var(--col-ammo)' : 'var(--col-danger)';
+        const bonusBar = document.getElementById('hud-hp-bonus');
+        if (bonusBar) bonusBar.style.width = '0%';
+    }
+};
 
 // Mutatore "Fantasmi": i modelli remoti diventano semitrasparenti con opacità
 // pulsante, sfasata per colore (così non "respirano" all'unisono). Restano sempre
@@ -4533,6 +4746,7 @@ function animate() {
     for (const rp of Object.values(gameState.players)) {
         if (!rp.dead) updateRemoteAnim(rp, dt);
     }
+    PovController.update(dt);
     applyFlicker();   // mutatore "Fantasmi" (invisibilità intermittente)
     drawMinimap();
 
