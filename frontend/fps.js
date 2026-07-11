@@ -4571,6 +4571,24 @@ GamepadInput.setCallbacks({
 //  qui `source` è sempre 'live' (stream di rete); un domani un buffer
 //  registrato potrà alimentare update() senza cambiarne la firma.
 // ══════════════════════════════════════════════════════
+// ── Banner "Play of the Round" (replay fine-round) ──
+function showPlayOfRoundBanner(data) {
+    const el = document.getElementById('play-of-round-banner');
+    if (!el) return;
+    const label = document.getElementById('por-label');
+    const tag = document.getElementById('por-headshot-tag');
+    const streakLabels = { 2: 'Doppia Uccisione', 3: 'Tripla Uccisione' };
+    label.textContent = data.streakCount >= 4
+        ? `Multikill ×${data.streakCount}`
+        : (streakLabels[data.streakCount] || '');
+    tag.classList.toggle('active', !!data.headshot);
+    el.classList.add('active');
+}
+function hidePlayOfRoundBanner() {
+    const el = document.getElementById('play-of-round-banner');
+    if (el) el.classList.remove('active');
+}
+
 const PovController = {
     active: false,
     targetColor: null,
@@ -4580,6 +4598,8 @@ const PovController = {
                        // astratto (live o registrato), non solo cambiare questo flag.
     _lastSeenShotSeq: {},
     _recoilPitch: 0, _recoilYaw: 0, _shake: 0,
+    _replay: null,       // { killerColor, clipStartLocal, clipEndLocal, onDone }, solo se source === 'buffer'
+    _replayShotIdx: 0,
 
     enter(color) {
         if (!gameState.players[color]) return;
@@ -4592,12 +4612,132 @@ const PovController = {
     exit() {
         if (!this.active) return;
         this.active = false;
+        this.source = 'live';
         this.targetColor = null;
+        this._replay = null;
         this._lastSeenShotSeq = {};
         this._recoilPitch = this._recoilYaw = this._shake = 0;
         document.getElementById('crosshair').style.display = '';
         document.getElementById('spectator-banner').classList.remove('active');
+        hidePlayOfRoundBanner();
         if (weaponGroup) weaponGroup.visible = false;
+    },
+
+    // Ritorna il buffer di posizione/rotazione del colore dato: il proprio
+    // (mySnapshots) se sono io, altrimenti quello remoto (Task 2).
+    _bufferFor(color) {
+        if (color === MY_COLOR) return mySnapshots;
+        const rp = gameState.players[color];
+        return rp ? rp.snapshots : null;
+    },
+
+    // Ritorna il log spari con timestamp del colore dato (Task 2).
+    _shotLogFor(color) {
+        if (color === MY_COLOR) return myShotLog;
+        const rp = gameState.players[color];
+        return rp ? rp.shotLog : null;
+    },
+
+    // Ingresso in modalità replay: data è il campo `playOfRound` ricevuto da
+    // roundEnd. onDone viene chiamata quando la clip finisce (o subito, se il
+    // buffer del killer non copre la finestra richiesta — fallback silenzioso).
+    enterReplay(data, onDone) {
+        const ageMs = data.serverNow - data.timestamp;   // delta nel clock SERVER, immune a offset client-server
+        const killLocal = performance.now() - ageMs;
+        const clipStartLocal = killLocal - data.preRollMs;
+        const clipEndLocal = killLocal + data.postRollMs;
+
+        const buf = this._bufferFor(data.killerColor);
+        if (!buf || buf.length < 2 || buf[0].t > clipStartLocal) {
+            onDone();   // buffer insufficiente: nessun replay, si passa oltre
+            return;
+        }
+
+        this.source = 'buffer';
+        this.active = true;
+        this.targetColor = data.killerColor;
+        this._replay = { killerColor: data.killerColor, clipStartLocal, clipEndLocal, onDone };
+        this._lastSeenShotSeq = {};
+        this._replayShotIdx = 0;
+        this._recoilPitch = this._recoilYaw = this._shake = 0;
+
+        document.getElementById('crosshair').style.display = 'none';
+        showPlayOfRoundBanner(data);
+
+        if (data.killerColor !== MY_COLOR) {
+            const rp = gameState.players[data.killerColor];
+            if (rp) rp.group.visible = false;   // non vogliamo vedere il modello dall'interno
+        }
+        switchWeaponModel(data.weaponKey);
+        if (weaponGroup) weaponGroup.visible = true;
+    },
+
+    // Interpola una coppia di snapshot consecutivi al tempo locale t. buf è
+    // ordinato per t crescente (stesso ordine di inserimento del buffer).
+    _interp(buf, t) {
+        if (!buf || buf.length === 0) return null;
+        if (t <= buf[0].t) return buf[0];
+        if (t >= buf[buf.length - 1].t) return buf[buf.length - 1];
+        for (let i = 1; i < buf.length; i++) {
+            if (buf[i].t >= t) {
+                const s0 = buf[i - 1], s1 = buf[i];
+                const span = s1.t - s0.t;
+                const f = span > 0 ? (t - s0.t) / span : 0;
+                const da = (s1.ry - s0.ry + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+                return {
+                    x: s0.x + (s1.x - s0.x) * f,
+                    y: s0.y + (s1.y - s0.y) * f,
+                    z: s0.z + (s1.z - s0.z) * f,
+                    ry: s0.ry + da * f,
+                    rx: (s0.rx || 0) + ((s1.rx || 0) - (s0.rx || 0)) * f,
+                    mv: f < 0.5 ? s0.mv : s1.mv, sp: f < 0.5 ? s0.sp : s1.sp,
+                    cr: f < 0.5 ? s0.cr : s1.cr, sl: f < 0.5 ? s0.sl : s1.sl
+                };
+            }
+        }
+        return buf[buf.length - 1];
+    },
+
+    _updateReplay() {
+        const r = this._replay;
+        const now = performance.now();
+        if (now >= r.clipEndLocal) { this._endReplay(); return; }
+
+        const buf = this._bufferFor(r.killerColor);
+        const frame = this._interp(buf, now);
+        if (!frame) { this._endReplay(); return; }   // difensivo: non deve succedere dopo il check in enterReplay
+
+        playerRoot.position.set(frame.x, frame.y, frame.z);
+        yaw = frame.ry;
+        pitch = frame.rx || 0;
+        playerRoot.rotation.y = yaw;
+        const eyeH = (frame.sl ? SLIDE_EYE : frame.cr ? CROUCH_EYE : STAND_EYE) * sizeMul;
+        camera.position.y = eyeH;
+        camera.rotation.x = pitch;
+        camera.rotation.z = 0;
+
+        // Riproduce, in ordine, gli spari bufferizzati fino all'istante corrente della clip.
+        const shots = this._shotLogFor(r.killerColor) || [];
+        while (this._replayShotIdx < shots.length && shots[this._replayShotIdx].t <= now) {
+            this._playShotFeedback(shots[this._replayShotIdx].weaponKey);
+            this._replayShotIdx++;
+        }
+    },
+
+    _endReplay() {
+        const r = this._replay;
+        this.active = false;
+        this.source = 'live';
+        this.targetColor = null;
+        this._replay = null;
+        document.getElementById('crosshair').style.display = '';
+        hidePlayOfRoundBanner();
+        if (weaponGroup) weaponGroup.visible = false;
+        if (r && r.killerColor !== MY_COLOR) {
+            const rp = gameState.players[r.killerColor];
+            if (rp) rp.group.visible = !rp.dead;
+        }
+        if (r && r.onDone) r.onDone();
     },
 
     setTarget(color) {
@@ -4645,6 +4785,7 @@ const PovController = {
 
     update(dt) {
         if (!this.active) return;
+        if (this.source === 'buffer') { this._updateReplay(); return; }
         const rp = gameState.players[this.targetColor];
         if (!rp || rp.dead) return;   // lo switch al prossimo vivo lo gestisce il chiamante (Task 3)
 
