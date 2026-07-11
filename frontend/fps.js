@@ -4531,7 +4531,7 @@ let myShotLog = [];   // {t, weaponKey} — spari propri con timestamp, per il r
 
 // Invio posizione agli altri client (WebRTC + fallback socket)
 function sendStateHeartbeat() {
-    if (gameState.phase !== 'playing' || gameState.isDead) return;
+    if (gameState.phase !== 'playing' || gameState.isDead || PovController.active) return;
     mySnapshots.push({
         t: performance.now(),
         x: playerRoot.position.x, y: playerRoot.position.y, z: playerRoot.position.z,
@@ -4665,7 +4665,10 @@ const PovController = {
         this.source = 'buffer';
         this.active = true;
         this.targetColor = data.killerColor;
-        this._replay = { killerColor: data.killerColor, clipStartLocal, clipEndLocal, onDone };
+        // startedAt ancora l'orologio di replay: il cursore di riproduzione avanza
+        // da clipStartLocal in tempo reale a partire da questo istante, NON legge
+        // performance.now() direttamente (che è già ben oltre la finestra passata).
+        this._replay = { killerColor: data.killerColor, clipStartLocal, clipEndLocal, startedAt: performance.now(), onDone };
         this._lastSeenShotSeq = {};
         this._replayShotIdx = 0;
         this._recoilPitch = this._recoilYaw = this._shake = 0;
@@ -4707,13 +4710,17 @@ const PovController = {
         return buf[buf.length - 1];
     },
 
-    _updateReplay() {
+    _updateReplay(dt) {
         const r = this._replay;
-        const now = performance.now();
-        if (now >= r.clipEndLocal) { this._endReplay(); return; }
+        // Cursore di riproduzione: avanza da clipStartLocal in tempo reale (1×) a
+        // partire da startedAt — NON legge performance.now() direttamente, che è
+        // già ben oltre la finestra passata (il kill può essere avvenuto secondi
+        // o decine di secondi prima che iniziasse il replay).
+        const cursor = r.clipStartLocal + (performance.now() - r.startedAt);
+        if (cursor >= r.clipEndLocal) { this._endReplay(); return; }
 
         const buf = this._bufferFor(r.killerColor);
-        const frame = this._interp(buf, now);
+        const frame = this._interp(buf, cursor);
         if (!frame) { this._endReplay(); return; }   // difensivo: non deve succedere dopo il check in enterReplay
 
         playerRoot.position.set(frame.x, frame.y, frame.z);
@@ -4727,10 +4734,26 @@ const PovController = {
 
         // Riproduce, in ordine, gli spari bufferizzati fino all'istante corrente della clip.
         const shots = this._shotLogFor(r.killerColor) || [];
-        while (this._replayShotIdx < shots.length && shots[this._replayShotIdx].t <= now) {
+        while (this._replayShotIdx < shots.length && shots[this._replayShotIdx].t <= cursor) {
             this._playShotFeedback(shots[this._replayShotIdx].weaponKey);
             this._replayShotIdx++;
         }
+
+        // Applica e decade rinculo/shake accumulati dagli spari appena riprodotti,
+        // esattamente come il ramo live (stessa formula, stesso decadimento) —
+        // altrimenti il feedback visivo degli spari in replay va perso.
+        const recover = Math.min(1, dt * 11);
+        this._recoilPitch += (0 - this._recoilPitch) * recover;
+        this._recoilYaw += (0 - this._recoilYaw) * recover;
+        this._shake = Math.max(0, this._shake - dt * 1.6);
+        const shakeSq = this._shake * this._shake;
+        const shX = (Math.random() - 0.5) * 2 * 0.05 * shakeSq;
+        const shY = (Math.random() - 0.5) * 2 * 0.05 * shakeSq;
+        const shZ = (Math.random() - 0.5) * 2 * 0.04 * shakeSq;
+
+        playerRoot.rotation.y = yaw + this._recoilYaw + shX;
+        camera.rotation.x = pitch + this._recoilPitch + shY;
+        camera.rotation.z = shZ;
     },
 
     _endReplay() {
@@ -4795,7 +4818,7 @@ const PovController = {
 
     update(dt) {
         if (!this.active) return;
-        if (this.source === 'buffer') { this._updateReplay(); return; }
+        if (this.source === 'buffer') { this._updateReplay(dt); return; }
         const rp = gameState.players[this.targetColor];
         if (!rp || rp.dead) return;   // lo switch al prossimo vivo lo gestisce il chiamante (Task 3)
 
