@@ -2126,8 +2126,9 @@ function applyRemoteState(rp, d) {
         x: d.x, y: d.y, z: d.z, ry: d.ry, rx: d.rx || 0,
         mv: !!d.mv, sp: !!d.sp, cr: !!d.cr, sl: !!d.sl
     });
-    // Limita la coda (robustezza se la tab è in background a lungo)
-    if (rp.snapshots.length > 60) rp.snapshots.splice(0, rp.snapshots.length - 30);
+    // Nota: NON più troncato — il buffer copre l'intero round (serve al replay
+    // "Play of the Round"), azzerato ad ogni round perché gameState.players
+    // viene ricreato da zero in handleRoundStart.
     // Arma/munizioni: aggiornate subito (valori discreti, non interpolabili)
     if (d.wk) setRemoteWeapon(rp, d.wk);
     if (d.am != null) rp.ammo = d.am;
@@ -2420,6 +2421,7 @@ function tryShoot() {
     playMuzzleFlash();
     Sfx.shoot(gameState.myWeapon);
     broadcastShotFired(gameState.myWeapon);
+    myShotLog.push({ t: performance.now(), weaponKey: gameState.myWeapon });
 
     // ── Rinculo: kick della vista + shake + scossone del viewmodel ──
     const rc = RECOIL[gameState.myWeapon] || RECOIL.assault;
@@ -3610,6 +3612,8 @@ function handleRemoteShot(color, weaponKey, seq) {
     }
     rp._shotSeq = (rp._shotSeq || 0) + 1;
     rp._shotWeapon = weaponKey;
+    if (!rp.shotLog) rp.shotLog = [];
+    rp.shotLog.push({ t: performance.now(), weaponKey });
 }
 
 // Signaling
@@ -4255,6 +4259,8 @@ function applyAmmoCap() {
 function handleRoundStart(data) {
     clearTimeout(roundIntroTimer);
     PovController.exit();   // difensivo: copre resync via fpsInit senza un roundEnd intermedio
+    mySnapshots = [];       // Play of the Round: buffer propri azzerati ad ogni round
+    myShotLog = [];
     gameState.phase = 'round_intro';   // gioco congelato: input/movimento/sparo bloccati fino a fine intro
     gameState.currentRound = data.round || data.currentRound || gameState.currentRound;
     gameState.isDead = false;
@@ -4507,9 +4513,22 @@ document.getElementById('ws-confirm-btn').addEventListener('click', () => {
 let lastTime = performance.now();
 let stateThrottle = 0;
 
+// Buffer locale del proprio movimento — stessa struttura di rp.snapshots,
+// stesso ciclo di vita (azzerato ad ogni round in handleRoundStart). Serve al
+// replay "Play of the Round" quando il killer scelto sono io: il mio client
+// non riceve mai i propri pacchetti di rete, quindi va specchiato qui.
+let mySnapshots = [];
+let myShotLog = [];   // {t, weaponKey} — spari propri con timestamp, per il replay
+
 // Invio posizione agli altri client (WebRTC + fallback socket)
 function sendStateHeartbeat() {
     if (gameState.phase !== 'playing' || gameState.isDead) return;
+    mySnapshots.push({
+        t: performance.now(),
+        x: playerRoot.position.x, y: playerRoot.position.y, z: playerRoot.position.z,
+        ry: yaw, rx: pitch,
+        mv: isMoving, sp: isSprinting, cr: isCrouching, sl: isSliding
+    });
     broadcastState();
     socket.emit('playerState', {
         lobbyId: LOBBY_ID,
