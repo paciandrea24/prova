@@ -4754,6 +4754,25 @@ const PovController = {
         playerRoot.rotation.y = yaw + this._recoilYaw + shX;
         camera.rotation.x = pitch + this._recoilPitch + shY;
         camera.rotation.z = shZ;
+
+        // Ricostruisce gli ALTRI giocatori (vittima compresa) alla loro posizione
+        // storica nello stesso istante della clip — altrimenti il replay mostra un
+        // mondo vuoto (loro mesh restano ferme/nascoste dove le ha lasciate l'ultimo
+        // aggiornamento LIVE, che a fine round li mostra già morti/fermi).
+        for (const [color, rp] of Object.entries(gameState.players)) {
+            if (color === r.killerColor) continue;   // il killer è già gestito (nascosto, è il POV)
+            const otherFrame = this._interp(rp.snapshots, cursor);
+            if (!otherFrame || !rp.snapshots || rp.snapshots.length === 0 || rp.snapshots[0].t > cursor) {
+                rp.group.visible = false;
+                continue;
+            }
+            rp.group.visible = true;
+            rp.group.position.set(otherFrame.x, otherFrame.y, otherFrame.z);
+            rp.group.rotation.y = otherFrame.ry;
+            const p = otherFrame.sl ? POSTURE.slide : otherFrame.cr ? POSTURE.crouch : POSTURE.stand;
+            rp.upper.position.y = p.upperY;
+            rp.upper.rotation.x = p.tilt;
+        }
     },
 
     _endReplay() {
@@ -4769,6 +4788,14 @@ const PovController = {
         if (r && r.killerColor !== MY_COLOR) {
             const rp = gameState.players[r.killerColor];
             if (rp) rp.group.visible = !rp.dead;
+        }
+        // Ripristina la visibilità REALE (dal vivo) di tutti gli altri giocatori
+        // ricostruiti storicamente durante il replay (Task 5).
+        if (r) {
+            for (const [color, rp] of Object.entries(gameState.players)) {
+                if (color === r.killerColor) continue;
+                rp.group.visible = !rp.dead;
+            }
         }
         if (r && r.onDone) r.onDone();
     },
