@@ -4637,6 +4637,7 @@ const PovController = {
     _replay: null,       // { killerColor, clipStartLocal, clipEndLocal, onDone }, solo se source === 'buffer'
     _replayShotIdx: 0,
     _replayAnimPhase: {},   // { [color]: number } — fase LOCALE del ciclo gambe nel replay, mai rp.anim.phase
+    _announceTimer: null,   // id del setTimeout della schermata nera in enterReplay, per poterlo cancellare in exit()
 
     enter(color) {
         if (!gameState.players[color]) return;
@@ -4652,6 +4653,7 @@ const PovController = {
         this.source = 'live';
         this.targetColor = null;
         this._replay = null;
+        this._replayAnimPhase = {};
         if (this._announceTimer) { clearTimeout(this._announceTimer); this._announceTimer = null; }
         const announceEl = document.getElementById('play-of-round-announce');
         if (announceEl) announceEl.classList.remove('active');
@@ -4783,6 +4785,11 @@ const PovController = {
     },
 
     _updateReplay(dt) {
+        // Tra enterReplay (che imposta active/source SUBITO per bloccare l'input)
+        // e lo scatto del timer dell'annuncio che chiama _startReplayPlayback,
+        // this._replay è ancora null: durante quella finestra non c'è nulla da
+        // aggiornare, si aspetta in silenzio dietro la schermata nera.
+        if (!this._replay) return;
         const r = this._replay;
         // Cursore di riproduzione: avanza da clipStartLocal in tempo reale (1×) a
         // partire da startedAt — NON legge performance.now() direttamente, che è
