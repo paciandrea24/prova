@@ -4690,10 +4690,27 @@ const PovController = {
         this.source = 'buffer';
         this.active = true;
         this.targetColor = data.killerColor;
+
+        // Converte ogni timestamp di morte (clock SERVER, da data.kills) nello
+        // stesso istante locale usato dal cursore di riproduzione: la differenza
+        // tra il timestamp di una kill e quello dell'ancora (data.timestamp) è
+        // un delta puro di clock server, quindi si somma direttamente a killLocal
+        // (già convertito). Se un colore muore più volte nella finestra (raro:
+        // respawn in mischia seguito da una seconda morte), si tiene l'ultima —
+        // resta nascosto dalla sua morte più recente fino a fine clip (nessuna
+        // "resurrezione" visiva a metà replay, fuori scope).
+        const deathsByColor = {};
+        for (const k of (data.kills || [])) {
+            const localT = killLocal + (k.timestamp - data.timestamp);
+            if (deathsByColor[k.targetColor] == null || localT > deathsByColor[k.targetColor]) {
+                deathsByColor[k.targetColor] = localT;
+            }
+        }
+
         // startedAt ancora l'orologio di replay: il cursore di riproduzione avanza
         // da clipStartLocal in tempo reale a partire da questo istante, NON legge
         // performance.now() direttamente (che è già ben oltre la finestra passata).
-        this._replay = { killerColor: data.killerColor, weaponKey: data.weaponKey, clipStartLocal, clipEndLocal, startedAt: performance.now(), onDone };
+        this._replay = { killerColor: data.killerColor, weaponKey: data.weaponKey, clipStartLocal, clipEndLocal, startedAt: performance.now(), deathsByColor, onDone };
         this._lastSeenShotSeq = {};
         this._replayShotIdx = 0;
         this._recoilPitch = this._recoilYaw = this._shake = 0;
@@ -4812,7 +4829,12 @@ const PovController = {
             // durante la finestra del replay).
             const otherBuf = this._bufferFor(color);
             const otherFrame = this._interp(otherBuf, cursor);
-            if (!otherFrame || !otherBuf || otherBuf.length === 0 || otherBuf[0].t > cursor) {
+            // Nasconde la vittima esattamente nell'istante in cui è morta davvero
+            // (Task 9/10) — identico al comportamento già esistente quando muore
+            // dal vivo (dead=true, group.visible=false), nessuna animazione nuova.
+            const deathLocal = r.deathsByColor ? r.deathsByColor[color] : null;
+            const isDeadByNow = deathLocal != null && cursor >= deathLocal;
+            if (isDeadByNow || !otherFrame || !otherBuf || otherBuf.length === 0 || otherBuf[0].t > cursor) {
                 rp.group.visible = false;
                 continue;
             }
