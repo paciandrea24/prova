@@ -35,7 +35,15 @@ const SPAWN_POINTS = [
     { x:  97, y: 0, z:  26, angle: Math.atan2(97 - 97,  26) },     // braccio sud (fondo)
     { x:  79, y: 0, z:   0, angle: Math.atan2(79 - 97,   0) },     // braccio ovest (verso i corridoi)
     { x:  85, y: 0, z:   0, angle: Math.atan2(85 - 97,   0) },     // braccio ovest (interno)
-    { x: 115, y: 0, z:   0, angle: Math.atan2(115 - 97,  0) }      // braccio est (fondo sigillato)
+    { x: 115, y: 0, z:   0, angle: Math.atan2(115 - 97,  0) },     // braccio est (fondo sigillato)
+    // — PIAZZA DELLA FONTANA (ovale centro 55.5,0) —
+    { x: 55.5, y: 0, z: -13, angle: Math.PI },  // estremo nord, guarda la fontana (+z)
+    { x: 55.5, y: 0, z:  13, angle: 0 },        // estremo sud, guarda la fontana (−z)
+    // — FUNLAND (luna park nord, recinto x 38..88 / z -52..-18): rivolti alla giostra (56,-34) —
+    { x: 55.5, y: 0, z: -21, angle: Math.atan2(55.5 - 56, -21 + 34) },  // gola d'ingresso
+    { x: 44,   y: 0, z: -40, angle: Math.atan2(44 - 56,   -40 + 34) },  // tiro a segno
+    { x: 78,   y: 0, z: -44, angle: Math.atan2(78 - 56,   -44 + 34) },  // base ruota
+    { x: 84,   y: 0, z: -27, angle: Math.atan2(84 - 56,   -27 + 34) }   // bordo pista autoscontro
 ];
 
 const PLAYER_HP = 100;

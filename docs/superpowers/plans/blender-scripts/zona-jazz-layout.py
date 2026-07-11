@@ -175,12 +175,15 @@ for card in (0, 90, 180, 270):   # lampioni sul perimetro ai cardinali
 for diag in (45, 135, 225, 315):  # festoni RADIALI in corsia 2 (rotY = 90-phi)
     x, z = polar(38.5, diag)
     PROPS.append(("props/festone_10m", round(x, 2), round(z, 2), norm(90 - diag)))
-# insegna DANCE sulla facciata del 2o edificio dell'arco SO (segue eventuale flip)
-_m, _x, _z, _r = ARCO_SO[1]
-_dx, _dz = math.sin(math.radians(_r)), math.cos(math.radians(_r))
-_d = DIMS[_m][1] / 2.0 + 0.4
-PROPS.append(("props/insegna_verticale", round(_x + _d * _dx, 2),
-              round(_z + _d * _dz, 2), _r))
+# insegna DANCE RIMOSSA (2026-07-09): ARCO_SO[1] è capitato essere il barbiere
+# (edificio_06) e un banner verticale "DANCE" sulla sua facciata non c'entrava
+# niente. Se si vorrà reintrodurla, ancorarla a un edificio a tema (ballroom)
+# scelto per MODELLO, non per posizione nell'arco.
+# _m, _x, _z, _r = ARCO_SO[1]
+# _dx, _dz = math.sin(math.radians(_r)), math.cos(math.radians(_r))
+# _d = DIMS[_m][1] / 2.0 + 0.4
+# PROPS.append(("props/insegna_verticale", round(_x + _d * _dx, 2),
+#               round(_z + _d * _dz, 2), _r))
 FESTONE_Z = 4.2
 
 # ── VIE (corde approssimate delle corsie anulari + varchi radiali ai cardinali) ──

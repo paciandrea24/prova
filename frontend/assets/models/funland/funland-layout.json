@@ -1,0 +1,487 @@
+{
+  "edifici": [
+    {
+      "modello": "funland_base",
+      "x": 63.0,
+      "z": -35.0,
+      "rotY": 0.0,
+      "y": -0.02,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 46.12,
+      "z": -18.0,
+      "rotY": -0.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 49.38,
+      "z": -18.0,
+      "rotY": -0.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 62.0,
+      "z": -18.0,
+      "rotY": -0.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 66.0,
+      "z": -18.0,
+      "rotY": -0.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 70.0,
+      "z": -18.0,
+      "rotY": -0.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 74.0,
+      "z": -18.0,
+      "rotY": -0.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 78.0,
+      "z": -18.0,
+      "rotY": -0.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 82.0,
+      "z": -18.0,
+      "rotY": -0.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 86.0,
+      "z": -18.0,
+      "rotY": -0.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 88.0,
+      "z": -20.03,
+      "rotY": 90.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 88.0,
+      "z": -24.09,
+      "rotY": 90.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 88.0,
+      "z": -28.16,
+      "rotY": 90.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 88.0,
+      "z": -32.22,
+      "rotY": 90.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "cancello",
+      "x": 88.0,
+      "z": -36.0,
+      "rotY": 90.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 88.0,
+      "z": -39.53,
+      "rotY": 90.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 88.0,
+      "z": -43.09,
+      "rotY": 90.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 88.0,
+      "z": -46.66,
+      "rotY": 90.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 88.0,
+      "z": -50.22,
+      "rotY": 90.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 86.04,
+      "z": -52.0,
+      "rotY": -180.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 82.12,
+      "z": -52.0,
+      "rotY": -180.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 78.19,
+      "z": -52.0,
+      "rotY": -180.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 74.27,
+      "z": -52.0,
+      "rotY": -180.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 70.35,
+      "z": -52.0,
+      "rotY": -180.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 66.42,
+      "z": -52.0,
+      "rotY": -180.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 62.5,
+      "z": -52.0,
+      "rotY": -180.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 58.58,
+      "z": -52.0,
+      "rotY": -180.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 54.65,
+      "z": -52.0,
+      "rotY": -180.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 50.73,
+      "z": -52.0,
+      "rotY": -180.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 46.81,
+      "z": -52.0,
+      "rotY": -180.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 42.88,
+      "z": -52.0,
+      "rotY": -180.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 38.96,
+      "z": -52.0,
+      "rotY": -180.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 36.35,
+      "z": -50.18,
+      "rotY": -109.6,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 35.05,
+      "z": -46.53,
+      "rotY": -109.6,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 33.75,
+      "z": -42.88,
+      "rotY": -109.6,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 32.45,
+      "z": -39.23,
+      "rotY": -109.6,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinzione",
+      "x": 31.15,
+      "z": -35.58,
+      "rotY": -109.6,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "raccordo_ovest",
+      "x": 32.5,
+      "z": -31.8,
+      "rotY": 135.6,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "arco_ingresso",
+      "x": 55.5,
+      "z": -17.5,
+      "rotY": 0.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "giostra",
+      "x": 56.0,
+      "z": -34.0,
+      "rotY": 15.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "autoscontro",
+      "x": 72.0,
+      "z": -32.0,
+      "rotY": 0.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "macchinina",
+      "x": 67.0,
+      "z": -30.0,
+      "rotY": 20,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "macchinina",
+      "x": 74.5,
+      "z": -29.0,
+      "rotY": 160,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "macchinina",
+      "x": 70.0,
+      "z": -34.5,
+      "rotY": 75,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "macchinina",
+      "x": 76.5,
+      "z": -35.0,
+      "rotY": 290,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "macchinina",
+      "x": 71.5,
+      "z": -31.5,
+      "rotY": 120,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "macchinina",
+      "x": 63.0,
+      "z": -24.0,
+      "rotY": 205,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "ruota",
+      "x": 78.0,
+      "z": -46.0,
+      "rotY": 0.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "chiosco_churros",
+      "x": 48.5,
+      "z": -24.0,
+      "rotY": 250.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "tavolino",
+      "x": 46.5,
+      "z": -27.0,
+      "rotY": 15,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "tavolino",
+      "x": 50.5,
+      "z": -27.5,
+      "rotY": 80,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "tavolino",
+      "x": 47.0,
+      "z": -21.0,
+      "rotY": 200,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "tiro_a_segno",
+      "x": 44.0,
+      "z": -40.0,
+      "rotY": 270.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "coaster_fondale",
+      "x": 48.0,
+      "z": -55.0,
+      "rotY": 2.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "coaster_fondale",
+      "x": 66.0,
+      "z": -55.0,
+      "rotY": -3.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "coaster_fondale",
+      "x": 82.0,
+      "z": -55.0,
+      "rotY": 4.0,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinto_basso",
+      "x": 64.0,
+      "z": -39.5,
+      "rotY": 45,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinto_basso",
+      "x": 61.0,
+      "z": -44.0,
+      "rotY": 10,
+      "y": 0.0,
+      "s": 1.0
+    },
+    {
+      "modello": "recinto_basso",
+      "x": 80.5,
+      "z": -23.5,
+      "rotY": 90,
+      "y": 0.0,
+      "s": 1.0
+    }
+  ],
+  "props": [],
+  "vie": [
+    {
+      "nome": "funland",
+      "asse": "x",
+      "da": 38,
+      "a": 88,
+      "centro": -35,
+      "larghezza": 34
+    }
+  ]
+}

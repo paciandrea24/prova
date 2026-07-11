@@ -9,14 +9,15 @@
 # box_game(...) che fa la conversione una volta sola.
 
 import sys, os, json, math
-GALLERIA_SCRIPTS = "C:/Users/pacia/Desktop/Claude Workspace/prova/.claude/worktrees/fps-galleria-art-deco/docs/superpowers/plans/blender-scripts/galleria"
+# Path della work directory UNICA (i worktree sono stati consolidati e rimossi)
+REPO = "C:/Users/pacia/Desktop/Claude Workspace/prova"
+GALLERIA_SCRIPTS = REPO + "/docs/superpowers/plans/blender-scripts/galleria"
 sys.path.insert(0, GALLERIA_SCRIPTS)
 import bpy
 import galleria_lib as gl
 
-WORKTREE = "C:/Users/pacia/Desktop/Claude Workspace/prova/.claude/worktrees/fps-galleria-art-deco"
-MODELS_DIR = WORKTREE + "/frontend/assets/models/collegamenti-wip"
-PREVIEW_DIR = WORKTREE + "/docs/superpowers/plans/blender-scripts/collegamenti/preview"
+MODELS_DIR = REPO + "/frontend/assets/models/collegamenti-wip"
+PREVIEW_DIR = REPO + "/docs/superpowers/plans/blender-scripts/collegamenti/preview"
 # Reindirizza l'output degli helper di galleria_lib
 gl.MODELS_DIR = MODELS_DIR
 gl.PREVIEW_DIR = PREVIEW_DIR
@@ -108,15 +109,10 @@ X_JZ, X_GL = 45.5, 65.4          # bordo disco Jazz → portale OVEST Galleria (
 Z_MAIN = -1.2                    # centro dello slot del palazzo centrale rimosso (idx38)
 X_MID = (X_JZ + X_GL) / 2
 W_MAIN, H_MAIN = 7.0, 5.6
-# Metà JAZZ: 7 m centrata sullo slot del palazzo rimosso (z=-1.2), tra i due vicini stretti.
-run("main_a", X_JZ, Z_MAIN, X_MID, Z_MAIN, W_MAIN, H_MAIN, M['crema'], roofed=False, ext=False)
-# Metà GALLERIA: 9 m centrata su z=0 per COMBACIARE col braccio ovest (negozi a z=±4.5).
-# Il corridoio stretto (7 m, sfalsato) faceva sporgere i muri crema dentro l'apertura.
-W_GAL = 9.0
-run("main_b", X_MID, 0.0, X_GL, 0.0, W_GAL, H_MAIN, M['crema'], roofed=False, ext=False)
-# Muro-gradino SUD a X_MID: collega il muro sud stretto di main_a (z=+2.3) a quello largo
-# di main_b (z=+4.5). Il lato nord (-4.7→-4.5, 0.2 m) è trascurabile e non serve gradino.
-wall_seg("main_step_s", X_MID, Z_MAIN + W_MAIN / 2, X_MID, W_GAL / 2, H_MAIN, M['crema'])
+# ── PIAZZA DELLA FONTANA al posto del corr_main (spec 2026-07-09) ──
+# L'ovale A=10, B=16 centro (55.5,0) riempie x∈[45.5,65.4]: niente più corridoio.
+# main_jz_cap resta come porta OVEST della piazza; il portale Galleria (x=65.4,
+# w9) è la porta EST. Il perimetro lo sigilla la zona piazza (muretti/quinte).
 # TAPPI crema ai lati dell'imbocco: riempiono il cuneo curvo fino ai palazzi vicini
 # (idx37/idx39) così non restano buchi laterali (spessi in x per la curvatura).
 # Spinti a X_JZ+0.2 = DAVANTI (lato galleria) alle facce rosse, non dentro (anti z-fight).
@@ -153,8 +149,7 @@ def barrel(tag, x0, x1, w, zc, ribs):
                          xr, -(zc + (z_a + z_b) / 2), (y_a + y_b) / 2,
                          M['ottone'], rot=(math.radians(90), 0, 0), bevel=0)
 
-barrel("a", X_JZ, X_MID, W_MAIN, Z_MAIN, 2)   # lato Jazz: 7 m centrata z=-1.2
-barrel("b", X_MID, X_GL, W_GAL, 0.0, 3)       # lato galleria: 9 m centrata z=0
+# (volta a botte rimossa insieme al corr_main: la piazza è a cielo aperto)
 
 def jazz_gateway(p, x_ent, z_ent, half, h, mat_face, mat_col):
     # Sigilla il giunto tra il PERIMETRO Jazz (radiale) e l'IMBOCCO del flank (asse-allineato),
@@ -225,9 +220,25 @@ def flank_u(p, x_ent, z_ent, z_dip, x_gal, z_gal, w, h, mat, roof_mat):
 WF, HF = 3.5, 4.0
 # Muri flank in CREMA Déco (coerenti con corridoio principale + porta verde galleria).
 # NORD: edificio Jazz NE (32.5,-31.8) → fondo a z=-38 → portale N Galleria (97,-31.6)
-flank_u("fN", 32.5, -31.8, -38.0, 97.0, -31.6, WF, HF, M['sabbia'], M['nero'])
+# fN DEMOLITO (spec 2026-07-10): il flanking nord lo fa l'anello esterno di
+# Funland; il tratto verso il portale N Galleria è il corridoio srv_* qui sotto.
 # SUD (speculare): edificio Jazz SE (34.9,29.18) → fondo a z=38 → portale S Galleria (97,31.6)
 flank_u("fS", 34.9, 29.18, 38.0, 97.0, 31.6, WF, HF, M['sabbia'], M['nero'])
+
+# ── PASSAGGIO DI SERVIZIO EST (Funland → portale N Galleria) ──
+# L: braccio E-O a z=-36 dal cancello est del parco (x=88) a x≈97, poi gamba a
+# sud fino al portale N (97,-31.6): stessa geometria d'arrivo del vecchio fN,
+# la sigillatura lato galleria resta la porta verde `portale_varco`.
+W_SRV, H_SRV = 3.5, 4.0
+hs = W_SRV / 2
+wall_seg("srv_o_eo", 88.0, -36.0 - hs, 97.0 + hs, -36.0 - hs, H_SRV, M['sabbia'])   # esterno nord
+wall_seg("srv_o_ns", 97.0 + hs, -36.0 - hs, 97.0 + hs, -31.6, H_SRV, M['sabbia'])   # esterno est
+wall_seg("srv_i_eo", 88.0, -36.0 + hs, 97.0 - hs, -36.0 + hs, H_SRV, M['sabbia'])   # interno sud (si ferma al gomito)
+wall_seg("srv_i_ns", 97.0 - hs, -36.0 + hs, 97.0 - hs, -31.6, H_SRV, M['sabbia'])   # interno ovest
+box_game("srv_pav_eo", 9.0 + hs, W_SRV, 0.12, (88.0 + 97.0 + hs) / 2, -36.0, -0.12, M['pav'])
+box_game("srv_pav_ns", W_SRV, 4.4 + hs, 0.12, 97.0, (-36.0 - hs - 31.6) / 2, -0.12, M['pav'])
+box_game("srv_roof_eo", 9.0 + hs, W_SRV + 0.4, 0.2, (88.0 + 97.0 + hs) / 2, -36.0, H_SRV, M['nero'])
+box_game("srv_roof_ns", W_SRV + 0.4, 4.4 + hs, 0.2, 97.0, (-36.0 - hs - 31.6) / 2, H_SRV, M['nero'])
 
 # ── EXPORT GLB (solo corridoi) ──
 gl.export_glb("collegamenti.glb")
@@ -237,8 +248,8 @@ layout = {
     "edifici": [{"modello": "collegamenti", "x": 0.0, "z": 0.0, "rotY": 0.0, "y": 0.0, "s": 1.0}],
     "props": [],
     "vie": [
-        {"nome": "corr_main", "asse": "x", "da": X_JZ, "a": X_GL, "centro": 0, "larghezza": W_MAIN},
-        {"nome": "flank_nord", "asse": "x", "da": 32.5, "a": 97, "centro": -38, "larghezza": WF},
+        {"nome": "piazza_ovale", "asse": "x", "da": X_JZ, "a": X_GL, "centro": 0, "larghezza": 20},
+        {"nome": "servizio_est", "asse": "x", "da": 88, "a": 97, "centro": -36, "larghezza": WF},
         {"nome": "flank_sud", "asse": "x", "da": 34.9, "a": 97, "centro": 38, "larghezza": WF},
     ],
 }

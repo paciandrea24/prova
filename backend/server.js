@@ -7,7 +7,7 @@ const http = require('http');
 
 const { Server } = require('socket.io')
 
-/* const fs = require('fs'); */
+const fs = require('fs');
 
 const lobbyRoutes = require('./routes/lobbyRoutes');
 const socketManager = require('./sockets/socketManager');
@@ -17,6 +17,32 @@ const app = express();
 const server = http.createServer(app);
 const io = require('socket.io')(server);
 
+
+// ── Route DEV: salvataggio texture minimappa generata da minimap-gen.html ──
+// Registrata PRIMA dei body-parser globali: il parser JSON di default (100kb)
+// respingerebbe il PNG (~1-4 MB). Solo in locale: mai attiva in produzione.
+if (process.env.NODE_ENV !== 'production') {
+    const MM_PREFIX = 'data:image/png;base64,';
+    app.post('/dev/minimap', express.json({ limit: '25mb' }), (req, res) => {
+        const { png, meta } = req.body || {};
+        if (typeof png !== 'string' || png.indexOf(MM_PREFIX) !== 0 ||
+            !meta || !(meta.width > 0) || !(meta.maxX > meta.minX)) {
+            return res.status(400).json({ error: 'payload non valido' });
+        }
+        const dir = path.join(__dirname, '..', 'frontend', 'assets', 'minimap');
+        try {
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(path.join(dir, 'world.png'),
+                Buffer.from(png.slice(MM_PREFIX.length), 'base64'));
+            fs.writeFileSync(path.join(dir, 'world.json'),
+                JSON.stringify(meta, null, 2));
+            console.log('🗺  Minimappa salvata in frontend/assets/minimap/');
+            res.json({ ok: true });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+}
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());

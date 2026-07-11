@@ -8,7 +8,8 @@
 # Coordinate di GIOCO: x est, z sud, fronte non ruotato = +Z; Blender: bx=x, by=-z.
 # Verifica: render galleria_top_debug.png con frecce-fronte.
 import sys
-sys.path.insert(0, "C:/Users/pacia/Desktop/Claude Workspace/prova/.claude/worktrees/fps-galleria-art-deco/docs/superpowers/plans/blender-scripts/galleria")
+# Path della work directory UNICA (i worktree sono stati consolidati e rimossi)
+sys.path.insert(0, "C:/Users/pacia/Desktop/Claude Workspace/prova/docs/superpowers/plans/blender-scripts/galleria")
 import json
 import math
 import random
@@ -18,7 +19,8 @@ import galleria_lib as gl
 importlib.reload(gl)
 
 # Copia di lavoro: output nelle cartelle -wip (originali congelati)
-gl.MODELS_DIR = "C:/Users/pacia/Desktop/Claude Workspace/prova/.claude/worktrees/fps-galleria-art-deco/frontend/assets/models/galleria-wip"
+gl.MODELS_DIR = "C:/Users/pacia/Desktop/Claude Workspace/prova/frontend/assets/models/galleria-wip"
+gl.PREVIEW_DIR = "C:/Users/pacia/Desktop/Claude Workspace/prova/docs/superpowers/plans/blender-scripts/galleria/preview"
 
 rng = random.Random(24)   # layout riproducibile
 
@@ -202,13 +204,25 @@ for phi in (0, 90, 180, 270):
                 mi = 1 if (c + j) % 4 != 1 else 2   # scuro con accenti verdi
             gx, gz = rot(xc, -zc, phi)
             tile(gx, gz, T - 0.06, T - 0.06, mi, rot_deg=phi)
-# rotonda: pavimento a RAGGIERA (sunburst Déco), anello verde a meta'
+# rotonda: pavimento a RAGGIERA (sunburst Déco), anello verde a meta'.
+# I settori che sconfinano negli IMBOCCHI dei bracci si SALTANO: lì il pavimento
+# dritto dei bracci è alla stessa quota (top 0.07) e la sovrapposizione
+# complanare faceva z-fighting. Sotto resta la base scura → si legge come fuga.
+def _in_imbocco(r, a_deg):
+    a = math.radians(a_deg)
+    gx, gz = r * math.sin(a), -r * math.cos(a)
+    return min(abs(gx), abs(gz)) < HALF + 0.15 and max(abs(gx), abs(gz)) > Z_M - 0.1
+
+
 NSEC = 28
 for ring, (r0, r1) in enumerate(((2.8, 4.7), (4.75, 6.6), (6.65, 7.35), (7.4, 9.3), (9.35, 10.45))):
     for s in range(NSEC):
         a0 = 360.0 * s / NSEC + ring * 6
         a1 = 360.0 * (s + 1) / NSEC + ring * 6
         mi = 2 if ring == 2 else (s % 2 if ring % 2 == 0 else (s + 1) % 2)
+        if any(_in_imbocco(r, a) for r in (r0, r1)
+               for a in (a0 + 0.35, a1 - 0.35, (a0 + a1) / 2)):
+            continue
         sector_tile(r0, r1 - 0.0, a0 + 0.35, a1 - 0.35, mi)
 
 mesh = bpy.data.meshes.new("pavimento")

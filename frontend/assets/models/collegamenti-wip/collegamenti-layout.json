@@ -12,19 +12,19 @@
   "props": [],
   "vie": [
     {
-      "nome": "corr_main",
+      "nome": "piazza_ovale",
       "asse": "x",
       "da": 45.5,
       "a": 65.4,
       "centro": 0,
-      "larghezza": 7.0
+      "larghezza": 20
     },
     {
-      "nome": "flank_nord",
+      "nome": "servizio_est",
       "asse": "x",
-      "da": 32.5,
+      "da": 88,
       "a": 97,
-      "centro": -38,
+      "centro": -36,
       "larghezza": 3.5
     },
     {

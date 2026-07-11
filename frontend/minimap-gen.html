@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>FPS — Generatore minimappa (tool dev)</title>
+<style>
+body{background:#111;color:#eee;font-family:monospace;margin:0;padding:16px}
+h1{font-size:16px;margin:0 0 12px}
+#status{margin-bottom:12px;white-space:pre-line}
+#links a{color:#6cf;margin-right:12px}
+#out{max-width:100%;border:1px solid #444}
+</style>
+</head>
+<body>
+<h1>Generatore texture minimappa — apri questa pagina dopo OGNI modifica alla mappa</h1>
+<div id="status">Caricamento zone…</div>
+<div id="links"></div>
+<canvas id="out"></canvas>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="world-config.js"></script>
+<script>
+// ══════════════════════════════════════════════════════
+//  TOOL DEV — genera la texture top-down della minimappa
+//  Carica le stesse zone del gioco (WORLD_CONFIG) con un loader
+//  SEMPLIFICATO (solo posa istanze: niente toon/collisioni/merge),
+//  renderizza con camera ORTOGRAFICA verticale e salva PNG+JSON
+//  via POST /dev/minimap. In caso di errore: NESSUN salvataggio.
+// ══════════════════════════════════════════════════════
+(async () => {
+const statusEl = document.getElementById('status');
+const log = m => { statusEl.textContent += '\n' + m; };
+
+const MAX_TEX = 2048;   // lato massimo texture (px)
+const MARGIN  = 3;      // margine attorno all'area giocabile (unità mondo)
+
+const loader = new THREE.GLTFLoader();
+const _CB = '?v=' + Date.now();   // anti-cache, come loadZone in fps.js
+const gltfLoad = url => new Promise((res, rej) => loader.load(url + _CB, res, undefined, rej));
+
+// ── 1. Zone → gruppo mondo (loader semplificato) ──
+const world = new THREE.Group();
+try {
+    const varchi = await fetch(WORLD_CONFIG.VARCHI_URL + _CB).then(r => r.json());
+    for (const zn of WORLD_CONFIG.ZONES) {
+        const off  = zn.offset || { x: 0, z: 0 };
+        const skip = zn.varchi ? varchi.skip : [];
+        const layout = await fetch(zn.dir + zn.json + _CB).then(r => r.json());
+        const modelNames = [...new Set([
+            ...layout.edifici.map(e => e.modello),
+            ...layout.props.map(p => p.modello)
+        ])];
+        const models = {};
+        for (const n of modelNames) models[n] = (await gltfLoad(zn.dir + n + '.glb')).scene;
+        if (zn.pav !== false) {
+            const pav = (await gltfLoad(zn.dir + 'pavimentazione.glb')).scene;
+            pav.position.set(off.x, 0, off.z);
+            world.add(pav);
+        }
+        // Stessa semantica di loadZone: skip su coord LOCALI, raggio 1.0,
+        // vale per edifici E props; i passthrough sono visibili → inclusi.
+        const nearSkip = inst => skip.some(s => Math.hypot(inst.x - s.x, inst.z - s.z) < 1.0);
+        const place = inst => {
+            const g = models[inst.modello].clone(true);
+            g.position.set(inst.x + off.x, inst.y || 0, inst.z + off.z);
+            g.rotation.y = (inst.rotY || 0) * Math.PI / 180;
+            const s = inst.s || 1.0;
+            g.scale.set(s, s, s);
+            world.add(g);
+        };
+        layout.edifici.forEach(e => { if (!nearSkip(e)) place(e); });
+        layout.props.forEach(p =>   { if (!nearSkip(p)) place(p); });
+        log('OK  ' + zn.dir);
+    }
+} catch (e) {
+    statusEl.textContent = 'ERRORE caricamento zone: ' + e.message +
+        '\nNessuna texture salvata (mai salvare un render parziale).';
+    throw e;
+}
+// Mesh COL_ = collisioni invisibili in gioco → invisibili anche qui
+world.traverse(o => { if (o.isMesh && o.name.indexOf('COL_') === 0) o.visible = false; });
+
+// ── 2. Scena, luci, camera ortografica top-down ──
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x5d7a36);   // base verde (stesso tono del prato in gioco)
+scene.add(world);
+scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+const sun = new THREE.DirectionalLight(0xffffff, 0.55);
+sun.position.set(30, 100, 20);   // leggermente inclinato: dà modellato ai tetti
+scene.add(sun);
+
+const bb = new THREE.Box3().setFromObject(world);
+const minX = bb.min.x - MARGIN, maxX = bb.max.x + MARGIN;
+const minZ = bb.min.z - MARGIN, maxZ = bb.max.z + MARGIN;
+const w = maxX - minX, h = maxZ - minZ;
+const pxPerUnit = MAX_TEX / Math.max(w, h);          // scala UNIFORME sui 2 assi
+const W = Math.round(w * pxPerUnit), H = Math.round(h * pxPerUnit);
+
+const cam = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 0.1, 500);
+cam.position.set((minX + maxX) / 2, 200, (minZ + maxZ) / 2);
+cam.up.set(0, 0, -1);                    // mondo +X → destra immagine, +Z → basso
+cam.lookAt(cam.position.x, 0, cam.position.z);
+
+// ── 3. Render ──
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.outputEncoding = THREE.sRGBEncoding;   // colori GLB corretti (come da GLTFLoader)
+renderer.setSize(W, H);
+renderer.render(scene, cam);
+const dataURL = renderer.domElement.toDataURL('image/png');
+
+// anteprima a schermo
+const out = document.getElementById('out');
+out.width = W; out.height = H;
+out.getContext('2d').drawImage(renderer.domElement, 0, 0);
+
+const meta = { minX, minZ, maxX, maxZ, width: W, height: H };
+log('Render ' + W + 'x' + H + ' px — bounds X[' + minX.toFixed(1) + ',' + maxX.toFixed(1) +
+    '] Z[' + minZ.toFixed(1) + ',' + maxZ.toFixed(1) + ']');
+
+// ── 4. Salvataggio automatico (route dev); ripiego: download manuale ──
+try {
+    const r = await fetch('/dev/minimap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ png: dataURL, meta })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    log('SALVATO in frontend/assets/minimap/ (world.png + world.json)');
+} catch (e) {
+    log('Salvataggio automatico FALLITO (' + e.message + ') — scarica a mano e copia in frontend/assets/minimap/:');
+    const links = document.getElementById('links');
+    const a1 = document.createElement('a');
+    a1.href = dataURL; a1.download = 'world.png'; a1.textContent = '[scarica world.png]';
+    const a2 = document.createElement('a');
+    a2.href = 'data:application/json,' + encodeURIComponent(JSON.stringify(meta, null, 2));
+    a2.download = 'world.json'; a2.textContent = '[scarica world.json]';
+    links.append(a1, a2);
+}
+})();
+</script>
+</body>
+</html>

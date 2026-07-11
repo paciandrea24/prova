@@ -72,8 +72,26 @@ circolare chiuso** di edifici (fronti quasi tutti verso l'interno, flip random).
 - **Confini**: clamp **radiale** `MAP_RADIUS=49` in `updateMovement` (niente più
   muro quadrato/`MAP_X1`); il perimetro visivo è chiuso dagli edifici stessi.
 - **Bordi neri edifici**: tasto **B** (debug) toggla i gusci inverted-hull sulle
-  mesh merged (`toggleJazzOutlines`, lazy). Default SPENTO (stile Cuphead: fondali
-  senza china). Decisione definitiva → fissare e rimuovere il toggle.
+  mesh merged (`toggleJazzOutlines`, lazy). Default ACCESO dal restyle "fondale
+  dipinto" (2026-07-09). Decisione definitiva → fissare e rimuovere il toggle.
+- **Shading "fondale dipinto"** (2026-07-09): `worldToon` inietta via
+  `onBeforeCompile` (funzione `_worldFxPatch`) gli effetti su TUTTI i materiali
+  del mondo (personaggi/`makeToonMat` esclusi): ① "macchia acquerello" da
+  texture di rumore tileable proiettata sull'asse dominante della normale
+  (coordinate MONDO, le mesh merged non hanno UV); ② ombre del cel-shading
+  virate al viola (chunk `gradientmap_pars_fragment` riscritto); ③ ANTI-ABBAGLIO:
+  ambiente scalato ~0.5 + spalla morbida proporzionale sopra `uFxKnee` — senza
+  ombre, gli interni prendono il sole come gli esterni e ambiente+sole sfondava
+  il bianco sui materiali chiari collassando TUTTE le fasce in piatto bruciato
+  (era la causa sia del "colori piatti" sia del mezzanino accecante); il
+  `marmo_chiaro` è inoltre portato ad avorio (×0.75 in `_jazzToonMat`).
+  Il gradiente verticale base-scura/cima-chiara è stato PROVATO e RIMOSSO
+  (feedback utente: non piace sui palazzi) — knob `uFxBaseTint` lasciato a
+  bianco. Il mondo usa una gradient map dedicata a 4 fasce più contrastate
+  (`_worldGradMap`); i personaggi restano su `_toonGradMap` a 3. Tuning
+  centralizzato nelle uniformi condivise `_worldFxU` (modificabili live da
+  console). Tasto **N** (debug) = on/off dell'intero trattamento per confronto;
+  da rimuovere a look approvato.
 - **Trade-off accettato dall'utente**: niente interni enterable né tetti
   calpestabili (interni club = step futuro). I SISTEMI porte interattive
   (`doors[]` vuoto) e breakables (liste vuote) restano vivi per gli interni futuri.
@@ -81,14 +99,97 @@ circolare chiuso** di edifici (fronti quasi tutti verso l'interno, flip random).
   PORTO con nave/gru/container, ~25 builder) è stata RIMOSSA da fps.js il
   2026-07-06 (−712 righe); recuperabile da git prima di quel punto.
 
+### Piazza della Fontana (zona centrale, 2026-07-10)
+Ovale **20×32 m** (semiassi A=10 E-O, B=16 N-S) centro mondo **(55.5, 0)**: ha
+SOSTITUITO il corr_main tra Jazz e Galleria (rimosso da `collegamenti-wip`; i
+flank a z=±38 sono intatti). Arena di scontro vera: spawn propri e coperture.
+- **Asset** (`frontend/assets/models/piazza/`): `piazza_base.glb` (pavimento a
+  sanpietrini ad anelli + letto di malta + RACCORDI in pietra a filo nei varchi
+  — chiudono le lenti di void tra disco Jazz/braccio Galleria e ovale),
+  `muretto`, `fontana` (vasca Ø7 entrabile h0.45 + gatto jazz in ottone che
+  sputa lo zampillo), `chiosco` (EDICOLA), `panchina`, `aiuola` + 2 quinte jazz
+  copiate (`edificio_02`, `edificio_09`).
+  `piazza-layout.json`: 29 istanze (il `cantiere` — vecchio tappo nord — e i
+  2 muretti nel varco w5 sono stati RIMOSSI il 2026-07-10: al loro posto c'è
+  l'arco d'ingresso di Funland, vedi sotto). Sorgenti in `blender-scripts/piazza/`
+  (`piazza_lib.py` riusa galleria_lib+jazz_lib con path della work dir unica).
+- **Perimetro**: quinte SOLO a est (a ovest il fondale sono i retri dell'anello
+  palazzi Jazz), 16 muretti a riempimento adattivo sull'ellisse, 3 aperture:
+  OVEST porta w7 endcap (z −4.7..2.3), EST portale Galleria w9, NORD varco w5
+  aperto sull'arco Funland (gola a sanpietrini z −16..−18). Il varco del
+  palazzo jazz è gestito dalla skip-list esistente.
+- **Caricamento**: `loadZone('assets/models/piazza/', 'piazza-layout.json',
+  { pav:false })` nel boot EXTENDED. 57 solidi (COL_* → OBB per istanza).
+- **Gameplay**: sightline O↔E spezzata da fontana (centro) + chiosco (S-E,
+  sportello verso la fontana); panchine (anello 0.58) e aiuole (0.72) =
+  coperture basse. Bordo vasca = step-up (y≈0.35 col JAZZ_Y_OFF).
+- ⚠️ **Winding from_pydata**: la mappa `(lx,−lz)` gioco→Blender SPECCHIA il
+  winding: costruire i quad in ordine invertito o le facce top spariscono in
+  Three.js FrontSide (pavimento "nero" — bug trovato e risolto qui).
+- ⚠️ **Anti z-fighting pavimenti (2026-07-10)**: le LASTRE di fondazione della
+  pav Jazz (es. `lotto_26`, del palazzo del varco: fuse in pavimentazione.glb,
+  non skippabili) stanno a y mondo 0.0 → `piazza_base` istanziata a **y −0.02**
+  (la lastra fa da sagrato). Scala quote piazza (bz, con offset −0.10−0.02):
+  conci 0.10 → −0.02 mondo, raccordi 0.06 → −0.06, malta 0.03 → −0.09.
+  I conci sono CLAMPATI ai confini (cerchio Jazz r45.55, piano x=65.35) e i
+  raccordi NON passano più sotto i sanpietrini Jazz (jitter top 0.082–0.098:
+  qualunque sovrapposizione < 2 cm sfarfalla). In Galleria i settori della
+  RAGGIERA della rotonda che sconfinavano negli imbocchi dei bracci (stessa
+  quota top 0.07 del pavimento dritto) sono SALTATI (`_in_imbocco`): la fascia
+  scura di base che resta si legge come soglia.
+
+### Luna Park Funland (quartiere nord, 2026-07-10)
+Recinto **50×38 m** (x 38..88, z −52..−18) a nord della piazza, al posto del
+flank nord (DEMOLITO da `collegamenti-wip`: al suo posto l'ANELLO ESTERNO del
+parco + un corridoio di servizio a L `srv_*` w3.5 h4 semi-coperto dal cancello
+est (88,−36) al portale N Galleria (97,−31.6), sigillato dalla porta verde
+`portale_varco` esistente). Tutto STATICO, nessuna animazione.
+- **3 porte**: SUD arco d'ingresso clown (55.5,−17.5) bocca w5 h4 dalla piazza;
+  EST cancello (88,−36) → corridoio servizio → Galleria; OVEST raccordo con
+  varco w3.5 sul buco di `edificio_08` (già in `varchi-skip.json`) → Jazz.
+- **Asset** (`frontend/assets/models/funland/`, sorgenti `blender-scripts/funland/`
+  con `funland_lib.py`): `funland_base` (pavimento a celle 2×2: nastri sanpietrini
+  = viale+anello, terra battuta = piazzole, prato; clamp cerchio Jazz r45.8),
+  `recinzione` (modulo 4 m con bandierine, file a moduli FISSI s=1.0 — loadZone
+  scala uniforme, moduli adattivi si abbasserebbero), `cancello`, `recinto_basso`
+  (crouch cover h1.05), `raccordo_ovest`, `arco_ingresso` (faccia clown su
+  pannello ellittico + insegna FUNLAND; COL spalle+architrave anti-scavalco),
+  `giostra` (tettoia cono lathe, 5 cavalli, recinto 11×11 CHIUSO con COL),
+  `autoscontro` (pista 14×10, muretto h1.1 con aperture SUD z−27 e OVEST x65,
+  rete su pali, insegna a nord), `macchinina` (bumper car, COL basso; 5 in pista
+  + 1 in panne), `ruota` (Ø18 a (78,−46), COL solo 4 zampe + 2 cabine basse),
+  `chiosco_churros`, `tavolino`, `tiro_a_segno` (bancone COL crouch davanti,
+  fianchi/fondale pieni, papere su ripiano), `coaster_fondale` (3 moduli
+  scenografici a z=−55, NESSUNA COL, skyline con gobba ~10 m).
+  `funland-layout.json`: 59 istanze, 131 solidi. Generatore: `funland-layout.py`.
+- **fps.js**: `ceilingAt` → rettangolo Funland (30<x<92, −58<z<−16) = MAP_CEIL
+  cielo aperto (il corridoio servizio x>92 resta CORR_CEIL); rete di sicurezza
+  estesa a **z −58** (coaster incluso); `loadZone(..., 'funland-layout.json',
+  { pav:false })` nel boot EXTENDED.
+- **Sightline**: arco↔ruota spezzata da recinto giostra + muretto pista +
+  recinti bassi (64,−39.5)(61,−44); corsia est spezzata da (80.5,−23.5).
+- ⚠️ I **retri Jazz** invadono il lato SO: fila sud della recinzione parte da
+  x=44.5 (spigolo reale di edificio_06, validato su render combinato
+  `debug_ovest.py` — il piano diceva 48.5 e lasciava un buco di 3 m); la
+  diagonale NO muore SUL muro del raccordo (t=2.8, 1 m oltre il varco).
+- Tooling: `debug_ovest.py` (scena combinata Jazz reali+collegamenti+funland),
+  `debug_pav_top.py` (top pavimentazione), harness puppeteer per screenshot
+  in-engine + sonde `resolveCollisions` (scratchpad sessione 2026-07-10).
+
 ### Spawn (server SPAWN_POINTS)
-10 punti Zona Jazz: 8 in corsia esterna (r≈38.5, cardinali+diagonali) + 2 in corsia
-interna (r≈20, N/S), tutti rivolti verso il centro con `angle = Math.atan2(x, z)`.
-Devono restare coerenti con `zona-layout.json`: se cambi il layout, aggiornali.
+23 punti: 10 Zona Jazz (8 corsia esterna r≈38.5 + 2 interna r≈20, rivolti al
+centro con `angle = Math.atan2(x, z)`), 7 Galleria (bracci della croce, offset
+97,0), **2 Piazza della Fontana** (estremi N/S dell'ovale a (55.5, ∓13),
+rivolti verso la fontana), **4 Funland** (gola d'ingresso (55.5,−21), tiro a
+segno (44,−40), base ruota (78,−44), bordo pista (84,−27), rivolti alla
+giostra (56,−34)).
+Devono restare coerenti con i layout JSON: se cambi il layout, aggiornali.
 Convenzione angoli: forward = `(-sin yaw, -cos yaw)`. Guardare verso +Z → yaw=PI; verso -Z → yaw=0.
 
 ### Minimap (client `drawMinimap()`)
 Rotante, player-centric: il giocatore è sempre al centro come triangolo che punta in alto. Proietta le coord-mondo sui vettori forward/right del player. Canvas 130px, in alto a destra.
+**Sfondo**: texture top-down del mondo (`assets/minimap/world.png` + `world.json` di calibrazione `{minX,minZ,maxX,maxZ,width,height}`, +X→destra, +Z→basso, scala px/unità uniforme), disegnata con la stessa rotazione/scala di `toMM` + velo scuro; fallback sfondo nero se assente.
+**Rigenerazione (SOLO in dev, mai in partita)**: dopo ogni modifica alla mappa aprire `localhost:3000/minimap-gen.html` — carica le zone da `world-config.js` (config condivisa con fps.js), renderizza in ortografica top-down e salva via `POST /dev/minimap` (route attiva solo fuori produzione). Sfondo del render = verde (`0x5d7a36`), stesso tono del prato in gioco.
 
 ### Hitmarker / Healthbar
 - `showHitmarker(isKill)`: X bianca animata attorno al mirino quando colpisci; rossa su `playerKilled` se il killer sei tu.

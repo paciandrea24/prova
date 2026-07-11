@@ -24,11 +24,14 @@ const MAP_RADIUS = 49;    // clamp RADIALE sul disco r=52 della Zona Jazz (rete 
 const MAP_CEIL = 13;      // soffitto invisibile: anti-fuga con Gravità Lunare (cresta club 14 m solo visiva)
 // Mondo esteso = Jazz + corridoi + Galleria cuciti. ?map=jazz carica solo la Jazz classica.
 const EXTENDED = new URLSearchParams(location.search).get('map') !== 'jazz';
-const GALLERIA_OFF = { x: 97, z: 0 };   // offset mondo della Galleria (combacia con collegamenti-layout.py)
+const GALLERIA_OFF = WORLD_CONFIG.GALLERIA_OFF;   // definito in world-config.js (condiviso con minimap-gen.html)
 const GALLERIA_CEIL = 8.5;              // ceilingY della Galleria (sotto la cupola)
 const CORR_CEIL = 6.0;                  // volta dei corridoi di collegamento
-// Soffitto per-zona (mondo esteso): Galleria attorno all'offset, Jazz attorno all'origine, corridoi in mezzo.
+// Soffitto per-zona (mondo esteso): Funland (cielo aperto), Galleria attorno
+// all'offset, Jazz attorno all'origine, corridoi in mezzo (il corridoio di
+// servizio est a x>92 ricade in CORR_CEIL come i flank).
 function ceilingAt(x, z) {
+    if (x > 30 && x < 92 && z < -16 && z > -58) return MAP_CEIL;   // Funland
     if (Math.hypot(x - GALLERIA_OFF.x, z - GALLERIA_OFF.z) < 34) return GALLERIA_CEIL;
     if (Math.hypot(x, z) < 50) return MAP_CEIL;
     return CORR_CEIL;
@@ -524,13 +527,10 @@ function drawStripes(ctx, s, colA = '#c94f42', colB = '#f6efe0') {
 
 // ══ STILE TOON (rubber-hose, validato nel prototipo fps-toon-proto) ══
 // Gradient map a fasce nette per il cel-shading (NearestFilter = bande dure)
-const _toonGradMap = (() => {
+function _makeGradMap(vals) {
     const c = document.createElement('canvas');
     c.width = 256; c.height = 1;
     const ctx = c.getContext('2d');
-    // Cel-shading a contrasto pieno (pop toon) ma con tetto appena sotto il bianco
-    // puro (0.92): mantiene le fasce nette ed evita il clipping/bagliore sui chiari.
-    const vals = [0.44, 0.70, 0.92];
     const w = 256 / vals.length;
     vals.forEach((v, i) => {
         const g = Math.round(v * 255);
@@ -542,7 +542,13 @@ const _toonGradMap = (() => {
     tex.magFilter = THREE.NearestFilter;
     tex.generateMipmaps = false;
     return tex;
-})();
+}
+// Personaggi: contrasto pieno (pop toon) ma con tetto appena sotto il bianco
+// puro (0.92): mantiene le fasce nette ed evita il clipping/bagliore sui chiari.
+const _toonGradMap = _makeGradMap([0.44, 0.70, 0.92]);
+// Mondo: 4 fasce più contrastate ("bande marcate" stile Cuphead); la fascia
+// scura vira di TINTA (viola) nello shader iniettato da worldToon, non qui.
+const _worldGradMap = _makeGradMap([0.30, 0.55, 0.78, 0.94]);
 
 // Grana vintage: base bianca puntinata, moltiplicata dal colore del materiale
 const _toonGrainTex = (() => {
@@ -637,10 +643,143 @@ function _cupheadGrade(col) {
     return c;
 }
 
+// ── FX "fondale dipinto" (shading Cuphead del mondo) ──────────────
+// Iniettati via onBeforeCompile in TUTTI i materiali worldToon:
+//  1. gradiente verticale: le superfici scuriscono verso terra con tinta calda
+//     (rompe il colore-unico delle facciate piatte);
+//  2. "macchia acquerello": rumore a bassa frequenza campionato in coordinate
+//     MONDO (le mesh merged non hanno UV) → pennellate irregolari sulle pareti;
+//  3. ombre colorate: la fascia scura del cel-shading vira al viola invece di
+//     essere solo più scura.
+// Tuning: tutti i parametri stanno in _worldFxU. Tasto N (debug) = on/off.
+
+// Texture di macchie morbide TILEABLE (ogni blob è disegnato anche sulle 8
+// copie wrap-around così i bordi del tile non si vedono).
+const _worldBlotchTex = (() => {
+    const s = 256;
+    const c = document.createElement('canvas');
+    c.width = s; c.height = s;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 26; i++) {
+        const x = Math.random() * s, y = Math.random() * s;
+        const r = 26 + Math.random() * 55;
+        const lum = Math.random() < 0.5 ? 96 : 160;   // macchia scura o chiara
+        for (let ox = -s; ox <= s; ox += s) {
+            for (let oy = -s; oy <= s; oy += s) {
+                const g = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+                g.addColorStop(0, `rgba(${lum},${lum},${lum},0.55)`);
+                g.addColorStop(1, `rgba(${lum},${lum},${lum},0)`);
+                ctx.fillStyle = g;
+                ctx.beginPath();
+                ctx.arc(x + ox, y + oy, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+})();
+
+// Uniformi CONDIVISE da tutti gli shader worldToon: ritoccare .value qui
+// (anche da console) aggiorna l'intera scena in tempo reale.
+const _worldFxU = {
+    uFxOn:          { value: 1 },                                  // master on/off (tasto N)
+    uFxShadowTint:  { value: new THREE.Color(0x5c4d7d) },          // tinta della fascia in ombra (viola caldo)
+    // Gradiente verticale DISATTIVATO (feedback 2026-07-09: base scura/cima
+    // chiara non piace sui palazzi) — tinta bianca = nessun effetto. Il knob
+    // resta per eventuali ritocchi leggeri futuri.
+    uFxBaseTint:    { value: new THREE.Color(1, 1, 1) },
+    uFxGradY0:      { value: -0.5 },                               // il gradiente parte da qui (m, mondo)
+    uFxGradY1:      { value: 6.5 },                                // ... e svanisce a questa quota
+    uFxFloorAtten:  { value: 0.65 },                               // quanto le superfici ORIZZONTALI recuperano verso 1 (0=come i muri)
+    uFxBlotchTex:   { value: _worldBlotchTex },
+    uFxBlotchScale: { value: 0.10 },                               // 1/metri: il tile di macchie copre ~10 m
+    uFxBlotchAmt:   { value: 0.07 },                               // ampiezza ± della variazione acquerello
+    // Anti-abbaglio (diagnosi 2026-07-09): senza ombre, gli interni prendono
+    // il sole come gli esterni e ambiente(0.78)+sole(≈1.0) sfonda il bianco
+    // sui materiali chiari → TUTTE le fasce collassavano in bianco piatto.
+    uFxIndirect:    { value: 0.50 },                               // scala della luce ambiente (solo mondo)
+    uFxKnee:        { value: 0.85 },                               // da qui la luce viene compressa...
+    uFxShoulder:    { value: 0.13 }                                // ...con spalla morbida (max = knee+shoulder)
+};
+
+function _worldFxPatch(shader) {
+    Object.assign(shader.uniforms, _worldFxU);
+    // Varying con posizione/normale MONDO (transformed/objectNormal sono già
+    // definiti dai chunk begin_vertex/beginnormal_vertex).
+    shader.vertexShader = 'varying vec3 vWfxPos;\nvarying vec3 vWfxNorm;\n' +
+        shader.vertexShader.replace('#include <worldpos_vertex>',
+            '#include <worldpos_vertex>\n' +
+            'vWfxPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\n' +
+            'vWfxNorm = normalize(mat3(modelMatrix) * objectNormal);\n');
+    shader.fragmentShader = (
+        'uniform float uFxOn;\n' +
+        'uniform vec3 uFxShadowTint;\nuniform vec3 uFxBaseTint;\n' +
+        'uniform float uFxGradY0;\nuniform float uFxGradY1;\nuniform float uFxFloorAtten;\n' +
+        'uniform sampler2D uFxBlotchTex;\nuniform float uFxBlotchScale;\nuniform float uFxBlotchAmt;\n' +
+        'uniform float uFxIndirect;\nuniform float uFxKnee;\nuniform float uFxShoulder;\n' +
+        'varying vec3 vWfxPos;\nvarying vec3 vWfxNorm;\n'
+    ) + shader.fragmentShader
+        // Ombre COLORATE: riscrivo il chunk del gradient map così la fascia
+        // scura lerpa verso uFxShadowTint invece di restare grigia.
+        .replace('#include <gradientmap_pars_fragment>', [
+            '#ifdef USE_GRADIENTMAP',
+            '    uniform sampler2D gradientMap;',
+            '#endif',
+            'vec3 getGradientIrradiance( vec3 normal, vec3 lightDirection ) {',
+            '    float dotNL = dot( normal, lightDirection );',
+            '    vec2 coord = vec2( dotNL * 0.5 + 0.5, 0.0 );',
+            '    #ifdef USE_GRADIENTMAP',
+            '        float band = texture2D( gradientMap, coord ).r;',
+            '    #else',
+            '        float band = ( coord.x < 0.7 ) ? 0.7 : 1.0;',
+            '    #endif',
+            '    vec3 tinted = mix( uFxShadowTint, vec3( 1.0 ), band );',
+            '    return mix( vec3( band ), tinted, uFxOn );',
+            '}'
+        ].join('\n'))
+        // Gradiente dipinto + macchia acquerello, applicati al colore diffuse.
+        .replace('#include <color_fragment>', [
+            '#include <color_fragment>',
+            '{',
+            '    float hgt = smoothstep( uFxGradY0, uFxGradY1, vWfxPos.y );',
+            '    vec3 grad = mix( uFxBaseTint, vec3( 1.0 ), hgt );',
+            // le superfici orizzontali (pavimento, tetti) recuperano verso 1
+            '    grad = mix( grad, vec3( 1.0 ), clamp( vWfxNorm.y, 0.0, 1.0 ) * uFxFloorAtten );',
+            // proiezione della macchia sull asse dominante della normale (no UV)
+            '    vec3 an = abs( vWfxNorm );',
+            '    vec2 buv = ( an.y > max( an.x, an.z ) ) ? vWfxPos.xz',
+            '             : ( ( an.x > an.z ) ? vWfxPos.zy : vWfxPos.xy );',
+            '    float blotch = texture2D( uFxBlotchTex, buv * uFxBlotchScale ).r;',
+            '    grad *= 1.0 + ( blotch - 0.5 ) * 2.0 * uFxBlotchAmt;',
+            '    diffuseColor.rgb *= mix( vec3( 1.0 ), grad, uFxOn );',
+            '}'
+        ].join('\n'))
+        // Ambiente ridotto + spalla morbida sul sopra-bianco: comprime in modo
+        // proporzionale (preserva la tinta, niente lavaggio a bianco puro) e
+        // fa riemergere le fasce del cel-shading sui materiali chiari.
+        .replace(
+            'vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;',
+            [
+                'reflectedLight.indirectDiffuse *= mix( 1.0, uFxIndirect, uFxOn );',
+                'vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;',
+                'float fxLum = max( outgoingLight.r, max( outgoingLight.g, outgoingLight.b ) );',
+                'if ( uFxOn > 0.5 && fxLum > uFxKnee ) {',
+                '    float fxC = uFxKnee + uFxShoulder * ( fxLum - uFxKnee ) / ( uFxShoulder + fxLum - uFxKnee );',
+                '    outgoingLight *= fxC / fxLum;',
+                '}'
+            ].join('\n'));
+}
+
 function worldToon(opts) {
     // copia superficiale + grade sul colore esplicito (non muta l'opts del chiamante)
     if (opts && opts.color != null) opts = Object.assign({}, opts, { color: _cupheadGrade(opts.color) });
-    return new THREE.MeshToonMaterial(Object.assign({ gradientMap: _toonGradMap }, opts));
+    const m = new THREE.MeshToonMaterial(Object.assign({ gradientMap: _worldGradMap }, opts));
+    m.onBeforeCompile = _worldFxPatch;   // stessa funzione per tutti → programma GL condiviso
+    return m;
 }
 const MAT = {
     // ── Superfici terreno/mappa ──────────────────────────
@@ -714,15 +853,34 @@ function climbZoneAt(x, z) {
 // Toon-swap: un materiale toon per NOME materiale Blender (condiviso tra modelli).
 // I materiali Emission (neon del club, vetri lampade) diventano Basic "sempre accesi".
 const _jazzMatCache = {};
+// Chiave cache/merge: nome + COLORE. I GLB riusano lo stesso nome materiale
+// ("muro") con colori diversi per modello: la vecchia cache per solo nome
+// collassava tutti i palazzi sul colore del primo caricato (tutti uguali).
+function _jazzMatKey(srcMat) {
+    if (!srcMat) return 'mat';
+    const e = srcMat.emissive;
+    const emiss = (e && (e.r + e.g + e.b) > 0.3) ? '!' + e.getHexString() : '';
+    return (srcMat.name || 'mat') + '#' +
+        (srcMat.color ? srcMat.color.getHexString() : 'cccccc') + emiss;
+}
+
 function _jazzToonMat(srcMat) {
     const name = (srcMat && srcMat.name) || 'mat';
-    if (_jazzMatCache[name]) return _jazzMatCache[name];
+    const key = _jazzMatKey(srcMat);
+    if (_jazzMatCache[key]) return _jazzMatCache[key];
     let m;
     const e = srcMat && srcMat.emissive;
     if (e && (e.r + e.g + e.b) > 0.3) {
-        m = new THREE.MeshBasicMaterial({ color: e.clone() });
+        // NEON: nucleo del tubo "caldo" (verso il bianco); il colore saturo
+        // originale va nei gusci-alone additivi (finto bloom, vedi merge).
+        m = new THREE.MeshBasicMaterial({ color: e.clone().lerp(new THREE.Color(1, 1, 1), 0.35) });
+        m.userData.glowColor = e.clone();
     } else {
         m = worldToon({ color: srcMat && srcMat.color ? srcMat.color.clone() : new THREE.Color(0xcccccc) });
+        // Anti-abbaglio (feedback 2026-07-09): il marmo chiaro del mezzanino
+        // Galleria saturava a bianco puro sommando sole+ambiente → verso
+        // l'avorio. Moltiplicativo: le fasce del cel-shading restano intatte.
+        if (/marmo_chiaro/i.test(name)) m.color.multiplyScalar(0.75);
     }
     // Anti z-fighting: i decori metallici (oro/ottone) sono spesso complanari alle
     // facciate/parapetti → li spingo leggermente davanti col polygon offset.
@@ -733,7 +891,7 @@ function _jazzToonMat(srcMat) {
         m.polygonOffsetFactor = -2;
         m.polygonOffsetUnits = -2;
     }
-    _jazzMatCache[name] = m;
+    _jazzMatCache[key] = m;
     return m;
 }
 
@@ -848,7 +1006,7 @@ function loadZone(dir, jsonName, opts = {}) {
                     return;
                 }
                 const g = o.geometry.clone().applyMatrix4(o.matrixWorld);
-                const mn = (o.material && o.material.name) || 'mat';
+                const mn = _jazzMatKey(o.material);
                 (byMat[mn] = byMat[mn] || []).push(g);
                 if (!_jazzMatCache[mn]) _jazzToonMat(o.material);
             });
@@ -869,7 +1027,36 @@ function loadZone(dir, jsonName, opts = {}) {
             Q.setFromAxisAngle(UP, rot);
             M.compose(new THREE.Vector3(ix, y, iz), Q, new THREE.Vector3(s, s, s));
             for (const mn in mdl.byMat) {
-                const g = mdl.byMat[mn].clone().applyMatrix4(M);
+                const g = mdl.byMat[mn].clone();
+                // FIX puntuale: l'insegna "AL'S BARBERSHOP" dell'edificio_06
+                // dell'ISOLATO CENTRALE (5.05, 7.82) compenetra il palazzo
+                // vicino → solo per quell'istanza la scritta trasla di 1.2 m
+                // verso -x locale (a sinistra per chi guarda la facciata).
+                if (inst.modello === 'edificio_06' && mn.indexOf('insegna_') === 0 &&
+                    Math.abs(inst.x - 5.05) < 0.1 && Math.abs(inst.z - 7.82) < 0.1) {
+                    g.translate(-1.2, 0, 0);
+                    if (mn.indexOf('insegna_fondo') === 0) {
+                        // ... e il pannello giallo si ACCORCIA di 0.8 m sul lato
+                        // sinistro (-x): i vertici oltre il piano di taglio si
+                        // appiattiscono sul piano (il box resta chiuso).
+                        g.computeBoundingBox();
+                        const cut = g.boundingBox.min.x + 0.8;
+                        const p = g.attributes.position;
+                        for (let i = 0; i < p.count; i++) {
+                            if (p.getX(i) < cut) p.setX(i, cut);
+                        }
+                        p.needsUpdate = true;
+                    } else {
+                        // la scritta si CONDENSA (-18% in x) e si ricentra sul
+                        // pannello accorciato, così non sborda dai bordi.
+                        g.computeBoundingBox();
+                        const tcx = (g.boundingBox.min.x + g.boundingBox.max.x) / 2;
+                        g.translate(-tcx, 0, 0);
+                        g.scale(0.82, 1, 1);
+                        g.translate(tcx + 0.4, 0, 0);
+                    }
+                }
+                g.applyMatrix4(M);
                 (globalByMat[mn] = globalByMat[mn] || []).push(g);
             }
             if (!isProp && !noCol) {
@@ -909,6 +1096,21 @@ function loadZone(dir, jsonName, opts = {}) {
             mesh.matrixAutoUpdate = false;
             jazzMergedMeshes.push(mesh);
             jazzZoneGroup.add(mesh);
+            // NEON (chiave con '!'): due gusci additivi attorno ai tubi =
+            // alone luminoso senza postprocessing (r128).
+            if (mn.indexOf('!') !== -1) {
+                mesh.userData.neon = true;
+                const glowCol = _jazzMatCache[mn].userData.glowColor || _jazzMatCache[mn].color;
+                [[0.03, 0.40], [0.08, 0.16]].forEach(([t, op]) => {
+                    const glow = new THREE.Mesh(_toonDisplacedGeo(mesh.geometry, t),
+                        new THREE.MeshBasicMaterial({
+                            color: glowCol, transparent: true, opacity: op,
+                            blending: THREE.AdditiveBlending, depthWrite: false
+                        }));
+                    glow.matrixAutoUpdate = false;
+                    jazzZoneGroup.add(glow);
+                });
+            }
         }
         if (!jazzZoneGroup.parent) scene.add(jazzZoneGroup);
         console.log(`🏙 Zona ${dir}: ${Object.keys(globalByMat).length} mat, ${solidBoxes.length} solidi tot, ${climbZones.length} climb tot`);
@@ -916,12 +1118,14 @@ function loadZone(dir, jsonName, opts = {}) {
 }
 
 // ── Bordi neri sugli edifici: toggle di valutazione (tasto B) ──
-// Default SPENTO (stile Cuphead: fondali senza china; personaggi/armi/prop
-// restano inchiostrati). Gusci inverted-hull costruiti lazy alla prima pressione.
+// Default ACCESO (deciso col restyle "fondale dipinto" 2026-07-09): la china
+// sugli edifici piace insieme a gradiente+ombre colorate. B resta come toggle
+// di confronto durante il playtest. Gusci inverted-hull costruiti lazy.
 let _jazzOutlines = null;
 function toggleJazzOutlines() {
     if (!_jazzOutlines) {
-        _jazzOutlines = jazzMergedMeshes.map(m => {
+        // niente china sui neon: il contorno nero ucciderebbe l'alone
+        _jazzOutlines = jazzMergedMeshes.filter(m => !m.userData.neon).map(m => {
             const o = new THREE.Mesh(_toonDisplacedGeo(m.geometry, TOON_OUTLINE_T * 1.2), MAT.ink);
             o.matrixAutoUpdate = false;
             jazzZoneGroup.add(o);
@@ -2133,6 +2337,13 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'KeyB') {
         toggleJazzOutlines();
     }
+    // DEBUG (valutazione stile): N accende/spegne il trattamento "fondale
+    // dipinto" (gradiente base + macchia acquerello + ombre colorate) per il
+    // confronto prima/dopo. Da rimuovere quando il look sarà definitivo.
+    if (e.code === 'KeyN') {
+        _worldFxU.uFxOn.value = 1 - _worldFxU.uFxOn.value;
+        console.log('🎨 Fondale dipinto:', _worldFxU.uFxOn.value ? 'ON' : 'OFF');
+    }
     // L: cambio arma in-round. Apre il menu di selezione (modalità "cambio");
     // la nuova arma entra in gioco al prossimo respawn. Solo in mischia, da vivi.
     if (e.code === 'KeyL' && gameState.phase === 'playing'
@@ -2943,9 +3154,10 @@ function updateMovement(dt) {
     // Confini: mondo esteso = rete di sicurezza AABB (i muri veri sono le COL) +
     // soffitto per-zona. Jazz classico (?map=jazz) = clamp radiale sul disco.
     if (EXTENDED) {
-        // Rete di sicurezza globale (anti-fuga se manca una COL): racchiude Jazz+corridoi+Galleria
+        // Rete di sicurezza globale (anti-fuga se manca una COL): racchiude
+        // Jazz+corridoi+Galleria+Funland (coaster fondale incluso, z fino a -58)
         pos.x = Math.max(-50, Math.min(131, pos.x));
-        pos.z = Math.max(-50, Math.min(50, pos.z));
+        pos.z = Math.max(-58, Math.min(50, pos.z));
         const ceil = ceilingAt(pos.x, pos.z);
         if (pos.y > ceil) { pos.y = ceil; velocityY = Math.min(velocityY, 0); }
     } else {
@@ -3015,6 +3227,23 @@ function updateMovement(dt) {
 // ══════════════════════════════════════════════════════
 const minimapCtx = document.getElementById('minimap-canvas').getContext('2d');
 
+// Sfondo minimappa: texture pre-generata dal tool dev minimap-gen.html
+// (assets/minimap/world.png + world.json di calibrazione).
+// Caricamento NON bloccante: finché — o se — manca, resta lo sfondo nero.
+let _mmTex = null, _mmMeta = null;
+(function loadMinimapTexture() {
+    const _cb = '?v=' + Date.now();   // anti-cache come i GLB -wip
+    fetch('assets/minimap/world.json' + _cb)
+        .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+        .then(meta => {
+            if (!meta || !(meta.width > 0) || !(meta.maxX > meta.minX)) return;
+            const img = new Image();
+            img.onload = () => { _mmTex = img; _mmMeta = meta; };
+            img.src = 'assets/minimap/world.png' + _cb;
+        })
+        .catch(() => { /* texture assente: fallback sfondo nero */ });
+})();
+
 function drawMinimap() {
     const ctx = minimapCtx;
     const size = 130;
@@ -3042,8 +3271,30 @@ function drawMinimap() {
     ctx.beginPath();
     ctx.arc(c, c, c, 0, Math.PI * 2);
     ctx.clip();
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(0, 0, size, size);
+    if (_mmTex) {
+        // Texture del mondo con GLI STESSI sin/cos e scala di toMM.
+        // Pixel texture (u,v) → mondo (minX+u·k, minZ+v·k) → proiezione
+        // forward/right del player; in forma di matrice canvas:
+        //   sx = e + u·a + v·cc      sy = f + u·b + v·d
+        const k  = (_mmMeta.maxX - _mmMeta.minX) / _mmMeta.width;  // unità mondo per px texture
+        const a  =  s * k * cosY, b =  s * k * sinY;               // colonna u (asse X mondo)
+        const cc = -s * k * sinY, d =  s * k * cosY;               // colonna v (asse Z mondo)
+        const rx0 = _mmMeta.minX - px, rz0 = _mmMeta.minZ - pz;    // angolo texture, relativo al player
+        const e = c + s * (rx0 * cosY - rz0 * sinY);
+        const f = c + s * (rx0 * sinY + rz0 * cosY);
+        ctx.fillStyle = '#0b0b10';               // fuori-texture: scuro pieno
+        ctx.fillRect(0, 0, size, size);
+        ctx.setTransform(a, b, cc, d, e, f);
+        ctx.filter = 'saturate(0.65)';           // desatura: i pallini devono spiccare
+        ctx.drawImage(_mmTex, 0, 0);
+        ctx.filter = 'none';
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = 'rgba(10,10,14,0.45)';   // velo scuro ("render reale scurito")
+        ctx.fillRect(0, 0, size, size);
+    } else {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';      // fallback: sfondo nero attuale
+        ctx.fillRect(0, 0, size, size);
+    }
 
     // Croce di riferimento (assi N/S, E/O ruotati con il player)
     ctx.strokeStyle = 'rgba(255,255,255,0.06)';
@@ -3211,16 +3462,41 @@ const socket = io();
 // Il join parte SOLO a zona caricata: lo spawn dentro la geometria richiede i solidi.
 const _loadingEl = document.getElementById('model-loading');
 if (_loadingEl) _loadingEl.style.display = 'flex';
+
+// ── Base verde: prato sotto tutto il mondo ──
+// Gli edifici altrimenti "galleggiano" sul vuoto. Un unico piano d'erba,
+// dimensionato sull'AABB reale delle zone caricate (robusto anche con
+// ?map=jazz), posto SOTTO i pavimenti (y=-0.15: pav più bassa ≈ -0.04, niente
+// z-fighting). Riusa il materiale prato toon per coerenza di stile.
+function addWorldGround() {
+    const bb = new THREE.Box3().setFromObject(jazzZoneGroup);
+    if (!isFinite(bb.min.x)) return;   // nessuna geometria: niente prato
+    const PAD = 10;                    // margine oltre il perimetro
+    const w = (bb.max.x - bb.min.x) + PAD * 2;
+    const d = (bb.max.z - bb.min.z) + PAD * 2;
+    const cx = (bb.min.x + bb.max.x) / 2, cz = (bb.min.z + bb.max.z) / 2;
+    const mat = worldToon({ map: makeTex(drawGrass, Math.round(w / 4), Math.round(d / 4)) });
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+    ground.rotation.x = -Math.PI / 2;   // orizzontale, faccia verso l'alto
+    ground.position.set(cx, -0.15, cz);
+    ground.matrixAutoUpdate = false;
+    ground.updateMatrix();
+    scene.add(ground);
+}
+
 const _boot = EXTENDED
-    ? fetch('assets/models/jazz/varchi-skip.json').then(r => r.json()).then(v =>
-        Promise.all([
-            loadZone('assets/models/jazz/', 'zona-layout.json', { skip: v.skip, passthrough: v.passthrough || [] }),
-            loadZone('assets/models/collegamenti-wip/', 'collegamenti-layout.json', { pav: false }),
-            loadZone('assets/models/galleria-wip/', 'galleria-layout.json', { offset: GALLERIA_OFF }),
-        ]))
+    ? fetch(WORLD_CONFIG.VARCHI_URL).then(r => r.json()).then(v =>
+        Promise.all(WORLD_CONFIG.ZONES.map(zn => loadZone(zn.dir, zn.json, {
+            offset: zn.offset,
+            pav: zn.pav,
+            skip: zn.varchi ? v.skip : undefined,
+            passthrough: zn.varchi ? (v.passthrough || []) : undefined,
+        }))))
     : loadZone('assets/models/jazz/', 'zona-layout.json', {});
 _boot.then(() => {
     if (_loadingEl) _loadingEl.style.display = 'none';
+    addWorldGround();       // prato sotto il mondo (dopo che le zone hanno definito l'AABB)
+    toggleJazzOutlines();   // china sugli edifici ACCESA di default (prima chiamata = build+on)
     socket.emit('joinFPS', { lobbyId: LOBBY_ID, playerColor: MY_COLOR });
 }).catch(err => {
     console.error('Caricamento scenario fallito', err);
