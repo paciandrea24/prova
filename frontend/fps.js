@@ -4804,8 +4804,15 @@ const PovController = {
         // aggiornamento LIVE, che a fine round li mostra già morti/fermi).
         for (const [color, rp] of Object.entries(gameState.players)) {
             if (color === r.killerColor) continue;   // il killer è già gestito (nascosto, è il POV)
-            const otherFrame = this._interp(rp.snapshots, cursor);
-            if (!otherFrame || !rp.snapshots || rp.snapshots.length === 0 || rp.snapshots[0].t > cursor) {
+            // _bufferFor(color) legge rp.replayLog (mai azzerato ai respawn), non
+            // rp.snapshots (azzerato ad ogni respawn in mischia per l'interpolazione
+            // LIVE) — stesso fix del buffer del killer, applicato qui perché anche
+            // la ricostruzione degli ALTRI giocatori nel replay è un consumo "replay",
+            // non "live", e soffriva dello stesso bug (vittima invisibile se rinata
+            // durante la finestra del replay).
+            const otherBuf = this._bufferFor(color);
+            const otherFrame = this._interp(otherBuf, cursor);
+            if (!otherFrame || !otherBuf || otherBuf.length === 0 || otherBuf[0].t > cursor) {
                 rp.group.visible = false;
                 continue;
             }
