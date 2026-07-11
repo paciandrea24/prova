@@ -48,8 +48,16 @@ const SPAWN_POINTS = [
 
 const PLAYER_HP = 100;
 const WEAPON_SELECT_TIME = 20000; // 20 secondi per scegliere l'arma (solo round 1)
-const ROUND_END_DELAY = 2500;     // pausa breve tra un round e l'altro (pacing "ancora una")
 const ROUND_INTRO_TIME = 3500;    // fase INTRO a inizio round: gioco congelato, pannello di preparazione
+
+// ── Play of the Round: scoring del kill "migliore" del round per il replay fine-round ──
+const MULTI_KILL_WINDOW = 5000;   // gap massimo (ms) tra kill dello stesso killer per contare come stessa serie
+const HEADSHOT_BONUS = 12;
+const ENDS_ROUND_BONUS = 8;       // bonus minore: non deve MAI dominare su una serie ravvicinata
+const REPLAY_PREROLL_BASE = 4500; // finestra minima di replay prima del colpo scelto
+const REPLAY_PREROLL_MAX = 12000; // tetto anche per serie molto lunghe
+const REPLAY_POSTROLL = 1200;     // coda dopo il colpo scelto (tempo di "vedere" l'esito)
+const SCORE_PAUSE_BASE = 2500;    // pausa "solo overlay punteggi" dopo la clip (era ROUND_END_DELAY)
 const MELEE_DURATION = 45000;     // durata fase MISCHIA (respawn istantaneo) prima del sudden death
 const FPS_ROUNDS = 5;             // round fissi per partita
 const RESPAWN_DELAY = 1500;       // ritardo prima di rinascere in mischia
@@ -400,6 +408,13 @@ module.exports = function (io, socket) {
             target.dead = true;
             console.log(`☠ [FPS] kill: ${shooterColor} → ${targetColor} (sub=${game.subphase}, mut=${game.mutator})`);
 
+            // Play of the Round: storico di TUTTI i kill del round (mischia + sudden
+            // death), usato a fine round da pickPlayOfRound per scegliere il replay.
+            game.killLog.push({
+                killerColor: shooterColor, targetColor, weaponKey,
+                headshot: !!headshot, timestamp: Date.now(), endsRound: false
+            });
+
             // Punti "a teste": ogni kill vale POINTS_PER_KILL al killer (no autogol)
             if (shooterColor && shooterColor !== targetColor) {
                 game.points[shooterColor] = (game.points[shooterColor] || 0) + POINTS_PER_KILL;
@@ -611,6 +626,7 @@ function launchRound(io, lobbyId) {
     // Reset timer di fase/respawn del round precedente
     clearAllTimers(game);
     game.respawnTimers = {};
+    game.killLog = [];   // Play of the Round: storico kill del round, azzerato ad ogni round
 
     // Assegna spawn distanziati: con offset casuale e passo uniforme i
     // giocatori finiscono su cortili opposti (1v1 → case diverse).
@@ -758,6 +774,72 @@ function clearAllTimers(game) {
     }
 }
 
+// Punteggio di una serie di N kill ravvicinate dello stesso killer: 1→0
+// (kill isolata, nessun bonus), poi crescente per premiare le serie più lunghe.
+function streakBonus(size) {
+    if (size <= 1) return 0;
+    if (size === 2) return 30;
+    if (size === 3) return 70;
+    return 120 + (size - 4) * 40;
+}
+
+// Sceglie il kill "migliore" del round appena concluso, tra TUTTO il killLog
+// (mischia + sudden death). Ritorna null solo se il round non ha avuto kill
+// (non dovrebbe mai succedere: checkRoundEnd chiama questa funzione solo
+// quando il round sta davvero per chiudersi).
+function pickPlayOfRound(game) {
+    const log = game.killLog;
+    if (!log || log.length === 0) return null;
+
+    let best = null;
+    let bestScore = -1;
+    for (let i = 0; i < log.length; i++) {
+        const kill = log[i];
+
+        // Dimensione della serie: quanti kill consecutivi dello stesso killer
+        // precedono (inclusa) questa, con gap <= MULTI_KILL_WINDOW dal precedente.
+        let streakStart = i;
+        while (streakStart > 0 &&
+               log[streakStart - 1].killerColor === kill.killerColor &&
+               log[streakStart].timestamp - log[streakStart - 1].timestamp <= MULTI_KILL_WINDOW) {
+            streakStart--;
+        }
+
+        // Questo kill va valutato solo se è l'ULTIMO della sua serie — altrimenti
+        // la stessa serie verrebbe contata (e mostrata come replay) più volte.
+        const next = log[i + 1];
+        const isLastOfStreak = !next || next.killerColor !== kill.killerColor ||
+            next.timestamp - kill.timestamp > MULTI_KILL_WINDOW;
+        if (!isLastOfStreak) continue;
+
+        const streakSize = i - streakStart + 1;
+        const score = streakBonus(streakSize) +
+            (kill.headshot ? HEADSHOT_BONUS : 0) +
+            (kill.endsRound ? ENDS_ROUND_BONUS : 0);
+
+        // >= così, a parità di punteggio, vince il kill più recente (i cresce nel tempo).
+        if (score >= bestScore) {
+            bestScore = score;
+            best = { kill, streakSize, firstTimestamp: log[streakStart].timestamp };
+        }
+    }
+    if (!best) return null;
+
+    const span = best.kill.timestamp - best.firstTimestamp;
+    const preRollMs = Math.min(REPLAY_PREROLL_MAX, Math.max(REPLAY_PREROLL_BASE, span + 2000));
+
+    return {
+        killerColor: best.kill.killerColor,
+        victimColor: best.kill.targetColor,
+        weaponKey: best.kill.weaponKey,
+        headshot: best.kill.headshot,
+        streakCount: best.streakSize,
+        timestamp: best.kill.timestamp,
+        preRollMs,
+        postRollMs: REPLAY_POSTROLL
+    };
+}
+
 function checkRoundEnd(io, lobbyId) {
     const game = activeGames.get(lobbyId);
     const lobby = lobbies.get(lobbyId);
@@ -779,6 +861,17 @@ function checkRoundEnd(io, lobbyId) {
         game.points[winner] = (game.points[winner] || 0) + SD_WIN_BONUS;
     }
 
+    // Play of the Round: marca l'ultimo kill del log come quello che ha chiuso
+    // il round (bonus minore nello scoring). Approssimazione accettata: se il
+    // round si chiude per disconnessione anziché per un kill, il bonus finisce
+    // comunque sull'ultimo kill storico — innocuo, il peso è ridotto (+8).
+    if (game.killLog && game.killLog.length) {
+        game.killLog[game.killLog.length - 1].endsRound = true;
+    }
+    const playOfRound = pickPlayOfRound(game);
+    const replayDurationMs = playOfRound ? playOfRound.preRollMs + playOfRound.postRollMs : 0;
+    const nextInMs = replayDurationMs + SCORE_PAUSE_BASE;
+
     io.to(lobbyId).emit('roundEnd', {
         winnerColor: winner,
         scores: game.scores,
@@ -786,17 +879,18 @@ function checkRoundEnd(io, lobbyId) {
         sdBonus: SD_WIN_BONUS,
         round: game.currentRound,
         totalRounds: game.totalRounds,
-        nextInMs: ROUND_END_DELAY
+        nextInMs,
+        playOfRound: playOfRound ? { ...playOfRound, serverNow: Date.now() } : null
     });
 
     game.currentRound++;
 
     if (game.currentRound > game.totalRounds) {
         // Partita finita
-        setTimeout(() => endGame(io, lobbyId), ROUND_END_DELAY);
+        setTimeout(() => endGame(io, lobbyId), nextInMs);
     } else {
         // Prossimo round: scelta arma a inizio di OGNI round (l'utente può cambiare loadout)
-        setTimeout(() => startWeaponSelect(io, lobbyId), ROUND_END_DELAY);
+        setTimeout(() => startWeaponSelect(io, lobbyId), nextInMs);
     }
 }
 
