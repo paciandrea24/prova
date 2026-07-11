@@ -4822,6 +4822,12 @@ const PovController = {
             const p = otherFrame.sl ? POSTURE.slide : otherFrame.cr ? POSTURE.crouch : POSTURE.stand;
             rp.upper.position.y = p.upperY;
             rp.upper.rotation.x = p.tilt;
+            // Non bufferizziamo la vita storica: mostrare il valore LIVE congelato
+            // (quello che aveva l'ultimo aggiornamento prima di uscire dal loop live)
+            // sarebbe fuorviante e diverso per ogni giocatore. Meglio nascosta che
+            // sbagliata — updateHealthbar() la farà ricomparire correttamente non
+            // appena il giocatore torna ad essere aggiornato dal vivo.
+            if (rp.hpBar) rp.hpBar.visible = false;
         }
     },
 
