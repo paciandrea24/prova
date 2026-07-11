@@ -4634,6 +4634,7 @@ const PovController = {
     _recoilPitch: 0, _recoilYaw: 0, _shake: 0,
     _replay: null,       // { killerColor, clipStartLocal, clipEndLocal, onDone }, solo se source === 'buffer'
     _replayShotIdx: 0,
+    _replayAnimPhase: {},   // { [color]: number } — fase LOCALE del ciclo gambe nel replay, mai rp.anim.phase
 
     enter(color) {
         if (!gameState.players[color]) return;
@@ -4710,6 +4711,7 @@ const PovController = {
         // startedAt ancora l'orologio di replay: il cursore di riproduzione avanza
         // da clipStartLocal in tempo reale a partire da questo istante, NON legge
         // performance.now() direttamente (che è già ben oltre la finestra passata).
+        this._replayAnimPhase = {};
         this._replay = { killerColor: data.killerColor, weaponKey: data.weaponKey, clipStartLocal, clipEndLocal, startedAt: performance.now(), deathsByColor, onDone };
         this._lastSeenShotSeq = {};
         this._replayShotIdx = 0;
@@ -4844,6 +4846,26 @@ const PovController = {
             const p = otherFrame.sl ? POSTURE.slide : otherFrame.cr ? POSTURE.crouch : POSTURE.stand;
             rp.upper.position.y = p.upperY;
             rp.upper.rotation.x = p.tilt;
+
+            // Ciclo gambe: STESSA formula di updateRemoteAnim (rate/swing identici),
+            // ma con una fase LOCALE al replay (mai rp.anim.phase, che è condiviso
+            // col rendering LIVE) — altrimenti i giocatori ricostruiti restano fermi
+            // e sembrano traslare invece di camminare.
+            if (this._replayAnimPhase[color] == null) this._replayAnimPhase[color] = 0;
+            if (otherFrame.mv && !otherFrame.sl) {
+                const rate = otherFrame.sp ? 13 : 9;
+                const swing = otherFrame.sp ? 0.95 : 0.6;
+                this._replayAnimPhase[color] += dt * rate;
+                rp.legL.rotation.x = Math.sin(this._replayAnimPhase[color]) * swing;
+                rp.legR.rotation.x = -Math.sin(this._replayAnimPhase[color]) * swing;
+            } else {
+                const k2 = Math.min(1, dt * 10);
+                rp.legL.rotation.x += (0 - rp.legL.rotation.x) * k2;
+                rp.legR.rotation.x += (0 - rp.legR.rotation.x) * k2;
+                if (otherFrame.sl) { rp.legL.rotation.x = 0.5; rp.legR.rotation.x = -0.2; }
+                this._replayAnimPhase[color] = 0;
+            }
+
             // Non bufferizziamo la vita storica: mostrare il valore LIVE congelato
             // (quello che aveva l'ultimo aggiornamento prima di uscire dal loop live)
             // sarebbe fuorviante e diverso per ogni giocatore. Meglio nascosta che
