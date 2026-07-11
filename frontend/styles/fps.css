@@ -620,6 +620,27 @@ body.ads-sniper #scope-reticle { display: block; }
 }
 #por-headshot-tag.active { display: block; }
 
+/* ─── ANNUNCIO PLAY OF THE ROUND (schermata nera pre-replay) ───── */
+#play-of-round-announce {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 350;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-ui);
+}
+#play-of-round-announce.active { display: flex; }
+#play-of-round-announce span {
+    font-size: 42px;
+    font-weight: 800;
+    color: var(--col-text);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    text-shadow: 0 0 40px rgba(255,255,255,0.25);
+}
+
 /* ─── BARRA INTRO ROUND (gioco congelato: barra orizzontale in alto con celle) ───── */
 #round-intro {
     display: none;

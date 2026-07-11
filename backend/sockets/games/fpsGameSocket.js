@@ -58,6 +58,7 @@ const REPLAY_PREROLL_BASE = 4500; // finestra minima di replay prima del colpo s
 const REPLAY_PREROLL_MAX = 12000; // tetto anche per serie molto lunghe
 const REPLAY_POSTROLL = 1200;     // coda dopo il colpo scelto (tempo di "vedere" l'esito)
 const SCORE_PAUSE_BASE = 2500;    // pausa "solo overlay punteggi" dopo la clip (era ROUND_END_DELAY)
+const ANNOUNCE_DURATION = 1500;   // schermata nera "Play of the Round" prima del cut alla POV (solo se c'è un replay)
 const MELEE_DURATION = 45000;     // durata fase MISCHIA (respawn istantaneo) prima del sudden death
 const FPS_ROUNDS = 5;             // round fissi per partita
 const RESPAWN_DELAY = 1500;       // ritardo prima di rinascere in mischia
@@ -883,8 +884,9 @@ function checkRoundEnd(io, lobbyId) {
         game.killLog[game.killLog.length - 1].endsRound = true;
     }
     const playOfRound = pickPlayOfRound(game);
+    const announceDurationMs = playOfRound ? ANNOUNCE_DURATION : 0;
     const replayDurationMs = playOfRound ? playOfRound.preRollMs + playOfRound.postRollMs : 0;
-    const nextInMs = replayDurationMs + SCORE_PAUSE_BASE;
+    const nextInMs = announceDurationMs + replayDurationMs + SCORE_PAUSE_BASE;
 
     io.to(lobbyId).emit('roundEnd', {
         winnerColor: winner,

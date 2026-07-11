@@ -4605,6 +4605,8 @@ GamepadInput.setCallbacks({
 //  qui `source` è sempre 'live' (stream di rete); un domani un buffer
 //  registrato potrà alimentare update() senza cambiarne la firma.
 // ══════════════════════════════════════════════════════
+const ANNOUNCE_DURATION_MS = 1500;   // schermata nera pre-replay — DEVE combaciare con ANNOUNCE_DURATION sul server (pacing)
+
 // ── Banner "Play of the Round" (replay fine-round) ──
 function showPlayOfRoundBanner(data) {
     const el = document.getElementById('play-of-round-banner');
@@ -4650,6 +4652,9 @@ const PovController = {
         this.source = 'live';
         this.targetColor = null;
         this._replay = null;
+        if (this._announceTimer) { clearTimeout(this._announceTimer); this._announceTimer = null; }
+        const announceEl = document.getElementById('play-of-round-announce');
+        if (announceEl) announceEl.classList.remove('active');
         this._lastSeenShotSeq = {};
         this._recoilPitch = this._recoilYaw = this._shake = 0;
         document.getElementById('crosshair').style.display = '';
@@ -4684,12 +4689,35 @@ const PovController = {
 
         const buf = this._bufferFor(data.killerColor);
         if (!buf || buf.length < 2 || buf[0].t > clipStartLocal) {
-            onDone();   // buffer insufficiente: nessun replay, si passa oltre
+            onDone();   // buffer insufficiente: nessun replay, si passa oltre (niente annuncio)
             return;
         }
 
+        // Annuncio: schermata nera per ANNOUNCE_DURATION_MS. active=true SUBITO
+        // (non solo al cut) — i guard d'input esistenti (updateMovement, mousemove,
+        // tryShoot, ecc.) sono già condizionati su PovController.active, quindi
+        // bloccano input/mira/sparo per l'intera sequenza annuncio+replay senza
+        // bisogno di nuovi controlli sparsi nel codice.
         this.source = 'buffer';
         this.active = true;
+        document.getElementById('crosshair').style.display = 'none';
+        const announceEl = document.getElementById('play-of-round-announce');
+        if (announceEl) announceEl.classList.add('active');
+
+        // killLocal/clipStartLocal/clipEndLocal sono ancorati all'istante di
+        // RICEZIONE dell'evento (ora): passati così come sono a
+        // _startReplayPlayback, MAI ricalcolati dopo il timer dell'annuncio.
+        this._announceTimer = setTimeout(() => {
+            this._announceTimer = null;
+            if (announceEl) announceEl.classList.remove('active');
+            this._startReplayPlayback(data, killLocal, clipStartLocal, clipEndLocal, onDone);
+        }, ANNOUNCE_DURATION_MS);
+    },
+
+    // Fase 2 dell'ingresso in replay: il vero "cut" alla POV del killer, eseguito
+    // dopo la schermata nera dell'annuncio. killLocal/clipStartLocal/clipEndLocal
+    // arrivano già calcolati da enterReplay (vedi nota sul clock sopra).
+    _startReplayPlayback(data, killLocal, clipStartLocal, clipEndLocal, onDone) {
         this.targetColor = data.killerColor;
 
         // Converte ogni timestamp di morte (clock SERVER, da data.kills) nello
@@ -4717,7 +4745,6 @@ const PovController = {
         this._replayShotIdx = 0;
         this._recoilPitch = this._recoilYaw = this._shake = 0;
 
-        document.getElementById('crosshair').style.display = 'none';
         showPlayOfRoundBanner(data);
 
         if (data.killerColor !== MY_COLOR) {
