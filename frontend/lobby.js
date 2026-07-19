@@ -26,8 +26,31 @@ document.addEventListener('DOMContentLoaded', () => {
         deduction: { impostors: 1 },
         spleef: { mapSize: 20 },
         fps: { rounds: 5 }, // round FISSI a 5 (il server ignora comunque questo valore)
-        f1: { mode: 'championship', laps: 10 }
+        f1: { mode: 'championship', trackId: 'monte-rosso' }
     };
+
+    // Popola il menu "Track" delle impostazioni F1 con le piste disponibili
+    // (vedi backend/routes/lobbyRoutes.js — GET /api/f1/tracks). Viene
+    // chiamato una sola volta all'avvio: l'elenco piste non cambia mentre
+    // la pagina è aperta.
+    function loadF1Tracks() {
+        const select = document.getElementById('f1-trackId');
+        if (!select) return;
+        fetch('/api/f1/tracks')
+            .then(res => res.json())
+            .then(tracks => {
+                select.innerHTML = '';
+                tracks.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t.id;
+                    opt.textContent = t.name;
+                    select.appendChild(opt);
+                });
+                select.value = gameSettings.f1.trackId;
+            })
+            .catch(err => console.error('Impossibile caricare le piste F1:', err));
+    }
+    loadF1Tracks();
 
     // 2. Interfaccia Header (ID e Copia)
     const lobbyIdValue = document.getElementById('lobby-id-value');

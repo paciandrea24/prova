@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { lobbies, users, generateLobbyId } = require('../store/lobbies');
 const leaderboard = require('../store/leaderboard');
+const { listTracks } = require('../sockets/games/trackLoader');
 
 // GET root
 router.get('/', (req, res) => {
@@ -107,6 +108,13 @@ router.get('/api/lobbies', (req, res) => {
 // ---------------------------------------------------------
 router.get('/api/leaderboard', (req, res) => {
     res.json(leaderboard.getAllRecords());
+});
+
+// ---------------------------------------------------------
+// API per l'elenco delle piste F1 disponibili (per il menu in lobby)
+// ---------------------------------------------------------
+router.get('/api/f1/tracks', (req, res) => {
+    res.json(listTracks());
 });
 
 module.exports = router;
