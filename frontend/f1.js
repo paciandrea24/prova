@@ -12,6 +12,13 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.emit('joinLobby', { lobbyId, color: myColor });
     socket.emit('joinF1Game', { lobbyId, playerColor: myColor });
 
+    // Riconnessione (rete instabile, scheda in background riattivata): ri-emette
+    // il join così il server annulla il timer di grazia e reintegra l'auto.
+    socket.io.on('reconnect', () => {
+        socket.emit('joinLobby', { lobbyId, color: myColor });
+        socket.emit('joinF1Game', { lobbyId, playerColor: myColor });
+    });
+
     // ====================================================
     // THREE.JS SETUP
     // ====================================================
@@ -73,6 +80,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const ROAD_HALF   = 11;          // metà larghezza carreggiata
     const CURB_W      = 2.8;         // larghezza cordolo
     const BARRIER_D   = ROAD_HALF + CURB_W + 1.2;  // distanza barriera dal centro
+
+    // Corsia box: STESSI waypoint del server (backend/sockets/games/f1GameSocket.js,
+    // PIT_PATH) — una vera strada che si stacca dal tracciato principale, corre
+    // ben distante da qualunque chicane, tocca la casella box, poi rientra sul
+    // tracciato molto più avanti. Le barriere non sono collidabili lato server,
+    // quindi non serve un varco nel muro per renderla percorribile.
+    const PIT_PATH = [
+        { x: -30, z:   0 }, { x: -42, z:  10 }, { x: -55, z:  25 }, { x: -58, z:  50 },
+        { x: -58, z:  80 }, { x: -58, z: 110 }, { x: -55, z: 135 }, { x: -42, z: 148 }, { x: -30, z: 155 },
+    ];
+    const PIT_BOX_INDEX = 4;
+    const PIT_ROAD_HALF = 5;   // metà larghezza della corsia box
 
     // --- Punti di controllo del circuito ---
     function circuitCtrlPoints() {
@@ -301,12 +320,102 @@ document.addEventListener('DOMContentLoaded', () => {
         scene.add(imB, imK);
     }
 
+    // --- Corsia box: striscia d'asfalto grigio parallela al rettilineo sx,
+    // con linee bianche di limite velocità a ingresso/uscita e la casella
+    // box marcata al centro. ---
+    // Normale per una curva APERTA (non chiusa a loop, a differenza di
+    // normalAt usato dal tracciato principale): agli estremi usa la sola
+    // differenza in avanti/indietro invece di avvolgere sull'altro capo.
+    function normalAtOpen(pts, i) {
+        const n = pts.length;
+        const next = pts[Math.min(i + 1, n - 1)];
+        const prev = pts[Math.max(i - 1, 0)];
+        const tx = next.x - prev.x;
+        const tz = next.z - prev.z;
+        const len = Math.sqrt(tx * tx + tz * tz) || 1;
+        return { nx: -tz / len, nz: tx / len };
+    }
+
+    // Ribbon per una curva APERTA: stessa tecnica di buildRibbon ma senza
+    // richiudere l'ultimo segmento sul primo punto (qui serve una strada con
+    // un inizio e una fine, non un anello).
+    function buildOpenRibbon(pts, halfW, material) {
+        const n = pts.length;
+        const pos = new Float32Array(n * 2 * 3);
+        const uv  = new Float32Array(n * 2 * 2);
+        const idx = [];
+
+        for (let i = 0; i < n; i++) {
+            const { nx, nz } = normalAtOpen(pts, i);
+            const p = pts[i];
+            const b = i * 6;
+            pos[b    ] = p.x + nx * halfW;  pos[b + 1] = 0.03;  pos[b + 2] = p.z + nz * halfW;
+            pos[b + 3] = p.x - nx * halfW;  pos[b + 4] = 0.03;  pos[b + 5] = p.z - nz * halfW;
+
+            const u = i / (n - 1);
+            const ub = i * 4;
+            uv[ub] = 0; uv[ub + 1] = u; uv[ub + 2] = 1; uv[ub + 3] = u;
+
+            if (i < n - 1) {
+                const base = i * 2;
+                const next = (i + 1) * 2;
+                idx.push(base, base + 1, next, next, base + 1, next + 1);
+            }
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uv,  2));
+        geo.setIndex(idx);
+        geo.computeVertexNormals();
+
+        const mesh = new THREE.Mesh(geo, material);
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+        return mesh;
+    }
+
+    // --- Corsia box: vera strada curva che si stacca dal tracciato
+    // principale (stessi waypoint PIT_PATH del server), corre ben distante
+    // dalla chicane, tocca la casella box, poi rientra sul tracciato. ---
+    function buildPitLane() {
+        const ctrlPts  = PIT_PATH.map(p => new THREE.Vector3(p.x, 0, p.z));
+        const pitCurve = new THREE.CatmullRomCurve3(ctrlPts, false, 'centripetal', 0.5);
+        const pitPts   = pitCurve.getSpacedPoints(300);
+
+        buildOpenRibbon(pitPts, PIT_ROAD_HALF, new THREE.MeshStandardMaterial({
+            color: 0x3a3a3a, roughness: 0.95, side: THREE.DoubleSide
+        }));
+
+        // Casella box: sul tratto rettilineo centrale del percorso (direzione pura +Z)
+        const boxPos = PIT_PATH[PIT_BOX_INDEX];
+        const boxMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(PIT_ROAD_HALF * 1.7, 0.03, 15),
+            new THREE.MeshStandardMaterial({ color: 0xf1c40f, roughness: 0.9, transparent: true, opacity: 0.55 })
+        );
+        boxMesh.position.set(boxPos.x, 0.04, boxPos.z);
+        scene.add(boxMesh);
+
+        // Linee bianche vicino a distacco/rientro, orientate come il primo/ultimo
+        // tratto del percorso (angolo noto analiticamente dai waypoint).
+        const lineMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        function addLine(x, z, dx, dz) {
+            const line = new THREE.Mesh(new THREE.BoxGeometry(PIT_ROAD_HALF * 2, 0.03, 1), lineMat);
+            line.position.set(x, 0.045, z);
+            line.rotation.y = Math.atan2(dx, dz);
+            scene.add(line);
+        }
+        addLine(-40, 8,   PIT_PATH[1].x - PIT_PATH[0].x, PIT_PATH[1].z - PIT_PATH[0].z);
+        addLine(-40, 147, PIT_PATH[8].x - PIT_PATH[7].x, PIT_PATH[8].z - PIT_PATH[7].z);
+    }
+
     // --- Assembla tutto ---
     // DoubleSide evita artefatti di culling nelle zone ad alta curvatura
     buildRibbon(trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: 0x1e1e1e, roughness: 0.95, side: THREE.DoubleSide }));
     buildCurbs(trackPts, ROAD_HALF, CURB_W);
     buildBarriers(trackPts, BARRIER_D);
     buildStartLine(trackPts, ROAD_HALF);
+    buildPitLane();
 
     // ====================================================
     // LOADER GLB (macchina Kenney colorata)
@@ -318,6 +427,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const group = new THREE.Group();
             const model = gltf.scene;
             model.scale.set(3.5, 3.5, 3.5);
+
+            // Il nodo radice del GLB ha un pivot non centrato sull'asset (translation
+            // locale non nulla): senza compensarlo la mesh visibile risulta spostata
+            // rispetto al centro logico (group), che è quello usato da fisica, hitbox
+            // e camera — causa del disallineamento "auto qui, hitbox là" osservato in
+            // gioco. Ricentriamo sul bounding box reale (x/z al centro, y a terra).
+            model.updateMatrixWorld(true);
+            const carBBox0 = new THREE.Box3().setFromObject(model);
+            const carCenter0 = carBBox0.getCenter(new THREE.Vector3());
+            model.position.x -= carCenter0.x;
+            model.position.z -= carCenter0.z;
+            model.position.y -= carBBox0.min.y;
 
             const hex        = parseInt(playerColor.replace('#', ''), 16);
             const namedWheels = [];
@@ -406,38 +527,216 @@ document.addEventListener('DOMContentLoaded', () => {
     let localStart    = null;
     let myFinalTime   = null;
     let hostColor     = null;
+    let currentPhase  = null;   // tyre_select | qualifying | grid_display | race
 
     const serverState = {};
     const visualState = {};
     const otherCars   = {};
 
     // ====================================================
+    // DEBUG: hitbox visibili (tasto H) — stessi valori di CAR_HALF_LENGTH/
+    // CAR_HALF_WIDTH lato server. Posizionate sulla posizione REALE del
+    // server (serverState), non su quella interpolata (visualState), per
+    // poter verificare a occhio eventuali disallineamenti tra fisica e resa.
+    // ====================================================
+    const HITBOX_HALF_LEN = 2.4, HITBOX_HALF_WID = 1.3, HITBOX_HEIGHT = 1.5;
+    let showHitboxes = true;   // ON di default durante il tuning delle collisioni
+    const hitboxMeshes = {};
+
+    function getHitboxMesh(color) {
+        if (hitboxMeshes[color]) return hitboxMeshes[color];
+        const geo   = new THREE.BoxGeometry(HITBOX_HALF_WID * 2, HITBOX_HEIGHT, HITBOX_HALF_LEN * 2);
+        const edges = new THREE.EdgesGeometry(geo);
+        const mat   = new THREE.LineBasicMaterial({ color: color === myColor ? 0x00ff00 : 0xff0000 });
+        const mesh  = new THREE.LineSegments(edges, mat);
+        mesh.position.y = HITBOX_HEIGHT / 2;
+        scene.add(mesh);
+        hitboxMeshes[color] = mesh;
+        return mesh;
+    }
+
+    // ====================================================
+    // SELEZIONE MESCOLA
+    // ====================================================
+    let tyreSelectActive = false;   // true mentre siamo in fase tyre_select: la camera orbita sul tracciato
+    let tyreOrbitAngle   = 0;
+    let myCompoundChoice = null;
+    let tyreCompoundsInfo = null;   // { hard:{...}, medium:{...}, soft:{...} }, ricevuto una volta in f1Setup
+
+    function updateTyreSelectCamera() {
+        tyreOrbitAngle += 0.0022;
+        const radius = 150, height = 115;
+        camera.position.set(50 + Math.cos(tyreOrbitAngle) * radius, height, 100 + Math.sin(tyreOrbitAngle) * radius);
+        camera.lookAt(50, 0, 100);
+    }
+
+    // Riparenta il canvas dentro la cornice della selezione mescola e lo
+    // ridimensiona a quella: un vero modellino contenuto, non la scena a
+    // schermo intero vista in trasparenza dietro l'overlay.
+    function enterTyrePreview() {
+        const frame = document.getElementById('tyre-preview-frame');
+        if (renderer.domElement.parentElement !== frame) frame.appendChild(renderer.domElement);
+        renderer.domElement.classList.add('tyre-preview-canvas');
+        const w = frame.clientWidth, h = frame.clientHeight;
+        renderer.setSize(w, h);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+    }
+
+    function exitTyrePreview() {
+        if (renderer.domElement.parentElement !== document.body) document.body.appendChild(renderer.domElement);
+        renderer.domElement.classList.remove('tyre-preview-canvas');
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+    }
+
+    // Riusata sia per la selezione mescola pre-qualifica sia per il cambio
+    // gomme ai box (containerId/eventName diversi, stessa presentazione).
+    function renderTyreCards(compounds, myCompound, containerId, eventName) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = '';
+        for (const key of ['hard', 'medium', 'soft']) {
+            const c = compounds[key];
+            if (!c) continue;
+            const card = document.createElement('div');
+            card.className = 'tyre-card' + (myCompound === key ? ' selected' : '');
+            card.innerHTML = `
+                <div class="tyre-card-dot" style="background:${c.color};"></div>
+                <div class="tyre-card-label">${c.label.toUpperCase()}</div>
+                <div class="tyre-card-stats">
+                    Velocità ${c.speedMult >= 1 ? '+' : ''}${Math.round((c.speedMult - 1) * 100)}%<br>
+                    Aderenza ${c.gripMult >= 1 ? '+' : ''}${Math.round((c.gripMult - 1) * 100)}%<br>
+                    Usura ${c.wearRate}×
+                </div>`;
+            card.onclick = () => {
+                if (eventName === 'f1TyreChoice') myCompoundChoice = key;
+                socket.emit(eventName, { lobbyId, playerColor: myColor, compound: key });
+                container.querySelectorAll('.tyre-card').forEach(el => el.classList.remove('selected'));
+                card.classList.add('selected');
+            };
+            container.appendChild(card);
+        }
+    }
+
+    // ====================================================
+    // PIT STOP — autopilota ingresso/uscita + minigioco di reazione
+    // (pannello visibile SOLO al pilota in visita ai box: gli eventi sotto
+    // arrivano solo al SUO socket, il server non fa broadcast alla lobby).
+    // Il pannello resta aperto per TUTTA la visita — dall'ingresso (mentre
+    // l'auto guida da sola verso il box: qui si sceglie la mescola) fino
+    // all'uscita — non solo durante il minigioco.
+    // ====================================================
+    let pitting = false;   // true SOLO durante la sosta vera e propria (minigioco attivo)
+
+    socket.on('f1PitLaneEntered', () => {
+        const panel = document.getElementById('pitstop-panel');
+        panel.style.display = 'flex';
+        document.getElementById('pitstop-status').textContent = 'INGRESSO AI BOX...';
+        document.getElementById('pitstop-instructions').textContent =
+            'Scegli la mescola mentre arrivi al box.';
+        document.getElementById('pitstop-react-prompt').style.display = 'none';
+        document.getElementById('pitstop-result').textContent = '';
+        if (tyreCompoundsInfo) renderTyreCards(tyreCompoundsInfo, null, 'pitstop-cards', 'f1PitCompoundChoice');
+    });
+
+    socket.on('f1PitStopStarted', () => {
+        pitting = true;
+        document.getElementById('pitstop-status').textContent = 'AI BOX...';
+        document.getElementById('pitstop-instructions').textContent =
+            'Aspetta il segnale verde, poi premi SPAZIO più veloce che puoi! (premere prima non conta, puoi aspettare tranquillo)';
+    });
+
+    socket.on('f1PitReactionGo', () => {
+        document.getElementById('pitstop-status').textContent = '';
+        document.getElementById('pitstop-instructions').textContent = '';
+        document.getElementById('pitstop-react-prompt').style.display = 'block';
+    });
+
+    socket.on('f1PitStopTiming', ({ durationMs }) => {
+        document.getElementById('pitstop-react-prompt').style.display = 'none';
+        const secs = (durationMs / 1000).toFixed(1);
+        document.getElementById('pitstop-result').textContent = `Sosta: ${secs}s`;
+    });
+
+    socket.on('f1PitStopFinished', () => {
+        pitting = false;
+        document.getElementById('pitstop-status').textContent = 'USCITA DAI BOX...';
+        document.getElementById('pitstop-instructions').textContent = '';
+    });
+
+    socket.on('f1PitLaneExited', () => {
+        document.getElementById('pitstop-panel').style.display = 'none';
+    });
+
+    // Il client inoltra la pressione ogni volta che viene premuto spazio
+    // durante la sosta: è il server a decidere se conta (solo se arrivata
+    // DOPO il segnale) o va ignorata (prematura) — nessun rischio di
+    // "bruciarsi" l'unico tentativo premendo troppo presto per curiosità.
+    document.addEventListener('keydown', (e) => {
+        if (pitting && e.code === 'Space') {
+            socket.emit('f1PitReactionPress', { lobbyId, playerColor: myColor });
+        }
+    });
+
+    // ====================================================
     // SOCKET EVENTS
     // ====================================================
     let myTotalLaps = 3;
 
-    socket.on('f1Setup', ({ players, trackName, hostColor: hc, totalLaps }) => {
+    socket.on('f1Setup', ({ players, trackName, hostColor: hc, totalLaps, phase, raceStarted, elapsed,
+                            compounds, strategy, myCompound, tyreConfirmed, tyreTotal }) => {
+        if (compounds) tyreCompoundsInfo = compounds;
+        if (phase) currentPhase = phase;
         if (hc) hostColor = hc;
         if (trackName) document.getElementById('track-name-display').textContent = trackName;
         if (totalLaps) {
-            myTotalLaps = totalLaps;
+            // In qualifica il giro totale è sempre 1, non quello impostato per
+            // la gara vera (totalLaps qui si riferisce alla gara, non alla
+            // sessione corrente) — altrimenti il box mostrerebbe "0/3" durante
+            // un giro secco.
+            const displayTotalLaps = phase === 'qualifying' ? 1 : totalLaps;
+            myTotalLaps = displayTotalLaps;
+            const myLap = players[myColor] ? players[myColor].lap : 0;
             const box = document.getElementById('lap-box');
             box.style.display = 'flex';
-            document.getElementById('lap-display').textContent = `0/${totalLaps}`;
+            document.getElementById('lap-display').textContent = `${Math.min(myLap, displayTotalLaps)}/${displayTotalLaps}`;
         }
 
-        loadCarModel(myColor, (g) => { myCarGroup = g; });
+        // Idempotente: su un rientro (reconnect senza reload) i modelli esistono
+        // già in scena, ricrearli darebbe auto duplicate.
+        if (!myCarGroup) loadCarModel(myColor, (g) => { myCarGroup = g; });
 
         for (const [color, state] of Object.entries(players)) {
             serverState[color] = { x: state.x, z: state.z, angle: state.angle, speed: 0 };
-            visualState[color] = { ...serverState[color] };
-            if (color !== myColor) {
+            if (!visualState[color]) visualState[color] = { ...serverState[color] };
+            if (color !== myColor && !otherCars[color]) {
                 loadCarModel(color, (g) => {
                     otherCars[color] = g;
                     g.position.set(state.x, 0, state.z);
                     g.rotation.y = state.angle;
                 });
             }
+        }
+
+        // Rientro a gara già in corso: riprende il cronometro dal punto giusto
+        // senza rivedere il countdown (che è già passato per tutti gli altri).
+        if (raceStarted) {
+            isRacing    = true;
+            localStart  = Date.now() - (elapsed || 0);
+            document.getElementById('countdown-overlay').style.display = 'none';
+            document.getElementById('timer-box').style.visibility = 'visible';
+        }
+
+        if (phase === 'tyre_select') {
+            tyreSelectActive = true;
+            myCompoundChoice = myCompound || null;
+            document.getElementById('tyre-select-overlay').style.display = 'flex';
+            enterTyrePreview();
+            document.getElementById('tyre-strategy-hint').textContent =
+                'Strategia consigliata: ' + (strategy || []).map(c => (compounds[c]?.label || c).toUpperCase()).join(' → ');
+            renderTyreCards(compounds, myCompoundChoice, 'tyre-cards', 'f1TyreChoice');
+            document.getElementById('tyre-confirm-status').textContent = `${tyreConfirmed || 0}/${tyreTotal || 1} pronti`;
         }
     });
 
@@ -450,22 +749,83 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (!visualState[color]) {
                 visualState[color] = { x: data.x, z: data.z, angle: data.angle };
             }
+
+            if (showHitboxes) {
+                const hb = getHitboxMesh(color);
+                hb.position.x = data.x;
+                hb.position.z = data.z;
+                hb.rotation.y = data.angle;
+                hb.visible = true;
+            } else if (hitboxMeshes[color]) {
+                hitboxMeshes[color].visible = false;
+            }
+
+            // Solo in GARA: in qualifica tutti guidano sullo spec Soft a
+            // prescindere dalla mescola scelta (quella conta solo in gara),
+            // mostrarla lì sarebbe fuorviante.
+            if (color === myColor && currentPhase === 'race' && data.compound && tyreCompoundsInfo) {
+                const info = tyreCompoundsInfo[data.compound];
+                if (info) {
+                    const box = document.getElementById('tyre-box');
+                    box.style.display = 'flex';
+                    document.getElementById('tyre-dot').style.background = info.color;
+                    document.getElementById('tyre-label').textContent = info.label.toUpperCase();
+                    document.getElementById('tyre-wear-value').textContent = Math.round(data.tyreWear || 0);
+                }
+            } else if (color === myColor && currentPhase !== 'race') {
+                document.getElementById('tyre-box').style.display = 'none';
+            }
         }
+        updateStandings(state);
     });
+
+    // Classifica live: pallino colore + posizione, ordinata per rank. Nulla da
+    // mostrare prima che la gara sia partita (position è null lato server).
+    function updateStandings(state) {
+        const box = document.getElementById('standings-box');
+        const entries = Object.entries(state)
+            .filter(([, d]) => d.position)
+            .sort((a, b) => a[1].position - b[1].position);
+
+        if (entries.length === 0) { box.innerHTML = ''; return; }
+
+        box.innerHTML = entries.map(([color, d]) => `
+            <div class="standing-entry${color === myColor ? ' me' : ''}">
+                <span class="standing-pos">${d.position}°</span>
+                <span class="standing-dot" style="background:${color};"></span>
+            </div>
+        `).join('');
+    }
 
     socket.on('f1PlayerLeft', (color) => {
         if (otherCars[color]) { scene.remove(otherCars[color]); delete otherCars[color]; }
+        if (hitboxMeshes[color]) { scene.remove(hitboxMeshes[color]); delete hitboxMeshes[color]; }
         delete serverState[color]; delete visualState[color];
+    });
+
+    socket.on('f1TyreConfirmed', ({ count, total }) => {
+        const status = document.getElementById('tyre-confirm-status');
+        if (status) status.textContent = `${count}/${total} pronti`;
     });
 
     socket.on('f1Countdown', (data) => {
         isRacing    = false;
         myFinalTime = null;
+        if (tyreSelectActive) exitTyrePreview();   // la qualifica sta per partire: fine anteprima tracciato
+        tyreSelectActive = false;
         document.getElementById('timer-box').style.visibility = 'hidden';
+        // Nasconde in automatico un'eventuale griglia/animazione/selezione ancora
+        // a schermo: evita di dover sincronizzare a mano un timeout lato client
+        // con GRID_DISPLAY_MS/TYRE_SELECT_MS del server.
+        document.getElementById('podium-modal').style.display = 'none';
+        document.getElementById('pole-overlay').style.display = 'none';
+        document.getElementById('tyre-select-overlay').style.display = 'none';
         const overlay  = document.getElementById('countdown-overlay');
         const num      = document.getElementById('countdown-number');
         const trackEl  = document.getElementById('countdown-track');
+        const labelEl  = document.getElementById('countdown-label');
         if (data?.trackName) trackEl.textContent = data.trackName;
+        labelEl.textContent = data?.label || '';
         overlay.style.background = 'rgba(0,0,0,0.65)';
         overlay.style.display    = 'flex';
         num.textContent = '3'; num.style.color = '#e74c3c';
@@ -476,6 +836,7 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('f1RaceStarted', (data) => {
         isRacing    = true;
         myFinalTime = null;
+        if (data?.phase) currentPhase = data.phase;
         localStart  = Date.now() - (data?.syncTime || 0);
         const overlay = document.getElementById('countdown-overlay');
         const num     = document.getElementById('countdown-number');
@@ -490,6 +851,69 @@ document.addEventListener('DOMContentLoaded', () => {
         if (color !== myColor) return;
         document.getElementById('lap-box').style.display = 'flex';
         document.getElementById('lap-display').textContent = `${Math.min(lap, totalLaps)}/${totalLaps}`;
+    });
+
+    // Animazione di rivelazione: rivela il TESTO passato lettera per lettera,
+    // con un leggero scorrimento verso il centro ad ogni carattere aggiunto.
+    // Personale: chi fa pole vede "POOOOOOOOOOLE" (tutto MAIUSCOLO), tutti gli
+    // altri vedono solo la PROPRIA posizione (es. "P4") — vedi f1QualiEnded.
+    function playRevealAnimation(fullText) {
+        const CHAR_DELAY = 85;
+        const overlay = document.getElementById('pole-overlay');
+        const textEl  = document.getElementById('pole-text');
+        overlay.style.display = 'flex';
+        textEl.textContent = '';
+        textEl.style.transition = 'none';
+        textEl.style.transform  = 'translateX(55vw)';
+        // forza il reflow prima di riattivare la transition, altrimenti il primo step non scorre
+        void textEl.offsetWidth;
+        textEl.style.transition = 'transform 0.08s linear';
+
+        let i = 0;
+        const timer = setInterval(() => {
+            i++;
+            textEl.textContent = fullText.slice(0, i);
+            textEl.style.transform = `translateX(${(fullText.length - i) * 42}px)`;
+            if (i >= fullText.length) {
+                clearInterval(timer);
+                setTimeout(() => { overlay.style.display = 'none'; }, 1800);
+            }
+        }, CHAR_DELAY);
+    }
+
+    // Fine qualifica: rivelazione personale (POLE per il 1°, "P<n>" per tutti
+    // gli altri, ognuno vede solo la propria — ricavata dalla propria posizione
+    // nella griglia condivisa, nessun evento dedicato per-utente necessario),
+    // poi la griglia di partenza completa (riusa il modal del podio) per il
+    // resto della finestra prima del countdown di gara (si chiude da sé al
+    // prossimo f1Countdown, vedi handler sopra).
+    socket.on('f1QualiEnded', ({ grid }) => {
+        const myPos = (grid || []).findIndex(e => e.color === myColor) + 1;
+        if (myPos === 1)      playRevealAnimation('POOOOOOOOOOLE');
+        else if (myPos > 1)   playRevealAnimation(`P${myPos}`);
+
+        const modal = document.getElementById('podium-modal');
+        const title = document.getElementById('podium-title');
+        const list  = document.getElementById('podium-list');
+        title.textContent = '🏁 GRIGLIA DI PARTENZA 🏁';
+        list.innerHTML = (grid || []).map((entry, i) => {
+            const t = entry.time;
+            const timeStr = t === null
+                ? 'Nessun tempo'
+                : `${Math.floor(t / 60000)}:${String(Math.floor((t % 60000) / 1000)).padStart(2, '0')}.${String(t % 1000).padStart(3, '0')}`;
+            return `
+                <li style="display:flex;justify-content:space-between;align-items:center;padding:10px 5px;border-bottom:1px solid #bdc3c7;font-size:18px;">
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <span style="font-weight:900;width:26px;color:#2C3E50;">${i + 1}°</span>
+                        <span style="display:inline-block;width:20px;height:20px;background:${entry.color};border-radius:50%;border:2px solid #2C3E50;"></span>
+                        <span style="font-size:13px;font-weight:bold;">${entry.color === myColor ? '(TU)' : ''}</span>
+                    </div>
+                    <span style="font-family:monospace;font-weight:bold;">${timeStr}</span>
+                </li>`;
+        }).join('');
+        document.getElementById('single-mode-controls').style.display = 'none';
+        document.getElementById('auto-return-text').style.display = 'none';
+        modal.style.display = 'flex';
     });
 
     socket.on('f1BoostUpdate', ({ boostTime }) => {
@@ -507,6 +931,9 @@ document.addEventListener('DOMContentLoaded', () => {
         isRacing = false;
         const modal = document.getElementById('podium-modal');
         const list  = document.getElementById('podium-list');
+        // Ripristina il titolo statico (f1QualiEnded lo sovrascrive con "GRIGLIA
+        // DI PARTENZA" per la schermata di qualifica).
+        document.getElementById('podium-title').textContent = '🏁 RACE FINISHED 🏁';
         list.innerHTML = '';
 
         const title = document.createElement('h2');
@@ -529,6 +956,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span style="font-weight:900;width:26px;color:${i===0?'#f1c40f':i===1?'#95a5a6':i===2?'#d35400':'#2C3E50'}">${i+1}°</span>
                     <span style="display:inline-block;width:20px;height:20px;background:${entry.color};border-radius:50%;border:2px solid #2C3E50;"></span>
                     <span style="font-size:13px;font-weight:bold;">${entry.color===myColor?'(YOU)':''}</span>
+                    ${entry.pitPenalty ? '<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+30s NO PIT</span>' : ''}
                 </div>
                 <span style="font-family:monospace;font-weight:bold;">${m}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}</span>`;
             list.appendChild(li);
@@ -584,6 +1012,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (k === 's' && !inputs.s) { inputs.s = true;  ch = true; }
         if (k === 'd' && !inputs.d) { inputs.d = true;  ch = true; }
         if (k === 'c') cameraMode = cameraMode === 'third' ? 'first' : 'third';
+        if (k === 'h') {   // DEBUG: mostra/nascondi le hitbox di collisione
+            showHitboxes = !showHitboxes;
+            for (const mesh of Object.values(hitboxMeshes)) mesh.visible = showHitboxes;
+        }
         if (ch && isRacing) sendInputs();
     });
 
@@ -686,15 +1118,23 @@ document.addEventListener('DOMContentLoaded', () => {
             timerEl.style.color = myFinalTime !== null ? '#2ecc71' : '#2C3E50';
         }
 
-        updateCamera();
+        if (tyreSelectActive) updateTyreSelectCamera();
+        else                  updateCamera();
         renderer.render(scene, camera);
     }
 
     animate();
 
     window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        if (tyreSelectActive) {
+            const frame = document.getElementById('tyre-preview-frame');
+            camera.aspect = frame.clientWidth / frame.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(frame.clientWidth, frame.clientHeight);
+        } else {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
     });
 });

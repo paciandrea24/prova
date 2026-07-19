@@ -24,10 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
         racing: { mode: 'championship', numTracks: 3, trackName: 'Monza' },
         football: { maxGoals: 3 },
         deduction: { impostors: 1 },
-        kart: { laps: 3 },
         spleef: { mapSize: 20 },
         fps: { rounds: 5 }, // round FISSI a 5 (il server ignora comunque questo valore)
-        f1: { mode: 'championship', laps: 3 }
+        f1: { mode: 'championship', laps: 10 }
     };
 
     // 2. Interfaccia Header (ID e Copia)
@@ -63,7 +62,6 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (gameId === 'football') targetPage = '/football.html';
         else if (data.gameId === 'footballMulti') targetPage = '/footballMulti.html';
         else if (gameId === 'deduction') targetPage = '/deduction.html';
-        else if (gameId === 'kart') targetPage = '/kart.html';
         else if (gameId === 'spleef') targetPage = '/spleef.html';
         else if (gameId === 'fps') targetPage = '/fps.html';
         else if (gameId === 'f1') targetPage = '/f1.html';
@@ -269,7 +267,6 @@ document.addEventListener('DOMContentLoaded', () => {
             bomb: '💣 Bomb Settings',
             football: '⚽ Football Settings',
             deduction: '🔪 Deduction Settings',
-            kart: '🏎️ Kart 3D Settings',
             spleef: '⛏️ Spleef Settings',
             fps: '🎯 FPS Settings',
             f1: '🏎️ F1 3D Settings'

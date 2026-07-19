@@ -80,7 +80,10 @@ body::before {
 }
 
 .logo-w {
-    color: var(--my-color);
+    /* Colore dell'HOST della lobby (non del singolo giocatore).
+       --host-color viene impostato da lobby.js su loadLobby e lobbyUpdated;
+       fallback su --my-color solo per il primo frame prima della risposta. */
+    color: var(--host-color, var(--my-color));
     transition: color 0.25s ease;
     text-shadow:
         -2px -2px 0 var(--ink),  2px -2px 0 var(--ink),
@@ -356,7 +359,6 @@ body::before {
 .game-card[data-game-id="bomb"]      .g-icon { stroke: #E67E22; fill: rgba(230, 126,  34, 0.18); }
 .game-card[data-game-id="football"]  .g-icon { stroke: #2ECC71; fill: rgba( 46, 204, 113, 0.18); }
 .game-card[data-game-id="deduction"] .g-icon { stroke: #6C5CE7; fill: rgba(108,  92, 231, 0.18); }
-.game-card[data-game-id="kart"]      .g-icon { stroke: #FF7F11; fill: rgba(255, 127,  17, 0.18); }
 .game-card[data-game-id="spleef"]    .g-icon { stroke: #17BEBB; fill: rgba( 23, 190, 187, 0.18); }
 .game-card[data-game-id="fps"]       .g-icon { stroke: #C0392B; fill: rgba(192,  57,  43, 0.18); }
 .game-card[data-game-id="f1"]        .g-icon { stroke: #2D6CDF; fill: rgba( 45, 108, 223, 0.18); }
