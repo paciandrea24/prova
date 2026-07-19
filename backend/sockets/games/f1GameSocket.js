@@ -43,59 +43,6 @@ function nearestTrackDist(track, x, z) {
 }
 
 // ====================================================
-// GEOMETRIA PISTA LEGACY (Monte Rosso, hardcoded) — TEMPORANEAMENTE ancora
-// necessaria: TRACK_LAP_LENGTH alimenta WEAR_PER_UNIT_DIST qui sotto (usura
-// gomme), e TRACK_POINTS è ancora usato da updateTrackIndex/progressScore/
-// applyOffTrackDrag — tutta logica di competenza del Task 8 (migrazione a
-// game.track), non toccata da questo task. Rimuovere questo blocco è compito
-// del Task 8, quando quelle funzioni passeranno a usare game.track.points/
-// game.track.lapLength.
-// ====================================================
-function leftCX(z) {
-    if (z <= 60)  return -30;
-    if (z <= 82)  return -30 + (z - 60) / 22 * 14;   // -30 → -16
-    if (z <= 100) return -16 + (z - 82) / 18 * 8;    // -16 → -8
-    if (z <= 118) return  -8 - (z - 100) / 18 * 8;   // -8 → -16
-    if (z <= 145) return -16 - (z - 118) / 27 * 14;  // -16 → -30
-    return -30;
-}
-function rightCX(z) {
-    if (z <= 60)  return 130;
-    if (z <= 82)  return 130 + (z - 60) / 22 * 16;   // 130 → 146
-    if (z <= 100) return 146 - (z - 82) / 18 * 8;    // 146 → 138
-    if (z <= 118) return 138 + (z - 100) / 18 * 8;   // 138 → 146
-    if (z <= 145) return 146 - (z - 118) / 27 * 16;  // 146 → 130
-    return 130;
-}
-
-const TRACK_POINTS = (() => {
-    const pts = [];
-    for (let z = -5; z <= 205; z += 3) pts.push({ x: leftCX(z),  z });
-    for (let a = 180; a >= 0; a -= 3) {
-        const r = a * Math.PI / 180;
-        pts.push({ x: 50 + 80 * Math.cos(r), z: 200 + 80 * Math.sin(r) });
-    }
-    for (let z = 205; z >= -5; z -= 3) pts.push({ x: rightCX(z), z });
-    for (let a = 0; a >= -180; a -= 3) {
-        const r = a * Math.PI / 180;
-        pts.push({ x: 50 + 80 * Math.cos(r), z: 80 * Math.sin(r) });
-    }
-    return pts;
-})();
-
-// Lunghezza reale del giro, derivata da TRACK_POINTS (non un numero fisso a
-// mano): usata per calibrare l'usura delle gomme in "quanti giri dura una
-// mescola" invece che in unità di distanza astratte.
-const TRACK_LAP_LENGTH = (() => {
-    let len = 0;
-    for (let i = 0; i < TRACK_POINTS.length; i++) {
-        const a = TRACK_POINTS[i], b = TRACK_POINTS[(i + 1) % TRACK_POINTS.length];
-        len += Math.hypot(b.x - a.x, b.z - a.z);
-    }
-    return len;
-})();
-
-// ====================================================
 // MESCOLE E USURA GOMME
 // Soft/Medium/Hard differiscono sia in prestazioni (velocità massima e
 // aderenza) sia in velocità di usura — come nella F1 vera: la Soft è più
@@ -113,7 +60,6 @@ const DEFAULT_COMPOUND = 'medium';
 const TYRE_SELECT_MS   = 20000;   // tempo per scegliere prima che scatti la mescola di default
 
 const WEAR_LAPS_AT_MEDIUM = 5;   // quanti giri dura una Medium (wearRate=1) prima del 100% di usura
-const WEAR_PER_UNIT_DIST  = 100 / (WEAR_LAPS_AT_MEDIUM * TRACK_LAP_LENGTH);
 const WEAR_OFFTRACK_EXTRA = 0.02; // piccolo extra per tick fuori pista (oltre a quello da distanza)
 const WEAR_SPEED_PENALTY  = 0.25; // fino a -25% velocità massima a gomme esaurite
 const WEAR_GRIP_PENALTY   = 0.35; // fino a -35% aderenza a gomme esaurite (più derapate)
@@ -276,7 +222,7 @@ module.exports = function (io, socket) {
             grid:          game.grid,
             raceStarted:   game.raceStarted,
             elapsed:       (game.raceStarted && game.raceStartTime) ? (Date.now() - game.raceStartTime) : 0,
-            players:       buildPublicState(playersVisibleTo(game, playerColor), game.raceStarted),
+            players:       buildPublicState(playersVisibleTo(game, playerColor), game.raceStarted, game.track),
             compounds:     TYRE_COMPOUNDS,
             strategy:      suggestStrategy(totalLaps),
             myCompound:    game.players[playerColor].compound,
@@ -728,11 +674,11 @@ function broadcastState(io, lobbyId, game, raceStartedFlag) {
         for (const color of Object.keys(game.players)) {
             const sid = game.socketByColor[color];
             if (!sid) continue;
-            io.to(sid).emit('f1StateUpdate', buildPublicState(playersVisibleTo(game, color), raceStartedFlag));
+            io.to(sid).emit('f1StateUpdate', buildPublicState(playersVisibleTo(game, color), raceStartedFlag, game.track));
         }
         return;
     }
-    io.to(lobbyId).emit('f1StateUpdate', buildPublicState(playersVisibleTo(game, null), raceStartedFlag));
+    io.to(lobbyId).emit('f1StateUpdate', buildPublicState(playersVisibleTo(game, null), raceStartedFlag, game.track));
 }
 
 // ====================================================
@@ -762,21 +708,18 @@ function tickGame(io, lobbyId, game) {
     // (vedi commento su COLLISION_SUBSTEPS). Le auto ferme (finite o in grazia)
     // restano ostacoli fisici, quindi resolveCollisions lavora su TUTTI i
     // giocatori non-in-qualifica, non solo su chi corre.
-    const prevZ = {};
-    for (const p of racing) prevZ[p.color] = p.z;
-
     for (let s = 0; s < COLLISION_SUBSTEPS; s++) {
         for (const p of racing) integratePosition(p, 1 / COLLISION_SUBSTEPS);
         if (!isQuali) resolveCollisions(players);
     }
 
     for (const p of racing) {
-        const offTrack = applyOffTrackDrag(p);
-        updateTrackIndex(p);
+        const offTrack = applyOffTrackDrag(p, game.track);
+        updateTrackIndex(p, game.track);
         // L'usura conta solo in GARA: in qualifica le gomme restano quelle
         // scelte ma "fresche" fino al via vero (resettate in assignGridSpawns).
-        if (game.phase === 'race') applyTyreWear(p, offTrack);
-        checkLap(p, prevZ[p.color], totalLaps, io, lobbyId, game);
+        if (game.phase === 'race') applyTyreWear(p, offTrack, game.track);
+        checkLap(p, totalLaps, io, lobbyId, game);
 
         // Ingresso volontario nella corsia box (solo in gara: sterzare lì è
         // una scelta del giocatore). Da qui il server prende il volante — vedi
@@ -790,7 +733,7 @@ function tickGame(io, lobbyId, game) {
     // per updateVelocity/integratePosition (niente input del giocatore).
     for (const p of autoPiloted) {
         updatePitAutopilot(io, lobbyId, game, p);
-        updateTrackIndex(p);
+        updateTrackIndex(p, game.track);
     }
 
     // Fine sessione (qualifica o gara): tutti i giocatori CONNESSI hanno finito
@@ -814,51 +757,55 @@ function tickGame(io, lobbyId, game) {
 
 // ====================================================
 // PROGRESSO LUNGO IL TRACCIATO (per le posizioni in gara)
-// TRACK_POINTS è già ordinato nel verso di marcia (rettilineo sx → parabolica
-// alta → rettilineo dx → parabolica bassa). Ricerca LOCALE nell'intorno
-// dell'indice precedente (con wrap) invece che globale: evita l'ambiguità nel
-// punto di saldatura fine/inizio giro, dove l'ultimo punto della parabolica
-// bassa e il primo del rettilineo sx sono quasi coincidenti nello spazio.
+// game.track.points è già ordinato nel verso di marcia. Ricerca LOCALE
+// nell'intorno dell'indice precedente (con wrap) invece che globale: evita
+// l'ambiguità nel punto di saldatura fine/inizio giro, dove l'ultimo punto e
+// il primo sono quasi coincidenti nello spazio.
 // ====================================================
 const TRACK_INDEX_WINDOW = 20;
+// Il numero di campioni è sempre SAMPLES=1000 (vedi trackLoader.js),
+// indipendentemente dalla pista: questi indici restano costanti globali.
+const N_SAMPLES        = 1000;
+const HALF_LAP_IDX      = Math.floor(N_SAMPLES / 2);
+const CHECKPOINT_WINDOW = Math.floor(N_SAMPLES * 0.12);
+const FINISH_WINDOW     = Math.floor(N_SAMPLES * 0.03);
 
-function updateTrackIndex(p) {
-    const n    = TRACK_POINTS.length;
-    const prev = p.trackIndex || 0;
-    let bestIdx  = prev;
-    let bestDist = Infinity;
-    for (let d = -TRACK_INDEX_WINDOW; d <= TRACK_INDEX_WINDOW; d++) {
-        const idx = ((prev + d) % n + n) % n;
-        const pt  = TRACK_POINTS[idx];
-        const dist = (p.x - pt.x) ** 2 + (p.z - pt.z) ** 2;
-        if (dist < bestDist) { bestDist = dist; bestIdx = idx; }
-    }
-    p.trackIndex = bestIdx;
+function updateTrackIndex(p, track) {
+    p.trackIndex = TrackGeometry.nearestIndexNear(track.points, p.trackIndex || 0, p.x, p.z, TRACK_INDEX_WINDOW);
 }
 
 // Punteggio di avanzamento: lap*N+indice cresce in modo continuo attraverso il
 // giro (l'indice si azzera esattamente quando lap incrementa, stesso tick,
 // perché entrambi derivano dalla stessa p.x/p.z). Un giocatore finished ha
 // sempre punteggio più alto di uno ancora in gara (lap==totalLaps domina).
-function progressScore(p) {
-    return p.lap * TRACK_POINTS.length + (p.trackIndex || 0);
+function progressScore(p, track) {
+    return p.lap * track.points.length + (p.trackIndex || 0);
+}
+
+// Distanza circolare minima tra due indici su un loop di `n` campioni.
+function circularWithin(idx, target, n, halfWidth) {
+    let d = Math.abs(idx - target);
+    if (d > n / 2) d = n - d;
+    return d <= halfWidth;
 }
 
 // ====================================================
-// LAP CHECK — zona-based (più robusto del crossing)
-// Checkpoint A: z ∈ [150,210] sul rettilineo sx (x < 50)
-// Traguardo:    z ∈ [0, 10]  sul rettilineo sx (x < 50), dopo aver passato A
+// LAP CHECK — basato sull'indice campionato (generico per qualunque pista):
+// la linea di partenza è sempre l'indice 0 dei punti campionati; il
+// checkpoint anti-taglio è l'indice a metà giro (HALF_LAP_IDX). Un giro conta
+// solo se il giocatore ha toccato il checkpoint dall'ultimo passaggio sul
+// traguardo (evita falsi giri per jitter vicino al traguardo), derivato dai
+// dati invece che da coordinate scritte a mano per una singola pista.
 // ====================================================
-function checkLap(p, prevZ, totalLaps, io, lobbyId, game) {
-    const onLeftSide = p.x < 50;   // esclude il rettilineo dx (x≈130)
+function checkLap(p, totalLaps, io, lobbyId, game) {
+    const n   = game.track.points.length;
+    const idx = p.trackIndex || 0;
 
-    // Checkpoint A: il driver ha superato metà giro
-    if (onLeftSide && p.z >= 150 && p.z <= 210 && !p.checkpointA) {
+    if (!p.checkpointA && circularWithin(idx, HALF_LAP_IDX, n, CHECKPOINT_WINDOW)) {
         p.checkpointA = true;
     }
 
-    // Zona traguardo: z ∈ [0,10] sul rettilineo sx, dopo il checkpoint A
-    const inFinishZone = onLeftSide && p.z >= 0 && p.z <= 10;
+    const inFinishZone = circularWithin(idx, 0, n, FINISH_WINDOW);
     if (p.checkpointA && inFinishZone && !p.inFinishZone) {
         // Il giocatore ha appena ENTRATO nella zona traguardo → giro completato
         p.lap++;
@@ -962,11 +909,11 @@ function integratePosition(p, dt) {
 // da questa funzione — vedi il filtro "racing" in tickGame — quindi non
 // serve più un'esenzione qui: la zona di trigger d'ingresso è comunque
 // abbastanza vicina al bordo pista normale da non scattare mai.)
-function applyOffTrackDrag(p) {
-    const dist = nearestTrackDist(p.x, p.z);
-    const offTrack = dist > ROAD_HALF + 2;
+function applyOffTrackDrag(p, track) {
+    const dist = nearestTrackDist(track, p.x, p.z);
+    const offTrack = dist > track.roadHalf + 2;
     if (offTrack) {
-        const k = Math.min(1, (dist - ROAD_HALF - 2) / 8);  // 0..1 in funzione della profondità
+        const k = Math.min(1, (dist - track.roadHalf - 2) / 8);  // 0..1 in funzione della profondità
         const drag = 0.04 + k * 0.08;
         p.speed *= (1 - drag);
         p.vx   *= (1 - drag);
@@ -977,9 +924,10 @@ function applyOffTrackDrag(p) {
 
 // Usura gomme: SOLO dalla distanza percorsa nel tick (fermo = zero usura,
 // nessun caso speciale necessario) + un piccolo extra fisso se fuori pista.
-function applyTyreWear(p, offTrack) {
+function applyTyreWear(p, offTrack, track) {
     const dist = Math.hypot(p.vx, p.vz);   // distanza percorsa in questo tick
-    p.tyreWear = Math.min(100, p.tyreWear + dist * WEAR_PER_UNIT_DIST * tyreOf(p).wearRate);
+    const wearPerUnitDist = 100 / (WEAR_LAPS_AT_MEDIUM * track.lapLength);
+    p.tyreWear = Math.min(100, p.tyreWear + dist * wearPerUnitDist * tyreOf(p).wearRate);
     if (offTrack) p.tyreWear = Math.min(100, p.tyreWear + WEAR_OFFTRACK_EXTRA);
 }
 
@@ -1064,14 +1012,14 @@ function resolveCollisions(players) {
 // ====================================================
 // HELPERS
 // ====================================================
-function buildPublicState(players, raceStarted) {
+function buildPublicState(players, raceStarted, track) {
     const out = {};
 
     // Classifica: calcolata solo a gara avviata (prima non ha senso, tutti fermi
     // allo spawn). ranked.indexOf è O(M) per giocatore ma M è al più 8 → irrilevante.
     let ranked = [];
     if (raceStarted) {
-        ranked = Object.values(players).sort((a, b) => progressScore(b) - progressScore(a));
+        ranked = Object.values(players).sort((a, b) => progressScore(b, track) - progressScore(a, track));
     }
 
     for (const [color, p] of Object.entries(players)) {
