@@ -3,6 +3,7 @@ const path = require('path');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 
 const TRACKS_DIR = path.join(__dirname, '..', '..', '..', 'frontend', 'tracks');
+const TRACK_ID_PATTERN = /^[a-z0-9-]+$/;
 const SAMPLES = 1000;
 const QUALI_LEAD = 8;        // unità avanti alla linea di partenza per lo spawn di qualifica
 const GRID_START = 40;       // unità dietro la linea di partenza per la pole
@@ -54,8 +55,16 @@ function buildTrack(id, raw) {
 
 function loadTrack(id) {
     if (cache.has(id)) return cache.get(id);
+    if (!TRACK_ID_PATTERN.test(id)) {
+        throw new Error(`Errore: trackId non valido: "${id}"`);
+    }
     const file = path.join(TRACKS_DIR, `${id}.json`);
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    let raw;
+    try {
+        raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (err) {
+        throw new Error(`Impossibile caricare la pista "${id}": ${err.message}`);
+    }
     const track = buildTrack(id, raw);
     cache.set(id, track);
     return track;
@@ -66,9 +75,15 @@ function listTracks() {
         .filter(f => f.endsWith('.json'))
         .map(f => {
             const id = f.replace(/\.json$/, '');
-            const raw = JSON.parse(fs.readFileSync(path.join(TRACKS_DIR, f), 'utf8'));
-            return { id, name: raw.name };
-        });
+            try {
+                const raw = JSON.parse(fs.readFileSync(path.join(TRACKS_DIR, f), 'utf8'));
+                return { id, name: raw.name };
+            } catch (err) {
+                console.warn(`listTracks: file pista malformato ignorato "${f}": ${err.message}`);
+                return null;
+            }
+        })
+        .filter(t => t !== null);
 }
 
 module.exports = { loadTrack, listTracks };

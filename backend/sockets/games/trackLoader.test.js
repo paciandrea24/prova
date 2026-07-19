@@ -1,6 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { loadTrack, listTracks } = require('./trackLoader.js');
+
+const TRACKS_DIR = path.join(__dirname, '..', '..', '..', 'frontend', 'tracks');
 
 test('loadTrack("monte-rosso") calcola 10 giri dal targetKm', () => {
     const track = loadTrack('monte-rosso');
@@ -50,4 +54,28 @@ test('loadTrack cachea per id (stessa istanza restituita)', () => {
 test('listTracks include monte-rosso', () => {
     const tracks = listTracks();
     assert.ok(tracks.some(t => t.id === 'monte-rosso' && t.name === 'Monte Rosso'));
+});
+
+test('loadTrack rifiuta id con caratteri di path-traversal prima di toccare il filesystem', () => {
+    assert.throws(() => loadTrack('../../etc'), /trackId non valido: "\.\.\/\.\.\/etc"/);
+    assert.throws(() => loadTrack('foo/bar'), /trackId non valido: "foo\/bar"/);
+});
+
+test('loadTrack lancia un errore chiaro (non un ENOENT grezzo) per un id ben formato ma inesistente', () => {
+    assert.throws(() => loadTrack('pista-che-non-esiste'), (err) => {
+        assert.ok(err instanceof Error);
+        assert.match(err.message, /Impossibile caricare la pista "pista-che-non-esiste"/);
+        return true;
+    });
+});
+
+test('listTracks non lancia e restituisce comunque le piste valide in presenza di un file malformato', () => {
+    const malformedPath = path.join(TRACKS_DIR, '__test-malformed.json');
+    fs.writeFileSync(malformedPath, '{ questo non e\' json valido ', 'utf8');
+    try {
+        const tracks = listTracks();
+        assert.ok(tracks.some(t => t.id === 'monte-rosso' && t.name === 'Monte Rosso'));
+    } finally {
+        fs.unlinkSync(malformedPath);
+    }
 });

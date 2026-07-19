@@ -143,9 +143,16 @@ module.exports = function (io, socket) {
         if (!activeGames.has(lobbyId)) {
             const lobby   = lobbies.get(lobbyId);
             const trackId = (lobby && lobby.gameSettings && lobby.gameSettings.trackId) || 'monte-rosso';
+            let track;
+            try {
+                track = loadTrack(trackId);
+            } catch (err) {
+                console.error(`joinF1Game: impossibile caricare la pista "${trackId}", fallback a "monte-rosso":`, err);
+                track = loadTrack('monte-rosso');
+            }
             activeGames.set(lobbyId, {
                 gameId:            'f1',   // marca il tipo: gli handler condivisi (disconnect) NON devono toccare partite di altri giochi
-                track:             loadTrack(trackId),
+                track:             track,
                 phase:             'tyre_select',   // tyre_select -> qualifying -> grid_display -> race -> race_end
                 players:           {},
                 socketByColor:     {},   // color -> socket.id CORRENTE, per gli emit personalizzati in qualifica

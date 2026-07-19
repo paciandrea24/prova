@@ -164,6 +164,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('exportBtn').addEventListener('click', () => {
         if (mainPoints.length < 3) { alert('Servono almeno 3 punti per il tracciato principale'); return; }
         if (pitPoints.length < 3) { alert('Servono almeno 3 punti per la corsia box (obbligatoria)'); return; }
+        const pitBoxIndex = parseInt(document.getElementById('pitBoxIndex').value, 10) || 0;
+        if (pitBoxIndex < 0 || pitBoxIndex >= pitPoints.length) { alert('pitBoxIndex non valido: deve essere un indice valido della corsia box'); return; }
         const data = {
             id: document.getElementById('trackId').value.trim(),
             name: document.getElementById('trackName').value.trim(),
