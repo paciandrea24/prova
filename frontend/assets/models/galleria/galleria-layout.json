@@ -289,7 +289,7 @@
       "s": 1.0
     },
     {
-      "modello": "portale_aperto",
+      "modello": "portale_varco",
       "x": 0.0,
       "z": -31.6,
       "rotY": 0.0,
@@ -945,7 +945,7 @@
       "s": 1.0
     },
     {
-      "modello": "portale_aperto",
+      "modello": "portale_varco",
       "x": 0.0,
       "z": 31.6,
       "rotY": -180.0,

@@ -15,8 +15,8 @@ const WORLD_CONFIG = {
     // pav:false   → la zona non ha 'pavimentazione.glb' separata
     ZONES: [
         { dir: 'assets/models/jazz/',             json: 'zona-layout.json',         varchi: true },
-        { dir: 'assets/models/collegamenti-wip/', json: 'collegamenti-layout.json', pav: false },
-        { dir: 'assets/models/galleria-wip/',     json: 'galleria-layout.json',     offset: _GALLERIA_OFF },
+        { dir: 'assets/models/collegamenti/',     json: 'collegamenti-layout.json', pav: false },
+        { dir: 'assets/models/galleria/',         json: 'galleria-layout.json',     offset: _GALLERIA_OFF },
         { dir: 'assets/models/piazza/',           json: 'piazza-layout.json',       pav: false },
         { dir: 'assets/models/funland/',          json: 'funland-layout.json',      pav: false },
     ],

@@ -600,6 +600,20 @@ function _toonDisplacedGeo(geo, t) {
 // head.scale del mutatore Teste Giganti). outMat è un'istanza per-personaggio
 // per i player (così "Fantasmi"/setGroupOpacity non tocca i contorni degli
 // altri); per i prop del mondo si usa il condiviso MAT.ink.
+// Cache degli hull "gonfiati": stessa geometria sorgente + stesso spessore
+// ⇒ stessa geometria di contorno, CONDIVISA tra le istanze. I cloni di Inky
+// (giocatori, trofei, podio) riusano le geometrie del template: senza cache
+// ogni clone ricalcolava e teneva in memoria ~23k tri di hull duplicati
+// (causa di scatti/consumo inutile). WeakMap: le voci muoiono con la geometria.
+const _outlineGeoCache = new WeakMap();
+function _toonDisplacedGeoCached(geo, t) {
+    let byT = _outlineGeoCache.get(geo);
+    if (!byT) { byT = {}; _outlineGeoCache.set(geo, byT); }
+    const k = t.toFixed(4);
+    if (!byT[k]) byT[k] = _toonDisplacedGeo(geo, t);
+    return byT[k];
+}
+
 function _addToonOutline(src, outMat, tMul = 1) {
     let o;
     if (src.geometry.type.indexOf('Box') === 0) {
@@ -613,7 +627,7 @@ function _addToonOutline(src, outMat, tMul = 1) {
             1 + 2 * t / Math.max(bb.max.y - bb.min.y, 1e-3),
             1 + 2 * t / Math.max(bb.max.z - bb.min.z, 1e-3));
     } else {
-        o = new THREE.Mesh(_toonDisplacedGeo(src.geometry, TOON_OUTLINE_T * tMul), outMat);
+        o = new THREE.Mesh(_toonDisplacedGeoCached(src.geometry, TOON_OUTLINE_T * tMul), outMat);
     }
     o.castShadow = false;
     src.add(o);
@@ -941,17 +955,13 @@ function loadZone(dir, jsonName, opts = {}) {
     const passthrough = opts.passthrough || [];   // istanze visibili ma SENZA COL (edifici attraversabili → passaggi segreti)
     const hasPav = opts.pav !== false;
     const loader = new THREE.GLTFLoader();
-    // Cache-buster di sviluppo: il browser (e GLTFLoader) altrimenti servono i .glb dalla
-    // cache anche dopo la rigenerazione. _CB cambia a ogni ricaricamento pagina → fetch fresco.
-    // TODO: rimuovere quando le -wip vengono promosse/committate.
-    const _CB = '?v=' + Date.now();
-    return fetch(dir + jsonName + _CB).then(r => r.json()).then(layout => {
+    return fetch(dir + jsonName).then(r => r.json()).then(layout => {
         const modelNames = [...new Set([
             ...layout.edifici.map(e => e.modello),
             ...layout.props.map(p => p.modello)
         ])];
         const urls = hasPav ? ['pavimentazione', ...modelNames] : [...modelNames];
-        return Promise.all(urls.map(n => _gltfLoad(loader, dir + n + '.glb' + _CB)))
+        return Promise.all(urls.map(n => _gltfLoad(loader, dir + n + '.glb')))
             .then(gltfs => ({ layout, modelNames, gltfs }));
     }).then(({ layout, modelNames, gltfs }) => {
         const modelStart = hasPav ? 1 : 0;
@@ -1717,7 +1727,116 @@ function buildMascotHead(color, s = 1) {
     return g;
 }
 
+// ── INKY: personaggio GLB (sostituisce la mascotte procedurale) ──────────
+// Template caricato una volta al boot; ogni giocatore riceve un clone con
+// materiali PER-ISTANZA (requisito "Fantasmi"/setGroupOpacity) e contorni
+// china per-istanza. Geometrie condivise tra i cloni (clone() non le copia).
+let inkyTemplate = null;
+const INKY_URL = 'assets/models/chars/inky.glb';
+const INKY_HAND_R = [0.255, -0.029, -0.003];  // guanto dx relativo a upper (da build_inky.py: HAND_R)
+const INKY_SCALE = 1.06;   // taratura visiva (gate finale): un filo più grosso,
+                           // solo estetica — hitbox/netcode invariati
+
+function inkyToonSwap(root) {
+    // GLTF dà MeshStandardMaterial → MeshToonMaterial con la stessa map.
+    // map.encoding a LinearEncoding: la texture è già nei byte finali
+    // (pipeline passthrough), il GLTFLoader la taggherebbe sRGB scurendola.
+    const cache = new Map();
+    root.traverse(o => {
+        if (!o.isMesh) return;
+        const src = o.material;
+        if (!cache.has(src)) {
+            if (src.map) src.map.encoding = THREE.LinearEncoding;
+            const m = new THREE.MeshToonMaterial({
+                color: src.color ? src.color.clone() : 0xffffff,
+                map: src.map || null,
+                gradientMap: _toonGradMap,
+            });
+            m.name = src.name;
+            cache.set(src, m);
+        }
+        o.material = cache.get(src);
+    });
+}
+
+function loadInky() {
+    return new Promise((resolve, reject) => {
+        new THREE.GLTFLoader().load(INKY_URL + '?v=' + Date.now(), g => {
+            inkyToonSwap(g.scene);
+            inkyTemplate = g.scene;
+            resolve();
+        }, undefined, reject);
+    });
+}
+
+// Clona il template con materiali e contorni per-istanza.
+// NB: le outline si aggiungono DOPO aver raccolto le mesh in un array
+// (mai dentro traverse: l'hull è figlio della mesh → ricorsione infinita).
+function makeInkyClone(outMat) {
+    const root = inkyTemplate.clone(true);
+    const matCache = new Map();
+    const meshes = [];
+    root.traverse(o => { if (o.isMesh) meshes.push(o); });
+    for (const o of meshes) {
+        o.castShadow = true;
+        if (!matCache.has(o.material)) matCache.set(o.material, o.material.clone());
+        o.material = matCache.get(o.material);
+        _addToonOutline(o, outMat, 1);
+    }
+    return {
+        root,
+        head: root.getObjectByName('head'),
+        upper: root.getObjectByName('upper'),
+        legL: root.getObjectByName('legL'),
+        legR: root.getObjectByName('legR'),
+    };
+}
+
 function createPlayerMesh(color, weaponKey) {
+    if (!inkyTemplate) return createPlayerMeshProc(color, weaponKey);  // fallback
+
+    const group = new THREE.Group();
+    // Contorno per-personaggio: istanza dedicata per il mutatore "Fantasmi"
+    const outMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a, side: THREE.BackSide });
+    const inky = makeInkyClone(outMat);
+    inky.root.scale.setScalar(INKY_SCALE);
+    group.add(inky.root);
+
+    const { head, upper, legL, legR } = inky;
+    // Le posture/animazioni pilotano upper.position.y (già = HIP_Y dal GLB)
+    // e legL/legR.rotation.x (pivot all'anca, origini nel GLB).
+    // NB: `color` non tinge nulla (scelta spec: niente colore squadra su Inky);
+    // resta nella firma per i chiamanti e per il futuro.
+
+    // Arma in terza persona: grip al guanto destro, canna verso -Z
+    const weaponMount = new THREE.Group();
+    weaponMount.position.set(INKY_HAND_R[0], INKY_HAND_R[1], INKY_HAND_R[2]);
+    upper.add(weaponMount);
+    weaponMount.add(buildTPWeapon(weaponKey || 'assault'));
+
+    head.scale.setScalar(headScale);   // mutatore "Teste Giganti"
+
+    // Healthbar sopra la testa (come la versione procedurale, ma un filo più
+    // alta: con INKY_SCALE la stellina fluttuante arriva quasi a 2.15)
+    const hpBar = new THREE.Group();
+    hpBar.position.set(0, 2.3, 0);
+    const hpBg = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.86, 0.16),
+        new THREE.MeshBasicMaterial({ color: 0x101010 })
+    );
+    const hpFill = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.80, 0.10),
+        new THREE.MeshBasicMaterial({ color: 0x46d35a })
+    );
+    hpFill.position.z = 0.002;
+    hpBar.add(hpBg, hpFill);
+    hpBar.visible = false;
+    group.add(hpBar);
+
+    return { group, head, upper, legL, legR, hpBar, hpFill, weaponMount, weaponKey: weaponKey || 'assault' };
+}
+
+function createPlayerMeshProc(color, weaponKey) {
     const group = new THREE.Group();
     // Il modello guarda verso -Z (forward del gioco quando yaw = 0).
     // Mascotte "rubber-hose" (stile validato nel prototipo fps-toon-proto):
@@ -1858,14 +1977,39 @@ function createPlayerMesh(color, weaponKey) {
     return { group, head, upper, legL, legR, hpBar, hpFill, weaponMount, weaponKey: weaponKey || 'assault' };
 }
 
+// Testa di Inky "staccata" (trofei a terra + podio): clona il solo nodo head
+// del template, con materiali e contorni per-istanza. Fonte unica con il
+// personaggio vivo. s = scala (0.8 per trofei/podio come prima).
+function makeInkyHead(s = 1) {
+    if (!inkyTemplate) return buildMascotHead(0xffffff, s);   // fallback
+    const outMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a, side: THREE.BackSide });
+    const src = inkyTemplate.getObjectByName('head');
+    const head = src.clone(true);
+    head.position.set(0, 0, 0);
+    head.rotation.set(0, 0, 0);
+    const matCache = new Map();
+    const meshes = [];
+    head.traverse(o => { if (o.isMesh) meshes.push(o); });
+    for (const o of meshes) {
+        o.castShadow = true;
+        if (!matCache.has(o.material)) matCache.set(o.material, o.material.clone());
+        o.material = matCache.get(o.material);
+        _addToonOutline(o, outMat, 1);
+    }
+    const g = new THREE.Group();
+    g.add(head);
+    g.scale.setScalar(s);
+    return g;
+}
+
 // ── TROFEI-TESTE (Cimitero dei Trofei) ──────────────
-// Testa del caduto impalata su un'astina, nel colore-team per riconoscere chi è.
-// Usa la testa-mascotte vera (buildMascotHead), non più il vecchio box squadrato.
+// Testa di Inky impalata su un'astina colore-team: senza livrea squadra sul
+// personaggio, è l'astina a dire di chi era la testa.
 function makeTrophyHead(color, x, y, z) {
     const g = new THREE.Group();
     const spikeH = 0.34;
     const spike = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.022, 0.03, spikeH, 10), makeToonMat(0x2e3238));
+        new THREE.CylinderGeometry(0.022, 0.03, spikeH, 10), makeToonMat(color));
     spike.position.y = spikeH / 2;
     spike.castShadow = true;
     g.add(spike);
@@ -1873,8 +2017,8 @@ function makeTrophyHead(color, x, y, z) {
         new THREE.MeshBasicMaterial({ color: 0x1a1a1a, side: THREE.BackSide }), 1);
 
     const HEAD_S = 0.8;   // un filo ridotta rispetto al vivo: è un trofeo
-    const head = buildMascotHead(color, HEAD_S);
-    head.position.y = spikeH + 0.28 * HEAD_S;   // cranio appoggiato sull'astina
+    const head = makeInkyHead(HEAD_S);
+    head.position.y = spikeH + 0.06;   // base del collo appoggiata sull'astina
     g.add(head);
 
     g.position.set(x, y || 0, z);
@@ -1906,10 +2050,11 @@ function _easeOutBack(x) {
     return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
 }
 
-// Testa "da impilare" nel colore-team: la stessa testa-mascotte dei giocatori.
-// A scala 0.8 l'ingombro verticale (~0.51) combacia con HEAD_H=0.5 della torre.
+// Testa "da impilare": la stessa testa di Inky dei giocatori. `color` resta
+// nella firma (lo usa ancora makePointsLabel); le torri si distinguono
+// per etichetta.
 function makePodiumHead(color) {
-    const head = buildMascotHead(color, 0.8);
+    const head = makeInkyHead(0.8);
     head.rotation.y = Math.PI;   // la faccia guarda -Z → girata verso la camera (+Z)
     return head;
 }
@@ -2241,6 +2386,24 @@ let fpHand = null;
     cuff.rotation.x = Math.PI / 2;
     cuff.position.set(0, 0, -0.25);
     arm.add(cuff);
+
+    // ── Sostituzione con il braccio GLB di Inky ──
+    // Il procedurale sopra resta come contenuto provvisorio: quando il GLB
+    // arriva, si svuota fpHand e si monta il braccio vero. Scala, posa da
+    // imbracciatura e offset sul grip sono già COTTI nel GLB
+    // (build_fp_arm_inky.py) → stesse FP_HAND_ANCHOR, nessuna ricalibrazione.
+    new THREE.GLTFLoader().load('assets/models/chars/fp_arm_inky.glb?v=' + Date.now(), g => {
+        inkyToonSwap(g.scene);
+        const meshes = [];
+        g.scene.traverse(o => { if (o.isMesh) meshes.push(o); });
+        const outMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a, side: THREE.BackSide });
+        for (const o of meshes) {
+            o.castShadow = false;              // il viewmodel non proietta ombre
+            _addToonOutline(o, outMat, 1);
+        }
+        while (fpHand.children.length) fpHand.remove(fpHand.children[0]);
+        fpHand.add(g.scene);
+    });
 })();
 
 function switchWeaponModel(key) {
@@ -3255,7 +3418,7 @@ const minimapCtx = document.getElementById('minimap-canvas').getContext('2d');
 // Caricamento NON bloccante: finché — o se — manca, resta lo sfondo nero.
 let _mmTex = null, _mmMeta = null;
 (function loadMinimapTexture() {
-    const _cb = '?v=' + Date.now();   // anti-cache come i GLB -wip
+    const _cb = '?v=' + Date.now();   // anti-cache: la texture può essere rigenerata dal tool
     fetch('assets/minimap/world.json' + _cb)
         .then(r => { if (!r.ok) throw new Error(); return r.json(); })
         .then(meta => {
@@ -3507,7 +3670,7 @@ function addWorldGround() {
     scene.add(ground);
 }
 
-const _boot = EXTENDED
+const _bootZones = EXTENDED
     ? fetch(WORLD_CONFIG.VARCHI_URL).then(r => r.json()).then(v =>
         Promise.all(WORLD_CONFIG.ZONES.map(zn => loadZone(zn.dir, zn.json, {
             offset: zn.offset,
@@ -3516,6 +3679,9 @@ const _boot = EXTENDED
             passthrough: zn.varchi ? (v.passthrough || []) : undefined,
         }))))
     : loadZone('assets/models/jazz/', 'zona-layout.json', {});
+// Inky si carica in parallelo alle zone: il join parte solo a template pronto,
+// così createPlayerMesh non usa mai il fallback in partita.
+const _boot = Promise.all([_bootZones, loadInky()]);
 _boot.then(() => {
     if (_loadingEl) _loadingEl.style.display = 'none';
     addWorldGround();       // prato sotto il mondo (dopo che le zone hanno definito l'AABB)
