@@ -1,5 +1,7 @@
 const { activeGames } = require('../../store/activeGames');
 const { lobbies } = require('../../store/lobbies');
+const { loadTrack } = require('./trackLoader');
+const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 
 const PHYSICS_TICK_MS = 50;
 const MAX_SPEED    = 4.0;
@@ -7,7 +9,6 @@ const ACCEL        = 0.12;
 const FRICTION     = 0.050;
 const TURN_SPEED   = 0.048;
 const GRIP         = 0.78;
-const ROAD_HALF    = 11;
 const REJOIN_GRACE = 60000;   // finestra di riconnessione dopo un drop (scheda in background, refresh, rete)
 const GRID_DISPLAY_MS = 8000; // quanto resta a schermo l'animazione POLE + la griglia prima del countdown di gara
 
@@ -28,86 +29,27 @@ const COLLISION_BOUNCE = 0.6;  // quota della velocità normale scambiata all'ur
 // 1 unità/sottostep, ben sotto qualunque zona di contatto possibile.
 const COLLISION_SUBSTEPS = 8;
 
-// ====================================================
-// CORSIA BOX — vera strada che si stacca dal tracciato principale (punto 0),
-// corre ben distante da qualunque chicane (x fino a -58, contro x≈-8/-16
-// della chicane: nessuna interferenza) per un lungo tratto, tocca la
-// casella box (indice PIT_BOX_INDEX), poi rientra sul tracciato principale
-// molto più avanti (punto finale, dopo la chicane). Stessi punti usati anche
-// per la mesh 3D lato client (frontend/f1.js).
-//
-// STERZARE VOLONTARIAMENTE verso il distacco (zona PIT_ENTRY_TRIGGER — una
-// porzione stretta ancora dentro la larghezza normale di pista, nessun drag/
-// usura da gestire lì) è il trigger d'ingresso: da quel momento il server
-// guida l'auto lungo tutto il percorso (autopilota) fino alla casella,
-// gestisce la sosta, poi la riporta sulla pista principale. Il giocatore non
-// deve più fermarsi con precisione da solo (causa del "blocco troppo lungo/
-// impreciso" segnalato in precedenza).
-// ====================================================
-const PIT_PATH = [
-    { x: -30, z:   0 },   // 0: distacco dal tracciato principale
-    { x: -42, z:  10 },   // 1
-    { x: -55, z:  25 },   // 2
-    { x: -58, z:  50 },   // 3
-    { x: -58, z:  80 },   // 4: CASELLA BOX
-    { x: -58, z: 110 },   // 5
-    { x: -55, z: 135 },   // 6
-    { x: -42, z: 148 },   // 7
-    { x: -30, z: 155 },   // 8: rientro sul tracciato principale
-];
-const PIT_BOX_INDEX = 4;
-
-// Zona di trigger: stretta e vicina al bordo pista normale (nessuna
-// interferenza con la guida normale sul resto del rettilineo).
-const PIT_ENTRY_TRIGGER = { xMax: -36, zMin: -3, zMax: 15 };
-function inPitEntryZone(p) {
-    return p.x <= PIT_ENTRY_TRIGGER.xMax && p.z >= PIT_ENTRY_TRIGGER.zMin && p.z <= PIT_ENTRY_TRIGGER.zMax;
-}
-
-const PIT_AUTO_SPEED = 1.0;   // unità/tick dell'autopilota lungo PIT_PATH (25% di MAX_SPEED)
+const PIT_AUTO_SPEED = 1.0;   // unità/tick dell'autopilota lungo il percorso box (25% di MAX_SPEED)
 const PIT_AUTO_ARRIVE_DIST = 1.0;   // sotto questa distanza dal waypoint, "arrivato"
 
-// ====================================================
-// PUNTI SPAWN (rettilineo principale x≈-30, z crescente)
-// ====================================================
-const SPAWN_POINTS = [
-    { x: -26, z:  8, angle: 0 },
-    { x: -34, z:  8, angle: 0 },
-    { x: -26, z: 18, angle: 0 },
-    { x: -34, z: 18, angle: 0 },
-    { x: -26, z: 28, angle: 0 },
-    { x: -34, z: 28, angle: 0 },
-    { x: -26, z: 38, angle: 0 },
-    { x: -34, z: 38, angle: 0 },
-];
+function inPitEntryZone(p, track) {
+    const t = track.pitEntryTrigger;
+    return p.x <= t.xMax && p.z >= t.zMin && p.z <= t.zMax;
+}
 
-// Qualifica: TUTTI dallo stesso identico punto (isolati tra loro — vedi
-// playersVisibleTo — quindi condividere la posizione è innocuo, e rende la
-// prova di ognuno equa/comparabile fin dal via).
-const QUALI_SPAWN = { x: -30, z: 8, angle: 0 };
-
-// ====================================================
-// GRIGLIA DI PARTENZA (dopo la qualifica) — a scaglioni, non a righe pari.
-// Due corsie alternate (come le due "caselle" di ogni riga F1), ma OGNI
-// posizione è leggermente più indietro della precedente — anche il 2° rispetto
-// al 1°, non solo riga contro riga — così nessuno parte perfettamente
-// affiancato a chi lo precede in griglia.
-// ====================================================
-const GRID_START_Z   = 40;
-const GRID_STAGGER_Z = 5;              // quanto ogni posizione è più indietro della precedente
-const GRID_LANE_X    = [-34, -26];     // due corsie alternate, stessa x delle SPAWN_POINTS esistenti
-
-function gridSpawnPoint(i) {
-    return {
-        x:     GRID_LANE_X[i % 2],
-        z:     GRID_START_Z - i * GRID_STAGGER_Z,
-        angle: 0
-    };
+// Fuoripista: distanza dal punto più vicino della pista caricata.
+function nearestTrackDist(track, x, z) {
+    return TrackGeometry.nearestPoint(track.points, x, z).dist;
 }
 
 // ====================================================
-// PUNTI DELLA PISTA (per rilevamento uscita)
-// Interpolazione lineare tra i waypoint del frontend
+// GEOMETRIA PISTA LEGACY (Monte Rosso, hardcoded) — TEMPORANEAMENTE ancora
+// necessaria: TRACK_LAP_LENGTH alimenta WEAR_PER_UNIT_DIST qui sotto (usura
+// gomme), e TRACK_POINTS è ancora usato da updateTrackIndex/progressScore/
+// applyOffTrackDrag — tutta logica di competenza del Task 8 (migrazione a
+// game.track), non toccata da questo task. Rimuovere questo blocco è compito
+// del Task 8, quando quelle funzioni passeranno a usare game.track.points/
+// game.track.lapLength.
 // ====================================================
 function leftCX(z) {
     if (z <= 60)  return -30;
@@ -152,15 +94,6 @@ const TRACK_LAP_LENGTH = (() => {
     }
     return len;
 })();
-
-function nearestTrackDist(x, z) {
-    let min = Infinity;
-    for (const pt of TRACK_POINTS) {
-        const d = (x - pt.x) ** 2 + (z - pt.z) ** 2;
-        if (d < min) min = d;
-    }
-    return Math.sqrt(min);
-}
 
 // ====================================================
 // MESCOLE E USURA GOMME
@@ -262,9 +195,11 @@ module.exports = function (io, socket) {
         socket.data.joinedF1 = true;
 
         if (!activeGames.has(lobbyId)) {
-            const lobby = lobbies.get(lobbyId);
+            const lobby   = lobbies.get(lobbyId);
+            const trackId = (lobby && lobby.gameSettings && lobby.gameSettings.trackId) || 'monte-rosso';
             activeGames.set(lobbyId, {
                 gameId:            'f1',   // marca il tipo: gli handler condivisi (disconnect) NON devono toccare partite di altri giochi
+                track:             loadTrack(trackId),
                 phase:             'tyre_select',   // tyre_select -> qualifying -> grid_display -> race -> race_end
                 players:           {},
                 socketByColor:     {},   // color -> socket.id CORRENTE, per gli emit personalizzati in qualifica
@@ -285,7 +220,7 @@ module.exports = function (io, socket) {
         }
 
         const game       = activeGames.get(lobbyId);
-        const totalLaps  = parseInt((game.settings || {}).laps) || 3;
+        const totalLaps  = game.track.totalLaps;
         const isRejoin   = !!game.players[playerColor];
 
         // Aggiornato ad OGNI join/rejoin: il socket.id cambia ad ogni riconnessione,
@@ -304,9 +239,9 @@ module.exports = function (io, socket) {
         } else {
             game.players[playerColor] = {
                 color:           playerColor,
-                x:               QUALI_SPAWN.x,
-                z:               QUALI_SPAWN.z,
-                angle:           QUALI_SPAWN.angle,
+                x:               game.track.qualiSpawn.x,
+                z:               game.track.qualiSpawn.z,
+                angle:           game.track.qualiSpawn.angle,
                 speed:           0,
                 vx:              0,
                 vz:              0,
@@ -328,14 +263,14 @@ module.exports = function (io, socket) {
                 hasPitted:       false,   // per l'obbligo di almeno un pit stop in gara
                 pitPenalty:      false,   // true se ha preso la penalità per non aver fatto pit stop
                 pitAutoState:    null,    // 'entering' | 'exiting' | null — autopilota corsia box
-                pitPathIndex:    0,       // prossimo waypoint di PIT_PATH verso cui puntare
+                pitPathIndex:    0,       // prossimo waypoint del percorso box (track.pitPath) verso cui puntare
             };
         }
 
         socket.emit('f1Setup', {
             playerColor,
             hostColor:     game.hostColor,
-            trackName:     'Monte Rosso',
+            trackName:     game.track.name,
             totalLaps,
             phase:         game.phase,
             grid:          game.grid,
@@ -547,17 +482,17 @@ function startQualifying(io, lobbyId, game) {
     game.phase       = 'qualifying';
     game.qualiEnded  = false;
     game.raceStarted = false;
-    // Tutti allo stesso identico punto (vedi QUALI_SPAWN), a prescindere da
-    // dove fossero prima (già impostato alla creazione, ma qui è garantito
-    // anche per chi era entrato con uno stato diverso).
+    // Tutti allo stesso identico punto (vedi game.track.qualiSpawn), a
+    // prescindere da dove fossero prima (già impostato alla creazione, ma qui
+    // è garantito anche per chi era entrato con uno stato diverso).
     for (const p of Object.values(game.players)) {
-        p.x = QUALI_SPAWN.x; p.z = QUALI_SPAWN.z; p.angle = QUALI_SPAWN.angle;
+        p.x = game.track.qualiSpawn.x; p.z = game.track.qualiSpawn.z; p.angle = game.track.qualiSpawn.angle;
         p.speed = 0; p.vx = 0; p.vz = 0;
         p.finished = false; p.time = null;
         p.lap = 0; p.checkpointA = false; p.inFinishZone = false;
         p.trackIndex = 0;
     }
-    io.to(lobbyId).emit('f1Countdown', { trackName: 'Monte Rosso', label: 'QUALIFICA — 1 GIRO' });
+    io.to(lobbyId).emit('f1Countdown', { trackName: game.track.name, label: 'QUALIFICA — 1 GIRO' });
     setTimeout(() => {
         const g = activeGames.get(lobbyId);
         if (!g) return;
@@ -610,7 +545,7 @@ function startRaceCountdown(io, lobbyId, game) {
     game.raceEnded      = false;
     game.raceStarted    = false;
     game.raceStartTime  = null;
-    io.to(lobbyId).emit('f1Countdown', { trackName: 'Monte Rosso', label: 'GARA' });
+    io.to(lobbyId).emit('f1Countdown', { trackName: game.track.name, label: 'GARA' });
     setTimeout(() => {
         const g = activeGames.get(lobbyId);
         if (!g) return;
@@ -629,7 +564,7 @@ function assignGridSpawns(game) {
     order.forEach((color, i) => {
         const p = game.players[color];
         if (!p) return;
-        const spawn = gridSpawnPoint(i);
+        const spawn = game.track.gridSpawnPoint(i);
         p.x = spawn.x; p.z = spawn.z; p.angle = spawn.angle;
         p.speed = 0; p.vx = 0; p.vz = 0;
         p.finished = false; p.time = null;
@@ -663,11 +598,12 @@ function startPitLaneEntry(io, lobbyId, game, p) {
     if (sid) io.to(sid).emit('f1PitLaneEntered');
 }
 
-// Sposta l'auto verso il prossimo waypoint di PIT_PATH a velocità fissa e
+// Sposta l'auto verso il prossimo waypoint del percorso box (track.pitPath) a velocità fissa e
 // bassa — apposta lenta, per dare tempo di scegliere la mescola durante il
 // tragitto (soprattutto in ingresso).
 function updatePitAutopilot(io, lobbyId, game, p) {
-    const target = PIT_PATH[p.pitPathIndex];
+    const track  = game.track;
+    const target = track.pitPath[p.pitPathIndex];
     const dx = target.x - p.x, dz = target.z - p.z;
     const dist = Math.hypot(dx, dz);
 
@@ -675,14 +611,14 @@ function updatePitAutopilot(io, lobbyId, game, p) {
         p.x = target.x; p.z = target.z;
         p.speed = 0; p.vx = 0; p.vz = 0;
 
-        if (p.pitPathIndex === PIT_BOX_INDEX && p.pitAutoState === 'entering') {
+        if (p.pitPathIndex === track.pitBoxIndex && p.pitAutoState === 'entering') {
             p.pitAutoState = null;   // arrivato: la sosta prende il posto dell'autopilota
             startPitStop(io, lobbyId, game, p);
             return;
         }
 
         p.pitPathIndex++;
-        if (p.pitPathIndex >= PIT_PATH.length) {
+        if (p.pitPathIndex >= track.pitPath.length) {
             p.pitAutoState = null;   // fine autopilota: comandi restituiti al giocatore
             const sid = game.socketByColor[p.color];
             if (sid) io.to(sid).emit('f1PitLaneExited');
@@ -757,7 +693,7 @@ function completePitStop(io, lobbyId, game, p) {
     if (sid) io.to(sid).emit('f1PitStopFinished', { compound: p.compound });
 
     p.pitAutoState = 'exiting';
-    p.pitPathIndex = PIT_BOX_INDEX + 1;   // continua dal waypoint successivo alla casella
+    p.pitPathIndex = game.track.pitBoxIndex + 1;   // continua dal waypoint successivo alla casella
 }
 
 // Stato visibile ad UN determinato giocatore (viewerColor):
@@ -808,8 +744,8 @@ function tickGame(io, lobbyId, game) {
         return;
     }
     const isQuali  = game.phase === 'qualifying';
-    // In qualifica si fa UN giro secco; in gara i giri sono quelli impostati in lobby.
-    const totalLaps = isQuali ? 1 : (parseInt((game.settings || {}).laps) || 3);
+    // In qualifica si fa UN giro secco; in gara i giri sono quelli della pista caricata.
+    const totalLaps = isQuali ? 1 : game.track.totalLaps;
     const players    = Object.values(game.players);
     // In qualifica corrono TUTTI in parallelo (isolati solo visivamente, non
     // fisicamente: nessuna collisione tra loro — vedi sotto). Chi è fermo ai
@@ -845,7 +781,7 @@ function tickGame(io, lobbyId, game) {
         // Ingresso volontario nella corsia box (solo in gara: sterzare lì è
         // una scelta del giocatore). Da qui il server prende il volante — vedi
         // startPitLaneEntry/updatePitAutopilot — fino a fine visita ai box.
-        if (game.phase === 'race' && inPitEntryZone(p)) {
+        if (game.phase === 'race' && inPitEntryZone(p, game.track)) {
             startPitLaneEntry(io, lobbyId, game, p);
         }
     }
@@ -970,7 +906,7 @@ function endRace(io, lobbyId, game) {
         podium,
         isFinal:      true,
         isSingleMode: (game.settings || {}).mode === 'single',
-        trackName:    'Monte Rosso'
+        trackName:    game.track.name
     });
 }
 
@@ -1156,7 +1092,7 @@ function buildPublicState(players, raceStarted) {
 function resetPlayers(game) {
     let i = 0;
     for (const p of Object.values(game.players)) {
-        const spawn = SPAWN_POINTS[i % SPAWN_POINTS.length];
+        const spawn = game.track.gridSpawnPoint(i);
         p.x = spawn.x; p.z = spawn.z; p.angle = spawn.angle;
         p.speed = 0; p.vx = 0; p.vz = 0;
         p.finished = false; p.time = null;
