@@ -1,7 +1,10 @@
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const urlParams = new URLSearchParams(window.location.search);
     const lobbyId = urlParams.get('lobby');
     const myColor = urlParams.get('color') ? decodeURIComponent(urlParams.get('color')) : null;
+    const rawSettings = urlParams.get('settings');
+    const clientSettings = rawSettings ? JSON.parse(decodeURIComponent(rawSettings)) : {};
+    const trackId = clientSettings.trackId || 'monte-rosso';
 
     if (!lobbyId || !myColor) {
         window.location.href = '/';
@@ -69,353 +72,27 @@ document.addEventListener('DOMContentLoaded', () => {
     scene.add(ground);
 
     // ====================================================
-    // COSTRUZIONE PISTA 3D
+    // COSTRUZIONE PISTA 3D — dati caricati dal JSON della pista scelta
+    // (vedi frontend/tracks/), stessa geometria usata dal server tramite
+    // backend/sockets/games/trackLoader.js.
     // ====================================================
-    // Piano XZ: X = destra, Z = avanti.
-    // I punti del circuito sono definiti come (x, z) — Y sempre 0.
-    // Il circuito è percorso in senso counter-clockwise visto dall'alto.
-    // La linea di partenza/arrivo si trova sul rettilineo sinistro (x≈-30, z=0→200).
-    // La macchina parte col muso rivolto verso +Z (angle=0).
+    const trackRes  = await fetch(`/tracks/${trackId}.json`);
+    const trackData = await trackRes.json();
 
-    const ROAD_HALF   = 11;          // metà larghezza carreggiata
-    const CURB_W      = 2.8;         // larghezza cordolo
-    const BARRIER_D   = ROAD_HALF + CURB_W + 1.2;  // distanza barriera dal centro
+    const ROAD_HALF    = trackData.roadHalfWidth;
+    const CURB_W       = 2.8;
+    const BARRIER_D    = ROAD_HALF + CURB_W + 1.2;
+    const PIT_PATH     = trackData.pit.path;
 
-    // Corsia box: STESSI waypoint del server (backend/sockets/games/f1GameSocket.js,
-    // PIT_PATH) — una vera strada che si stacca dal tracciato principale, corre
-    // ben distante da qualunque chicane, tocca la casella box, poi rientra sul
-    // tracciato molto più avanti. Le barriere non sono collidabili lato server,
-    // quindi non serve un varco nel muro per renderla percorribile.
-    const PIT_PATH = [
-        { x: -30, z:   0 }, { x: -42, z:  10 }, { x: -55, z:  25 }, { x: -58, z:  50 },
-        { x: -58, z:  80 }, { x: -58, z: 110 }, { x: -55, z: 135 }, { x: -42, z: 148 }, { x: -30, z: 155 },
-    ];
-    const PIT_BOX_INDEX = 4;
-    const PIT_ROAD_HALF = 5;   // metà larghezza della corsia box
+    const N_SAMPLES = 1000;
+    const trackPts  = TrackGeometry.sampleLoop(trackData.controlPoints, N_SAMPLES);
 
-    // --- Punti di controllo del circuito ---
-    function circuitCtrlPoints() {
-        const v = (x, z) => new THREE.Vector3(x, 0, z);
-        const pts = [];
-
-        // RETTILINEO PRINCIPALE con chicane (x≈-30, z: 0→200)
-        pts.push(v(-30,   0));
-        pts.push(v(-30,  60));
-        pts.push(v(-16,  82));   // chicane dx
-        pts.push(v( -8, 100));
-        pts.push(v(-16, 118));   // chicane sx
-        pts.push(v(-30, 145));
-        pts.push(v(-30, 200));
-
-        // PARABOLICA ALTA — arco orario, centro (50,200) r=80
-        for (let d = 165; d >= 15; d -= 15) {
-            const r = THREE.MathUtils.degToRad(d);
-            pts.push(v(50 + 80 * Math.cos(r), 200 + 80 * Math.sin(r)));
-        }
-        pts.push(v(130, 200));
-
-        // RETTILINEO DX con chicane (x≈130, z: 200→0)
-        pts.push(v(130, 145));
-        pts.push(v(146, 118));   // chicane sx
-        pts.push(v(138, 100));
-        pts.push(v(146,  82));   // chicane dx
-        pts.push(v(130,  60));
-        pts.push(v(130,   0));
-
-        // PARABOLICA BASSA — arco orario, centro (50,0) r=80
-        for (let d = -15; d >= -165; d -= 15) {
-            const r = THREE.MathUtils.degToRad(d);
-            pts.push(v(50 + 80 * Math.cos(r), 80 * Math.sin(r)));
-        }
-        // La curva CatmullRom chiude il loop automaticamente
-
-        return pts;
-    }
-
-    // 'centripetal' previene loop e auto-intersezioni nelle chicane strette
-    const circuitCurve = new THREE.CatmullRomCurve3(circuitCtrlPoints(), true, 'centripetal', 0.5);
-    const N_SAMPLES    = 1000;
-    // getSpacedPoints dà punti equi-distanti sull'arco
-    const rawPts       = circuitCurve.getSpacedPoints(N_SAMPLES);
-    // Escludi l'ultimo punto (== primo, curva chiusa)
-    const trackPts     = rawPts.slice(0, N_SAMPLES);
-
-    // Helper: dato un indice i, restituisce (normale perpendicolare al tangente in XZ)
-    function normalAt(pts, i) {
-        const n = pts.length;
-        const next = pts[(i + 1) % n];
-        const prev = pts[(i - 1 + n) % n];
-        const tx = next.x - prev.x;
-        const tz = next.z - prev.z;
-        const len = Math.sqrt(tx * tx + tz * tz) || 1;
-        return { nx: -tz / len, nz: tx / len };   // normale a sinistra del tangente
-    }
-
-    // --- Ribbon mesh generico ---
-    function buildRibbon(pts, halfW, material) {
-        const n = pts.length;
-        const pos = new Float32Array(n * 2 * 3);
-        const uv  = new Float32Array(n * 2 * 2);
-        const idx = [];
-
-        for (let i = 0; i < n; i++) {
-            const { nx, nz } = normalAt(pts, i);
-            const p = pts[i];
-            const b = i * 6;
-            // vertice sinistro
-            pos[b    ] = p.x + nx * halfW;  pos[b + 1] = 0.02;  pos[b + 2] = p.z + nz * halfW;
-            // vertice destro
-            pos[b + 3] = p.x - nx * halfW;  pos[b + 4] = 0.02;  pos[b + 5] = p.z - nz * halfW;
-
-            const u = i / (n - 1);
-            const ub = i * 4;
-            uv[ub] = 0; uv[ub + 1] = u; uv[ub + 2] = 1; uv[ub + 3] = u;
-
-            // quad con il punto successivo (chiusura del loop inclusa)
-            const base = i * 2;
-            const next = ((i + 1) % n) * 2;
-            idx.push(base, base + 1, next, next, base + 1, next + 1);
-        }
-
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uv,  2));
-        geo.setIndex(idx);
-        geo.computeVertexNormals();
-
-        const mesh = new THREE.Mesh(geo, material);
-        mesh.receiveShadow = true;
-        scene.add(mesh);
-        return mesh;
-    }
-
-    // --- Cordoli alternati rosso/bianco ---
-    function buildCurbs(pts, roadHalf, curbW) {
-        const n         = pts.length;
-        const arcLen    = circuitCurve.getLength();
-        const stepLen   = arcLen / n;      // lunghezza arco per campione
-        const STRIPE    = 10;              // unità di pista per stripe
-
-        for (const side of [-1, 1]) {
-            const pos  = new Float32Array(n * 2 * 3);
-            const col  = new Float32Array(n * 2 * 3);
-            const idx  = [];
-            let   dist = 0;
-            let   flip = false;
-
-            for (let i = 0; i < n; i++) {
-                const { nx, nz } = normalAt(pts, i);
-                const p      = pts[i];
-                const inner  = roadHalf * side;
-                const outer  = (roadHalf + curbW) * side;
-
-                const b = i * 6;
-                pos[b    ] = p.x + nx * inner; pos[b + 1] = 0.04; pos[b + 2] = p.z + nz * inner;
-                pos[b + 3] = p.x + nx * outer; pos[b + 4] = 0.04; pos[b + 5] = p.z + nz * outer;
-
-                if (i > 0) { dist += stepLen; if (dist >= STRIPE) { dist = 0; flip = !flip; } }
-                const r = flip ? 1 : 1,   g = flip ? 0 : 1,   bv = flip ? 0 : 1;
-                const cb = i * 6;
-                col[cb    ]=r; col[cb+1]=g; col[cb+2]=bv;
-                col[cb + 3]=r; col[cb+4]=g; col[cb+5]=bv;
-
-                const base = i * 2, nxt = ((i + 1) % n) * 2;
-                idx.push(base, base + 1, nxt, nxt, base + 1, nxt + 1);
-            }
-
-            const geo = new THREE.BufferGeometry();
-            geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-            geo.setAttribute('color',    new THREE.Float32BufferAttribute(col, 3));
-            geo.setIndex(idx);
-            geo.computeVertexNormals();
-            const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }));
-            mesh.receiveShadow = true;
-            scene.add(mesh);
-        }
-    }
-
-    // --- Barriere Armco come ribbon continuo (no rotazione, no gap) ---
-    function buildBarriers(pts, distFromCenter) {
-        const n       = pts.length;
-        const HEIGHT  = 1.1;
-        const arcLen  = circuitCurve.getLength();
-        const stepLen = arcLen / n;
-        const STRIPE  = 14;   // unità di arco per ogni stripe bianco/rosso
-
-        for (const side of [-1, 1]) {
-            const pos = new Float32Array(n * 2 * 3);
-            const col = new Float32Array(n * 2 * 3);
-            const idx = [];
-            let stripeAcc = 0;
-            let isRed     = false;
-
-            for (let i = 0; i < n; i++) {
-                const { nx, nz } = normalAt(pts, i);
-                const p  = pts[i];
-                const bx = p.x + nx * distFromCenter * side;
-                const bz = p.z + nz * distFromCenter * side;
-
-                // vertice basso e alto
-                pos[i * 6    ] = bx;  pos[i * 6 + 1] = 0.05;    pos[i * 6 + 2] = bz;
-                pos[i * 6 + 3] = bx;  pos[i * 6 + 4] = HEIGHT;  pos[i * 6 + 5] = bz;
-
-                if (i > 0) { stripeAcc += stepLen; if (stripeAcc >= STRIPE) { stripeAcc = 0; isRed = !isRed; } }
-                const r  = isRed ? 0.85 : 0.93;
-                const g  = isRed ? 0.10 : 0.93;
-                const bv = isRed ? 0.10 : 0.96;
-                col[i * 6    ] = r; col[i * 6 + 1] = g; col[i * 6 + 2] = bv;
-                col[i * 6 + 3] = r; col[i * 6 + 4] = g; col[i * 6 + 5] = bv;
-
-                const base = i * 2;
-                const next = ((i + 1) % n) * 2;
-                // winding diverso per i due lati così i fronti puntano verso la pista
-                if (side < 0) idx.push(base, base + 1, next, next, base + 1, next + 1);
-                else          idx.push(base, next, base + 1, next, next + 1, base + 1);
-            }
-
-            const geo = new THREE.BufferGeometry();
-            geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-            geo.setAttribute('color',    new THREE.Float32BufferAttribute(col, 3));
-            geo.setIndex(idx);
-            geo.computeVertexNormals();
-            const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-                vertexColors: true,
-                roughness:    0.6,
-                metalness:    0.15,
-                side:         THREE.DoubleSide
-            }));
-            mesh.castShadow    = true;
-            mesh.receiveShadow = true;
-            scene.add(mesh);
-        }
-    }
-
-    // --- Linea di Partenza/Arrivo (scacchi bianchi/neri) ---
-    function buildStartLine(pts, roadHalf) {
-        const p0 = pts[0];
-        const p1 = pts[1];
-        const { nx, nz } = normalAt(pts, 0);
-
-        const STRIPES  = 10;
-        const stripeW  = (roadHalf * 2) / STRIPES;
-        const dummy    = new THREE.Object3D();
-        const geoS     = new THREE.BoxGeometry(stripeW - 0.1, 0.02, 2.5);
-        const matB     = new THREE.MeshStandardMaterial({ color: 0xffffff });
-        const matK     = new THREE.MeshStandardMaterial({ color: 0x111111 });
-        const imB      = new THREE.InstancedMesh(geoS, matB, STRIPES);
-        const imK      = new THREE.InstancedMesh(geoS, matK, STRIPES);
-        const angle    = Math.atan2(p1.x - p0.x, p1.z - p0.z);
-        let   iB = 0, iK = 0;
-
-        for (let s = 0; s < STRIPES; s++) {
-            const off = -roadHalf + stripeW * s + stripeW / 2;
-            dummy.position.set(p0.x + nx * off, 0.06, p0.z + nz * off);
-            dummy.rotation.y = angle;
-            dummy.updateMatrix();
-            if (s % 2 === 0) imB.setMatrixAt(iB++, dummy.matrix);
-            else              imK.setMatrixAt(iK++, dummy.matrix);
-        }
-        imB.count = iB; imK.count = iK;
-        imB.instanceMatrix.needsUpdate = imK.instanceMatrix.needsUpdate = true;
-        scene.add(imB, imK);
-    }
-
-    // --- Corsia box: striscia d'asfalto grigio parallela al rettilineo sx,
-    // con linee bianche di limite velocità a ingresso/uscita e la casella
-    // box marcata al centro. ---
-    // Normale per una curva APERTA (non chiusa a loop, a differenza di
-    // normalAt usato dal tracciato principale): agli estremi usa la sola
-    // differenza in avanti/indietro invece di avvolgere sull'altro capo.
-    function normalAtOpen(pts, i) {
-        const n = pts.length;
-        const next = pts[Math.min(i + 1, n - 1)];
-        const prev = pts[Math.max(i - 1, 0)];
-        const tx = next.x - prev.x;
-        const tz = next.z - prev.z;
-        const len = Math.sqrt(tx * tx + tz * tz) || 1;
-        return { nx: -tz / len, nz: tx / len };
-    }
-
-    // Ribbon per una curva APERTA: stessa tecnica di buildRibbon ma senza
-    // richiudere l'ultimo segmento sul primo punto (qui serve una strada con
-    // un inizio e una fine, non un anello).
-    function buildOpenRibbon(pts, halfW, material) {
-        const n = pts.length;
-        const pos = new Float32Array(n * 2 * 3);
-        const uv  = new Float32Array(n * 2 * 2);
-        const idx = [];
-
-        for (let i = 0; i < n; i++) {
-            const { nx, nz } = normalAtOpen(pts, i);
-            const p = pts[i];
-            const b = i * 6;
-            pos[b    ] = p.x + nx * halfW;  pos[b + 1] = 0.03;  pos[b + 2] = p.z + nz * halfW;
-            pos[b + 3] = p.x - nx * halfW;  pos[b + 4] = 0.03;  pos[b + 5] = p.z - nz * halfW;
-
-            const u = i / (n - 1);
-            const ub = i * 4;
-            uv[ub] = 0; uv[ub + 1] = u; uv[ub + 2] = 1; uv[ub + 3] = u;
-
-            if (i < n - 1) {
-                const base = i * 2;
-                const next = (i + 1) * 2;
-                idx.push(base, base + 1, next, next, base + 1, next + 1);
-            }
-        }
-
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uv,  2));
-        geo.setIndex(idx);
-        geo.computeVertexNormals();
-
-        const mesh = new THREE.Mesh(geo, material);
-        mesh.receiveShadow = true;
-        scene.add(mesh);
-        return mesh;
-    }
-
-    // --- Corsia box: vera strada curva che si stacca dal tracciato
-    // principale (stessi waypoint PIT_PATH del server), corre ben distante
-    // dalla chicane, tocca la casella box, poi rientra sul tracciato. ---
-    function buildPitLane() {
-        const ctrlPts  = PIT_PATH.map(p => new THREE.Vector3(p.x, 0, p.z));
-        const pitCurve = new THREE.CatmullRomCurve3(ctrlPts, false, 'centripetal', 0.5);
-        const pitPts   = pitCurve.getSpacedPoints(300);
-
-        buildOpenRibbon(pitPts, PIT_ROAD_HALF, new THREE.MeshStandardMaterial({
-            color: 0x3a3a3a, roughness: 0.95, side: THREE.DoubleSide
-        }));
-
-        // Casella box: sul tratto rettilineo centrale del percorso (direzione pura +Z)
-        const boxPos = PIT_PATH[PIT_BOX_INDEX];
-        const boxMesh = new THREE.Mesh(
-            new THREE.BoxGeometry(PIT_ROAD_HALF * 1.7, 0.03, 15),
-            new THREE.MeshStandardMaterial({ color: 0xf1c40f, roughness: 0.9, transparent: true, opacity: 0.55 })
-        );
-        boxMesh.position.set(boxPos.x, 0.04, boxPos.z);
-        scene.add(boxMesh);
-
-        // Linee bianche vicino a distacco/rientro, orientate come il primo/ultimo
-        // tratto del percorso (angolo noto analiticamente dai waypoint).
-        const lineMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-        function addLine(x, z, dx, dz) {
-            const line = new THREE.Mesh(new THREE.BoxGeometry(PIT_ROAD_HALF * 2, 0.03, 1), lineMat);
-            line.position.set(x, 0.045, z);
-            line.rotation.y = Math.atan2(dx, dz);
-            scene.add(line);
-        }
-        addLine(-40, 8,   PIT_PATH[1].x - PIT_PATH[0].x, PIT_PATH[1].z - PIT_PATH[0].z);
-        addLine(-40, 147, PIT_PATH[8].x - PIT_PATH[7].x, PIT_PATH[8].z - PIT_PATH[7].z);
-    }
-
-    // --- Assembla tutto ---
     // DoubleSide evita artefatti di culling nelle zone ad alta curvatura
-    buildRibbon(trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: 0x1e1e1e, roughness: 0.95, side: THREE.DoubleSide }));
-    buildCurbs(trackPts, ROAD_HALF, CURB_W);
-    buildBarriers(trackPts, BARRIER_D);
-    buildStartLine(trackPts, ROAD_HALF);
-    buildPitLane();
+    TrackMeshBuilder.buildRibbon(scene, trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: 0x1e1e1e, roughness: 0.95, side: THREE.DoubleSide }));
+    TrackMeshBuilder.buildCurbs(scene, trackPts, ROAD_HALF, CURB_W);
+    TrackMeshBuilder.buildBarriers(scene, trackPts, BARRIER_D);
+    TrackMeshBuilder.buildStartLine(scene, trackPts, ROAD_HALF);
+    TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex);
 
     // ====================================================
     // LOADER GLB (macchina Kenney colorata)
