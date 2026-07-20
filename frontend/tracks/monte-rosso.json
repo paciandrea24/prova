@@ -20,7 +20,7 @@
     "pit": {
         "roadHalfWidth": 5,
         "boxIndex": 4,
-        "entryTrigger": { "xMax": -36, "zMin": -3, "zMax": 15 },
+        "entryTrigger": { "xMin": -999, "xMax": -36, "zMin": -3, "zMax": 15 },
         "path": [
             { "x": -30, "z": 0 }, { "x": -42, "z": 10 }, { "x": -55, "z": 25 }, { "x": -58, "z": 50 },
             { "x": -58, "z": 80 }, { "x": -58, "z": 110 }, { "x": -55, "z": 135 }, { "x": -42, "z": 148 },
