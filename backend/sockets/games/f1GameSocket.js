@@ -32,9 +32,14 @@ const COLLISION_SUBSTEPS = 8;
 const PIT_AUTO_SPEED = 1.0;   // unità/tick dell'autopilota lungo il percorso box (25% di MAX_SPEED)
 const PIT_AUTO_ARRIVE_DIST = 1.0;   // sotto questa distanza dal waypoint, "arrivato"
 
+// Riquadro pieno allineato agli assi (xMin/xMax/zMin/zMax): a differenza
+// della vecchia versione (solo "x <= xMax", pensata per un rettilineo box
+// orientato lungo Z come in Monte Rosso), funziona per un rettilineo con
+// qualunque orientamento — es. Monza, dove la corsia box si stacca da un
+// rettilineo orientato lungo X.
 function inPitEntryZone(p, track) {
     const t = track.pitEntryTrigger;
-    return p.x <= t.xMax && p.z >= t.zMin && p.z <= t.zMax;
+    return p.x >= t.xMin && p.x <= t.xMax && p.z >= t.zMin && p.z <= t.zMax;
 }
 
 // Fuoripista: distanza dal punto più vicino della pista caricata.
@@ -73,7 +78,9 @@ const WEAR_GRIP_PENALTY   = 0.35; // fino a -35% aderenza a gomme esaurite (più
 // ====================================================
 const PIT_GO_DELAY_MIN  = 1000, PIT_GO_DELAY_MAX  = 3000;   // attesa casuale prima del segnale
 const PIT_REACTION_BEST = 150,  PIT_REACTION_WORST = 800;   // ms: sotto/sopra questi si satura
-const PIT_DURATION_MIN  = 3000, PIT_DURATION_MAX   = 7000;  // durata sosta risultante
+// 2.0s-3.0s: range realistico da gioco F1 (richiesto dall'utente, che
+// trovava 3.0s-7.0s troppo lento anche a reazione ottima).
+const PIT_DURATION_MIN  = 2000, PIT_DURATION_MAX   = 3000;  // durata sosta risultante
 const PIT_PENALTY_MS    = 30000;   // penalità se non si fa MAI pit stop in gara (regola F1 vera)
 
 // In qualifica TUTTI usano lo spec della Soft (gomma da qualifica, come in F1
@@ -470,6 +477,11 @@ function endQualifying(io, lobbyId, game) {
         return a.time - b.time;
     });
     game.grid = ranked.map(p => p.color);
+    // Catturati QUI, prima di assignGridSpawns qui sotto: quella funzione
+    // azzera p.time in preparazione della gara (stessi oggetti giocatore
+    // referenziati da `ranked`), quindi leggerlo dopo restituirebbe sempre
+    // null nel pannello griglia.
+    const qualiTimes = ranked.map(p => ({ color: p.color, time: p.time }));
 
     game.phase       = 'grid_display';
     game.raceStarted = false;
@@ -482,9 +494,7 @@ function endQualifying(io, lobbyId, game) {
     assignGridSpawns(game);
 
     console.log(`🏁 [F1] Qualifica conclusa (lobby ${lobbyId}) — griglia: ${game.grid.join(', ')}`);
-    io.to(lobbyId).emit('f1QualiEnded', {
-        grid: ranked.map(p => ({ color: p.color, time: p.time }))
-    });
+    io.to(lobbyId).emit('f1QualiEnded', { grid: qualiTimes });
 
     setTimeout(() => {
         const g = activeGames.get(lobbyId);
@@ -771,14 +781,36 @@ function tickGame(io, lobbyId, game) {
 // ====================================================
 const TRACK_INDEX_WINDOW = 20;
 // Il numero di campioni è sempre SAMPLES=1000 (vedi trackLoader.js),
-// indipendentemente dalla pista: questi indici restano costanti globali.
-const N_SAMPLES        = 1000;
-const HALF_LAP_IDX      = Math.floor(N_SAMPLES / 2);
-const CHECKPOINT_WINDOW = Math.floor(N_SAMPLES * 0.12);
-const FINISH_WINDOW     = Math.floor(N_SAMPLES * 0.03);
+// indipendentemente dalla pista: questo indice resta una costante globale.
+const N_SAMPLES     = 1000;
+const HALF_LAP_IDX  = Math.floor(N_SAMPLES / 2);
+// Tolleranze del checkpoint anti-taglio e del traguardo espresse in METRI
+// fisici, convertite in campioni in base alla lunghezza REALE della pista
+// caricata (vedi checkpointWindowFor()/finishWindowFor()) — invariata su
+// piste più lunghe, a differenza delle vecchie percentuali fisse del giro.
+//
+// CHECKPOINT_WINDOW_M resta largo apposta (era il 12% di Monte Rosso, ~112m):
+// serve solo a non penalizzare chi taglia leggermente a metà giro, non è mai
+// visibile al giocatore.
+//
+// FINISH_WINDOW_M era il 3% di Monte Rosso (~28m, ~6 lunghezze di monoposto):
+// troppo presto — "POLE"/fine giro comparivano ben prima di attraversare
+// davvero la linea a scacchi. Ridotto al minimo che serve solo a non perdere
+// il rilevamento tra un tick e l'altro del server (l'auto percorre al
+// massimo ~4 unità/tick a velocità massima).
+const CHECKPOINT_WINDOW_M = 112;
+const FINISH_WINDOW_M     = 6;
 
 function updateTrackIndex(p, track) {
     p.trackIndex = TrackGeometry.nearestIndexNear(track.points, p.trackIndex || 0, p.x, p.z, TRACK_INDEX_WINDOW);
+}
+
+function checkpointWindowFor(track) {
+    return Math.max(1, Math.round(CHECKPOINT_WINDOW_M * track.points.length / track.lapLength));
+}
+
+function finishWindowFor(track) {
+    return Math.max(1, Math.round(FINISH_WINDOW_M * track.points.length / track.lapLength));
 }
 
 // Punteggio di avanzamento: lap*N+indice cresce in modo continuo attraverso il
@@ -808,11 +840,11 @@ function checkLap(p, totalLaps, io, lobbyId, game) {
     const n   = game.track.points.length;
     const idx = p.trackIndex || 0;
 
-    if (!p.checkpointA && circularWithin(idx, HALF_LAP_IDX, n, CHECKPOINT_WINDOW)) {
+    if (!p.checkpointA && circularWithin(idx, HALF_LAP_IDX, n, checkpointWindowFor(game.track))) {
         p.checkpointA = true;
     }
 
-    const inFinishZone = circularWithin(idx, 0, n, FINISH_WINDOW);
+    const inFinishZone = circularWithin(idx, 0, n, finishWindowFor(game.track));
     if (p.checkpointA && inFinishZone && !p.inFinishZone) {
         // Il giocatore ha appena ENTRATO nella zona traguardo → giro completato
         p.lap++;
@@ -1032,6 +1064,7 @@ function buildPublicState(players, raceStarted, track) {
     for (const [color, p] of Object.entries(players)) {
         out[color] = {
             x: p.x, z: p.z, angle: p.angle,
+            trackIndex: p.trackIndex,
             speed:    p.speed,
             finished: p.finished,
             time:     p.time,
