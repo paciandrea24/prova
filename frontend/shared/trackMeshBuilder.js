@@ -11,9 +11,10 @@
         for (let i = 0; i < n; i++) {
             const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
             const p = pts[i];
+            const y = (p.y || 0) + 0.02;
             const b = i * 6;
-            pos[b]     = p.x + nx * halfW; pos[b + 1] = 0.02; pos[b + 2] = p.z + nz * halfW;
-            pos[b + 3] = p.x - nx * halfW; pos[b + 4] = 0.02; pos[b + 5] = p.z - nz * halfW;
+            pos[b]     = p.x + nx * halfW; pos[b + 1] = y; pos[b + 2] = p.z + nz * halfW;
+            pos[b + 3] = p.x - nx * halfW; pos[b + 4] = y; pos[b + 5] = p.z - nz * halfW;
 
             const u = i / (n - 1);
             const ub = i * 4;
@@ -84,11 +85,12 @@
             for (let i = 0; i < n; i++) {
                 const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
                 const p = pts[i];
+                const y = (p.y || 0) + 0.04;
                 const inner = roadHalf * side, outer = (roadHalf + curbW) * side;
 
                 const b = i * 6;
-                pos[b]     = p.x + nx * inner; pos[b + 1] = 0.04; pos[b + 2] = p.z + nz * inner;
-                pos[b + 3] = p.x + nx * outer; pos[b + 4] = 0.04; pos[b + 5] = p.z + nz * outer;
+                pos[b]     = p.x + nx * inner; pos[b + 1] = y; pos[b + 2] = p.z + nz * inner;
+                pos[b + 3] = p.x + nx * outer; pos[b + 4] = y; pos[b + 5] = p.z + nz * outer;
 
                 if (i > 0) { dist += stepLen; if (dist >= STRIPE) { dist = 0; flip = !flip; } }
                 const r = 1, g = flip ? 0 : 1, bv = flip ? 0 : 1;
@@ -126,11 +128,12 @@
             for (let i = 0; i < n; i++) {
                 const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
                 const p = pts[i];
+                const baseY = p.y || 0;
                 const bx = p.x + nx * distFromCenter * side;
                 const bz = p.z + nz * distFromCenter * side;
 
-                pos[i * 6]     = bx; pos[i * 6 + 1] = 0.05;   pos[i * 6 + 2] = bz;
-                pos[i * 6 + 3] = bx; pos[i * 6 + 4] = HEIGHT; pos[i * 6 + 5] = bz;
+                pos[i * 6]     = bx; pos[i * 6 + 1] = baseY + 0.05;   pos[i * 6 + 2] = bz;
+                pos[i * 6 + 3] = bx; pos[i * 6 + 4] = baseY + HEIGHT; pos[i * 6 + 5] = bz;
 
                 if (i > 0) { stripeAcc += stepLen; if (stripeAcc >= STRIPE) { stripeAcc = 0; isRed = !isRed; } }
                 const r = isRed ? 0.85 : 0.93, g = isRed ? 0.10 : 0.93, bv = isRed ? 0.10 : 0.96;
@@ -173,7 +176,7 @@
 
         for (let s = 0; s < STRIPES; s++) {
             const off = -roadHalf + stripeW * s + stripeW / 2;
-            dummy.position.set(p0.x + nx * off, 0.06, p0.z + nz * off);
+            dummy.position.set(p0.x + nx * off, (p0.y || 0) + 0.06, p0.z + nz * off);
             dummy.rotation.y = angle;
             dummy.updateMatrix();
             if (s % 2 === 0) imB.setMatrixAt(iB++, dummy.matrix);

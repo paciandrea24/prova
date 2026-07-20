@@ -10,7 +10,15 @@
 
     // Punto sul segmento p1->p2 di una Catmull-Rom centripeta (algoritmo
     // piramidale di Barry-Goldman), dati i 4 punti di controllo p0,p1,p2,p3
-    // e il parametro locale u in [0,1].
+    // e il parametro locale u in [0,1]. Il blend piramidale guarda anche ai
+    // vicini p0/p3: su x/z va bene (è quello che arrotonda le curve), ma sulla
+    // quota y un punto isolato molto più alto/basso dei vicini fa "sforare"
+    // la curva oltre il punto stesso (si vede come una piega/anello nella
+    // mesh della pista). La quota quindi NON passa dal blend piramidale: è
+    // interpolata separatamente, solo tra p1.y e p2.y, con uno smoothstep che
+    // garantisce pendenza nulla (quindi continua, senza spigoli) esattamente
+    // in corrispondenza di ogni punto di controllo — non può mai superare i
+    // due punti che delimitano il segmento.
     function evalSegment(p0, p1, p2, p3, u) {
         const alpha = 0.5; // centripeta
         const t0 = 0;
@@ -21,11 +29,10 @@
 
         function lerp(a, b, ta, tb, tt) {
             const d = tb - ta;
-            if (Math.abs(d) < 1e-9) return { x: a.x, y: a.y || 0, z: a.z };
+            if (Math.abs(d) < 1e-9) return { x: a.x, z: a.z };
             const f = (tt - ta) / d;
             return {
                 x: a.x + (b.x - a.x) * f,
-                y: (a.y || 0) + ((b.y || 0) - (a.y || 0)) * f,
                 z: a.z + (b.z - a.z) * f
             };
         }
@@ -35,7 +42,11 @@
         const A3 = lerp(p2, p3, t2, t3, t);
         const B1 = lerp(A1, A2, t0, t2, t);
         const B2 = lerp(A2, A3, t1, t3, t);
-        return lerp(B1, B2, t1, t2, t);
+        const xz = lerp(B1, B2, t1, t2, t);
+
+        const y1 = p1.y || 0, y2 = p2.y || 0;
+        const ue = u * u * (3 - 2 * u); // smoothstep: derivata nulla a u=0 e u=1
+        return { x: xz.x, y: y1 + (y2 - y1) * ue, z: xz.z };
     }
 
     // Valuta la curva (chiusa o aperta) al parametro globale t in [0,1].
