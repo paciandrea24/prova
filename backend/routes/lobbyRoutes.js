@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { lobbies, users, generateLobbyId } = require('../store/lobbies');
 const leaderboard = require('../store/leaderboard');
-const { listTracks } = require('../sockets/games/trackLoader');
+const { listTracks, saveTrack, deleteTrack } = require('../sockets/games/trackLoader');
 
 // GET root
 router.get('/', (req, res) => {
@@ -115,6 +115,31 @@ router.get('/api/leaderboard', (req, res) => {
 // ---------------------------------------------------------
 router.get('/api/f1/tracks', (req, res) => {
     res.json(listTracks());
+});
+
+// ---------------------------------------------------------
+// API per salvare una pista disegnata nell'editor direttamente in
+// frontend/tracks/, senza passare per il download manuale del file
+// ---------------------------------------------------------
+router.post('/api/f1/tracks', (req, res) => {
+    try {
+        const id = saveTrack(req.body);
+        res.json({ success: true, id });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+// ---------------------------------------------------------
+// API per eliminare una pista salvata (dall'editor, dev-only)
+// ---------------------------------------------------------
+router.delete('/api/f1/tracks/:id', (req, res) => {
+    try {
+        deleteTrack(req.params.id);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
 });
 
 module.exports = router;
