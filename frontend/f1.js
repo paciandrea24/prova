@@ -12,8 +12,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const socket = io({ transports: ['websocket'], upgrade: false });
-    socket.emit('joinLobby', { lobbyId, color: myColor });
-    socket.emit('joinF1Game', { lobbyId, playerColor: myColor });
 
     // Riconnessione (rete instabile, scheda in background riattivata): ri-emette
     // il join così il server annulla il timer di grazia e reintegra l'auto.
@@ -86,6 +84,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const N_SAMPLES = 1000;
     const trackPts  = TrackGeometry.sampleLoop(trackData.controlPoints, N_SAMPLES);
+
+    // Beccheggio (pitch) visivo dell'auto sui dislivelli: pendenza locale tra
+    // il campione precedente e successivo lungo il giro, applicata come
+    // rotazione attorno all'asse locale dell'auto DOPO l'imbardata (vedi
+    // rotation.order = 'YXZ' in animate()) — così il muso si alza in salita e
+    // si abbassa in discesa indipendentemente dalla direzione di marcia.
+    function trackPitchAt(idx) {
+        const n = trackPts.length;
+        const prev = trackPts[(idx - 1 + n) % n];
+        const next = trackPts[(idx + 1) % n];
+        const dy = (next.y || 0) - (prev.y || 0);
+        const horiz = Math.hypot(next.x - prev.x, next.z - prev.z) || 1e-6;
+        return -Math.atan2(dy, horiz);
+    }
 
     // DoubleSide evita artefatti di culling nelle zone ad alta curvatura
     TrackMeshBuilder.buildRibbon(scene, trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: 0x1e1e1e, roughness: 0.95, side: THREE.DoubleSide }));
@@ -717,6 +729,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         socket.emit('f1Input', { lobbyId, playerColor: myColor, inputs });
     }
 
+    // Tutti i socket.on(...) sono registrati sopra: SOLO ora è sicuro chiedere
+    // al server lo stato (f1Setup arriva in risposta sincrona a joinF1Game).
+    // Emesso prima — subito dopo io(), come prima del refactor track-editor —
+    // apriva una finestra di race: il fetch del JSON pista qui sopra è
+    // asincrono, quindi f1Setup poteva arrivare dal server prima che il
+    // listener fosse registrato ed essere perso (schermata bloccata sul cielo
+    // blu, "certe volte" — bug segnalato dall'utente).
+    socket.emit('joinLobby', { lobbyId, color: myColor });
+    socket.emit('joinF1Game', { lobbyId, playerColor: myColor });
+
     // ====================================================
     // RENDER LOOP — LERP + CAMERA
     // ====================================================
@@ -770,7 +792,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const carGroup = color === myColor ? myCarGroup : otherCars[color];
             if (carGroup) {
-                carGroup.position.set(v.x, 0, v.z);
+                // Quota e inclinazione solo visive, agganciate all'indice pista
+                // che tiene già il server (trackIndex): niente ricerca "punto più
+                // vicino nello spazio", che su tracciati che si riavvicinano a se
+                // stessi può agganciarsi a un tratto sbagliato del giro. La
+                // fisica server resta interamente 2D (x/z), qui si aggiusta solo
+                // dove/come appare l'auto quando la pista ha dislivelli.
+                const idx = (target.trackIndex != null)
+                    ? target.trackIndex
+                    : TrackGeometry.nearestPoint(trackPts, v.x, v.z).index;
+                // Il server aggiorna trackIndex solo al proprio tick (20/s): senza
+                // ammorbidire quota e beccheggio come già succede per x/z/angle,
+                // ogni salto di campione si vede come uno scatto, evidente sui
+                // dislivelli e invisibile in piano (dove restano sempre a 0).
+                v.y     = (v.y     || 0) + ((trackPts[idx].y || 0) - (v.y || 0))     * LERP;
+                v.pitch = (v.pitch || 0) + (trackPitchAt(idx)      - (v.pitch || 0)) * LERP;
+                carGroup.position.set(v.x, v.y, v.z);
+                carGroup.rotation.order = 'YXZ';
+                carGroup.rotation.x = v.pitch;
                 carGroup.rotation.y = v.angle;
                 // Rotazione ruote basata sulla velocità
                 if (carGroup.userData.wheels && carGroup.userData.wheels.length > 0) {
