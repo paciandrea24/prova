@@ -6,9 +6,10 @@
     <style>
         html, body { margin: 0; height: 100%; overflow: hidden; font-family: sans-serif; background: #1a1a22; }
         #panel {
-            position: fixed; top: 10px; left: 10px; z-index: 10;
+            position: fixed; top: 10px; left: 10px; bottom: 10px; z-index: 10;
             background: rgba(20,20,28,0.9); color: #ecf0f1; padding: 14px 16px;
             border-radius: 10px; width: 260px; font-size: 13px;
+            box-sizing: border-box; overflow-y: auto;
         }
         #panel h1 { font-size: 15px; margin: 0 0 10px; }
         #panel label { display: block; margin-top: 8px; }
@@ -22,6 +23,17 @@
 <body>
     <div id="panel">
         <h1>Track Editor</h1>
+
+        <label>Carica pista esistente
+            <select id="loadTrackSelect"><option value="">-- seleziona --</option></select>
+        </label>
+        <button id="loadTrackBtn">Carica pista selezionata</button>
+        <button id="deleteTrackBtn">Elimina pista selezionata</button>
+        <label>Importa da file (.json scaricato)
+            <input type="file" id="importFile" accept="application/json">
+        </label>
+        <hr style="border-color: #4b5b6b; margin: 10px 0;">
+
         <label>ID<input id="trackId" value="nuova-pista"></label>
         <label>Nome<input id="trackName" value="Nuova Pista"></label>
         <label>Target km<input id="targetKm" type="number" step="0.1" value="5"></label>
@@ -29,16 +41,21 @@
         <label>Larghezza corsia box<input id="pitRoadHalfWidth" type="number" step="0.5" value="5"></label>
         <label>Indice casella box (pit)<input id="pitBoxIndex" type="number" step="1" value="4"></label>
         <label><input type="checkbox" id="pitMode" style="width:auto;"> Modalità corsia box</label>
+        <label>Riquadro trigger ingresso pit (viola nella scena)</label>
         <div class="row">
-            <div><label>entry xMax<input id="entryXMax" type="number" value="-36"></label></div>
-            <div><label>entry zMin<input id="entryZMin" type="number" value="-3"></label></div>
-            <div><label>entry zMax<input id="entryZMax" type="number" value="15"></label></div>
+            <div><label>x min<input id="entryXMin" type="number" value="-999"></label></div>
+            <div><label>x max<input id="entryXMax" type="number" value="-36"></label></div>
+        </div>
+        <div class="row">
+            <div><label>z min<input id="entryZMin" type="number" value="-3"></label></div>
+            <div><label>z max<input id="entryZMax" type="number" value="15"></label></div>
         </div>
         <button id="undoBtn">Annulla ultimo punto (U)</button>
         <button id="clearBtn">Svuota lista attiva</button>
-        <button id="exportBtn">Esporta JSON</button>
+        <button id="saveGameBtn">Salva nel gioco</button>
+        <button id="exportBtn">Esporta JSON (scarica file)</button>
     </div>
-    <div id="hint">Click: aggiungi punto · Trascina: sposta · Rotellina su un punto: alza/abbassa (solo pista) · Tasto destro: elimina</div>
+    <div id="hint">Click: aggiungi punto · Trascina un punto: sposta · Tasto destro: elimina · Rotellina su un punto: alza/abbassa (solo pista) · Tasto centrale + trascina: pan · Rotellina altrove: zoom</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="shared/trackGeometry.js"></script>

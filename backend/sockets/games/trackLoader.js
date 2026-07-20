@@ -86,4 +86,66 @@ function listTracks() {
         .filter(t => t !== null);
 }
 
-module.exports = { loadTrack, listTracks };
+// Validazione lato server dei dati esportati dall'editor: non fidarsi del
+// client, è l'unico gate prima di scrivere su disco.
+function validateTrackData(data) {
+    if (!data || typeof data !== 'object') return 'Dati pista mancanti';
+    if (typeof data.id !== 'string' || !TRACK_ID_PATTERN.test(data.id)) return 'id pista non valido (solo lettere minuscole, cifre, trattini)';
+    if (typeof data.name !== 'string' || !data.name.trim()) return 'Nome pista mancante';
+    if (typeof data.targetKm !== 'number' || !(data.targetKm > 0)) return 'targetKm non valido';
+    if (typeof data.roadHalfWidth !== 'number' || !(data.roadHalfWidth > 0)) return 'roadHalfWidth non valido';
+    if (!Array.isArray(data.controlPoints) || data.controlPoints.length < 3) return 'Servono almeno 3 punti di controllo';
+    if (!data.controlPoints.every(p => p && typeof p.x === 'number' && typeof p.z === 'number')) return 'Punti di controllo malformati';
+    if (!data.pit || typeof data.pit !== 'object') return 'Dati corsia box mancanti';
+    if (!Array.isArray(data.pit.path) || data.pit.path.length < 3) return 'Servono almeno 3 punti per la corsia box';
+    if (!data.pit.path.every(p => p && typeof p.x === 'number' && typeof p.z === 'number')) return 'Punti corsia box malformati';
+    if (typeof data.pit.roadHalfWidth !== 'number' || !(data.pit.roadHalfWidth > 0)) return 'pit.roadHalfWidth non valido';
+    if (!Number.isInteger(data.pit.boxIndex) || data.pit.boxIndex < 0 || data.pit.boxIndex >= data.pit.path.length) return 'pit.boxIndex non valido';
+    const et = data.pit.entryTrigger;
+    if (!et || typeof et.xMin !== 'number' || typeof et.xMax !== 'number' || typeof et.zMin !== 'number' || typeof et.zMax !== 'number') {
+        return 'pit.entryTrigger non valido (servono xMin, xMax, zMin, zMax)';
+    }
+    if (!(et.xMin < et.xMax) || !(et.zMin < et.zMax)) return 'pit.entryTrigger non valido: xMin/zMin devono essere minori di xMax/zMax';
+    // Il riquadro non deve necessariamente contenere il primo punto della
+    // corsia box (che spesso coincide col distacco dalla linea principale,
+    // ancora "in pista"): basta che intercetti ALMENO un punto della corsia,
+    // altrimenti il trigger non corrisponde alla vera zona d'ingresso di
+    // questa pista (bug reale riscontrato: un riquadro lasciato ai valori di
+    // default di un'altra pista, che finiva per intercettare un tratto
+    // qualunque del tracciato principale invece della corsia box).
+    const triggerHitsPath = data.pit.path.some(pt =>
+        pt.x >= et.xMin && pt.x <= et.xMax && pt.z >= et.zMin && pt.z <= et.zMax);
+    if (!triggerHitsPath) return 'pit.entryTrigger non intercetta nessun punto della corsia box: il riquadro non corrisponde al vero punto d\'ingresso';
+    return null;
+}
+
+// Scrive frontend/tracks/<id>.json e invalida la cache in-memory, così una
+// pista risalvata con lo stesso id viene ricaricata dalla partita successiva
+// senza riavviare il server.
+function saveTrack(data) {
+    const err = validateTrackData(data);
+    if (err) throw new Error(err);
+    const file = path.join(TRACKS_DIR, `${data.id}.json`);
+    fs.writeFileSync(file, JSON.stringify(data, null, 4), 'utf8');
+    cache.delete(data.id);
+    return data.id;
+}
+
+// Elimina frontend/tracks/<id>.json e invalida la cache. Rifiuta se `id`
+// è l'unica pista rimasta, per non lasciare il menu piste della lobby vuoto.
+function deleteTrack(id) {
+    if (!TRACK_ID_PATTERN.test(id)) {
+        throw new Error(`id pista non valido: "${id}"`);
+    }
+    const file = path.join(TRACKS_DIR, `${id}.json`);
+    if (!fs.existsSync(file)) {
+        throw new Error(`Pista "${id}" non trovata`);
+    }
+    if (listTracks().length <= 1) {
+        throw new Error('Non puoi eliminare l\'ultima pista rimasta');
+    }
+    fs.unlinkSync(file);
+    cache.delete(id);
+}
+
+module.exports = { loadTrack, listTracks, saveTrack, deleteTrack };

@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { loadTrack, listTracks } = require('./trackLoader.js');
+const { loadTrack, listTracks, saveTrack, deleteTrack } = require('./trackLoader.js');
 
 const TRACKS_DIR = path.join(__dirname, '..', '..', '..', 'frontend', 'tracks');
 
@@ -67,6 +67,62 @@ test('loadTrack lancia un errore chiaro (non un ENOENT grezzo) per un id ben for
         assert.match(err.message, /Impossibile caricare la pista "pista-che-non-esiste"/);
         return true;
     });
+});
+
+// Copertura di regressione per il bug reale trovato su Monza: un
+// entryTrigger lasciato ai valori di un'altra pista (schema vecchio a 3
+// campi, o un riquadro nel posto sbagliato) veniva salvato senza controlli
+// e finiva per intercettare un tratto qualunque del tracciato principale.
+function minimalValidTrackData(overrides) {
+    return Object.assign({
+        id: 'test-scratch-track',
+        name: 'Test Scratch',
+        targetKm: 1,
+        roadHalfWidth: 10,
+        controlPoints: [{ x: 0, z: 0 }, { x: 10, z: 0 }, { x: 10, z: 10 }, { x: 0, z: 10 }],
+        pit: {
+            roadHalfWidth: 5,
+            boxIndex: 0,
+            entryTrigger: { xMin: -1, xMax: 3, zMin: -1, zMax: 3 },
+            path: [{ x: 0, z: 0 }, { x: 1, z: 1 }, { x: 2, z: 2 }]
+        }
+    }, overrides);
+}
+
+test('saveTrack accetta un entryTrigger a 4 campi che intercetta la corsia box', () => {
+    saveTrack(minimalValidTrackData());
+    try {
+        assert.ok(listTracks().some(t => t.id === 'test-scratch-track'));
+    } finally {
+        deleteTrack('test-scratch-track');
+    }
+});
+
+test('saveTrack rifiuta il vecchio schema entryTrigger a 3 campi (senza xMin)', () => {
+    const data = minimalValidTrackData({
+        pit: Object.assign({}, minimalValidTrackData().pit, {
+            entryTrigger: { xMax: 3, zMin: -1, zMax: 3 }
+        })
+    });
+    assert.throws(() => saveTrack(data), /entryTrigger non valido \(servono xMin, xMax, zMin, zMax\)/);
+});
+
+test('saveTrack rifiuta un entryTrigger che non intercetta nessun punto della corsia box', () => {
+    const data = minimalValidTrackData({
+        pit: Object.assign({}, minimalValidTrackData().pit, {
+            // riquadro lontanissimo dalla corsia box (path attorno a x/z 0-2):
+            // stesso tipo di errore del bug reale (default di un'altra pista).
+            entryTrigger: { xMin: 500, xMax: 600, zMin: 500, zMax: 600 }
+        })
+    });
+    assert.throws(() => saveTrack(data), /entryTrigger non intercetta nessun punto della corsia box/);
+});
+
+test('deleteTrack rimuove una pista salvata e la fa sparire da listTracks', () => {
+    saveTrack(minimalValidTrackData());
+    assert.ok(listTracks().some(t => t.id === 'test-scratch-track'));
+    deleteTrack('test-scratch-track');
+    assert.ok(!listTracks().some(t => t.id === 'test-scratch-track'));
 });
 
 test('listTracks non lancia e restituisce comunque le piste valide in presenza di un file malformato', () => {
