@@ -107,6 +107,60 @@ document.addEventListener('DOMContentLoaded', async () => {
     TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex);
 
     // ====================================================
+    // AUDIO MOTORE — un solo loop di 4s di un vero motore d'auto,
+    // registrato e tarato apposta per un gioco di corse (progetto
+    // "Trigger" di qubodup): CC-BY 3.0, va mantenuta l'attribuzione —
+    // https://opengameart.org/content/car-engine-loop-96khz-4s. I
+    // tentativi precedenti (crossfade a 8 bande da una registrazione F1
+    // reale, poi un loop generico di macchinario CC0) sono stati bocciati
+    // all'ascolto dall'utente. Pitch/volume seguono la velocità in
+    // continuo (vedi animate()), con range diversi se l'auto sta
+    // accelerando o decelerando/rilasciando — stesso file per entrambe le
+    // fasi, nessun secondo asset.
+    // ====================================================
+    const listener = new THREE.AudioListener();
+    camera.add(listener);
+    // Politica autoplay dei browser: il contesto audio nasce sospeso finché
+    // non c'è un gesto dell'utente sulla pagina.
+    function resumeAudioContext() {
+        if (listener.context.state === 'suspended') listener.context.resume();
+    }
+    window.addEventListener('pointerdown', resumeAudioContext, { once: true });
+    window.addEventListener('keydown', resumeAudioContext, { once: true });
+
+    const engineBuffer = await new Promise((resolve, reject) => {
+        new THREE.AudioLoader().load('/assets/audio/engine.wav', resolve, undefined, reject);
+    });
+    // Il file (4s, non tagliato da noi) non è stato editato per essere
+    // seamless in loop: misurato sui campioni grezzi, tra l'ultimo e il
+    // primo campione c'è un salto di ampiezza di ~0.28 (su scala -1..1) —
+    // un "colpo" udibile a ogni giro di loop. Dissolvenza lineare di 15ms
+    // su inizio e fine di ogni canale, verso lo zero, per eliminarlo.
+    (function declickLoopEdges(buffer, fadeMs = 15) {
+        const fadeSamples = Math.floor(buffer.sampleRate * fadeMs / 1000);
+        for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+            const data = buffer.getChannelData(ch);
+            for (let i = 0; i < fadeSamples; i++) {
+                const g = i / fadeSamples;
+                data[i] *= g;                          // fade-in iniziale
+                data[data.length - 1 - i] *= g;         // fade-out finale
+            }
+        }
+    })(engineBuffer);
+
+    // Deve restare in sync a mano con MAX_SPEED in
+    // backend/sockets/games/f1GameSocket.js (oggi 6.2): nessun endpoint
+    // espone questa costante al client.
+    const ENGINE_REF_MAX_SPEED = 6.2;
+    // Manopola unica di volume: le tre formule sotto (accelerando,
+    // decelerando, corsia box) restano invariate come "forma" relativa,
+    // questo moltiplicatore le scala tutte insieme — il volume si
+    // percepisce su scala logaritmica, quindi per un taglio netto serve
+    // un moltiplicatore basso (0.4 ≈ dimezzato all'orecchio, non 0.5
+    // lineare), non un piccolo aggiustamento.
+    const ENGINE_VOLUME_MULT = 0.4;
+
+    // ====================================================
     // LOADER GLB (macchina Kenney colorata)
     // ====================================================
     const loader = new THREE.GLTFLoader();
@@ -202,6 +256,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             group.userData.wheels   = wheels;
             group.userData.wheelRot = 0;
+
+            // Loop motore: un solo buffer, mai fermato — pitch e volume
+            // vengono regolati ogni frame in animate() in base a velocità
+            // e stato accelerando/decelerando.
+            const engineSound = new THREE.PositionalAudio(listener);
+            engineSound.setBuffer(engineBuffer);
+            engineSound.setLoop(true);
+            engineSound.setRefDistance(15);
+            engineSound.setRolloffFactor(1.5);
+            engineSound.setVolume(0);
+            engineSound.play();
+            group.add(engineSound);
+            group.userData.engineSound = engineSound;
+
             scene.add(group);
             onReady(group);
         }, undefined, (err) => console.error('Errore car model:', err));
@@ -221,6 +289,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     const serverState = {};
     const visualState = {};
     const otherCars   = {};
+
+    // Motore: per ogni auto (mia e altrui) approssimo "sta
+    // accelerando/decelerando" da una variazione di velocità rispetto
+    // all'ultimo valore osservato — vale anche per me: se rilascio
+    // l'acceleratore e la velocità scende per attrito, senza frenare, è
+    // comunque una decelerazione udibile. Finestra di "tenuta"
+    // (ENGINE_ACTIVE_HOLD_MS) più lunga del tick server (50ms) per non far
+    // sfarfallare il suono tra un aggiornamento e l'altro dello stato di
+    // rete. Niente più cambio marcia sonoro: il clunk sintetizzato (onda
+    // quadra) stonava col nuovo motore reale e veniva percepito come un
+    // "colpo" indesiderato — rimosso su richiesta dell'utente.
+    const engineActiveSince      = {};
+    const engineLastCheckedSpeed = {};
+    const engineAccelerating    = {};
+    const ENGINE_ACTIVE_HOLD_MS     = 400;
+    const ENGINE_SPEED_DELTA_EPS    = 0.02;
 
     // ====================================================
     // DEBUG: hitbox visibili (tasto H) — stessi valori di CAR_HALF_LENGTH/
@@ -816,6 +900,82 @@ document.addEventListener('DOMContentLoaded', async () => {
                     carGroup.userData.wheelRot = (carGroup.userData.wheelRot || 0) + Math.abs(target.speed || 0) * 1.4;
                     const wr = -carGroup.userData.wheelRot;
                     for (const w of carGroup.userData.wheels) w.rotation.x = wr;
+                }
+                // Motore: pitch/volume seguono la velocità REALE in
+                // continuo, con range diversi se l'auto sta accelerando o
+                // decelerando/rilasciando (anche solo per attrito, senza
+                // frenare, è comunque una decelerazione udibile) — stesso
+                // loop per entrambe le fasi, nessun file diverso.
+                // Eccezione: in corsia box con autopilota (limitatore
+                // inserito) il regime è fisso, perché la velocità è
+                // costante ma il motore gira comunque, anche se non stai
+                // guidando tu in quella fase.
+                if (carGroup.userData.engineSound) {
+                    const spd     = target.speed || 0;
+                    const actxNow = listener.context.currentTime;
+                    const RAMP      = 0.08;   // costante di tempo rampa volume (setTargetAtTime), evita click
+                    // Il playbackRate salta tra due formule diverse
+                    // (accelerando/decelerando) nello stesso istante in cui
+                    // lo stato cambia — un salto anche di 0.6 a frac≈1. La
+                    // rampa interna di THREE.Audio.setPlaybackRate (fissa a
+                    // 10ms) è troppo breve per un salto così ampio e si
+                    // sente come un "colpo": qui bypassiamo setPlaybackRate
+                    // e rampiamo noi il parametro sottostante, più lento.
+                    const RATE_RAMP = 0.15;
+                    let targetRate, targetVolume, frac;
+
+                    if (target.pitLimiter) {
+                        targetRate   = 0.9;
+                        targetVolume = 0.15;
+                        frac         = 0.25;   // regime fisso e basso, coerente col limitatore
+                    } else {
+                        const now = performance.now();
+                        const prevChecked = engineLastCheckedSpeed[color];
+                        const magPrev = Math.abs(prevChecked ?? spd);
+                        const magNow  = Math.abs(spd);
+                        if (prevChecked === undefined || Math.abs(magNow - magPrev) > ENGINE_SPEED_DELTA_EPS) {
+                            engineActiveSince[color] = now;
+                            engineLastCheckedSpeed[color] = spd;
+                        }
+                        let active = (now - (engineActiveSince[color] || 0)) < ENGINE_ACTIVE_HOLD_MS;
+                        // La mia auto: niente silenzio finché tengo premuto
+                        // accelera/freno, anche se la velocità ha smesso di
+                        // cambiare perché ha toccato il tetto massimo (avanti
+                        // o in retromarcia) — lì la variazione di velocità da
+                        // sola non basta più a tenere acceso il motore.
+                        if (color === myColor && (inputs.w || inputs.s)) active = true;
+
+                        // Accelerando o decelerando: per la mia auto uso
+                        // direttamente i tasti premuti (diretto, niente
+                        // ritardo di rete); per le altre auto, di cui non
+                        // conosco gli input, lo deduco dalla variazione di
+                        // velocità osservata — se non cambia in modo
+                        // significativo, tengo l'ultimo stato noto invece di
+                        // far sfarfallare il suono.
+                        let accelerating;
+                        if (color === myColor && (inputs.w || inputs.s)) {
+                            accelerating = !!inputs.w;
+                        } else if (magNow > magPrev + ENGINE_SPEED_DELTA_EPS) {
+                            accelerating = true;
+                        } else if (magNow < magPrev - ENGINE_SPEED_DELTA_EPS) {
+                            accelerating = false;
+                        } else {
+                            accelerating = engineAccelerating[color] ?? true;
+                        }
+                        engineAccelerating[color] = accelerating;
+
+                        frac = Math.min(1, magNow / ENGINE_REF_MAX_SPEED);
+                        if (accelerating) {
+                            targetRate   = 0.8 + frac * 0.9;                    // 0.8x fermo → 1.7x a tutta velocità
+                            targetVolume = active ? (0.09 + frac * 0.30) : 0;
+                        } else {
+                            targetRate   = 0.6 + frac * 0.5;                    // 0.6x fermo → 1.1x a tutta velocità, più cupo
+                            targetVolume = active ? (0.05 + frac * 0.14) : 0;
+                        }
+                    }
+
+                    carGroup.userData.engineSound.source.playbackRate.setTargetAtTime(targetRate, actxNow, RATE_RAMP);
+                    carGroup.userData.engineSound.gain.gain.setTargetAtTime(targetVolume * ENGINE_VOLUME_MULT, actxNow, RAMP);
                 }
             }
 
