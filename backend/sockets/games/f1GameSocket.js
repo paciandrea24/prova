@@ -4,11 +4,20 @@ const { loadTrack } = require('./trackLoader');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 
 const PHYSICS_TICK_MS = 50;
-const MAX_SPEED    = 4.0;
-const ACCEL        = 0.12;
-const FRICTION     = 0.050;
+// Velocità realistica F1: fattore di scala R=1.55 (+55%) applicato a
+// MAX_SPEED/ACCEL/FRICTION rispetto ai valori storici (4.0/0.12/0.050).
+// Km/h a schermo = speed * 55 (frontend/f1.js): 6.2 → 341 km/h base Medium,
+// 358 Soft, 324 Hard. Vedi docs/superpowers/specs/2026-07-21-f1-velocita-frenata-mescole-design.md.
+const MAX_SPEED    = 6.2;
+const ACCEL        = 0.186;
+// FRICTION scalato ×R² (non ×R) come la frenata sotto: è un decremento
+// costante per tick, quindi lo spazio di "coast-down" va con v²/decel — a
+// parità di R, senza lo ×R² il rilascio del gas sembrerebbe non rallentare
+// quasi per niente rispetto a oggi.
+const FRICTION     = 0.120;
 const TURN_SPEED   = 0.048;
 const GRIP         = 0.78;
+const BRAKE_MULT   = 2.17;   // moltiplicatore di ACCEL in frenata (era 1.4 a MAX_SPEED=4.0)
 const REJOIN_GRACE = 60000;   // finestra di riconnessione dopo un drop (scheda in background, refresh, rete)
 const GRID_DISPLAY_MS = 8000; // quanto resta a schermo l'animazione POLE + la griglia prima del countdown di gara
 
@@ -21,15 +30,16 @@ const CAR_HALF_LENGTH  = 2.4;  // metà lunghezza, asse avanti/dietro (locale Z)
 const CAR_HALF_WIDTH   = 1.3;  // metà larghezza, asse fianchi (locale X)
 const COLLISION_BOUNCE = 0.6;  // quota della velocità normale scambiata all'urto (bump arcade, non elastico puro)
 
-// A MAX_SPEED (4/tick) due auto che si avvicinano chiudono fino a 8 unità in
-// un tick — più della zona di contatto minima (~2.6, urto fianco-contro-fianco
-// lungo l'asse stretto): senza integrare la posizione in sottostep, il
-// rilevamento SAT (fatto una volta a fine tick) può non vedere mai la
-// sovrapposizione e le auto si attraversano. 8 sottostep → chiusura massima
-// 1 unità/sottostep, ben sotto qualunque zona di contatto possibile.
-const COLLISION_SUBSTEPS = 8;
+// A MAX_SPEED (6.2/tick) due auto che si avvicinano chiudono fino a 12.4
+// unità in un tick — più della zona di contatto minima (~2.6, urto
+// fianco-contro-fianco lungo l'asse stretto): senza integrare la posizione
+// in sottostep, il rilevamento SAT (fatto una volta a fine tick) può non
+// vedere mai la sovrapposizione e le auto si attraversano. 13 sottostep →
+// chiusura massima ~0.95 unità/sottostep, stesso margine di sicurezza che
+// c'era a MAX_SPEED=4.0 con 8 sottostep.
+const COLLISION_SUBSTEPS = 13;
 
-const PIT_AUTO_SPEED = 1.0;   // unità/tick dell'autopilota lungo il percorso box (25% di MAX_SPEED)
+const PIT_AUTO_SPEED = 1.55;   // unità/tick dell'autopilota lungo il percorso box (25% di MAX_SPEED)
 const PIT_AUTO_ARRIVE_DIST = 1.0;   // sotto questa distanza dal waypoint, "arrivato"
 
 // Riquadro pieno allineato agli assi (xMin/xMax/zMin/zMax): a differenza
@@ -910,10 +920,12 @@ function updateVelocity(p, isQuali) {
 
     if (inputs.w)      p.speed = Math.min(p.speed + ACCEL, maxSpeed);
     else if (inputs.s) {
-        // Frenata/retromarcia: più pronta dell'accelerazione ma non aggressiva
-        // (prima era 2× + uno smorzamento laterale del 16%/tick, troppo brusca
-        // e difficile da controllare — segnalato dall'utente).
-        p.speed = Math.max(p.speed - ACCEL * 1.4, -maxSpeed / 2);
+        // Frenata/retromarcia. La decelerazione in frenata è un decremento
+        // costante per tick, quindi lo spazio d'arresto va con v²/decel: per
+        // tenerlo vicino a quello di prima dell'aumento di velocità (R=1.55),
+        // BRAKE_MULT scala di R² rispetto al vecchio 1.4 (non solo ×R) — vedi
+        // docs/superpowers/specs/2026-07-21-f1-velocita-frenata-mescole-design.md.
+        p.speed = Math.max(p.speed - ACCEL * BRAKE_MULT, -maxSpeed / 2);
         p.vx *= 0.94;
         p.vz *= 0.94;
     } else {
@@ -1071,7 +1083,12 @@ function buildPublicState(players, raceStarted, track) {
             lap:      p.lap,
             position: raceStarted ? ranked.findIndex(r => r.color === color) + 1 : null,
             compound: p.compound,
-            tyreWear: p.tyreWear
+            tyreWear: p.tyreWear,
+            // Autopilota corsia box (entrata/uscita): velocità del
+            // limitatore, non del giocatore — il client la usa per un
+            // rumore motore fisso invece che legato all'accelerazione,
+            // anche quando non è lui a "guidare" in quella fase.
+            pitLimiter: !!p.pitAutoState
         };
     }
     return out;
