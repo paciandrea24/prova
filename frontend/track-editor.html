@@ -54,8 +54,19 @@
         <button id="clearBtn">Svuota lista attiva</button>
         <button id="saveGameBtn">Salva nel gioco</button>
         <button id="exportBtn">Esporta JSON (scarica file)</button>
+
+        <div id="imgOverlaySection" style="display:none;">
+            <hr style="border-color: #4b5b6b; margin: 10px 0;">
+            <h1>Immagine di riferimento</h1>
+            <label>Opacità
+                <input type="range" id="imgOpacity" min="0" max="100" value="35">
+            </label>
+            <button id="imgConfirmBtn">Conferma posizione</button>
+            <button id="imgEditBtn">Modifica posizione</button>
+            <button id="imgRemoveBtn">Rimuovi immagine</button>
+        </div>
     </div>
-    <div id="hint">Click: aggiungi punto · Trascina un punto: sposta · Tasto destro: elimina · Rotellina su un punto: alza/abbassa (solo pista) · Tasto centrale + trascina: pan · Rotellina altrove: zoom</div>
+    <div id="hint">Click: aggiungi punto · Trascina un punto: sposta · Tasto destro: elimina · Rotellina su un punto: alza/abbassa (solo pista) · Tasto centrale + trascina: pan · Rotellina altrove: zoom · Ctrl+V: incolla immagine di riferimento da ricalcare (poi trascina corpo/maniglie, Conferma per bloccarla)</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="shared/trackGeometry.js"></script>

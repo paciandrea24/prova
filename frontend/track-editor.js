@@ -52,6 +52,145 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ====================================================
+    // OVERLAY IMMAGINE DI RIFERIMENTO — incollata con Ctrl+V, serve solo a
+    // ricalcare un tracciato reale con i punti esistenti. Non persiste (né
+    // in buildTrackData() né sul server): sparisce a reload/cambio pista.
+    // ====================================================
+    let imageOverlay = null;      // { mesh, texture, x, z, rotation, width, height, opacity }
+    let imagePositioning = false; // true = maniglie attive, click normali sospesi
+    let imageDrag = null;         // { mode: 'move'|'scale'|'rotate', ...dati iniziali }
+    let scaleHandleMesh = null;
+    let rotateHandleMesh = null;
+    const imageHandleGroup = new THREE.Group();
+    scene.add(imageHandleGroup);
+
+    function updateImageOverlayTransform() {
+        if (!imageOverlay) return;
+        imageOverlay.mesh.position.set(imageOverlay.x, -0.05, imageOverlay.z);
+        imageOverlay.mesh.rotation.y = imageOverlay.rotation;
+        imageOverlay.mesh.scale.set(imageOverlay.width, 1, imageOverlay.height);
+    }
+
+    // Le maniglie sono posizionate ricalcolando a mano la trasformazione
+    // (centro + rotazione Y) invece di essere figlie del mesh dell'immagine:
+    // così restano oggetti di primo livello, facili da raycastare separati
+    // dal piano stesso (vedi pickImageHandle).
+    function updateImageHandles() {
+        if (!imageOverlay || !imagePositioning) return;
+        const { x, z, rotation, width, height } = imageOverlay;
+        const cos = Math.cos(rotation), sin = Math.sin(rotation);
+
+        const cornerLocalX = width / 2, cornerLocalZ = height / 2;
+        scaleHandleMesh.position.set(
+            x + cornerLocalX * cos + cornerLocalZ * sin,
+            0.2,
+            z - cornerLocalX * sin + cornerLocalZ * cos
+        );
+
+        const gap = Math.max(6, height * 0.15);
+        const topLocalZ = -(height / 2 + gap);
+        rotateHandleMesh.position.set(x + topLocalZ * sin, 0.2, z + topLocalZ * cos);
+    }
+
+    function enterImagePositioning() {
+        if (!imageOverlay) return;
+        imagePositioning = true;
+        if (!scaleHandleMesh) {
+            const handleGeo = new THREE.SphereGeometry(3, 12, 12);
+            scaleHandleMesh = new THREE.Mesh(handleGeo, new THREE.MeshBasicMaterial({ color: 0x2ecc71 }));
+            scaleHandleMesh.userData = { mode: 'scale' };
+            rotateHandleMesh = new THREE.Mesh(handleGeo, new THREE.MeshBasicMaterial({ color: 0xe67e22 }));
+            rotateHandleMesh.userData = { mode: 'rotate' };
+        }
+        imageHandleGroup.add(scaleHandleMesh, rotateHandleMesh);
+        updateImageHandles();
+    }
+
+    function exitImagePositioning() {
+        imagePositioning = false;
+        imageDrag = null;
+        imageHandleGroup.clear();
+    }
+
+    function setOverlayImage(img) {
+        if (imageOverlay) removeImageOverlay();
+        const texture = new THREE.Texture(img);
+        texture.needsUpdate = true;
+        const aspect = img.width / img.height;
+        const width  = aspect >= 1 ? 150 : 150 * aspect;
+        const height = aspect >= 1 ? 150 / aspect : 150;
+        // Piano unitario "sdraiato" una volta sola in fase di creazione: da
+        // qui in poi basta scale.set(width,1,height) per dimensionarlo,
+        // niente da ricalcolare sulla geometria ad ogni resize.
+        const geo = new THREE.PlaneGeometry(1, 1);
+        geo.rotateX(-Math.PI / 2);
+        const material = new THREE.MeshBasicMaterial({
+            map: texture, transparent: true, opacity: 0.35,
+            depthWrite: false, side: THREE.DoubleSide
+        });
+        const mesh = new THREE.Mesh(geo, material);
+        scene.add(mesh);
+
+        imageOverlay = { mesh, texture, x: camTarget.x, z: camTarget.z, rotation: 0, width, height, opacity: 0.35 };
+        updateImageOverlayTransform();
+
+        document.getElementById('imgOverlaySection').style.display = 'block';
+        document.getElementById('imgOpacity').value = 35;
+        enterImagePositioning();
+    }
+
+    function removeImageOverlay() {
+        if (!imageOverlay) return;
+        scene.remove(imageOverlay.mesh);
+        imageOverlay.mesh.geometry.dispose();
+        imageOverlay.mesh.material.dispose();
+        imageOverlay.texture.dispose();
+        imageOverlay = null;
+        exitImagePositioning();
+        document.getElementById('imgOverlaySection').style.display = 'none';
+    }
+
+    function pickImageHandle(ev) {
+        mouseNDC.x = (ev.clientX / window.innerWidth) * 2 - 1;
+        mouseNDC.y = -(ev.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouseNDC, camera);
+        const hits = raycaster.intersectObjects(imageHandleGroup.children);
+        return hits.length > 0 ? hits[0].object : null;
+    }
+
+    function pickImageBody(ev) {
+        mouseNDC.x = (ev.clientX / window.innerWidth) * 2 - 1;
+        mouseNDC.y = -(ev.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouseNDC, camera);
+        return raycaster.intersectObject(imageOverlay.mesh).length > 0;
+    }
+
+    document.addEventListener('paste', (ev) => {
+        const items = ev.clipboardData && ev.clipboardData.items;
+        if (!items) return;
+        for (const item of items) {
+            if (item.type.startsWith('image/')) {
+                ev.preventDefault();
+                const blob = item.getAsFile();
+                const url = URL.createObjectURL(blob);
+                const img = new Image();
+                img.onload = () => { setOverlayImage(img); URL.revokeObjectURL(url); };
+                img.src = url;
+                break;
+            }
+        }
+    });
+
+    document.getElementById('imgOpacity').addEventListener('input', (ev) => {
+        if (!imageOverlay) return;
+        imageOverlay.opacity = ev.target.value / 100;
+        imageOverlay.mesh.material.opacity = imageOverlay.opacity;
+    });
+    document.getElementById('imgConfirmBtn').addEventListener('click', exitImagePositioning);
+    document.getElementById('imgEditBtn').addEventListener('click', enterImagePositioning);
+    document.getElementById('imgRemoveBtn').addEventListener('click', removeImageOverlay);
+
+    // ====================================================
     // FEEDBACK VISIVO QUOTA (y) — vista dall'alto: la posizione verticale
     // non si vede, quindi la quota va resa con colore (giallo=0, rosso=su,
     // blu=giù) e dimensione del marker. Materiali precalcolati a bucket
@@ -186,6 +325,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (ev.button === 2) return;
+        if (imagePositioning) {
+            const handle = pickImageHandle(ev);
+            if (handle) {
+                imageDrag = handle.userData.mode === 'scale'
+                    ? { mode: 'scale', startWidth: imageOverlay.width, startHeight: imageOverlay.height,
+                        startCornerDist: 0.5 * Math.hypot(imageOverlay.width, imageOverlay.height) }
+                    : { mode: 'rotate' };
+                return;
+            }
+            if (pickImageBody(ev)) imageDrag = { mode: 'move' };
+            return;
+        }
         const marker = pickMarker(ev);
         if (marker) { dragging = marker.userData; return; }
         const hit = worldFromEvent(ev);
@@ -206,6 +357,24 @@ document.addEventListener('DOMContentLoaded', () => {
             updateCameraTransform();
             return;
         }
+        if (imageDrag) {
+            const hit = worldFromEvent(ev);
+            if (imageDrag.mode === 'move') {
+                imageOverlay.x = hit.x;
+                imageOverlay.z = hit.z;
+            } else if (imageDrag.mode === 'scale') {
+                const dist = Math.hypot(hit.x - imageOverlay.x, hit.z - imageOverlay.z);
+                const ratio = Math.max(0.05, dist / imageDrag.startCornerDist);
+                imageOverlay.width = imageDrag.startWidth * ratio;
+                imageOverlay.height = imageDrag.startHeight * ratio;
+            } else if (imageDrag.mode === 'rotate') {
+                const dx = hit.x - imageOverlay.x, dz = hit.z - imageOverlay.z;
+                imageOverlay.rotation = Math.atan2(-dx, -dz);
+            }
+            updateImageOverlayTransform();
+            updateImageHandles();
+            return;
+        }
         if (!dragging) return;
         const hit = worldFromEvent(ev);
         const list = dragging.list === 'main' ? mainPoints : pitPoints;
@@ -215,7 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
         rebuild();
     });
 
-    window.addEventListener('mouseup', () => { dragging = null; panning = false; });
+    window.addEventListener('mouseup', () => { dragging = null; panning = false; imageDrag = null; });
 
     renderer.domElement.addEventListener('contextmenu', (ev) => {
         ev.preventDefault();
