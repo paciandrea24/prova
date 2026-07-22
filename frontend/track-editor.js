@@ -263,29 +263,80 @@ document.addEventListener('DOMContentLoaded', () => {
     // salvare (bug reale: un riquadro lasciato ai valori di un'altra pista
     // intercettava un tratto qualunque del tracciato principale).
     // ====================================================
-    let entryTriggerMesh = null;
+    let entryTriggerFrame = null; // THREE.Group di 4 barre piatte: cornice visiva E bersaglio del drag
+    // Spessore fisso della cornice, stessa scala d'ingombro dei marker/maniglie
+    // già cliccabili in questo editor (sfere raggio 2-3): un wireframe sottile
+    // (1px) era troppo difficile da centrare col mouse per trascinarlo.
+    const ENTRY_TRIGGER_FRAME_THICKNESS = 5;
     // Valori "senza limite" (es. -999, convenzione ereditata da Monte Rosso
     // per il lato del riquadro che non deve restringere nulla) renderebbero
-    // il wireframe enorme e inutile da vedere: la visualizzazione clampa,
-    // il valore salvato nel JSON resta quello scritto nel campo.
-    const VISUAL_CLAMP = 600;
+    // il wireframe enorme e inutile da vedere, quindi la visualizzazione
+    // clampa — il valore salvato nel JSON resta sempre quello scritto nel
+    // campo, mai quello clampato. Il limite però NON può essere un numero
+    // fisso: un tracciato con punti lontani dall'origine (bug reale,
+    // riscontrato su un tracciato con punti fino a x=-966) faceva sembrare
+    // il riquadro "bloccato" a un bordo — il valore era corretto (es.
+    // xMin=-700), ma il disegno veniva tagliato a un limite fisso più
+    // stretto (600) del tutto scollegato dall'estensione vera del
+    // tracciato. Il limite si ricalcola quindi sul tracciato in editing.
+    const VISUAL_CLAMP_MIN    = 600; // minimo ragionevole per un tracciato piccolo/vuoto
+    const VISUAL_CLAMP_MARGIN = 200; // oltre il punto più lontano dall'origine
+    function visualClampExtent() {
+        let maxAbs = VISUAL_CLAMP_MIN;
+        for (const p of mainPoints) maxAbs = Math.max(maxAbs, Math.abs(p.x), Math.abs(p.z));
+        for (const p of pitPoints)  maxAbs = Math.max(maxAbs, Math.abs(p.x), Math.abs(p.z));
+        return maxAbs + VISUAL_CLAMP_MARGIN;
+    }
     function updateEntryTriggerVisual() {
-        if (entryTriggerMesh) { scene.remove(entryTriggerMesh); entryTriggerMesh = null; }
+        if (entryTriggerFrame) { scene.remove(entryTriggerFrame); entryTriggerFrame = null; }
         const xMin = parseFloat(document.getElementById('entryXMin').value);
         const xMax = parseFloat(document.getElementById('entryXMax').value);
         const zMin = parseFloat(document.getElementById('entryZMin').value);
         const zMax = parseFloat(document.getElementById('entryZMax').value);
         if (![xMin, xMax, zMin, zMax].every(Number.isFinite) || xMin >= xMax || zMin >= zMax) return;
 
-        const cx0 = Math.max(xMin, -VISUAL_CLAMP), cx1 = Math.min(xMax, VISUAL_CLAMP);
-        const cz0 = Math.max(zMin, -VISUAL_CLAMP), cz1 = Math.min(zMax, VISUAL_CLAMP);
+        const clamp = visualClampExtent();
+        const cx0 = Math.max(xMin, -clamp), cx1 = Math.min(xMax, clamp);
+        const cz0 = Math.max(zMin, -clamp), cz1 = Math.min(zMax, clamp);
         if (cx0 >= cx1 || cz0 >= cz1) return;
 
-        const geo = new THREE.BoxGeometry(cx1 - cx0, 3, cz1 - cz0);
-        const edges = new THREE.EdgesGeometry(geo);
-        entryTriggerMesh = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xff00ff }));
-        entryTriggerMesh.position.set((cx0 + cx1) / 2, 1.5, (cz0 + cz1) / 2);
-        scene.add(entryTriggerMesh);
+        // Cornice = 4 barre piatte (non un box pieno): l'interno resta senza
+        // mesh, così un click al centro del riquadro continua ad aggiungere
+        // punti pista/box come oggi. Solo le barre sono il bersaglio del drag
+        // (vedi pickEntryTriggerFrame).
+        const w = cx1 - cx0, d = cz1 - cz0, t = ENTRY_TRIGGER_FRAME_THICKNESS;
+        const mat = new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
+        entryTriggerFrame = new THREE.Group();
+
+        const barTB = new THREE.PlaneGeometry(w, t);
+        const top = new THREE.Mesh(barTB, mat);
+        top.rotation.x = -Math.PI / 2;
+        top.position.set((cx0 + cx1) / 2, 1.5, cz0 + t / 2);
+        const bottom = new THREE.Mesh(barTB, mat);
+        bottom.rotation.x = -Math.PI / 2;
+        bottom.position.set((cx0 + cx1) / 2, 1.5, cz1 - t / 2);
+
+        // Barre verticali accorciate di 2*t: gli angoli sono già coperti da
+        // top/bottom, evita di sovrapporre due mesh trasparenti nello stesso
+        // punto (si vedrebbe più scuro/opaco agli angoli).
+        const barLR = new THREE.PlaneGeometry(t, Math.max(0.01, d - 2 * t));
+        const left = new THREE.Mesh(barLR, mat);
+        left.rotation.x = -Math.PI / 2;
+        left.position.set(cx0 + t / 2, 1.5, (cz0 + cz1) / 2);
+        const right = new THREE.Mesh(barLR, mat);
+        right.rotation.x = -Math.PI / 2;
+        right.position.set(cx1 - t / 2, 1.5, (cz0 + cz1) / 2);
+
+        entryTriggerFrame.add(top, bottom, left, right);
+        scene.add(entryTriggerFrame);
+    }
+
+    function pickEntryTriggerFrame(ev) {
+        if (!entryTriggerFrame) return false;
+        mouseNDC.x = (ev.clientX / window.innerWidth) * 2 - 1;
+        mouseNDC.y = -(ev.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouseNDC, camera);
+        return raycaster.intersectObjects(entryTriggerFrame.children).length > 0;
     }
 
     // ====================================================
@@ -315,6 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let dragging = null;
     let panning = false;
     let panLast = { x: 0, y: 0 };
+    let triggerDrag = null; // { startHitX, startHitZ, startXMin, startXMax, startZMin, startZMax }
 
     renderer.domElement.addEventListener('mousedown', (ev) => {
         if (ev.button === 1) {
@@ -339,6 +391,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const marker = pickMarker(ev);
         if (marker) { dragging = marker.userData; return; }
+        if (pickEntryTriggerFrame(ev)) {
+            const hit = worldFromEvent(ev);
+            triggerDrag = {
+                startHitX: hit.x, startHitZ: hit.z,
+                startXMin: parseFloat(document.getElementById('entryXMin').value),
+                startXMax: parseFloat(document.getElementById('entryXMax').value),
+                startZMin: parseFloat(document.getElementById('entryZMin').value),
+                startZMax: parseFloat(document.getElementById('entryZMax').value),
+            };
+            return;
+        }
         const hit = worldFromEvent(ev);
         activeList().push({ x: +hit.x.toFixed(2), z: +hit.z.toFixed(2) });
         rebuild();
@@ -375,6 +438,17 @@ document.addEventListener('DOMContentLoaded', () => {
             updateImageHandles();
             return;
         }
+        if (triggerDrag) {
+            const hit = worldFromEvent(ev);
+            const dx = hit.x - triggerDrag.startHitX;
+            const dz = hit.z - triggerDrag.startHitZ;
+            document.getElementById('entryXMin').value = (triggerDrag.startXMin + dx).toFixed(2);
+            document.getElementById('entryXMax').value = (triggerDrag.startXMax + dx).toFixed(2);
+            document.getElementById('entryZMin').value = (triggerDrag.startZMin + dz).toFixed(2);
+            document.getElementById('entryZMax').value = (triggerDrag.startZMax + dz).toFixed(2);
+            updateEntryTriggerVisual();
+            return;
+        }
         if (!dragging) return;
         const hit = worldFromEvent(ev);
         const list = dragging.list === 'main' ? mainPoints : pitPoints;
@@ -384,7 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
         rebuild();
     });
 
-    window.addEventListener('mouseup', () => { dragging = null; panning = false; imageDrag = null; });
+    window.addEventListener('mouseup', () => { dragging = null; panning = false; imageDrag = null; triggerDrag = null; });
 
     renderer.domElement.addEventListener('contextmenu', (ev) => {
         ev.preventDefault();
