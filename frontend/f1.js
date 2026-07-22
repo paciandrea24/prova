@@ -85,6 +85,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const N_SAMPLES = 1000;
     const trackPts  = TrackGeometry.sampleLoop(trackData.controlPoints, N_SAMPLES);
 
+    // Stessi punti campionati usati internamente da TrackMeshBuilder.buildPitLane
+    // (che li ricalcola per conto suo): un secondo ricalcolo qui è economico
+    // (300 campioni, una tantum al caricamento) e serve per generare la
+    // scenografia senza toccare la firma di buildPitLane.
+    const PIT_PTS = TrackGeometry.sampleOpenPath(trackData.pit.path, 300);
+
     // Beccheggio (pitch) visivo dell'auto sui dislivelli: pendenza locale tra
     // il campione precedente e successivo lungo il giro, applicata come
     // rotazione attorno all'asse locale dell'auto DOPO l'imbardata (vedi
@@ -159,6 +165,86 @@ document.addEventListener('DOMContentLoaded', async () => {
     // un moltiplicatore basso (0.4 ≈ dimezzato all'orecchio, non 0.5
     // lineare), non un piccolo aggiustamento.
     const ENGINE_VOLUME_MULT = 0.4;
+
+    // ====================================================
+    // SCENOGRAFIA — caricamento asset e istanziazione dal layout generato
+    // da TrackScenery.generateLayout. Ogni asset ripetuto (natura, folla)
+    // usa un unico THREE.InstancedMesh per tenere basse le draw call anche
+    // con centinaia di istanze; il laghetto (categoria 'pond', nessun asset
+    // scaricato: il Nature Kit non ne include uno) è una mesh procedurale,
+    // stesso approccio già usato per il prato di sfondo qui sopra.
+    // ====================================================
+    const SCENERY_ASSET_PATHS = {
+        treeLarge:            '/assets/kenney/treeLarge.glb',
+        treeSmall:             '/assets/kenney/treeSmall.glb',
+        grandStand:            '/assets/kenney/grandStand.glb',
+        grandStandAwning:      '/assets/kenney/grandStandAwning.glb',
+        grandStandCovered:     '/assets/kenney/grandStandCovered.glb',
+        billboard:             '/assets/kenney/billboard.glb',
+        billboardLow:          '/assets/kenney/billboardLow.glb',
+        pitsGarageClosed:      '/assets/kenney/pitsGarageClosed.glb',
+        pitsOffice:            '/assets/kenney/pitsOffice.glb',
+    };
+
+    function loadScenery(container, layout) {
+        const sceneryLoader = new THREE.GLTFLoader();
+        const byAsset = new Map();
+        for (const item of layout) {
+            if (item.category === 'pond') continue;
+            if (!byAsset.has(item.asset)) byAsset.set(item.asset, []);
+            byAsset.get(item.asset).push(item);
+        }
+
+        const dummy = new THREE.Object3D();
+        for (const [asset, items] of byAsset) {
+            const url = SCENERY_ASSET_PATHS[asset];
+            sceneryLoader.load(url, (gltf) => {
+                gltf.scene.updateMatrixWorld(true);
+                const meshes = [];
+                gltf.scene.traverse((child) => { if (child.isMesh) meshes.push(child); });
+
+                for (const mesh of meshes) {
+                    const im = new THREE.InstancedMesh(mesh.geometry, mesh.material.clone(), items.length);
+                    im.frustumCulled = false;
+                    im.castShadow    = true;
+                    im.receiveShadow = true;
+                    const localMatrix = mesh.matrixWorld;
+
+                    items.forEach((it, i) => {
+                        dummy.position.set(it.x, it.y || 0, it.z);
+                        dummy.rotation.set(0, it.rotY || 0, 0);
+                        dummy.scale.setScalar(it.scale || 1);
+                        dummy.updateMatrix();
+                        const finalMatrix = new THREE.Matrix4().multiplyMatrices(dummy.matrix, localMatrix);
+                        im.setMatrixAt(i, finalMatrix);
+                    });
+                    im.instanceMatrix.needsUpdate = true;
+                    container.add(im);
+                }
+            }, undefined, (err) => console.error(`[F1] Errore caricando asset scenografia "${asset}":`, err));
+        }
+
+        for (const item of layout) {
+            if (item.category !== 'pond') continue;
+            const pond = new THREE.Mesh(
+                new THREE.CircleGeometry(item.radius, 24),
+                new THREE.MeshStandardMaterial({ color: 0x2f6fa8, roughness: 0.35, metalness: 0.05 })
+            );
+            pond.rotation.x = -Math.PI / 2;
+            pond.position.set(item.x, (item.y || 0) + 0.03, item.z);
+            pond.receiveShadow = true;
+            container.add(pond);
+        }
+    }
+
+    // Chiamata qui (dopo la dichiarazione di loadScenery/SCENERY_ASSET_PATHS,
+    // non subito dopo buildPitLane più sopra): SCENERY_ASSET_PATHS è un
+    // const nello stesso scope della funzione asincrona di DOMContentLoaded,
+    // quindi resta nella temporal dead zone finché l'esecuzione non arriva
+    // alla sua riga — chiamare loadScenery prima, pur essendo la funzione
+    // stessa hoistata, faceva scattare un ReferenceError a runtime.
+    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D);
+    loadScenery(scene, sceneryLayout);
 
     // ====================================================
     // LOADER GLB (macchina Kenney colorata)
@@ -313,7 +399,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // poter verificare a occhio eventuali disallineamenti tra fisica e resa.
     // ====================================================
     const HITBOX_HALF_LEN = 2.4, HITBOX_HALF_WID = 1.3, HITBOX_HEIGHT = 1.5;
-    let showHitboxes = true;   // ON di default durante il tuning delle collisioni
+    let showHitboxes = false;  // toggle con H, debug only
     const hitboxMeshes = {};
 
     function getHitboxMesh(color) {
@@ -369,6 +455,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function renderTyreCards(compounds, myCompound, containerId, eventName) {
         const container = document.getElementById(containerId);
         container.innerHTML = '';
+        let myIndex = 0, i = 0;
         for (const key of ['hard', 'medium', 'soft']) {
             const c = compounds[key];
             if (!c) continue;
@@ -389,7 +476,46 @@ document.addEventListener('DOMContentLoaded', async () => {
                 card.classList.add('selected');
             };
             container.appendChild(card);
+            if (myCompound === key) myIndex = i;
+            i++;
         }
+        // Abilita la navigazione da gamepad (D-pad sx/dx + X) su questo
+        // container: diventa quello "attivo" finché non se ne apre un altro
+        // o viene esplicitamente disattivato (vedi clearTyreNav()).
+        activeTyreContainerId = containerId;
+        tyreFocusIndex = myIndex;
+        _applyTyreFocus();
+    }
+
+    // ── Navigazione mescola da gamepad ──────────────────────────────────
+    let activeTyreContainerId = null;
+    let tyreFocusIndex = 0;
+
+    function _tyreCards() {
+        if (!activeTyreContainerId) return [];
+        const container = document.getElementById(activeTyreContainerId);
+        return container ? Array.from(container.querySelectorAll('.tyre-card')) : [];
+    }
+
+    function _applyTyreFocus() {
+        const cards = _tyreCards();
+        cards.forEach((el, idx) => el.classList.toggle('gp-focused', idx === tyreFocusIndex));
+    }
+
+    function tyreNav(delta) {
+        const cards = _tyreCards();
+        if (cards.length === 0) return;
+        tyreFocusIndex = (tyreFocusIndex + delta + cards.length) % cards.length;
+        _applyTyreFocus();
+    }
+
+    function tyreConfirm() {
+        const cards = _tyreCards();
+        if (cards[tyreFocusIndex]) cards[tyreFocusIndex].click();
+    }
+
+    function clearTyreNav() {
+        activeTyreContainerId = null;
     }
 
     // ====================================================
@@ -415,6 +541,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     socket.on('f1PitStopStarted', () => {
         pitting = true;
+        clearTyreNav();   // la mescola è ormai fissata: X torna a significare "reazione pit"
         document.getElementById('pitstop-status').textContent = 'AI BOX...';
         document.getElementById('pitstop-instructions').textContent =
             'Aspetta il segnale verde, poi premi SPAZIO più veloce che puoi! (premere prima non conta, puoi aspettare tranquillo)';
@@ -586,6 +713,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         myFinalTime = null;
         if (tyreSelectActive) exitTyrePreview();   // la qualifica sta per partire: fine anteprima tracciato
         tyreSelectActive = false;
+        clearTyreNav();
         document.getElementById('timer-box').style.visibility = 'hidden';
         // Nasconde in automatico un'eventuale griglia/animazione/selezione ancora
         // a schermo: evita di dover sincronizzare a mano un timeout lato client
@@ -773,44 +901,92 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // ====================================================
-    // INPUT TASTIERA
+    // INPUT TASTIERA + GAMEPAD
     // ====================================================
-    const inputs = { w: false, a: false, s: false, d: false };
+    // Protocollo unificato: la tastiera manda sempre valori estremi
+    // (0/1/-1), il gamepad manda valori analogici continui — la fisica
+    // server tratta i due casi con la stessa formula. Un solo invio
+    // "throttled" per frame (vedi maybeSendInputs in animate()) copre sia
+    // i cambi da tastiera che il flusso continuo del gamepad.
+    const keys   = { w: false, a: false, s: false, d: false };
+    const inputs = { throttle: 0, brake: 0, steer: 0 };
+
+    function applyKeys() {
+        inputs.throttle = keys.w ? 1 : 0;
+        inputs.brake    = keys.s ? 1 : 0;
+        inputs.steer    = (keys.a ? 1 : 0) + (keys.d ? -1 : 0);
+    }
 
     document.addEventListener('keydown', (e) => {
-        let ch = false;
         const k = e.key.toLowerCase();
-        if (k === 'w' && !inputs.w) { inputs.w = true;  ch = true; }
-        if (k === 'a' && !inputs.a) { inputs.a = true;  ch = true; }
-        if (k === 's' && !inputs.s) { inputs.s = true;  ch = true; }
-        if (k === 'd' && !inputs.d) { inputs.d = true;  ch = true; }
+        if (k === 'w') keys.w = true;
+        if (k === 'a') keys.a = true;
+        if (k === 's') keys.s = true;
+        if (k === 'd') keys.d = true;
         if (k === 'c') cameraMode = cameraMode === 'third' ? 'first' : 'third';
         if (k === 'h') {   // DEBUG: mostra/nascondi le hitbox di collisione
             showHitboxes = !showHitboxes;
             for (const mesh of Object.values(hitboxMeshes)) mesh.visible = showHitboxes;
         }
-        if (ch && isRacing) sendInputs();
+        applyKeys();
     });
 
     document.addEventListener('keyup', (e) => {
-        let ch = false;
         const k = e.key.toLowerCase();
-        if (k === 'w') { inputs.w = false; ch = true; }
-        if (k === 'a') { inputs.a = false; ch = true; }
-        if (k === 's') { inputs.s = false; ch = true; }
-        if (k === 'd') { inputs.d = false; ch = true; }
-        if (ch && isRacing) sendInputs();
+        if (k === 'w') keys.w = false;
+        if (k === 'a') keys.a = false;
+        if (k === 's') keys.s = false;
+        if (k === 'd') keys.d = false;
+        applyKeys();
     });
 
     window.addEventListener('blur', () => {
-        inputs.w = inputs.a = inputs.s = inputs.d = false;
-        if (isRacing) sendInputs();
+        keys.w = keys.a = keys.s = keys.d = false;
+        applyKeys();
     });
 
     document.addEventListener('contextmenu', e => e.preventDefault());
 
     function sendInputs() {
         socket.emit('f1Input', { lobbyId, playerColor: myColor, inputs });
+    }
+
+    // Invio continuo throttled: chiamato ogni frame da animate(). Manda solo
+    // se qualcosa è cambiato di più di un epsilon, e non più spesso del tick
+    // fisico server (50ms) — evita di floodare il socket coi valori analogici
+    // del gamepad, che cambiano quasi ogni frame anche per il minimo tremore.
+    const SEND_EPS = 0.02, SEND_MIN_MS = 50;
+    let lastSent = { throttle: 0, brake: 0, steer: 0 };
+    let lastSendTime = 0;
+
+    function maybeSendInputs() {
+        if (!isRacing) return;
+        const now = performance.now();
+        const changed = Math.abs(inputs.throttle - lastSent.throttle) > SEND_EPS ||
+                        Math.abs(inputs.brake    - lastSent.brake)    > SEND_EPS ||
+                        Math.abs(inputs.steer    - lastSent.steer)    > SEND_EPS;
+        if (changed && now - lastSendTime >= SEND_MIN_MS) {
+            sendInputs();
+            lastSent = { ...inputs };
+            lastSendTime = now;
+        }
+    }
+
+    // ── Gamepad ──────────────────────────────────────────────────────────
+    // Azioni a tasto (edge-triggered), sterzo/gas/freno analogici li legge
+    // animate() via F1GamepadInput.poll() ad ogni frame. X (onConfirm) è
+    // contestuale: conferma la mescola se una schermata di scelta è attiva,
+    // altrimenti conta come reazione pit stop durante il minigioco.
+    if (typeof F1GamepadInput !== 'undefined') {
+        F1GamepadInput.setCallbacks({
+            onConfirm: () => {
+                if (activeTyreContainerId) tyreConfirm();
+                else if (pitting) socket.emit('f1PitReactionPress', { lobbyId, playerColor: myColor });
+            },
+            onCameraToggle: () => { cameraMode = cameraMode === 'third' ? 'first' : 'third'; },
+            onNavLeft:      () => tyreNav(-1),
+            onNavRight:     () => tyreNav(1),
+        });
     }
 
     // Tutti i socket.on(...) sono registrati sopra: SOLO ora è sicuro chiedere
@@ -865,6 +1041,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function animate() {
         requestAnimationFrame(animate);
+
+        if (typeof F1GamepadInput !== 'undefined') {
+            const gp = F1GamepadInput.poll();
+            if (gp && gp.connected) {
+                inputs.throttle = gp.throttle;
+                inputs.brake    = gp.brake;
+                inputs.steer    = gp.steer;
+            }
+        }
+        maybeSendInputs();
 
         for (const [color, target] of Object.entries(serverState)) {
             const v = visualState[color];
@@ -943,7 +1129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         // cambiare perché ha toccato il tetto massimo (avanti
                         // o in retromarcia) — lì la variazione di velocità da
                         // sola non basta più a tenere acceso il motore.
-                        if (color === myColor && (inputs.w || inputs.s)) active = true;
+                        if (color === myColor && (inputs.throttle > 0 || inputs.brake > 0)) active = true;
 
                         // Accelerando o decelerando: per la mia auto uso
                         // direttamente i tasti premuti (diretto, niente
@@ -953,8 +1139,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         // significativo, tengo l'ultimo stato noto invece di
                         // far sfarfallare il suono.
                         let accelerating;
-                        if (color === myColor && (inputs.w || inputs.s)) {
-                            accelerating = !!inputs.w;
+                        if (color === myColor && (inputs.throttle > 0 || inputs.brake > 0)) {
+                            accelerating = inputs.throttle > 0;
                         } else if (magNow > magPrev + ENGINE_SPEED_DELTA_EPS) {
                             accelerating = true;
                         } else if (magNow < magPrev - ENGINE_SPEED_DELTA_EPS) {

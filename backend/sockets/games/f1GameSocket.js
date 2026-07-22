@@ -215,7 +215,7 @@ module.exports = function (io, socket) {
                 speed:           0,
                 vx:              0,
                 vz:              0,
-                inputs:          { w: false, a: false, s: false, d: false },
+                inputs:          { throttle: 0, brake: 0, steer: 0 },
                 finished:        false,
                 time:            null,
                 lap:             0,
@@ -315,8 +315,14 @@ module.exports = function (io, socket) {
 
     socket.on('f1Input', ({ lobbyId, playerColor, inputs }) => {
         const game = activeGames.get(lobbyId);
-        if (!game || !game.players[playerColor]) return;
-        game.players[playerColor].inputs = inputs;
+        if (!game || !game.players[playerColor] || !inputs) return;
+        // Clamp qui perché arriva dal client (analogico, valori liberi):
+        // la fisica sotto assume i range dichiarati.
+        game.players[playerColor].inputs = {
+            throttle: Math.max(0, Math.min(1, Number(inputs.throttle) || 0)),
+            brake:    Math.max(0, Math.min(1, Number(inputs.brake)    || 0)),
+            steer:    Math.max(-1, Math.min(1, Number(inputs.steer)   || 0)),
+        };
     });
 
     // "Riprova" (modalità single): rilancia la GARA con la stessa griglia già
@@ -372,7 +378,7 @@ module.exports = function (io, socket) {
         if (!p) return;   // già rimosso definitivamente
 
         p.disconnected = true;
-        p.inputs = { w: false, a: false, s: false, d: false };
+        p.inputs = { throttle: 0, brake: 0, steer: 0 };
 
         if (!game.rejoinTimers) game.rejoinTimers = {};
         clearTimeout(game.rejoinTimers[color]);
@@ -918,14 +924,14 @@ function updateVelocity(p, isQuali) {
     const maxSpeed = effectiveMaxSpeed(p, isQuali);   // dipende da mescola + usura (Soft fissa in qualifica)
     const grip     = effectiveGrip(p, isQuali);
 
-    if (inputs.w)      p.speed = Math.min(p.speed + ACCEL, maxSpeed);
-    else if (inputs.s) {
+    if (inputs.throttle > 0) p.speed = Math.min(p.speed + ACCEL * inputs.throttle, maxSpeed);
+    else if (inputs.brake > 0) {
         // Frenata/retromarcia. La decelerazione in frenata è un decremento
         // costante per tick, quindi lo spazio d'arresto va con v²/decel: per
         // tenerlo vicino a quello di prima dell'aumento di velocità (R=1.55),
         // BRAKE_MULT scala di R² rispetto al vecchio 1.4 (non solo ×R) — vedi
         // docs/superpowers/specs/2026-07-21-f1-velocita-frenata-mescole-design.md.
-        p.speed = Math.max(p.speed - ACCEL * BRAKE_MULT, -maxSpeed / 2);
+        p.speed = Math.max(p.speed - ACCEL * BRAKE_MULT * inputs.brake, -maxSpeed / 2);
         p.vx *= 0.94;
         p.vz *= 0.94;
     } else {
@@ -939,8 +945,7 @@ function updateVelocity(p, isQuali) {
 
     if (Math.abs(p.speed) > 0.01 || (p.vx * p.vx + p.vz * p.vz) > 0.0001) {
         const dir = p.speed >= 0 ? 1 : -1;
-        if (inputs.a) p.angle += TURN_SPEED * dir;
-        if (inputs.d) p.angle -= TURN_SPEED * dir;
+        p.angle += TURN_SPEED * dir * inputs.steer;
     }
 
     const fx = Math.sin(p.angle) * p.speed;

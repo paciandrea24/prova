@@ -142,6 +142,12 @@ canvas.tyre-preview-canvas {
     background: rgba(46,204,113,0.18);
 }
 
+/* Focus da navigazione gamepad (D-pad sx/dx + X per confermare) */
+.tyre-card.gp-focused {
+    box-shadow: 0 0 0 3px #f1c40f;
+    transform: translateY(-4px);
+}
+
 .tyre-card-dot {
     width: 46px;
     height: 46px;

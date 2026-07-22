@@ -2,7 +2,7 @@
     "id": "interlagos",
     "name": "Interlagos",
     "targetKm": 5,
-    "roadHalfWidth": 12,
+    "roadHalfWidth": 14.5,
     "controlPoints": [
         {
             "x": 173.47,
