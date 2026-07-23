@@ -1345,7 +1345,8 @@ function buildPublicState(players, raceStarted, track) {
             // fine gara — record storico, non un avviso "da pagare").
             falseStart: !!p.falseStart,
             falseStartServed: !!p.falseStartServed,
-            gapToLeaderMs: (p.gapToLeaderMs != null) ? p.gapToLeaderMs : null
+            gapToLeaderMs: (p.gapToLeaderMs != null) ? p.gapToLeaderMs : null,
+            isBot: !!p.isBot
         };
     }
     return out;

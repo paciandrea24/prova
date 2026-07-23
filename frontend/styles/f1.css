@@ -348,6 +348,24 @@ canvas.tyre-preview-canvas {
     flex-shrink: 0;
 }
 
+/* Badge "CPU": box neutro accanto al pallino colore per i piloti bot, per
+   distinguerli a colpo d'occhio dai giocatori umani in classifica. */
+.bot-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    height: 14px;
+    border-radius: 3px;
+    background: #7f8c8d;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 900;
+    line-height: 1;
+    flex-shrink: 0;
+    letter-spacing: 0.5px;
+}
+
 /* Velocità */
 .speed-unit {
     font-size: 14px;

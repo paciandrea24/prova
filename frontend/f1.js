@@ -839,7 +839,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         rowEl.innerHTML = `
             <span class="pos">${d.position}</span>
             <span class="dot" style="background:${color};"></span>
-            ${color === myColor ? 'TU' : ''}${(d.falseStart && !d.falseStartServed) ? '<span class="false-start-badge">!</span>' : ''}
+            ${color === myColor ? 'TU' : ''}${d.isBot ? '<span class="bot-badge">CPU</span>' : ''}${(d.falseStart && !d.falseStartServed) ? '<span class="false-start-badge">!</span>' : ''}
             <span class="gap">${formatGap(d.gapToLeaderMs)}</span>
         `;
     }
