@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
         deduction: { impostors: 1 },
         spleef: { mapSize: 20 },
         fps: { rounds: 5 }, // round FISSI a 5 (il server ignora comunque questo valore)
-        f1: { mode: 'championship', trackId: 'monte-rosso' }
+        f1: { mode: 'championship', trackId: 'monte-rosso', botsEnabled: 'true' }
     };
 
     // Popola il menu "Track" delle impostazioni F1 con le piste disponibili
