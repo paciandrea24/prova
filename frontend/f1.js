@@ -417,6 +417,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let raceTotalLaps = 3;      // giri della gara vera (fisso, indipendente dalla fase corrente)
 
     let tyrePanelOpen = false;   // stato locale, mai sincronizzato col server — resettato a chiuso ad ogni f1Countdown
+    let lightsSequenceActive = false;   // true durante la plancia luci del via gara (non in qualifica)
 
     // Interpola verde -> giallo -> rosso in base all'usura (0-100): stessa
     // scala già usata nel mockup approvato dall'utente.
@@ -802,6 +803,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="standing-entry${color === myColor ? ' me' : ''}">
                 <span class="standing-pos">${d.position}°</span>
                 <span class="standing-dot" style="background:${color};"></span>
+                ${d.falseStart ? '<span class="false-start-badge">!</span>' : ''}
             </div>
         `).join('');
     }
@@ -836,26 +838,63 @@ document.addEventListener('DOMContentLoaded', async () => {
         const num      = document.getElementById('countdown-number');
         const trackEl  = document.getElementById('countdown-track');
         const labelEl  = document.getElementById('countdown-label');
+        const lightsBoard = document.getElementById('lights-board');
         if (data?.trackName) trackEl.textContent = data.trackName;
         labelEl.textContent = data?.label || '';
         overlay.style.background = 'rgba(0,0,0,0.65)';
         overlay.style.display    = 'flex';
-        num.textContent = '3'; num.style.color = '#e74c3c';
-        setTimeout(() => { num.textContent = '2'; num.style.color = '#f39c12'; }, 1000);
-        setTimeout(() => { num.textContent = '1'; num.style.color = '#f1c40f'; }, 2000);
+
+        if (data?.phase === 'race') {
+            // Plancia luci: 5 bulbi spenti, si accendono uno alla volta ogni
+            // LIGHT_INTERVAL_MS (stesso valore lato server, 1000ms), poi
+            // restano tutte accese finché non arriva davvero f1RaceStarted
+            // (l'attesa casuale la decide solo il server, qui non c'è nessun
+            // timer locale che la replica — lo spegnimento è una reazione
+            // all'evento, mai un timeout indipendente).
+            lightsSequenceActive = true;
+            num.style.display = 'none';
+            lightsBoard.style.display = 'flex';
+            const bulbs = [0, 1, 2, 3, 4].map(i => document.getElementById(`light-${i}`));
+            bulbs.forEach(b => b.classList.remove('on'));
+            const LIGHT_INTERVAL_MS = 1000;
+            bulbs.forEach((bulb, i) => {
+                setTimeout(() => {
+                    bulb.classList.add('on');
+                    anime({ targets: bulb, scale: [1, 1.18, 1], duration: 260, easing: 'easeOutQuad' });
+                }, i * LIGHT_INTERVAL_MS);
+            });
+        } else {
+            num.style.display = '';
+            lightsBoard.style.display = 'none';
+            num.textContent = '3'; num.style.color = '#e74c3c';
+            setTimeout(() => { num.textContent = '2'; num.style.color = '#f39c12'; }, 1000);
+            setTimeout(() => { num.textContent = '1'; num.style.color = '#f1c40f'; }, 2000);
+        }
     });
 
     socket.on('f1RaceStarted', (data) => {
-        isRacing    = true;
+        isRacing             = true;
+        lightsSequenceActive = false;
         myFinalTime = null;
         if (data?.phase) currentPhase = data.phase;
         localStart  = Date.now() - (data?.syncTime || 0);
         const overlay = document.getElementById('countdown-overlay');
         const num     = document.getElementById('countdown-number');
-        num.textContent = 'GO!'; num.style.color = '#2ecc71';
+        const lightsBoard = document.getElementById('lights-board');
+        if (data?.phase === 'race') {
+            // Le 5 luci si spengono tutte insieme, sincronizzate con l'arrivo
+            // di questo stesso evento (niente testo "GO!" per la gara, lo
+            // spegnimento simultaneo è già il segnale di partenza).
+            document.querySelectorAll('.light-bulb').forEach(b => b.classList.remove('on'));
+        } else {
+            num.textContent = 'GO!'; num.style.color = '#2ecc71';
+        }
         overlay.style.background = 'transparent';
         document.getElementById('timer-panel').style.display = (data?.phase === 'qualifying') ? 'flex' : 'none';
-        setTimeout(() => { overlay.style.display = 'none'; }, 800);
+        setTimeout(() => {
+            overlay.style.display = 'none';
+            lightsBoard.style.display = 'none';
+        }, 800);
         // Rinfresca il box giri appena la sessione (qualifica o gara) parte
         // davvero: senza questo restava il valore lasciato dalla fase
         // precedente (es. "1/1" della qualifica per tutto il 1° giro di gara).
@@ -1063,7 +1102,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     let lastSendTime = 0;
 
     function maybeSendInputs() {
-        if (!isRacing) return;
+        // In gara (mai in qualifica) l'input parte già durante la sequenza
+        // luci: serve al server SOLO per il rilevamento falsa partenza — la
+        // fisica resta congelata lato server finché la gara non parte
+        // davvero, quindi non c'è rischio che l'auto si muova prima del via.
+        if (!isRacing && !lightsSequenceActive) return;
         const now = performance.now();
         const changed = Math.abs(inputs.throttle - lastSent.throttle) > SEND_EPS ||
                         Math.abs(inputs.brake    - lastSent.brake)    > SEND_EPS ||
