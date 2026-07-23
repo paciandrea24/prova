@@ -794,6 +794,14 @@ function tickGame(io, lobbyId, game) {
         updateTrackIndex(p, game.track);
     }
 
+    // Trasmesso PRIMA del controllo di fine sessione qui sotto: altrimenti
+    // l'ultimo giocatore che finisce (tipicamente chi non fa la pole, essendo
+    // il più lento) innesca endQualifying/endRace nello stesso tick in cui il
+    // suo `finished` diventa true, e quel `return` faceva saltare proprio la
+    // trasmissione con il suo stato finale — il client non riceveva mai
+    // finished/time e il cronometro continuava a scorrere sullo sfondo.
+    broadcastState(io, lobbyId, game, true);
+
     // Fine sessione (qualifica o gara): tutti i giocatori CONNESSI hanno finito
     // (chi è in grazia con l'auto ferma non blocca la chiusura; c'è comunque un
     // timer di sicurezza per chi resta indietro senza essersi disconnesso).
@@ -809,8 +817,6 @@ function tickGame(io, lobbyId, game) {
             return;
         }
     }
-
-    broadcastState(io, lobbyId, game, true);
 }
 
 // ====================================================

@@ -386,6 +386,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     let myFinalTime   = null;
     let hostColor     = null;
     let currentPhase  = null;   // tyre_select | qualifying | grid_display | race
+    let raceTotalLaps = 3;      // giri della gara vera (fisso, indipendente dalla fase corrente)
+
+    // Mostra il giro CORRENTE che si sta guidando (convenzione vera F1: durante
+    // l'ultimo giro di una gara a 3 giri si legge "3/3" per tutto il giro, non
+    // "2/3" — altrimenti il traguardo finale sembra arrivare "un giro prima").
+    // `completedLaps` è il conteggio di giri già completati (0 all'inizio);
+    // in qualifica il totale è sempre 1 giro secco, mai quello della gara vera.
+    function setLapDisplay(completedLaps, phaseName) {
+        const total   = phaseName === 'qualifying' ? 1 : raceTotalLaps;
+        const current = Math.min(completedLaps + 1, total);
+        document.getElementById('lap-box').style.display = 'flex';
+        document.getElementById('lap-display').textContent = `${current}/${total}`;
+    }
 
     const serverState = {};
     const visualState = {};
@@ -597,24 +610,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ====================================================
     // SOCKET EVENTS
     // ====================================================
-    let myTotalLaps = 3;
-
     socket.on('f1Setup', ({ players, trackName, hostColor: hc, totalLaps, phase, raceStarted, elapsed,
                             compounds, strategy, myCompound, tyreConfirmed, tyreTotal }) => {
         if (compounds) tyreCompoundsInfo = compounds;
         if (phase) currentPhase = phase;
         if (hc) hostColor = hc;
         if (totalLaps) {
-            // In qualifica il giro totale è sempre 1, non quello impostato per
-            // la gara vera (totalLaps qui si riferisce alla gara, non alla
-            // sessione corrente) — altrimenti il box mostrerebbe "0/3" durante
-            // un giro secco.
-            const displayTotalLaps = phase === 'qualifying' ? 1 : totalLaps;
-            myTotalLaps = displayTotalLaps;
+            // totalLaps qui è SEMPRE quello della gara vera (il server lo manda
+            // così a prescindere dalla fase corrente): setLapDisplay lo riduce
+            // già a 1 se si è in qualifica.
+            raceTotalLaps = totalLaps;
             const myLap = players[myColor] ? players[myColor].lap : 0;
-            const box = document.getElementById('lap-box');
-            box.style.display = 'flex';
-            document.getElementById('lap-display').textContent = `${Math.min(myLap, displayTotalLaps)}/${displayTotalLaps}`;
+            setLapDisplay(myLap, phase);
         }
 
         // Idempotente: su un rientro (reconnect senza reload) i modelli esistono
@@ -759,13 +766,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         overlay.style.background = 'transparent';
         document.getElementById('timer-box').style.visibility = 'visible';
         setTimeout(() => { overlay.style.display = 'none'; }, 800);
+        // Rinfresca il box giri appena la sessione (qualifica o gara) parte
+        // davvero: senza questo restava il valore lasciato dalla fase
+        // precedente (es. "1/1" della qualifica per tutto il 1° giro di gara).
+        setLapDisplay(0, data?.phase);
         sendInputs();
     });
 
-    socket.on('f1LapUpdate', ({ color, lap, totalLaps }) => {
+    socket.on('f1LapUpdate', ({ color, lap, phase }) => {
         if (color !== myColor) return;
-        document.getElementById('lap-box').style.display = 'flex';
-        document.getElementById('lap-display').textContent = `${Math.min(lap, totalLaps)}/${totalLaps}`;
+        setLapDisplay(lap, phase);
     });
 
     // Animazione di rivelazione: rivela il TESTO passato lettera per lettera,
