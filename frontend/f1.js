@@ -977,10 +977,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ? 'Nessun tempo'
                 : `${Math.floor(t / 60000)}:${String(Math.floor((t % 60000) / 1000)).padStart(2, '0')}.${String(t % 1000).padStart(3, '0')}`;
             return `
-                <li style="display:flex;justify-content:space-between;align-items:center;padding:10px 5px;border-bottom:1px solid #bdc3c7;font-size:18px;">
+                <li style="display:flex;justify-content:space-between;align-items:center;padding:10px 5px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:18px;">
                     <div style="display:flex;align-items:center;gap:12px;">
-                        <span style="font-weight:900;width:26px;color:#2C3E50;">${i + 1}°</span>
-                        <span style="display:inline-block;width:20px;height:20px;background:${entry.color};border-radius:50%;border:2px solid #2C3E50;"></span>
+                        <span style="font-weight:900;width:26px;color:var(--hud-text);">${i + 1}°</span>
+                        <span style="display:inline-block;width:20px;height:20px;background:${entry.color};border-radius:50%;border:2px solid var(--hud-surface);"></span>
                         <span style="font-size:13px;font-weight:bold;">${entry.color === myColor ? '(TU)' : ''}</span>
                     </div>
                     <span style="font-family:monospace;font-weight:bold;">${timeStr}</span>
@@ -1014,11 +1014,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const s  = Math.floor((t % 60000) / 1000);
             const ms = t % 1000;
             const li = document.createElement('li');
-            li.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px 5px;border-bottom:1px solid #bdc3c7;font-size:18px;';
+            li.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px 5px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:18px;';
             li.innerHTML = `
                 <div style="display:flex;align-items:center;gap:12px;">
-                    <span style="font-weight:900;width:26px;color:${i===0?'#f1c40f':i===1?'#95a5a6':i===2?'#d35400':'#2C3E50'}">${i+1}°</span>
-                    <span style="display:inline-block;width:20px;height:20px;background:${entry.color};border-radius:50%;border:2px solid #2C3E50;"></span>
+                    <span style="font-weight:900;width:26px;color:${i===0?'#f1c40f':i===1?'#95a5a6':i===2?'#d35400':'var(--hud-text)'}">${i+1}°</span>
+                    <span style="display:inline-block;width:20px;height:20px;background:${entry.color};border-radius:50%;border:2px solid var(--hud-surface);"></span>
                     <span style="font-size:13px;font-weight:bold;">${entry.color===myColor?'(YOU)':''}</span>
                     ${entry.pitPenalty ? '<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+30s NO PIT</span>' : ''}
                     ${entry.falseStart ? '<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+5s FALSE START</span>' : ''}
