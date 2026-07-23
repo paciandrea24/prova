@@ -296,6 +296,24 @@ canvas.tyre-preview-canvas {
     flex-shrink: 0;
 }
 
+/* Badge falsa partenza: box rosso pieno con "!" accanto al pallino colore
+   del pilota in classifica — visibile a tutti in tempo reale, resta per
+   tutta la gara anche dopo che la penalità è stata scontata ai box. */
+.false-start-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    background: #c0392b;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
 /* Velocità */
 .speed-unit {
     font-size: 14px;
@@ -355,6 +373,32 @@ canvas.tyre-preview-canvas {
 @keyframes pulse {
     from { transform: scale(1.4); opacity: 0.6; }
     to   { transform: scale(1);   opacity: 1;   }
+}
+
+/* Plancia semaforo (solo via gara): pannello scuro con 5 bulbi, spenti di
+   default — f1.js li accende uno alla volta via anime.js, poi li spegne
+   tutti insieme al via. */
+#lights-board {
+    display: flex;
+    gap: 14px;
+    padding: 18px 26px;
+    background: #0c0e12;
+    border-radius: 16px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.5), inset 0 0 0 2px #2a2f38;
+}
+
+.light-bulb {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: #2a0d0d;
+    box-shadow: inset 0 0 6px rgba(0,0,0,0.6);
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.light-bulb.on {
+    background: #ff2c2c;
+    box-shadow: 0 0 18px 4px rgba(255,44,44,0.85), inset 0 0 6px rgba(255,255,255,0.3);
 }
 
 /* Animazione POLE: rivelata lettera per lettera, scorre da destra verso il

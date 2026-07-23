@@ -79,11 +79,19 @@
     <!-- Suggerimento camera -->
     <div class="camera-hint" id="camera-hint">C: cambia visuale · H: hitbox debug</div>
 
-    <!-- Overlay countdown -->
+    <!-- Overlay countdown: testo 3-2-1 per la qualifica, plancia luci per la
+         gara (mostrati alternativamente in base alla fase, vedi f1.js) -->
     <div id="countdown-overlay" class="overlay" style="display:none;">
         <span id="countdown-label" class="countdown-track" style="letter-spacing:3px;"></span>
         <span id="countdown-track" class="countdown-track"></span>
         <span id="countdown-number" class="countdown-number">3</span>
+        <div id="lights-board" style="display:none;">
+            <span class="light-bulb" id="light-0"></span>
+            <span class="light-bulb" id="light-1"></span>
+            <span class="light-bulb" id="light-2"></span>
+            <span class="light-bulb" id="light-3"></span>
+            <span class="light-bulb" id="light-4"></span>
+        </div>
     </div>
 
     <!-- Overlay selezione mescola -->
