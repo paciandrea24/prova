@@ -86,12 +86,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const trackPts  = TrackGeometry.sampleLoop(trackData.controlPoints, N_SAMPLES);
 
     // ====================================================
-    // MINIMAPPA — contorno pista in SVG, generato una tantum proiettando
-    // trackPts (x,z) sul piano. Nessuna finezza di parametrizzazione per
-    // arco: 1000 vertici a poligono sono già lisci a queste dimensioni.
+    // MINIMAPPA — contorno pista + corsia box in SVG, generati una tantum
+    // proiettando trackPts/PIT_PTS (x,z) sul piano. Nessuna finezza di
+    // parametrizzazione per arco: i vertici campionati sono già lisci a
+    // queste dimensioni. Trasformazione (scala/offset) calcolata UNA VOLTA
+    // sull'ingombro di entrambi i tracciati insieme, non solo della pista
+    // principale: altrimenti la corsia box, se sporge anche di poco dal
+    // riquadro della pista, finirebbe tagliata fuori dai margini.
     // ====================================================
-    function buildMinimapPath(pts) {
-        const xs = pts.map(p => p.x), zs = pts.map(p => p.z);
+    function minimapTransform(allPts) {
+        const xs = allPts.map(p => p.x), zs = allPts.map(p => p.z);
         const minX = Math.min(...xs), maxX = Math.max(...xs);
         const minZ = Math.min(...zs), maxZ = Math.max(...zs);
         const w = maxX - minX, h = maxZ - minZ;
@@ -99,8 +103,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         const scale = Math.min((VB_W - MARGIN * 2) / w, (VB_H - MARGIN * 2) / h);
         const offX = MARGIN + (VB_W - MARGIN * 2 - w * scale) / 2 - minX * scale;
         const offZ = MARGIN + (VB_H - MARGIN * 2 - h * scale) / 2 - minZ * scale;
-        const toSvg = (p) => `${(p.x * scale + offX).toFixed(1)},${(p.z * scale + offZ).toFixed(1)}`;
-        return `M ${toSvg(pts[0])} ` + pts.slice(1).map(p => `L ${toSvg(p)}`).join(' ') + ' Z';
+        return { scale, offX, offZ };
+    }
+
+    // `closed`: true per un anello (pista, si richiude su se stessa con Z),
+    // false per un percorso aperto (corsia box, che non è un loop).
+    function minimapPathString(pts, transform, closed) {
+        const toSvg = (p) => `${(p.x * transform.scale + transform.offX).toFixed(1)},${(p.z * transform.scale + transform.offZ).toFixed(1)}`;
+        return `M ${toSvg(pts[0])} ` + pts.slice(1).map(p => `L ${toSvg(p)}`).join(' ') + (closed ? ' Z' : '');
     }
 
     // ====================================================
@@ -449,10 +459,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // `completedLaps` è il conteggio di giri già completati (0 all'inizio);
     // in qualifica il totale è sempre 1 giro secco, mai quello della gara vera.
     function setLapDisplay(completedLaps, phaseName) {
-        const total   = phaseName === 'qualifying' ? 1 : raceTotalLaps;
-        const current = Math.min(completedLaps + 1, total);
         document.getElementById('lap-box').style.display = 'flex';
-        document.getElementById('lap-display').textContent = `${current}/${total}`;
+        const el = document.getElementById('lap-display');
+        // In qualifica non ha senso mostrare "1/1" (un solo giro secco non è
+        // un rapporto giri/totale) — l'utente lo trovava fuorviante.
+        if (phaseName === 'qualifying') {
+            el.textContent = 'GIRO SECCO';
+            return;
+        }
+        const current = Math.min(completedLaps + 1, raceTotalLaps);
+        el.textContent = `${current}/${raceTotalLaps}`;
     }
 
     const serverState = {};
@@ -766,10 +782,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateStandings(state);
     });
 
-    // Classifica live: pallino colore + posizione, ordinata per rank. Nulla da
-    // mostrare prima che la gara sia partita (position è null lato server).
+    // Classifica live: pallino colore + posizione, ordinata per rank. Mai in
+    // qualifica: lì ogni giocatore vede solo se stesso (playersVisibleTo la
+    // isola), quindi avrebbe comunque "position" (raceStarted è true anche in
+    // qualifica) e mostrerebbe una classifica assurda con un solo "1°" — non
+    // basta controllare le entries, va escluso esplicitamente per fase.
     function updateStandings(state) {
         const box = document.getElementById('standings-box');
+        if (currentPhase !== 'race') { box.innerHTML = ''; box.style.display = 'none'; return; }
+
         const entries = Object.entries(state)
             .filter(([, d]) => d.position)
             .sort((a, b) => a[1].position - b[1].position);
@@ -1135,8 +1156,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Marker minimappa: colore auto del giocatore, stesso valore già usato
     // altrove (es. standing-dot) — nessuna nuova palette.
     const minimapTrackEl = document.getElementById('minimap-track');
+    const minimapPitEl   = document.getElementById('minimap-pit');
     const minimapDotEl   = document.getElementById('minimap-dot');
-    minimapTrackEl.setAttribute('d', buildMinimapPath(trackPts));
+    const minimapT = minimapTransform([...trackPts, ...PIT_PTS]);
+    minimapTrackEl.setAttribute('d', minimapPathString(trackPts, minimapT, true));
+    minimapPitEl.setAttribute('d', minimapPathString(PIT_PTS, minimapT, false));
     minimapDotEl.querySelectorAll('circle').forEach(c => { c.style.fill = myColor; });
 
     // anime.js Motion Path (vedi documentazione createMotionPath): l'istanza
@@ -1329,7 +1353,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             const s  = Math.floor((t % 60000) / 1000);
             const ms = t % 1000;
             timerEl.textContent = `${m}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
-            timerEl.style.color = myFinalTime !== null ? '#2ecc71' : '#2C3E50';
+            // Colore: verde a tempo fissato, altrimenti nessun override così
+            // resta il colore chiaro di .hud-mono — il vecchio #2C3E50 (blu
+            // navy, pensato per il pannello chiaro pre-redesign) era quasi
+            // invisibile sullo schermo scuro incassato (segnalato dall'utente
+            // come "blu su blu").
+            timerEl.style.color = myFinalTime !== null ? '#2ecc71' : '';
         }
 
         if (tyreSelectActive) updateTyreSelectCamera();
