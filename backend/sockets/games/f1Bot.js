@@ -39,7 +39,7 @@ const BOT_STEER_GAIN = 3.0;
 // istantaneo), quindi il raggio davvero percorso è un po' più ampio di
 // quello puramente geometrico — un margine copre lo scarto senza dover
 // indovinare quanto sia stretta ciascuna curva.
-const BOT_CORNER_SPEED_MARGIN = 0.97;
+const BOT_CORNER_SPEED_MARGIN = 0.99;
 
 function normalizeAngle(a) {
     while (a > Math.PI) a -= 2 * Math.PI;
@@ -76,7 +76,7 @@ function lookaheadIndex(n, currentIdx, lookaheadSamples) {
 // BOT_APEX_MAX_FRACTION della mezza larghezza pista (mai fino al bordo).
 // ====================================================
 const BOT_APEX_REF_ANGLE     = Math.PI / 6;   // 30° sulla finestra locale: oltre, taglio già al massimo consentito
-const BOT_APEX_MAX_FRACTION  = 0.72;          // frazione massima della mezza larghezza pista di cui ci si sposta verso l'interno
+const BOT_APEX_MAX_FRACTION  = 0.85;          // frazione massima della mezza larghezza pista di cui ci si sposta verso l'interno
 
 // Offset {dx,dz} da sommare al punto mirato in idx, verso l'interno della
 // curva locale (stimata confrontando la tangente `halfWindowSamples` prima
@@ -342,6 +342,13 @@ const BOT_FOLLOW_MIN_FRACTION = 0.55;   // frazione minima di velocità quando s
 // posizione fissa per tutta la gara, nessun sorpasso si verifica mai.
 const BOT_OVERTAKE_PACE_MARGIN = 1.05;   // serve almeno il 5% di velocità libera in più per tentare
 const BOT_OVERTAKE_FRACTION    = 0.55;   // quanto ci si sposta lateralmente (frazione della mezza larghezza pista)
+// Il sorpasso si somma allo spazio pista già "consumato" dal taglio curva
+// (apexOffset): tentarlo mentre si è già in curva stretta può superare la
+// larghezza pista reale e mandare il bot fuori — segnalato in playtest.
+// Si tenta solo se la curvatura locale (misurata dallo stesso apexOffset
+// già calcolato per lo sterzo) è sotto questa frazione del taglio massimo,
+// cioè su rettilinei o curve dolci — come farebbe un pilota vero.
+const BOT_OVERTAKE_MAX_CORNER_SEVERITY = 0.4;
 
 function metersToSamples(meters, track) {
     return Math.max(1, Math.round(meters * track.points.length / track.lapLength));
@@ -437,7 +444,12 @@ function updateBotInputs(game, deps) {
                     // star frenando per una curva in quel preciso istante):
                     // solo se il bot avrebbe davvero un ritmo superiore
                     // tenta il sorpasso, altrimenti resta dietro sicuro.
-                    if (targetSpeed > ahead.player.speed * BOT_OVERTAKE_PACE_MARGIN) {
+                    // In curva stretta lo spazio è già "occupato" dal
+                    // taglio (apex): niente sorpasso lì, solo su rettilinei
+                    // o curve dolci (stessa logica di un pilota vero).
+                    const apexMag = Math.hypot(apex.dx, apex.dz);
+                    const cornerIsMild = apexMag < track.roadHalf * BOT_APEX_MAX_FRACTION * BOT_OVERTAKE_MAX_CORNER_SEVERITY;
+                    if (cornerIsMild && targetSpeed > ahead.player.speed * BOT_OVERTAKE_PACE_MARGIN) {
                         const overtake = overtakeOffset(
                             track.points, ahead.player.trackIndex || 0, ahead.player.x, ahead.player.z,
                             track.roadHalf, BOT_OVERTAKE_FRACTION, p.botOvertakeSide
