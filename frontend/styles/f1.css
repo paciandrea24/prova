@@ -219,26 +219,36 @@ canvas.tyre-preview-canvas {
     width: 130px;
     padding: 18px 12px;
     border-radius: 16px;
-    border: 4px solid #566573;
-    background: rgba(255,255,255,0.06);
+    background: var(--hud-surface);
+    box-shadow:
+        4px 4px 10px var(--hud-shadow-dk),
+        -4px -4px 9px var(--hud-shadow-lt);
     cursor: pointer;
-    transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
     pointer-events: auto;
 }
 
 .tyre-card:hover {
     transform: translateY(-4px);
-    background: rgba(255,255,255,0.12);
+    background: #232a35;
 }
 
+/* Bagliore verde sommato all'ombra neumorfica di base (mai un bordo pieno,
+   coerente col resto del sistema neumorfico). */
 .tyre-card.selected {
-    border-color: #2ecc71;
-    background: rgba(46,204,113,0.18);
+    box-shadow:
+        4px 4px 10px var(--hud-shadow-dk),
+        -4px -4px 9px var(--hud-shadow-lt),
+        0 0 0 2px rgba(46,204,113,0.55);
 }
 
-/* Focus da navigazione gamepad (D-pad sx/dx + X per confermare) */
+/* Focus da navigazione gamepad (D-pad sx/dx + X per confermare): outline,
+   non box-shadow — altrimenti confliggerebbe con .selected (le box-shadow
+   di classi diverse si sovrascrivono, non si sommano; gli outline invece
+   restano sempre visibili insieme a qualunque box-shadow). */
 .tyre-card.gp-focused {
-    box-shadow: 0 0 0 3px #f1c40f;
+    outline: 3px solid var(--hud-wear-mid);
+    outline-offset: 2px;
     transform: translateY(-4px);
 }
 
@@ -247,18 +257,19 @@ canvas.tyre-preview-canvas {
     height: 46px;
     border-radius: 50%;
     margin: 0 auto 10px;
-    border: 3px solid #2C3E50;
+    border: 3px solid var(--hud-surface);
 }
 
 .tyre-card-label {
     font-size: 18px;
     font-weight: 900;
     letter-spacing: 1px;
+    color: var(--hud-text);
 }
 
 .tyre-card-stats {
     font-size: 12px;
-    color: #bdc3c7;
+    color: var(--hud-text-dim);
     margin-top: 6px;
     line-height: 1.6;
 }
@@ -379,6 +390,10 @@ canvas.tyre-preview-canvas {
    default — f1.js li accende uno alla volta via anime.js, poi li spegne
    tutti insieme al via. */
 #lights-board {
+    position: fixed;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     gap: 14px;
     padding: 18px 26px;
@@ -401,22 +416,32 @@ canvas.tyre-preview-canvas {
     box-shadow: 0 0 18px 4px rgba(255,44,44,0.85), inset 0 0 6px rgba(255,255,255,0.3);
 }
 
-/* Animazione POLE: rivelata lettera per lettera, scorre da destra verso il
-   centro (transform aggiornato via JS ad ogni lettera, la transition rende
-   fluido lo scorrimento invece di un salto secco). */
+/* Animazione POLE: rivelata lettera per lettera via anime.stagger (vedi
+   playRevealAnimation in f1.js) — il colore (oro per la pole, chiaro per
+   gli altri) è impostato via JS su textEl.style.color, non qui. */
 .pole-text {
     font-family: 'Fredoka', sans-serif;
     font-weight: 900;
     font-size: 100px;
-    color: #f1c40f;
     letter-spacing: 6px;
     white-space: nowrap;
     text-transform: uppercase;
-    text-shadow:
-        -3px -3px 0 #2C3E50,  3px -3px 0 #2C3E50,
-        -3px  3px 0 #2C3E50,  3px  3px 0 #2C3E50,
-         6px  6px 0 rgba(0,0,0,0.35);
-    transition: transform 0.08s linear;
+    text-shadow: 4px 4px 10px rgba(0,0,0,0.5);
+}
+
+/* Overlay/pannelli a schermo intero in stile neumorfico scuro — stesso
+   principio dell'HUD (.hud-panel-neu): letti dalla coppia di ombre, mai da
+   un bordo colorato. */
+.menu-overlay-bg {
+    background: rgba(6, 8, 11, 0.92);
+}
+.menu-panel-neu {
+    background: var(--hud-surface);
+    border-radius: 20px;
+    box-shadow:
+        8px 8px 20px var(--hud-shadow-dk),
+        -6px -6px 16px var(--hud-shadow-lt);
+    color: var(--hud-text);
 }
 
 /* ========================
@@ -434,13 +459,9 @@ canvas.tyre-preview-canvas {
 }
 
 .modal-content {
-    background: #fff;
-    border: 4px solid var(--border-color);
-    border-radius: 20px;
     padding: 30px 40px;
     max-width: 550px;
     width: 90%;
-    box-shadow: 6px 6px 0 var(--border-color);
     text-align: center;
     max-height: 85vh;
     overflow-y: auto;
@@ -450,15 +471,34 @@ canvas.tyre-preview-canvas {
     font-family: 'Fredoka', sans-serif;
     font-size: 18px;
     font-weight: 700;
-    border: 3px solid var(--border-color);
+    border: none;
     border-radius: 12px;
     padding: 10px 24px;
     cursor: pointer;
-    box-shadow: 3px 3px 0 var(--border-color);
-    transition: transform 0.1s;
+    box-shadow: 4px 4px 10px var(--hud-shadow-dk), -3px -3px 8px var(--hud-shadow-lt);
+    transition: transform 0.1s, box-shadow 0.1s;
 }
 
 .btn-green { background: var(--green); color: #fff; }
 .btn-red   { background: var(--red);   color: #fff; }
 .btn-green:hover, .btn-red:hover { transform: translate(-2px, -2px); }
-.btn-green:active, .btn-red:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--border-color); }
+.btn-green:active, .btn-red:active { transform: translate(1px, 1px); box-shadow: 2px 2px 6px var(--hud-shadow-dk); }
+
+/* Dissolvenza a nero durante la pausa di "Riprova" (RESTART_GRACE_MS lato
+   server): copre il riposizionamento dell'auto alla griglia, mai visibile
+   a metà transizione — vedi handler f1RestartTransition in f1.js. */
+.restart-transition {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--hud-text);
+    font-family: 'Fredoka', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    opacity: 0;
+}
