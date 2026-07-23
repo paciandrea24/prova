@@ -683,7 +683,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             isRacing    = true;
             localStart  = Date.now() - (elapsed || 0);
             document.getElementById('countdown-overlay').style.display = 'none';
-            document.getElementById('timer-box').style.visibility = 'visible';
+            document.getElementById('timer-panel').style.display = (phase === 'qualifying') ? 'flex' : 'none';
         }
 
         if (phase === 'tyre_select') {
