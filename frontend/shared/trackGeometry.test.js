@@ -86,3 +86,80 @@ test('lapsForDistance arrotonda ai giri più vicini, minimo 1', () => {
     assert.equal(TrackGeometry.lapsForDistance(929.4, 9.3), 10);
     assert.equal(TrackGeometry.lapsForDistance(5000, 0.1), 1);
 });
+
+test('terrainHeightAt restituisce la quota pista entro embankStart', () => {
+    const pts = [];
+    for (let i = 0; i < 50; i++) pts.push({ x: i * 10, z: 0, y: 12 });
+    const y = TrackGeometry.terrainHeightAt(pts, 230, 3, 5, 45);
+    assert.equal(y, 12);
+});
+
+test('terrainHeightAt restituisce 0 oltre embankOuter', () => {
+    const pts = [];
+    for (let i = 0; i < 50; i++) pts.push({ x: i * 10, z: 0, y: 12 });
+    const y = TrackGeometry.terrainHeightAt(pts, 230, 50, 5, 45);
+    assert.equal(y, 0);
+});
+
+test('terrainHeightAt sfuma con uno smoothstep tra embankStart e embankOuter', () => {
+    const pts = [];
+    for (let i = 0; i < 50; i++) pts.push({ x: i * 10, z: 0, y: 12 });
+    // A metà tragitto (dist=25, embankStart=5, embankOuter=45) lo smoothstep
+    // vale esattamente 0.5 (simmetrico): quota attesa = 12 + (0-12)*0.5 = 6.
+    const yHalfway = TrackGeometry.terrainHeightAt(pts, 230, 25, 5, 45);
+    assert.ok(Math.abs(yHalfway - 6) < 0.01, `atteso ~6 a metà smoothstep, trovato ${yHalfway}`);
+});
+
+test('terrainHeightAt resta a 0 se la pista è già a quota 0 ovunque', () => {
+    const pts = [];
+    for (let i = 0; i < 50; i++) pts.push({ x: i * 10, z: 0 });
+    assert.equal(TrackGeometry.terrainHeightAt(pts, 230, 3, 5, 45), 0);
+    assert.equal(TrackGeometry.terrainHeightAt(pts, 230, 25, 5, 45), 0);
+});
+
+test('sampleLoop propaga bridge=true solo ai campioni del tratto tra due punti di controllo entrambi bridge:true', () => {
+    const square = [
+        { x: 0, z: 0 },
+        { x: 100, z: 0, bridge: true },
+        { x: 100, z: 100, bridge: true },
+        { x: 0, z: 100 }
+    ];
+    const pts = TrackGeometry.sampleLoop(square, 400);
+    // Il segmento indice 1->2 è l'unico con entrambi gli estremi bridge:true:
+    // su un quadrato a lati uguali corrisponde a ~1/4 dei 400 campioni.
+    const bridgeCount = pts.filter(p => p.bridge).length;
+    assert.ok(bridgeCount > 90 && bridgeCount < 110, `campioni bridge fuori range atteso: ${bridgeCount}`);
+    assert.equal(pts[0].bridge, false);
+});
+
+test('splitByBridge: nessun punto ponte -> un solo spezzone chiuso con tutti gli indici', () => {
+    const pts = [];
+    for (let i = 0; i < 10; i++) pts.push({ x: i, z: 0, bridge: false });
+    const { groundRuns, bridgeRuns } = TrackGeometry.splitByBridge(pts);
+    assert.equal(groundRuns.length, 1);
+    assert.equal(groundRuns[0].closed, true);
+    assert.deepEqual(groundRuns[0].indices, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    assert.equal(bridgeRuns.length, 0);
+});
+
+test('splitByBridge: un arco ponte non al bordo dell\'array -> uno spezzone a terra aperto (concatenato) + uno ponte', () => {
+    const pts = [];
+    for (let i = 0; i < 10; i++) pts.push({ x: i, z: 0, bridge: i >= 4 && i <= 6 });
+    const { groundRuns, bridgeRuns } = TrackGeometry.splitByBridge(pts);
+    assert.equal(bridgeRuns.length, 1);
+    assert.deepEqual(bridgeRuns[0], [4, 5, 6]);
+    assert.equal(groundRuns.length, 1);
+    assert.equal(groundRuns[0].closed, false);
+    assert.deepEqual(groundRuns[0].indices, [7, 8, 9, 0, 1, 2, 3]);
+});
+
+test('splitByBridge: arco ponte a cavallo del bordo dell\'array -> uno spezzone a terra aperto contiguo', () => {
+    const pts = [];
+    for (let i = 0; i < 10; i++) pts.push({ x: i, z: 0, bridge: i >= 8 || i <= 1 });
+    const { groundRuns, bridgeRuns } = TrackGeometry.splitByBridge(pts);
+    assert.equal(bridgeRuns.length, 1);
+    assert.deepEqual(bridgeRuns[0], [8, 9, 0, 1]);
+    assert.equal(groundRuns.length, 1);
+    assert.equal(groundRuns[0].closed, false);
+    assert.deepEqual(groundRuns[0].indices, [2, 3, 4, 5, 6, 7]);
+});

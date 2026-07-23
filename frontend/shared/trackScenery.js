@@ -140,8 +140,9 @@
     // + edifici box (pitsGarageClosed/pitsOffice alternati) lungo la corsia
     // box. Nessun PRNG: posizioni deterministiche a intervalli fissi, area
     // "propria" non condivisa con lo scatter natura.
-    function buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, mainSide) {
+    function buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, mainSide, embankOuter) {
         const layout = [];
+        const groundPts = trackPts.filter(p => !p.bridge);
         const n = trackPts.length;
         const stepLen = TrackGeometry.lapLength(trackPts) / n;
         const halfWindowSamples = Math.max(1, Math.round((START_WINDOW_LEN / 2) / stepLen));
@@ -171,10 +172,13 @@
                 if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + PADDOCK_PIT_CLEARANCE) continue;
 
                 const rotY = Math.atan2(p.x - x, p.z - z);
-                layout.push({ asset, category: 'paddock', x, y: p.y || 0, z, rotY, scale: KENNEY_MODEL_SCALE });
+                const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
+                layout.push({ asset, category: 'paddock', x, y, z, rotY, scale: KENNEY_MODEL_SCALE });
             }
         }
 
+        // Edifici box: quota invariata (p.y || 0, dalla corsia box stessa) —
+        // il terrapieno non copre la corsia box, fuori scope (vedi design).
         let altBuilding = 0;
         for (let idx = 10; idx < pitPts.length - 10; idx += PIT_BUILDING_STEP_SAMPLES) {
             const p = pitPts[idx];
@@ -203,8 +207,9 @@
     // scartare subito la tribuna — un circuito con una corsia box lunga
     // (es. Monte Rosso) altrimenti perderebbe troppe tribune invece di
     // limitarsi a spostarle di qualche metro.
-    function buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng) {
+    function buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankOuter) {
         const layout = [];
+        const groundPts = trackPts.filter(p => !p.bridge);
         const lapLen = TrackGeometry.lapLength(trackPts);
         const count = Math.max(6, Math.min(10, Math.round(lapLen / 220)));
         const n = trackPts.length;
@@ -239,7 +244,8 @@
             const { x, z, p } = slotXZ(idx, side);
             const rotY = Math.atan2(p.x - x, p.z - z);
             const asset = STAND_VARIANTS[Math.floor(rng() * STAND_VARIANTS.length)];
-            const stand = { asset, category: 'grandstand', x, y: p.y || 0, z, rotY, scale: KENNEY_MODEL_SCALE };
+            const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
+            const stand = { asset, category: 'grandstand', x, y, z, rotY, scale: KENNEY_MODEL_SCALE };
             layout.push(stand);
             accepted.push(stand);
         }
@@ -265,8 +271,9 @@
     // sola volta vicino a trackPts[0] (stesso punto di riferimento di
     // buildStartLine/buildPaddockLayout). `side` (1 o -1) viene passato da
     // generateLayout via mainStandSide(), condiviso con buildPaddockLayout.
-    function buildMainGrandstandLayout(trackPts, barrierDist, side) {
+    function buildMainGrandstandLayout(trackPts, barrierDist, side, embankOuter) {
         const layout = [];
+        const groundPts = trackPts.filter(p => !p.bridge);
         const n = trackPts.length;
         const stepLen = TrackGeometry.lapLength(trackPts) / n;
         const colSpacingSamples = Math.max(1, Math.round(MAIN_STAND_COL_SPACING / stepLen));
@@ -282,9 +289,10 @@
                 const x = p.x + nx * offset * side;
                 const z = p.z + nz * offset * side;
                 const rotY = Math.atan2(p.x - x, p.z - z);
+                const baseY = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
                 layout.push({
                     asset: MAIN_STAND_ASSET, category: 'grandstand-main',
-                    x, y: (p.y || 0) + tier * MAIN_STAND_TIER_HEIGHT,
+                    x, y: baseY + tier * MAIN_STAND_TIER_HEIGHT,
                     z, rotY, scale: KENNEY_MODEL_SCALE
                 });
             }
@@ -307,8 +315,9 @@
     // uniformi nel riquadro attorno al tracciato, filtrati per restare in
     // una fascia libera fuori dal corridoio pista/box e a distanza minima
     // dagli altri oggetti già accettati (di qualunque categoria).
-    function buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted) {
+    function buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter) {
         const layout = [];
+        const groundPts = trackPts.filter(p => !p.bridge);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist);
 
         for (let i = 0; i < NATURE_ATTEMPTS; i++) {
@@ -322,7 +331,8 @@
             if (isTooCloseToAny(accepted, x, z, NATURE_MIN_SPACING)) continue;
 
             const asset = weightedPick(rng, NATURE_ASSETS);
-            const point = { asset, category: 'nature', x, y: dTrack.y, z, rotY: rng() * Math.PI * 2, scale: NATURE_SCALE[asset] };
+            const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
+            const point = { asset, category: 'nature', x, y, z, rotY: rng() * Math.PI * 2, scale: NATURE_SCALE[asset] };
             layout.push(point);
             accepted.push(point);
         }
@@ -332,7 +342,8 @@
     // Tentativo singolo (non garantito) di piazzare un laghetto: cerca un
     // punto con un raggio libero sufficiente attorno; se non lo trova entro
     // il budget di tentativi, nessun laghetto su questo tracciato.
-    function findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted) {
+    function findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter) {
+        const groundPts = trackPts.filter(p => !p.bridge);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist);
 
         for (let i = 0; i < POND_ATTEMPTS; i++) {
@@ -345,7 +356,8 @@
             if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + PIT_NATURE_MARGIN + POND_RADIUS) continue;
             if (isTooCloseToAny(accepted, x, z, POND_CLEARANCE)) continue;
 
-            return { category: 'pond', x, y: dTrack.y, z, radius: POND_RADIUS };
+            const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
+            return { category: 'pond', x, y, z, radius: POND_RADIUS };
         }
         return null;
     }
@@ -355,18 +367,24 @@
     // (TrackGeometry.sampleLoop/sampleOpenPath), stessi usati da
     // TrackMeshBuilder. barrierDist: distanza barriera dal centro pista
     // (BARRIER_D in f1.js).
-    function generateLayout(trackData, trackPts, pitPts, barrierDist) {
+    // embankmentWidth: ampiezza del terrapieno oltre barrierDist entro cui la
+    // quota sfuma a 0 (vedi TrackGeometry.terrainHeightAt) — default 45,
+    // stesso valore usato in frontend/f1.js per la mesh del terrapieno
+    // stesso: se in futuro si tara diversamente in f1.js, va passato qui
+    // esplicitamente per restare coerenti.
+    function generateLayout(trackData, trackPts, pitPts, barrierDist, embankmentWidth = 45) {
         const rng = mulberry32(hashString(trackData.id));
         const pitRoadHalf = trackData.pit.roadHalfWidth;
         const side = mainStandSide(trackPts, pitPts);
+        const embankOuter = barrierDist + embankmentWidth;
 
-        const paddock   = buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side);
-        const mainStand = buildMainGrandstandLayout(trackPts, barrierDist, side);
+        const paddock   = buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankOuter);
+        const mainStand = buildMainGrandstandLayout(trackPts, barrierDist, side, embankOuter);
         const accepted  = [...paddock, ...mainStand];
-        const grandstand = buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng);
+        const grandstand = buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankOuter);
 
-        const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted);
-        const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted);
+        const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter);
+        const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter);
 
         const layout = [...paddock, ...mainStand, ...grandstand, ...nature];
         if (pond) layout.push(pond);

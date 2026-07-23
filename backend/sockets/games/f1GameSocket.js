@@ -39,6 +39,26 @@ const COLLISION_BOUNCE = 0.6;  // quota della velocità normale scambiata all'ur
 // c'era a MAX_SPEED=4.0 con 8 sottostep.
 const COLLISION_SUBSTEPS = 13;
 
+// Sui tratti ponte, uscire lateralmente non deve far "cadere" l'auto (senza
+// terreno vero sotto finché non ricade sul terrapieno più lontano, vedi
+// Fase 2): il bordo diventa un muro rigido. Stessa soglia già usata per il
+// fuoripista (roadHalf+2 in applyOffTrackDrag), non una nuova distanza.
+const BRIDGE_BARRIER_MARGIN = 2;
+// Quanta della componente di velocità che spinge oltre il muro (lungo la
+// normale, verso l'esterno) viene rimossa ad ogni contatto — la componente
+// parallela al muro non viene mai toccata da questo fattore (vedi
+// applyBridgeBarrier: nessun calcolo/scelta di verso, solo rimozione della
+// spinta verso l'esterno).
+const BRIDGE_BARRIER_SLOWDOWN = 0.5;
+// Attrito continuo applicato a tutta la velocità (non solo alla componente
+// normale) finché l'auto resta appoggiata al muro — un rallentamento reale
+// e sostenuto, non solo un colpo secco al momento dell'urto, richiesto
+// esplicitamente dall'utente ("non velocità visibile dal contatore ma
+// proprio un rallentamento"). Applicato ad ogni sotto-step di contatto
+// (COLLISION_SUBSTEPS per tick): da tarare a vista, un valore troppo alto
+// qui si amplifica rapidamente su contatti prolungati.
+const BRIDGE_BARRIER_CONTACT_DRAG = 0.01;
+
 const PIT_AUTO_SPEED = 1.55;   // unità/tick dell'autopilota lungo il percorso box (25% di MAX_SPEED)
 const PIT_AUTO_ARRIVE_DIST = 1.0;   // sotto questa distanza dal waypoint, "arrivato"
 
@@ -744,6 +764,11 @@ function tickGame(io, lobbyId, game) {
     for (let s = 0; s < COLLISION_SUBSTEPS; s++) {
         for (const p of racing) integratePosition(p, 1 / COLLISION_SUBSTEPS);
         if (!isQuali) resolveCollisions(players);
+        // A differenza di resolveCollisions (disabilitata in qualifica: le
+        // collisioni auto-auto sono una questione di fair-play multiplayer),
+        // il muro dei tratti ponte si applica sempre, anche in qualifica —
+        // è un limite fisico della pista, non un'interazione tra giocatori.
+        for (const p of racing) applyBridgeBarrier(p, game.track);
     }
 
     for (const p of racing) {
@@ -976,6 +1001,88 @@ function applyOffTrackDrag(p, track) {
         p.vz   *= (1 - drag);
     }
     return offTrack;
+}
+
+// Muro rigido sui tratti ponte (Fase 3): a differenza di applyOffTrackDrag
+// (che si applica ovunque e frena soltanto), qui — solo dove il punto pista
+// più vicino è bridge:true — si impedisce fisicamente di superare la
+// soglia. La sicurezza (non superare mai il muro) viene prima di tutto: la
+// posizione è sempre riportata sul bordo.
+//
+// Redesign 2026-07-23 (vedi
+// docs/superpowers/specs/2026-07-23-f1-barriera-ponte-redesign-design.md):
+// tutti i tentativi precedenti provavano a CALCOLARE un verso "giusto" lungo
+// il muro (dalla velocità d'impatto, poi da p.speed, poi da orientamento×
+// p.speed) — ma qualunque calcolo è di fatto un "aiuto" che decide per il
+// giocatore, e quando quel calcolo assume il verso canonico della pista
+// (invece del verso reale di marcia) redirige in modo indesiderato chi va
+// contromano o in retromarcia (bug segnalato dall'utente). Il fix corretto
+// è più semplice: NON scegliere mai un verso. Si rimuove solo la componente
+// di velocità che spinge oltre il muro (lungo la normale, verso l'esterno);
+// qualunque componente parallela al muro l'auto avesse già — in qualunque
+// verso, anche debole o ambigua — resta esattamente quella, senza alcuna
+// correzione di direzione o di orientamento.
+function applyBridgeBarrier(p, track) {
+    const idx = TrackGeometry.nearestIndexNear(track.points, p.trackIndex || 0, p.x, p.z, TRACK_INDEX_WINDOW);
+    const pt = track.points[idx];
+    if (!pt.bridge) return;
+
+    const dx = p.x - pt.x, dz = p.z - pt.z;
+    const dist = Math.hypot(dx, dz);
+    const limit = track.roadHalf + BRIDGE_BARRIER_MARGIN;
+
+    if (dist <= limit) return;
+
+    const { nx, nz } = TrackGeometry.normalAt(track.points, idx, true);
+    // normalAt punta sempre verso lo stesso lato fisso: va orientata verso
+    // il lato da cui l'auto è effettivamente uscita.
+    const side = (dx * nx + dz * nz) >= 0 ? 1 : -1;
+    const wallNx = nx * side, wallNz = nz * side;
+
+    // Riporta l'auto ESATTAMENTE sul bordo sottraendo solo l'eccesso lungo
+    // la normale dalla sua posizione ATTUALE (non ricostruendola da zero sul
+    // punto pista campionato pt): con una formula "p.x = pt.x + wallNx*limit"
+    // ogni contatto ripiazzerebbe l'auto sullo stesso punto campionato più un
+    // offset fisso, scartando qualunque avanzamento tangenziale reale appena
+    // fatto — se il contatto scatta ad ogni sotto-step (equilibrio stabile
+    // lungo il muro, confermato via log: l'indice pista restava congelato
+    // per centinaia di tick nonostante una velocità sana) l'auto resterebbe
+    // bloccata esattamente nello stesso punto per sempre. Sottrarre solo
+    // l'eccesso preserva l'esatta posizione tangenziale raggiunta, azzerando
+    // solo la componente radiale in più.
+    const overshoot = dist - limit;
+    p.x -= wallNx * overshoot;
+    p.z -= wallNz * overshoot;
+
+    // Componente della velocità lungo la normale (con segno: positiva se
+    // punta ancora verso l'esterno, cioè sta ancora spingendo l'auto oltre
+    // il muro). Si rimuove/smorza SOLO questa componente — quella
+    // parallela al muro (vx/vz meno la parte normale) non viene mai
+    // toccata: qualunque direzione avesse già l'auto lungo il bordo (avanti,
+    // contromano, retromarcia) resta quella, senza alcun calcolo che scelga
+    // un verso "giusto" al posto del giocatore.
+    const vn = p.vx * wallNx + p.vz * wallNz;
+    if (vn > 0) {
+        const remove = vn * BRIDGE_BARRIER_SLOWDOWN;
+        p.vx -= wallNx * remove;
+        p.vz -= wallNz * remove;
+    }
+
+    // Attrito continuo mentre l'auto resta appoggiata al muro (non solo un
+    // colpo secco al momento dell'urto): un rallentamento REALE e sostenuto
+    // finché il contatto persiste — non solo un numero diverso sul
+    // contachilometri — richiesto esplicitamente dall'utente.
+    const contactKeep = 1 - BRIDGE_BARRIER_CONTACT_DRAG;
+    p.vx *= contactKeep;
+    p.vz *= contactKeep;
+
+    // p.speed (lo scalare usato da updateVelocity per ricostruire
+    // fx/fz = sin/cos(angle)*speed ad ogni tick, vedi blend col grip) va
+    // risincronizzato: si proietta la nuova vx/vz sul muso dell'auto
+    // (stessa convenzione di updateVelocity), non ricostruito da un verso
+    // scelto — altrimenti riappare il disallineamento "velocità fantasma"
+    // già diagnosticato e corretto in precedenza.
+    p.speed = p.vx * Math.sin(p.angle) + p.vz * Math.cos(p.angle);
 }
 
 // Usura gomme: SOLO dalla distanza percorsa nel tick (fermo = zero usura,

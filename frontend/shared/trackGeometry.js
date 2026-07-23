@@ -46,7 +46,12 @@
 
         const y1 = p1.y || 0, y2 = p2.y || 0;
         const ue = u * u * (3 - 2 * u); // smoothstep: derivata nulla a u=0 e u=1
-        return { x: xz.x, y: y1 + (y2 - y1) * ue, z: xz.z };
+        // Un campione è "ponte" solo se ENTRAMBI i punti che delimitano il
+        // segmento lo sono (stessa coppia p1/p2 usata sopra per la quota): i
+        // punti di transizione (rampa) restano a terra, il terrapieno della
+        // Fase 1 continua a coprirli normalmente.
+        const bridge = !!p1.bridge && !!p2.bridge;
+        return { x: xz.x, y: y1 + (y2 - y1) * ue, z: xz.z, bridge };
     }
 
     // Valuta la curva (chiusa o aperta) al parametro globale t in [0,1].
@@ -105,7 +110,8 @@
             out.push({
                 x: a.x + (b.x - a.x) * f,
                 y: (a.y || 0) + ((b.y || 0) - (a.y || 0)) * f,
-                z: a.z + (b.z - a.z) * f
+                z: a.z + (b.z - a.z) * f,
+                bridge: a.bridge
             });
         }
         return out;
@@ -141,6 +147,67 @@
         }
         const p = points[bestIdx];
         return { x: p.x, y: p.y || 0, z: p.z, index: bestIdx, dist: Math.sqrt(bestDist) };
+    }
+
+    // Quota "del terreno" in un punto qualunque del mondo: pari alla quota
+    // pista se si è entro embankStart dal punto pista più vicino, sfuma a 0
+    // (prato in piano) oltre embankOuter con uno smoothstep nel mezzo (stessa
+    // curva già usata in evalSegment per la quota lungo il tracciato:
+    // pendenza nulla ai due estremi, nessuno spigolo visibile). Fonte di
+    // verità unica per "che quota ha il terreno qui", riusata sia per
+    // posizionare oggetti scenici sia per la quota visiva dell'auto fuori
+    // pista sia per costruire la mesh del terrapieno.
+    function terrainHeightAt(groundPts, x, z, embankStart, embankOuter) {
+        const { y, dist } = nearestPoint(groundPts, x, z);
+        if (dist <= embankStart) return y;
+        if (dist >= embankOuter) return 0;
+        const t = (dist - embankStart) / (embankOuter - embankStart);
+        const te = t * t * (3 - 2 * t);
+        return y + (0 - y) * te;
+    }
+
+    // Divide i punti campionati (chiusi, come trackPts) in spezzoni "a terra"
+    // (non-ponte) e "ponte": un ponte non genera terrapieno/prato proprio
+    // (li ignora, il terreno resta quello vero sotto), uno spezzone a terra
+    // continua a funzionare come nella Fase 1. Se non c'è nessun punto ponte,
+    // un solo spezzone chiuso copre l'intero giro (nessuna differenza
+    // rispetto a prima di questa funzione). La scansione parte sempre
+    // dall'inizio di uno spezzone a terra (non da un indice arbitrario):
+    // partire a metà di uno spezzone lo spezzerebbe in due pezzi ai lati del
+    // bordo dell'array — un bug reale trovato scrivendo i test di questa
+    // funzione.
+    function splitByBridge(trackPts) {
+        const n = trackPts.length;
+        if (!trackPts.some(p => p.bridge)) {
+            return { groundRuns: [{ indices: trackPts.map((_, i) => i), closed: true }], bridgeRuns: [] };
+        }
+
+        let first = 0;
+        for (let i = 0; i < n; i++) {
+            if (!trackPts[i].bridge && trackPts[(i - 1 + n) % n].bridge) { first = i; break; }
+        }
+
+        const groundRuns = [];
+        const bridgeRuns = [];
+        let current = [];
+        let currentIsBridge = false;
+
+        function flush() {
+            if (!current.length) return;
+            if (currentIsBridge) bridgeRuns.push(current);
+            else groundRuns.push({ indices: current, closed: false });
+            current = [];
+        }
+
+        for (let k = 0; k < n; k++) {
+            const idx = (first + k) % n;
+            const isBridge = !!trackPts[idx].bridge;
+            if (isBridge !== currentIsBridge) { flush(); currentIsBridge = isBridge; }
+            current.push(idx);
+        }
+        flush();
+
+        return { groundRuns, bridgeRuns };
     }
 
     // Giri necessari per coprire (circa) targetKm, dati in metri = unità di
@@ -188,6 +255,8 @@
         lapsForDistance,
         nearestIndexNear,
         nearestPoint,
+        terrainHeightAt,
+        splitByBridge,
         tangentAt,
         normalAt
     };

@@ -165,3 +165,44 @@ test('nessun cartellone sponsor del rettilineo di partenza finisce dentro la cor
         assert.ok(dPit >= pitRoadHalf + 4 - 1e-6, `cartellone troppo vicino alla corsia box: distanza ${dPit}, pitRoadHalf ${pitRoadHalf}`);
     }
 });
+
+test('gli oggetti natura usano la quota del terrapieno (sfuma con la distanza), non la quota pista pura', () => {
+    const E = 20;
+    const ctrl = [];
+    for (let a = 0; a < 360; a += 15) {
+        const r = a * Math.PI / 180;
+        ctrl.push({ x: 300 * Math.cos(r), z: 300 * Math.sin(r), y: E });
+    }
+    const hillTrack = { ...monteRosso, id: 'collina-test', controlPoints: ctrl };
+    const trackPts = TrackGeometry.sampleLoop(ctrl, 1000);
+    const pitPts   = TrackGeometry.sampleOpenPath(monteRosso.pit.path, 300);
+    const layout = TrackScenery.generateLayout(hillTrack, trackPts, pitPts, BARRIER_D);
+    const nature = layout.filter(i => i.category === 'nature');
+    assert.ok(nature.length > 0);
+    for (const n of nature) {
+        assert.ok(n.y >= -1e-6 && n.y <= E + 1e-6, `quota fuori range atteso [0, ${E}]: ${n.y}`);
+    }
+    assert.ok(nature.some(n => n.y < E - 0.5), 'atteso che alcuni oggetti abbiano quota sfumata sotto quella pista (terrapieno)');
+});
+
+test('gli oggetti scenici non ereditano mai la quota del ponte (solo il terreno vero conta)', () => {
+    const E = 20;
+    const ctrl = [];
+    for (let a = 0; a < 360; a += 15) {
+        const r = a * Math.PI / 180;
+        const isBridge = a >= 150 && a <= 210; // arco di ponte isolato, lontano dalla partenza (a=0)
+        ctrl.push({ x: 300 * Math.cos(r), z: 300 * Math.sin(r), y: isBridge ? E : 0, bridge: isBridge });
+    }
+    const bridgeTrack = { ...monteRosso, id: 'ponte-test', controlPoints: ctrl };
+    const trackPts = TrackGeometry.sampleLoop(ctrl, 1000);
+    const pitPts   = TrackGeometry.sampleOpenPath(monteRosso.pit.path, 300);
+    const layout = TrackScenery.generateLayout(bridgeTrack, trackPts, pitPts, BARRIER_D);
+
+    // Il valore massimo di quota "a terra" possibile (nessun punto ponte):
+    // ogni oggetto scenico deve restare entro questo limite, altrimenti ha
+    // ereditato la quota del ponte da un punto che dovrebbe essere escluso.
+    const groundMaxY = Math.max(...trackPts.filter(p => !p.bridge).map(p => p.y || 0));
+    for (const item of layout) {
+        assert.ok(item.y <= groundMaxY + 0.01, `oggetto con quota superiore al terreno vero (${groundMaxY}): trovato y=${item.y} (categoria ${item.category})`);
+    }
+});

@@ -238,10 +238,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         markerGroup.clear();
         const pitMat = new THREE.MeshBasicMaterial({ color: 0x3498db });
+        const bridgeMat = new THREE.MeshBasicMaterial({ color: 0xff8c00 });
         const geo = new THREE.SphereGeometry(2, 12, 12);
         mainPoints.forEach((p, i) => {
             const y = p.y || 0;
-            const m = new THREE.Mesh(geo, materialForY(y));
+            const m = new THREE.Mesh(geo, p.bridge ? bridgeMat : materialForY(y));
             m.scale.setScalar(scaleForY(y));
             m.position.set(p.x, y + 1, p.z);
             m.userData = { list: 'main', index: i };
@@ -368,6 +369,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let panLast = { x: 0, y: 0 };
     let triggerDrag = null; // { startHitX, startHitZ, startXMin, startXMax, startZMin, startZMax }
 
+    // Tenuta aggiornata per poter "riusare" pickMarker anche da un evento
+    // tastiera (keydown non porta la posizione del mouse) — vedi tasto B.
+    let lastMouseClient = { clientX: 0, clientY: 0 };
+
     renderer.domElement.addEventListener('mousedown', (ev) => {
         if (ev.button === 1) {
             // Tasto centrale: pan, mai aggiunta/selezione punti.
@@ -408,6 +413,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     renderer.domElement.addEventListener('mousemove', (ev) => {
+        lastMouseClient = { clientX: ev.clientX, clientY: ev.clientY };
         if (panning) {
             const dx = ev.clientX - panLast.x;
             const dy = ev.clientY - panLast.y;
@@ -506,6 +512,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.addEventListener('keydown', (ev) => {
         if (ev.key === 'u' || ev.key === 'U') { activeList().pop(); rebuild(); }
+        if (ev.key === 'b' || ev.key === 'B') {
+            const marker = pickMarker(lastMouseClient);
+            if (marker && marker.userData.list === 'main') {
+                const p = mainPoints[marker.userData.index];
+                p.bridge = !p.bridge;
+                rebuild();
+            }
+        }
     });
 
     // ====================================================
@@ -549,9 +563,11 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('entryZMin').value = et.zMin ?? -3;
         document.getElementById('entryZMax').value = et.zMax ?? 15;
 
-        mainPoints = data.controlPoints.map(p => (
-            typeof p.y === 'number' ? { x: p.x, z: p.z, y: p.y } : { x: p.x, z: p.z }
-        ));
+        mainPoints = data.controlPoints.map(p => {
+            const point = typeof p.y === 'number' ? { x: p.x, z: p.z, y: p.y } : { x: p.x, z: p.z };
+            if (p.bridge) point.bridge = true;
+            return point;
+        });
         pitPoints = Array.isArray(pit.path) ? pit.path.map(p => ({ x: p.x, z: p.z })) : [];
 
         rebuild();

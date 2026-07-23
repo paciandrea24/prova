@@ -59,17 +59,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     scene.add(sun);
 
     // ====================================================
-    // TERRENO ERBOSO (sfondo)
-    // ====================================================
-    const ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(3000, 3000),
-        new THREE.MeshStandardMaterial({ color: 0x3d8b3d, roughness: 1, metalness: 0 })
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    scene.add(ground);
-
-    // ====================================================
     // COSTRUZIONE PISTA 3D — dati caricati dal JSON della pista scelta
     // (vedi frontend/tracks/), stessa geometria usata dal server tramite
     // backend/sockets/games/trackLoader.js.
@@ -80,10 +69,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     const ROAD_HALF    = trackData.roadHalfWidth;
     const CURB_W       = 2.8;
     const BARRIER_D    = ROAD_HALF + CURB_W + 1.2;
+    // Il terrapieno deve iniziare esattamente dal bordo esterno del cordolo
+    // (non da BARRIER_D, che è 1.2 unità più in là, dove sta la barriera):
+    // altrimenti resta scoperta una fascia sottile tra cordolo e barriera —
+    // prima invisibile perché il prato piatto infinito copriva tutto, ora
+    // che il prato parte dal terrapieno si vedrebbe il cielo di sfondo.
+    const EMBANKMENT_START = ROAD_HALF + CURB_W;
+    // Ampiezza del terrapieno oltre EMBANKMENT_START, entro cui la quota del
+    // terreno sfuma dalla quota pista a 0 (prato in piano) — valore di
+    // partenza, da tarare a vista (pendenza troppo ripida/dolce si aggiusta
+    // solo qui, non in TrackGeometry.terrainHeightAt/TrackMeshBuilder).
+    const EMBANKMENT_WIDTH = 45;
     const PIT_PATH     = trackData.pit.path;
 
     const N_SAMPLES = 1000;
     const trackPts  = TrackGeometry.sampleLoop(trackData.controlPoints, N_SAMPLES);
+
+    // ====================================================
+    // TERRENO ERBOSO — prato con un "buco" a forma di tracciato (esterno) +
+    // pezzo pieno per l'infield, riempiti dal terrapieno che sfuma dalla
+    // quota pista a 0 man mano che ci si allontana: niente più piano piatto
+    // fisso che potesse tagliare la pista nelle discese sotto quota 0 (vedi
+    // design 2026-07-22-f1-terrapieno-e-ponti).
+    // ====================================================
+    TrackMeshBuilder.buildGround(scene, trackPts, BARRIER_D + EMBANKMENT_WIDTH, 3000);
+    TrackMeshBuilder.buildEmbankment(scene, trackPts, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH);
+    // Punti "a terra" (non-ponte): usati sia per i piloni (quota reale sotto
+    // un ponte) sia per la quota visiva dell'auto fuori pista più sotto —
+    // calcolato una sola volta qui, non ad ogni frame.
+    const groundPts = trackPts.filter(p => !p.bridge);
+    TrackMeshBuilder.buildBridgeDecks(scene, trackPts, groundPts, ROAD_HALF + CURB_W, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH);
 
     // Stessi punti campionati usati internamente da TrackMeshBuilder.buildPitLane
     // (che li ricalcola per conto suo): un secondo ricalcolo qui è economico
@@ -243,7 +258,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // quindi resta nella temporal dead zone finché l'esecuzione non arriva
     // alla sua riga — chiamare loadScenery prima, pur essendo la funzione
     // stessa hoistata, faceva scattare un ReferenceError a runtime.
-    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D);
+    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH);
     loadScenery(scene, sceneryLayout);
 
     // ====================================================
@@ -1004,6 +1019,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ====================================================
     const LERP = 0.22;
 
+    // Isteresi sulla soglia "fuori pista" usata per scegliere la sorgente
+    // della quota visiva (trackY del punto pista vs terrainHeightAt): senza
+    // margine, distFromCenter che oscilla anche di pochi centimetri attorno
+    // a ROAD_HALF+2 (confermato via log: si assesta esattamente lì quando
+    // l'auto tocca il muro rigido del ponte) fa flippare il ramo ogni frame
+    // tra due quote radicalmente diverse (quota ponte vs ~0 del terreno
+    // sotto), il vero scatto segnalato dall'utente — non un problema di
+    // v.x/z vs target.x/z (già escluso in un tentativo precedente). Stato
+    // "appiccicoso" per colore: entra nel ramo fuori-pista solo oltre
+    // soglia+margine, ne esce solo sotto soglia-margine.
+    const OFF_BRIDGE_EDGE_HYSTERESIS = 1.5;
+    const _offBridgeEdgeState = {};
+
     function lerpAngle(a, b, t) {
         let d = b - a;
         while (d >  Math.PI) d -= Math.PI * 2;
@@ -1075,7 +1103,35 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // ammorbidire quota e beccheggio come già succede per x/z/angle,
                 // ogni salto di campione si vede come uno scatto, evidente sui
                 // dislivelli e invisibile in piano (dove restano sempre a 0).
-                v.y     = (v.y     || 0) + ((trackPts[idx].y || 0) - (v.y || 0))     * LERP;
+                // Fuori pista (stessa soglia di applyOffTrackDrag lato server,
+                // roadHalf+2) la quota visiva segue il terrapieno alla
+                // posizione REALE dell'auto invece di restare agganciata alla
+                // quota dell'indice pista — sui tratti sopraelevati altrimenti
+                // l'auto resterebbe a "volare" alla quota pista anche ben
+                // oltre il bordo.
+                // Decisione e query sulla posizione AUTORITATIVA del server
+                // (target.x/z), non su v.x/v.z (smussata via LERP verso quella):
+                // su una curva, v.x/v.z può restare per qualche frame dietro/di
+                // lato rispetto alla posizione vera già corretta dal muro
+                // rigido dei ponti, facendo scattare qui il fallback "fuori
+                // pista" anche quando il server non l'ha mai considerata tale —
+                // su un vero incrocio (dove terrainHeightAt scende quasi a 0,
+                // vedi sopra) questo si vedeva come un crollo/risalita di quota
+                // a scatti (segnalato dall'utente).
+                const distFromCenter = Math.hypot(target.x - trackPts[idx].x, target.z - trackPts[idx].z);
+                // groundPts (non trackPts): se l'auto esce di pista proprio
+                // sotto/accanto a un ponte, la quota deve seguire il terreno
+                // vero, non agganciarsi al punto-ponte più vicino.
+                const wasOffBridgeEdge = _offBridgeEdgeState[color] || false;
+                const offBridgeEdge = wasOffBridgeEdge
+                    ? distFromCenter > (ROAD_HALF + 2 - OFF_BRIDGE_EDGE_HYSTERESIS)
+                    : distFromCenter > (ROAD_HALF + 2 + OFF_BRIDGE_EDGE_HYSTERESIS);
+                _offBridgeEdgeState[color] = offBridgeEdge;
+                const targetY = offBridgeEdge
+                    ? TrackGeometry.terrainHeightAt(groundPts, target.x, target.z, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH)
+                    : (trackPts[idx].y || 0);
+
+                v.y     = (v.y     || 0) + (targetY - (v.y || 0)) * LERP;
                 v.pitch = (v.pitch || 0) + (trackPitchAt(idx)      - (v.pitch || 0)) * LERP;
                 carGroup.position.set(v.x, v.y, v.z);
                 carGroup.rotation.order = 'YXZ';
