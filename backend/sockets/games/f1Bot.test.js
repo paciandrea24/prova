@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-    PALETTE, normalizeAngle, steerToward, lookaheadIndex,
+    PALETTE, normalizeAngle, steerToward, lookaheadIndex, apexOffset,
     cornerTargetSpeed, pickPostPitCompound, pickBotColors, estimateFinishTime
 } = require('./f1Bot.js');
 
@@ -58,6 +58,42 @@ test('lookaheadIndex avanza con wrap sul loop', () => {
     assert.equal(lookaheadIndex(1000, 995, 10), 5);
     assert.equal(lookaheadIndex(1000, 10, 5), 15);
     assert.equal(lookaheadIndex(1000, 0, 0), 0);
+});
+
+test('apexOffset: rettilineo => nessun offset', () => {
+    const points = buildConstantCurveTrack(40, 40, 0);   // niente curvatura da nessuna parte
+    const offset = apexOffset(points, 20, 10, 3);
+    assert.equal(offset.dx, 0);
+    assert.equal(offset.dz, 0);
+});
+
+test('apexOffset: sposta il punto mirato verso il centro geometrico della curva (interno, mai esterno)', () => {
+    // Verifica geometrica diretta (non solo il segno "a occhio"): una curva
+    // che parte da (0,0) puntando +z e gira sempre a destra (delta>0) ha il
+    // proprio centro di curvatura a (raggio, 0) — un taglio verso l'interno
+    // deve avvicinare il punto mirato a QUEL centro, mai allontanarlo (che
+    // sarebbe tagliare verso l'esterno, cioè uscire di pista).
+    const delta = 0.05;                 // raggio ≈ 1/delta = 20
+    const points = buildConstantCurveTrack(40, 0, delta);
+    const idx = 20;
+    const center = { x: 1 / delta, z: 0 };
+    const before = points[idx];
+    const distBefore = Math.hypot(before.x - center.x, before.z - center.z);
+    const offset = apexOffset(points, idx, 10, 3);
+    const after = { x: before.x + offset.dx, z: before.z + offset.dz };
+    const distAfter = Math.hypot(after.x - center.x, after.z - center.z);
+    assert.ok(
+        distAfter < distBefore,
+        `atteso spostamento verso il centro della curva: prima ${distBefore.toFixed(2)}, dopo ${distAfter.toFixed(2)}`
+    );
+});
+
+test('apexOffset: rispetta il limite massimo (maxOffsetM) anche su una curva strettissima', () => {
+    const delta = 0.3;   // tornante molto stretto
+    const points = buildConstantCurveTrack(40, 0, delta);
+    const offset = apexOffset(points, 20, 10, 3);
+    const mag = Math.hypot(offset.dx, offset.dz);
+    assert.ok(mag <= 3 + 1e-9, `atteso <= 3 (maxOffsetM), ottenuto ${mag}`);
 });
 
 test('cornerTargetSpeed: rettilineo puro => resta alla velocità massima', () => {

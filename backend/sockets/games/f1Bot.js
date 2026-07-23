@@ -39,7 +39,7 @@ const BOT_STEER_GAIN = 3.0;
 // istantaneo), quindi il raggio davvero percorso è un po' più ampio di
 // quello puramente geometrico — un margine copre lo scarto senza dover
 // indovinare quanto sia stretta ciascuna curva.
-const BOT_CORNER_SPEED_MARGIN = 0.85;
+const BOT_CORNER_SPEED_MARGIN = 0.93;
 
 function normalizeAngle(a) {
     while (a > Math.PI) a -= 2 * Math.PI;
@@ -62,6 +62,44 @@ function steerToward(px, pz, angle, tx, tz) {
 // currentIdx, su un loop di `n` campioni.
 function lookaheadIndex(n, currentIdx, lookaheadSamples) {
     return ((currentIdx + lookaheadSamples) % n + n) % n;
+}
+
+// ====================================================
+// TAGLIO CURVE — un bot che segue sempre il centro pista percorre un
+// raggio più stretto di quello che un pilota vero ottiene tagliando verso
+// l'apice: dato che la velocità in curva è proporzionale al raggio (vedi
+// cornerTargetSpeed), seguire sempre il centro costa velocità reale, non
+// solo stile — causa concreta del distacco osservato su piste con curve
+// strette. apexOffset sposta il punto mirato dallo sterzo verso l'INTERNO
+// della curva (mai verso l'esterno: sarebbe uscire di pista, non tagliare),
+// in proporzione a quanto è stretta la curva lì, entro il limite di
+// BOT_APEX_MAX_FRACTION della mezza larghezza pista (mai fino al bordo).
+// ====================================================
+const BOT_APEX_REF_ANGLE     = Math.PI / 6;   // 30° sulla finestra locale: oltre, taglio già al massimo consentito
+const BOT_APEX_MAX_FRACTION  = 0.6;           // frazione massima della mezza larghezza pista di cui ci si sposta verso l'interno
+
+// Offset {dx,dz} da sommare al punto mirato in idx, verso l'interno della
+// curva locale (stimata confrontando la tangente `halfWindowSamples` prima
+// e dopo idx). {0,0} in rettilineo. Il verso interno/esterno si deduce dal
+// segno della curvatura: se la pista gira verso l'angolo crescente (destra
+// nella convenzione atan2(tx,tz) di questo file), l'interno è dal lato
+// OPPOSTO alla normale di TrackGeometry.normalAt (che punta sempre allo
+// stesso lato fisso, non verso l'interno di una curva specifica).
+function apexOffset(points, idx, halfWindowSamples, maxOffsetM) {
+    const n = points.length;
+    const before = ((idx - halfWindowSamples) % n + n) % n;
+    const after  = lookaheadIndex(n, idx, halfWindowSamples);
+    const t1 = TrackGeometry.tangentAt(points, before, true);
+    const t2 = TrackGeometry.tangentAt(points, after, true);
+    const angle1 = Math.atan2(t1.tx, t1.tz);
+    const angle2 = Math.atan2(t2.tx, t2.tz);
+    const turnSigned = normalizeAngle(angle2 - angle1);
+    if (turnSigned === 0) return { dx: 0, dz: 0 };
+    const severity = Math.min(1, Math.abs(turnSigned) / BOT_APEX_REF_ANGLE);
+    const insideSign = turnSigned > 0 ? -1 : 1;
+    const normal = TrackGeometry.normalAt(points, idx, true);
+    const mag = severity * maxOffsetM * insideSign;
+    return { dx: normal.nx * mag, dz: normal.nz * mag };
 }
 
 // Velocità bersaglio "fisica": resta al massimo (maxSpeed) finché nessuna
@@ -338,7 +376,8 @@ function updateBotInputs(game, deps) {
             const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
             const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
             const target = track.points[targetIdx];
-            steer = steerToward(p.x, p.z, p.angle, target.x, target.z);
+            const apex = apexOffset(track.points, targetIdx, localSamples, track.roadHalf * BOT_APEX_MAX_FRACTION);
+            steer = steerToward(p.x, p.z, p.angle, target.x + apex.dx, target.z + apex.dz);
 
             // Distanza di scansione = il caso peggiore possibile: da tutto
             // gas a quasi fermo con la vera decelerazione di frenata del
@@ -379,7 +418,7 @@ function updateBotInputs(game, deps) {
 
 module.exports = {
     PALETTE, MAX_GRID_SIZE,
-    normalizeAngle, steerToward, lookaheadIndex, cornerTargetSpeed,
+    normalizeAngle, steerToward, lookaheadIndex, apexOffset, cornerTargetSpeed,
     pickPostPitCompound, pickBotColors, estimateFinishTime,
     createBots, updateBotInputs
 };
