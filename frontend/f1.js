@@ -616,8 +616,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function _applyTyreFocus() {
+        // L'anello di focus ha senso solo con un gamepad davvero collegato:
+        // senza questo controllo, tyreFocusIndex parte comunque da 0 (prima
+        // card, "hard") e finiva applicato SEMPRE, anche da tastiera/mouse —
+        // bordo giallo fisso sulla prima mescola segnalato dall'utente.
+        const gpActive = typeof F1GamepadInput !== 'undefined' && F1GamepadInput.isConnected();
         const cards = _tyreCards();
-        cards.forEach((el, idx) => el.classList.toggle('gp-focused', idx === tyreFocusIndex));
+        cards.forEach((el, idx) => el.classList.toggle('gp-focused', gpActive && idx === tyreFocusIndex));
     }
 
     function tyreNav(delta) {

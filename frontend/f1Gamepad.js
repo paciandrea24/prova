@@ -89,5 +89,7 @@ const F1GamepadInput = (() => {
         return { connected: true, throttle, brake, steer };
     }
 
-    return { poll, setCallbacks };
+    function isConnected() { return connected; }
+
+    return { poll, setCallbacks, isConnected };
 })();
