@@ -4,6 +4,17 @@
     --green: #2ecc71;
     --red: #e74c3c;
     --blue: #3498db;
+    --hud-surface:      #1c212a;
+    --hud-shadow-dk:    rgba(2, 3, 5, 0.65);
+    --hud-shadow-lt:    rgba(255, 255, 255, 0.05);
+    --hud-screen-bg:    #12151b;
+    --hud-screen-dk:    rgba(0, 0, 0, 0.7);
+    --hud-screen-lt:    rgba(255, 255, 255, 0.025);
+    --hud-text:         #eef2f6;
+    --hud-text-dim:     #838d9c;
+    --hud-wear-fresh:   #4fbf82;
+    --hud-wear-mid:     #d9b23c;
+    --hud-wear-worn:    #c65b52;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -37,75 +48,157 @@ canvas.tyre-preview-canvas {
 }
 
 /* ========================
-   HUD PANELS
+   HUD — neumorfismo scuro
    ======================== */
-.hud-panel {
+.hud {
     position: fixed;
-    z-index: 10;
-    display: flex;
-    gap: 8px;
-    pointer-events: none;
-}
-
-.hud-left {
-    top: 20px;
-    left: 20px;
-    flex-direction: column;
-    align-items: flex-start;
-}
-
-.hud-right {
-    top: 20px;
-    right: 20px;
-    flex-direction: column;
-    align-items: flex-end;
-}
-
-.hud-bottom {
-    position: fixed;
-    bottom: 28px;
-    left: 50%;
-    transform: translateX(-50%);
     z-index: 10;
     pointer-events: none;
 }
 
-.hud-box {
-    background: rgba(236, 240, 241, 0.88);
-    backdrop-filter: blur(10px);
-    border: 3px solid var(--border-color);
-    border-radius: 12px;
-    padding: 8px 16px;
-    font-size: 18px;
+/* Pannello "raised": stessa tinta dello sfondo di gioco, niente bordo,
+   letto solo dalla coppia di ombre chiara/scura (mai da un bordo colorato —
+   il colore resta riservato ai contenuti: pallini pilota, usura gomme). */
+.hud-panel-neu {
+    background: var(--hud-surface);
+    border-radius: 11px;
+    box-shadow:
+        4px 4px 10px var(--hud-shadow-dk),
+        -4px -4px 9px var(--hud-shadow-lt);
+}
+
+/* "Display" incassato dentro un pannello: ombra invertita (concava), ospita
+   il valore vero e proprio — richiamo diretto a un cruscotto auto reale. */
+.hud-screen {
+    background: var(--hud-screen-bg);
+    border-radius: 7px;
+    box-shadow:
+        inset 2px 2px 5px var(--hud-screen-dk),
+        inset -1px -1px 3px var(--hud-screen-lt);
+}
+
+.hud-eyebrow {
+    font-family: 'Fredoka', sans-serif;
+    text-transform: uppercase;
     font-weight: 700;
-    color: var(--border-color);
-    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
-    white-space: nowrap;
+    letter-spacing: 1.4px;
+    font-size: 9px;
+    color: var(--hud-text-dim);
 }
 
-.lap-style {
-    font-size: 20px;
+.hud-mono {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--hud-text);
 }
 
-.timer-style {
-    font-size: 22px;
-    font-family: monospace;
+.hud-key-hint {
+    font-size: 8.5px;
+    color: var(--hud-text-dim);
+    background: var(--hud-screen-bg);
+    border-radius: 3px;
+    padding: 1px 4px;
 }
 
-.tyre-style {
-    font-size: 16px;
+/* ---- top-left: classifica ---- */
+.hud-standings {
+    top: 14px; left: 12px;
+    padding: 6px 10px 7px;
+    min-width: 84px;
     display: flex;
-    align-items: center;
-    gap: 6px;
+    flex-direction: column;
+    gap: 0;
 }
 
-.tyre-dot {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 2px solid var(--border-color);
-    display: inline-block;
+/* ---- top-center: giri ---- */
+.hud-lap {
+    top: 14px; left: 50%; transform: translateX(-50%);
+    padding: 5px 6px;
+    text-align: center;
 }
+.hud-lap .hud-eyebrow { letter-spacing: 2.5px; margin-bottom: 3px; display: block; }
+.hud-lap .hud-screen { padding: 2px 14px 4px; }
+.hud-lap .hud-mono { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+
+/* ---- top-right: timer (solo qualifica) ---- */
+.hud-timer {
+    top: 14px; right: 12px;
+    padding: 5px 10px 6px;
+    text-align: right;
+}
+.hud-timer .hud-eyebrow { margin-bottom: 3px; display: block; }
+.hud-timer .hud-screen { padding: 3px 9px; }
+.hud-timer .hud-mono { font-size: 15px; font-weight: 600; }
+
+/* ---- bottom-center: velocità ---- */
+.hud-speed {
+    bottom: 14px; left: 50%; transform: translateX(-50%);
+    padding: 6px;
+    text-align: center;
+}
+.hud-speed .hud-screen { padding: 4px 14px; }
+.hud-speed #speed-value { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 17px; font-weight: 700; color: var(--hud-text); }
+
+/* ---- bottom-left: gomme, stato chiuso ---- */
+.hud-tyre-closed {
+    bottom: 14px; left: 12px;
+    display: flex; align-items: center; gap: 5px;
+    padding: 5px 8px;
+    pointer-events: auto;
+    cursor: pointer;
+}
+.tyre-icon-closed {
+    display: inline-block;
+    width: 12px; height: 12px; border-radius: 3px;
+    background: var(--hud-wear-mid);
+}
+
+/* ---- bottom-left: gomme, stato aperto ---- */
+.hud-tyre-open {
+    bottom: 14px; left: 12px;
+    width: 118px;
+    padding: 8px 9px 10px;
+    pointer-events: auto;
+}
+.hud-tyre-open-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 5px;
+    cursor: pointer;
+}
+.hud-tyre-compound {
+    display: flex; align-items: center; gap: 4px;
+    font-family: 'Fredoka', sans-serif;
+    font-size: 9px; font-weight: 700; letter-spacing: 0.8px; color: var(--hud-text-dim);
+}
+.hud-tyre-compound-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.hud-car-top { width: 100%; height: 86px; margin: 1px 0 5px; }
+.hud-car-top svg { width: 100%; height: 100%; display: block; }
+.car-chassis { fill: #2b313c; }
+.car-wing    { fill: #232830; }
+.car-halo    { fill: none; stroke: #454e5c; stroke-width: 2; }
+.wheel       { fill: var(--wear, var(--hud-wear-mid)); transition: fill 0.4s ease; }
+.hud-tyre-wear-readout { text-align: center; }
+.hud-tyre-wear-readout .hud-screen { padding: 3px 0 4px; }
+.hud-tyre-wear-readout .hud-mono { font-size: 14px; font-weight: 700; }
+.hud-tyre-wear-readout .hud-eyebrow { margin-top: 3px; }
+
+/* ---- bottom-right: minimappa ---- */
+.hud-minimap {
+    bottom: 14px; right: 12px;
+    width: 118px; height: 82px;
+    padding: 6px;
+}
+.hud-minimap .hud-screen { width: 100%; height: 100%; }
+.hud-minimap svg { width: 100%; height: 100%; display: block; }
+.minimap-track-line {
+    fill: none;
+    stroke: rgba(255,255,255,0.22);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.minimap-you-core { r: 4; }
+.minimap-you-halo { r: 9; opacity: 0.3; }
 
 /* Selezione mescola */
 .tyre-card {
