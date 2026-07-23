@@ -833,6 +833,12 @@ function tickGame(io, lobbyId, game) {
         broadcastState(io, lobbyId, game, false);
         return;
     }
+
+    updateBotInputs(game, {
+        effectiveMaxSpeed, handlePitReactionPress, io, lobbyId,
+        wearLapsAtMedium: WEAR_LAPS_AT_MEDIUM
+    });
+
     const isQuali  = game.phase === 'qualifying';
     // In qualifica si fa UN giro secco; in gara i giri sono quelli della pista caricata.
     const totalLaps = isQuali ? 1 : game.track.totalLaps;

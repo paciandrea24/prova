@@ -158,9 +158,85 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
     }
 }
 
+// ====================================================
+// GUIDA PER TICK — chiamata una volta per tick da tickGame, per TUTTI i
+// bot (anche quelli fermi ai box o guidati dall'autopilota, per gestire
+// la reazione al minigioco pit-stop). Scrive solo p.inputs (throttle/
+// brake/steer): la fisica/collisioni/pit-lane restano quelle esistenti.
+// ====================================================
+const BOT_LOOKAHEAD_M           = 18;    // metri: punto mirato per lo sterzo sulla linea di corsa
+const BOT_CURVATURE_LOOKAHEAD_M = 40;    // metri: quanto avanti si giudica la curvatura per la velocità target
+const BOT_SPEED_MARGIN          = 0.03;  // isteresi throttle/brake attorno alla velocità target
+const BOT_PIT_REACTION_MIN_MS   = 150;
+const BOT_PIT_REACTION_MAX_MS   = 700;
+
+function metersToSamples(meters, track) {
+    return Math.max(1, Math.round(meters * track.points.length / track.lapLength));
+}
+
+function updateBotInputs(game, deps) {
+    const { effectiveMaxSpeed, handlePitReactionPress, io, lobbyId, wearLapsAtMedium } = deps;
+    const track = game.track;
+    const isQuali = game.phase === 'qualifying';
+
+    for (const p of Object.values(game.players)) {
+        if (!p.isBot || p.finished) continue;
+
+        // Fermo ai box o guidato dall'autopilota corsia box: nessun input
+        // di guida da scrivere, il server ha già il volante. L'unica cosa
+        // che un bot deve ancora fare qui è "premere" il minigioco di
+        // reazione al segnale di via, con un ritardo simulato realistico.
+        if (p.pitAutoState || p.pitting) {
+            p.botHeadingToPits = false;
+            if (p.pitPhase === 'waiting') p.botPitReactionScheduled = false;
+            if (p.pitting && p.pitPhase === 'go' && !p.botPitReactionScheduled) {
+                p.botPitReactionScheduled = true;
+                const t = p.botPrecisionNoise / BOT_PRECISION_NOISE_MAX;
+                const delay = BOT_PIT_REACTION_MIN_MS + t * (BOT_PIT_REACTION_MAX_MS - BOT_PIT_REACTION_MIN_MS);
+                setTimeout(() => handlePitReactionPress(io, lobbyId, game, p), delay);
+            }
+            continue;
+        }
+
+        // Soglia usura superata (solo in gara, l'usura non conta in
+        // quali): il bot punta al distacco della corsia box invece che
+        // alla linea principale — appena entra nel trigger d'ingresso
+        // (inPitEntryZone, già controllato per tutti in tickGame), il
+        // server prende il volante come farebbe con un umano.
+        if (game.phase === 'race' && !p.botHeadingToPits && p.tyreWear >= p.botPitThreshold) {
+            p.botHeadingToPits = true;
+            const remainingLaps = Math.max(0, track.totalLaps - p.lap);
+            p.pendingCompound = pickPostPitCompound(remainingLaps, wearLapsAtMedium);
+        }
+
+        let steer, throttle = 0, brake = 0;
+        if (p.botHeadingToPits) {
+            const target = track.pitPath[0];
+            steer = steerToward(p.x, p.z, p.angle, target.x, target.z);
+            throttle = 0.6;   // rallenta in ingresso corsia box
+        } else {
+            const lookSamples  = metersToSamples(BOT_LOOKAHEAD_M, track);
+            const curveSamples = metersToSamples(BOT_CURVATURE_LOOKAHEAD_M, track);
+            const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
+            const target = track.points[targetIdx];
+            steer = steerToward(p.x, p.z, p.angle, target.x, target.z);
+
+            const speedFrac = curvatureSpeedFraction(track.points, p.trackIndex || 0, curveSamples);
+            const targetSpeed = effectiveMaxSpeed(p, isQuali) * speedFrac * p.botSpeedFactor;
+            if (p.speed < targetSpeed * (1 - BOT_SPEED_MARGIN)) throttle = 1;
+            else if (p.speed > targetSpeed * (1 + BOT_SPEED_MARGIN)) brake = 1;
+        }
+
+        steer += (Math.random() * 2 - 1) * p.botPrecisionNoise;
+        steer = Math.max(-1, Math.min(1, steer));
+
+        p.inputs = { throttle, brake, steer };
+    }
+}
+
 module.exports = {
     PALETTE, MAX_GRID_SIZE,
     normalizeAngle, steerToward, lookaheadIndex, curvatureSpeedFraction,
     pickPostPitCompound, pickBotColors,
-    createBots
+    createBots, updateBotInputs
 };
