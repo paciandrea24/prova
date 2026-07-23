@@ -1125,10 +1125,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         list.appendChild(title);
 
         (data.podium || []).forEach((entry, i) => {
-            const t  = entry.totalTime;
-            const m  = Math.floor(t / 60000);
-            const s  = Math.floor((t % 60000) / 1000);
-            const ms = t % 1000;
+            const t = entry.totalTime;
+            // null = ancora in pista quando la gara ha chiuso (un bot non
+            // ancora arrivato): mantiene la sua posizione attuale invece di
+            // un tempo — vedi endRace in f1GameSocket.js.
+            const timeStr = t === null
+                ? 'IN CORSA'
+                : `${Math.floor(t / 60000)}:${String(Math.floor((t % 60000) / 1000)).padStart(2, '0')}.${String(t % 1000).padStart(3, '0')}`;
             const li = document.createElement('li');
             li.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px 5px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:18px;';
             li.innerHTML = `
@@ -1139,7 +1142,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ${entry.pitPenalty ? '<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+30s NO PIT</span>' : ''}
                     ${entry.falseStart ? '<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+5s FALSE START</span>' : ''}
                 </div>
-                <span style="font-family:monospace;font-weight:bold;">${m}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}</span>`;
+                <span style="font-family:monospace;font-weight:bold;">${timeStr}</span>`;
             list.appendChild(li);
         });
 
