@@ -558,6 +558,14 @@ function startRaceCountdown(io, lobbyId, game) {
     game.raceStartTime        = null;
     game.lightsSequenceActive = true;   // finestra di rilevamento falsa partenza, vedi tickGame
 
+    // Azzera l'input di TUTTI prima di aprire la finestra di rilevamento:
+    // senza questo, un giocatore che finisce la sessione precedente tenendo
+    // premuto l'acceleratore (il client smette di inviare non appena la
+    // sessione finisce, ma il server non lo sapeva mai azzerare da solo)
+    // risultava marcato falsa partenza al via successivo senza aver toccato
+    // nulla — bug reale trovato dalla review finale.
+    for (const p of Object.values(game.players)) p.inputs = { throttle: 0, brake: 0, steer: 0 };
+
     // holdMs resta SOLO lato server, per il proprio setTimeout: il client
     // non ha bisogno di conoscerlo, gli basta reagire al vero evento
     // f1RaceStarted per spegnere le luci — evita qualunque rischio di
@@ -599,6 +607,7 @@ function assignGridSpawns(game) {
         p.pendingCompound = null; p.hasPitted = false; p.pitPenalty = false;
         p.falseStart = false; p.falseStartServed = false;
         p.pitAutoState = null; p.pitPathIndex = 0;
+        p.inputs = { throttle: 0, brake: 0, steer: 0 };
     });
 }
 
@@ -778,7 +787,7 @@ function tickGame(io, lobbyId, game) {
         // l'input in anticipo serve SOLO al rilevamento, non fa muovere nessuno.
         if (game.lightsSequenceActive) {
             for (const p of Object.values(game.players)) {
-                if (!p.falseStart && p.inputs.throttle > 0) p.falseStart = true;
+                if (!p.falseStart && p.inputs.throttle > 0.05) p.falseStart = true;
             }
         }
         broadcastState(io, lobbyId, game, false);
@@ -1271,6 +1280,7 @@ function resetPlayers(game) {
         p.finished = false; p.time = null;
         p.lap = 0; p.checkpointA = false; p.inFinishZone = false;
         p.trackIndex = 0;
+        p.inputs = { throttle: 0, brake: 0, steer: 0 };
         i++;
     }
 }
