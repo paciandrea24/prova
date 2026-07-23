@@ -132,6 +132,8 @@ const LIGHTS_ALL_ON_MS  = (LIGHT_COUNT - 1) * LIGHT_INTERVAL_MS;   // 4000: tutt
 const HOLD_MIN_MS       = 200, HOLD_MAX_MS = 3000;
 const FALSE_START_PENALTY_MS = 5000;
 
+const GAP_RECALC_MS = 3500;   // ricalcolo distacco dal leader — non serve più frequente, è una stima
+
 // In qualifica TUTTI usano lo spec della Soft (gomma da qualifica, come in F1
 // vera), gomme fresche, a prescindere dalla mescola scelta per la gara — la
 // scelta conta solo una volta iniziata la gara vera.
@@ -216,6 +218,7 @@ module.exports = function (io, socket) {
                 raceStarted:       false,
                 raceEnded:         false,
                 raceStartTime:     null,
+                lastGapRecalc:     0,      // timestamp ultimo ricalcolo distacco dal leader (vedi GAP_RECALC_MS)
                 endTimeout:        null,
                 qualiEnded:        false,
                 qualiEndTimeout:   null,   // timer di sicurezza: dà agli altri il tempo di finire il giro se qualcuno resta molto indietro
@@ -273,6 +276,7 @@ module.exports = function (io, socket) {
                 pitPenalty:      false,   // true se ha preso la penalità per non aver fatto pit stop
                 falseStart:      false,   // true se ha accelerato mentre le luci erano accese (resta true per tutta la gara, indicatore storico)
                 falseStartServed: false,  // true una volta scontata la penalità al primo pit stop
+                gapToLeaderMs:   null,    // stima distacco dal leader in ms, null per il leader stesso o prima del primo ricalcolo
                 pitAutoState:    null,    // 'entering' | 'exiting' | null — autopilota corsia box
                 pitPathIndex:    0,       // prossimo waypoint del percorso box (track.pitPath) verso cui puntare
             };
@@ -635,6 +639,7 @@ function assignGridSpawns(game) {
         p.pitting = false; p.pitPhase = null; p.pitGoTime = null;
         p.pendingCompound = null; p.hasPitted = false; p.pitPenalty = false;
         p.falseStart = false; p.falseStartServed = false;
+        p.gapToLeaderMs = null;
         p.pitAutoState = null; p.pitPathIndex = 0;
         p.inputs = { throttle: 0, brake: 0, steer: 0 };
     });
@@ -872,6 +877,26 @@ function tickGame(io, lobbyId, game) {
     for (const p of autoPiloted) {
         updatePitAutopilot(io, lobbyId, game, p);
         updateTrackIndex(p, game.track);
+    }
+
+    // Distacco dal leader: stima da distanza/velocità, ricalcolata ogni
+    // GAP_RECALC_MS e riusata fino al prossimo giro — non serve precisione
+    // al millisecondo, un vero timing per-checkpoint sarebbe uno sforzo
+    // sproporzionato per quello che serve qui (esplicitamente accettato).
+    if (game.phase === 'race' && Date.now() - (game.lastGapRecalc || 0) >= GAP_RECALC_MS) {
+        game.lastGapRecalc = Date.now();
+        const ranked = [...players].sort((a, b) => progressScore(b, game.track) - progressScore(a, game.track));
+        const leader = ranked[0];
+        const metersPerUnit = game.track.lapLength / game.track.points.length;
+        for (const p of ranked) {
+            if (p === leader) { p.gapToLeaderMs = null; continue; }
+            const distanceBehindUnits = progressScore(leader, game.track) - progressScore(p, game.track);
+            const distanceBehindM = Math.max(0, distanceBehindUnits) * metersPerUnit;
+            // speed è in unità/tick fisico; conversione a m/s: la stessa
+            // usata dal client per mostrare i km/h (speed*55), portata a m/s (/3.6).
+            const speedMs = Math.max(0.5, Math.abs(p.speed) * 55 / 3.6);   // pavimento anti-divisione-per-zero
+            p.gapToLeaderMs = Math.round((distanceBehindM / speedMs) * 1000);
+        }
     }
 
     // Trasmesso PRIMA del controllo di fine sessione qui sotto: altrimenti
@@ -1299,7 +1324,8 @@ function buildPublicState(players, raceStarted, track) {
             // (resta invece visibile, senza questo campo, nel riepilogo di
             // fine gara — record storico, non un avviso "da pagare").
             falseStart: !!p.falseStart,
-            falseStartServed: !!p.falseStartServed
+            falseStartServed: !!p.falseStartServed,
+            gapToLeaderMs: (p.gapToLeaderMs != null) ? p.gapToLeaderMs : null
         };
     }
     return out;
