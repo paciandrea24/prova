@@ -604,7 +604,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (compounds) tyreCompoundsInfo = compounds;
         if (phase) currentPhase = phase;
         if (hc) hostColor = hc;
-        if (trackName) document.getElementById('track-name-display').textContent = trackName;
         if (totalLaps) {
             // In qualifica il giro totale è sempre 1, non quello impostato per
             // la gara vera (totalLaps qui si riferisce alla gara, non alla
@@ -830,17 +829,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('single-mode-controls').style.display = 'none';
         document.getElementById('auto-return-text').style.display = 'none';
         modal.style.display = 'flex';
-    });
-
-    socket.on('f1BoostUpdate', ({ boostTime }) => {
-        const mBox = document.getElementById('multiplier-box');
-        const mVal = document.getElementById('multiplier-display');
-        mBox.style.display = 'flex';
-        const bonus = (boostTime / 4.0) * 0.20;
-        mVal.textContent = (1.0 + bonus).toFixed(2);
-        if      (bonus >= 0.20) { mBox.style.color = '#f1c40f'; mBox.style.borderColor = '#f1c40f'; }
-        else if (bonus >  0   ) { mBox.style.color = '#e67e22'; mBox.style.borderColor = '#e67e22'; }
-        else                    { mBox.style.color = '#95a5a6'; mBox.style.borderColor = '#95a5a6'; }
     });
 
     socket.on('f1RaceEnded', (data) => {
