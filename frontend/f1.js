@@ -574,6 +574,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 socket.emit(eventName, { lobbyId, playerColor: myColor, compound: key });
                 container.querySelectorAll('.tyre-card').forEach(el => el.classList.remove('selected'));
                 card.classList.add('selected');
+                anime({
+                    targets: card,
+                    scale: [1, 1.12, 1],
+                    duration: 320,
+                    easing: 'easeOutElastic(1, 0.6)',
+                });
             };
             container.appendChild(card);
             if (myCompound === key) myIndex = i;
@@ -585,6 +591,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         activeTyreContainerId = containerId;
         tyreFocusIndex = myIndex;
         _applyTyreFocus();
+
+        // Ingresso a cascata: le card compaiono una dopo l'altra invece di
+        // tutte insieme, ogni volta che questa funzione viene chiamata
+        // (apertura schermo scelta iniziale o pannello ai box).
+        anime({
+            targets: container.querySelectorAll('.tyre-card'),
+            translateY: [16, 0],
+            opacity: [0, 1],
+            delay: anime.stagger(90),
+            duration: 320,
+            easing: 'easeOutQuad',
+        });
     }
 
     // ── Navigazione mescola da gamepad ──────────────────────────────────
@@ -650,7 +668,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     socket.on('f1PitReactionGo', () => {
         document.getElementById('pitstop-status').textContent = '';
         document.getElementById('pitstop-instructions').textContent = '';
-        document.getElementById('pitstop-react-prompt').style.display = 'block';
+        const promptEl = document.getElementById('pitstop-react-prompt');
+        promptEl.style.display = 'block';
+        anime({
+            targets: promptEl,
+            scale: [0, 1],
+            opacity: [0, 1],
+            duration: 380,
+            easing: 'easeOutElastic(1, 0.5)',
+        });
     });
 
     socket.on('f1PitStopTiming', ({ durationMs }) => {
@@ -906,32 +932,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         setLapDisplay(lap, phase);
     });
 
-    // Animazione di rivelazione: rivela il TESTO passato lettera per lettera,
-    // con un leggero scorrimento verso il centro ad ogni carattere aggiunto.
-    // Personale: chi fa pole vede "POOOOOOOOOOLE" (tutto MAIUSCOLO), tutti gli
-    // altri vedono solo la PROPRIA posizione (es. "P4") — vedi f1QualiEnded.
-    function playRevealAnimation(fullText) {
-        const CHAR_DELAY = 85;
+    // Animazione di rivelazione: rivela il TESTO lettera per lettera via
+    // anime.stagger (ogni lettera è un <span> che entra con dissolvenza +
+    // scorrimento, in sequenza). Personale: chi fa pole vede
+    // "POOOOOOOOOOLE" in oro, tutti gli altri vedono solo la PROPRIA
+    // posizione (es. "P4") in un colore neutro — vedi f1QualiEnded.
+    function playRevealAnimation(fullText, isPole) {
         const overlay = document.getElementById('pole-overlay');
         const textEl  = document.getElementById('pole-text');
         overlay.style.display = 'flex';
-        textEl.textContent = '';
-        textEl.style.transition = 'none';
-        textEl.style.transform  = 'translateX(55vw)';
-        // forza il reflow prima di riattivare la transition, altrimenti il primo step non scorre
-        void textEl.offsetWidth;
-        textEl.style.transition = 'transform 0.08s linear';
-
-        let i = 0;
-        const timer = setInterval(() => {
-            i++;
-            textEl.textContent = fullText.slice(0, i);
-            textEl.style.transform = `translateX(${(fullText.length - i) * 42}px)`;
-            if (i >= fullText.length) {
-                clearInterval(timer);
-                setTimeout(() => { overlay.style.display = 'none'; }, 1800);
-            }
-        }, CHAR_DELAY);
+        textEl.style.color = isPole ? '#f1c40f' : 'var(--hud-text)';
+        textEl.innerHTML = fullText.split('').map(ch =>
+            `<span style="display:inline-block; opacity:0;">${ch}</span>`
+        ).join('');
+        anime({
+            targets: textEl.querySelectorAll('span'),
+            opacity: [0, 1],
+            translateX: [42, 0],
+            delay: anime.stagger(85),
+            duration: 220,
+            easing: 'easeOutQuad',
+            complete: () => setTimeout(() => { overlay.style.display = 'none'; }, 1800),
+        });
     }
 
     // Fine qualifica: rivelazione personale (POLE per il 1°, "P<n>" per tutti
@@ -942,8 +964,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // prossimo f1Countdown, vedi handler sopra).
     socket.on('f1QualiEnded', ({ grid }) => {
         const myPos = (grid || []).findIndex(e => e.color === myColor) + 1;
-        if (myPos === 1)      playRevealAnimation('POOOOOOOOOOLE');
-        else if (myPos > 1)   playRevealAnimation(`P${myPos}`);
+        if (myPos === 1)      playRevealAnimation('POOOOOOOOOOLE', true);
+        else if (myPos > 1)   playRevealAnimation(`P${myPos}`, false);
 
         const modal = document.getElementById('podium-modal');
         const title = document.getElementById('podium-title');
@@ -1036,6 +1058,26 @@ document.addEventListener('DOMContentLoaded', async () => {
                 autoText.textContent = 'Caricamento prossima pista…';
             }
         }
+    });
+
+    // Dissolvenza a nero durante la pausa "Riprova" (RESTART_GRACE_MS lato
+    // server, vedi backend): copre il riposizionamento dell'auto alla
+    // griglia, che altrimenti si vedrebbe "teletrasportata" appena il
+    // podio si chiude. Il fade-out finisce all'incirca quando arriva
+    // f1Countdown (che nasconde comunque podium-modal per conto suo, in
+    // modo idempotente — nessun conflitto se questo handler lo ha già
+    // fatto sparire prima).
+    socket.on('f1RestartTransition', ({ graceMs }) => {
+        const el = document.getElementById('restart-transition');
+        document.getElementById('podium-modal').style.display = 'none';
+        el.style.display = 'flex';
+        anime({ targets: el, opacity: [0, 1], duration: 250, easing: 'easeOutQuad' });
+        setTimeout(() => {
+            anime({
+                targets: el, opacity: [1, 0], duration: 400, easing: 'easeInQuad',
+                complete: () => { el.style.display = 'none'; }
+            });
+        }, Math.max(0, graceMs - 400));
     });
 
     socket.on('f1RedirectToLobby', () => {
