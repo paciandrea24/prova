@@ -389,9 +389,11 @@ module.exports = function (io, socket) {
         } else {
             resetPlayers(game);   // difensivo, non dovrebbe capitare (la qualifica gira sempre prima)
         }
-        // Pausa di cortesia prima del semaforo (vedi RESTART_GRACE_MS): il
-        // podio resta a schermo nel frattempo, nessun nuovo evento arriva
-        // finché non scatta questo timeout.
+        // Pausa di cortesia prima del semaforo (vedi RESTART_GRACE_MS):
+        // annunciata SUBITO al client con questo evento dedicato, così può
+        // coprirla con una dissolvenza a nero invece di lasciare il podio a
+        // schermo fino all'ultimo istante (vedi f1RestartTransition in f1.js).
+        io.to(lobbyId).emit('f1RestartTransition', { graceMs: RESTART_GRACE_MS });
         setTimeout(() => {
             const g = activeGames.get(lobbyId);
             if (!g) return;
