@@ -648,6 +648,10 @@ function assignGridSpawns(game) {
         p.gapToLeaderMs = null;
         p.pitAutoState = null; p.pitPathIndex = 0;
         p.inputs = { throttle: 0, brake: 0, steer: 0 };
+        // Stato bot transitorio: un bot ancora diretto ai box (non ancora
+        // entrato nel trigger) alla fine della gara precedente non deve
+        // ripartire già puntato alla corsia box con gomme appena montate.
+        if (p.isBot) { p.botHeadingToPits = false; p.botPitReactionScheduled = false; }
     });
 }
 
@@ -1362,6 +1366,7 @@ function resetPlayers(game) {
         p.lap = 0; p.checkpointA = false; p.inFinishZone = false;
         p.trackIndex = 0;
         p.inputs = { throttle: 0, brake: 0, steer: 0 };
+        if (p.isBot) { p.botHeadingToPits = false; p.botPitReactionScheduled = false; }
         i++;
     }
 }
