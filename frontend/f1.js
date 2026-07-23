@@ -829,7 +829,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         return m > 0 ? `+${m}:${secStr.padStart(4, '0')}` : `+${secStr}`;
     }
 
-    let lastStandingsOrder = [];   // colori nell'ordine dell'ultimo render, per l'animazione FLIP
+    let lastStandingsOrder = [];   // colori nell'ordine dell'ultimo render, per rilevare i sorpassi
+    const standingRowEls = {};     // color -> riga DOM persistente (mai ricreata finché il pilota resta in gara)
+
+    const STANDING_ROW_HEIGHT = 24;   // deve corrispondere all'altezza reale di .f1-standing-row (padding incluso)
+    const STANDING_LIFT_PX    = 16;   // quanto la riga di chi sorpassa si "alza" oltre lo slot di arrivo, a metà animazione
+
+    function renderStandingRowContent(rowEl, color, d) {
+        rowEl.innerHTML = `
+            <span class="pos">${d.position}</span>
+            <span class="dot" style="background:${color};"></span>
+            ${color === myColor ? 'TU' : ''}${(d.falseStart && !d.falseStartServed) ? '<span class="false-start-badge">!</span>' : ''}
+            <span class="gap">${formatGap(d.gapToLeaderMs)}</span>
+        `;
+    }
 
     // Classifica live: pallino colore + posizione + distacco dal leader,
     // ordinata per rank. Mai in qualifica: lì ogni giocatore vede solo se
@@ -837,48 +850,100 @@ document.addEventListener('DOMContentLoaded', async () => {
     // "position" (raceStarted è true anche in qualifica) e mostrerebbe una
     // classifica assurda con un solo "1°" — non basta controllare le
     // entries, va escluso esplicitamente per fase.
+    //
+    // Le righe sono elementi DOM persistenti, uno per colore, mai ricreati
+    // da un innerHTML sull'intera lista: il server manda f1StateUpdate ogni
+    // 50ms (PHYSICS_TICK_MS), un rebuild completo ad ogni chiamata
+    // distruggerebbe qualsiasi animazione di sorpasso dopo un solo frame,
+    // prima ancora che potesse essere visibile.
     function updateStandings(state) {
         const box = document.getElementById('standings-panel');
         const rowsEl = document.getElementById('standings-rows');
-        if (currentPhase !== 'race') { rowsEl.innerHTML = ''; box.style.display = 'none'; lastStandingsOrder = []; return; }
 
-        const entries = Object.entries(state)
+        const entries = (currentPhase !== 'race') ? [] : Object.entries(state)
             .filter(([, d]) => d.position)
             .sort((a, b) => a[1].position - b[1].position);
 
-        if (entries.length === 0) { rowsEl.innerHTML = ''; box.style.display = 'none'; lastStandingsOrder = []; return; }
+        if (entries.length === 0) {
+            rowsEl.innerHTML = '';
+            box.style.display = 'none';
+            lastStandingsOrder = [];
+            for (const color in standingRowEls) delete standingRowEls[color];
+            return;
+        }
 
         box.style.display = 'flex';
         const newOrder = entries.map(([color]) => color);
 
-        // FLIP: calcola, PRIMA di ridisegnare, dove si trovava ogni pilota
-        // nell'ordine precedente — serve per far "scavalcare" chi sorpassa
-        // invece di un secco ricalcolo della lista.
+        // posizione di ogni pilota nell'ordine PRIMA di questo aggiornamento —
+        // serve per animare solo chi ha davvero cambiato posizione.
         const prevIndex = {};
         lastStandingsOrder.forEach((color, i) => { prevIndex[color] = i; });
 
-        rowsEl.innerHTML = entries.map(([color, d]) => `
-            <div class="f1-standing-row${color === myColor ? ' me' : ''}" data-color="${color}">
-                <span class="pos">${d.position}</span>
-                <span class="dot" style="background:${color};"></span>
-                ${color === myColor ? 'TU' : ''}${(d.falseStart && !d.falseStartServed) ? '<span class="false-start-badge">!</span>' : ''}
-                <span class="gap">${formatGap(d.gapToLeaderMs)}</span>
-            </div>
-        `).join('');
+        // righe di chi non è più in classifica (disconnesso) — via
+        for (const color in standingRowEls) {
+            if (!newOrder.includes(color)) {
+                standingRowEls[color].remove();
+                delete standingRowEls[color];
+            }
+        }
 
-        const ROW_HEIGHT = 24;   // deve corrispondere all'altezza reale di .f1-standing-row (padding incluso)
-        rowsEl.querySelectorAll('.f1-standing-row').forEach((rowEl, newIdx) => {
-            const color = rowEl.dataset.color;
-            const oldIdx = prevIndex[color];
-            if (oldIdx === undefined || oldIdx === newIdx) return;   // nuova riga o posizione invariata: nessuna animazione
-            const deltaPx = (oldIdx - newIdx) * ROW_HEIGHT;
-            anime({
-                targets: rowEl,
-                translateY: [deltaPx, 0],
-                duration: 420,
-                easing: 'easeOutQuad',
+        // crea (solo se manca) o aggiorna il contenuto di ogni riga — mai un
+        // innerHTML sull'intera lista, solo sulla singola riga toccata.
+        for (const [color, d] of entries) {
+            let rowEl = standingRowEls[color];
+            if (!rowEl) {
+                rowEl = document.createElement('div');
+                rowEl.className = 'f1-standing-row';
+                rowEl.dataset.color = color;
+                standingRowEls[color] = rowEl;
+                rowsEl.appendChild(rowEl);
+            }
+            rowEl.classList.toggle('me', color === myColor);
+            renderStandingRowContent(rowEl, color, d);
+        }
+
+        // riordina il DOM secondo la classifica attuale — solo se l'ordine è
+        // davvero cambiato, per non forzare un reflow ad ogni tick.
+        const orderChanged = newOrder.some((color, i) => lastStandingsOrder[i] !== color);
+        if (orderChanged) {
+            newOrder.forEach(color => rowsEl.appendChild(standingRowEls[color]));
+
+            newOrder.forEach((color, newIdx) => {
+                const oldIdx = prevIndex[color];
+                if (oldIdx === undefined || oldIdx === newIdx) return;   // riga nuova o posizione invariata: nessuna animazione
+
+                const rowEl = standingRowEls[color];
+                const deltaPx = (oldIdx - newIdx) * STANDING_ROW_HEIGHT;
+
+                if (newIdx < oldIdx) {
+                    // Ha sorpassato: la riga viene "estratta" dalla classifica
+                    // (sollevata oltre lo slot di arrivo, come una fascia tolta
+                    // dal cartellone) e poi riposizionata nel posto giusto —
+                    // richiesta esplicita dell'utente, ispirata ai vecchi
+                    // cartelloni a fasce non digitali.
+                    rowEl.style.transform = `translateY(${deltaPx}px)`;
+                    rowEl.classList.add('is-lifting');
+                    anime({
+                        targets: rowEl,
+                        keyframes: [
+                            { translateY: -STANDING_LIFT_PX, scale: 1.08, duration: 180, easing: 'easeOutQuad' },
+                            { translateY: 0, scale: 1, duration: 300, easing: 'easeInOutQuad' },
+                        ],
+                        complete: () => rowEl.classList.remove('is-lifting'),
+                    });
+                } else {
+                    // È stato sorpassato: scorre semplicemente giù di uno slot
+                    // per fare spazio, nessun sollevamento.
+                    anime({
+                        targets: rowEl,
+                        translateY: [deltaPx, 0],
+                        duration: 420,
+                        easing: 'easeOutQuad',
+                    });
+                }
             });
-        });
+        }
 
         lastStandingsOrder = newOrder;
     }

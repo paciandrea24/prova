@@ -125,6 +125,7 @@ canvas.tyre-preview-canvas {
     top: 14px; left: 12px;
     width: 200px;
     overflow: hidden;
+    flex-direction: column;
 }
 #lap-chip {
     background: var(--f1-panel-strong);
@@ -152,6 +153,13 @@ canvas.tyre-preview-canvas {
     color: var(--f1-text);
 }
 .f1-standing-row.me { background: rgba(255,255,255,0.05); }
+.f1-standing-row.is-lifting {
+    position: relative;
+    z-index: 5;
+    background: var(--f1-panel-strong);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.55);
+    border-radius: 4px;
+}
 .f1-standing-row .pos { width: 16px; color: var(--f1-text-dim); font-variant-numeric: tabular-nums; }
 .f1-standing-row .dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 .f1-standing-row .gap {

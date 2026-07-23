@@ -892,9 +892,17 @@ function tickGame(io, lobbyId, game) {
             if (p === leader) { p.gapToLeaderMs = null; continue; }
             const distanceBehindUnits = progressScore(leader, game.track) - progressScore(p, game.track);
             const distanceBehindM = Math.max(0, distanceBehindUnits) * metersPerUnit;
+            // Ritmo di riferimento = velocità del LEADER, non dell'inseguitore:
+            // usare p.speed produceva distacchi di minuti ogni volta che
+            // l'inseguitore era momentaneamente fermo/lento nell'istante esatto
+            // del ricalcolo (contro una barriera, in un testacoda, in pit box,
+            // in griglia dopo falsa partenza) — la stima proiettava quella
+            // velocità istantanea quasi nulla all'infinito. Il leader è quasi
+            // sempre in movimento normale, quindi è un riferimento molto più
+            // stabile per "quanto ci metterebbe a coprire questa distanza".
             // speed è in unità/tick fisico; conversione a m/s: la stessa
             // usata dal client per mostrare i km/h (speed*55), portata a m/s (/3.6).
-            const speedMs = Math.max(0.5, Math.abs(p.speed) * 55 / 3.6);   // pavimento anti-divisione-per-zero
+            const speedMs = Math.max(0.5, Math.abs(leader.speed) * 55 / 3.6);   // pavimento anti-divisione-per-zero
             p.gapToLeaderMs = Math.round((distanceBehindM / speedMs) * 1000);
         }
     }
