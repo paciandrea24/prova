@@ -460,10 +460,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // `completedLaps` è il conteggio di giri già completati (0 all'inizio);
     // in qualifica il totale è sempre 1 giro secco, mai quello della gara vera.
     function setLapDisplay(completedLaps, phaseName) {
-        document.getElementById('lap-box').style.display = 'flex';
-        const el = document.getElementById('lap-display');
+        const el = document.getElementById('lap-chip-value');
         // In qualifica non ha senso mostrare "1/1" (un solo giro secco non è
-        // un rapporto giri/totale) — l'utente lo trovava fuorviante.
+        // un rapporto giri/totale) — l'utente lo trovava fuorviante. Nota:
+        // il pannello che contiene questo chip è visibile SOLO in gara
+        // (vedi updateStandings), quindi questa scrittura in qualifica non
+        // si vede mai — innocua, non serve un controllo in più per evitarla.
         if (phaseName === 'qualifying') {
             el.textContent = 'GIRO SECCO';
             return;
@@ -756,7 +758,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             isRacing    = true;
             localStart  = Date.now() - (elapsed || 0);
             document.getElementById('countdown-overlay').style.display = 'none';
-            document.getElementById('timer-panel').style.display = (phase === 'qualifying') ? 'flex' : 'none';
+            document.getElementById('timer-speed-panel').style.display = (phase === 'qualifying' || phase === 'race') ? 'flex' : 'none';
         }
 
         if (phase === 'tyre_select') {
@@ -774,6 +776,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     socket.on('f1StateUpdate', (state) => {
         for (const [color, data] of Object.entries(state)) {
             serverState[color] = data;
+            updateMinimapDot(color, data.trackIndex);
             if (color !== myColor && !otherCars[color] && !visualState[color]) {
                 visualState[color] = { x: data.x, z: data.z, angle: data.angle };
                 loadCarModel(color, (g) => { otherCars[color] = g; });
@@ -814,33 +817,76 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateStandings(state);
     });
 
-    // Classifica live: pallino colore + posizione, ordinata per rank. Mai in
-    // qualifica: lì ogni giocatore vede solo se stesso (playersVisibleTo la
-    // isola), quindi avrebbe comunque "position" (raceStarted è true anche in
-    // qualifica) e mostrerebbe una classifica assurda con un solo "1°" — non
-    // basta controllare le entries, va escluso esplicitamente per fase.
+    // Formatta gapToLeaderMs (ms) in "+S.m" (sotto il minuto) o "+M:SS.m"
+    // (oltre) — un solo decimale, dato che il calcolo è già una stima
+    // (mostrare 3 cifre sarebbe fuorviante). null/leader => stringa vuota.
+    function formatGap(ms) {
+        if (ms == null) return '';
+        const totalDeci = Math.round(ms / 100);
+        const s10 = totalDeci % 600;
+        const m   = Math.floor(totalDeci / 600);
+        const secStr = (s10 / 10).toFixed(1);
+        return m > 0 ? `+${m}:${secStr.padStart(4, '0')}` : `+${secStr}`;
+    }
+
+    let lastStandingsOrder = [];   // colori nell'ordine dell'ultimo render, per l'animazione FLIP
+
+    // Classifica live: pallino colore + posizione + distacco dal leader,
+    // ordinata per rank. Mai in qualifica: lì ogni giocatore vede solo se
+    // stesso (playersVisibleTo la isola), quindi avrebbe comunque
+    // "position" (raceStarted è true anche in qualifica) e mostrerebbe una
+    // classifica assurda con un solo "1°" — non basta controllare le
+    // entries, va escluso esplicitamente per fase.
     function updateStandings(state) {
-        const box = document.getElementById('standings-box');
-        if (currentPhase !== 'race') { box.innerHTML = ''; box.style.display = 'none'; return; }
+        const box = document.getElementById('standings-panel');
+        const rowsEl = document.getElementById('standings-rows');
+        if (currentPhase !== 'race') { rowsEl.innerHTML = ''; box.style.display = 'none'; lastStandingsOrder = []; return; }
 
         const entries = Object.entries(state)
             .filter(([, d]) => d.position)
             .sort((a, b) => a[1].position - b[1].position);
 
-        if (entries.length === 0) { box.innerHTML = ''; box.style.display = 'none'; return; }
+        if (entries.length === 0) { rowsEl.innerHTML = ''; box.style.display = 'none'; lastStandingsOrder = []; return; }
 
         box.style.display = 'flex';
-        box.innerHTML = entries.map(([color, d]) => `
-            <div class="standing-entry${color === myColor ? ' me' : ''}">
-                <span class="standing-pos">${d.position}°</span>
-                <span class="standing-dot" style="background:${color};"></span>${(d.falseStart && !d.falseStartServed) ? '<span class="false-start-badge">!</span>' : ''}
+        const newOrder = entries.map(([color]) => color);
+
+        // FLIP: calcola, PRIMA di ridisegnare, dove si trovava ogni pilota
+        // nell'ordine precedente — serve per far "scavalcare" chi sorpassa
+        // invece di un secco ricalcolo della lista.
+        const prevIndex = {};
+        lastStandingsOrder.forEach((color, i) => { prevIndex[color] = i; });
+
+        rowsEl.innerHTML = entries.map(([color, d]) => `
+            <div class="f1-standing-row${color === myColor ? ' me' : ''}" data-color="${color}">
+                <span class="pos">${d.position}</span>
+                <span class="dot" style="background:${color};"></span>
+                ${color === myColor ? 'TU' : ''}${(d.falseStart && !d.falseStartServed) ? '<span class="false-start-badge">!</span>' : ''}
+                <span class="gap">${formatGap(d.gapToLeaderMs)}</span>
             </div>
         `).join('');
+
+        const ROW_HEIGHT = 24;   // deve corrispondere all'altezza reale di .f1-standing-row (padding incluso)
+        rowsEl.querySelectorAll('.f1-standing-row').forEach((rowEl, newIdx) => {
+            const color = rowEl.dataset.color;
+            const oldIdx = prevIndex[color];
+            if (oldIdx === undefined || oldIdx === newIdx) return;   // nuova riga o posizione invariata: nessuna animazione
+            const deltaPx = (oldIdx - newIdx) * ROW_HEIGHT;
+            anime({
+                targets: rowEl,
+                translateY: [deltaPx, 0],
+                duration: 420,
+                easing: 'easeOutQuad',
+            });
+        });
+
+        lastStandingsOrder = newOrder;
     }
 
     socket.on('f1PlayerLeft', (color) => {
         if (otherCars[color]) { scene.remove(otherCars[color]); delete otherCars[color]; }
         if (hitboxMeshes[color]) { scene.remove(hitboxMeshes[color]); delete hitboxMeshes[color]; }
+        if (minimapDots[color]) { minimapDots[color].remove(); delete minimapDots[color]; }
         delete serverState[color]; delete visualState[color];
     });
 
@@ -855,7 +901,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (tyreSelectActive) exitTyrePreview();   // la qualifica sta per partire: fine anteprima tracciato
         tyreSelectActive = false;
         clearTyreNav();
-        document.getElementById('timer-panel').style.display = 'none';
+        document.getElementById('timer-speed-panel').style.display = 'none';
         tyrePanelOpen = false;
         renderTyreVisibility();
         // Nasconde in automatico un'eventuale griglia/animazione/selezione ancora
@@ -920,7 +966,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             num.textContent = 'GO!'; num.style.color = '#2ecc71';
         }
         overlay.style.background = 'transparent';
-        document.getElementById('timer-panel').style.display = (data?.phase === 'qualifying') ? 'flex' : 'none';
+        document.getElementById('timer-speed-panel').style.display = (data?.phase === 'qualifying' || data?.phase === 'race') ? 'flex' : 'none';
         setTimeout(() => {
             overlay.style.display = 'none';
             lightsBoard.style.display = 'none';
@@ -1243,34 +1289,41 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Marker minimappa: colore auto del giocatore, stesso valore già usato
-    // altrove (es. standing-dot) — nessuna nuova palette.
+    // Contorno pista/corsia box: generato una tantum come prima. I marker
+    // (uno per giocatore, non più solo il proprio) sono <circle> SVG creati
+    // e distrutti dinamicamente — stesso pattern già usato per
+    // otherCars/hitboxMeshes altrove in questo file — non anime.js: con un
+    // insieme dinamico di piloti che si uniscono/lasciano la partita,
+    // gestire N istanze anime.js parallele è inutilmente complesso, e
+    // getPointAtLength nativo basta da solo per posizionare un punto.
     const minimapTrackEl = document.getElementById('minimap-track');
     const minimapPitEl   = document.getElementById('minimap-pit');
-    const minimapDotEl   = document.getElementById('minimap-dot');
     const minimapT = minimapTransform([...trackPts, ...PIT_PTS]);
     minimapTrackEl.setAttribute('d', minimapPathString(trackPts, minimapT, true));
     minimapPitEl.setAttribute('d', minimapPathString(PIT_PTS, minimapT, false));
-    minimapDotEl.querySelectorAll('circle').forEach(c => { c.style.fill = myColor; });
 
-    // anime.js Motion Path (vedi documentazione createMotionPath): l'istanza
-    // resta SEMPRE in pausa (autoplay:false) — non è mai il tempo a farla
-    // avanzare, ma updateMinimap() che la "scrub-ba" ad ogni frame in base
-    // al trackIndex reale ricevuto dal server via f1StateUpdate.
-    const MINIMAP_DURATION = 1000;
-    const minimapMotionPath = anime.path(minimapTrackEl);
-    const minimapAnim = anime({
-        targets: minimapDotEl,
-        translateX: minimapMotionPath('x'),
-        translateY: minimapMotionPath('y'),
-        easing: 'linear',
-        duration: MINIMAP_DURATION,
-        autoplay: false,
-    });
+    const minimapDots = {};   // color -> <circle> element
 
-    function updateMinimap(trackIndex) {
+    function ensureMinimapDot(color) {
+        if (minimapDots[color]) return minimapDots[color];
+        const svg = document.getElementById('minimap-svg');
+        const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        c.setAttribute('r', color === myColor ? '4' : '3');
+        c.setAttribute('fill', color);
+        c.setAttribute('stroke', 'rgba(0,0,0,0.55)');
+        c.setAttribute('stroke-width', '1');
+        svg.appendChild(c);
+        minimapDots[color] = c;
+        return c;
+    }
+
+    function updateMinimapDot(color, trackIndex) {
+        const dot = ensureMinimapDot(color);
         const progress = ((trackIndex || 0) / N_SAMPLES) % 1;
-        minimapAnim.seek(progress * MINIMAP_DURATION);
+        const len = minimapTrackEl.getTotalLength();
+        const pt  = minimapTrackEl.getPointAtLength(progress * len);
+        dot.setAttribute('cx', pt.x);
+        dot.setAttribute('cy', pt.y);
     }
 
     const timerEl = document.getElementById('hud-timer');
@@ -1433,7 +1486,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (color === myColor) {
                 speedEl.textContent = Math.round(Math.abs(target.speed || 0) * 55);
                 if (target.finished && target.time) myFinalTime = target.time;
-                updateMinimap(target.trackIndex);
             }
         }
 
