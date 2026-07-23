@@ -348,6 +348,17 @@ module.exports = function (io, socket) {
     socket.on('f1Input', ({ lobbyId, playerColor, inputs }) => {
         const game = activeGames.get(lobbyId);
         if (!game || !game.players[playerColor] || !inputs) return;
+        // Un giocatore già "finished" (giro di qualifica o gara completati)
+        // resta escluso dalla fisica (vedi filtro `racing` in tickGame), ma
+        // il client continua comunque a inviare finché non arriva la
+        // prossima sessione (isRacing lato client si azzera solo con
+        // f1Countdown/f1RaceEnded, non al MIO traguardo individuale) — se
+        // tiene premuto l'acceleratore durante l'attesa/l'animazione POLE,
+        // quell'input restava scritto in p.inputs e veniva letto come falsa
+        // partenza al via successivo (bug reale, non solo un valore stantio
+        // da un singolo istante: il client lo riscriveva di continuo).
+        // Ignorarlo qui, alla fonte, non richiede fidarsi del client.
+        if (game.players[playerColor].finished) return;
         // Clamp qui perché arriva dal client (analogico, valori liberi):
         // la fisica sotto assume i range dichiarati.
         game.players[playerColor].inputs = {
