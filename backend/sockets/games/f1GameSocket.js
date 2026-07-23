@@ -2,7 +2,7 @@ const { activeGames } = require('../../store/activeGames');
 const { lobbies } = require('../../store/lobbies');
 const { loadTrack } = require('./trackLoader');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
-const { createBots, updateBotInputs, estimateFinishTime } = require('./f1Bot');
+const { createBots, updateBotInputs, estimateFinishTime, nearestAheadPlayer } = require('./f1Bot');
 
 const PHYSICS_TICK_MS = 50;
 // Velocità realistica F1: fattore di scala R=1.55 (+55%) applicato a
@@ -27,6 +27,17 @@ const TURN_SPEED_LOW  = 0.075;   // rad/tick a velocità quasi nulla (era 0.048 
 const TURN_SPEED_HIGH = 0.052;   // rad/tick alla velocità massima (era 0.048 fisso, +8%)
 const GRIP         = 0.78;
 const BRAKE_MULT   = 2.17;   // moltiplicatore di ACCEL in frenata (era 1.4 a MAX_SPEED=4.0)
+
+// Scia: un'auto che segue da vicino un'altra (stessa distanza lungo la
+// pista già usata per il "seguire" dei bot, non una posizione laterale)
+// ottiene un bonus di velocità massima, tanto più grande quanto più è
+// vicina, azzerato oltre SLIPSTREAM_RANGE_M — vale per TUTTI i giocatori
+// (umani e bot), stesso meccanismo, richiesto esplicitamente dall'utente
+// per rendere più frequenti i sorpassi: chi insegue recupera terreno.
+// Solo in GARA (mai in qualifica, dove ogni pilota corre isolato — vedi
+// playersVisibleTo — un boost da un'auto invisibile sarebbe incomprensibile).
+const SLIPSTREAM_RANGE_M   = 25;
+const SLIPSTREAM_MAX_BOOST = 0.08;   // fino a +8% di velocità massima quasi a contatto
 const REJOIN_GRACE = 60000;   // finestra di riconnessione dopo un drop (scheda in background, refresh, rete)
 const GRID_DISPLAY_MS = 8000; // quanto resta a schermo l'animazione POLE + la griglia prima del countdown di gara
 // Il normale flusso qualifica->griglia->gara ha già una pausa naturale
@@ -890,7 +901,18 @@ function tickGame(io, lobbyId, game) {
     const autoPiloted = players.filter(p => p.pitAutoState);
 
     // Velocità (accelerazione/freno/sterzo/grip): una volta per tick, come prima.
-    for (const p of racing) updateVelocity(p, isQuali);
+    // Scia solo in gara (mai in quali, dove ogni pilota è isolato).
+    for (const p of racing) {
+        let slipstreamMult = 1;
+        if (!isQuali) {
+            const ahead = nearestAheadPlayer(p, players, game.track);
+            if (ahead && ahead.gapM < SLIPSTREAM_RANGE_M) {
+                const closeness = 1 - ahead.gapM / SLIPSTREAM_RANGE_M;
+                slipstreamMult = 1 + closeness * SLIPSTREAM_MAX_BOOST;
+            }
+        }
+        updateVelocity(p, isQuali, slipstreamMult);
+    }
 
     // Posizione: in SOTTOSTEP, con risoluzione collisioni ad ogni sottostep
     // (vedi commento su COLLISION_SUBSTEPS). Le auto ferme (finite o in grazia)
@@ -1134,9 +1156,9 @@ function endRace(io, lobbyId, game) {
 // posizione viene integrata in sottostep da tickGame (vedi COLLISION_SUBSTEPS)
 // per dare alla risoluzione collisioni più occasioni di vedere un contatto.
 // ====================================================
-function updateVelocity(p, isQuali) {
+function updateVelocity(p, isQuali, slipstreamMult) {
     const { inputs } = p;
-    const maxSpeed = effectiveMaxSpeed(p, isQuali);   // dipende da mescola + usura (Soft fissa in qualifica)
+    const maxSpeed = effectiveMaxSpeed(p, isQuali) * (slipstreamMult || 1);   // dipende da mescola + usura (Soft fissa in qualifica) + scia
     const grip     = effectiveGrip(p, isQuali);
 
     if (inputs.throttle > 0) p.speed = Math.min(p.speed + ACCEL * inputs.throttle, maxSpeed);

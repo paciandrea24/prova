@@ -476,6 +476,6 @@ function updateBotInputs(game, deps) {
 module.exports = {
     PALETTE, MAX_GRID_SIZE,
     normalizeAngle, steerToward, lookaheadIndex, apexOffset, cornerTargetSpeed, overtakeOffset,
-    pickPostPitCompound, pickBotColors, estimateFinishTime,
+    nearestAheadPlayer, pickPostPitCompound, pickBotColors, estimateFinishTime,
     createBots, updateBotInputs
 };

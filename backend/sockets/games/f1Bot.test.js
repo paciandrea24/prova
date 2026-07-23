@@ -3,7 +3,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
     PALETTE, normalizeAngle, steerToward, lookaheadIndex, apexOffset,
-    cornerTargetSpeed, overtakeOffset, pickPostPitCompound, pickBotColors, estimateFinishTime
+    cornerTargetSpeed, overtakeOffset, nearestAheadPlayer,
+    pickPostPitCompound, pickBotColors, estimateFinishTime
 } = require('./f1Bot.js');
 
 // Costruisce un tracciato sintetico con curvatura costante e controllata:
@@ -195,4 +196,36 @@ test('estimateFinishTime: progresso completo => stesso tempo trascorso', () => {
 test('estimateFinishTime: progresso quasi nullo => pavimento SIMULATED_MIN_PROGRESS (0.05)', () => {
     assert.equal(estimateFinishTime(60000, 0), Math.round(60000 / 0.05));
     assert.equal(estimateFinishTime(60000, 0.01), Math.round(60000 / 0.05));
+});
+
+function mockTrack(n, lapLength) {
+    return { points: { length: n }, lapLength };
+}
+
+test('nearestAheadPlayer: trova il più vicino davanti, con wrap sul giro', () => {
+    const p = { trackIndex: 900 };
+    const near = { trackIndex: 950, finished: false, pitting: false, pitAutoState: null };   // 50 avanti
+    const far  = { trackIndex: 100, finished: false, pitting: false, pitAutoState: null };   // 200 avanti (con wrap su n=1000)
+    const track = mockTrack(1000, 1000);   // 1 metro per campione, semplifica i calcoli
+    const result = nearestAheadPlayer(p, [p, near, far], track);
+    assert.equal(result.player, near);
+    assert.ok(Math.abs(result.gapM - 50) < 1e-9, `atteso 50, ottenuto ${result.gapM}`);
+});
+
+test('nearestAheadPlayer: ignora finiti/ai box/in autopilota', () => {
+    const p = { trackIndex: 0 };
+    const finished    = { trackIndex: 10, finished: true,  pitting: false, pitAutoState: null };
+    const pitting     = { trackIndex: 20, finished: false, pitting: true,  pitAutoState: null };
+    const autoPiloted = { trackIndex: 30, finished: false, pitting: false, pitAutoState: 'entering' };
+    const valid        = { trackIndex: 40, finished: false, pitting: false, pitAutoState: null };
+    const track = mockTrack(1000, 1000);
+    const result = nearestAheadPlayer(p, [p, finished, pitting, autoPiloted, valid], track);
+    assert.equal(result.player, valid);
+});
+
+test('nearestAheadPlayer: nessun altro giocatore valido => null', () => {
+    const p = { trackIndex: 0 };
+    const finished = { trackIndex: 10, finished: true, pitting: false, pitAutoState: null };
+    const track = mockTrack(1000, 1000);
+    assert.equal(nearestAheadPlayer(p, [p, finished], track), null);
 });
