@@ -939,17 +939,21 @@ function tickGame(io, lobbyId, game) {
     // finished/time e il cronometro continuava a scorrere sullo sfondo.
     broadcastState(io, lobbyId, game, true);
 
-    // Fine sessione (qualifica o gara): tutti i giocatori CONNESSI hanno finito
-    // (chi è in grazia con l'auto ferma non blocca la chiusura; c'è comunque un
-    // timer di sicurezza per chi resta indietro senza essersi disconnesso).
-    const connected = players.filter(p => !p.disconnected);
+    // Fine sessione (qualifica o gara): tutti i giocatori UMANI CONNESSI
+    // hanno finito (chi è in grazia con l'auto ferma non blocca la
+    // chiusura; c'è comunque un timer di sicurezza per chi resta indietro
+    // senza essersi disconnesso). I bot NON bloccano la chiusura: un bot
+    // lento o fuori pista non deve tenere in attesa un giocatore umano che
+    // ha già finito — i bot restano comunque in gara, semplicemente non
+    // contano per questo gate.
+    const connectedHumans = players.filter(p => !p.disconnected && !p.isBot);
     if (isQuali) {
-        if (!game.qualiEnded && connected.length > 0 && connected.every(p => p.finished)) {
+        if (!game.qualiEnded && connectedHumans.length > 0 && connectedHumans.every(p => p.finished)) {
             endQualifying(io, lobbyId, game);
             return;
         }
     } else if (game.phase === 'race') {
-        if (!game.raceEnded && connected.length > 0 && connected.every(p => p.finished)) {
+        if (!game.raceEnded && connectedHumans.length > 0 && connectedHumans.every(p => p.finished)) {
             endRace(io, lobbyId, game);
             return;
         }
