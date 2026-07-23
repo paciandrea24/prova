@@ -39,7 +39,7 @@ const BOT_STEER_GAIN = 3.0;
 // istantaneo), quindi il raggio davvero percorso è un po' più ampio di
 // quello puramente geometrico — un margine copre lo scarto senza dover
 // indovinare quanto sia stretta ciascuna curva.
-const BOT_CORNER_SPEED_MARGIN = 0.93;
+const BOT_CORNER_SPEED_MARGIN = 0.97;
 
 function normalizeAngle(a) {
     while (a > Math.PI) a -= 2 * Math.PI;
@@ -76,7 +76,7 @@ function lookaheadIndex(n, currentIdx, lookaheadSamples) {
 // BOT_APEX_MAX_FRACTION della mezza larghezza pista (mai fino al bordo).
 // ====================================================
 const BOT_APEX_REF_ANGLE     = Math.PI / 6;   // 30° sulla finestra locale: oltre, taglio già al massimo consentito
-const BOT_APEX_MAX_FRACTION  = 0.6;           // frazione massima della mezza larghezza pista di cui ci si sposta verso l'interno
+const BOT_APEX_MAX_FRACTION  = 0.72;          // frazione massima della mezza larghezza pista di cui ci si sposta verso l'interno
 
 // Offset {dx,dz} da sommare al punto mirato in idx, verso l'interno della
 // curva locale (stimata confrontando la tangente `halfWindowSamples` prima
