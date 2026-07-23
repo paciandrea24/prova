@@ -95,10 +95,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const minX = Math.min(...xs), maxX = Math.max(...xs);
         const minZ = Math.min(...zs), maxZ = Math.max(...zs);
         const w = maxX - minX, h = maxZ - minZ;
-        const VB = 200, MARGIN = 16;
-        const scale = Math.min((VB - MARGIN * 2) / w, (VB - MARGIN * 2) / h);
-        const offX = MARGIN + (VB - MARGIN * 2 - w * scale) / 2 - minX * scale;
-        const offZ = MARGIN + (VB - MARGIN * 2 - h * scale) / 2 - minZ * scale;
+        const VB_W = 200, VB_H = 140, MARGIN = 16;
+        const scale = Math.min((VB_W - MARGIN * 2) / w, (VB_H - MARGIN * 2) / h);
+        const offX = MARGIN + (VB_W - MARGIN * 2 - w * scale) / 2 - minX * scale;
+        const offZ = MARGIN + (VB_H - MARGIN * 2 - h * scale) / 2 - minZ * scale;
         const toSvg = (p) => `${(p.x * scale + offX).toFixed(1)},${(p.z * scale + offZ).toFixed(1)}`;
         return `M ${toSvg(pts[0])} ` + pts.slice(1).map(p => `L ${toSvg(p)}`).join(' ') + ' Z';
     }
