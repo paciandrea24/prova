@@ -16,7 +16,15 @@ const ACCEL        = 0.186;
 // parità di R, senza lo ×R² il rilascio del gas sembrerebbe non rallentare
 // quasi per niente rispetto a oggi.
 const FRICTION     = 0.120;
-const TURN_SPEED   = 0.048;
+// Velocità di sterzata dipendente dalla velocità dell'auto (non più un
+// unico valore fisso): pieno sterzo a bassa velocità per manovre strette
+// (tornanti, uscita curva), più contenuto al massimo — come un'auto vera.
+// Richiesto esplicitamente dall'utente, che trovava lo sterzo "rigido" sia
+// in generale (valore assoluto basso) sia perché identico a ogni velocità
+// (nessuna differenza basso/alto regime). Vedi interpolazione in
+// updateVelocity in base a |p.speed|/maxSpeed.
+const TURN_SPEED_LOW  = 0.075;   // rad/tick a velocità quasi nulla (era 0.048 fisso, +56%)
+const TURN_SPEED_HIGH = 0.052;   // rad/tick alla velocità massima (era 0.048 fisso, +8%)
 const GRIP         = 0.78;
 const BRAKE_MULT   = 2.17;   // moltiplicatore di ACCEL in frenata (era 1.4 a MAX_SPEED=4.0)
 const REJOIN_GRACE = 60000;   // finestra di riconnessione dopo un drop (scheda in background, refresh, rete)
@@ -1151,7 +1159,9 @@ function updateVelocity(p, isQuali) {
 
     if (Math.abs(p.speed) > 0.01 || (p.vx * p.vx + p.vz * p.vz) > 0.0001) {
         const dir = p.speed >= 0 ? 1 : -1;
-        p.angle += TURN_SPEED * dir * inputs.steer;
+        const speedFrac = Math.min(1, Math.abs(p.speed) / maxSpeed);
+        const turnRate  = TURN_SPEED_LOW + (TURN_SPEED_HIGH - TURN_SPEED_LOW) * speedFrac;
+        p.angle += turnRate * dir * inputs.steer;
     }
 
     const fx = Math.sin(p.angle) * p.speed;
