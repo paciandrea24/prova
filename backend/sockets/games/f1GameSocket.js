@@ -2,7 +2,7 @@ const { activeGames } = require('../../store/activeGames');
 const { lobbies } = require('../../store/lobbies');
 const { loadTrack } = require('./trackLoader');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
-const { createBots, updateBotInputs } = require('./f1Bot');
+const { createBots, updateBotInputs, estimateFinishTime } = require('./f1Bot');
 
 const PHYSICS_TICK_MS = 50;
 // Velocità realistica F1: fattore di scala R=1.55 (+55%) applicato a
@@ -563,8 +563,25 @@ function endQualifying(io, lobbyId, game) {
     game.qualiEnded = true;
     if (game.qualiEndTimeout) { clearTimeout(game.qualiEndTimeout); game.qualiEndTimeout = null; }
 
-    // Chi non ha completato il giro (null) va in fondo alla griglia, in ordine
-    // di apparizione (nessun'altra informazione disponibile per ordinarli).
+    // La qualifica chiude non appena tutti gli UMANI connessi hanno finito
+    // (vedi il gate in tickGame, i bot non la bloccano più): un bot ancora
+    // in pista in quel momento riceve un tempo simulato realistico,
+    // estrapolato dal proprio ritmo osservato fin lì, invece di comparire
+    // come "nessun tempo" — non è un'anomalia, è normale che un bot non
+    // abbia ancora finito quando la sessione chiude sul giocatore umano.
+    const n = game.track.points.length;
+    for (const p of Object.values(game.players)) {
+        if (p.time === null && p.isBot) {
+            const elapsed  = Date.now() - game.raceStartTime;
+            const progress = (p.lap * n + (p.trackIndex || 0)) / n;   // totalLaps quali = 1
+            p.time = estimateFinishTime(elapsed, progress);
+        }
+    }
+
+    // Chi non ha completato il giro (null, solo umani disconnessi: i bot
+    // hanno sempre un tempo ormai, vedi sopra) va in fondo alla griglia, in
+    // ordine di apparizione (nessun'altra informazione disponibile per
+    // ordinarli).
     const ranked = Object.values(game.players).slice().sort((a, b) => {
         if (a.time === null && b.time === null) return 0;
         if (a.time === null) return 1;
@@ -1079,10 +1096,20 @@ function checkLap(p, totalLaps, io, lobbyId, game) {
 function endRace(io, lobbyId, game) {
     game.raceEnded = true;
     if (game.endTimeout) { clearTimeout(game.endTimeout); game.endTimeout = null; }
-    const podium = Object.values(game.players)
-        .filter(p => p.time !== null)
-        .sort((a, b) => a.time - b.time)
-        .map(p => ({ color: p.color, totalTime: p.time, pitPenalty: !!p.pitPenalty, falseStart: !!p.falseStart }));
+    // La gara chiude non appena tutti gli UMANI connessi hanno finito (vedi
+    // il gate in tickGame): un bot ancora in pista in quel momento NON va
+    // omesso dal podio (a differenza di prima) — mantiene la sua posizione
+    // attuale, calcolata dallo stesso progressScore usato per la classifica
+    // live. Chi ha finito viene sempre prima (progressScore più alto per
+    // costruzione: totalLaps*n domina), poi chi è ancora in pista in
+    // ordine di posizione corrente. totalTime resta null per questi ultimi
+    // — il client mostra la posizione, non un tempo inventato.
+    const finished   = Object.values(game.players).filter(p => p.time !== null);
+    const unfinished = Object.values(game.players).filter(p => p.time === null);
+    const podium = [
+        ...finished.sort((a, b) => a.time - b.time),
+        ...unfinished.sort((a, b) => progressScore(b, game.track) - progressScore(a, game.track))
+    ].map(p => ({ color: p.color, totalTime: p.time, pitPenalty: !!p.pitPenalty, falseStart: !!p.falseStart }));
     io.to(lobbyId).emit('f1RaceEnded', {
         podium,
         isFinal:      true,
