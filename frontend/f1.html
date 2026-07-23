@@ -9,32 +9,37 @@
 </head>
 <body>
 
-    <!-- HUD: classifica live — top-left. Popolata da updateStandings() in f1.js -->
-    <div class="hud hud-standings hud-panel-neu" id="standings-box" style="display:none;"></div>
-
-    <!-- HUD: giri — top-center, stile broadcast (giro CORRENTE/totale) -->
-    <div class="hud hud-lap hud-panel-neu" id="lap-box" style="display:none;">
-        <span class="hud-eyebrow">LAP</span>
-        <div class="hud-screen"><span class="hud-mono" id="lap-display">1/3</span></div>
+    <!-- HUD: classifica + giri — top-left, un pannello solo. Popolato da
+         updateStandings()/setLapDisplay() in f1.js. Visibile solo in gara
+         (currentPhase !== 'race' nasconde tutto, incluso il chip giri). -->
+    <div class="hud f1-panel" id="standings-panel" style="display:none;">
+        <div id="lap-chip">
+            <span class="eyebrow">Giro</span>
+            <span id="lap-chip-value">1/3</span>
+        </div>
+        <div id="standings-rows"></div>
     </div>
 
-    <!-- HUD: timer — top-right, SOLO qualifica -->
-    <div class="hud hud-timer hud-panel-neu" id="timer-panel" style="display:none;">
-        <div class="hud-screen"><span class="hud-mono" id="hud-timer">0:00.000</span></div>
-    </div>
-
-    <!-- HUD: velocità — bottom-center -->
-    <div class="hud hud-speed hud-panel-neu">
-        <div class="hud-screen"><span id="speed-value">0</span><span class="speed-unit"> km/h</span></div>
+    <!-- HUD: tempo + velocità — top-right, un pannello solo. Visibile in
+         qualifica E in gara (non più solo qualifica). -->
+    <div class="hud f1-panel" id="timer-speed-panel" style="display:none;">
+        <div class="col">
+            <span class="eyebrow">Tempo</span>
+            <span class="value" id="hud-timer">0:00.000</span>
+        </div>
+        <div class="col">
+            <span class="eyebrow">Velocità</span>
+            <span class="value" id="speed-value">0</span><span class="unit">km/h</span>
+        </div>
     </div>
 
     <!-- HUD: gomme — bottom-left, apribile/chiudibile (tasto T / L1), chiuso di
          default, visibile solo in gara (vedi renderTyreVisibility in f1.js) -->
-    <div class="hud hud-tyre-closed hud-panel-neu" id="tyre-closed" style="display:none;" title="T / L1 — apri gomme">
+    <div class="hud hud-tyre-closed f1-panel" id="tyre-closed" style="display:none;" title="T / L1 — apri gomme">
         <span class="tyre-icon-closed" id="tyre-icon-closed"></span>
         <span class="hud-key-hint">T</span>
     </div>
-    <div class="hud hud-tyre-open hud-panel-neu" id="tyre-open" style="display:none;">
+    <div class="hud hud-tyre-open f1-panel" id="tyre-open" style="display:none;">
         <div class="hud-tyre-open-head" id="tyre-open-head">
             <span class="hud-tyre-compound">
                 <span class="hud-tyre-compound-dot" id="tyre-compound-dot"></span>
@@ -62,18 +67,15 @@
         </div>
     </div>
 
-    <!-- HUD: minimappa — bottom-right. Path e marker gestiti da f1.js (anime.js) -->
-    <div class="hud hud-minimap hud-panel-neu" id="minimap-box">
-        <div class="hud-screen">
-            <svg id="minimap-svg" viewBox="0 0 200 140">
-                <path id="minimap-track" class="minimap-track-line"></path>
-                <path id="minimap-pit" class="minimap-pit-line"></path>
-                <g id="minimap-dot">
-                    <circle class="minimap-you-halo"></circle>
-                    <circle class="minimap-you-core"></circle>
-                </g>
-            </svg>
-        </div>
+    <!-- HUD: minimappa — bottom-right. Path generato una tantum, un
+         <circle> per giocatore creato/distrutto dinamicamente da f1.js
+         (vedi ensureMinimapDot/updateMinimapDot) — non più un marker
+         singolo statico. -->
+    <div class="hud hud-minimap f1-panel" id="minimap-box">
+        <svg id="minimap-svg" viewBox="0 0 200 140">
+            <path id="minimap-track" class="minimap-track-line"></path>
+            <path id="minimap-pit" class="minimap-pit-line"></path>
+        </svg>
     </div>
 
     <!-- Suggerimento camera -->
