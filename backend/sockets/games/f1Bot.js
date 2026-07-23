@@ -21,9 +21,22 @@ const MAX_GRID_SIZE = 6;   // umani + bot totali per gara
 // ====================================================
 // GUIDA — pure pursuit + velocità da curvatura
 // ====================================================
-const BOT_STEER_GAIN = 1.6;   // guadagno proporzionale errore-angolo -> sterzo
-const MAX_CURVATURE_ANGLE = Math.PI / 3;   // 60°: oltre, velocità al minimo
-const MIN_SPEED_FRACTION  = 0.35;
+// Guadagno alto apposta: satura lo sterzo a fondo già per scarti angolari
+// moderati (~1/3.0 rad ≈ 19°), per correggere in modo deciso quando il bot
+// non è già ben allineato alla linea (es. dopo un urto) — con un guadagno
+// più basso il bot restava per più tempo "storto" prima di raddrizzarsi,
+// una delle cause delle uscite di pista osservate in playtest.
+const BOT_STEER_GAIN = 3.0;
+// Soglia di curvatura abbassata (era 60°): anche una curva moderata (30° di
+// cambio direzione sul tratto guardato in avanti) porta già alla velocità
+// minima, non solo le curve strettissime — i bot frenavano troppo poco
+// anche per curve medie.
+const MAX_CURVATURE_ANGLE = Math.PI / 6;   // 30°: oltre, velocità al minimo
+// Pavimento di velocità abbassato (era 0.35): a MIN_SPEED_FRACTION=0.35 un
+// bot non riusciva comunque a sterzare abbastanza stretto per i tornanti
+// più chiusi, indipendentemente da quanto presto iniziasse a frenare (il
+// raggio di sterzata dipende dalla velocità, non solo da QUANDO si frena).
+const MIN_SPEED_FRACTION  = 0.18;
 
 function normalizeAngle(a) {
     while (a > Math.PI) a -= 2 * Math.PI;
@@ -77,6 +90,21 @@ function pickPostPitCompound(remainingLaps, wearLapsAtMedium) {
 }
 
 // ====================================================
+// TEMPO SIMULATO A FINE SESSIONE
+// Qualifica/gara chiudono non appena tutti gli UMANI connessi hanno
+// finito (i bot non bloccano più la chiusura). Un bot ancora in pista in
+// quel momento non deve comparire come "nessun tempo": si stima un tempo
+// plausibile estrapolando dal proprio ritmo osservato fin lì (tempo
+// trascorso diviso frazione di sessione completata).
+// ====================================================
+const SIMULATED_MIN_PROGRESS = 0.05;   // pavimento anti-estrapolazione assurda per chi si è mosso pochissimo
+
+function estimateFinishTime(elapsedMs, progressFraction) {
+    const p = Math.max(SIMULATED_MIN_PROGRESS, Math.min(1, progressFraction));
+    return Math.round(elapsedMs / p);
+}
+
+// ====================================================
 // ASSEGNAZIONE COLORI BOT
 // ====================================================
 function pickBotColors(humanColors, count, rng = Math.random) {
@@ -97,7 +125,12 @@ function pickBotColors(humanColors, count, rng = Math.random) {
 // game object): eventuali umani disconnessi a gara in corso NON vengono
 // sostituiti da un bot (riempimento singolo, non dinamico).
 // ====================================================
-const BOT_SPEED_FACTOR_MIN    = 0.85, BOT_SPEED_FACTOR_MAX    = 1.05;
+// Range 0.8..1.0 (non oltre 1.0): la velocità reale è comunque limitata da
+// effectiveMaxSpeed, quindi un fattore >1.0 non produceva alcuna differenza
+// osservabile in rettilineo (sempre a tutto gas contro lo stesso tetto) —
+// tutta la variabilità reale finiva compressa nella sola metà 0.85..1.0,
+// che contribuiva ai bot "tutti uguali" in gruppo (effetto trenino).
+const BOT_SPEED_FACTOR_MIN    = 0.8,  BOT_SPEED_FACTOR_MAX    = 1.0;
 const BOT_PRECISION_NOISE_MIN = 0,    BOT_PRECISION_NOISE_MAX = 0.25;   // rad aggiunti/tolti allo sterzo
 const BOT_PIT_THRESHOLD_MIN   = 60,   BOT_PIT_THRESHOLD_MAX   = 80;     // % usura gomme a cui il bot decide di entrare ai box
 
@@ -181,8 +214,34 @@ const BOT_SPEED_MARGIN          = 0.03;  // isteresi throttle/brake attorno alla
 const BOT_PIT_REACTION_MIN_MS   = 150;
 const BOT_PIT_REACTION_MAX_MS   = 700;
 
+// Distanza di scia: senza questo, più bot che seguono la stessa linea di
+// corsa e frenano/accelerano secondo la stessa curvatura convergono a
+// velocità quasi identiche nello stesso punto pista, risultando in gruppetti
+// che si muovono "in blocco" (effetto trenino osservato in playtest). Un bot
+// che si accorge di un'altra auto entro BOT_FOLLOW_GAP_M subito avanti lungo
+// il tracciato rallenta proporzionalmente, invece di tallonarla identico.
+const BOT_FOLLOW_GAP_M        = 15;
+const BOT_FOLLOW_MIN_FRACTION = 0.55;   // frazione minima di velocità quando si è praticamente addosso a chi precede
+
 function metersToSamples(meters, track) {
     return Math.max(1, Math.round(meters * track.points.length / track.lapLength));
+}
+
+// Distanza (in metri, lungo il verso di marcia, con wrap di giro) fino
+// all'auto più vicina DAVANTI a p, tra tutti i players passati — ignora chi
+// è finito/ai box/in autopilota (non un ostacolo "in pista" da seguire).
+// Infinity se nessuno è abbastanza vicino avanti.
+function nearestAheadGapM(p, allPlayers, track) {
+    const n = track.points.length;
+    const metersPerSample = track.lapLength / n;
+    let best = Infinity;
+    for (const q of allPlayers) {
+        if (q === p || q.finished || q.pitting || q.pitAutoState) continue;
+        const delta = (((q.trackIndex || 0) - (p.trackIndex || 0)) % n + n) % n;
+        const gapM = delta * metersPerSample;
+        if (gapM < best) best = gapM;
+    }
+    return best;
 }
 
 // p.speed è lo scalare interno di fisica; stessa conversione a m/s già
@@ -243,7 +302,14 @@ function updateBotInputs(game, deps) {
             steer = steerToward(p.x, p.z, p.angle, target.x, target.z);
 
             const speedFrac = curvatureSpeedFraction(track.points, p.trackIndex || 0, curveSamples);
-            const targetSpeed = effectiveMaxSpeed(p, isQuali) * speedFrac * p.botSpeedFactor;
+            let targetSpeed = effectiveMaxSpeed(p, isQuali) * speedFrac * p.botSpeedFactor;
+
+            const gapM = nearestAheadGapM(p, Object.values(game.players), track);
+            if (gapM < BOT_FOLLOW_GAP_M) {
+                const closeness = 1 - gapM / BOT_FOLLOW_GAP_M;   // 0 = al limite, 1 = praticamente addosso
+                targetSpeed *= 1 - closeness * (1 - BOT_FOLLOW_MIN_FRACTION);
+            }
+
             if (p.speed < targetSpeed * (1 - BOT_SPEED_MARGIN)) throttle = 1;
             else if (p.speed > targetSpeed * (1 + BOT_SPEED_MARGIN)) brake = 1;
         }
@@ -258,6 +324,6 @@ function updateBotInputs(game, deps) {
 module.exports = {
     PALETTE, MAX_GRID_SIZE,
     normalizeAngle, steerToward, lookaheadIndex, curvatureSpeedFraction,
-    pickPostPitCompound, pickBotColors,
+    pickPostPitCompound, pickBotColors, estimateFinishTime,
     createBots, updateBotInputs
 };
