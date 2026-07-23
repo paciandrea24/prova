@@ -508,6 +508,14 @@ function hardRemoveF1Player(io, lobbyId, color) {
 function startTyreSelect(io, lobbyId, game) {
     game.phase = 'tyre_select';
     game.tyreConfirmed.clear();
+    // I bot si auto-confermano già alla creazione (vedi createBots, chiamata
+    // prima di questa funzione nello stesso joinF1Game): il clear() sopra
+    // svuota anche la loro conferma, quindi va ripristinata qui — altrimenti
+    // un giocatore umano da solo con 5 bot restava bloccato a "1/6 pronti"
+    // dopo la propria scelta, perché i bot non confermano una seconda volta.
+    for (const color of Object.keys(game.players)) {
+        if (game.players[color].isBot) game.tyreConfirmed.add(color);
+    }
 
     game.tyreSelectTimeout = setTimeout(() => {
         const g = activeGames.get(lobbyId);
