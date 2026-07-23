@@ -13,6 +13,7 @@ const F1GamepadInput = (() => {
     const BTN_BRAKE     = 6;   // L2 (grilletto sinistro)
     const BTN_CONFIRM   = 0;   // X / Cross — reazione pit O conferma mescola (dipende dalla fase)
     const BTN_CAMERA    = 3;   // Triangolo / Y
+    const BTN_TYRE_TOGGLE = 4;   // L1 — apri/chiudi il pannello gomme (mappatura standard Gamepad API: index 4 = LB/L1)
     const BTN_DPAD_LEFT  = 14;
     const BTN_DPAD_RIGHT = 15;
 
@@ -24,12 +25,13 @@ const F1GamepadInput = (() => {
     let prevCamera  = false;
     let prevDpadL   = false;
     let prevDpadR   = false;
+    let prevTyre    = false;
     let cbs = {};
 
     window.addEventListener('gamepadconnected', (e) => {
         connected = true;
         gpIdx = e.gamepad.index;
-        prevConfirm = prevCamera = prevDpadL = prevDpadR = false;
+        prevConfirm = prevCamera = prevDpadL = prevDpadR = prevTyre = false;
     });
 
     window.addEventListener('gamepaddisconnected', (e) => {
@@ -71,6 +73,10 @@ const F1GamepadInput = (() => {
         const cameraNow = (gp.buttons[BTN_CAMERA] || { pressed: false }).pressed;
         if (cameraNow && !prevCamera && cbs.onCameraToggle) cbs.onCameraToggle();
         prevCamera = cameraNow;
+
+        const tyreNow = (gp.buttons[BTN_TYRE_TOGGLE] || { pressed: false }).pressed;
+        if (tyreNow && !prevTyre && cbs.onTyreToggle) cbs.onTyreToggle();
+        prevTyre = tyreNow;
 
         const dpadLNow = (gp.buttons[BTN_DPAD_LEFT]  || { pressed: false }).pressed;
         if (dpadLNow && !prevDpadL && cbs.onNavLeft) cbs.onNavLeft();

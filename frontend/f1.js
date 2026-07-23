@@ -1050,6 +1050,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             onCameraToggle: () => { cameraMode = cameraMode === 'third' ? 'first' : 'third'; },
             onNavLeft:      () => tyreNav(-1),
             onNavRight:     () => tyreNav(1),
+            onTyreToggle:   () => { tyrePanelOpen = !tyrePanelOpen; renderTyreVisibility(); },
         });
     }
 
