@@ -86,6 +86,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     const trackPts  = TrackGeometry.sampleLoop(trackData.controlPoints, N_SAMPLES);
 
     // ====================================================
+    // MINIMAPPA — contorno pista in SVG, generato una tantum proiettando
+    // trackPts (x,z) sul piano. Nessuna finezza di parametrizzazione per
+    // arco: 1000 vertici a poligono sono già lisci a queste dimensioni.
+    // ====================================================
+    function buildMinimapPath(pts) {
+        const xs = pts.map(p => p.x), zs = pts.map(p => p.z);
+        const minX = Math.min(...xs), maxX = Math.max(...xs);
+        const minZ = Math.min(...zs), maxZ = Math.max(...zs);
+        const w = maxX - minX, h = maxZ - minZ;
+        const VB = 200, MARGIN = 16;
+        const scale = Math.min((VB - MARGIN * 2) / w, (VB - MARGIN * 2) / h);
+        const offX = MARGIN + (VB - MARGIN * 2 - w * scale) / 2 - minX * scale;
+        const offZ = MARGIN + (VB - MARGIN * 2 - h * scale) / 2 - minZ * scale;
+        const toSvg = (p) => `${(p.x * scale + offX).toFixed(1)},${(p.z * scale + offZ).toFixed(1)}`;
+        return `M ${toSvg(pts[0])} ` + pts.slice(1).map(p => `L ${toSvg(p)}`).join(' ') + ' Z';
+    }
+
+    // ====================================================
     // TERRENO ERBOSO — prato con un "buco" a forma di tracciato (esterno) +
     // pezzo pieno per l'infield, riempiti dal terrapieno che sfuma dalla
     // quota pista a 0 man mano che ci si allontana: niente più piano piatto
@@ -1114,6 +1132,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // Marker minimappa: colore auto del giocatore, stesso valore già usato
+    // altrove (es. standing-dot) — nessuna nuova palette.
+    const minimapTrackEl = document.getElementById('minimap-track');
+    const minimapDotEl   = document.getElementById('minimap-dot');
+    minimapTrackEl.setAttribute('d', buildMinimapPath(trackPts));
+    minimapDotEl.querySelectorAll('circle').forEach(c => { c.style.fill = myColor; });
+
+    // anime.js Motion Path (vedi documentazione createMotionPath): l'istanza
+    // resta SEMPRE in pausa (autoplay:false) — non è mai il tempo a farla
+    // avanzare, ma updateMinimap() che la "scrub-ba" ad ogni frame in base
+    // al trackIndex reale ricevuto dal server via f1StateUpdate.
+    const MINIMAP_DURATION = 1000;
+    const minimapMotionPath = anime.path(minimapTrackEl);
+    const minimapAnim = anime({
+        targets: minimapDotEl,
+        translateX: minimapMotionPath('x'),
+        translateY: minimapMotionPath('y'),
+        easing: 'linear',
+        duration: MINIMAP_DURATION,
+        autoplay: false,
+    });
+
+    function updateMinimap(trackIndex) {
+        const progress = ((trackIndex || 0) / N_SAMPLES) % 1;
+        minimapAnim.seek(progress * MINIMAP_DURATION);
+    }
+
     const timerEl = document.getElementById('hud-timer');
     const speedEl = document.getElementById('speed-value');
 
@@ -1274,6 +1319,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (color === myColor) {
                 speedEl.textContent = Math.round(Math.abs(target.speed || 0) * 55);
                 if (target.finished && target.time) myFinalTime = target.time;
+                updateMinimap(target.trackIndex);
             }
         }
 
