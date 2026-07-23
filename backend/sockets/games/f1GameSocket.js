@@ -873,7 +873,8 @@ function tickGame(io, lobbyId, game) {
 
     updateBotInputs(game, {
         effectiveMaxSpeed, handlePitReactionPress, io, lobbyId,
-        wearLapsAtMedium: WEAR_LAPS_AT_MEDIUM
+        wearLapsAtMedium: WEAR_LAPS_AT_MEDIUM,
+        accel: ACCEL, brakeMult: BRAKE_MULT, turnRateHigh: TURN_SPEED_HIGH
     });
 
     const isQuali  = game.phase === 'qualifying';

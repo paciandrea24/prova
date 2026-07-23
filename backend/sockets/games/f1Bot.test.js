@@ -3,8 +3,27 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
     PALETTE, normalizeAngle, steerToward, lookaheadIndex,
-    curvatureSpeedFraction, pickPostPitCompound, pickBotColors, estimateFinishTime
+    cornerTargetSpeed, pickPostPitCompound, pickBotColors, estimateFinishTime
 } = require('./f1Bot.js');
+
+// Costruisce un tracciato sintetico con curvatura costante e controllata:
+// dritto per `straightSamples` campioni, poi curva con `deltaAnglePerSample`
+// radianti di svolta ad ogni campione successivo. Ogni campione dista
+// esattamente 1 unità dal precedente (passo unitario), quindi
+// metersPerSample=1 nei test che lo usano — nessuna ambiguità sul raggio
+// reale della curva prodotta (raggio ≈ 1/deltaAnglePerSample).
+function buildConstantCurveTrack(totalSamples, straightSamples, deltaAnglePerSample) {
+    const pts = [];
+    let x = 0, z = 0, heading = 0;
+    for (let i = 0; i < totalSamples; i++) {
+        pts.push({ x, z });
+        const delta = i < straightSamples ? 0 : deltaAnglePerSample;
+        heading += delta;
+        x += Math.sin(heading);
+        z += Math.cos(heading);
+    }
+    return pts;
+}
 
 test('normalizeAngle riporta angoli fuori range in [-π, π]', () => {
     assert.ok(Math.abs(normalizeAngle(Math.PI * 3) - Math.PI) < 1e-9);
@@ -41,37 +60,32 @@ test('lookaheadIndex avanza con wrap sul loop', () => {
     assert.equal(lookaheadIndex(1000, 0, 0), 0);
 });
 
-test('curvatureSpeedFraction: rettilineo => frazione vicina a 1', () => {
-    const straight = [];
-    for (let i = 0; i < 30; i++) straight.push({ x: 0, z: i });
-    const frac = curvatureSpeedFraction(straight, 5, 15, 4);
-    assert.ok(frac > 0.98, `atteso ~1, ottenuto ${frac}`);
+test('cornerTargetSpeed: rettilineo puro => resta alla velocità massima', () => {
+    const track = buildConstantCurveTrack(60, 60, 0);   // niente curvatura da nessuna parte
+    const target = cornerTargetSpeed(track, 5, 40, 4, 1, 6, 6, 1, 0.05, 1);
+    assert.equal(target, 6);
 });
 
-test('curvatureSpeedFraction: tornante stretto scoperto dalla scansione lunga anche se non subito => frazione al minimo (0.5)', () => {
-    const bent = [];
-    for (let i = 0; i < 30; i++) bent.push({ x: 0, z: i });           // rettilineo lungo +z, idx 0..29
-    for (let i = 0; i < 30; i++) bent.push({ x: i, z: 29 });          // tornante di 90° a idx~30, poi lungo +x
-    // idx=5, scansiona 40 campioni avanti (fino a idx=45, ben oltre il
-    // tornante): la finestra locale corta (4) lo trova comunque.
-    const frac = curvatureSpeedFraction(bent, 5, 40, 4);
-    assert.ok(Math.abs(frac - 0.5) < 0.01, `atteso ~0.5, ottenuto ${frac}`);
+test('cornerTargetSpeed: tornante lontano con margine sufficiente => non frena troppo presto', () => {
+    // Curva di raggio ~20 che inizia 100m avanti: alla velocità/decelerazione
+    // di questo test la distanza di frenata necessaria è ~17.5m — con 95m
+    // di margine non c'è ancora motivo di rallentare.
+    const track = buildConstantCurveTrack(160, 100, 1 / 20);
+    const target = cornerTargetSpeed(track, 5, 140, 4, 1, 6, 6, 1, 0.05, 1);
+    assert.equal(target, 6, `atteso 6 (nessuna frenata ancora necessaria), ottenuto ${target}`);
 });
 
-test('curvatureSpeedFraction: stesso angolo totale (90°) ma su una curva DOLCE (raggio ampio) => non scende al minimo', () => {
-    // Bug reale (playtest): confrontare solo inizio/fine di una scansione
-    // lunga confondeva "curva dolce spalmata su tanta distanza" con
-    // "tornante stretto" — qui l'angolo totale è lo stesso 90° del test
-    // sopra, ma spalmato su un raggio di 500 unità: misurata con finestre
-    // LOCALI corte deve restare dolce ovunque, non toccare il minimo.
-    const n = 200;
-    const wide = [];
-    for (let i = 0; i <= n; i++) {
-        const a = (Math.PI / 2) * (i / n);
-        wide.push({ x: Math.sin(a) * 500, z: Math.cos(a) * 500 });
-    }
-    const frac = curvatureSpeedFraction(wide, 5, 50, 4);
-    assert.ok(frac > 0.9, `atteso vicino a 1 (curva dolce vista localmente), ottenuto ${frac}`);
+test('cornerTargetSpeed: stesso tornante ma vicino => scende sotto la velocità massima per frenare in tempo', () => {
+    const track = buildConstantCurveTrack(60, 10, 1 / 20);   // stessa curva, ma a ~5m invece di ~95m
+    const target = cornerTargetSpeed(track, 5, 40, 4, 1, 6, 6, 1, 0.05, 1);
+    assert.ok(target < 6, `atteso <6 (deve già frenare), ottenuto ${target}`);
+    assert.ok(target < 3, `atteso vicino alla velocità del tornante (~1), ottenuto ${target}`);
+});
+
+test('cornerTargetSpeed: già più lenti del necessario => la curva non è più vincolante (niente doppia frenata)', () => {
+    const track = buildConstantCurveTrack(60, 10, 1 / 20);
+    const target = cornerTargetSpeed(track, 5, 40, 4, 1, 0.5, 6, 1, 0.05, 1);
+    assert.equal(target, 6, `atteso 6 (già più lenti del richiesto dalla curva), ottenuto ${target}`);
 });
 
 test('pickPostPitCompound: pochi giri restanti => soft', () => {

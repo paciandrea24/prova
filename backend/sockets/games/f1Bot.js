@@ -19,27 +19,27 @@ const PALETTE = [
 const MAX_GRID_SIZE = 6;   // umani + bot totali per gara
 
 // ====================================================
-// GUIDA — pure pursuit + velocità da curvatura
+// GUIDA — pure pursuit per lo sterzo, velocità in curva calcolata dalla
+// FISICA REALE del gioco (non più soglie in gradi indovinate a occhio: i
+// tentativi precedenti — mai verificabili senza un browser reale — hanno
+// prodotto bot ora fuori pista ora troppo lenti su tutto il giro, non solo
+// nelle curve). Lo sterzo ha un tasso di rotazione massimo (vedi
+// TURN_SPEED_LOW/HIGH in f1GameSocket.js): il raggio di curva che un'auto
+// riesce davvero a percorrere a velocità v è raggio = v / tassoDiSterzata.
+// Da qui si ricava ESATTAMENTE la velocità massima possibile per una curva
+// di raggio noto, con lo stesso identico limite fisico che vale per un
+// giocatore umano — vedi cornerTargetSpeed più sotto.
 // ====================================================
 // Guadagno alto apposta: satura lo sterzo a fondo già per scarti angolari
 // moderati (~1/3.0 rad ≈ 19°), per correggere in modo deciso quando il bot
-// non è già ben allineato alla linea (es. dopo un urto) — con un guadagno
-// più basso il bot restava per più tempo "storto" prima di raddrizzarsi,
-// una delle cause delle uscite di pista osservate in playtest.
+// non è già ben allineato alla linea (es. dopo un urto).
 const BOT_STEER_GAIN = 3.0;
-// Soglia di curvatura: dopo aver separato scansione lunga e finestra locale
-// (vedi curvatureSpeedFraction), la rilevazione è ormai precisa — non serve
-// più una soglia bassissima per compensare un rilevamento impreciso. 45°
-// misurati su una finestra locale corta (BOT_CURVATURE_LOCAL_M) è comunque
-// un vero tornante, non una curva qualunque.
-const MAX_CURVATURE_ANGLE = Math.PI / 4;   // 45°: oltre, velocità al minimo
-// Pavimento di velocità: con la rilevazione ormai precisa (curva dolce non
-// tocca più il minimo, vedi fix locale), non serve più un pavimento
-// bassissimo per "star sul sicuro" — un valore troppo basso (provato: 0.18)
-// produceva un rallentamento generale eccessivo su tutto il giro (giro di
-// qualifica ~4× più lento di un umano, segnalato dall'utente), non solo
-// nei tornanti veri.
-const MIN_SPEED_FRACTION  = 0.5;
+// Margine di sicurezza sul limite fisico esatto: la velocità reale (vx/vz)
+// insegue l'angolo con un filtro (GRIP<1 in updateVelocity, non
+// istantaneo), quindi il raggio davvero percorso è un po' più ampio di
+// quello puramente geometrico — un margine copre lo scarto senza dover
+// indovinare quanto sia stretta ciascuna curva.
+const BOT_CORNER_SPEED_MARGIN = 0.85;
 
 function normalizeAngle(a) {
     while (a > Math.PI) a -= 2 * Math.PI;
@@ -64,25 +64,27 @@ function lookaheadIndex(n, currentIdx, lookaheadSamples) {
     return ((currentIdx + lookaheadSamples) % n + n) % n;
 }
 
-// Frazione 0.18..1 di velocità massima consentita dalla curvatura futura.
-// `scanSamples` è quanto avanti guardare in totale (per frenare in tempo su
-// un tornante lontano), `localSamples` è la finestra con cui si MISURA
-// quanto è stretta la curva in un punto — devono restare separati: un
-// singolo confronto tra la tangente ORA e quella alla fine di tutto lo
-// `scanSamples` (versione precedente di questa funzione) confonde "curva
-// dolce spalmata su una lunga distanza" con "tornante stretto", perché su
-// una distanza lunga anche una curva normale cambia direzione di decine di
-// gradi — causa reale dei bot troppo lenti ovunque osservata in playtest
-// dopo aver allungato lo scan per frenare in tempo alle alte velocità.
-// Si scansiona `scanSamples` avanti con finestre locali sovrapposte (passo
-// = metà di `localSamples`, per non "saltare" un tornante corto tra un
-// campione e l'altro) e si tiene la curva più stretta trovata: un vero
-// tornante lontano viene comunque scoperto in tempo, ma una curva dolce
-// resta dolce ovunque la si misuri localmente.
-function curvatureSpeedFraction(points, idx, scanSamples, localSamples) {
+// Velocità bersaglio "fisica": resta al massimo (maxSpeed) finché nessuna
+// curva nel raggio di scansione impone ancora di iniziare a frenare;
+// scende alla velocità massima percorribile dalla curva più vincolante non
+// appena la distanza rimanente è pari o inferiore alla distanza di frenata
+// REALMENTE necessaria per arrivarci a quella velocità (dalla fisica di
+// frenata del gioco: v0²−v1² = 2·decelerazione·distanza — non un tempo di
+// anticipo indovinato).
+// `localSamples` è la finestra con cui si MISURA quanto è stretta la
+// curva in un punto (corta, caratterizza la geometria), `scanSamples` è
+// fin dove cercare (lungo, per non scoprire un tornante troppo tardi) —
+// restano separati: confrontare solo l'inizio e la fine di una scansione
+// lunga confonderebbe una curva dolce spalmata su tanta distanza con un
+// tornante stretto. Si scansiona `scanSamples` avanti con finestre locali
+// sovrapposte (passo = metà di `localSamples`) e, per ogni curva trovata,
+// si valuta se la distanza rimanente basta ancora per non dover già
+// frenare.
+function cornerTargetSpeed(points, idx, scanSamples, localSamples, metersPerSample, currentSpeed, maxSpeed, brakeDecel, turnRateAtMax, marginFactor) {
     const n = points.length;
     const step = Math.max(1, Math.floor(localSamples / 2));
-    let worstTurn = 0;
+    const localArcM = localSamples * metersPerSample;
+    let target = maxSpeed;
     for (let offset = 0; offset <= scanSamples; offset += step) {
         const i1 = lookaheadIndex(n, idx, offset);
         const i2 = lookaheadIndex(n, idx, offset + localSamples);
@@ -91,10 +93,15 @@ function curvatureSpeedFraction(points, idx, scanSamples, localSamples) {
         const angle1 = Math.atan2(t1.tx, t1.tz);
         const angle2 = Math.atan2(t2.tx, t2.tz);
         const turn = Math.abs(normalizeAngle(angle2 - angle1));
-        if (turn > worstTurn) worstTurn = turn;
+        if (turn < 1e-4) continue;   // praticamente dritto, nessun raggio significativo da questa finestra
+        const radius = localArcM / turn;   // arco/angolo ≈ raggio per curvatura ~costante nella finestra
+        const cornerSpeed = Math.min(maxSpeed, radius * turnRateAtMax * marginFactor);
+        if (cornerSpeed >= currentSpeed) continue;   // già più lenti del necessario per questa curva
+        const distanceM = offset * metersPerSample;
+        const neededBrakingM = (currentSpeed * currentSpeed - cornerSpeed * cornerSpeed) / (2 * brakeDecel);
+        if (distanceM <= neededBrakingM && cornerSpeed < target) target = cornerSpeed;
     }
-    const frac = 1 - Math.min(1, worstTurn / MAX_CURVATURE_ANGLE);
-    return MIN_SPEED_FRACTION + frac * (1 - MIN_SPEED_FRACTION);
+    return target;
 }
 
 // ====================================================
@@ -228,22 +235,15 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
 // perché la conseguenza di guardare troppo poco è frenare troppo tardi.
 const BOT_LOOKAHEAD_TIME_S           = 0.6;   // s di anticipo per il punto mirato dallo sterzo
 const BOT_LOOKAHEAD_MIN_M            = 10;
-// Ridotto da 2.2s: con uno scan troppo lungo, il tratto "più stretto
-// trovato ovunque nella finestra" include quasi sempre una curva vera
-// (le piste hanno curve ogni poche centinaia di metri), quindi il bersaglio
-// di velocità restava basso per gran parte del rettilineo di avvicinamento,
-// non solo dentro la curva — contributo diretto al giro ~4× più lento di
-// un umano segnalato dall'utente. 1.1s è comunque più del tempo di frenata
-// reale (frenata piena da velocità massima a MIN_SPEED_FRACTION dura una
-// frazione di secondo), lascia margine senza tenere il bot "sotto freno"
-// troppo a lungo prima del bisogno.
-const BOT_CURVATURE_LOOKAHEAD_TIME_S = 1.1;   // s di anticipo per giudicare la curvatura (frenata anticipata)
-const BOT_CURVATURE_LOOKAHEAD_MIN_M  = 20;
 // Finestra con cui si MISURA quanto è stretta una curva — fissa, non
 // proporzionale alla velocità: caratterizza la geometria della pista in
-// quel punto, non la distanza di frenata (quella è BOT_CURVATURE_LOOKAHEAD_*
-// sopra, che decide invece FIN DOVE cercare una curva stretta).
+// quel punto, non la distanza di frenata (calcolata dalla fisica reale in
+// updateBotInputs, non più un tempo di anticipo indovinato).
 const BOT_CURVATURE_LOCAL_M          = 12;
+// Margine sulla distanza di frenata calcolata dalla fisica: oltre il
+// margine "matematico" già insito nel calcolo (v0²−v1²=2·decel·distanza),
+// un 20% extra copre l'imprecisione del rilevamento a campioni discreti.
+const BOT_BRAKING_DISTANCE_MARGIN    = 1.2;
 const BOT_SPEED_MARGIN          = 0.03;  // isteresi throttle/brake attorno alla velocità target
 const BOT_PIT_REACTION_MIN_MS   = 150;
 const BOT_PIT_REACTION_MAX_MS   = 700;
@@ -286,9 +286,14 @@ function botSpeedMs(speed) {
 }
 
 function updateBotInputs(game, deps) {
-    const { effectiveMaxSpeed, handlePitReactionPress, io, lobbyId, wearLapsAtMedium } = deps;
+    const {
+        effectiveMaxSpeed, handlePitReactionPress, io, lobbyId, wearLapsAtMedium,
+        accel, brakeMult, turnRateHigh
+    } = deps;
     const track = game.track;
     const isQuali = game.phase === 'qualifying';
+    const metersPerSample = track.lapLength / track.points.length;
+    const brakeDecel = accel * brakeMult;   // stessa decelerazione di frenata usata dalla fisica reale
 
     for (const p of Object.values(game.players)) {
         if (!p.isBot || p.finished) continue;
@@ -326,18 +331,27 @@ function updateBotInputs(game, deps) {
             steer = steerToward(p.x, p.z, p.angle, target.x, target.z);
             throttle = 0.6;   // rallenta in ingresso corsia box
         } else {
-            const speedMs = Math.max(5, botSpeedMs(p.speed));   // floor: niente lookahead quasi-zero da fermi (es. alla partenza)
-            const lookM  = Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * BOT_LOOKAHEAD_TIME_S);
-            const curveM = Math.max(BOT_CURVATURE_LOOKAHEAD_MIN_M, speedMs * BOT_CURVATURE_LOOKAHEAD_TIME_S);
+            const maxSpeed = effectiveMaxSpeed(p, isQuali);
+            const speedMs  = Math.max(5, botSpeedMs(p.speed));   // floor: niente lookahead quasi-zero da fermi (es. alla partenza)
+            const lookM    = Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * BOT_LOOKAHEAD_TIME_S);
             const lookSamples  = metersToSamples(lookM, track);
-            const curveSamples = metersToSamples(curveM, track);
             const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
             const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
             const target = track.points[targetIdx];
             steer = steerToward(p.x, p.z, p.angle, target.x, target.z);
 
-            const speedFrac = curvatureSpeedFraction(track.points, p.trackIndex || 0, curveSamples, localSamples);
-            let targetSpeed = effectiveMaxSpeed(p, isQuali) * speedFrac * p.botSpeedFactor;
+            // Distanza di scansione = il caso peggiore possibile: da tutto
+            // gas a quasi fermo con la vera decelerazione di frenata del
+            // gioco — oltre questa distanza nessuna curva può comunque
+            // imporre di frenare adesso, quindi non serve cercare più
+            // lontano (niente "quanti secondi di anticipo" indovinati).
+            const scanM = (maxSpeed * maxSpeed) / (2 * brakeDecel) * BOT_BRAKING_DISTANCE_MARGIN;
+            const scanSamples = metersToSamples(scanM, track);
+
+            let targetSpeed = cornerTargetSpeed(
+                track.points, p.trackIndex || 0, scanSamples, localSamples, metersPerSample,
+                p.speed, maxSpeed, brakeDecel, turnRateHigh, BOT_CORNER_SPEED_MARGIN
+            ) * p.botSpeedFactor;
 
             // Solo in gara: in qualifica ogni pilota corre isolato (un vero
             // giro veloce, anche visivamente ognuno vede solo se stesso —
@@ -365,7 +379,7 @@ function updateBotInputs(game, deps) {
 
 module.exports = {
     PALETTE, MAX_GRID_SIZE,
-    normalizeAngle, steerToward, lookaheadIndex, curvatureSpeedFraction,
+    normalizeAngle, steerToward, lookaheadIndex, cornerTargetSpeed,
     pickPostPitCompound, pickBotColors, estimateFinishTime,
     createBots, updateBotInputs
 };
