@@ -2,7 +2,7 @@ const { activeGames } = require('../../store/activeGames');
 const { lobbies } = require('../../store/lobbies');
 const { loadTrack } = require('./trackLoader');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
-const { createBots } = require('./f1Bot');
+const { createBots, updateBotInputs } = require('./f1Bot');
 
 const PHYSICS_TICK_MS = 50;
 // Velocità realistica F1: fattore di scala R=1.55 (+55%) applicato a
