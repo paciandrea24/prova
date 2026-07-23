@@ -644,6 +644,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    document.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() === 't') {
+            tyrePanelOpen = !tyrePanelOpen;
+            renderTyreVisibility();
+        }
+    });
+
     // ====================================================
     // SOCKET EVENTS
     // ====================================================
