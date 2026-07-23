@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
     PALETTE, normalizeAngle, steerToward, lookaheadIndex, apexOffset,
-    cornerTargetSpeed, pickPostPitCompound, pickBotColors, estimateFinishTime
+    cornerTargetSpeed, overtakeOffset, pickPostPitCompound, pickBotColors, estimateFinishTime
 } = require('./f1Bot.js');
 
 // Costruisce un tracciato sintetico con curvatura costante e controllata:
@@ -94,6 +94,32 @@ test('apexOffset: rispetta il limite massimo (maxOffsetM) anche su una curva str
     const offset = apexOffset(points, 20, 10, 3);
     const mag = Math.hypot(offset.dx, offset.dz);
     assert.ok(mag <= 3 + 1e-9, `atteso <= 3 (maxOffsetM), ottenuto ${mag}`);
+});
+
+// Su un rettilineo lungo +z (buildConstantCurveTrack senza curvatura), la
+// normale è costante = (-1,0): utile per assertion esatte sul verso.
+test('overtakeOffset: auto da superare esattamente al centro pista => usa la preferenza di lato (sideFallback)', () => {
+    const track = buildConstantCurveTrack(30, 30, 0);
+    const centerPt = track[15];
+    const o1 = overtakeOffset(track, 15, centerPt.x, centerPt.z, 10, 0.55, 1);
+    assert.ok(Math.abs(o1.dx - -5.5) < 1e-9 && Math.abs(o1.dz) < 1e-9, `atteso (-5.5,0), ottenuto (${o1.dx},${o1.dz})`);
+
+    const o2 = overtakeOffset(track, 15, centerPt.x, centerPt.z, 10, 0.55, -1);
+    assert.ok(Math.abs(o2.dx - 5.5) < 1e-9 && Math.abs(o2.dz) < 1e-9, `atteso (5.5,0), ottenuto (${o2.dx},${o2.dz})`);
+});
+
+test('overtakeOffset: auto da superare spostata su un lato => si passa dal lato OPPOSTO', () => {
+    const track = buildConstantCurveTrack(30, 30, 0);
+    const centerPt = track[15];
+
+    // Auto da superare 3 unità verso -x rispetto al centro pista: il bot
+    // deve passare verso +x (mai dallo stesso lato, sarebbe una collisione).
+    const oLeft = overtakeOffset(track, 15, centerPt.x - 3, centerPt.z, 10, 0.55, 1);
+    assert.ok(oLeft.dx > 0, `auto a -x, atteso bot verso +x, ottenuto dx=${oLeft.dx}`);
+
+    // Auto da superare 3 unità verso +x: il bot deve passare verso -x.
+    const oRight = overtakeOffset(track, 15, centerPt.x + 3, centerPt.z, 10, 0.55, 1);
+    assert.ok(oRight.dx < 0, `auto a +x, atteso bot verso -x, ottenuto dx=${oRight.dx}`);
 });
 
 test('cornerTargetSpeed: rettilineo puro => resta alla velocità massima', () => {

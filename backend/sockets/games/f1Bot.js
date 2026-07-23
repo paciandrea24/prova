@@ -143,6 +143,46 @@ function cornerTargetSpeed(points, idx, scanSamples, localSamples, metersPerSamp
 }
 
 // ====================================================
+// SORPASSO — un bot che si limita a rallentare dietro un'auto più lenta
+// non la supera mai: la "skill" di qualifica diventava una posizione
+// fissa per tutta la gara. Quando il bot ha un vero margine di velocità
+// libera sull'auto che precede, scarta lateralmente per superarla invece
+// di limitarsi a rallentare (vedi updateBotInputs).
+// ====================================================
+// Da che lato passare: si proietta la posizione REALE dell'auto che
+// precede (non il centro pista) sulla normale nel suo trackIndex, per
+// sapere da che lato di centro pista si trova, e si punta al lato
+// OPPOSTO — se è vicina al centro (nessun lato chiaro), si usa
+// `sideFallback` (preferenza fissa del bot, assegnata alla creazione) per
+// spareggiare.
+function overtakeOffset(points, aheadIdx, aheadX, aheadZ, roadHalf, overtakeFraction, sideFallback) {
+    const centerPt = points[aheadIdx];
+    const normal = TrackGeometry.normalAt(points, aheadIdx, true);
+    const dx = aheadX - centerPt.x, dz = aheadZ - centerPt.z;
+    const aheadLateral = dx * normal.nx + dz * normal.nz;
+    const side = Math.abs(aheadLateral) < 0.5 ? sideFallback : -Math.sign(aheadLateral);
+    const mag = roadHalf * overtakeFraction * side;
+    return { dx: normal.nx * mag, dz: normal.nz * mag };
+}
+
+// Distanza (in metri, lungo il verso di marcia, con wrap di giro) e
+// riferimento all'auto più vicina DAVANTI a p, tra tutti i players
+// passati — ignora chi è finito/ai box/in autopilota (non un ostacolo "in
+// pista" da seguire/superare). null se nessuno è abbastanza vicino avanti.
+function nearestAheadPlayer(p, allPlayers, track) {
+    const n = track.points.length;
+    const metersPerSample = track.lapLength / n;
+    let best = null, bestGap = Infinity;
+    for (const q of allPlayers) {
+        if (q === p || q.finished || q.pitting || q.pitAutoState) continue;
+        const delta = (((q.trackIndex || 0) - (p.trackIndex || 0)) % n + n) % n;
+        const gapM = delta * metersPerSample;
+        if (gapM < bestGap) { bestGap = gapM; best = q; }
+    }
+    return best ? { player: best, gapM: bestGap } : null;
+}
+
+// ====================================================
 // STRATEGIA GOMME POST PIT-STOP
 // Pochi giri restanti: la durata non conta più, meglio la mescola più
 // veloce (Soft). Molti giri restanti: meglio quella che dura di più
@@ -247,7 +287,8 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
             botPrecisionNoise:      randRange(BOT_PRECISION_NOISE_MIN, BOT_PRECISION_NOISE_MAX, rng),
             botPitThreshold:        randRange(BOT_PIT_THRESHOLD_MIN, BOT_PIT_THRESHOLD_MAX, rng),
             botHeadingToPits:       false,
-            botPitReactionScheduled: false
+            botPitReactionScheduled: false,
+            botOvertakeSide:        rng() < 0.5 ? 1 : -1   // spareggio quando l'auto da superare è vicina al centro pista
         };
         // Auto-conferma la mescola: riusa il gate esistente in f1TyreChoice
         // (game.tyreConfirmed.size >= Object.keys(game.players).length),
@@ -294,28 +335,19 @@ const BOT_PIT_REACTION_MAX_MS   = 700;
 // il tracciato rallenta proporzionalmente, invece di tallonarla identico.
 const BOT_FOLLOW_GAP_M        = 15;
 const BOT_FOLLOW_MIN_FRACTION = 0.55;   // frazione minima di velocità quando si è praticamente addosso a chi precede
+// Sorpasso: entro BOT_FOLLOW_GAP_M, se il bot avrebbe margine di velocità
+// libera vero sull'auto che precede (non solo momentaneo, es. lei in
+// frenata per una curva) tenta di superarla scartando di lato invece di
+// limitarsi a rallentare — altrimenti la "skill" di qualifica diventa una
+// posizione fissa per tutta la gara, nessun sorpasso si verifica mai.
+const BOT_OVERTAKE_PACE_MARGIN = 1.05;   // serve almeno il 5% di velocità libera in più per tentare
+const BOT_OVERTAKE_FRACTION    = 0.55;   // quanto ci si sposta lateralmente (frazione della mezza larghezza pista)
 
 function metersToSamples(meters, track) {
     return Math.max(1, Math.round(meters * track.points.length / track.lapLength));
 }
 
 // Distanza (in metri, lungo il verso di marcia, con wrap di giro) fino
-// all'auto più vicina DAVANTI a p, tra tutti i players passati — ignora chi
-// è finito/ai box/in autopilota (non un ostacolo "in pista" da seguire).
-// Infinity se nessuno è abbastanza vicino avanti.
-function nearestAheadGapM(p, allPlayers, track) {
-    const n = track.points.length;
-    const metersPerSample = track.lapLength / n;
-    let best = Infinity;
-    for (const q of allPlayers) {
-        if (q === p || q.finished || q.pitting || q.pitAutoState) continue;
-        const delta = (((q.trackIndex || 0) - (p.trackIndex || 0)) % n + n) % n;
-        const gapM = delta * metersPerSample;
-        if (gapM < best) best = gapM;
-    }
-    return best;
-}
-
 // p.speed è lo scalare interno di fisica; stessa conversione a m/s già
 // usata altrove nel gioco per i km/h a schermo (speed*55) e per il
 // distacco dal leader (speed*55/3.6) — vedi f1GameSocket.js.
@@ -398,10 +430,23 @@ function updateBotInputs(game, deps) {
             // altro bot vicino durante il giro secco non avrebbe senso e
             // contribuiva a tempi di qualifica troppo lenti.
             if (!isQuali) {
-                const gapM = nearestAheadGapM(p, Object.values(game.players), track);
-                if (gapM < BOT_FOLLOW_GAP_M) {
-                    const closeness = 1 - gapM / BOT_FOLLOW_GAP_M;   // 0 = al limite, 1 = praticamente addosso
-                    targetSpeed *= 1 - closeness * (1 - BOT_FOLLOW_MIN_FRACTION);
+                const ahead = nearestAheadPlayer(p, Object.values(game.players), track);
+                if (ahead && ahead.gapM < BOT_FOLLOW_GAP_M) {
+                    // Margine di velocità VERO (target fisico, non lo
+                    // scalare istantaneo dell'auto che precede — potrebbe
+                    // star frenando per una curva in quel preciso istante):
+                    // solo se il bot avrebbe davvero un ritmo superiore
+                    // tenta il sorpasso, altrimenti resta dietro sicuro.
+                    if (targetSpeed > ahead.player.speed * BOT_OVERTAKE_PACE_MARGIN) {
+                        const overtake = overtakeOffset(
+                            track.points, ahead.player.trackIndex || 0, ahead.player.x, ahead.player.z,
+                            track.roadHalf, BOT_OVERTAKE_FRACTION, p.botOvertakeSide
+                        );
+                        steer = steerToward(p.x, p.z, p.angle, target.x + overtake.dx, target.z + overtake.dz);
+                    } else {
+                        const closeness = 1 - ahead.gapM / BOT_FOLLOW_GAP_M;   // 0 = al limite, 1 = praticamente addosso
+                        targetSpeed *= 1 - closeness * (1 - BOT_FOLLOW_MIN_FRACTION);
+                    }
                 }
             }
 
@@ -418,7 +463,7 @@ function updateBotInputs(game, deps) {
 
 module.exports = {
     PALETTE, MAX_GRID_SIZE,
-    normalizeAngle, steerToward, lookaheadIndex, apexOffset, cornerTargetSpeed,
+    normalizeAngle, steerToward, lookaheadIndex, apexOffset, cornerTargetSpeed, overtakeOffset,
     pickPostPitCompound, pickBotColors, estimateFinishTime,
     createBots, updateBotInputs
 };
