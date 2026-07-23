@@ -20,6 +20,15 @@ const GRIP         = 0.78;
 const BRAKE_MULT   = 2.17;   // moltiplicatore di ACCEL in frenata (era 1.4 a MAX_SPEED=4.0)
 const REJOIN_GRACE = 60000;   // finestra di riconnessione dopo un drop (scheda in background, refresh, rete)
 const GRID_DISPLAY_MS = 8000; // quanto resta a schermo l'animazione POLE + la griglia prima del countdown di gara
+// Il normale flusso qualifica->griglia->gara ha già una pausa naturale
+// (GRID_DISPLAY_MS) tra la fine di una sessione e l'inizio della prossima,
+// tempo per staccare il piede dall'acceleratore. "Riprova" (modalità
+// singola) invece incatenava resetPlayers/assignGridSpawns e il semaforo
+// nello stesso istante, senza alcuna pausa: chi finiva la gara tenendo
+// premuto l'acceleratore lo teneva ancora premuto un attimo dopo — falsa
+// partenza "vera" secondo la regola, ma percepita come un bug perché non
+// c'era mai stato un momento naturale per rilasciare il tasto.
+const RESTART_GRACE_MS = 1500;
 
 // Ingombro reale dell'auto, misurato dal GLB (raceCarWhite.glb, bounding box
 // combinata body+ruote applicando le translation dei nodi) × lo scale 3.5 con
@@ -380,7 +389,14 @@ module.exports = function (io, socket) {
         } else {
             resetPlayers(game);   // difensivo, non dovrebbe capitare (la qualifica gira sempre prima)
         }
-        startRaceCountdown(io, lobbyId, game);
+        // Pausa di cortesia prima del semaforo (vedi RESTART_GRACE_MS): il
+        // podio resta a schermo nel frattempo, nessun nuovo evento arriva
+        // finché non scatta questo timeout.
+        setTimeout(() => {
+            const g = activeGames.get(lobbyId);
+            if (!g) return;
+            startRaceCountdown(io, lobbyId, g);
+        }, RESTART_GRACE_MS);
     });
 
     socket.on('f1ReturnToLobby', (lobbyId) => {
@@ -1276,7 +1292,12 @@ function buildPublicState(players, raceStarted, track) {
             // rumore motore fisso invece che legato all'accelerazione,
             // anche quando non è lui a "guidare" in quella fase.
             pitLimiter: !!p.pitAutoState,
-            falseStart: !!p.falseStart
+            // falseStartServed: il client lo usa per nascondere il badge
+            // "!" in classifica live una volta scontata la penalità ai box
+            // (resta invece visibile, senza questo campo, nel riepilogo di
+            // fine gara — record storico, non un avviso "da pagare").
+            falseStart: !!p.falseStart,
+            falseStartServed: !!p.falseStartServed
         };
     }
     return out;

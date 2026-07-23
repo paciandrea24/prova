@@ -802,7 +802,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         box.innerHTML = entries.map(([color, d]) => `
             <div class="standing-entry${color === myColor ? ' me' : ''}">
                 <span class="standing-pos">${d.position}°</span>
-                <span class="standing-dot" style="background:${color};"></span>${d.falseStart ? '<span class="false-start-badge">!</span>' : ''}
+                <span class="standing-dot" style="background:${color};"></span>${(d.falseStart && !d.falseStartServed) ? '<span class="false-start-badge">!</span>' : ''}
             </div>
         `).join('');
     }
