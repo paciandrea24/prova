@@ -388,6 +388,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentPhase  = null;   // tyre_select | qualifying | grid_display | race
     let raceTotalLaps = 3;      // giri della gara vera (fisso, indipendente dalla fase corrente)
 
+    let tyrePanelOpen = false;   // stato locale, mai sincronizzato col server — resettato a chiuso ad ogni f1Countdown
+
+    // Interpola verde -> giallo -> rosso in base all'usura (0-100): stessa
+    // scala già usata nel mockup approvato dall'utente.
+    function wearColor(pct) {
+        const stops = [
+            [0,   [79, 191, 130]],
+            [55,  [217, 178, 60]],
+            [100, [198, 91, 82]],
+        ];
+        for (let i = 0; i < stops.length - 1; i++) {
+            const [p0, c0] = stops[i], [p1, c1] = stops[i + 1];
+            if (pct >= p0 && pct <= p1) {
+                const f = (pct - p0) / (p1 - p0);
+                const c = c0.map((v, idx) => Math.round(v + (c1[idx] - v) * f));
+                return `rgb(${c[0]},${c[1]},${c[2]})`;
+            }
+        }
+        return `rgb(${stops[stops.length - 1][1].join(',')})`;
+    }
+
+    // Il pannello gomme ha senso SOLO in gara (in qualifica/tyre_select/
+    // grid_display l'usura non è mai rilevante — stessa logica del vecchio
+    // tyre-box). Dentro la gara, mostra o l'icona chiusa o il pannello
+    // esteso a seconda di tyrePanelOpen, mai entrambi.
+    function renderTyreVisibility() {
+        const closedEl = document.getElementById('tyre-closed');
+        const openEl   = document.getElementById('tyre-open');
+        if (currentPhase !== 'race') {
+            closedEl.style.display = 'none';
+            openEl.style.display   = 'none';
+            return;
+        }
+        closedEl.style.display = tyrePanelOpen ? 'none' : 'flex';
+        openEl.style.display   = tyrePanelOpen ? 'block' : 'none';
+    }
+
     // Mostra il giro CORRENTE che si sta guidando (convenzione vera F1: durante
     // l'ultimo giro di una gara a 3 giri si legge "3/3" per tutto il giro, non
     // "2/3" — altrimenti il traguardo finale sembra arrivare "un giro prima").
@@ -683,19 +720,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Solo in GARA: in qualifica tutti guidano sullo spec Soft a
             // prescindere dalla mescola scelta (quella conta solo in gara),
-            // mostrarla lì sarebbe fuorviante.
+            // mostrarla lì sarebbe fuorviante. Aggiorna SEMPRE sia l'icona
+            // chiusa che il pannello esteso: quale dei due sia visibile è
+            // deciso solo da renderTyreVisibility()/tyrePanelOpen.
             if (color === myColor && currentPhase === 'race' && data.compound && tyreCompoundsInfo) {
                 const info = tyreCompoundsInfo[data.compound];
                 if (info) {
-                    const box = document.getElementById('tyre-box');
-                    box.style.display = 'flex';
-                    document.getElementById('tyre-dot').style.background = info.color;
-                    document.getElementById('tyre-label').textContent = info.label.toUpperCase();
-                    document.getElementById('tyre-wear-value').textContent = Math.round(data.tyreWear || 0);
+                    const wear = Math.round(data.tyreWear || 0);
+                    const col  = wearColor(wear);
+                    document.getElementById('tyre-icon-closed').style.background = col;
+                    document.getElementById('tyre-compound-dot').style.background = info.color;
+                    document.getElementById('tyre-compound-label').textContent = info.label.toUpperCase();
+                    document.getElementById('tyre-wear-value').textContent = wear;
+                    ['wFL', 'wFR', 'wRL', 'wRR'].forEach(id =>
+                        document.getElementById(id).style.setProperty('--wear', col));
                 }
-            } else if (color === myColor && currentPhase !== 'race') {
-                document.getElementById('tyre-box').style.display = 'none';
             }
+            if (color === myColor) renderTyreVisibility();
         }
         updateStandings(state);
     });
@@ -708,8 +749,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             .filter(([, d]) => d.position)
             .sort((a, b) => a[1].position - b[1].position);
 
-        if (entries.length === 0) { box.innerHTML = ''; return; }
+        if (entries.length === 0) { box.innerHTML = ''; box.style.display = 'none'; return; }
 
+        box.style.display = 'flex';
         box.innerHTML = entries.map(([color, d]) => `
             <div class="standing-entry${color === myColor ? ' me' : ''}">
                 <span class="standing-pos">${d.position}°</span>
@@ -735,7 +777,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (tyreSelectActive) exitTyrePreview();   // la qualifica sta per partire: fine anteprima tracciato
         tyreSelectActive = false;
         clearTyreNav();
-        document.getElementById('timer-box').style.visibility = 'hidden';
+        document.getElementById('timer-panel').style.display = 'none';
+        tyrePanelOpen = false;
+        renderTyreVisibility();
         // Nasconde in automatico un'eventuale griglia/animazione/selezione ancora
         // a schermo: evita di dover sincronizzare a mano un timeout lato client
         // con GRID_DISPLAY_MS/TYRE_SELECT_MS del server.
@@ -764,7 +808,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const num     = document.getElementById('countdown-number');
         num.textContent = 'GO!'; num.style.color = '#2ecc71';
         overlay.style.background = 'transparent';
-        document.getElementById('timer-box').style.visibility = 'visible';
+        document.getElementById('timer-panel').style.display = (data?.phase === 'qualifying') ? 'flex' : 'none';
         setTimeout(() => { overlay.style.display = 'none'; }, 800);
         // Rinfresca il box giri appena la sessione (qualifica o gara) parte
         // davvero: senza questo restava il valore lasciato dalla fase
