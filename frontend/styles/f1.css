@@ -15,6 +15,14 @@
     --hud-wear-fresh:   #4fbf82;
     --hud-wear-mid:     #d9b23c;
     --hud-wear-worn:    #c65b52;
+
+    --f1-panel:        rgba(9, 11, 14, 0.86);
+    --f1-panel-strong: rgba(9, 11, 14, 0.95);
+    --f1-panel-border: rgba(255, 255, 255, 0.14);
+    --f1-text:         #f2f4f6;
+    --f1-text-dim:     #8b96a3;
+    --f1-telemetry:    #39c7f2;
+    --f1-wear-mid:     #f1c40f;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -100,49 +108,81 @@ canvas.tyre-preview-canvas {
     padding: 1px 4px;
 }
 
-/* ---- top-left: classifica ---- */
-.hud-standings {
+/* ========================
+   HUD — stile piatto "broadcast" (sostituisce il neumorfismo per gli
+   elementi toccati da questo redesign — i menu a schermo intero restano
+   sul vecchio sistema .hud-panel-neu/.menu-panel-neu, invariati)
+   ======================== */
+.f1-panel {
+    background: var(--f1-panel);
+    border: 1px solid var(--f1-panel-border);
+    border-radius: 5px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.45);
+}
+
+/* ---- top-left: classifica + giri, un pannello solo ---- */
+#standings-panel {
     top: 14px; left: 12px;
-    padding: 6px 10px 7px;
-    min-width: 84px;
-    display: flex;
-    flex-direction: column;
-    gap: 0;
+    width: 200px;
+    overflow: hidden;
+}
+#lap-chip {
+    background: var(--f1-panel-strong);
+    padding: 6px 10px;
+    display: flex; align-items: baseline; gap: 7px;
+    border-bottom: 1px solid var(--f1-panel-border);
+    font-family: 'Fredoka', sans-serif;
+}
+#lap-chip .eyebrow {
+    text-transform: uppercase;
+    font-weight: 800; letter-spacing: 1.5px; font-size: 10.5px; color: var(--f1-text-dim);
+}
+#lap-chip-value {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 17px; font-weight: 800; letter-spacing: 0.5px;
+    color: var(--f1-text);
+}
+#standings-rows { padding: 3px 0; }
+.f1-standing-row {
+    display: flex; align-items: center; gap: 7px;
+    padding: 4px 10px;
+    font-family: 'Fredoka', sans-serif;
+    font-size: 12.5px; font-weight: 600;
+    color: var(--f1-text);
+}
+.f1-standing-row.me { background: rgba(255,255,255,0.05); }
+.f1-standing-row .pos { width: 16px; color: var(--f1-text-dim); font-variant-numeric: tabular-nums; }
+.f1-standing-row .dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.f1-standing-row .gap {
+    margin-left: auto; color: var(--f1-text-dim); font-size: 11px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
 }
 
-/* ---- top-center: giri ---- */
-/* flex column + align-items:center invece di text-align:center: centra ogni
-   riga sul proprio contenuto (l'eyebrow con letter-spacing altrimenti si
-   percepisce leggermente disallineata rispetto al valore sotto). */
-.hud-lap {
-    top: 14px; left: 50%; transform: translateX(-50%);
-    padding: 5px 6px;
-    min-width: 74px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
-.hud-lap .hud-eyebrow { margin-bottom: 3px; }
-.hud-lap .hud-screen { padding: 2px 14px 4px; }
-.hud-lap .hud-mono { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
-
-/* ---- top-right: timer (solo qualifica) ---- */
-.hud-timer {
+/* ---- top-right: tempo + velocità ---- */
+#timer-speed-panel {
     top: 14px; right: 12px;
-    padding: 5px 10px 6px;
+    display: flex;
+}
+#timer-speed-panel .col {
+    padding: 8px 16px;
     text-align: right;
+    font-family: 'Fredoka', sans-serif;
 }
-.hud-timer .hud-screen { padding: 3px 9px; }
-.hud-timer .hud-mono { font-size: 15px; font-weight: 600; }
-
-/* ---- bottom-center: velocità ---- */
-.hud-speed {
-    bottom: 14px; left: 50%; transform: translateX(-50%);
-    padding: 6px;
-    text-align: center;
+#timer-speed-panel .col + .col { border-left: 1px solid var(--f1-panel-border); }
+#timer-speed-panel .eyebrow {
+    text-transform: uppercase;
+    font-weight: 800; letter-spacing: 1.5px; font-size: 9.5px; color: var(--f1-text-dim);
+    display: block; margin-bottom: 3px;
 }
-.hud-speed .hud-screen { padding: 4px 14px; }
-.hud-speed #speed-value { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 17px; font-weight: 700; color: var(--hud-text); }
+#timer-speed-panel .value {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 19px; font-weight: 700; color: var(--f1-text);
+}
+#timer-speed-panel #speed-value { color: var(--f1-telemetry); }
+#timer-speed-panel .unit { font-size: 10px; color: var(--f1-text-dim); margin-left: 2px; }
 
 /* ---- bottom-left: gomme, stato chiuso ---- */
 .hud-tyre-closed {
@@ -181,7 +221,7 @@ canvas.tyre-preview-canvas {
 .car-chassis { fill: #2b313c; }
 .car-wing    { fill: #232830; }
 .car-halo    { fill: none; stroke: #454e5c; stroke-width: 2; }
-.wheel       { fill: var(--wear, var(--hud-wear-mid)); transition: fill 0.4s ease; }
+.wheel       { fill: var(--wear, var(--f1-wear-mid)); transition: fill 0.4s ease; }
 .hud-tyre-wear-readout { text-align: center; }
 .hud-tyre-wear-readout .hud-screen { padding: 5px 0 6px; }
 .hud-tyre-wear-readout .hud-mono { font-size: 20px; font-weight: 700; }
@@ -280,31 +320,6 @@ canvas.tyre-preview-canvas {
     flex-direction: column;
     gap: 6px;
     padding: 10px 14px;
-}
-
-.standing-entry {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 15px;
-}
-
-.standing-entry.me {
-    font-weight: 900;
-    color: #c0392b;
-}
-
-.standing-pos {
-    width: 24px;
-    text-align: right;
-}
-
-.standing-dot {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 2px solid var(--border-color);
-    flex-shrink: 0;
 }
 
 /* Badge falsa partenza: box rosso pieno con "!" accanto al pallino colore
