@@ -288,6 +288,7 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
             gapToLeaderMs:   null,
             pitAutoState:    null,
             pitPathIndex:    0,
+            inSlipstream:    false,
             // --- campi solo-bot ---
             isBot:                  true,
             botSpeedFactor:         randRange(BOT_SPEED_FACTOR_MIN, BOT_SPEED_FACTOR_MAX, rng),

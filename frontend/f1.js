@@ -405,9 +405,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // ====================================================
+    // EFFETTO SCIA — linee tratteggiate dietro l'auto, visibili solo
+    // quando il server segnala il bonus di velocità in scia (f1StateUpdate
+    // → slipstream), SOLO sulla propria auto (richiesta esplicita
+    // dell'utente). L'effetto di "scorrimento" è dato da dashOffset
+    // animato ad ogni frame (THREE.LineDashedMaterial), non da geometria
+    // che si muove — più leggero e senza bisogno di logica di reset.
+    // Coordinate nello stesso spazio locale non scalato del group esterno
+    // (vedi wheels sintetiche sopra, z negativo = retro auto: ±2.7 di
+    // larghezza, ±3.6 di lunghezza sono l'ingombro reale del modello).
+    // ====================================================
+    const SLIPSTREAM_STREAK_LENGTH = 2.4;
+    const SLIPSTREAM_STREAK_Z0     = -4.0;   // appena dietro il paraurti posteriore
+    const SLIPSTREAM_DASH_SPEED    = 0.045;
+    const SLIPSTREAM_STREAK_OFFSETS = [
+        { x: -1.6, y: 0.9 }, { x: 1.6, y: 0.9 },
+        { x: -0.8, y: 1.3 }, { x: 0.8, y: 1.3 },
+        { x: -2.2, y: 0.6 }, { x: 2.2, y: 0.6 }
+    ];
+    const slipstreamMaterial = new THREE.LineDashedMaterial({
+        color: 0xbfe8ff, transparent: true, opacity: 0.65,
+        dashSize: 0.5, gapSize: 0.35
+    });
+
+    function buildSlipstreamEffect() {
+        const group = new THREE.Group();
+        SLIPSTREAM_STREAK_OFFSETS.forEach(o => {
+            const geo = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(o.x, o.y, SLIPSTREAM_STREAK_Z0),
+                new THREE.Vector3(o.x, o.y, SLIPSTREAM_STREAK_Z0 - SLIPSTREAM_STREAK_LENGTH)
+            ]);
+            const line = new THREE.Line(geo, slipstreamMaterial);
+            line.computeLineDistances();
+            group.add(line);
+        });
+        group.visible = false;
+        return group;
+    }
+
+    // ====================================================
     // STATO DI GIOCO
     // ====================================================
-    let myCarGroup    = null;
+    let myCarGroup       = null;
+    let slipstreamGroup  = null;
+    let slipstreamActive = false;
     let cameraMode    = 'third';
     let isRacing      = false;
     let localStart    = null;
@@ -738,7 +779,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Idempotente: su un rientro (reconnect senza reload) i modelli esistono
         // già in scena, ricrearli darebbe auto duplicate.
-        if (!myCarGroup) loadCarModel(myColor, (g) => { myCarGroup = g; });
+        if (!myCarGroup) loadCarModel(myColor, (g) => {
+            myCarGroup = g;
+            slipstreamGroup = buildSlipstreamEffect();
+            myCarGroup.add(slipstreamGroup);
+        });
 
         for (const [color, state] of Object.entries(players)) {
             serverState[color] = { x: state.x, z: state.z, angle: state.angle, speed: 0 };
@@ -812,7 +857,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         document.getElementById(id).style.setProperty('--wear', col));
                 }
             }
-            if (color === myColor) renderTyreVisibility();
+            if (color === myColor) {
+                renderTyreVisibility();
+                slipstreamActive = !!data.slipstream;
+                if (slipstreamGroup) slipstreamGroup.visible = slipstreamActive;
+            }
         }
         updateStandings(state);
     });
@@ -1409,6 +1458,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
         maybeSendInputs();
+
+        // Effetto scia: le linee non si muovono, "scorrono" tramite
+        // dashOffset animato (vedi buildSlipstreamEffect) — nessuna
+        // geometria da aggiornare, solo quando l'effetto è attivo.
+        if (slipstreamActive) slipstreamMaterial.dashOffset -= SLIPSTREAM_DASH_SPEED;
 
         for (const [color, target] of Object.entries(serverState)) {
             const v = visualState[color];

@@ -304,6 +304,7 @@ module.exports = function (io, socket) {
                 gapToLeaderMs:   null,    // stima distacco dal leader in ms, null per il leader stesso o prima del primo ricalcolo
                 pitAutoState:    null,    // 'entering' | 'exiting' | null — autopilota corsia box
                 pitPathIndex:    0,       // prossimo waypoint del percorso box (track.pitPath) verso cui puntare
+                inSlipstream:    false,   // bonus di velocità in scia attivo in questo tick (solo effetto visivo lato client)
             };
         }
 
@@ -902,6 +903,11 @@ function tickGame(io, lobbyId, game) {
 
     // Velocità (accelerazione/freno/sterzo/grip): una volta per tick, come prima.
     // Scia solo in gara (mai in quali, dove ogni pilota è isolato).
+    // Azzerato per TUTTI (non solo chi corre) prima del ricalcolo: senza
+    // questo un'auto che entra ai box/finisce manterrebbe congelato
+    // l'ultimo valore letto in gara, mostrando l'effetto visivo cliente
+    // anche da ferma ai box.
+    for (const p of players) p.inSlipstream = false;
     for (const p of racing) {
         let slipstreamMult = 1;
         if (!isQuali) {
@@ -909,6 +915,7 @@ function tickGame(io, lobbyId, game) {
             if (ahead && ahead.gapM < SLIPSTREAM_RANGE_M) {
                 const closeness = 1 - ahead.gapM / SLIPSTREAM_RANGE_M;
                 slipstreamMult = 1 + closeness * SLIPSTREAM_MAX_BOOST;
+                p.inSlipstream = true;   // solo per il badge/effetto visivo lato client, vedi buildPublicState
             }
         }
         updateVelocity(p, isQuali, slipstreamMult);
@@ -1422,7 +1429,8 @@ function buildPublicState(players, raceStarted, track) {
             falseStart: !!p.falseStart,
             falseStartServed: !!p.falseStartServed,
             gapToLeaderMs: (p.gapToLeaderMs != null) ? p.gapToLeaderMs : null,
-            isBot: !!p.isBot
+            isBot: !!p.isBot,
+            slipstream: !!p.inSlipstream
         };
     }
     return out;
