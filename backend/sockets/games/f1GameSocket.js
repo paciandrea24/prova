@@ -113,6 +113,16 @@ const PIT_REACTION_BEST = 150,  PIT_REACTION_WORST = 800;   // ms: sotto/sopra q
 const PIT_DURATION_MIN  = 2000, PIT_DURATION_MAX   = 3000;  // durata sosta risultante
 const PIT_PENALTY_MS    = 30000;   // penalità se non si fa MAI pit stop in gara (regola F1 vera)
 
+// Semaforo di partenza (solo gara, mai in qualifica): 5 luci, una ogni
+// LIGHT_INTERVAL_MS, poi un'attesa casuale prima che si spengano tutte
+// insieme = via (come in F1 vera — l'attesa casuale impedisce di "contare"
+// il ritmo e accelerare a colpo sicuro).
+const LIGHT_COUNT       = 5;
+const LIGHT_INTERVAL_MS = 1000;
+const LIGHTS_ALL_ON_MS  = (LIGHT_COUNT - 1) * LIGHT_INTERVAL_MS;   // 4000: tutte accese
+const HOLD_MIN_MS       = 200, HOLD_MAX_MS = 3000;
+const FALSE_START_PENALTY_MS = 5000;
+
 // In qualifica TUTTI usano lo spec della Soft (gomma da qualifica, come in F1
 // vera), gomme fresche, a prescindere dalla mescola scelta per la gara — la
 // scelta conta solo una volta iniziata la gara vera.
@@ -252,6 +262,8 @@ module.exports = function (io, socket) {
                 pendingCompound: null,    // mescola scelta ai box, applicata a fine sosta
                 hasPitted:       false,   // per l'obbligo di almeno un pit stop in gara
                 pitPenalty:      false,   // true se ha preso la penalità per non aver fatto pit stop
+                falseStart:      false,   // true se ha accelerato mentre le luci erano accese (resta true per tutta la gara, indicatore storico)
+                falseStartServed: false,  // true una volta scontata la penalità al primo pit stop
                 pitAutoState:    null,    // 'entering' | 'exiting' | null — autopilota corsia box
                 pitPathIndex:    0,       // prossimo waypoint del percorso box (track.pitPath) verso cui puntare
             };
@@ -488,7 +500,7 @@ function startQualifying(io, lobbyId, game) {
         p.lap = 0; p.checkpointA = false; p.inFinishZone = false;
         p.trackIndex = 0;
     }
-    io.to(lobbyId).emit('f1Countdown', { trackName: game.track.name, label: 'QUALIFICA — 1 GIRO' });
+    io.to(lobbyId).emit('f1Countdown', { trackName: game.track.name, label: 'QUALIFICA — 1 GIRO', phase: 'qualifying' });
     setTimeout(() => {
         const g = activeGames.get(lobbyId);
         if (!g) return;
@@ -540,19 +552,31 @@ function endQualifying(io, lobbyId, game) {
 }
 
 function startRaceCountdown(io, lobbyId, game) {
-    game.phase          = 'race';
-    game.raceEnded      = false;
-    game.raceStarted    = false;
-    game.raceStartTime  = null;
-    io.to(lobbyId).emit('f1Countdown', { trackName: game.track.name, label: 'GARA' });
+    game.phase                = 'race';
+    game.raceEnded            = false;
+    game.raceStarted          = false;
+    game.raceStartTime        = null;
+    game.lightsSequenceActive = true;   // finestra di rilevamento falsa partenza, vedi tickGame
+
+    // holdMs resta SOLO lato server, per il proprio setTimeout: il client
+    // non ha bisogno di conoscerlo, gli basta reagire al vero evento
+    // f1RaceStarted per spegnere le luci — evita qualunque rischio di
+    // disallineamento dovuto alla latenza di rete rispetto a un timer
+    // locale indipendente.
+    const holdMs  = HOLD_MIN_MS + Math.random() * (HOLD_MAX_MS - HOLD_MIN_MS);
+    const totalMs = LIGHTS_ALL_ON_MS + holdMs;
+
+    io.to(lobbyId).emit('f1Countdown', { trackName: game.track.name, label: 'GARA', phase: 'race' });
+
     setTimeout(() => {
         const g = activeGames.get(lobbyId);
         if (!g) return;
+        g.lightsSequenceActive = false;
         g.raceStarted   = true;
         g.raceStartTime = Date.now();
         console.log(`🚦 [F1] Gara avviata (lobby ${lobbyId})`);
         io.to(lobbyId).emit('f1RaceStarted', { syncTime: 0, phase: 'race' });
-    }, 3000);
+    }, totalMs);
 }
 
 // Assegna gli spawn secondo l'ordine di griglia (pole = posizione 0, la PIÙ
@@ -573,6 +597,7 @@ function assignGridSpawns(game) {
         if (p.pitGoTimer) { clearTimeout(p.pitGoTimer); p.pitGoTimer = null; }
         p.pitting = false; p.pitPhase = null; p.pitGoTime = null;
         p.pendingCompound = null; p.hasPitted = false; p.pitPenalty = false;
+        p.falseStart = false; p.falseStartServed = false;
         p.pitAutoState = null; p.pitPathIndex = 0;
     });
 }
@@ -668,7 +693,15 @@ function handlePitReactionPress(io, lobbyId, game, p) {
     const reactionMs = Date.now() - p.pitGoTime;
     const clamped = Math.min(Math.max(reactionMs, PIT_REACTION_BEST), PIT_REACTION_WORST);
     const t = (clamped - PIT_REACTION_BEST) / (PIT_REACTION_WORST - PIT_REACTION_BEST);
-    const durationMs = PIT_DURATION_MIN + t * (PIT_DURATION_MAX - PIT_DURATION_MIN);
+    let durationMs = PIT_DURATION_MIN + t * (PIT_DURATION_MAX - PIT_DURATION_MIN);
+
+    // Penalità falsa partenza scontata QUI, alla PRIMA sosta: stesso
+    // minigioco di reazione, sosta più lunga di 5s — nessun secondo
+    // meccanismo da imparare per il giocatore.
+    if (p.falseStart && !p.falseStartServed) {
+        durationMs += FALSE_START_PENALTY_MS;
+        p.falseStartServed = true;
+    }
 
     const sid = game.socketByColor[p.color];
     if (sid) io.to(sid).emit('f1PitStopTiming', { durationMs });
@@ -739,6 +772,15 @@ function broadcastState(io, lobbyId, game, raceStartedFlag) {
 // ====================================================
 function tickGame(io, lobbyId, game) {
     if (!game.raceStarted) {
+        // Falsa partenza: il client inizia a inviare l'input dell'acceleratore
+        // già durante la sequenza luci (vedi Task 3), ma la fisica qui sotto
+        // resta comunque congelata finché raceStarted è false — ricevere
+        // l'input in anticipo serve SOLO al rilevamento, non fa muovere nessuno.
+        if (game.lightsSequenceActive) {
+            for (const p of Object.values(game.players)) {
+                if (!p.falseStart && p.inputs.throttle > 0) p.falseStart = true;
+            }
+        }
         broadcastState(io, lobbyId, game, false);
         return;
     }
@@ -908,6 +950,13 @@ function checkLap(p, totalLaps, io, lobbyId, game) {
                 p.time += PIT_PENALTY_MS;
                 p.pitPenalty = true;
             }
+            // Rete di sicurezza: se la falsa partenza non è mai stata scontata
+            // ai box (il giocatore non si è mai fermato), si somma comunque
+            // qui al tempo finale — mai persa in silenzio.
+            if (game.phase === 'race' && p.falseStart && !p.falseStartServed) {
+                p.time += FALSE_START_PENALTY_MS;
+                p.falseStartServed = true;
+            }
             // Timer di sicurezza di gruppo: dà agli altri il tempo di finire la
             // sessione (giro di qualifica o gara, entrambe corse in parallelo)
             // anche se qualcuno resta molto indietro senza essersi disconnesso
@@ -934,7 +983,7 @@ function endRace(io, lobbyId, game) {
     const podium = Object.values(game.players)
         .filter(p => p.time !== null)
         .sort((a, b) => a.time - b.time)
-        .map(p => ({ color: p.color, totalTime: p.time, pitPenalty: !!p.pitPenalty }));
+        .map(p => ({ color: p.color, totalTime: p.time, pitPenalty: !!p.pitPenalty, falseStart: !!p.falseStart }));
     io.to(lobbyId).emit('f1RaceEnded', {
         podium,
         isFinal:      true,
@@ -1206,7 +1255,8 @@ function buildPublicState(players, raceStarted, track) {
             // limitatore, non del giocatore — il client la usa per un
             // rumore motore fisso invece che legato all'accelerazione,
             // anche quando non è lui a "guidare" in quella fase.
-            pitLimiter: !!p.pitAutoState
+            pitLimiter: !!p.pitAutoState,
+            falseStart: !!p.falseStart
         };
     }
     return out;
