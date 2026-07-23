@@ -92,8 +92,75 @@ function pickBotColors(humanColors, count, rng = Math.random) {
     return picked;
 }
 
+// ====================================================
+// CREAZIONE BOT — fissa al primo joinF1Game della lobby (creazione del
+// game object): eventuali umani disconnessi a gara in corso NON vengono
+// sostituiti da un bot (riempimento singolo, non dinamico).
+// ====================================================
+const BOT_SPEED_FACTOR_MIN    = 0.85, BOT_SPEED_FACTOR_MAX    = 1.05;
+const BOT_PRECISION_NOISE_MIN = 0,    BOT_PRECISION_NOISE_MAX = 0.25;   // rad aggiunti/tolti allo sterzo
+const BOT_PIT_THRESHOLD_MIN   = 60,   BOT_PIT_THRESHOLD_MAX   = 80;     // % usura gomme a cui il bot decide di entrare ai box
+
+function randRange(min, max, rng) {
+    return min + rng() * (max - min);
+}
+
+function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
+    const botsEnabled = !game.settings || game.settings.botsEnabled !== 'false';
+    if (!botsEnabled) return;
+
+    const humanColors = (lobby && (lobby.lockedPlayers || lobby.players)) || [];
+    const botsNeeded = MAX_GRID_SIZE - humanColors.length;
+    if (botsNeeded <= 0) return;
+
+    const colors = pickBotColors(humanColors, botsNeeded, rng);
+    const compoundKeys = Object.keys(TYRE_COMPOUNDS);
+
+    for (const color of colors) {
+        game.players[color] = {
+            color,
+            x: game.track.qualiSpawn.x, z: game.track.qualiSpawn.z, angle: game.track.qualiSpawn.angle,
+            speed: 0, vx: 0, vz: 0,
+            inputs:          { throttle: 0, brake: 0, steer: 0 },
+            finished:        false,
+            time:            null,
+            lap:             0,
+            checkpointA:     false,
+            inFinishZone:    false,
+            disconnected:    false,
+            trackIndex:      0,
+            compound:        compoundKeys[Math.floor(rng() * compoundKeys.length)],
+            tyreWear:        0,
+            pitting:         false,
+            pitPhase:        null,
+            pitGoTime:       null,
+            pitGoTimer:      null,
+            pendingCompound: null,
+            hasPitted:       false,
+            pitPenalty:      false,
+            falseStart:      false,
+            falseStartServed: false,
+            gapToLeaderMs:   null,
+            pitAutoState:    null,
+            pitPathIndex:    0,
+            // --- campi solo-bot ---
+            isBot:                  true,
+            botSpeedFactor:         randRange(BOT_SPEED_FACTOR_MIN, BOT_SPEED_FACTOR_MAX, rng),
+            botPrecisionNoise:      randRange(BOT_PRECISION_NOISE_MIN, BOT_PRECISION_NOISE_MAX, rng),
+            botPitThreshold:        randRange(BOT_PIT_THRESHOLD_MIN, BOT_PIT_THRESHOLD_MAX, rng),
+            botHeadingToPits:       false,
+            botPitReactionScheduled: false
+        };
+        // Auto-conferma la mescola: riusa il gate esistente in f1TyreChoice
+        // (game.tyreConfirmed.size >= Object.keys(game.players).length),
+        // nessuna logica nuova da scrivere per la fase tyre_select.
+        game.tyreConfirmed.add(color);
+    }
+}
+
 module.exports = {
     PALETTE, MAX_GRID_SIZE,
     normalizeAngle, steerToward, lookaheadIndex, curvatureSpeedFraction,
-    pickPostPitCompound, pickBotColors
+    pickPostPitCompound, pickBotColors,
+    createBots
 };

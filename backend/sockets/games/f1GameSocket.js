@@ -2,6 +2,7 @@ const { activeGames } = require('../../store/activeGames');
 const { lobbies } = require('../../store/lobbies');
 const { loadTrack } = require('./trackLoader');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
+const { createBots } = require('./f1Bot');
 
 const PHYSICS_TICK_MS = 50;
 // Velocità realistica F1: fattore di scala R=1.55 (+55%) applicato a
@@ -229,6 +230,11 @@ module.exports = function (io, socket) {
                 settings:          lobby ? (lobby.gameSettings || {}) : {},
                 rejoinTimers:      {}   // color -> timeout di rimozione definitiva dopo un drop
             });
+
+            // Riempie la griglia con bot fino a MAX_GRID_SIZE (6), se
+            // abilitati in lobby (game.settings.botsEnabled, default on).
+            // Fisso a questo momento: vedi commento su createBots.
+            createBots(activeGames.get(lobbyId), lobby, TYRE_COMPOUNDS);
         }
 
         const game       = activeGames.get(lobbyId);
