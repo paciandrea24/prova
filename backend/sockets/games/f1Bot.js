@@ -238,6 +238,13 @@ function pickBotColors(humanColors, count, rng = Math.random) {
 const BOT_SPEED_FACTOR_MIN    = 0.8,  BOT_SPEED_FACTOR_MAX    = 1.0;
 const BOT_PRECISION_NOISE_MIN = 0,    BOT_PRECISION_NOISE_MAX = 0.25;   // rad aggiunti/tolti allo sterzo
 const BOT_PIT_THRESHOLD_MIN   = 60,   BOT_PIT_THRESHOLD_MAX   = 80;     // % usura gomme a cui il bot decide di entrare ai box
+// botSpeedFactor è fisso per tutta la gara: da solo produce una griglia
+// già ordinata per ritmo (chi parte davanti è sempre il più veloce), quasi
+// nessun sorpasso tra bot per tutta la gara — richiesto esplicitamente
+// dall'utente. Un moltiplicatore ri-estratto ad ogni giro (giorno buono/
+// giorno storto, come un pilota vero) rompe l'ordine statico anche a
+// parità di usura gomme/strategia.
+const BOT_LAP_PACE_VARIANCE   = 0.04;   // ±4% di variazione di ritmo da un giro all'altro
 
 function randRange(min, max, rng) {
     return min + rng() * (max - min);
@@ -288,7 +295,9 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
             botPitThreshold:        randRange(BOT_PIT_THRESHOLD_MIN, BOT_PIT_THRESHOLD_MAX, rng),
             botHeadingToPits:       false,
             botPitReactionScheduled: false,
-            botOvertakeSide:        rng() < 0.5 ? 1 : -1   // spareggio quando l'auto da superare è vicina al centro pista
+            botOvertakeSide:        rng() < 0.5 ? 1 : -1,   // spareggio quando l'auto da superare è vicina al centro pista
+            botLapSeen:             0,
+            botLapPaceMult:         randRange(1 - BOT_LAP_PACE_VARIANCE, 1 + BOT_LAP_PACE_VARIANCE, rng)
         };
         // Auto-conferma la mescola: riusa il gate esistente in f1TyreChoice
         // (game.tyreConfirmed.size >= Object.keys(game.players).length),
@@ -375,6 +384,14 @@ function updateBotInputs(game, deps) {
     for (const p of Object.values(game.players)) {
         if (!p.isBot || p.finished) continue;
 
+        // Ri-estrae il ritmo del giro ad ogni cambio di p.lap (giorno
+        // buono/giorno storto, come un pilota vero) — rompe l'ordine
+        // altrimenti statico di una griglia già ordinata per ritmo fisso.
+        if (p.lap !== p.botLapSeen) {
+            p.botLapSeen = p.lap;
+            p.botLapPaceMult = 1 + (Math.random() * 2 - 1) * BOT_LAP_PACE_VARIANCE;
+        }
+
         // Fermo ai box o guidato dall'autopilota corsia box: nessun input
         // di guida da scrivere, il server ha già il volante. L'unica cosa
         // che un bot deve ancora fare qui è "premere" il minigioco di
@@ -429,7 +446,7 @@ function updateBotInputs(game, deps) {
             let targetSpeed = cornerTargetSpeed(
                 track.points, p.trackIndex || 0, scanSamples, localSamples, metersPerSample,
                 p.speed, maxSpeed, brakeDecel, turnRateHigh, BOT_CORNER_SPEED_MARGIN
-            ) * p.botSpeedFactor;
+            ) * p.botSpeedFactor * p.botLapPaceMult;
 
             // Solo in gara: in qualifica ogni pilota corre isolato (un vero
             // giro veloce, anche visivamente ognuno vede solo se stesso —
