@@ -61,19 +61,36 @@ function lookaheadIndex(n, currentIdx, lookaheadSamples) {
     return ((currentIdx + lookaheadSamples) % n + n) % n;
 }
 
-// Frazione 0.35..1 di velocità massima consentita dalla curvatura futura:
-// confronta la tangente in idx con quella `curvatureSamples` più avanti —
-// più grande l'angolo tra le due, più stretta la curva, più bassa la
-// frazione (mai sotto MIN_SPEED_FRACTION).
-function curvatureSpeedFraction(points, idx, curvatureSamples) {
+// Frazione 0.18..1 di velocità massima consentita dalla curvatura futura.
+// `scanSamples` è quanto avanti guardare in totale (per frenare in tempo su
+// un tornante lontano), `localSamples` è la finestra con cui si MISURA
+// quanto è stretta la curva in un punto — devono restare separati: un
+// singolo confronto tra la tangente ORA e quella alla fine di tutto lo
+// `scanSamples` (versione precedente di questa funzione) confonde "curva
+// dolce spalmata su una lunga distanza" con "tornante stretto", perché su
+// una distanza lunga anche una curva normale cambia direzione di decine di
+// gradi — causa reale dei bot troppo lenti ovunque osservata in playtest
+// dopo aver allungato lo scan per frenare in tempo alle alte velocità.
+// Si scansiona `scanSamples` avanti con finestre locali sovrapposte (passo
+// = metà di `localSamples`, per non "saltare" un tornante corto tra un
+// campione e l'altro) e si tiene la curva più stretta trovata: un vero
+// tornante lontano viene comunque scoperto in tempo, ma una curva dolce
+// resta dolce ovunque la si misuri localmente.
+function curvatureSpeedFraction(points, idx, scanSamples, localSamples) {
     const n = points.length;
-    const aheadIdx = lookaheadIndex(n, idx, curvatureSamples);
-    const t1 = TrackGeometry.tangentAt(points, idx, true);
-    const t2 = TrackGeometry.tangentAt(points, aheadIdx, true);
-    const angle1 = Math.atan2(t1.tx, t1.tz);
-    const angle2 = Math.atan2(t2.tx, t2.tz);
-    const turn = Math.abs(normalizeAngle(angle2 - angle1));
-    const frac = 1 - Math.min(1, turn / MAX_CURVATURE_ANGLE);
+    const step = Math.max(1, Math.floor(localSamples / 2));
+    let worstTurn = 0;
+    for (let offset = 0; offset <= scanSamples; offset += step) {
+        const i1 = lookaheadIndex(n, idx, offset);
+        const i2 = lookaheadIndex(n, idx, offset + localSamples);
+        const t1 = TrackGeometry.tangentAt(points, i1, true);
+        const t2 = TrackGeometry.tangentAt(points, i2, true);
+        const angle1 = Math.atan2(t1.tx, t1.tz);
+        const angle2 = Math.atan2(t2.tx, t2.tz);
+        const turn = Math.abs(normalizeAngle(angle2 - angle1));
+        if (turn > worstTurn) worstTurn = turn;
+    }
+    const frac = 1 - Math.min(1, worstTurn / MAX_CURVATURE_ANGLE);
     return MIN_SPEED_FRACTION + frac * (1 - MIN_SPEED_FRACTION);
 }
 
@@ -210,6 +227,11 @@ const BOT_LOOKAHEAD_TIME_S           = 0.6;   // s di anticipo per il punto mira
 const BOT_LOOKAHEAD_MIN_M            = 10;
 const BOT_CURVATURE_LOOKAHEAD_TIME_S = 2.2;   // s di anticipo per giudicare la curvatura (frenata anticipata)
 const BOT_CURVATURE_LOOKAHEAD_MIN_M  = 30;
+// Finestra con cui si MISURA quanto è stretta una curva — fissa, non
+// proporzionale alla velocità: caratterizza la geometria della pista in
+// quel punto, non la distanza di frenata (quella è BOT_CURVATURE_LOOKAHEAD_*
+// sopra, che decide invece FIN DOVE cercare una curva stretta).
+const BOT_CURVATURE_LOCAL_M          = 12;
 const BOT_SPEED_MARGIN          = 0.03;  // isteresi throttle/brake attorno alla velocità target
 const BOT_PIT_REACTION_MIN_MS   = 150;
 const BOT_PIT_REACTION_MAX_MS   = 700;
@@ -297,11 +319,12 @@ function updateBotInputs(game, deps) {
             const curveM = Math.max(BOT_CURVATURE_LOOKAHEAD_MIN_M, speedMs * BOT_CURVATURE_LOOKAHEAD_TIME_S);
             const lookSamples  = metersToSamples(lookM, track);
             const curveSamples = metersToSamples(curveM, track);
+            const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
             const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
             const target = track.points[targetIdx];
             steer = steerToward(p.x, p.z, p.angle, target.x, target.z);
 
-            const speedFrac = curvatureSpeedFraction(track.points, p.trackIndex || 0, curveSamples);
+            const speedFrac = curvatureSpeedFraction(track.points, p.trackIndex || 0, curveSamples, localSamples);
             let targetSpeed = effectiveMaxSpeed(p, isQuali) * speedFrac * p.botSpeedFactor;
 
             const gapM = nearestAheadGapM(p, Object.values(game.players), track);

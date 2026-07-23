@@ -43,17 +43,35 @@ test('lookaheadIndex avanza con wrap sul loop', () => {
 
 test('curvatureSpeedFraction: rettilineo => frazione vicina a 1', () => {
     const straight = [];
-    for (let i = 0; i < 20; i++) straight.push({ x: 0, z: i });
-    const frac = curvatureSpeedFraction(straight, 5, 5);
+    for (let i = 0; i < 30; i++) straight.push({ x: 0, z: i });
+    const frac = curvatureSpeedFraction(straight, 5, 15, 4);
     assert.ok(frac > 0.98, `atteso ~1, ottenuto ${frac}`);
 });
 
-test('curvatureSpeedFraction: curva a 90° oltre MAX_CURVATURE_ANGLE => frazione al minimo (0.18)', () => {
+test('curvatureSpeedFraction: tornante stretto scoperto dalla scansione lunga anche se non subito => frazione al minimo (0.18)', () => {
     const bent = [];
-    for (let i = 0; i < 10; i++) bent.push({ x: 0, z: i });           // rettilineo lungo +z
-    for (let i = 0; i < 10; i++) bent.push({ x: i, z: 9 });           // poi piega lungo +x
-    const frac = curvatureSpeedFraction(bent, 8, 6);   // idx=8 (dritto), +6 => idx=14 (piegato)
+    for (let i = 0; i < 30; i++) bent.push({ x: 0, z: i });           // rettilineo lungo +z, idx 0..29
+    for (let i = 0; i < 30; i++) bent.push({ x: i, z: 29 });          // tornante di 90° a idx~30, poi lungo +x
+    // idx=5, scansiona 40 campioni avanti (fino a idx=45, ben oltre il
+    // tornante): la finestra locale corta (4) lo trova comunque.
+    const frac = curvatureSpeedFraction(bent, 5, 40, 4);
     assert.ok(Math.abs(frac - 0.18) < 0.01, `atteso ~0.18, ottenuto ${frac}`);
+});
+
+test('curvatureSpeedFraction: stesso angolo totale (90°) ma su una curva DOLCE (raggio ampio) => non scende al minimo', () => {
+    // Bug reale (playtest): confrontare solo inizio/fine di una scansione
+    // lunga confondeva "curva dolce spalmata su tanta distanza" con
+    // "tornante stretto" — qui l'angolo totale è lo stesso 90° del test
+    // sopra, ma spalmato su un raggio di 500 unità: misurata con finestre
+    // LOCALI corte deve restare dolce ovunque, non toccare il minimo.
+    const n = 200;
+    const wide = [];
+    for (let i = 0; i <= n; i++) {
+        const a = (Math.PI / 2) * (i / n);
+        wide.push({ x: Math.sin(a) * 500, z: Math.cos(a) * 500 });
+    }
+    const frac = curvatureSpeedFraction(wide, 5, 50, 4);
+    assert.ok(frac > 0.9, `atteso vicino a 1 (curva dolce vista localmente), ottenuto ${frac}`);
 });
 
 test('pickPostPitCompound: pochi giri restanti => soft', () => {
