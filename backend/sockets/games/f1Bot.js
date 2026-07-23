@@ -164,14 +164,32 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
 // la reazione al minigioco pit-stop). Scrive solo p.inputs (throttle/
 // brake/steer): la fisica/collisioni/pit-lane restano quelle esistenti.
 // ====================================================
-const BOT_LOOKAHEAD_M           = 18;    // metri: punto mirato per lo sterzo sulla linea di corsa
-const BOT_CURVATURE_LOOKAHEAD_M = 40;    // metri: quanto avanti si giudica la curvatura per la velocità target
+// Lookahead in METRI ma proporzionale alla velocità reale del bot (secondi
+// di anticipo × velocità), non un valore fisso: un valore fisso tarato a
+// bassa velocità (es. 18-40m) diventa una frazione di secondo ad alta
+// velocità (le auto superano i 90 m/s) — troppo poco per accorgersi di una
+// curva stretta in tempo per frenare, causa reale di uscite di pista molto
+// frequenti osservate in playtest. Il punto mirato dallo sterzo resta un
+// anticipo breve (tracciamento preciso della linea), la curvatura — che
+// decide QUANDO iniziare a rallentare — guarda molto più avanti apposta,
+// perché la conseguenza di guardare troppo poco è frenare troppo tardi.
+const BOT_LOOKAHEAD_TIME_S           = 0.6;   // s di anticipo per il punto mirato dallo sterzo
+const BOT_LOOKAHEAD_MIN_M            = 10;
+const BOT_CURVATURE_LOOKAHEAD_TIME_S = 2.2;   // s di anticipo per giudicare la curvatura (frenata anticipata)
+const BOT_CURVATURE_LOOKAHEAD_MIN_M  = 30;
 const BOT_SPEED_MARGIN          = 0.03;  // isteresi throttle/brake attorno alla velocità target
 const BOT_PIT_REACTION_MIN_MS   = 150;
 const BOT_PIT_REACTION_MAX_MS   = 700;
 
 function metersToSamples(meters, track) {
     return Math.max(1, Math.round(meters * track.points.length / track.lapLength));
+}
+
+// p.speed è lo scalare interno di fisica; stessa conversione a m/s già
+// usata altrove nel gioco per i km/h a schermo (speed*55) e per il
+// distacco dal leader (speed*55/3.6) — vedi f1GameSocket.js.
+function botSpeedMs(speed) {
+    return Math.abs(speed) * 55 / 3.6;
 }
 
 function updateBotInputs(game, deps) {
@@ -215,8 +233,11 @@ function updateBotInputs(game, deps) {
             steer = steerToward(p.x, p.z, p.angle, target.x, target.z);
             throttle = 0.6;   // rallenta in ingresso corsia box
         } else {
-            const lookSamples  = metersToSamples(BOT_LOOKAHEAD_M, track);
-            const curveSamples = metersToSamples(BOT_CURVATURE_LOOKAHEAD_M, track);
+            const speedMs = Math.max(5, botSpeedMs(p.speed));   // floor: niente lookahead quasi-zero da fermi (es. alla partenza)
+            const lookM  = Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * BOT_LOOKAHEAD_TIME_S);
+            const curveM = Math.max(BOT_CURVATURE_LOOKAHEAD_MIN_M, speedMs * BOT_CURVATURE_LOOKAHEAD_TIME_S);
+            const lookSamples  = metersToSamples(lookM, track);
+            const curveSamples = metersToSamples(curveM, track);
             const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
             const target = track.points[targetIdx];
             steer = steerToward(p.x, p.z, p.angle, target.x, target.z);
