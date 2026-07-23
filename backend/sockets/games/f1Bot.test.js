@@ -48,14 +48,14 @@ test('curvatureSpeedFraction: rettilineo => frazione vicina a 1', () => {
     assert.ok(frac > 0.98, `atteso ~1, ottenuto ${frac}`);
 });
 
-test('curvatureSpeedFraction: tornante stretto scoperto dalla scansione lunga anche se non subito => frazione al minimo (0.18)', () => {
+test('curvatureSpeedFraction: tornante stretto scoperto dalla scansione lunga anche se non subito => frazione al minimo (0.5)', () => {
     const bent = [];
     for (let i = 0; i < 30; i++) bent.push({ x: 0, z: i });           // rettilineo lungo +z, idx 0..29
     for (let i = 0; i < 30; i++) bent.push({ x: i, z: 29 });          // tornante di 90° a idx~30, poi lungo +x
     // idx=5, scansiona 40 campioni avanti (fino a idx=45, ben oltre il
     // tornante): la finestra locale corta (4) lo trova comunque.
     const frac = curvatureSpeedFraction(bent, 5, 40, 4);
-    assert.ok(Math.abs(frac - 0.18) < 0.01, `atteso ~0.18, ottenuto ${frac}`);
+    assert.ok(Math.abs(frac - 0.5) < 0.01, `atteso ~0.5, ottenuto ${frac}`);
 });
 
 test('curvatureSpeedFraction: stesso angolo totale (90°) ma su una curva DOLCE (raggio ampio) => non scende al minimo', () => {

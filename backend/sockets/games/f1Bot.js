@@ -27,16 +27,19 @@ const MAX_GRID_SIZE = 6;   // umani + bot totali per gara
 // più basso il bot restava per più tempo "storto" prima di raddrizzarsi,
 // una delle cause delle uscite di pista osservate in playtest.
 const BOT_STEER_GAIN = 3.0;
-// Soglia di curvatura abbassata (era 60°): anche una curva moderata (30° di
-// cambio direzione sul tratto guardato in avanti) porta già alla velocità
-// minima, non solo le curve strettissime — i bot frenavano troppo poco
-// anche per curve medie.
-const MAX_CURVATURE_ANGLE = Math.PI / 6;   // 30°: oltre, velocità al minimo
-// Pavimento di velocità abbassato (era 0.35): a MIN_SPEED_FRACTION=0.35 un
-// bot non riusciva comunque a sterzare abbastanza stretto per i tornanti
-// più chiusi, indipendentemente da quanto presto iniziasse a frenare (il
-// raggio di sterzata dipende dalla velocità, non solo da QUANDO si frena).
-const MIN_SPEED_FRACTION  = 0.18;
+// Soglia di curvatura: dopo aver separato scansione lunga e finestra locale
+// (vedi curvatureSpeedFraction), la rilevazione è ormai precisa — non serve
+// più una soglia bassissima per compensare un rilevamento impreciso. 45°
+// misurati su una finestra locale corta (BOT_CURVATURE_LOCAL_M) è comunque
+// un vero tornante, non una curva qualunque.
+const MAX_CURVATURE_ANGLE = Math.PI / 4;   // 45°: oltre, velocità al minimo
+// Pavimento di velocità: con la rilevazione ormai precisa (curva dolce non
+// tocca più il minimo, vedi fix locale), non serve più un pavimento
+// bassissimo per "star sul sicuro" — un valore troppo basso (provato: 0.18)
+// produceva un rallentamento generale eccessivo su tutto il giro (giro di
+// qualifica ~4× più lento di un umano, segnalato dall'utente), non solo
+// nei tornanti veri.
+const MIN_SPEED_FRACTION  = 0.5;
 
 function normalizeAngle(a) {
     while (a > Math.PI) a -= 2 * Math.PI;
@@ -225,8 +228,17 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
 // perché la conseguenza di guardare troppo poco è frenare troppo tardi.
 const BOT_LOOKAHEAD_TIME_S           = 0.6;   // s di anticipo per il punto mirato dallo sterzo
 const BOT_LOOKAHEAD_MIN_M            = 10;
-const BOT_CURVATURE_LOOKAHEAD_TIME_S = 2.2;   // s di anticipo per giudicare la curvatura (frenata anticipata)
-const BOT_CURVATURE_LOOKAHEAD_MIN_M  = 30;
+// Ridotto da 2.2s: con uno scan troppo lungo, il tratto "più stretto
+// trovato ovunque nella finestra" include quasi sempre una curva vera
+// (le piste hanno curve ogni poche centinaia di metri), quindi il bersaglio
+// di velocità restava basso per gran parte del rettilineo di avvicinamento,
+// non solo dentro la curva — contributo diretto al giro ~4× più lento di
+// un umano segnalato dall'utente. 1.1s è comunque più del tempo di frenata
+// reale (frenata piena da velocità massima a MIN_SPEED_FRACTION dura una
+// frazione di secondo), lascia margine senza tenere il bot "sotto freno"
+// troppo a lungo prima del bisogno.
+const BOT_CURVATURE_LOOKAHEAD_TIME_S = 1.1;   // s di anticipo per giudicare la curvatura (frenata anticipata)
+const BOT_CURVATURE_LOOKAHEAD_MIN_M  = 20;
 // Finestra con cui si MISURA quanto è stretta una curva — fissa, non
 // proporzionale alla velocità: caratterizza la geometria della pista in
 // quel punto, non la distanza di frenata (quella è BOT_CURVATURE_LOOKAHEAD_*
@@ -327,10 +339,17 @@ function updateBotInputs(game, deps) {
             const speedFrac = curvatureSpeedFraction(track.points, p.trackIndex || 0, curveSamples, localSamples);
             let targetSpeed = effectiveMaxSpeed(p, isQuali) * speedFrac * p.botSpeedFactor;
 
-            const gapM = nearestAheadGapM(p, Object.values(game.players), track);
-            if (gapM < BOT_FOLLOW_GAP_M) {
-                const closeness = 1 - gapM / BOT_FOLLOW_GAP_M;   // 0 = al limite, 1 = praticamente addosso
-                targetSpeed *= 1 - closeness * (1 - BOT_FOLLOW_MIN_FRACTION);
+            // Solo in gara: in qualifica ogni pilota corre isolato (un vero
+            // giro veloce, anche visivamente ognuno vede solo se stesso —
+            // vedi playersVisibleTo in f1GameSocket.js), rallentare per un
+            // altro bot vicino durante il giro secco non avrebbe senso e
+            // contribuiva a tempi di qualifica troppo lenti.
+            if (!isQuali) {
+                const gapM = nearestAheadGapM(p, Object.values(game.players), track);
+                if (gapM < BOT_FOLLOW_GAP_M) {
+                    const closeness = 1 - gapM / BOT_FOLLOW_GAP_M;   // 0 = al limite, 1 = praticamente addosso
+                    targetSpeed *= 1 - closeness * (1 - BOT_FOLLOW_MIN_FRACTION);
+                }
             }
 
             if (p.speed < targetSpeed * (1 - BOT_SPEED_MARGIN)) throttle = 1;
