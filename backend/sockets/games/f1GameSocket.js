@@ -1450,3 +1450,17 @@ function resetPlayers(game) {
         i++;
     }
 }
+
+// ====================================================
+// EXPORT PRIMITIVE FISICHE — additivo, non tocca la firma dell'handler
+// socket esistente (module.exports resta chiamabile come module.exports(io,
+// socket)). Serve a strumenti offline (vedi backend/tools/f1LapSimulator.js)
+// che devono riprodurre la fisica ESATTA del server senza duplicarla.
+// ====================================================
+module.exports.physics = {
+    PHYSICS_TICK_MS, COLLISION_SUBSTEPS,
+    ACCEL, BRAKE_MULT, TURN_SPEED_HIGH, HALF_LAP_IDX,
+    effectiveMaxSpeed, updateVelocity, integratePosition,
+    applyOffTrackDrag, applyBridgeBarrier, updateTrackIndex,
+    circularWithin, checkpointWindowFor, finishWindowFor
+};
