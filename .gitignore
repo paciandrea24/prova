@@ -13,3 +13,6 @@ graphify-out/
 
 # Cache plugin (superpowers)
 .superpowers/
+
+# Telemetria generata da f1LapSimulator (output, non sorgente)
+backend/tools/*-telemetry.json
