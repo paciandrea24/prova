@@ -3,6 +3,12 @@ const path = require('path');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 
 const TRACKS_DIR = path.join(__dirname, '..', '..', '..', 'frontend', 'tracks');
+// backend/tools, NON frontend/tracks: listTracks() scansiona frontend/tracks
+// per il menu piste in lobby, un .json in più lì dentro apparirebbe come una
+// pista fittizia. I dati di racing line sono generati offline da
+// backend/tools/f1RaceLineOptimizer.js, opzionali (una pista senza il file
+// corrispondente carica esattamente come oggi, zero differenza).
+const RACELINES_DIR = path.join(__dirname, '..', '..', 'tools');
 const TRACK_ID_PATTERN = /^[a-z0-9-]+$/;
 const SAMPLES = 1000;
 const QUALI_LEAD = 8;        // unità avanti alla linea di partenza per lo spawn di qualifica
@@ -12,10 +18,54 @@ const GRID_LANE_OFFSET = 4;  // scostamento laterale di ogni corsia dal centro p
 
 const cache = new Map();
 
+// Racing line precalcolata offline (vedi backend/tools/f1RaceLineOptimizer.js
+// + docs/superpowers/specs/2026-07-24-f1-bot-cornering-redesign-design.md):
+// opzionale, `${id}-raceline.json` con {tuning, lineControls}. lineControls è
+// un array corto di punti di controllo (offset laterale dal centro pista),
+// interpolato qui sull'intero campionamento della pista — stessa identica
+// interpolazione usata dall'ottimizzatore per costruirla, altrimenti la linea
+// che il bot segue in gara non sarebbe quella davvero misurata offline.
+function interpolateLineControls(controls, targetLen) {
+    const m = controls.length;
+    const out = new Array(targetLen);
+    for (let i = 0; i < targetLen; i++) {
+        const cf = i * m / targetLen;
+        const c0 = Math.floor(cf) % m;
+        const c1 = (c0 + 1) % m;
+        const t = cf - Math.floor(cf);
+        out[i] = controls[c0] * (1 - t) + controls[c1] * t;
+    }
+    return out;
+}
+
+function loadRacelineData(id) {
+    const file = path.join(RACELINES_DIR, `${id}-raceline.json`);
+    if (!fs.existsSync(file)) return null;
+    try {
+        const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+        if (!Array.isArray(raw.lineControls) || raw.lineControls.length < 2) return null;
+        return raw;
+    } catch (err) {
+        console.warn(`loadTrack: raceline malformata ignorata per "${id}": ${err.message}`);
+        return null;
+    }
+}
+
 function buildTrack(id, raw) {
     const points = TrackGeometry.sampleLoop(raw.controlPoints, SAMPLES);
     const lapLength = TrackGeometry.lapLength(points);
     const totalLaps = TrackGeometry.lapsForDistance(lapLength, raw.targetKm);
+
+    const racelineData = loadRacelineData(id);
+    let racingLine = null, racingLineTuning = null;
+    if (racelineData) {
+        const offsets = interpolateLineControls(racelineData.lineControls, points.length);
+        racingLine = points.map((pt, i) => {
+            const normal = TrackGeometry.normalAt(points, i, true);
+            return { x: pt.x + normal.nx * offsets[i], z: pt.z + normal.nz * offsets[i] };
+        });
+        racingLineTuning = racelineData.tuning || null;
+    }
 
     const p0 = points[0];
     const tangent = TrackGeometry.tangentAt(points, 0, true);
@@ -49,7 +99,9 @@ function buildTrack(id, raw) {
         pitRoadHalf: raw.pit.roadHalfWidth,
         pitEntryTrigger: raw.pit.entryTrigger,
         qualiSpawn: alongTrack(QUALI_LEAD, 0),
-        gridSpawnPoint
+        gridSpawnPoint,
+        racingLine,
+        racingLineTuning
     };
 }
 

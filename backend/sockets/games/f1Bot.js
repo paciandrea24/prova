@@ -49,13 +49,16 @@ function normalizeAngle(a) {
 
 // Sterzo (-1..1) per puntare dalla posizione attuale (px,pz), con heading
 // `angle` (stessa convenzione della fisica: vettore = (sin(angle),
-// cos(angle))), verso il punto (tx,tz).
-function steerToward(px, pz, angle, tx, tz) {
+// cos(angle))), verso il punto (tx,tz). `gain` opzionale (default
+// BOT_STEER_GAIN, comportamento invariato): la racing line precalcolata
+// (vedi updateBotInputs) porta il proprio steerGain ottimizzato per pista,
+// diverso dalla costante fissa usata dal calcolo geometrico a runtime.
+function steerToward(px, pz, angle, tx, tz, gain = BOT_STEER_GAIN) {
     const dx = tx - px, dz = tz - pz;
     if (Math.abs(dx) < 1e-6 && Math.abs(dz) < 1e-6) return 0;
     const desired = Math.atan2(dx, dz);
     const diff = normalizeAngle(desired - angle);
-    return Math.max(-1, Math.min(1, diff * BOT_STEER_GAIN));
+    return Math.max(-1, Math.min(1, diff * gain));
 }
 
 // Indice campionato `lookaheadSamples` avanti (con wrap) rispetto a
@@ -147,10 +150,17 @@ function windowRadius(points, i1, i2, localArcM) {
 // stretta in un orizzonte lungo: una versione che cercasse il raggio minimo
 // assoluto su una distanza ampia rischierebbe di agganciarsi a un tornante
 // lontano invece della curva che il bot sta davvero affrontando ora — vedi
-// spec, caso chicane). Cammina da idx verso la prima finestra con curvatura
-// significativa (in entrambe le direzioni), poi prosegue in quella direzione
-// finché il raggio continua a diminuire: il punto in cui smette di scendere
-// è il minimo locale, cioè l'apice di QUELLA curva.
+// spec, caso chicane). Trova la prima finestra con curvatura significativa
+// (in entrambe le direzioni da idx), poi cammina in ENTRAMBE le direzioni da
+// lì finché il raggio continua a diminuire: il punto in cui smette di
+// scendere, su ciascun lato, è il minimo locale, cioè l'apice di QUELLA
+// curva. Camminare in una sola direzione (quella "scoperta" per prima)
+// mancava sistematicamente l'apice quando si trovava dal lato opposto — es.
+// idx già all'altezza o oltre l'apice reale, dove la finestra più stretta è
+// INDIETRO rispetto a idx — riportando distanceToApexM mai vicino a zero
+// nemmeno esattamente sull'apice (bug verificato: su una curva stretta
+// questo spingeva l'offset fuori-dentro-fuori a "sforare" la zona di
+// influenza dal lato sbagliato proprio nel punto più critico della curva).
 // ====================================================
 function cornerApexNear(points, idx, searchSamples, localSamples, metersPerSample) {
     const n = points.length;
@@ -167,27 +177,29 @@ function cornerApexNear(points, idx, searchSamples, localSamples, metersPerSampl
 
     let startOffset = null;
     let startRadius = null;
-    let direction = 1;
     for (let d = 0; d <= searchSamples; d += step) {
         const fwd = windowAt(d);
-        if (fwd !== null) { startOffset = d; startRadius = fwd; direction = 1; break; }
+        if (fwd !== null) { startOffset = d; startRadius = fwd; break; }
         if (d > 0) {
             const back = windowAt(-d);
-            if (back !== null) { startOffset = -d; startRadius = back; direction = -1; break; }
+            if (back !== null) { startOffset = -d; startRadius = back; break; }
         }
     }
     if (startOffset === null) return null;   // nessuna curvatura significativa nel raggio di ricerca
 
     let bestOffset = startOffset;
     let bestRadius = startRadius;
-    let cursor = startOffset;
-    while (true) {
-        const nextOffset = cursor + direction * step;
-        const nextRadius = windowAt(nextOffset);
-        if (nextRadius === null || nextRadius >= bestRadius) break;
-        bestRadius = nextRadius;
-        bestOffset = nextOffset;
-        cursor = nextOffset;
+    for (const direction of [1, -1]) {
+        let cursor = startOffset;
+        let radius = startRadius;
+        while (true) {
+            const nextOffset = cursor + direction * step;
+            const nextRadius = windowAt(nextOffset);
+            if (nextRadius === null || nextRadius >= radius) break;
+            radius = nextRadius;
+            cursor = nextOffset;
+            if (radius < bestRadius) { bestRadius = radius; bestOffset = cursor; }
+        }
     }
 
     const apexIdx = lookaheadIndex(n, idx, bestOffset + halfLocal);
@@ -317,12 +329,18 @@ function pickBotColors(humanColors, count, rng = Math.random) {
 // game object): eventuali umani disconnessi a gara in corso NON vengono
 // sostituiti da un bot (riempimento singolo, non dinamico).
 // ====================================================
-// Range 0.8..1.0 (non oltre 1.0): la velocità reale è comunque limitata da
-// effectiveMaxSpeed, quindi un fattore >1.0 non produceva alcuna differenza
-// osservabile in rettilineo (sempre a tutto gas contro lo stesso tetto) —
-// tutta la variabilità reale finiva compressa nella sola metà 0.85..1.0,
-// che contribuiva ai bot "tutti uguali" in gruppo (effetto trenino).
-const BOT_SPEED_FACTOR_MIN    = 0.8,  BOT_SPEED_FACTOR_MAX    = 1.0;
+// Range ristretto a 0.93..1.0 (non oltre 1.0: la racing line precalcolata è
+// già ottimizzata al limite fisico di aderenza — cornerSpeedMargin=1.0 sulle
+// piste con dati precalcolati — un fattore >1.0 chiede all'auto di prendere
+// le curve più veloce del limite reale, verificato che non produce alcun
+// guadagno di tempo, solo rumore statistico, vedi report). Il vecchio range
+// 0.8..1.0 era tarato sul tetto pre-linea-offline (24.2s): con il nuovo
+// tetto (21.35s su Monza) uno spread così ampio (0.8) produceva un bot
+// fortunato vicino all'umano e gli altri quattro staccatissimi — nessuna
+// vera lotta. 0.93 mantiene comunque un ventaglio di ritmi diversi (assieme
+// a BOT_LAP_PACE_VARIANCE, che abilita i sorpassi) senza spalancare il
+// distacco tra il migliore e il peggiore del gruppo.
+const BOT_SPEED_FACTOR_MIN    = 0.93, BOT_SPEED_FACTOR_MAX    = 1.0;
 const BOT_PRECISION_NOISE_MIN = 0,    BOT_PRECISION_NOISE_MAX = 0.25;   // rad aggiunti/tolti allo sterzo
 const BOT_PIT_THRESHOLD_MIN   = 60,   BOT_PIT_THRESHOLD_MAX   = 80;     // % usura gomme a cui il bot decide di entrare ai box
 // botSpeedFactor è fisso per tutta la gara: da solo produce una griglia
@@ -471,6 +489,20 @@ const DEFAULT_TUNING = {
     brakingDistanceMargin: BOT_BRAKING_DISTANCE_MARGIN
 };
 
+// Default per track.racingLineTuning quando il file generato da
+// f1RaceLineOptimizer.js non specifica un campo (robustezza, non un caso
+// atteso in pratica): stessi valori usati come punto di partenza
+// dell'ottimizzatore stesso, così un campo mancante degrada al
+// comportamento "non ancora ottimizzato" invece di un crash o un NaN.
+const DEFAULT_RACELINE_TUNING = {
+    lookaheadTimeS:        BOT_LOOKAHEAD_TIME_S,
+    steerGain:             BOT_STEER_GAIN,
+    cornerSpeedMargin:     BOT_CORNER_SPEED_MARGIN,
+    brakingDistanceMargin: BOT_BRAKING_DISTANCE_MARGIN,
+    deadband:              0.01,
+    ramp:                  0.06
+};
+
 function updateBotInputs(game, deps) {
     const {
         effectiveMaxSpeed, handlePitReactionPress, io, lobbyId, wearLapsAtMedium,
@@ -525,6 +557,76 @@ function updateBotInputs(game, deps) {
             const target = track.pitPath[0];
             steer = steerToward(p.x, p.z, p.angle, target.x, target.z);
             throttle = 0.6;   // rallenta in ingresso corsia box
+        } else if (track.racingLine) {
+            // Racing line precalcolata OFFLINE (vedi
+            // backend/tools/f1RaceLineOptimizer.js +
+            // docs/superpowers/specs/2026-07-24-f1-bot-cornering-redesign-design.md):
+            // il bot punta un lookahead sulla linea già pronta (pure
+            // pursuit) e frena in base alla curvatura DELLA LINEA STESSA
+            // (cornerTargetSpeed riusato as-is) — nessun calcolo di
+            // apice/severity dal vivo, quello era il punto fragile
+            // (chicane) del calcolo geometrico a runtime nel ramo sotto,
+            // qui sostituito da un percorso già misurato e validato offline
+            // (mai un tempo peggiore del centro pista, per costruzione
+            // dell'ottimizzatore). rt = i parametri di sterzo/frenata
+            // trovati per QUESTA pista specifica, non le costanti fisse
+            // valide per il ramo geometrico.
+            const rt = { ...DEFAULT_RACELINE_TUNING, ...(track.racingLineTuning || {}) };
+            const maxSpeed = effectiveMaxSpeed(p, isQuali);
+            const speedMs  = Math.max(5, botSpeedMs(p.speed));
+            const lookM    = Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * rt.lookaheadTimeS);
+            const lookSamples  = metersToSamples(lookM, track);
+            const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
+            const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
+            const target = track.racingLine[targetIdx];
+
+            steer = steerToward(p.x, p.z, p.angle, target.x, target.z, rt.steerGain);
+
+            const scanM = (maxSpeed * maxSpeed) / (2 * brakeDecel) * rt.brakingDistanceMargin;
+            const scanSamples = metersToSamples(scanM, track);
+            let targetSpeed = cornerTargetSpeed(
+                track.racingLine, p.trackIndex || 0, scanSamples, localSamples, metersPerSample,
+                p.speed, maxSpeed, brakeDecel, turnRateHigh, rt.cornerSpeedMargin
+            ) * p.botSpeedFactor * p.botLapPaceMult;
+
+            if (!isQuali) {
+                const ahead = nearestAheadPlayer(p, Object.values(game.players), track);
+                if (ahead && ahead.gapM < BOT_FOLLOW_GAP_M) {
+                    // Stessa idea del ramo geometrico (sorpasso solo su
+                    // rettilinei/curve dolci), ma la "severity" qui non
+                    // viene da apexOffset (non calcolato in questo ramo) —
+                    // si misura direttamente il raggio della racing line
+                    // davanti alla posizione reale con lo stesso
+                    // windowRadius condiviso.
+                    const localArcM = localSamples * metersPerSample;
+                    const i1 = p.trackIndex || 0;
+                    const i2 = lookaheadIndex(track.points.length, i1, localSamples);
+                    const w = windowRadius(track.racingLine, i1, i2, localArcM);
+                    const severity = w ? Math.min(1, track.roadHalf / w.radius) : 0;
+                    const cornerIsMild = severity < BOT_OVERTAKE_MAX_CORNER_SEVERITY;
+                    if (cornerIsMild && targetSpeed > ahead.player.speed * BOT_OVERTAKE_PACE_MARGIN) {
+                        const overtake = overtakeOffset(
+                            track.points, ahead.player.trackIndex || 0, ahead.player.x, ahead.player.z,
+                            track.roadHalf, BOT_OVERTAKE_FRACTION, p.botOvertakeSide
+                        );
+                        steer = steerToward(p.x, p.z, p.angle, target.x + overtake.dx, target.z + overtake.dz, rt.steerGain);
+                    } else {
+                        const closeness = 1 - ahead.gapM / BOT_FOLLOW_GAP_M;
+                        targetSpeed *= 1 - closeness * (1 - BOT_FOLLOW_MIN_FRACTION);
+                    }
+                }
+            }
+
+            // Controllo proporzionale (non on/off): la racing line è stata
+            // ottimizzata assumendo questo tipo di controllo — vedi report,
+            // frenare a scatti costava tempo misurabile anche a parità di
+            // traiettoria. Zona morta (rt.deadband) prima della rampa:
+            // qualunque brake>0 applica comunque lo scrub laterale ×0.94 in
+            // updateVelocity, frenare per un fuorigiri minimo costerebbe
+            // aderenza senza motivo.
+            const err = (p.speed - targetSpeed) / maxSpeed;
+            if (err > rt.deadband) brake = Math.min(1, (err - rt.deadband) / rt.ramp);
+            else if (err < -rt.deadband) throttle = Math.min(1, (-err - rt.deadband) / rt.ramp);
         } else {
             const maxSpeed = effectiveMaxSpeed(p, isQuali);
             const speedMs  = Math.max(5, botSpeedMs(p.speed));   // floor: niente lookahead quasi-zero da fermi (es. alla partenza)
@@ -549,7 +651,19 @@ function updateBotInputs(game, deps) {
             // (stesso ordine di grandezza della distanza di frenata: copre
             // una curva tipica senza agganciare tornanti troppo lontani) —
             // niente calcolo duplicato, un solo raggio di ricerca condiviso.
-            const apex = apexOffset(track.points, targetIdx, scanSamples, localSamples, metersPerSample, track.roadHalf, tuning.apexMaxFraction);
+            // La FASE nella curva (quanto siamo vicini all'apice, quindi se
+            // allargarsi o tagliare) va misurata sulla posizione REALE
+            // dell'auto (p.trackIndex), non sul punto mirato in anticipo
+            // (targetIdx, fino a decine di metri avanti ad alta velocità):
+            // valutarla sul lookahead faceva sì che, mentre l'auto era
+            // ancora dentro la curva, il punto mirato avesse già superato
+            // l'apice e "ordinasse" di allargarsi verso il bordo esterno —
+            // un comando di sterzo molto più stretto della curva reale, che
+            // mandava l'auto fuori pista durante l'uscita (drag pesante,
+            // causa reale del rallentamento misurato, non il sign-flip di
+            // cornerApexNear). L'offset risultante resta comunque sommato al
+            // punto mirato in anticipo, per una guida fluida.
+            const apex = apexOffset(track.points, p.trackIndex || 0, scanSamples, localSamples, metersPerSample, track.roadHalf, tuning.apexMaxFraction);
             steer = steerToward(p.x, p.z, p.angle, target.x + apex.dx, target.z + apex.dz);
 
             let targetSpeed = cornerTargetSpeed(

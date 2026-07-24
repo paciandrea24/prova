@@ -16,6 +16,7 @@ Avvio locale: `node server.js` dalla cartella `backend/`, poi aprire `localhost:
 ## Note per-gioco
 Le note tecniche dettagliate stanno in file dedicati, da leggere SOLO quando si lavora su quel gioco:
 - FPS → `docs/fps-notes.md`
+- F1 → `docs/f1-notes.md`
 
 ## Convenzioni / preferenze utente
 - **Italiano** nelle comunicazioni e nei commenti del codice.
