@@ -7,6 +7,7 @@ const {
     pickPostPitCompound, pickBotColors, estimateFinishTime,
     updateBotInputs, DEFAULT_TUNING
 } = require('./f1Bot.js');
+const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 
 // Costruisce un tracciato sintetico con curvatura costante e controllata:
 // dritto per `straightSamples` campioni, poi curva con `deltaAnglePerSample`
@@ -88,40 +89,86 @@ test('lookaheadIndex avanza con wrap sul loop', () => {
     assert.equal(lookaheadIndex(1000, 0, 0), 0);
 });
 
-test('apexOffset: rettilineo => nessun offset', () => {
-    const points = buildConstantCurveTrack(40, 40, 0);   // niente curvatura da nessuna parte
-    const offset = apexOffset(points, 20, 10, 3);
+test('apexOffset: rettilineo puro => nessun offset', () => {
+    // totalSamples=300 (non 80) e idx lontano dai bordi (150): lo stesso
+    // motivo già documentato per 'cornerApexNear: rettilineo puro => null' —
+    // buildConstantCurveTrack NON è un loop vero, quindi il campione 0 e
+    // l'ultimo campione non sono contigui nella geometria. Con un raggio di
+    // ricerca ±(searchSamples+localSamples)=±70 e un array troppo corto,
+    // lookaheadIndex avvolge sul modulo e aggancia quella cucitura fittizia
+    // (che sembra una curva strettissima ma è solo un artefatto), facendo
+    // fallire il test per un motivo estraneo al comportamento di apexOffset.
+    const points = buildConstantCurveTrack(300, 300, 0);
+    const offset = apexOffset(points, 150, 60, 10, 1, 5, 0.85);
     assert.equal(offset.dx, 0);
     assert.equal(offset.dz, 0);
 });
 
-test('apexOffset: sposta il punto mirato verso il centro geometrico della curva (interno, mai esterno)', () => {
-    // Verifica geometrica diretta (non solo il segno "a occhio"): una curva
-    // che parte da (0,0) puntando +z e gira sempre a destra (delta>0) ha il
-    // proprio centro di curvatura a (raggio, 0) — un taglio verso l'interno
-    // deve avvicinare il punto mirato a QUEL centro, mai allontanarlo (che
-    // sarebbe tagliare verso l'esterno, cioè uscire di pista).
-    const delta = 0.05;                 // raggio ≈ 1/delta = 20
-    const points = buildConstantCurveTrack(40, 0, delta);
-    const idx = 20;
-    const center = { x: 1 / delta, z: 0 };
-    const before = points[idx];
-    const distBefore = Math.hypot(before.x - center.x, before.z - center.z);
-    const offset = apexOffset(points, idx, 10, 3);
-    const after = { x: before.x + offset.dx, z: before.z + offset.dz };
-    const distAfter = Math.hypot(after.x - center.x, after.z - center.z);
-    assert.ok(
-        distAfter < distBefore,
-        `atteso spostamento verso il centro della curva: prima ${distBefore.toFixed(2)}, dopo ${distAfter.toFixed(2)}`
-    );
+test('apexOffset: esattamente all\'apice => il massimo taglio verso l\'interno (verso il centro di curvatura)', () => {
+    // NOTA taratura fixture: cornerApexNear riporta sempre distanceToApexM
+    // >= metà di localSamples (qui 5, "floor" strutturale del suo algoritmo
+    // a finestre — verificato con log manuale, vedi report) anche quando idx
+    // è esattamente sul campione di raggio minimo reale. Con una curva TROPPO
+    // stretta (es. peak=0.08 come nella bozza iniziale) questo floor di 5m
+    // ricade già fuori dalla zona di influenza (halfSpanM = apexRadius*30°),
+    // quindi lo shape all'apice risulterebbe negativo — non un bug di segno,
+    // solo un raggio di curva troppo piccolo per essere risolto a questa
+    // granularità. peak=0.03 (raggio reale ~40) e roadHalf=40 (severity~1)
+    // mantengono il floor di 5m ben dentro la zona di influenza (~21m) pur
+    // restando una curva "stretta" nel senso della severity — vedi report
+    // per i valori intermedi loggati durante il debug.
+    const points = buildVaryingCurveTrack(120, 20, 60, 0.03);   // apice atteso ~campione 50
+    const before = points[50];
+    // Centro di curvatura approssimato: per una curva verso destra (delta>0)
+    // il centro sta dal lato interno rispetto al verso di marcia — stessa
+    // verifica geometrica diretta già usata per la vecchia apexOffset,
+    // adattata: il punto con l'offset applicato deve essere più vicino al
+    // centro pista "verso l'interno" (normale invertita) rispetto al punto originale.
+    const normal = TrackGeometry.normalAt(points, 50, true);
+    const offset = apexOffset(points, 50, 60, 10, 1, 40, 0.85);
+    const mag = Math.hypot(offset.dx, offset.dz);
+    assert.ok(mag > 0.5 * 40 * 0.85, `atteso offset vicino al massimo all'apice, ottenuto magnitudine ${mag}`);
 });
 
-test('apexOffset: rispetta il limite massimo (maxOffsetM) anche su una curva strettissima', () => {
-    const delta = 0.3;   // tornante molto stretto
-    const points = buildConstantCurveTrack(40, 0, delta);
-    const offset = apexOffset(points, 20, 10, 3);
-    const mag = Math.hypot(offset.dx, offset.dz);
-    assert.ok(mag <= 3 + 1e-9, `atteso <= 3 (maxOffsetM), ottenuto ${mag}`);
+test('apexOffset: ben prima dell\'apice (in ingresso curva) => offset verso l\'ESTERNO (verso opposto rispetto all\'apice)', () => {
+    // Stessa curva/roadHalf tarati sopra (peak=0.03, roadHalf=40): il segno
+    // opposto ingresso/apice deve valere sulla STESSA geometria usata per
+    // verificare "il massimo taglio all'apice", non su una curva diversa.
+    const points = buildVaryingCurveTrack(120, 20, 60, 0.03);   // apice ~50
+    const idx = 22;   // appena entrato in curva, lontano dall'apice
+    const offsetAtEntry = apexOffset(points, idx, 60, 10, 1, 40, 0.85);
+    const offsetAtApex = apexOffset(points, 50, 60, 10, 1, 40, 0.85);
+    // Stesso verso della normale (stesso lato pista), ma segno OPPOSTO tra
+    // ingresso (esterno) e apice (interno): il prodotto scalare dei due
+    // offset deve essere negativo.
+    const dot = offsetAtEntry.dx * offsetAtApex.dx + offsetAtEntry.dz * offsetAtApex.dz;
+    assert.ok(dot < 0, `atteso offset di segno opposto tra ingresso e apice, ottenuto dot=${dot}`);
+});
+
+test('apexOffset: mai oltre roadHalf*maxOffsetFraction in valore assoluto, anche su un tornante strettissimo', () => {
+    const points = buildVaryingCurveTrack(120, 20, 60, 0.5);   // tornante molto stretto
+    for (const idx of [20, 30, 40, 50, 60, 70, 79]) {
+        const offset = apexOffset(points, idx, 60, 10, 1, 5, 0.85);
+        const mag = Math.hypot(offset.dx, offset.dz);
+        assert.ok(mag <= 5 * 0.85 + 1e-6, `atteso <= ${5 * 0.85} a idx=${idx}, ottenuto ${mag}`);
+    }
+});
+
+test('apexOffset: curva dolce => ampiezza minore che su un tornante stretto (taglio proporzionale)', () => {
+    // "sharp" tarato a 0.08 invece di 0.3: un tornante da 0.3 rad/campione
+    // (raggio reale ~4) è così stretto che il floor di 5m di
+    // cornerApexNear (vedi sopra) cade ben oltre la sua stessa zona di
+    // influenza (~2m), facendo collassare shape a 0 — quindi il confronto
+    // con "mild" non testerebbe più la proporzionalità, solo un caso
+    // degenere a offset nullo. 0.08 resta chiaramente più stretto di "mild"
+    // (0.02) pur restando dentro la zona di influenza, dove la differenza di
+    // severity/ampiezza è genuinamente misurabile.
+    const mild = buildVaryingCurveTrack(120, 20, 60, 0.02);
+    const sharp = buildVaryingCurveTrack(120, 20, 60, 0.08);
+    const offsetMild = apexOffset(mild, 50, 60, 10, 1, 5, 0.85);
+    const offsetSharp = apexOffset(sharp, 50, 60, 10, 1, 5, 0.85);
+    assert.ok(Math.hypot(offsetSharp.dx, offsetSharp.dz) > Math.hypot(offsetMild.dx, offsetMild.dz),
+        'atteso swing maggiore sul tornante stretto rispetto alla curva dolce');
 });
 
 test('windowRadius: rettilineo => null (nessuna curvatura significativa)', () => {

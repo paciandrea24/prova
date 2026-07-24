@@ -70,36 +70,59 @@ function lookaheadIndex(n, currentIdx, lookaheadSamples) {
 // l'apice: dato che la velocità in curva è proporzionale al raggio (vedi
 // cornerTargetSpeed), seguire sempre il centro costa velocità reale, non
 // solo stile — causa concreta del distacco osservato su piste con curve
-// strette. apexOffset sposta il punto mirato dallo sterzo verso l'INTERNO
-// della curva (mai verso l'esterno: sarebbe uscire di pista, non tagliare),
-// in proporzione a quanto è stretta la curva lì, entro il limite di
-// BOT_APEX_MAX_FRACTION della mezza larghezza pista (mai fino al bordo).
+// strette. apexOffset (sotto) sposta il punto mirato dallo sterzo con un
+// vero andamento fuori-dentro-fuori, entro il limite di BOT_APEX_MAX_FRACTION
+// della mezza larghezza pista (mai fino al bordo).
 // ====================================================
 const BOT_APEX_REF_ANGLE     = Math.PI / 6;   // 30° sulla finestra locale: oltre, taglio già al massimo consentito
 const BOT_APEX_MAX_FRACTION  = 0.85;          // frazione massima della mezza larghezza pista di cui ci si sposta verso l'interno
 
-// Offset {dx,dz} da sommare al punto mirato in idx, verso l'interno della
-// curva locale (stimata confrontando la tangente `halfWindowSamples` prima
-// e dopo idx). {0,0} in rettilineo. Il verso interno/esterno si deduce dal
-// segno della curvatura: se la pista gira verso l'angolo crescente (destra
-// nella convenzione atan2(tx,tz) di questo file), l'interno è dal lato
-// OPPOSTO alla normale di TrackGeometry.normalAt (che punta sempre allo
-// stesso lato fisso, non verso l'interno di una curva specifica).
-function apexOffset(points, idx, halfWindowSamples, maxOffsetM) {
-    const n = points.length;
-    const before = ((idx - halfWindowSamples) % n + n) % n;
-    const after  = lookaheadIndex(n, idx, halfWindowSamples);
-    const t1 = TrackGeometry.tangentAt(points, before, true);
-    const t2 = TrackGeometry.tangentAt(points, after, true);
-    const angle1 = Math.atan2(t1.tx, t1.tz);
-    const angle2 = Math.atan2(t2.tx, t2.tz);
-    const turnSigned = normalizeAngle(angle2 - angle1);
-    if (turnSigned === 0) return { dx: 0, dz: 0 };
-    const severity = Math.min(1, Math.abs(turnSigned) / BOT_APEX_REF_ANGLE);
-    const insideSign = turnSigned > 0 ? -1 : 1;
+// ====================================================
+// TAGLIO CURVE FUORI-DENTRO-FUORI — a differenza della versione precedente
+// (uno scalino: zero in rettilineo, salta a un taglio fisso verso l'interno
+// appena c'è curvatura), l'offset è ora una funzione a S della distanza con
+// segno dall'apice della curva più vicina (vedi cornerApexNear): negativo
+// (verso l'ESTERNO) ben prima e ben dopo l'apice, positivo (verso
+// l'INTERNO) esattamente all'apice — il classico fuori-dentro-fuori di un
+// pilota vero. L'ampiezza è proporzionale a quanto la curva è stretta
+// rispetto alla larghezza pista (severity), non più una frazione fissa
+// uguale per ogni curva — vedi spec
+// docs/superpowers/specs/2026-07-24-f1-bot-cornering-redesign-design.md.
+// ====================================================
+function apexOffset(points, idx, searchSamples, localSamples, metersPerSample, roadHalf, maxOffsetFraction) {
+    const apex = cornerApexNear(points, idx, searchSamples, localSamples, metersPerSample);
+    if (!apex) return { dx: 0, dz: 0 };
+
+    // Zona di influenza fuori-dentro-fuori: più ampia su una curva ampia,
+    // più stretta su un tornante — stessa logica dell'angolo di riferimento
+    // già usato per "severity" nella versione precedente.
+    const halfSpanM = apex.apexRadius * BOT_APEX_REF_ANGLE;
+    const x = Math.max(-1, Math.min(1, apex.distanceToApexM / halfSpanM));
+    let shape;
+    if (Math.abs(apex.distanceToApexM) <= halfSpanM) {
+        shape = Math.cos(x * Math.PI);   // +1 all'apice, -1 ai bordi della zona di influenza
+    } else {
+        // Oltre la zona di influenza: rampa lineare da -1 a 0 su una seconda
+        // finestra della stessa ampiezza — mai restare "allargati"
+        // all'infinito dopo l'uscita o ben prima dell'ingresso.
+        const beyond = (Math.abs(apex.distanceToApexM) - halfSpanM) / halfSpanM;
+        shape = -Math.max(0, 1 - Math.min(1, beyond));
+    }
+
+    const severity = Math.min(1, roadHalf / apex.apexRadius);
+    const mag = shape * severity * maxOffsetFraction * roadHalf;
+
+    // Verso: come nella versione precedente, dal segno della curvatura
+    // all'apice (turnSigned>0 = curva a destra nella convenzione
+    // atan2(tx,tz) di questo file => l'interno è dal lato opposto alla
+    // normale). apexRadius/turnSigned non sono nello stesso oggetto:
+    // recupera il segno con una windowRadius alla posizione dell'apice.
+    const apexNext = lookaheadIndex(points.length, apex.apexIdx, Math.max(1, Math.floor(localSamples / 2)));
+    const w = windowRadius(points, apex.apexIdx, apexNext, localSamples * metersPerSample);
+    const insideSign = (w && w.turnSigned > 0) ? -1 : 1;
+
     const normal = TrackGeometry.normalAt(points, idx, true);
-    const mag = severity * maxOffsetM * insideSign;
-    return { dx: normal.nx * mag, dz: normal.nz * mag };
+    return { dx: normal.nx * mag * insideSign, dz: normal.nz * mag * insideSign };
 }
 
 // ====================================================
@@ -510,16 +533,24 @@ function updateBotInputs(game, deps) {
             const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
             const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
             const target = track.points[targetIdx];
-            const apex = apexOffset(track.points, targetIdx, localSamples, track.roadHalf * tuning.apexMaxFraction);
-            steer = steerToward(p.x, p.z, p.angle, target.x + apex.dx, target.z + apex.dz);
 
             // Distanza di scansione = il caso peggiore possibile: da tutto
             // gas a quasi fermo con la vera decelerazione di frenata del
             // gioco — oltre questa distanza nessuna curva può comunque
             // imporre di frenare adesso, quindi non serve cercare più
             // lontano (niente "quanti secondi di anticipo" indovinati).
+            // Calcolata QUI (prima di apexOffset, non più dopo): apexOffset
+            // ora ha bisogno dello stesso raggio di ricerca di
+            // cornerTargetSpeed per trovare l'apice della curva più vicina.
             const scanM = (maxSpeed * maxSpeed) / (2 * brakeDecel) * tuning.brakingDistanceMargin;
             const scanSamples = metersToSamples(scanM, track);
+
+            // apexOffset riusa scanSamples come raggio di ricerca dell'apice
+            // (stesso ordine di grandezza della distanza di frenata: copre
+            // una curva tipica senza agganciare tornanti troppo lontani) —
+            // niente calcolo duplicato, un solo raggio di ricerca condiviso.
+            const apex = apexOffset(track.points, targetIdx, scanSamples, localSamples, metersPerSample, track.roadHalf, tuning.apexMaxFraction);
+            steer = steerToward(p.x, p.z, p.angle, target.x + apex.dx, target.z + apex.dz);
 
             let targetSpeed = cornerTargetSpeed(
                 track.points, p.trackIndex || 0, scanSamples, localSamples, metersPerSample,
