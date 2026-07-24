@@ -112,6 +112,20 @@ function slowestPoints(telemetry, track, count) {
 // Margini rilassati al limite: quanto tempo si guadagna solo togliendo la
 // prudenza (a parità di algoritmo/traiettoria) — vedi la spec per perché non
 // è un tempo-limite teorico assoluto, solo un confronto "prudenza vs resto".
+//
+// ATTENZIONE (scoperta investigando un DNF su monte-rosso, 2026-07-24):
+// apexMaxFraction=1.0 da solo può bloccare il bot su curve abbastanza
+// strette (isolato con test diretti: cornerSpeedMargin/brakingDistanceMargin
+// rilassati da soli sono innocui su tutte le piste, solo apexMaxFraction=1.0
+// causa il blocco). Tagliare fino al 100% della mezza larghezza pista può
+// spostare il punto mirato oltre la geometria reale della curva più stretta,
+// producendo un'oscillazione di sterzo che non si risolve mai (indice pista
+// congelato, velocità che oscilla senza mai avanzare). Il tetto di 0.85
+// usato in partita non è solo prudenza: previene anche questo overshoot
+// geometrico. Chi usa questo preset su una pista nuova deve aspettarsi
+// possibili "NON completato" — non è un bug del simulatore, è un limite
+// reale dell'algoritmo di taglio curva su certe geometrie (vedi
+// docs/superpowers/plans/2026-07-24-f1-bot-lap-simulator.md).
 const ZERO_MARGIN_TUNING = { cornerSpeedMargin: 1.0, apexMaxFraction: 1.0, brakingDistanceMargin: 1.0 };
 
 function parseArgs(argv) {
