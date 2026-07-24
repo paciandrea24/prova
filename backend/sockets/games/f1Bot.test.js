@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 const {
     PALETTE, normalizeAngle, steerToward, lookaheadIndex, apexOffset,
     cornerTargetSpeed, overtakeOffset, nearestAheadPlayer,
-    pickPostPitCompound, pickBotColors, estimateFinishTime
+    pickPostPitCompound, pickBotColors, estimateFinishTime,
+    updateBotInputs, DEFAULT_TUNING
 } = require('./f1Bot.js');
 
 // Costruisce un tracciato sintetico con curvatura costante e controllata:
@@ -228,4 +229,52 @@ test('nearestAheadPlayer: nessun altro giocatore valido => null', () => {
     const finished = { trackIndex: 10, finished: true, pitting: false, pitAutoState: null };
     const track = mockTrack(1000, 1000);
     assert.equal(nearestAheadPlayer(p, [p, finished], track), null);
+});
+
+test('DEFAULT_TUNING espone i tre margini con i valori attuali', () => {
+    assert.equal(DEFAULT_TUNING.cornerSpeedMargin, 0.99);
+    assert.equal(DEFAULT_TUNING.apexMaxFraction, 0.85);
+    assert.equal(DEFAULT_TUNING.brakingDistanceMargin, 1.2);
+});
+
+test('updateBotInputs: deps.tuning.apexMaxFraction sovrascrive il default e cambia lo sterzo in curva', () => {
+    // Curva costante che parte dal campione 50 (raggio ~20, delta=0.05/campione,
+    // passo unitario => metersPerSample=1, stesse assunzioni delle altre unit
+    // test di questo file).
+    const points = buildConstantCurveTrack(200, 50, 0.05);
+    const track = { points, lapLength: 200, roadHalf: 5 };
+    const deps = {
+        effectiveMaxSpeed: () => 6,
+        handlePitReactionPress: () => {},
+        io: { to: () => ({ emit: () => {} }) },
+        lobbyId: 'test',
+        wearLapsAtMedium: 5,
+        accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052
+    };
+
+    function makePlayer() {
+        return {
+            x: points[50].x, z: points[50].z, angle: 0,
+            speed: 0, vx: 0, vz: 0,
+            inputs: { throttle: 0, brake: 0, steer: 0 },
+            finished: false, lap: 0, botLapSeen: 0,
+            trackIndex: 50, tyreWear: 0, compound: 'medium',
+            pitting: false, pitAutoState: null, pitPhase: null,
+            isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+            botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false
+        };
+    }
+
+    const pFlat = makePlayer();
+    updateBotInputs({ track, phase: 'qualifying', players: { A: pFlat } },
+        { ...deps, tuning: { apexMaxFraction: 0 } });
+
+    const pFull = makePlayer();
+    updateBotInputs({ track, phase: 'qualifying', players: { A: pFull } },
+        { ...deps, tuning: { apexMaxFraction: 1 } });
+
+    assert.ok(
+        Math.abs(pFlat.inputs.steer - pFull.inputs.steer) > 1e-6,
+        `atteso sterzo diverso tra apexMaxFraction=0 (${pFlat.inputs.steer}) e =1 (${pFull.inputs.steer})`
+    );
 });

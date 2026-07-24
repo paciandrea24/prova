@@ -372,11 +372,24 @@ function botSpeedMs(speed) {
     return Math.abs(speed) * 55 / 3.6;
 }
 
+// Margini di taratura resi configurabili (invece di sole costanti di modulo)
+// per poter confrontare, da uno strumento esterno (vedi
+// backend/tools/f1LapSimulator.js), "margini di oggi" vs "margini rilassati"
+// sulla stessa pista senza editare questo file. Il call site in
+// f1GameSocket.js non passa mai `deps.tuning`, quindi il comportamento in
+// partita resta identico a prima di questo cambiamento.
+const DEFAULT_TUNING = {
+    cornerSpeedMargin:     BOT_CORNER_SPEED_MARGIN,
+    apexMaxFraction:       BOT_APEX_MAX_FRACTION,
+    brakingDistanceMargin: BOT_BRAKING_DISTANCE_MARGIN
+};
+
 function updateBotInputs(game, deps) {
     const {
         effectiveMaxSpeed, handlePitReactionPress, io, lobbyId, wearLapsAtMedium,
-        accel, brakeMult, turnRateHigh
+        accel, brakeMult, turnRateHigh, tuning: tuningOverrides
     } = deps;
+    const tuning = { ...DEFAULT_TUNING, ...(tuningOverrides || {}) };
     const track = game.track;
     const isQuali = game.phase === 'qualifying';
     const metersPerSample = track.lapLength / track.points.length;
@@ -433,7 +446,7 @@ function updateBotInputs(game, deps) {
             const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
             const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
             const target = track.points[targetIdx];
-            const apex = apexOffset(track.points, targetIdx, localSamples, track.roadHalf * BOT_APEX_MAX_FRACTION);
+            const apex = apexOffset(track.points, targetIdx, localSamples, track.roadHalf * tuning.apexMaxFraction);
             steer = steerToward(p.x, p.z, p.angle, target.x + apex.dx, target.z + apex.dz);
 
             // Distanza di scansione = il caso peggiore possibile: da tutto
@@ -441,12 +454,12 @@ function updateBotInputs(game, deps) {
             // gioco — oltre questa distanza nessuna curva può comunque
             // imporre di frenare adesso, quindi non serve cercare più
             // lontano (niente "quanti secondi di anticipo" indovinati).
-            const scanM = (maxSpeed * maxSpeed) / (2 * brakeDecel) * BOT_BRAKING_DISTANCE_MARGIN;
+            const scanM = (maxSpeed * maxSpeed) / (2 * brakeDecel) * tuning.brakingDistanceMargin;
             const scanSamples = metersToSamples(scanM, track);
 
             let targetSpeed = cornerTargetSpeed(
                 track.points, p.trackIndex || 0, scanSamples, localSamples, metersPerSample,
-                p.speed, maxSpeed, brakeDecel, turnRateHigh, BOT_CORNER_SPEED_MARGIN
+                p.speed, maxSpeed, brakeDecel, turnRateHigh, tuning.cornerSpeedMargin
             ) * p.botSpeedFactor * p.botLapPaceMult;
 
             // Solo in gara: in qualifica ogni pilota corre isolato (un vero
@@ -466,7 +479,7 @@ function updateBotInputs(game, deps) {
                     // taglio (apex): niente sorpasso lì, solo su rettilinei
                     // o curve dolci (stessa logica di un pilota vero).
                     const apexMag = Math.hypot(apex.dx, apex.dz);
-                    const cornerIsMild = apexMag < track.roadHalf * BOT_APEX_MAX_FRACTION * BOT_OVERTAKE_MAX_CORNER_SEVERITY;
+                    const cornerIsMild = apexMag < track.roadHalf * tuning.apexMaxFraction * BOT_OVERTAKE_MAX_CORNER_SEVERITY;
                     if (cornerIsMild && targetSpeed > ahead.player.speed * BOT_OVERTAKE_PACE_MARGIN) {
                         const overtake = overtakeOffset(
                             track.points, ahead.player.trackIndex || 0, ahead.player.x, ahead.player.z,
@@ -492,7 +505,7 @@ function updateBotInputs(game, deps) {
 }
 
 module.exports = {
-    PALETTE, MAX_GRID_SIZE,
+    PALETTE, MAX_GRID_SIZE, DEFAULT_TUNING,
     normalizeAngle, steerToward, lookaheadIndex, apexOffset, cornerTargetSpeed, overtakeOffset,
     nearestAheadPlayer, pickPostPitCompound, pickBotColors, estimateFinishTime,
     createBots, updateBotInputs
