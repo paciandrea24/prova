@@ -114,17 +114,31 @@ function slowestPoints(telemetry, track, count) {
 // è un tempo-limite teorico assoluto, solo un confronto "prudenza vs resto".
 //
 // ATTENZIONE (scoperta investigando un DNF su monte-rosso, 2026-07-24):
-// apexMaxFraction=1.0 da solo può bloccare il bot su curve abbastanza
-// strette (isolato con test diretti: cornerSpeedMargin/brakingDistanceMargin
-// rilassati da soli sono innocui su tutte le piste, solo apexMaxFraction=1.0
-// causa il blocco). Tagliare fino al 100% della mezza larghezza pista può
-// spostare il punto mirato oltre la geometria reale della curva più stretta,
-// producendo un'oscillazione di sterzo che non si risolve mai (indice pista
-// congelato, velocità che oscilla senza mai avanzare). Il tetto di 0.85
-// usato in partita non è solo prudenza: previene anche questo overshoot
-// geometrico. Chi usa questo preset su una pista nuova deve aspettarsi
-// possibili "NON completato" — non è un bug del simulatore, è un limite
-// reale dell'algoritmo di taglio curva su certe geometrie (vedi
+// NON è garantito che questo preset sia sempre uguale o più veloce del
+// default — isolando i tre margini uno alla volta su tutte e 6 le piste:
+//
+// - cornerSpeedMargin=1.0 e brakingDistanceMargin=1.0, presi da soli, non
+//   causano mai un blocco, ma su test-bot cornerSpeedMargin=1.0 da solo è
+//   PIÙ LENTO del default (33100ms vs 32250ms): entrare in curva alla
+//   velocità geometrica esatta (senza il margine che compensa lo scarto tra
+//   raggio geometrico e raggio realmente percorso, vedi BOT_CORNER_SPEED_MARGIN
+//   in f1Bot.js) può far allargare l'auto quel tanto che basta da costare più
+//   tempo in correzione di quanto se ne guadagni in ingresso.
+// - apexMaxFraction=1.0 da solo blocca il bot su monte-rosso (nessun altro
+//   caso di blocco trovato sulle 6 piste attuali): tagliare fino al 100%
+//   della mezza larghezza pista può spostare il punto mirato oltre la
+//   geometria reale di una curva abbastanza stretta, producendo
+//   un'oscillazione di sterzo che non si risolve mai (indice pista
+//   congelato, velocità che oscilla senza mai avanzare). Il tetto di 0.85
+//   usato in partita non è solo prudenza: previene anche questo overshoot
+//   geometrico.
+// - la combinazione di tutti e tre (questo preset) è più lenta del default
+//   anche su test-bot (32700ms vs 32250ms), pur senza bloccarsi.
+//
+// Chi usa questo preset su una pista nuova deve aspettarsi sia "NON
+// completato" sia tempi peggiori del default, non solo tempi uguali o
+// migliori — non è un bug del simulatore, è un limite reale dell'algoritmo
+// di taglio curva/margine su certe geometrie (vedi
 // docs/superpowers/plans/2026-07-24-f1-bot-lap-simulator.md).
 const ZERO_MARGIN_TUNING = { cornerSpeedMargin: 1.0, apexMaxFraction: 1.0, brakingDistanceMargin: 1.0 };
 
