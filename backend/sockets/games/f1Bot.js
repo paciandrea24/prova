@@ -102,6 +102,23 @@ function apexOffset(points, idx, halfWindowSamples, maxOffsetM) {
     return { dx: normal.nx * mag, dz: normal.nz * mag };
 }
 
+// ====================================================
+// RAGGIO IN UNA FINESTRA — helper puro condiviso: la stessa formula
+// arco/angolo era duplicata identica in apexOffset e cornerTargetSpeed;
+// estratta qui perché cornerApexNear (vedi sotto) e cornerTargetSpeed devono
+// misurare la curvatura nello stesso identico modo — sterzo e freno non
+// devono mai vedere due stime diverse della stessa curva.
+// ====================================================
+function windowRadius(points, i1, i2, localArcM) {
+    const t1 = TrackGeometry.tangentAt(points, i1, true);
+    const t2 = TrackGeometry.tangentAt(points, i2, true);
+    const angle1 = Math.atan2(t1.tx, t1.tz);
+    const angle2 = Math.atan2(t2.tx, t2.tz);
+    const turnSigned = normalizeAngle(angle2 - angle1);
+    if (Math.abs(turnSigned) < 1e-4) return null;   // praticamente dritto
+    return { radius: localArcM / Math.abs(turnSigned), turnSigned };
+}
+
 // Velocità bersaglio "fisica": resta al massimo (maxSpeed) finché nessuna
 // curva nel raggio di scansione impone ancora di iniziare a frenare;
 // scende alla velocità massima percorribile dalla curva più vincolante non
@@ -126,14 +143,9 @@ function cornerTargetSpeed(points, idx, scanSamples, localSamples, metersPerSamp
     for (let offset = 0; offset <= scanSamples; offset += step) {
         const i1 = lookaheadIndex(n, idx, offset);
         const i2 = lookaheadIndex(n, idx, offset + localSamples);
-        const t1 = TrackGeometry.tangentAt(points, i1, true);
-        const t2 = TrackGeometry.tangentAt(points, i2, true);
-        const angle1 = Math.atan2(t1.tx, t1.tz);
-        const angle2 = Math.atan2(t2.tx, t2.tz);
-        const turn = Math.abs(normalizeAngle(angle2 - angle1));
-        if (turn < 1e-4) continue;   // praticamente dritto, nessun raggio significativo da questa finestra
-        const radius = localArcM / turn;   // arco/angolo ≈ raggio per curvatura ~costante nella finestra
-        const cornerSpeed = Math.min(maxSpeed, radius * turnRateAtMax * marginFactor);
+        const w = windowRadius(points, i1, i2, localArcM);
+        if (!w) continue;   // praticamente dritto, nessun raggio significativo da questa finestra
+        const cornerSpeed = Math.min(maxSpeed, w.radius * turnRateAtMax * marginFactor);
         if (cornerSpeed >= currentSpeed) continue;   // già più lenti del necessario per questa curva
         const distanceM = offset * metersPerSample;
         const neededBrakingM = (currentSpeed * currentSpeed - cornerSpeed * cornerSpeed) / (2 * brakeDecel);
@@ -506,7 +518,7 @@ function updateBotInputs(game, deps) {
 
 module.exports = {
     PALETTE, MAX_GRID_SIZE, DEFAULT_TUNING,
-    normalizeAngle, steerToward, lookaheadIndex, apexOffset, cornerTargetSpeed, overtakeOffset,
+    normalizeAngle, steerToward, lookaheadIndex, apexOffset, windowRadius, cornerTargetSpeed, overtakeOffset,
     nearestAheadPlayer, pickPostPitCompound, pickBotColors, estimateFinishTime,
     createBots, updateBotInputs
 };

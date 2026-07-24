@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
     PALETTE, normalizeAngle, steerToward, lookaheadIndex, apexOffset,
-    cornerTargetSpeed, overtakeOffset, nearestAheadPlayer,
+    cornerTargetSpeed, windowRadius, overtakeOffset, nearestAheadPlayer,
     pickPostPitCompound, pickBotColors, estimateFinishTime,
     updateBotInputs, DEFAULT_TUNING
 } = require('./f1Bot.js');
@@ -96,6 +96,21 @@ test('apexOffset: rispetta il limite massimo (maxOffsetM) anche su una curva str
     const offset = apexOffset(points, 20, 10, 3);
     const mag = Math.hypot(offset.dx, offset.dz);
     assert.ok(mag <= 3 + 1e-9, `atteso <= 3 (maxOffsetM), ottenuto ${mag}`);
+});
+
+test('windowRadius: rettilineo => null (nessuna curvatura significativa)', () => {
+    const points = buildConstantCurveTrack(40, 40, 0);
+    const w = windowRadius(points, 5, 15, 10);
+    assert.equal(w, null);
+});
+
+test('windowRadius: curva a raggio noto => raggio coerente con arco/angolo', () => {
+    const delta = 0.05;   // raggio geometrico atteso ≈ 1/delta = 20
+    const points = buildConstantCurveTrack(60, 0, delta);
+    const w = windowRadius(points, 10, 20, 10);   // arco locale = 10 unità (passo unitario nel builder)
+    assert.ok(w !== null);
+    assert.ok(Math.abs(w.radius - 20) < 1, `atteso raggio ~20, ottenuto ${w.radius}`);
+    assert.ok(w.turnSigned > 0, 'curva verso destra (delta>0) => turnSigned positivo, come già verificato per apexOffset');
 });
 
 // Su un rettilineo lungo +z (buildConstantCurveTrack senza curvatura), la
