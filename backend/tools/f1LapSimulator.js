@@ -6,8 +6,11 @@
 // docs/superpowers/specs/2026-07-24-f1-bot-lap-simulator-design.md), per
 // misurare il tempo sul giro di un bot su qualunque pista senza bisogno di
 // un browser.
+const path = require('path');
+const fs = require('fs');
 const { physics } = require('../sockets/games/f1GameSocket.js');
 const { updateBotInputs } = require('../sockets/games/f1Bot.js');
+const { loadTrack, listTracks } = require('../sockets/games/trackLoader.js');
 
 function makeSimPlayer(track, opts) {
     return {
@@ -106,4 +109,75 @@ function slowestPoints(telemetry, track, count) {
     return result;
 }
 
-module.exports = { simulateLap, slowestPoints };
+// Margini rilassati al limite: quanto tempo si guadagna solo togliendo la
+// prudenza (a parità di algoritmo/traiettoria) — vedi la spec per perché non
+// è un tempo-limite teorico assoluto, solo un confronto "prudenza vs resto".
+const ZERO_MARGIN_TUNING = { cornerSpeedMargin: 1.0, apexMaxFraction: 1.0, brakingDistanceMargin: 1.0 };
+
+function parseArgs(argv) {
+    const args = {
+        trackId: null, allTracks: false, preset: 'default',
+        speedFactor: 1, paceMult: 1, precisionNoise: 0,
+        safetyCapS: 60, slowestCount: 5
+    };
+    for (const arg of argv) {
+        if (arg === '--all-tracks') args.allTracks = true;
+        else if (arg.startsWith('--preset=')) args.preset = arg.slice('--preset='.length);
+        else if (arg.startsWith('--speed-factor=')) args.speedFactor = Number(arg.slice('--speed-factor='.length));
+        else if (arg.startsWith('--pace-mult=')) args.paceMult = Number(arg.slice('--pace-mult='.length));
+        else if (arg.startsWith('--precision-noise=')) args.precisionNoise = Number(arg.slice('--precision-noise='.length));
+        else if (arg.startsWith('--safety-cap=')) args.safetyCapS = Number(arg.slice('--safety-cap='.length));
+        else if (!arg.startsWith('--')) args.trackId = arg;
+    }
+    return args;
+}
+
+function runOne(trackId, args) {
+    const track = loadTrack(trackId);
+    const tuning = args.preset === 'zero-margin' ? ZERO_MARGIN_TUNING : undefined;
+    const result = simulateLap(track, {
+        speedFactor: args.speedFactor, paceMult: args.paceMult, precisionNoise: args.precisionNoise,
+        safetyCapS: args.safetyCapS, tuning
+    });
+    return { trackId, track, ...result };
+}
+
+function main() {
+    const args = parseArgs(process.argv.slice(2));
+
+    if (args.allTracks) {
+        const rows = listTracks().map(t => runOne(t.id, args));
+        console.log('Pista'.padEnd(16), 'Tempo(ms)'.padEnd(10), 'Finito'.padEnd(7), 'Curva peggiore');
+        for (const r of rows) {
+            const worst = r.finished ? slowestPoints(r.telemetry, r.track, 1)[0] : null;
+            const worstStr = worst ? `${worst.pctLap}% giro @ ${worst.speedKmh}km/h` : '-';
+            console.log(r.trackId.padEnd(16), String(r.timeMs ?? '-').padEnd(10), (r.finished ? 'si' : 'NO').padEnd(7), worstStr);
+        }
+        return;
+    }
+
+    if (!args.trackId) {
+        console.error('Uso: node backend/tools/f1LapSimulator.js <trackId> [--preset=zero-margin] [--all-tracks] [--speed-factor=N] [--pace-mult=N] [--precision-noise=N] [--safety-cap=SECONDI]');
+        process.exitCode = 1;
+        return;
+    }
+
+    const r = runOne(args.trackId, args);
+    if (!r.finished) {
+        console.log(`${args.trackId}: NON completato entro ${args.safetyCapS}s simulati`);
+        return;
+    }
+    console.log(`${args.trackId}: giro completato in ${r.timeMs}ms (${(r.timeMs / 1000).toFixed(2)}s)`);
+    console.log('Curve piu lente:');
+    for (const s of slowestPoints(r.telemetry, r.track, args.slowestCount)) {
+        console.log(`  ${s.pctLap}% giro: ${s.speedKmh} km/h`);
+    }
+
+    const outFile = path.join(__dirname, `${args.trackId}-telemetry.json`);
+    fs.writeFileSync(outFile, JSON.stringify(r.telemetry, null, 2));
+    console.log(`Telemetria completa scritta in ${outFile}`);
+}
+
+if (require.main === module) main();
+
+module.exports = { simulateLap, slowestPoints, parseArgs };

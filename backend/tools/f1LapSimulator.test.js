@@ -37,3 +37,22 @@ test('slowestPoints: ritorna al massimo `count` voci, ordinate dalla più lenta'
     assert.equal(result[0].speedKmh, '50.0');
     assert.equal(result[1].speedKmh, '80.0');
 });
+
+const { parseArgs } = require('./f1LapSimulator.js');
+
+test('parseArgs: valori di default quando non si passa nulla', () => {
+    const args = parseArgs([]);
+    assert.equal(args.trackId, null);
+    assert.equal(args.allTracks, false);
+    assert.equal(args.preset, 'default');
+    assert.equal(args.speedFactor, 1);
+    assert.equal(args.safetyCapS, 60);
+});
+
+test('parseArgs: trackId posizionale + flag --all-tracks/--preset/--speed-factor', () => {
+    const args = parseArgs(['monza', '--all-tracks', '--preset=zero-margin', '--speed-factor=0.9']);
+    assert.equal(args.trackId, 'monza');
+    assert.equal(args.allTracks, true);
+    assert.equal(args.preset, 'zero-margin');
+    assert.equal(args.speedFactor, 0.9);
+});
