@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
     PALETTE, normalizeAngle, steerToward, lookaheadIndex, apexOffset,
-    cornerTargetSpeed, windowRadius, overtakeOffset, nearestAheadPlayer,
+    cornerTargetSpeed, windowRadius, cornerApexNear, overtakeOffset, nearestAheadPlayer,
     pickPostPitCompound, pickBotColors, estimateFinishTime,
     updateBotInputs, DEFAULT_TUNING
 } = require('./f1Bot.js');
@@ -20,6 +20,32 @@ function buildConstantCurveTrack(totalSamples, straightSamples, deltaAnglePerSam
     for (let i = 0; i < totalSamples; i++) {
         pts.push({ x, z });
         const delta = i < straightSamples ? 0 : deltaAnglePerSample;
+        heading += delta;
+        x += Math.sin(heading);
+        z += Math.cos(heading);
+    }
+    return pts;
+}
+
+// Curva che stringe (curvatura crescente) fino a un picco a metà della zona
+// di curva, poi allarga di nuovo (curvatura decrescente) — a differenza di
+// buildConstantCurveTrack (raggio costante, nessun apice ben definito), qui
+// il raggio ha un vero minimo a metà curva: serve per testare che
+// cornerApexNear trovi il minimo locale corretto, non un punto qualunque
+// dentro la curva.
+function buildVaryingCurveTrack(totalSamples, straightSamples, curveSamples, peakDeltaAnglePerSample) {
+    const pts = [];
+    let x = 0, z = 0, heading = 0;
+    const half = curveSamples / 2;
+    for (let i = 0; i < totalSamples; i++) {
+        pts.push({ x, z });
+        let delta = 0;
+        if (i >= straightSamples && i < straightSamples + curveSamples) {
+            const k = i - straightSamples;
+            // Triangolo: 0 → peak (prima metà), peak → 0 (seconda metà)
+            const t = k < half ? k / half : (curveSamples - k) / half;
+            delta = peakDeltaAnglePerSample * t;
+        }
         heading += delta;
         x += Math.sin(heading);
         z += Math.cos(heading);
@@ -111,6 +137,56 @@ test('windowRadius: curva a raggio noto => raggio coerente con arco/angolo', () 
     assert.ok(w !== null);
     assert.ok(Math.abs(w.radius - 20) < 1, `atteso raggio ~20, ottenuto ${w.radius}`);
     assert.ok(w.turnSigned > 0, 'curva verso destra (delta>0) => turnSigned positivo, come già verificato per apexOffset');
+});
+
+test('cornerApexNear: rettilineo puro => null', () => {
+    // lookaheadIndex chiude sempre l'array modulo n (corretto per un
+    // tracciato vero, che è un loop chiuso) — ma questo rettilineo sintetico
+    // NON è un loop: il punto 0 e l'ultimo punto dell'array sono vicini solo
+    // nell'indice, non nella geometria. idx=100 su un array di 200 tiene il
+    // raggio di ricerca (± searchSamples+localSamples = ±50) lontano da
+    // entrambi i bordi, evitando di agganciare per sbaglio quella cucitura
+    // fittizia (che sembrerebbe una curva strettissima ma è solo un
+    // artefatto del fixture).
+    const points = buildConstantCurveTrack(200, 200, 0);
+    const apex = cornerApexNear(points, 100, 40, 10, 1);
+    assert.equal(apex, null);
+});
+
+test('cornerApexNear: curva che stringe e riallarga => trova il punto di raggio minimo a metà curva', () => {
+    const points = buildVaryingCurveTrack(120, 20, 60, 0.08);   // curva da campione 20 a 80, picco a 50
+    const idx = 30;   // dentro la curva, prima del picco
+    const apex = cornerApexNear(points, idx, 60, 10, 1);
+    assert.ok(apex !== null);
+    assert.ok(Math.abs(apex.apexIdx - 50) <= 6, `atteso apice vicino al campione 50, ottenuto ${apex.apexIdx}`);
+    assert.ok(apex.distanceToApexM > 0, 'apice davanti a idx=30 => distanza positiva');
+});
+
+test('cornerApexNear: chicane (due curve ravvicinate) => trova la curva PIÙ VICINA, non la più stretta', () => {
+    // Prima curva (campioni 20-50, picco 35): raggio moderato.
+    // Seconda curva (campioni 70-100, picco 85), molto più stretta.
+    const pts = [];
+    let x = 0, z = 0, heading = 0;
+    for (let i = 0; i < 150; i++) {
+        pts.push({ x, z });
+        let delta = 0;
+        if (i >= 20 && i < 50) {
+            const k = i - 20, half = 15;
+            const t = k < half ? k / half : (30 - k) / half;
+            delta = 0.04 * t;   // curva dolce
+        } else if (i >= 70 && i < 100) {
+            const k = i - 70, half = 15;
+            const t = k < half ? k / half : (30 - k) / half;
+            delta = -0.15 * t;   // curva molto più stretta, segno opposto
+        }
+        heading += delta;
+        x += Math.sin(heading);
+        z += Math.cos(heading);
+    }
+    const idx = 25;   // dentro la PRIMA curva (dolce), lontano dalla seconda (stretta)
+    const apex = cornerApexNear(pts, idx, 60, 10, 1);
+    assert.ok(apex !== null);
+    assert.ok(apex.apexIdx < 60, `atteso apice della prima curva (~35), ottenuto ${apex.apexIdx} — se vicino a 85 ha sbagliato curva`);
 });
 
 // Su un rettilineo lungo +z (buildConstantCurveTrack senza curvatura), la

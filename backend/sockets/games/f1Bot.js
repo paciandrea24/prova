@@ -119,6 +119,58 @@ function windowRadius(points, i1, i2, localArcM) {
     return { radius: localArcM / Math.abs(turnSigned), turnSigned };
 }
 
+// ====================================================
+// APICE PIÙ VICINO — trova la curva più VICINA a un punto dato (non la più
+// stretta in un orizzonte lungo: una versione che cercasse il raggio minimo
+// assoluto su una distanza ampia rischierebbe di agganciarsi a un tornante
+// lontano invece della curva che il bot sta davvero affrontando ora — vedi
+// spec, caso chicane). Cammina da idx verso la prima finestra con curvatura
+// significativa (in entrambe le direzioni), poi prosegue in quella direzione
+// finché il raggio continua a diminuire: il punto in cui smette di scendere
+// è il minimo locale, cioè l'apice di QUELLA curva.
+// ====================================================
+function cornerApexNear(points, idx, searchSamples, localSamples, metersPerSample) {
+    const n = points.length;
+    const step = Math.max(1, Math.floor(localSamples / 2));
+    const localArcM = localSamples * metersPerSample;
+    const halfLocal = Math.floor(localSamples / 2);
+
+    function windowAt(offsetSamples) {
+        const i1 = lookaheadIndex(n, idx, offsetSamples);
+        const i2 = lookaheadIndex(n, idx, offsetSamples + localSamples);
+        const w = windowRadius(points, i1, i2, localArcM);
+        return w ? w.radius : null;
+    }
+
+    let startOffset = null;
+    let startRadius = null;
+    let direction = 1;
+    for (let d = 0; d <= searchSamples; d += step) {
+        const fwd = windowAt(d);
+        if (fwd !== null) { startOffset = d; startRadius = fwd; direction = 1; break; }
+        if (d > 0) {
+            const back = windowAt(-d);
+            if (back !== null) { startOffset = -d; startRadius = back; direction = -1; break; }
+        }
+    }
+    if (startOffset === null) return null;   // nessuna curvatura significativa nel raggio di ricerca
+
+    let bestOffset = startOffset;
+    let bestRadius = startRadius;
+    let cursor = startOffset;
+    while (true) {
+        const nextOffset = cursor + direction * step;
+        const nextRadius = windowAt(nextOffset);
+        if (nextRadius === null || nextRadius >= bestRadius) break;
+        bestRadius = nextRadius;
+        bestOffset = nextOffset;
+        cursor = nextOffset;
+    }
+
+    const apexIdx = lookaheadIndex(n, idx, bestOffset + halfLocal);
+    return { apexIdx, apexRadius: bestRadius, distanceToApexM: (bestOffset + halfLocal) * metersPerSample };
+}
+
 // Velocità bersaglio "fisica": resta al massimo (maxSpeed) finché nessuna
 // curva nel raggio di scansione impone ancora di iniziare a frenare;
 // scende alla velocità massima percorribile dalla curva più vincolante non
@@ -518,7 +570,7 @@ function updateBotInputs(game, deps) {
 
 module.exports = {
     PALETTE, MAX_GRID_SIZE, DEFAULT_TUNING,
-    normalizeAngle, steerToward, lookaheadIndex, apexOffset, windowRadius, cornerTargetSpeed, overtakeOffset,
+    normalizeAngle, steerToward, lookaheadIndex, apexOffset, windowRadius, cornerApexNear, cornerTargetSpeed, overtakeOffset,
     nearestAheadPlayer, pickPostPitCompound, pickBotColors, estimateFinishTime,
     createBots, updateBotInputs
 };
