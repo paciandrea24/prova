@@ -14,6 +14,46 @@
     let currentTrackPts = null;
     window.followedColor = null;   // usato dal Task 9 per la telecamera
 
+    // Tutti i socket.on(...) sono registrati QUI, prima di qualunque altra
+    // cosa (scena Three.js, audio) che richieda tempo — stesso motivo del
+    // commento in f1.js intorno alla riga 1302 ("SOLO ora è sicuro
+    // chiedere..."): il server emette f1tbTrackList non appena l'handshake
+    // si completa, senza aspettare nessuna richiesta del client. Se questi
+    // listener venissero registrati dopo l'await di engineBuffer più sotto,
+    // ci sarebbe una finestra di race in cui f1tbTrackList arriva prima che
+    // il listener esista e va perso silenziosamente (Socket.IO non bufferizza
+    // eventi passati per i listener aggiunti in ritardo).
+    document.getElementById('f1tb-error').textContent = '';
+    socket.on('f1tbError', ({ error }) => {
+        document.getElementById('f1tb-error').textContent = error;
+    });
+
+    socket.on('f1tbTrackList', (tracks) => {
+        const sel = document.getElementById('f1tb-track');
+        sel.innerHTML = tracks.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+    });
+
+    socket.on('f1StateUpdate', (state) => {
+        for (const [color, data] of Object.entries(state)) {
+            serverState[color] = data;
+            // Guardia combinata: !otherCars[color] da solo resterebbe falsy
+            // per TUTTA la durata del caricamento GLB asincrono (otherCars[color]
+            // viene assegnato solo dentro onReady) — con un tick server ogni
+            // 50ms (PHYSICS_TICK_MS), molto più veloce di un fetch+parse GLB,
+            // questo farebbe ripartire loadCarModel ad ogni tick, accumulando
+            // Group/PositionalAudio duplicati mai rimossi. visualState[color]
+            // viene impostato QUI, in modo sincrono, nello stesso ramo che
+            // avvia il caricamento, così da segnare "caricamento già avviato"
+            // prima che il prossimo f1StateUpdate arrivi — stesso schema di
+            // f1.js:736 (`!otherCars[color] && !visualState[color]`).
+            if (!otherCars[color] && !visualState[color]) {
+                CarLoader.loadCarModel(color, (g) => { otherCars[color] = g; }, { scene, listener, engineBuffer });
+            }
+            if (!visualState[color]) visualState[color] = { x: data.x, z: data.z, angle: data.angle };
+            if (window.followedColor === null) window.followedColor = color;   // segue la prima auto ricevuta di default
+        }
+    });
+
     // ====================================================
     // THREE.JS SETUP — copiato verbatim da frontend/f1.js:26-59
     // ====================================================
@@ -70,27 +110,6 @@
 
     const engineBuffer = await new Promise((resolve, reject) => {
         new THREE.AudioLoader().load('/assets/audio/engine.wav', resolve, undefined, reject);
-    });
-
-    document.getElementById('f1tb-error').textContent = '';
-    socket.on('f1tbError', ({ error }) => {
-        document.getElementById('f1tb-error').textContent = error;
-    });
-
-    socket.on('f1tbTrackList', (tracks) => {
-        const sel = document.getElementById('f1tb-track');
-        sel.innerHTML = tracks.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-    });
-
-    socket.on('f1StateUpdate', (state) => {
-        for (const [color, data] of Object.entries(state)) {
-            serverState[color] = data;
-            if (!otherCars[color]) {
-                CarLoader.loadCarModel(color, (g) => { otherCars[color] = g; }, { scene, listener, engineBuffer });
-            }
-            if (!visualState[color]) visualState[color] = { x: data.x, z: data.z, angle: data.angle };
-            if (window.followedColor === null) window.followedColor = color;   // segue la prima auto ricevuta di default
-        }
     });
 
     document.getElementById('f1tb-start').addEventListener('click', async () => {
