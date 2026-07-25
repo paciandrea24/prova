@@ -10,6 +10,7 @@ const deductionGameSocket = require('./games/deductionGameSocket');
 const spleefGameSocket = require('./games/spleefGameSocket')
 const fpsGameSocket = require('./games/fpsGameSocket');
 const f1GameSocket = require('./games/f1GameSocket');
+const f1Testbench = require('./games/f1Testbench');
 const playgroundGameSocket = require('./games/playgroundGameSocket');
 
 // IMPORTANTE: Importiamo lo store delle lobby per poterle modificare
@@ -181,6 +182,7 @@ module.exports = function (io) {
         spleefGameSocket(io, socket);
         fpsGameSocket(io, socket);
         f1GameSocket(io, socket);
+        f1Testbench(io, socket);
         playgroundGameSocket(io, socket);
     });
 };
