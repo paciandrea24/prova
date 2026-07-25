@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>F1 — Banco prova bot</title>
+    <style>
+        html, body { margin: 0; padding: 0; overflow: hidden; background: #111; }
+        #f1tb-panel {
+            position: fixed; top: 12px; left: 12px; z-index: 10;
+            background: rgba(9,11,14,0.9); border: 1px solid rgba(255,255,255,0.14);
+            border-radius: 8px; padding: 12px; color: #f2f4f6;
+            font-family: sans-serif; font-size: 13px; width: 220px;
+        }
+        #f1tb-panel label { display: block; margin-top: 8px; }
+        #f1tb-panel select, #f1tb-panel input, #f1tb-panel button { width: 100%; margin-top: 2px; }
+        #f1tb-panel .row { display: flex; gap: 4px; margin-top: 8px; }
+        #f1tb-panel .row button { flex: 1; }
+        #f1tb-hint { position: fixed; bottom: 12px; left: 12px; z-index: 10; color: #8b96a3; font-family: sans-serif; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div id="f1tb-panel">
+        <label>Pista <select id="f1tb-track"></select></label>
+        <label>Numero bot <select id="f1tb-botcount">
+            <option>2</option><option>3</option><option>4</option><option>5</option><option selected>6</option>
+        </select></label>
+        <label>Usura gomme di partenza (%) <input id="f1tb-tyrewear" type="number" min="0" max="100" value="0"></label>
+        <label>Mescola di partenza <select id="f1tb-compound">
+            <option value="soft">Soft</option>
+            <option value="medium" selected>Medium</option>
+            <option value="hard">Hard</option>
+        </select></label>
+        <div class="row">
+            <button id="f1tb-start">Avvia</button>
+            <button id="f1tb-stop">Stop</button>
+        </div>
+        <div class="row">
+            <button id="f1tb-pauseresume">Pausa</button>
+            <button id="f1tb-step">Passo</button>
+        </div>
+        <label>Velocità <select id="f1tb-speed">
+            <option value="1" selected>1x</option>
+            <option value="2">2x</option>
+            <option value="4">4x</option>
+        </select></label>
+        <div id="f1tb-error" style="color:#e74c3c; margin-top:8px;"></div>
+    </div>
+    <div id="f1tb-hint">Tasto N: prossima auto</div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="shared/trackGeometry.js"></script>
+    <script src="shared/trackMeshBuilder.js"></script>
+    <script src="shared/trackScenery.js"></script>
+    <script src="shared/carLoader.js"></script>
+    <script src="f1-testbench.js"></script>
+</body>
+</html>
