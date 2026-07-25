@@ -1464,3 +1464,6 @@ module.exports.physics = {
     applyOffTrackDrag, applyBridgeBarrier, updateTrackIndex,
     circularWithin, checkpointWindowFor, finishWindowFor
 };
+
+module.exports.tickGame = tickGame;
+module.exports.TYRE_COMPOUNDS = TYRE_COMPOUNDS;
