@@ -97,6 +97,8 @@ function startTimer(io) {
 }
 
 module.exports = function (io, socket) {
+    socket.emit('f1tbTrackList', listTracks());
+
     socket.on('f1tbStart', (config) => {
         const result = validateTestbenchScenario(config);
         if (!result.valid) {
