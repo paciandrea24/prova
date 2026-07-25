@@ -66,3 +66,48 @@ test('createTestbenchSession: il game risultante funziona con la vera tickGame (
     const anyMoved = before.some((b, i) => Math.abs(b.x - after[i].x) > 0.001 || Math.abs(b.z - after[i].z) > 0.001);
     assert.ok(anyMoved, 'atteso che almeno un bot si sia mosso dopo 50 tick della vera tickGame');
 });
+
+const { EventEmitter } = require('node:events');
+const registerTestbench = require('./f1Testbench.js');
+
+// Fake socket/io minimi: solo quello che f1Testbench.js usa davvero
+// (socket.on/emit/join, io.to().emit) — stesso pattern già usato nei test
+// di f1Bot.js per deps.io/deps.handlePitReactionPress.
+function makeFakeSocket() {
+    const s = new EventEmitter();
+    s.join = () => {};
+    s.emit = () => {};
+    return s;
+}
+
+test('f1tbStart con scenario non valido emette f1tbError e non crea sessione', (t, done) => {
+    const socket = makeFakeSocket();
+    const io = { to: () => ({ emit: () => {} }) };
+    registerTestbench(io, socket);
+
+    let errorMsg = null;
+    socket.emit = (event, payload) => { if (event === 'f1tbError') errorMsg = payload; };
+
+    socket.emit('___trigger___');   // no-op, solo per chiarezza del test
+    socket.listeners('f1tbStart')[0]({ trackId: 'non-esiste', botCount: 4, tyreWear: 0, compound: 'medium' });
+
+    assert.ok(errorMsg && errorMsg.error, 'atteso un f1tbError con messaggio');
+    done();
+});
+
+test('f1tbStart valido avvia il timer, f1tbStop lo ferma (nessuna eccezione)', (t, done) => {
+    const { listTracks } = require('./trackLoader.js');
+    const trackId = listTracks()[0].id;
+    const socket = makeFakeSocket();
+    const io = { to: () => ({ emit: () => {} }) };
+    registerTestbench(io, socket);
+
+    socket.listeners('f1tbStart')[0]({ trackId, botCount: 2, tyreWear: 0, compound: 'medium' });
+    socket.listeners('f1tbPause')[0]();
+    socket.listeners('f1tbStep')[0]();
+    socket.listeners('f1tbSetSpeed')[0]({ multiplier: 2 });
+    socket.listeners('f1tbResume')[0]();
+    socket.listeners('f1tbStop')[0]();
+
+    done();   // il vero obiettivo del test è che nessuna delle chiamate sopra lanci un'eccezione
+});

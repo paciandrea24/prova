@@ -30,8 +30,6 @@ function validateTestbenchScenario({ trackId, botCount, tyreWear, compound }) {
     return { valid: true };
 }
 
-module.exports.validateTestbenchScenario = validateTestbenchScenario;
-
 // Colori fittizi per "riempire" gli slot umani agli occhi di createBots
 // (che calcola quanti bot creare come MAX_GRID_SIZE - humanColors.length):
 // nel banco prova non c'è NESSUN giocatore reale, quindi passiamo
@@ -77,4 +75,67 @@ function createTestbenchSession({ trackId, botCount, tyreWear, compound }) {
     return game;
 }
 
+const TESTBENCH_LOBBY_ID = 'TESTBENCH';
+const VALID_SPEED_MULTIPLIERS = [1, 2, 4];
+
+// Una sola sessione alla volta (strumento per lo sviluppatore, non
+// multi-utente): stato in una variabile di modulo, MAI in activeGames —
+// nessuna possibilità di confusione con le lobby vere.
+let session = null;   // { game, timer, speedMultiplier, paused }
+
+function stopSession() {
+    if (session && session.timer) clearInterval(session.timer);
+    session = null;
+}
+
+function startTimer(io) {
+    session.timer = setInterval(() => {
+        for (let i = 0; i < session.speedMultiplier; i++) {
+            f1GameSocket.tickGame(io, TESTBENCH_LOBBY_ID, session.game);
+        }
+    }, physics.PHYSICS_TICK_MS);
+}
+
+module.exports = function (io, socket) {
+    socket.on('f1tbStart', (config) => {
+        const result = validateTestbenchScenario(config);
+        if (!result.valid) {
+            socket.emit('f1tbError', { error: result.error });
+            return;
+        }
+        stopSession();   // rimpiazza pulito una sessione precedente, se c'era
+        const game = createTestbenchSession(config);
+        session = { game, timer: null, speedMultiplier: 1, paused: false };
+        socket.join(TESTBENCH_LOBBY_ID);
+        startTimer(io);
+    });
+
+    socket.on('f1tbPause', () => {
+        if (!session || session.paused) return;
+        clearInterval(session.timer);
+        session.paused = true;
+    });
+
+    socket.on('f1tbResume', () => {
+        if (!session || !session.paused) return;
+        session.paused = false;
+        startTimer(io);
+    });
+
+    socket.on('f1tbStep', () => {
+        if (!session || !session.paused) return;   // no-op se non in pausa, non un errore
+        f1GameSocket.tickGame(io, TESTBENCH_LOBBY_ID, session.game);
+    });
+
+    socket.on('f1tbSetSpeed', ({ multiplier }) => {
+        if (!session || !VALID_SPEED_MULTIPLIERS.includes(multiplier)) return;
+        session.speedMultiplier = multiplier;
+    });
+
+    socket.on('f1tbStop', stopSession);
+
+    socket.on('disconnect', stopSession);
+};
+
+module.exports.validateTestbenchScenario = validateTestbenchScenario;
 module.exports.createTestbenchSession = createTestbenchSession;
