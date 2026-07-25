@@ -290,12 +290,122 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadScenery(scene, sceneryLayout);
 
     // ====================================================
-    // LOADER GLB (macchina Kenney colorata)
+    // LOADER GLB (macchina colorata per team)
     // ====================================================
     const loader = new THREE.GLTFLoader();
 
+    // Ricolore per modelli con texture-palette (mesh voxel unica, colore dato
+    // da una piccola texture invece che da material.color): si ricrea la
+    // palette sostituendo SOLO i texel "rosso livrea" (tonalità in
+    // [0, LIVERY_HUE_MAX], saturazione >= LIVERY_SAT_MIN — misurato sulla
+    // palette reale del modello: i rossi livrea non superano mai 23.8° di
+    // tonalità, i neri/grigi/ombre AO olive-marroni stanno da 32° in su —
+    // soglia scelta nel mezzo di questo margine, altrimenti quelle ombre
+    // vengono ricolorate per errore) con la stessa luminosità/saturazione
+    // ma tonalità del colore giocatore, così l'ombreggiatura già cotta
+    // nella palette resta intatta.
+    const LIVERY_HUE_MAX = 28;
+    const LIVERY_SAT_MIN = 0.2;
+
+    // Lift di luminosità applicato a OGNI texel (nero, grigio o livrea),
+    // stessa curva per tutti — misurato sulla palette reale: anche il "nero"
+    // più chiaro non supera v=0.36, e molte ombre livrea stanno sotto v=0.15,
+    // per questo in gioco auto propria e avversarie si leggono come un blob
+    // scuro indistinguibile. Curva uniforme (nessun ramo per tonalità) per
+    // non ripetere l'artefatto del tentativo precedente (floor applicato in
+    // base alla classificazione hue → macchie sui texel ambigui 30-45°).
+    const VALUE_LIFT_FLOOR = 0.14;
+    const VALUE_LIFT_GAMMA = 0.55;
+    function liftValue(v) {
+        return VALUE_LIFT_FLOOR + (1 - VALUE_LIFT_FLOOR) * Math.pow(v, VALUE_LIFT_GAMMA);
+    }
+
+    // Alcuni texel non-livrea hanno un residuo di tonalità (giallo/oliva,
+    // probabile artefatto di bake dell'AO) con saturazione non trascurabile:
+    // finché erano scurissimi non si vedeva, ma il lift sopra li rende
+    // luminosi abbastanza da leggersi come "voxel gialli" sulle gomme.
+    // Spenta qui, solo per i texel non classificati come livrea.
+    const BLACK_SAT_SCALE = 0.12;
+    function desaturateForBlack(s) {
+        return s * BLACK_SAT_SCALE;
+    }
+
+    function rgbToHsv(r, g, b) {
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        const d = max - min;
+        let h = 0;
+        if (d !== 0) {
+            if (max === r)      h = ((g - b) / d) % 6;
+            else if (max === g) h = (b - r) / d + 2;
+            else                h = (r - g) / d + 4;
+            h *= 60;
+            if (h < 0) h += 360;
+        }
+        const s = max === 0 ? 0 : d / max;
+        return [h, s, max];
+    }
+
+    function hsvToRgb(h, s, v) {
+        const c = v * s;
+        const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+        const m = v - c;
+        let r1, g1, b1;
+        if      (h < 60)  [r1, g1, b1] = [c, x, 0];
+        else if (h < 120) [r1, g1, b1] = [x, c, 0];
+        else if (h < 180) [r1, g1, b1] = [0, c, x];
+        else if (h < 240) [r1, g1, b1] = [0, x, c];
+        else if (h < 300) [r1, g1, b1] = [x, 0, c];
+        else              [r1, g1, b1] = [c, 0, x];
+        return [r1 + m, g1 + m, b1 + m];
+    }
+
+    function recolorLiveryTexture(sourceTexture, hex) {
+        const img = sourceTexture.image;
+        const canvas = document.createElement('canvas');
+        canvas.width  = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+
+        // targetSat/targetVal: per i texel livrea la saturazione/luminosità
+        // finali arrivano dal colore SCELTO dal giocatore, non dalla texture
+        // sorgente (quasi sempre un rosso vivido) — altrimenti un colore
+        // scuro/poco saturo come il marrone (#795548, H≈16° S≈0.40 V≈0.48,
+        // tonalità vicinissima al rosso) viene ricolorato con la vividezza
+        // del rosso sorgente e appare rosso invece che marrone. La texture
+        // sorgente resta usata come moltiplicatore di ombreggiatura relativa
+        // (chiaro/scuro), non come valore assoluto.
+        const [targetHue, targetSat, targetVal] = rgbToHsv(((hex >> 16) & 0xff) / 255, ((hex >> 8) & 0xff) / 255, (hex & 0xff) / 255);
+
+        for (let i = 0; i < data.length; i += 4) {
+            const [h, s, v] = rgbToHsv(data[i] / 255, data[i + 1] / 255, data[i + 2] / 255);
+            const isLivery = h <= LIVERY_HUE_MAX && s >= LIVERY_SAT_MIN;
+            const liftedV = liftValue(v);
+            const outHue  = isLivery ? targetHue : h;
+            const outSat  = isLivery ? targetSat : desaturateForBlack(s);
+            const outVal  = isLivery ? targetVal * liftedV : liftedV;
+            const [nr, ng, nb] = hsvToRgb(outHue, outSat, outVal);
+            data[i]     = Math.round(nr * 255);
+            data[i + 1] = Math.round(ng * 255);
+            data[i + 2] = Math.round(nb * 255);
+        }
+        ctx.putImageData(imageData, 0, 0);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.flipY     = sourceTexture.flipY;
+        tex.wrapS     = sourceTexture.wrapS;
+        tex.wrapT     = sourceTexture.wrapT;
+        tex.magFilter = sourceTexture.magFilter;
+        tex.minFilter = sourceTexture.minFilter;
+        tex.encoding  = sourceTexture.encoding;
+        tex.needsUpdate = true;
+        return tex;
+    }
+
     function loadCarModel(playerColor, onReady) {
-        loader.load('/assets/kenney/raceCarWhite.glb', (gltf) => {
+        loader.load('/assets/custom/f1Car.glb', (gltf) => {
             const group = new THREE.Group();
             const model = gltf.scene;
             model.scale.set(3.5, 3.5, 3.5);
@@ -321,11 +431,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 child.castShadow    = true;
                 child.receiveShadow = true;
                 child.material      = child.material.clone();
-                const c = child.material.color;
-                if (c.r > 0.85 && c.g > 0.85 && c.b > 0.85) {
-                    child.material.color.setHex(hex);
-                    child.material.metalness = 0.4;
-                    child.material.roughness = 0.35;
+                if (child.material.map) {
+                    child.material.map = recolorLiveryTexture(child.material.map, hex);
+                    child.material.needsUpdate = true;
+                } else {
+                    const c = child.material.color;
+                    if (c.r > 0.85 && c.g > 0.85 && c.b > 0.85) {
+                        child.material.color.setHex(hex);
+                        child.material.metalness = 0.4;
+                        child.material.roughness = 0.35;
+                    }
                 }
                 allMeshes.push(child);
                 const nm = (child.name + ' ' + (child.parent?.name || '')).toLowerCase();
@@ -361,8 +476,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 console.log('[F1] Ruote per BB:', wheels.length);
             }
 
-            // Fallback finale: ruote cilindriche sintetiche
-            if (wheels.length < 2) {
+            // Fallback finale: ruote cilindriche sintetiche — solo se il
+            // modello ha più mesh separate (indizio che le ruote ci sono ma
+            // non sono state trovate); su una mesh voxel unica (allMeshes.length
+            // === 1) le ruote sono già disegnate nel modello stesso, aggiungerne
+            // di finte creerebbe cilindri scoordinati sovrapposti.
+            if (wheels.length < 2 && allMeshes.length > 1) {
                 console.log('[F1] Nessuna ruota separata trovata → aggiungo ruote fake');
                 const wGeo = new THREE.CylinderGeometry(0.88, 0.88, 0.65, 16);
                 const wMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.95, metalness: 0.1 });
@@ -541,7 +660,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // server (serverState), non su quella interpolata (visualState), per
     // poter verificare a occhio eventuali disallineamenti tra fisica e resa.
     // ====================================================
-    const HITBOX_HALF_LEN = 2.4, HITBOX_HALF_WID = 1.3, HITBOX_HEIGHT = 1.5;
+    const HITBOX_HALF_LEN = 3.58, HITBOX_HALF_WID = 1.74, HITBOX_HEIGHT = 1.5;
     let showHitboxes = false;  // toggle con H, debug only
     const hitboxMeshes = {};
 
@@ -703,6 +822,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('pitstop-react-prompt').style.display = 'none';
         document.getElementById('pitstop-result').textContent = '';
         if (tyreCompoundsInfo) renderTyreCards(tyreCompoundsInfo, null, 'pitstop-cards', 'f1PitCompoundChoice');
+
+        const myDamage = (serverState[myColor] && serverState[myColor].damage) || 0;
+        const repairToggle = document.getElementById('pitstop-repair-toggle');
+        const repairCheckbox = document.getElementById('pitstop-repair-checkbox');
+        const repairLabel = document.getElementById('pitstop-repair-label');
+        if (myDamage > 0) {
+            const estSecs = ((myDamage * 150) / 1000).toFixed(1);   // 150 = REPAIR_MS_PER_DAMAGE_PCT lato server
+            repairLabel.textContent = `Ripara danni (+${estSecs}s)`;
+            repairToggle.style.display = 'block';
+            repairCheckbox.checked = false;
+            repairCheckbox.onchange = () => {
+                socket.emit('f1PitRepairChoice', { lobbyId, playerColor: myColor, repair: repairCheckbox.checked });
+            };
+        } else {
+            repairToggle.style.display = 'none';
+        }
     });
 
     socket.on('f1PitStopStarted', () => {
@@ -821,7 +956,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     socket.on('f1StateUpdate', (state) => {
         for (const [color, data] of Object.entries(state)) {
             serverState[color] = data;
-            updateMinimapDot(color, data.trackIndex);
+            updateMinimapDot(color, data.x, data.z);
             if (color !== myColor && !otherCars[color] && !visualState[color]) {
                 visualState[color] = { x: data.x, z: data.z, angle: data.angle };
                 loadCarModel(color, (g) => { otherCars[color] = g; });
@@ -855,6 +990,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     document.getElementById('tyre-wear-value').textContent = wear;
                     ['wFL', 'wFR', 'wRL', 'wRR'].forEach(id =>
                         document.getElementById(id).style.setProperty('--wear', col));
+                    const dmg = Math.round(data.damage || 0);
+                    document.getElementById('damage-value').textContent = dmg;
+                    document.getElementById('tyre-open').style.setProperty('--damage', wearColor(dmg));
                 }
             }
             if (color === myColor) {
@@ -885,10 +1023,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const STANDING_LIFT_PX    = 16;   // quanto la riga di chi sorpassa si "alza" oltre lo slot di arrivo, a metà animazione
 
     function renderStandingRowContent(rowEl, color, d) {
+        const compoundLetter = { soft: 'S', medium: 'M', hard: 'H' }[d.compound] || '';
+        const compoundColor  = (tyreCompoundsInfo && tyreCompoundsInfo[d.compound] && tyreCompoundsInfo[d.compound].color) || '#888';
         rowEl.innerHTML = `
             <span class="pos">${d.position}</span>
             <span class="dot" style="background:${color};"></span>
-            ${color === myColor ? 'TU' : ''}${d.isBot ? '<span class="bot-badge">CPU</span>' : ''}${(d.falseStart && !d.falseStartServed) ? '<span class="false-start-badge">!</span>' : ''}
+            ${color === myColor ? 'TU' : ''}${d.isBot ? '<span class="bot-badge">CPU</span>' : ''}
+            ${compoundLetter ? `<span class="compound-badge" style="color:${compoundColor};">${compoundLetter}</span>` : ''}
+            ${(d.falseStart && !d.falseStartServed) ? '<span class="false-start-badge">!</span>' : ''}${d.collisionPenalty ? '<span class="false-start-badge collision-badge">!</span>' : ''}
             <span class="gap">${formatGap(d.gapToLeaderMs)}</span>
         `;
     }
@@ -965,6 +1107,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const rowEl = standingRowEls[color];
                 const deltaPx = (oldIdx - newIdx) * STANDING_ROW_HEIGHT;
 
+                // Sorpassi ravvicinati possono far scattare due animazioni sulla
+                // stessa riga prima che la prima finisca (es. sorpassa e viene
+                // subito ri-sorpassato): senza cancellare la tween precedente,
+                // anime.js lascia "scale" congelato a un valore intermedio
+                // (l'unico ramo che lo anima è quello sotto, l'altro anima solo
+                // translateY) — badge/lettera restano leggermente deformati e
+                // fuori centro finché non arriva un altro sorpasso a "sbloccarli".
+                anime.remove(rowEl);
+
                 if (newIdx < oldIdx) {
                     // Ha sorpassato: la riga viene "estratta" dalla classifica
                     // (sollevata oltre lo slot di arrivo, come una fascia tolta
@@ -983,10 +1134,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
                 } else {
                     // È stato sorpassato: scorre semplicemente giù di uno slot
-                    // per fare spazio, nessun sollevamento.
+                    // per fare spazio, nessun sollevamento. Scale esplicito a 1
+                    // per riportare a riposo eventuale scale lasciato a metà da
+                    // un'animazione di sorpasso interrotta (vedi anime.remove sopra).
                     anime({
                         targets: rowEl,
                         translateY: [deltaPx, 0],
+                        scale: 1,
                         duration: 420,
                         easing: 'easeOutQuad',
                     });
@@ -1097,6 +1251,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         setLapDisplay(lap, phase);
     });
 
+    // Penalità collisione: il badge "!" (già presente in classifica per chi
+    // ha una collisionPenaltyMs > 0, vedi renderStandingRowContent) si
+    // espande temporaneamente per mostrare i secondi appena aggiunti, poi
+    // si richiude tornando al solo "!" — che resta per tutta la gara.
+    socket.on('f1CollisionPenalty', ({ color, penaltyMs }) => {
+        const rowEl = standingRowEls[color];
+        if (!rowEl) return;
+        const el = rowEl.querySelector('.collision-badge');
+        if (!el) return;
+        const secs = (penaltyMs / 1000).toFixed(1);
+        anime.timeline({ easing: 'easeOutQuad' })
+            .add({
+                targets: el, scale: [1, 1.3], width: [14, 46], duration: 200,
+                complete: () => { el.textContent = `+${secs}s`; }
+            })
+            .add({ targets: el, duration: 1200 })
+            .add({
+                targets: el, scale: 1, width: 14, duration: 200,
+                complete: () => { el.textContent = '!'; }
+            });
+    });
+
     // Animazione di rivelazione: rivela il TESTO lettera per lettera via
     // anime.stagger (ogni lettera è un <span> che entra con dissolvenza +
     // scorrimento, in sequenza). Personale: chi fa pole vede
@@ -1190,6 +1366,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <span style="font-size:13px;font-weight:bold;">${entry.color===myColor?'(YOU)':''}</span>
                     ${entry.pitPenalty ? '<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+30s NO PIT</span>' : ''}
                     ${entry.falseStart ? '<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+5s FALSE START</span>' : ''}
+                    ${entry.collisionPenaltyMs > 0 ? `<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+${(entry.collisionPenaltyMs / 1000).toFixed(1)}s COLLISIONI</span>` : ''}
                 </div>
                 <span style="font-family:monospace;font-weight:bold;">${timeStr}</span>`;
             list.appendChild(li);
@@ -1396,10 +1573,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             _lookTgt.copy(pos).add(new THREE.Vector3(0, 1.2, 0));
             camera.lookAt(_lookTgt);
         } else {
-            _camOff.set(0, 1.0, 1.3);
+            // Halo-cam broadcast (F1 TV pod): misurato sulla mesh reale (non
+            // dedotto) analizzando il profilo di altezza lungo la lunghezza
+            // dell'auto — il punto più alto del modello (apice halo/roll-hoop)
+            // sta a z locale ≈ -0.14, y locale = 0.256 (il max assoluto della
+            // mesh). Scalato ×3.5 e nel frame world del group (centrato in
+            // x/z, y=0 a terra): apice halo ≈ (0, 1.79, -0.49). La camera sta
+            // poco sopra e poco dietro quel punto, inclinata verso il basso
+            // così l'halo compare in basso nell'inquadratura invece di
+            // riempirla (era troppo vicino/dentro la mesh a y=1.85, z=0.3).
+            const COCKPIT_HEIGHT    = 1.95;  // ~0.16m sopra l'apice halo misurato (1.79)
+            const COCKPIT_Z         = -0.5;  // appena dietro l'apice halo misurato (-0.49)
+            const COCKPIT_PITCH_DEG = 10;    // inclinazione verso il basso
+            const COCKPIT_LOOK_DIST = 30;
+
+            _camOff.set(0, COCKPIT_HEIGHT, COCKPIT_Z);
             _camOff.applyQuaternion(q);
             camera.position.copy(pos).add(_camOff);
-            _lookTgt.set(0, 1.0, 30);
+
+            const pitchRad  = COCKPIT_PITCH_DEG * Math.PI / 180;
+            const lookDropY = Math.tan(pitchRad) * (COCKPIT_LOOK_DIST - COCKPIT_Z);
+            _lookTgt.set(0, COCKPIT_HEIGHT - lookDropY, COCKPIT_LOOK_DIST);
             _lookTgt.applyQuaternion(q);
             _lookTgt.add(pos);
             camera.lookAt(_lookTgt);
@@ -1434,11 +1628,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         return c;
     }
 
-    function updateMinimapDot(color, trackIndex) {
+    // Sceglie il tracciato (pista o corsia box) da cui prendere la posizione
+    // in base a quale dei due passa più vicino alla posizione REALE (x,z)
+    // del giocatore, invece di affidarsi solo a trackIndex (che è un indice
+    // sulla sola pista principale: durante la sosta ai box restava agganciato
+    // al punto più vicino della pista, quindi il pallino restava fermo
+    // sull'ingresso box invece di seguire l'auto lungo la corsia).
+    function updateMinimapDot(color, x, z) {
         const dot = ensureMinimapDot(color);
-        const progress = ((trackIndex || 0) / N_SAMPLES) % 1;
-        const len = minimapTrackEl.getTotalLength();
-        const pt  = minimapTrackEl.getPointAtLength(progress * len);
+        const nearTrack = TrackGeometry.nearestPoint(trackPts, x, z);
+        const nearPit   = TrackGeometry.nearestPoint(PIT_PTS, x, z);
+
+        let pt;
+        if (nearPit.dist < nearTrack.dist) {
+            const progress = nearPit.index / (PIT_PTS.length - 1);
+            const len = minimapPitEl.getTotalLength();
+            pt = minimapPitEl.getPointAtLength(progress * len);
+        } else {
+            const progress = (nearTrack.index / trackPts.length) % 1;
+            const len = minimapTrackEl.getTotalLength();
+            pt = minimapTrackEl.getPointAtLength(progress * len);
+        }
         dot.setAttribute('cx', pt.x);
         dot.setAttribute('cy', pt.y);
     }
