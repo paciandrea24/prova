@@ -34,3 +34,35 @@ test('validateTestbenchScenario: mescola sconosciuta viene rifiutata', () => {
     assert.equal(result.valid, false);
     assert.match(result.error, /mescola/i);
 });
+
+const { createTestbenchSession } = require('./f1Testbench.js');
+const { physics } = require('./f1GameSocket.js');
+
+test('createTestbenchSession: crea esattamente botCount bot con usura/mescola richieste', () => {
+    const trackId = listTracks()[0].id;
+    const game = createTestbenchSession({ trackId, botCount: 4, tyreWear: 45, compound: 'hard' });
+
+    const players = Object.values(game.players);
+    assert.equal(players.length, 4);
+    for (const p of players) {
+        assert.equal(p.isBot, true);
+        assert.equal(p.tyreWear, 45);
+        assert.equal(p.compound, 'hard');
+    }
+    assert.equal(game.phase, 'race');
+    assert.equal(game.raceStarted, true);
+});
+
+test('createTestbenchSession: il game risultante funziona con la vera tickGame (le auto si muovono)', () => {
+    const { tickGame } = require('./f1GameSocket.js');
+    const trackId = listTracks()[0].id;
+    const game = createTestbenchSession({ trackId, botCount: 2, tyreWear: 0, compound: 'medium' });
+    const fakeIo = { to: () => ({ emit: () => {} }) };
+
+    const before = Object.values(game.players).map(p => ({ x: p.x, z: p.z }));
+    for (let i = 0; i < 50; i++) tickGame(fakeIo, 'TESTBENCH', game);
+    const after = Object.values(game.players).map(p => ({ x: p.x, z: p.z }));
+
+    const anyMoved = before.some((b, i) => Math.abs(b.x - after[i].x) > 0.001 || Math.abs(b.z - after[i].z) > 0.001);
+    assert.ok(anyMoved, 'atteso che almeno un bot si sia mosso dopo 50 tick della vera tickGame');
+});
