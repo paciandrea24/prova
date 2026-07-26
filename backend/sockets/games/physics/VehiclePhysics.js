@@ -5,7 +5,7 @@
 // f1GameSocket.js (Rif. SDD Capitolo 10.6) senza modificarne la logica —
 // stesse formule, stessi valori, stesso comportamento.
 const TrackGeometry = require('../../../../frontend/shared/trackGeometry.js');
-const { tyreOf, WEAR_SPEED_PENALTY, WEAR_GRIP_PENALTY } = require('./TyreModel');
+const { tyreOf, WEAR_SPEED_PENALTY, WEAR_GRIP_PENALTY, WEAR_BRAKE_PENALTY, WEAR_ACCEL_PENALTY, getWearPenaltyFactor } = require('./TyreModel');
 const {
     DAMAGE_SPEED_PENALTY_MAX, DAMAGE_GRIP_PENALTY_MAX, DAMAGE_GRIP_THRESHOLD,
     applyDamageSteerNoise
@@ -40,17 +40,27 @@ const BRAKE_MULT   = 2.17;   // moltiplicatore di ACCEL in frenata (era 1.4 a MA
 // darebbe NaN e romperebbe la simulazione. Per i giocatori reali damage è
 // sempre un numero (mai undefined, vedi init in joinF1Game/createBots).
 function effectiveMaxSpeed(p, isQuali) {
-    const wearFactor   = isQuali ? 1 : 1 - (p.tyreWear / 100) * WEAR_SPEED_PENALTY;
+    const wearFactor   = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_SPEED_PENALTY;
     const damageFactor = isQuali ? 1 : 1 - ((p.damage || 0) / 100) * DAMAGE_SPEED_PENALTY_MAX;
     return MAX_SPEED * tyreOf(p, isQuali).speedMult * wearFactor * damageFactor;
 }
 
 function effectiveGrip(p, isQuali) {
-    const wearFactor = isQuali ? 1 : 1 - (p.tyreWear / 100) * WEAR_GRIP_PENALTY;
+    const wearFactor = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_GRIP_PENALTY;
     const gripDamageFrac = isQuali ? 0
         : Math.max(0, (p.damage || 0) - DAMAGE_GRIP_THRESHOLD) / (100 - DAMAGE_GRIP_THRESHOLD);
     const damageFactor = 1 - gripDamageFrac * DAMAGE_GRIP_PENALTY_MAX;
     return GRIP * tyreOf(p, isQuali).gripMult * wearFactor * damageFactor;
+}
+
+function effectiveAccel(p, isQuali) {
+    const wearFactor = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_ACCEL_PENALTY;
+    return ACCEL * wearFactor;
+}
+
+function effectiveBrakeMult(p, isQuali) {
+    const wearFactor = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_BRAKE_PENALTY;
+    return BRAKE_MULT * wearFactor;
 }
 
 // ====================================================
@@ -66,14 +76,14 @@ function updateVelocity(p, isQuali, slipstreamMult) {
     const maxSpeed = effectiveMaxSpeed(p, isQuali) * (slipstreamMult || 1);   // dipende da mescola + usura (Soft fissa in qualifica) + scia
     const grip     = effectiveGrip(p, isQuali);
 
-    if (inputs.throttle > 0) p.speed = Math.min(p.speed + ACCEL * inputs.throttle, maxSpeed);
+    if (inputs.throttle > 0) p.speed = Math.min(p.speed + effectiveAccel(p, isQuali) * inputs.throttle, maxSpeed);
     else if (inputs.brake > 0) {
         // Frenata/retromarcia. La decelerazione in frenata è un decremento
         // costante per tick, quindi lo spazio d'arresto va con v²/decel: per
         // tenerlo vicino a quello di prima dell'aumento di velocità (R=1.55),
         // BRAKE_MULT scala di R² rispetto al vecchio 1.4 (non solo ×R) — vedi
         // docs/superpowers/specs/2026-07-21-f1-velocita-frenata-mescole-design.md.
-        p.speed = Math.max(p.speed - ACCEL * BRAKE_MULT * inputs.brake, -maxSpeed / 2);
+        p.speed = Math.max(p.speed - effectiveAccel(p, isQuali) * effectiveBrakeMult(p, isQuali) * inputs.brake, -maxSpeed / 2);
         p.vx *= 0.94;
         p.vz *= 0.94;
     } else {
@@ -130,5 +140,5 @@ function applyOffTrackDrag(p, track) {
 
 module.exports = {
     MAX_SPEED, ACCEL, FRICTION, TURN_SPEED_LOW, TURN_SPEED_HIGH, GRIP, BRAKE_MULT,
-    effectiveMaxSpeed, effectiveGrip, updateVelocity, integratePosition, applyOffTrackDrag
+    effectiveMaxSpeed, effectiveGrip, effectiveAccel, effectiveBrakeMult, updateVelocity, integratePosition, applyOffTrackDrag
 };

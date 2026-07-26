@@ -20,7 +20,7 @@ const {
 const VehiclePhysics = require('./physics/VehiclePhysics');
 const {
     ACCEL, BRAKE_MULT, TURN_SPEED_HIGH,
-    effectiveMaxSpeed, effectiveGrip, updateVelocity, integratePosition, applyOffTrackDrag
+    effectiveMaxSpeed, effectiveGrip, effectiveAccel, effectiveBrakeMult, updateVelocity, integratePosition, applyOffTrackDrag
 } = VehiclePhysics;
 
 const CollisionResolver = require('./physics/CollisionResolver');
@@ -1211,7 +1211,7 @@ function resetPlayers(game) {
 module.exports.physics = {
     PHYSICS_TICK_MS, COLLISION_SUBSTEPS,
     ACCEL, BRAKE_MULT, TURN_SPEED_HIGH, HALF_LAP_IDX,
-    effectiveMaxSpeed, updateVelocity, integratePosition,
+    effectiveMaxSpeed, effectiveAccel, effectiveBrakeMult, updateVelocity, integratePosition,
     applyOffTrackDrag, applyBridgeBarrier, updateTrackIndex,
     circularWithin, checkpointWindowFor, finishWindowFor,
     assignGridSpawns,
