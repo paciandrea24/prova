@@ -14,7 +14,9 @@ const {
     DAMAGE_STEER_NOISE_MAX,
     MIN_COLLISION_SEVERITY, DAMAGE_CAP_PER_HIT, COLLISION_PENALTY_CAP_MS,
     applyDamageSteerNoise, collisionDamageAmount, applyCollisionPenalty,
-    applyCarCollisionDamage, applyBarrierDamage
+    applyCarCollisionDamage, applyBarrierDamage,
+    createDamageParts, FRONT_WING_STEER_PENALTY_MAX,
+    getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise
 } = DamageModel;
 
 const VehiclePhysics = require('./physics/VehiclePhysics');
@@ -207,7 +209,8 @@ module.exports = function (io, socket) {
                 pitAutoState:    null,    // 'entering' | 'exiting' | null — autopilota corsia box
                 pitPathIndex:    0,       // prossimo waypoint del percorso box (track.pitPath) verso cui puntare
                 inSlipstream:    false,   // bonus di velocità in scia attivo in questo tick (solo effetto visivo lato client)
-                damage:                  0,       // 0-100, come tyreWear — solo in gara (vedi assignGridSpawns/checkLap)
+                damage:                  0,       // 0-100, come tyreWear — solo in gara (vedi assignGridSpawns/checkLap). Derivato dal massimo dei 4 componenti di damageParts.
+                damageParts:             createDamageParts(),   // { frontWing, floor, engine, suspension }, 0-100 ciascuno — vedi DamageModel.js Cap. 3.8. Ri-creato ad ogni assignGridSpawns/repair ai box, mai condiviso per riferimento.
                 collisionPenaltyMs:      0,       // penalità di tempo accumulata per collisioni causate, sommata a p.time al traguardo
                 pendingRepair:           false,   // scelta fatta ai box, applicata a fine sosta come pendingCompound
                 carContacts:             new Set(),   // colori con cui è ATTUALMENTE a contatto (rileva un urto NUOVO)
@@ -618,6 +621,7 @@ function assignGridSpawns(game) {
         p.trackIndex = 0;
         p.tyreWear = 0;   // gomme fresche per la gara vera (l'usura conta solo in gara, non in qualifica)
         p.damage = 0;   // auto perfetta a inizio gara vera — stesso confine di tyreWear
+        p.damageParts = createDamageParts();   // fresco ad ogni gara — mai riutilizzare l'oggetto precedente
         p.collisionPenaltyMs = 0;
         p.pendingRepair = false;
         p.carContacts.clear();
@@ -762,7 +766,7 @@ function completePitStop(io, lobbyId, game, p) {
     p.tyreWear  = 0;
     p.hasPitted = true;
     if (p.pendingCompound) { p.compound = p.pendingCompound; p.pendingCompound = null; }
-    if (p.pendingRepair) { p.damage = 0; }
+    if (p.pendingRepair) { p.damage = 0; p.damageParts = createDamageParts(); }
     p.pendingRepair = false;
 
     const sid = game.socketByColor[p.color];
@@ -1167,6 +1171,7 @@ function buildPublicState(players, raceStarted, track) {
             compound: p.compound,
             tyreWear: p.tyreWear,
             damage:   p.damage,
+            damageParts: p.damageParts,
             // Autopilota corsia box (entrata/uscita): velocità del
             // limitatore, non del giocatore — il client la usa per un
             // rumore motore fisso invece che legato all'accelerazione,
@@ -1219,6 +1224,8 @@ module.exports.physics = {
     collisionDamageAmount, applyCarCollisionDamage, applyBarrierDamage, applyCollisionPenalty,
     resolveCollisions,
     applyDamageSteerNoise, DAMAGE_STEER_NOISE_MAX, effectiveGrip,
+    createDamageParts, FRONT_WING_STEER_PENALTY_MAX,
+    getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
     buildPublicState
 };
 

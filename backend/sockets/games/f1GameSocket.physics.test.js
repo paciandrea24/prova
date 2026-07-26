@@ -287,6 +287,44 @@ test('effectiveAccel: il danno al motore riduce anche l\'accelerazione, non solo
         'in qualifica il danno non deve avere effetto');
 });
 
+test('Simcade: isolamento dei componenti — ala anteriore riduce lo sterzo ma non velocità/accelerazione; motore riduce velocità/accelerazione ma non lo sterzo', () => {
+    const { physics } = f1GameSocket;
+    const base = { tyreWear: 0, compound: 'medium', damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
+    const frontWingDanneggiato = { tyreWear: 0, compound: 'medium', damageParts: { frontWing: 80, floor: 0, engine: 0, suspension: 0 } };
+    const engineDanneggiato    = { tyreWear: 0, compound: 'medium', damageParts: { frontWing: 0, floor: 0, engine: 80, suspension: 0 } };
+
+    // Ala all'80%: sottosterzo marcato, ma velocità/accelerazione IDENTICHE al sano.
+    assert.ok(physics.getFrontWingSteerPenalty(frontWingDanneggiato.damageParts) > 0, 'ala danneggiata: penalità sterzo attiva');
+    assert.ok(Math.abs(physics.effectiveMaxSpeed(frontWingDanneggiato, false) - physics.effectiveMaxSpeed(base, false)) < 1e-9,
+        'ala danneggiata: MAX_SPEED invariata');
+    assert.ok(Math.abs(physics.effectiveAccel(frontWingDanneggiato, false) - physics.effectiveAccel(base, false)) < 1e-9,
+        'ala danneggiata: accelerazione invariata');
+
+    // Motore all'80%: velocità/accelerazione ridotte, ma sterzo IDENTICO al sano.
+    assert.ok(physics.effectiveMaxSpeed(engineDanneggiato, false) < physics.effectiveMaxSpeed(base, false),
+        'motore danneggiato: MAX_SPEED ridotta');
+    assert.ok(physics.effectiveAccel(engineDanneggiato, false) < physics.effectiveAccel(base, false),
+        'motore danneggiato: accelerazione ridotta');
+    assert.ok(Math.abs(physics.getFrontWingSteerPenalty(engineDanneggiato.damageParts) - physics.getFrontWingSteerPenalty(base.damageParts)) < 1e-9,
+        'motore danneggiato: penalità sterzo invariata (zero in entrambi i casi)');
+});
+
+test('buildPublicState: espone anche damageParts (per evoluzioni future HUD)', () => {
+    const { physics } = f1GameSocket;
+    const parts = { frontWing: 10, floor: 20, engine: 30, suspension: 40 };
+    const players = {
+        red: {
+            x: 0, z: 0, angle: 0, trackIndex: 0, speed: 0, finished: false, time: null, lap: 0,
+            compound: 'medium', tyreWear: 0, damage: 40, damageParts: parts, collisionPenaltyMs: 0,
+            pitAutoState: null, falseStart: false, falseStartServed: false,
+            gapToLeaderMs: null, isBot: false, inSlipstream: false
+        }
+    };
+    const track = { points: [{ x: 0, z: 0 }] };
+    const state = physics.buildPublicState(players, false, track);
+    assert.deepEqual(state.red.damageParts, parts);
+});
+
 test('applyDamageSteerNoise: zero sotto soglia o in qualifica, non-zero sopra soglia in gara', () => {
     const { physics } = f1GameSocket;
     const rngAlways1 = () => 1;   // rng deterministico, sempre al massimo dell'intervallo
