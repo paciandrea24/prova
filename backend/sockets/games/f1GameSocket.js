@@ -3,6 +3,19 @@ const { lobbies } = require('../../store/lobbies');
 const { loadTrack } = require('./trackLoader');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 const { createBots, updateBotInputs, estimateFinishTime, nearestAheadPlayer } = require('./f1Bot');
+const TyreModel = require('./physics/TyreModel');
+const {
+    TYRE_COMPOUNDS, DEFAULT_COMPOUND, WEAR_LAPS_AT_MEDIUM,
+    // WEAR_SPEED_PENALTY/WEAR_GRIP_PENALTY: servono ancora a effectiveMaxSpeed/
+    // effectiveGrip, che restano funzioni LOCALI in questo file fino al Task 3
+    // (si spostano in VehiclePhysics.js solo lì) — senza questi due
+    // nell'import, quelle due funzioni smetterebbero di trovare i nomi non
+    // appena rimuoviamo le costanti originali nello Step 3 qui sotto. Vanno
+    // tolti da qui nel Task 3 (Step 2), quando effectiveMaxSpeed/effectiveGrip
+    // se ne vanno e VehiclePhysics.js li importa per conto proprio.
+    WEAR_SPEED_PENALTY, WEAR_GRIP_PENALTY,
+    tyreOf, applyTyreWear, suggestStrategy
+} = TyreModel;
 
 const PHYSICS_TICK_MS = 50;
 // Velocità realistica F1: fattore di scala R=1.55 (+55%) applicato a
@@ -55,8 +68,13 @@ const RESTART_GRACE_MS = 1500;
 // cui il modello viene caricato in f1.js: ~2.6 unità di larghezza (fianchi),
 // ~4.7 di lunghezza (muso/coda). Il rettangolo va tenuto orientato con
 // l'angolo dell'auto (SAT), altrimenti un cerchio esagera soprattutto i fianchi.
-const CAR_HALF_LENGTH  = 2.4;  // metà lunghezza, asse avanti/dietro (locale Z)
-const CAR_HALF_WIDTH   = 1.3;  // metà larghezza, asse fianchi (locale X)
+// Valori misurati sul modello custom (frontend/assets/custom/f1Car.glb):
+// bbox GLB 0.992 x 2.048 (largh. x lungh.) x scale 3.5 = 3.47 x 7.17 in
+// gioco -> metà 1.74 x 3.58. Prima erano 1.3/2.4, tarate sul vecchio kart
+// Kenney molto più piccolo — con quelle le ruote posteriori del modello
+// nuovo restavano fuori dall'hitbox.
+const CAR_HALF_LENGTH  = 3.58;  // metà lunghezza, asse avanti/dietro (locale Z)
+const CAR_HALF_WIDTH   = 1.74;  // metà larghezza, asse fianchi (locale X)
 const COLLISION_BOUNCE = 0.6;  // quota della velocità normale scambiata all'urto (bump arcade, non elastico puro)
 
 // A MAX_SPEED (6.2/tick) due auto che si avvicinano chiudono fino a 12.4
@@ -106,27 +124,13 @@ function nearestTrackDist(track, x, z) {
     return TrackGeometry.nearestPoint(track.points, x, z).dist;
 }
 
-// ====================================================
-// MESCOLE E USURA GOMME
-// Soft/Medium/Hard differiscono sia in prestazioni (velocità massima e
-// aderenza) sia in velocità di usura — come nella F1 vera: la Soft è più
-// veloce ma dura meno, la Hard il contrario. L'usura cresce SOLO con la
-// distanza percorsa (fermo = zero usura, richiesta esplicita), con un piccolo
-// extra fuoripista; a gomme esaurite si perde fino a WEAR_SPEED_PENALTY di
-// velocità massima e WEAR_GRIP_PENALTY di aderenza (più derapate).
-// ====================================================
-const TYRE_COMPOUNDS = {
-    soft:   { label: 'Soft',   color: '#e74c3c', speedMult: 1.05, gripMult: 1.00, wearRate: 1.5 },
-    medium: { label: 'Medium', color: '#f1c40f', speedMult: 1.00, gripMult: 0.95, wearRate: 1.0 },
-    hard:   { label: 'Hard',   color: '#ecf0f1', speedMult: 0.95, gripMult: 0.90, wearRate: 0.6 },
-};
-const DEFAULT_COMPOUND = 'medium';
 const TYRE_SELECT_MS   = 20000;   // tempo per scegliere prima che scatti la mescola di default
 
-const WEAR_LAPS_AT_MEDIUM = 5;   // quanti giri dura una Medium (wearRate=1) prima del 100% di usura
-const WEAR_OFFTRACK_EXTRA = 0.02; // piccolo extra per tick fuori pista (oltre a quello da distanza)
-const WEAR_SPEED_PENALTY  = 0.25; // fino a -25% velocità massima a gomme esaurite
-const WEAR_GRIP_PENALTY   = 0.35; // fino a -35% aderenza a gomme esaurite (più derapate)
+const DAMAGE_GRIP_THRESHOLD    = 33;    // % danno oltre cui inizia la perdita di aderenza
+const DAMAGE_STEER_THRESHOLD   = 66;    // % danno oltre cui inizia il rumore sullo sterzo
+const DAMAGE_SPEED_PENALTY_MAX = 0.30;  // fino a -30% velocità massima a danno 100%
+const DAMAGE_GRIP_PENALTY_MAX  = 0.35;  // fino a -35% aderenza, attivo solo oltre DAMAGE_GRIP_THRESHOLD
+const DAMAGE_STEER_NOISE_MAX   = 0.15;  // rumore massimo sterzo (frazione, sommata a inputs.steer), oltre DAMAGE_STEER_THRESHOLD
 
 // ====================================================
 // MINIGIOCO DI REAZIONE AL PIT STOP
@@ -141,6 +145,7 @@ const PIT_REACTION_BEST = 150,  PIT_REACTION_WORST = 800;   // ms: sotto/sopra q
 // trovava 3.0s-7.0s troppo lento anche a reazione ottima).
 const PIT_DURATION_MIN  = 2000, PIT_DURATION_MAX   = 3000;  // durata sosta risultante
 const PIT_PENALTY_MS    = 30000;   // penalità se non si fa MAI pit stop in gara (regola F1 vera)
+const REPAIR_MS_PER_DAMAGE_PCT = 150;   // ms extra di sosta per ogni % di danno riparato
 
 // Semaforo di partenza (solo gara, mai in qualifica): 5 luci, una ogni
 // LIGHT_INTERVAL_MS, poi un'attesa casuale prima che si spengano tutte
@@ -154,44 +159,35 @@ const FALSE_START_PENALTY_MS = 5000;
 
 const GAP_RECALC_MS = 3500;   // ricalcolo distacco dal leader — non serve più frequente, è una stima
 
-// In qualifica TUTTI usano lo spec della Soft (gomma da qualifica, come in F1
-// vera), gomme fresche, a prescindere dalla mescola scelta per la gara — la
-// scelta conta solo una volta iniziata la gara vera.
-function tyreOf(p, isQuali) {
-    if (isQuali) return TYRE_COMPOUNDS.soft;
-    return TYRE_COMPOUNDS[p.compound] || TYRE_COMPOUNDS[DEFAULT_COMPOUND];
-}
 
+// p.damage va letto come (p.damage || 0): gli strumenti offline
+// (f1LapSimulator.js, f1RaceLineOptimizer.js) costruiscono i loro player di
+// simulazione senza campo damage — con una lettura diretta p.damage/100
+// darebbe NaN e romperebbe la simulazione. Per i giocatori reali damage è
+// sempre un numero (mai undefined, vedi init in joinF1Game/createBots).
 function effectiveMaxSpeed(p, isQuali) {
-    const wearFactor = isQuali ? 1 : 1 - (p.tyreWear / 100) * WEAR_SPEED_PENALTY;
-    return MAX_SPEED * tyreOf(p, isQuali).speedMult * wearFactor;
+    const wearFactor   = isQuali ? 1 : 1 - (p.tyreWear / 100) * WEAR_SPEED_PENALTY;
+    const damageFactor = isQuali ? 1 : 1 - ((p.damage || 0) / 100) * DAMAGE_SPEED_PENALTY_MAX;
+    return MAX_SPEED * tyreOf(p, isQuali).speedMult * wearFactor * damageFactor;
 }
 
 function effectiveGrip(p, isQuali) {
     const wearFactor = isQuali ? 1 : 1 - (p.tyreWear / 100) * WEAR_GRIP_PENALTY;
-    return GRIP * tyreOf(p, isQuali).gripMult * wearFactor;
+    const gripDamageFrac = isQuali ? 0
+        : Math.max(0, (p.damage || 0) - DAMAGE_GRIP_THRESHOLD) / (100 - DAMAGE_GRIP_THRESHOLD);
+    const damageFactor = 1 - gripDamageFrac * DAMAGE_GRIP_PENALTY_MAX;
+    return GRIP * tyreOf(p, isQuali).gripMult * wearFactor * damageFactor;
 }
 
-// Suggerimento di strategia (solo indicativo, mostrato in selezione mescola):
-// parte da una mescola durevole per il primo stint, poi via via più
-// prestazionali per i restanti — quante ne servono dipende dai giri totali.
-function suggestStrategy(totalLaps) {
-    const life = {
-        hard:   Math.max(1, Math.round(WEAR_LAPS_AT_MEDIUM / TYRE_COMPOUNDS.hard.wearRate)),
-        medium: WEAR_LAPS_AT_MEDIUM,
-        soft:   Math.max(1, Math.round(WEAR_LAPS_AT_MEDIUM / TYRE_COMPOUNDS.soft.wearRate)),
-    };
-    const order  = ['hard', 'medium', 'soft'];
-    const stints = [];
-    let remaining = totalLaps;
-    let i = 0;
-    while (remaining > 0 && stints.length < 6) {
-        const compound = order[Math.min(i, order.length - 1)];
-        stints.push(compound);
-        remaining -= life[compound];
-        i++;
-    }
-    return stints;
+// Rumore sullo sterzo da danno grave (>DAMAGE_STEER_THRESHOLD), solo in
+// gara. rng iniettabile per test deterministici (stesso pattern di
+// randRange in f1Bot.js). Stesso fallback (p.damage || 0) di
+// effectiveMaxSpeed/effectiveGrip per i player senza il campo (strumenti offline).
+function applyDamageSteerNoise(p, isQuali, rng = Math.random) {
+    const damage = p.damage || 0;
+    if (isQuali || damage <= DAMAGE_STEER_THRESHOLD) return 0;
+    const frac = (damage - DAMAGE_STEER_THRESHOLD) / (100 - DAMAGE_STEER_THRESHOLD);
+    return (rng() * 2 - 1) * frac * DAMAGE_STEER_NOISE_MAX;
 }
 
 // ====================================================
@@ -305,6 +301,12 @@ module.exports = function (io, socket) {
                 pitAutoState:    null,    // 'entering' | 'exiting' | null — autopilota corsia box
                 pitPathIndex:    0,       // prossimo waypoint del percorso box (track.pitPath) verso cui puntare
                 inSlipstream:    false,   // bonus di velocità in scia attivo in questo tick (solo effetto visivo lato client)
+                damage:                  0,       // 0-100, come tyreWear — solo in gara (vedi assignGridSpawns/checkLap)
+                collisionPenaltyMs:      0,       // penalità di tempo accumulata per collisioni causate, sommata a p.time al traguardo
+                pendingRepair:           false,   // scelta fatta ai box, applicata a fine sosta come pendingCompound
+                carContacts:             new Set(),   // colori con cui è ATTUALMENTE a contatto (rileva un urto NUOVO)
+                wallContact:             false,   // true se attualmente appoggiato a un muro ponte
+                pendingCollisionPenaltyEvents: [],   // ms in attesa di notifica al client, drenata da tickGame
             };
         }
 
@@ -382,6 +384,17 @@ module.exports = function (io, socket) {
         // sosta (completePitStop).
         if (!p || (!p.pitting && !p.pitAutoState)) return;
         p.pendingCompound = compound;
+    });
+
+    // Scelta riparazione danni durante la sosta ai box: applicata a fine
+    // sosta (completePitStop), non subito — stesso pattern di
+    // f1PitCompoundChoice. Default se non si sceglie mai: NON riparare.
+    socket.on('f1PitRepairChoice', ({ lobbyId, playerColor, repair }) => {
+        const game = activeGames.get(lobbyId);
+        if (!game) return;
+        const p = game.players[playerColor];
+        if (!p || (!p.pitting && !p.pitAutoState)) return;
+        p.pendingRepair = !!repair;
     });
 
     socket.on('f1Input', ({ lobbyId, playerColor, inputs }) => {
@@ -666,6 +679,18 @@ function startRaceCountdown(io, lobbyId, game) {
         g.lightsSequenceActive = false;
         g.raceStarted   = true;
         g.raceStartTime = Date.now();
+        // Reazione al via per i bot: ognuno resta fermo per un ritardo
+        // casuale (nessuna correlazione col ritmo di gara, richiesto
+        // esplicitamente) prima che updateBotInputs inizi a guidarlo — senza
+        // questo tutti i bot spingono sull'acceleratore nell'esatto stesso
+        // tick, una griglia troppo "meccanica" (vedi BOT_RACE_START_REACTION_*
+        // in f1Bot.js).
+        for (const p of Object.values(g.players)) {
+            if (p.isBot) {
+                p.botRaceReactionUntil = g.raceStartTime +
+                    BOT_RACE_START_REACTION_MIN_MS + Math.random() * (BOT_RACE_START_REACTION_MAX_MS - BOT_RACE_START_REACTION_MIN_MS);
+            }
+        }
         console.log(`🚦 [F1] Gara avviata (lobby ${lobbyId})`);
         io.to(lobbyId).emit('f1RaceStarted', { syncTime: 0, phase: 'race' });
     }, totalMs);
@@ -686,6 +711,12 @@ function assignGridSpawns(game) {
         p.lap = 0; p.checkpointA = false; p.inFinishZone = false;
         p.trackIndex = 0;
         p.tyreWear = 0;   // gomme fresche per la gara vera (l'usura conta solo in gara, non in qualifica)
+        p.damage = 0;   // auto perfetta a inizio gara vera — stesso confine di tyreWear
+        p.collisionPenaltyMs = 0;
+        p.pendingRepair = false;
+        p.carContacts.clear();
+        p.wallContact = false;
+        p.pendingCollisionPenaltyEvents.length = 0;
         if (p.pitGoTimer) { clearTimeout(p.pitGoTimer); p.pitGoTimer = null; }
         p.pitting = false; p.pitPhase = null; p.pitGoTime = null;
         p.pendingCompound = null; p.hasPitted = false; p.pitPenalty = false;
@@ -801,6 +832,13 @@ function handlePitReactionPress(io, lobbyId, game, p) {
         p.falseStartServed = true;
     }
 
+    // Riparazione danni: tempo extra proporzionale al danno che c'era al
+    // momento della scelta (non al danno originale ad inizio sosta, ma è lo
+    // stesso valore: durante la sosta il danno non cambia, l'auto è ferma).
+    if (p.pendingRepair && p.damage > 0) {
+        durationMs += p.damage * REPAIR_MS_PER_DAMAGE_PCT;
+    }
+
     const sid = game.socketByColor[p.color];
     if (sid) io.to(sid).emit('f1PitStopTiming', { durationMs });
 
@@ -818,6 +856,8 @@ function completePitStop(io, lobbyId, game, p) {
     p.tyreWear  = 0;
     p.hasPitted = true;
     if (p.pendingCompound) { p.compound = p.pendingCompound; p.pendingCompound = null; }
+    if (p.pendingRepair) { p.damage = 0; }
+    p.pendingRepair = false;
 
     const sid = game.socketByColor[p.color];
     if (sid) io.to(sid).emit('f1PitStopFinished', { compound: p.compound });
@@ -886,7 +926,8 @@ function tickGame(io, lobbyId, game) {
     updateBotInputs(game, {
         effectiveMaxSpeed, handlePitReactionPress, io, lobbyId,
         wearLapsAtMedium: WEAR_LAPS_AT_MEDIUM,
-        accel: ACCEL, brakeMult: BRAKE_MULT, turnRateHigh: TURN_SPEED_HIGH
+        accel: ACCEL, brakeMult: BRAKE_MULT, turnRateHigh: TURN_SPEED_HIGH,
+        slipstreamMaxBoost: SLIPSTREAM_MAX_BOOST
     });
 
     const isQuali  = game.phase === 'qualifying';
@@ -932,7 +973,7 @@ function tickGame(io, lobbyId, game) {
         // collisioni auto-auto sono una questione di fair-play multiplayer),
         // il muro dei tratti ponte si applica sempre, anche in qualifica —
         // è un limite fisico della pista, non un'interazione tra giocatori.
-        for (const p of racing) applyBridgeBarrier(p, game.track);
+        for (const p of racing) applyBridgeBarrier(p, game.track, !isQuali);
     }
 
     for (const p of racing) {
@@ -962,27 +1003,40 @@ function tickGame(io, lobbyId, game) {
     // GAP_RECALC_MS e riusata fino al prossimo giro — non serve precisione
     // al millisecondo, un vero timing per-checkpoint sarebbe uno sforzo
     // sproporzionato per quello che serve qui (esplicitamente accettato).
-    if (game.phase === 'race' && Date.now() - (game.lastGapRecalc || 0) >= GAP_RECALC_MS) {
-        game.lastGapRecalc = Date.now();
+    // Ricalcolata ANCHE subito, fuori dal timer, quando l'ordine in classifica
+    // cambia (sorpasso): altrimenti la position si aggiorna a ogni tick ma i
+    // gap restano congelati ai valori pre-sorpasso fino a 3.5s, mostrando
+    // temporaneamente un ordine con gap non monotoni (es. P3 +2.5s, P4 +1.9s).
+    if (game.phase === 'race') {
         const ranked = [...players].sort((a, b) => progressScore(b, game.track) - progressScore(a, game.track));
-        const leader = ranked[0];
-        const metersPerUnit = game.track.lapLength / game.track.points.length;
-        for (const p of ranked) {
-            if (p === leader) { p.gapToLeaderMs = null; continue; }
-            const distanceBehindUnits = progressScore(leader, game.track) - progressScore(p, game.track);
-            const distanceBehindM = Math.max(0, distanceBehindUnits) * metersPerUnit;
-            // Ritmo di riferimento = velocità del LEADER, non dell'inseguitore:
-            // usare p.speed produceva distacchi di minuti ogni volta che
-            // l'inseguitore era momentaneamente fermo/lento nell'istante esatto
-            // del ricalcolo (contro una barriera, in un testacoda, in pit box,
-            // in griglia dopo falsa partenza) — la stima proiettava quella
-            // velocità istantanea quasi nulla all'infinito. Il leader è quasi
-            // sempre in movimento normale, quindi è un riferimento molto più
-            // stabile per "quanto ci metterebbe a coprire questa distanza".
-            // speed è in unità/tick fisico; conversione a m/s: la stessa
-            // usata dal client per mostrare i km/h (speed*55), portata a m/s (/3.6).
-            const speedMs = Math.max(0.5, Math.abs(leader.speed) * 55 / 3.6);   // pavimento anti-divisione-per-zero
-            p.gapToLeaderMs = Math.round((distanceBehindM / speedMs) * 1000);
+        const newRankOrder = ranked.map(p => p.color);
+        const orderChanged = !game.lastRankOrder ||
+            newRankOrder.length !== game.lastRankOrder.length ||
+            newRankOrder.some((c, i) => game.lastRankOrder[i] !== c);
+        const timerElapsed = Date.now() - (game.lastGapRecalc || 0) >= GAP_RECALC_MS;
+
+        if (orderChanged || timerElapsed) {
+            game.lastGapRecalc = Date.now();
+            game.lastRankOrder = newRankOrder;
+            const leader = ranked[0];
+            const metersPerUnit = game.track.lapLength / game.track.points.length;
+            for (const p of ranked) {
+                if (p === leader) { p.gapToLeaderMs = null; continue; }
+                const distanceBehindUnits = progressScore(leader, game.track) - progressScore(p, game.track);
+                const distanceBehindM = Math.max(0, distanceBehindUnits) * metersPerUnit;
+                // Ritmo di riferimento = velocità del LEADER, non dell'inseguitore:
+                // usare p.speed produceva distacchi di minuti ogni volta che
+                // l'inseguitore era momentaneamente fermo/lento nell'istante esatto
+                // del ricalcolo (contro una barriera, in un testacoda, in pit box,
+                // in griglia dopo falsa partenza) — la stima proiettava quella
+                // velocità istantanea quasi nulla all'infinito. Il leader è quasi
+                // sempre in movimento normale, quindi è un riferimento molto più
+                // stabile per "quanto ci metterebbe a coprire questa distanza".
+                // speed è in unità/tick fisico; conversione a m/s: la stessa
+                // usata dal client per mostrare i km/h (speed*55), portata a m/s (/3.6).
+                const speedMs = Math.max(0.5, Math.abs(leader.speed) * 55 / 3.6);   // pavimento anti-divisione-per-zero
+                p.gapToLeaderMs = Math.round((distanceBehindM / speedMs) * 1000);
+            }
         }
     }
 
@@ -993,6 +1047,25 @@ function tickGame(io, lobbyId, game) {
     // trasmissione con il suo stato finale — il client non riceveva mai
     // finished/time e il cronometro continuava a scorrere sullo sfondo.
     broadcastState(io, lobbyId, game, true);
+
+    // Notifica live di ogni penalità da collisione appena accumulata (Task
+    // 2/3): DOPO broadcastState, non prima — il client deve già avere il
+    // badge "!" nel DOM (aggiunto da renderStandingRowContent in risposta a
+    // collisionPenalty:true nello stato appena ricevuto) prima di ricevere
+    // il trigger di animazione, altrimenti sul primissimo incidente della
+    // gara l'elemento .collision-badge non esisterebbe ancora e l'animazione
+    // verrebbe silenziosamente ignorata. Una alla volta, nell'ordine in cui
+    // sono avvenute nel tick — la coda resta quasi sempre vuota (0-1
+    // elementi), niente di costoso qui.
+    for (const p of players) {
+        if (!p.pendingCollisionPenaltyEvents.length) continue;
+        for (const penaltyMs of p.pendingCollisionPenaltyEvents) {
+            io.to(lobbyId).emit('f1CollisionPenalty', {
+                color: p.color, penaltyMs, totalMs: p.collisionPenaltyMs
+            });
+        }
+        p.pendingCollisionPenaltyEvents.length = 0;
+    }
 
     // Fine sessione (qualifica o gara): tutti i giocatori UMANI CONNESSI
     // hanno finito (chi è in grazia con l'auto ferma non blocca la
@@ -1111,6 +1184,12 @@ function checkLap(p, totalLaps, io, lobbyId, game) {
                 p.time += FALSE_START_PENALTY_MS;
                 p.falseStartServed = true;
             }
+            // Penalità collisioni: accumulo di TUTTI gli incidenti causati in
+            // gara (non un flag singolo), già notificati live uno per uno
+            // (vedi drenaggio in tickGame) — qui solo la somma finale.
+            if (game.phase === 'race' && p.collisionPenaltyMs > 0) {
+                p.time += p.collisionPenaltyMs;
+            }
             // Timer di sicurezza di gruppo: dà agli altri il tempo di finire la
             // sessione (giro di qualifica o gara, entrambe corse in parallelo)
             // anche se qualcuno resta molto indietro senza essersi disconnesso
@@ -1147,7 +1226,7 @@ function endRace(io, lobbyId, game) {
     const podium = [
         ...finished.sort((a, b) => a.time - b.time),
         ...unfinished.sort((a, b) => progressScore(b, game.track) - progressScore(a, game.track))
-    ].map(p => ({ color: p.color, totalTime: p.time, pitPenalty: !!p.pitPenalty, falseStart: !!p.falseStart }));
+    ].map(p => ({ color: p.color, totalTime: p.time, pitPenalty: !!p.pitPenalty, falseStart: !!p.falseStart, collisionPenaltyMs: p.collisionPenaltyMs || 0 }));
     io.to(lobbyId).emit('f1RaceEnded', {
         podium,
         isFinal:      true,
@@ -1191,7 +1270,8 @@ function updateVelocity(p, isQuali, slipstreamMult) {
         const dir = p.speed >= 0 ? 1 : -1;
         const speedFrac = Math.min(1, Math.abs(p.speed) / maxSpeed);
         const turnRate  = TURN_SPEED_LOW + (TURN_SPEED_HIGH - TURN_SPEED_LOW) * speedFrac;
-        p.angle += turnRate * dir * inputs.steer;
+        const steer = inputs.steer + applyDamageSteerNoise(p, isQuali);
+        p.angle += turnRate * dir * steer;
     }
 
     const fx = Math.sin(p.angle) * p.speed;
@@ -1243,7 +1323,7 @@ function applyOffTrackDrag(p, track) {
 // qualunque componente parallela al muro l'auto avesse già — in qualunque
 // verso, anche debole o ambigua — resta esattamente quella, senza alcuna
 // correzione di direzione o di orientamento.
-function applyBridgeBarrier(p, track) {
+function applyBridgeBarrier(p, track, isRace) {
     const idx = TrackGeometry.nearestIndexNear(track.points, p.trackIndex || 0, p.x, p.z, TRACK_INDEX_WINDOW);
     const pt = track.points[idx];
     if (!pt.bridge) return;
@@ -1252,7 +1332,10 @@ function applyBridgeBarrier(p, track) {
     const dist = Math.hypot(dx, dz);
     const limit = track.roadHalf + BRIDGE_BARRIER_MARGIN;
 
-    if (dist <= limit) return;
+    if (dist <= limit) {
+        p.wallContact = false;
+        return;
+    }
 
     const { nx, nz } = TrackGeometry.normalAt(track.points, idx, true);
     // normalAt punta sempre verso lo stesso lato fisso: va orientata verso
@@ -1289,6 +1372,13 @@ function applyBridgeBarrier(p, track) {
         p.vz -= wallNz * remove;
     }
 
+    if (!p.wallContact) {
+        p.wallContact = true;
+        if (isRace && Math.abs(vn) >= MIN_COLLISION_SEVERITY) {
+            applyBarrierDamage(p, vn);
+        }
+    }
+
     // Attrito continuo mentre l'auto resta appoggiata al muro (non solo un
     // colpo secco al momento dell'urto): un rallentamento REALE e sostenuto
     // finché il contatto persiste — non solo un numero diverso sul
@@ -1306,13 +1396,55 @@ function applyBridgeBarrier(p, track) {
     p.speed = p.vx * Math.sin(p.angle) + p.vz * Math.cos(p.angle);
 }
 
-// Usura gomme: SOLO dalla distanza percorsa nel tick (fermo = zero usura,
-// nessun caso speciale necessario) + un piccolo extra fisso se fuori pista.
-function applyTyreWear(p, offTrack, track) {
-    const dist = Math.hypot(p.vx, p.vz);   // distanza percorsa in questo tick
-    const wearPerUnitDist = 100 / (WEAR_LAPS_AT_MEDIUM * track.lapLength);
-    p.tyreWear = Math.min(100, p.tyreWear + dist * wearPerUnitDist * tyreOf(p).wearRate);
-    if (offTrack) p.tyreWear = Math.min(100, p.tyreWear + WEAR_OFFTRACK_EXTRA);
+// ====================================================
+// DANNO DA COLLISIONE — modello unico 0-100%, come tyreWear. Si accumula
+// SOLO in gara (le funzioni che lo applicano sono chiamate solo dai punti
+// di resolveCollisions/applyBridgeBarrier già ristretti alla gara vera, vedi
+// docs/superpowers/specs/2026-07-25-f1-danno-collisioni-design.md).
+// ====================================================
+const MIN_COLLISION_SEVERITY         = 1.0;   // sotto questa velocità di avvicinamento, nessun danno/penalità
+const DAMAGE_PER_SEVERITY            = 6;     // % danno per unità di severità oltre soglia
+const DAMAGE_CAP_PER_HIT             = 25;    // % danno massimo da un singolo urto
+const VICTIM_DAMAGE_FRACTION         = 0.18;  // quota di danno che prende la vittima di un tamponamento
+const COLLISION_PENALTY_PER_SEVERITY = 400;   // ms di penalità per unità di severità oltre soglia
+const COLLISION_PENALTY_CAP_MS       = 5000;  // penalità massima da un singolo urto
+
+function collisionDamageAmount(severity) {
+    return Math.min(DAMAGE_CAP_PER_HIT, Math.abs(severity) * DAMAGE_PER_SEVERITY);
+}
+
+function applyCollisionPenalty(culprit, severity) {
+    // Arrotondato a ms interi: severity è un float di fisica, e senza questo
+    // collisionPenaltyMs (sommato a p.time in checkLap) diventa un numero
+    // non intero — il tempo finale mostrato a schermo finiva con una sfilza
+    // di decimali (es. "3:16.10.848209412244614", il resto del float dentro
+    // ms % 1000 nel client).
+    const ms = Math.round(Math.min(COLLISION_PENALTY_CAP_MS, Math.abs(severity) * COLLISION_PENALTY_PER_SEVERITY));
+    culprit.collisionPenaltyMs += ms;
+    culprit.pendingCollisionPenaltyEvents.push(ms);   // drenata da tickGame per l'emit f1CollisionPenalty
+}
+
+// avn/bvn: componenti di velocità di a/b lungo la normale d'urto (orientata
+// da a verso b, vedi resolveCollisions) — avn>0: a si avvicina a b; -bvn>0:
+// b si avvicina ad a. Chi si avvicina di più è il colpevole. closingRate è
+// la violenza totale dell'urto (somma dei due avvicinamenti), già filtrata
+// da MIN_COLLISION_SEVERITY dal chiamante.
+function applyCarCollisionDamage(a, b, avn, bvn, closingRate) {
+    const closingA = avn, closingB = -bvn;
+    const faultIsA = closingA >= closingB;
+    const culprit = faultIsA ? a : b;
+    const victim  = faultIsA ? b : a;
+
+    const dmg = collisionDamageAmount(closingRate);
+    culprit.damage = Math.min(100, culprit.damage + dmg);
+    victim.damage  = Math.min(100, victim.damage + dmg * VICTIM_DAMAGE_FRACTION);
+
+    applyCollisionPenalty(culprit, closingRate);
+}
+
+function applyBarrierDamage(p, vn) {
+    p.damage = Math.min(100, p.damage + collisionDamageAmount(vn));
+    // nessuna penalità: contro il muro ci si fa male da soli.
 }
 
 // ====================================================
@@ -1352,7 +1484,10 @@ function resolveCollisions(players) {
             const a = players[i], b = players[j];
 
             const dx = b.x - a.x, dz = b.z - a.z;
-            if (dx * dx + dz * dz > CAR_MAX_REACH * CAR_MAX_REACH) continue;   // troppo distanti, salta il SAT
+            if (dx * dx + dz * dz > CAR_MAX_REACH * CAR_MAX_REACH) {
+                a.carContacts.delete(b.color); b.carContacts.delete(a.color);
+                continue;   // troppo distanti, salta il SAT
+            }
 
             const axesA = carAxes(a);
             const axesB = carAxes(b);
@@ -1369,7 +1504,10 @@ function resolveCollisions(players) {
                 if (overlap <= 0) { separated = true; break; }
                 if (overlap < minOverlap) { minOverlap = overlap; mtvAxis = axis; }
             }
-            if (separated) continue;
+            if (separated) {
+                a.carContacts.delete(b.color); b.carContacts.delete(a.color);
+                continue;
+            }
 
             // Normale dell'MTV, orientata da a verso b
             let nx = mtvAxis.x, nz = mtvAxis.z;
@@ -1384,6 +1522,24 @@ function resolveCollisions(players) {
             const avn = a.vx * nx + a.vz * nz;
             const bvn = b.vx * nx + b.vz * nz;
             const rel = bvn - avn;
+
+            // Danno/penalità SOLO al primo contatto (transizione da "non a
+            // contatto" a "a contatto"): uno struscio prolungato non deve
+            // riaccumulare danno ad ogni sotto-step. resolveCollisions è
+            // chiamata solo `if (!isQuali)` in tickGame, quindi tutto qui è
+            // già implicitamente "solo in gara" — nessun controllo fase
+            // aggiuntivo necessario.
+            const wasInContact = a.carContacts.has(b.color);
+            if (!wasInContact) {
+                a.carContacts.add(b.color);
+                b.carContacts.add(a.color);
+
+                const closingRate = -rel;   // violenza totale dell'urto (rel<0 = si avvicinano)
+                if (closingRate >= MIN_COLLISION_SEVERITY) {
+                    applyCarCollisionDamage(a, b, avn, bvn, closingRate);
+                }
+            }
+
             if (rel < 0) {
                 const delta = rel * COLLISION_BOUNCE;
                 a.vx += nx * delta; a.vz += nz * delta;
@@ -1417,6 +1573,7 @@ function buildPublicState(players, raceStarted, track) {
             position: raceStarted ? ranked.findIndex(r => r.color === color) + 1 : null,
             compound: p.compound,
             tyreWear: p.tyreWear,
+            damage:   p.damage,
             // Autopilota corsia box (entrata/uscita): velocità del
             // limitatore, non del giocatore — il client la usa per un
             // rumore motore fisso invece che legato all'accelerazione,
@@ -1430,7 +1587,8 @@ function buildPublicState(players, raceStarted, track) {
             falseStartServed: !!p.falseStartServed,
             gapToLeaderMs: (p.gapToLeaderMs != null) ? p.gapToLeaderMs : null,
             isBot: !!p.isBot,
-            slipstream: !!p.inSlipstream
+            slipstream: !!p.inSlipstream,
+            collisionPenalty: p.collisionPenaltyMs > 0
         };
     }
     return out;
@@ -1462,7 +1620,13 @@ module.exports.physics = {
     ACCEL, BRAKE_MULT, TURN_SPEED_HIGH, HALF_LAP_IDX,
     effectiveMaxSpeed, updateVelocity, integratePosition,
     applyOffTrackDrag, applyBridgeBarrier, updateTrackIndex,
-    circularWithin, checkpointWindowFor, finishWindowFor
+    circularWithin, checkpointWindowFor, finishWindowFor,
+    assignGridSpawns,
+    MIN_COLLISION_SEVERITY, DAMAGE_CAP_PER_HIT, COLLISION_PENALTY_CAP_MS,
+    collisionDamageAmount, applyCarCollisionDamage, applyBarrierDamage, applyCollisionPenalty,
+    resolveCollisions,
+    applyDamageSteerNoise, DAMAGE_STEER_NOISE_MAX, effectiveGrip,
+    buildPublicState
 };
 
 module.exports.tickGame = tickGame;
