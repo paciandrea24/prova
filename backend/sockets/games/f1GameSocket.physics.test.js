@@ -250,30 +250,41 @@ test('applyBridgeBarrier: senza 3° argomento (retrocompatibile con f1LapSimulat
     assert.equal(p.damage, 0);
 });
 
-test('effectiveMaxSpeed: il danno riduce la velocità massima in gara, non in qualifica', () => {
+test('effectiveMaxSpeed: il danno al motore riduce la velocità massima in gara, non in qualifica', () => {
     const { physics } = f1GameSocket;
-    const pDanneggiato = { tyreWear: 0, compound: 'medium', damage: 100 };
-    const pIlleso       = { tyreWear: 0, compound: 'medium', damage: 0 };
+    const pDanneggiato = { tyreWear: 0, compound: 'medium', damageParts: { engine: 100, frontWing: 0, floor: 0, suspension: 0 } };
+    const pIlleso       = { tyreWear: 0, compound: 'medium', damageParts: { engine: 0, frontWing: 0, floor: 0, suspension: 0 } };
 
     const raceDanneggiato = physics.effectiveMaxSpeed(pDanneggiato, false);
     const raceIlleso      = physics.effectiveMaxSpeed(pIlleso, false);
-    assert.ok(raceDanneggiato < raceIlleso, 'in gara il danno deve rallentare');
+    assert.ok(raceDanneggiato < raceIlleso, 'in gara il danno al motore deve rallentare');
 
     const qualiDanneggiato = physics.effectiveMaxSpeed(pDanneggiato, true);
     const qualiIlleso      = physics.effectiveMaxSpeed(pIlleso, true);
     assert.ok(Math.abs(qualiDanneggiato - qualiIlleso) < 1e-9, 'in qualifica il danno non deve avere effetto');
 });
 
-test('effectiveGrip: nessun effetto sotto DAMAGE_GRIP_THRESHOLD, effetto sopra soglia', () => {
+test("effectiveGrip: il danno al fondo riduce l'aderenza in modo proporzionale, nessuna soglia", () => {
     const { physics } = f1GameSocket;
-    const pLieve = { tyreWear: 0, compound: 'medium', damage: 10 };
-    const pIlleso = { tyreWear: 0, compound: 'medium', damage: 0 };
-    const pGrave  = { tyreWear: 0, compound: 'medium', damage: 90 };
+    const pIlleso = { tyreWear: 0, compound: 'medium', damageParts: { engine: 0, frontWing: 0, floor: 0, suspension: 0 } };
+    const pLieve  = { tyreWear: 0, compound: 'medium', damageParts: { engine: 0, frontWing: 0, floor: 10, suspension: 0 } };
+    const pGrave  = { tyreWear: 0, compound: 'medium', damageParts: { engine: 0, frontWing: 0, floor: 90, suspension: 0 } };
 
-    assert.ok(Math.abs(physics.effectiveGrip(pLieve, false) - physics.effectiveGrip(pIlleso, false)) < 1e-9,
-        'sotto soglia, nessuna perdita di aderenza');
-    assert.ok(physics.effectiveGrip(pGrave, false) < physics.effectiveGrip(pIlleso, false),
-        'sopra soglia, aderenza ridotta');
+    assert.ok(physics.effectiveGrip(pLieve, false) < physics.effectiveGrip(pIlleso, false),
+        'già a basso danno al fondo, aderenza ridotta (nessuna soglia netta)');
+    assert.ok(physics.effectiveGrip(pGrave, false) < physics.effectiveGrip(pLieve, false),
+        'più danno al fondo, più aderenza ridotta');
+});
+
+test('effectiveAccel: il danno al motore riduce anche l\'accelerazione, non solo la velocità massima', () => {
+    const { physics } = f1GameSocket;
+    const pDanneggiato = { tyreWear: 0, compound: 'medium', damageParts: { engine: 100, frontWing: 0, floor: 0, suspension: 0 } };
+    const pIlleso       = { tyreWear: 0, compound: 'medium', damageParts: { engine: 0, frontWing: 0, floor: 0, suspension: 0 } };
+
+    assert.ok(physics.effectiveAccel(pDanneggiato, false) < physics.effectiveAccel(pIlleso, false),
+        'motore danneggiato: accelerazione ridotta in gara');
+    assert.ok(Math.abs(physics.effectiveAccel(pDanneggiato, true) - physics.effectiveAccel(pIlleso, true)) < 1e-9,
+        'in qualifica il danno non deve avere effetto');
 });
 
 test('applyDamageSteerNoise: zero sotto soglia o in qualifica, non-zero sopra soglia in gara', () => {

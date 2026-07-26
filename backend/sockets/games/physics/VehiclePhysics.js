@@ -7,8 +7,7 @@
 const TrackGeometry = require('../../../../frontend/shared/trackGeometry.js');
 const { tyreOf, WEAR_SPEED_PENALTY, WEAR_GRIP_PENALTY, WEAR_BRAKE_PENALTY, WEAR_ACCEL_PENALTY, getWearPenaltyFactor } = require('./TyreModel');
 const {
-    DAMAGE_SPEED_PENALTY_MAX, DAMAGE_GRIP_PENALTY_MAX, DAMAGE_GRIP_THRESHOLD,
-    applyDamageSteerNoise
+    getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise
 } = require('./DamageModel');
 
 // Velocità realistica F1: fattore di scala R=1.55 (+55%) applicato a
@@ -34,28 +33,29 @@ const TURN_SPEED_HIGH = 0.052;   // rad/tick alla velocità massima (era 0.048 f
 const GRIP         = 0.78;
 const BRAKE_MULT   = 2.17;   // moltiplicatore di ACCEL in frenata (era 1.4 a MAX_SPEED=4.0)
 
-// p.damage va letto come (p.damage || 0): gli strumenti offline
-// (f1LapSimulator.js, f1RaceLineOptimizer.js) costruiscono i loro player di
-// simulazione senza campo damage — con una lettura diretta p.damage/100
-// darebbe NaN e romperebbe la simulazione. Per i giocatori reali damage è
-// sempre un numero (mai undefined, vedi init in joinF1Game/createBots).
+// Le penalità da danno leggono p.damageParts tramite le funzioni pure di
+// DamageModel.js (getEnginePowerPenalty/getFloorGripPenalty/...), che
+// gestiscono internamente l'assenza del campo (parts?.x || 0): gli
+// strumenti offline (f1LapSimulator.js, f1RaceLineOptimizer.js) costruiscono
+// i loro player di simulazione senza damageParts e ottengono correttamente
+// penalità 0, senza NaN. Per i giocatori reali damageParts è sempre
+// popolato (vedi init in joinF1Game/createBots).
 function effectiveMaxSpeed(p, isQuali) {
     const wearFactor   = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_SPEED_PENALTY;
-    const damageFactor = isQuali ? 1 : 1 - ((p.damage || 0) / 100) * DAMAGE_SPEED_PENALTY_MAX;
-    return MAX_SPEED * tyreOf(p, isQuali).speedMult * wearFactor * damageFactor;
+    const engineFactor = isQuali ? 1 : 1 - getEnginePowerPenalty(p.damageParts);
+    return MAX_SPEED * tyreOf(p, isQuali).speedMult * wearFactor * engineFactor;
 }
 
 function effectiveGrip(p, isQuali) {
-    const wearFactor = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_GRIP_PENALTY;
-    const gripDamageFrac = isQuali ? 0
-        : Math.max(0, (p.damage || 0) - DAMAGE_GRIP_THRESHOLD) / (100 - DAMAGE_GRIP_THRESHOLD);
-    const damageFactor = 1 - gripDamageFrac * DAMAGE_GRIP_PENALTY_MAX;
-    return GRIP * tyreOf(p, isQuali).gripMult * wearFactor * damageFactor;
+    const wearFactor  = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_GRIP_PENALTY;
+    const floorFactor = isQuali ? 1 : 1 - getFloorGripPenalty(p.damageParts);
+    return GRIP * tyreOf(p, isQuali).gripMult * wearFactor * floorFactor;
 }
 
 function effectiveAccel(p, isQuali) {
-    const wearFactor = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_ACCEL_PENALTY;
-    return ACCEL * wearFactor;
+    const wearFactor   = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_ACCEL_PENALTY;
+    const engineFactor = isQuali ? 1 : 1 - getEnginePowerPenalty(p.damageParts);
+    return ACCEL * wearFactor * engineFactor;
 }
 
 function effectiveBrakeMult(p, isQuali) {
@@ -98,8 +98,17 @@ function updateVelocity(p, isQuali, slipstreamMult) {
     if (Math.abs(p.speed) > 0.01 || (p.vx * p.vx + p.vz * p.vz) > 0.0001) {
         const dir = p.speed >= 0 ? 1 : -1;
         const speedFrac = Math.min(1, Math.abs(p.speed) / maxSpeed);
-        const turnRate  = TURN_SPEED_LOW + (TURN_SPEED_HIGH - TURN_SPEED_LOW) * speedFrac;
-        const steer = inputs.steer + applyDamageSteerNoise(p, isQuali);
+        // Sottosterzo da ala anteriore rotta: riduce la capacità di sterzata
+        // (turnRate), non la annulla mai — un'ala completamente distrutta
+        // lascia comunque il complemento di FRONT_WING_STEER_PENALTY_MAX di
+        // capacità residua, mai zero.
+        const steerFactor = isQuali ? 1 : 1 - getFrontWingSteerPenalty(p.damageParts);
+        const turnRate = (TURN_SPEED_LOW + (TURN_SPEED_HIGH - TURN_SPEED_LOW) * speedFrac) * steerFactor;
+        // Rumore da sospensioni danneggiate: sostituisce la vecchia
+        // applyDamageSteerNoise (generica, a soglia) — ora progressivo sul
+        // danno specifico alle sospensioni, nessuna soglia.
+        const suspensionNoise = isQuali ? 0 : getSuspensionNoise(p.damageParts);
+        const steer = inputs.steer + suspensionNoise;
         p.angle += turnRate * dir * steer;
     }
 
