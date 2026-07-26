@@ -24,6 +24,8 @@ const WEAR_LAPS_AT_MEDIUM = 5;   // quanti giri dura una Medium (wearRate=1) pri
 const WEAR_OFFTRACK_EXTRA = 0.02; // piccolo extra per tick fuori pista (oltre a quello da distanza)
 const WEAR_SPEED_PENALTY  = 0.25; // fino a -25% velocità massima a gomme esaurite
 const WEAR_GRIP_PENALTY   = 0.35; // fino a -35% aderenza a gomme esaurite (più derapate)
+const WEAR_BRAKE_PENALTY  = 0.30; // fino a -30% di efficienza frenante a gomma esaurita
+const WEAR_ACCEL_PENALTY  = 0.20; // fino a -20% di trazione in accelerazione a gomma esaurita
 
 // In qualifica TUTTI usano lo spec della Soft (gomma da qualifica, come in F1
 // vera), gomme fresche, a prescindere dalla mescola scelta per la gara — la
@@ -31,6 +33,33 @@ const WEAR_GRIP_PENALTY   = 0.35; // fino a -35% aderenza a gomme esaurite (più
 function tyreOf(p, isQuali) {
     if (isQuali) return TYRE_COMPOUNDS.soft;
     return TYRE_COMPOUNDS[p.compound] || TYRE_COMPOUNDS[DEFAULT_COMPOUND];
+}
+
+// ====================================================
+// CURVA DI DEGRADO "CLIFF" — sostituisce il vecchio calcolo lineare
+// (tyreWear/100) con una curva a due tratti, come il comportamento reale
+// delle gomme F1 moderne: prestazioni quasi piene fino a una soglia, poi un
+// calo marcato e accelerato oltre quella soglia (il "cliff"). Il fattore
+// risultante (0..1) va moltiplicato per le penalità (WEAR_SPEED_PENALTY,
+// WEAR_GRIP_PENALTY, WEAR_ACCEL_PENALTY, WEAR_BRAKE_PENALTY) esattamente
+// come faceva prima (tyreWear/100) — stesso ruolo, curva diversa.
+// ====================================================
+const WEAR_CLIFF_THRESHOLD = 0.60;       // frazione di usura (0-1) oltre cui inizia il "cliff"
+const WEAR_CLIFF_GENTLE_FRACTION = 0.25; // quota del fattore massimo (1.0) raggiunta ESATTAMENTE alla soglia
+
+// Tratto dolce (w <= soglia): lineare da 0 a WEAR_CLIFF_GENTLE_FRACTION.
+// Tratto cliff (w > soglia): quadratico da WEAR_CLIFF_GENTLE_FRACTION a 1.0 —
+// continuo nel valore al punto di raccordo (stesso fattore su entrambi i
+// lati della soglia), non nella derivata: il cambio di pendenza è voluto,
+// è il "cliff" — una perdita di prestazione percepibile, non
+// un'estrapolazione morbida del tratto precedente.
+function getWearPenaltyFactor(tyreWear) {
+    const w = Math.max(0, Math.min(100, tyreWear)) / 100;
+    if (w <= WEAR_CLIFF_THRESHOLD) {
+        return (w / WEAR_CLIFF_THRESHOLD) * WEAR_CLIFF_GENTLE_FRACTION;
+    }
+    const t = (w - WEAR_CLIFF_THRESHOLD) / (1 - WEAR_CLIFF_THRESHOLD);
+    return WEAR_CLIFF_GENTLE_FRACTION + (1 - WEAR_CLIFF_GENTLE_FRACTION) * t * t;
 }
 
 // Usura gomme: SOLO dalla distanza percorsa nel tick (fermo = zero usura,
@@ -67,5 +96,7 @@ function suggestStrategy(totalLaps) {
 module.exports = {
     TYRE_COMPOUNDS, DEFAULT_COMPOUND,
     WEAR_LAPS_AT_MEDIUM, WEAR_OFFTRACK_EXTRA, WEAR_SPEED_PENALTY, WEAR_GRIP_PENALTY,
-    tyreOf, applyTyreWear, suggestStrategy
+    WEAR_BRAKE_PENALTY, WEAR_ACCEL_PENALTY,
+    WEAR_CLIFF_THRESHOLD, WEAR_CLIFF_GENTLE_FRACTION,
+    tyreOf, applyTyreWear, suggestStrategy, getWearPenaltyFactor
 };
