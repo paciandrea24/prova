@@ -7,7 +7,12 @@
 // nessuna formula cambiata.
 const { WEAR_BRAKE_PENALTY, getWearPenaltyFactor } = require('./TyreModel');
 
-const BRAKE_MULT = 2.17;   // moltiplicatore di ACCEL in frenata
+// Moltiplicatore di ACCEL in frenata (era 1.4 a MAX_SPEED=4.0), scalato ×R²
+// (non ×R) come FRICTION: la decelerazione è un decremento costante per
+// tick, quindi lo spazio d'arresto va con v²/decel — per tenerlo vicino a
+// quello di prima dell'aumento di velocità (R=1.55) serve lo stesso ×R² di
+// FRICTION. Vedi docs/superpowers/specs/2026-07-21-f1-velocita-frenata-mescole-design.md.
+const BRAKE_MULT = 2.17;
 
 function effectiveBrakeMult(p, isQuali) {
     const wearFactor = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_BRAKE_PENALTY;

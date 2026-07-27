@@ -18,6 +18,10 @@ function nearestTrackDist(track, x, z) {
 
 // Ghiaia: rallentamento fuori pista. Ritorna se il giocatore è fuori pista in
 // questo tick, riusato da TyreModel.applyTyreWear per il piccolo extra di usura.
+// (Chi è nella corsia box vera e propria è guidato dall'autopilota, escluso
+// da questa funzione — vedi il filtro "racing" in tickGame — quindi non
+// serve un'esenzione qui: la zona di trigger d'ingresso è comunque abbastanza
+// vicina al bordo pista normale da non scattare mai.)
 function applyOffTrackDrag(p, track) {
     const dist = nearestTrackDist(track, p.x, p.z);
     const offTrack = dist > track.roadHalf + 2;

@@ -10,6 +10,9 @@ const { getFloorGripPenalty } = require('./DamageModel');
 
 const GRIP = 0.78;
 
+// Stesso invariante "niente NaN senza damageParts" di
+// PowertrainModel.effectiveMaxSpeed (vedi lì per i dettagli): getFloorGripPenalty
+// gestisce l'assenza del campo internamente.
 function effectiveGrip(p, isQuali) {
     const wearFactor  = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_GRIP_PENALTY;
     const floorFactor = isQuali ? 1 : 1 - getFloorGripPenalty(p.damageParts);

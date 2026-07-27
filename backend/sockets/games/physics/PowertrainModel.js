@@ -11,10 +11,19 @@ const { getEnginePowerPenalty } = require('./DamageModel');
 // Velocità realistica F1: fattore di scala R=1.55 (+55%) applicato a
 // MAX_SPEED/ACCEL/FRICTION rispetto ai valori storici (4.0/0.12/0.050). Vedi
 // docs/superpowers/specs/2026-07-21-f1-velocita-frenata-mescole-design.md.
+// Km/h a schermo = speed * 55 (frontend/f1.js): 6.2 → 341 km/h base Medium,
+// 358 Soft, 324 Hard.
 const MAX_SPEED = 6.2;
 const ACCEL     = 0.186;
 const FRICTION  = 0.120;   // decremento costante per tick del coast-down
 
+// Le penalità da danno leggono p.damageParts tramite le funzioni pure di
+// DamageModel.js (getEnginePowerPenalty/...), che gestiscono internamente
+// l'assenza del campo (parts?.x || 0): gli strumenti offline
+// (f1LapSimulator.js, f1RaceLineOptimizer.js) costruiscono i loro player di
+// simulazione senza damageParts e ottengono correttamente penalità 0, senza
+// NaN. Per i giocatori reali damageParts è sempre popolato (vedi init in
+// joinF1Game/createBots).
 function effectiveMaxSpeed(p, isQuali) {
     const wearFactor   = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_SPEED_PENALTY;
     const engineFactor = isQuali ? 1 : 1 - getEnginePowerPenalty(p.damageParts);

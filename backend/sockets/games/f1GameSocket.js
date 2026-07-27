@@ -32,7 +32,11 @@ const { TRACK_INDEX_WINDOW } = CollisionResolver;
 // vettura — vedi VehicleDynamics.js. Le altre costanti/funzioni sopra
 // (TYRE_COMPOUNDS, DAMAGE_*, ACCEL, ecc.) restano importate direttamente dai
 // moduli originali: servono altrove in questo file (buildPublicState,
-// module.exports.physics, deps per f1Bot) e non fanno parte del tick loop.
+// module.exports.physics) — e in parte ANCHE dentro tickGame, ma non dalla
+// sequenza principale di simulazione vettura: effectiveMaxSpeed/ACCEL/
+// BRAKE_MULT/TURN_SPEED_HIGH sono usate dal deps object del bot AI
+// (updateBotInputs) più sotto, non dalla catena updateVelocity/
+// integratePosition/... che ora passa per VehicleDynamics.
 const VehicleDynamics = require('./physics/VehicleDynamics');
 const {
     COLLISION_SUBSTEPS,
