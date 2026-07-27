@@ -17,6 +17,13 @@
     const LIVERY_HUE_MAX = 28;
     const LIVERY_SAT_MIN = 0.2;
 
+    // Cerchio ruota: tonalità 45°-100° (verde oliva), misurata sulla palette
+    // reale — nettamente separata dalla livrea rossa (≤24°) e dal nero/grigio
+    // gomma (saturazione quasi nulla, o tonalità <10° con valore molto basso).
+    // Usata per ritingere il cerchio col colore mescola (vedi loadCarModel).
+    const RIM_HUE_MIN = 45;
+    const RIM_HUE_MAX = 100;
+
     // Lift di luminosità applicato a OGNI texel (nero, grigio o livrea),
     // stessa curva per tutti — misurato sulla palette reale: anche il "nero"
     // più chiaro non supera v=0.36, e molte ombre livrea stanno sotto v=0.15,
@@ -69,7 +76,7 @@
         return [r1 + m, g1 + m, b1 + m];
     }
 
-    function recolorLiveryTexture(sourceTexture, hex) {
+    function recolorLiveryTexture(sourceTexture, hex, forceNeutral = false, compoundHex = null) {
         const img = sourceTexture.image;
         const canvas = document.createElement('canvas');
         canvas.width  = img.width;
@@ -89,13 +96,27 @@
         // (chiaro/scuro), non come valore assoluto.
         const [targetHue, targetSat, targetVal] = rgbToHsv(((hex >> 16) & 0xff) / 255, ((hex >> 8) & 0xff) / 255, (hex & 0xff) / 255);
 
+        // Stesso principio per il colore mescola sul cerchio (solo quando
+        // forceNeutral è attivo, cioè sulle mesh ruota): se compoundHex non è
+        // fornito (mescola non ancora nota), isRim resta sempre falso più
+        // sotto e il cerchio si comporta come un texel neutro qualsiasi.
+        const [compoundHue, compoundSat, compoundVal] = compoundHex != null
+            ? rgbToHsv(((compoundHex >> 16) & 0xff) / 255, ((compoundHex >> 8) & 0xff) / 255, (compoundHex & 0xff) / 255)
+            : [0, 0, 0];
+
         for (let i = 0; i < data.length; i += 4) {
             const [h, s, v] = rgbToHsv(data[i] / 255, data[i + 1] / 255, data[i + 2] / 255);
-            const isLivery = h <= LIVERY_HUE_MAX && s >= LIVERY_SAT_MIN;
+            const isLivery = !forceNeutral && h <= LIVERY_HUE_MAX && s >= LIVERY_SAT_MIN;
+            const isRim    = forceNeutral && compoundHex != null && h >= RIM_HUE_MIN && h <= RIM_HUE_MAX;
             const liftedV = liftValue(v);
-            const outHue  = isLivery ? targetHue : h;
-            const outSat  = isLivery ? targetSat : desaturateForBlack(s);
-            const outVal  = isLivery ? targetVal * liftedV : liftedV;
+            let outHue, outSat, outVal;
+            if (isLivery) {
+                outHue = targetHue; outSat = targetSat; outVal = targetVal * liftedV;
+            } else if (isRim) {
+                outHue = compoundHue; outSat = compoundSat; outVal = compoundVal * liftedV;
+            } else {
+                outHue = h; outSat = desaturateForBlack(s); outVal = liftedV;
+            }
             const [nr, ng, nb] = hsvToRgb(outHue, outSat, outVal);
             data[i]     = Math.round(nr * 255);
             data[i + 1] = Math.round(ng * 255);
@@ -161,8 +182,22 @@
                 child.castShadow    = true;
                 child.receiveShadow = true;
                 child.material      = child.material.clone();
+                const nm = (child.name + ' ' + (child.parent?.name || '')).toLowerCase();
+                const isWheelMesh = nm.includes('wheel') || nm.includes('tyre') || nm.includes('tire');
+                // Le gomme non cambiano mai colore col giocatore (una gomma vera
+                // resta nera/grigia): la palette condivisa con la carrozzeria ha
+                // alcuni toni scuri (ombre) che per tonalità/saturazione vengono
+                // classificati come "livrea" da recolorLiveryTexture — corretto
+                // sulla carrozzeria, sbagliato sulle ruote (macchie del colore
+                // giocatore sui voxel gomma/cerchio). Sulle mesh ruota si applica
+                // comunque la schiarita di luminosità (altrimenti la palette
+                // scura originale si legge come un blob nero indistinguibile,
+                // vedi liftValue) ma MAI la tinta livrea (forceNeutral).
+                if (isWheelMesh && child.material.map) {
+                    child.userData.pristineTex = child.material.map;
+                }
                 if (child.material.map) {
-                    child.material.map = recolorLiveryTexture(child.material.map, hex);
+                    child.material.map = recolorLiveryTexture(child.material.map, hex, isWheelMesh);
                     child.material.needsUpdate = true;
                 } else {
                     const c = child.material.color;
@@ -173,8 +208,7 @@
                     }
                 }
                 allMeshes.push(child);
-                const nm = (child.name + ' ' + (child.parent?.name || '')).toLowerCase();
-                if (nm.includes('wheel') || nm.includes('tyre') || nm.includes('tire')) {
+                if (isWheelMesh) {
                     namedWheels.push(child);
                     const side = classifyWheelSide(nm);
                     if (side) meshSide.set(child, side);
@@ -245,6 +279,19 @@
             group.userData.wheels      = wheels;
             group.userData.frontWheels = frontWheels;
             group.userData.wheelRot    = 0;
+
+            // Rigenera la texture ruota col colore mescola richiesto, partendo
+            // sempre dalla copia non processata (mai dalla texture già
+            // ricolorata) per evitare degradazione cumulativa ad ogni cambio
+            // mescola (es. dopo un pit stop). Nessun effetto su mesh non-ruota
+            // (w.userData.pristineTex è undefined per la carrozzeria).
+            group.userData.setCompoundColor = function (compoundHex) {
+                for (const w of wheels) {
+                    if (!w.isMesh || !w.userData.pristineTex) continue;
+                    w.material.map = recolorLiveryTexture(w.userData.pristineTex, hex, true, compoundHex);
+                    w.material.needsUpdate = true;
+                }
+            };
 
             // Ordine Euler 'YXZ' su ogni nodo ruota: lo sterzo (rotation.y,
             // applicato solo alle ruote anteriori in frontend/f1.js) va
