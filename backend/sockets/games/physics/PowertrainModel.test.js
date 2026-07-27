@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { MAX_SPEED, ACCEL, FRICTION, effectiveMaxSpeed, effectiveAccel, applyThrottle, applyCoast } = require('./PowertrainModel');
 const { tractionFactor } = require('./TyreForceModel');
+const { tractionExcess, updateTractionSlipDebt, TRACTION_SLIP_PENALTY_MAX } = require('./TyreSlipModel');
 
 test('costanti storiche invariate', () => {
     assert.equal(MAX_SPEED, 6.2);
@@ -42,6 +43,89 @@ test('effectiveAccel: Fase 2B, il fattore usura proviene sempre da TyreForceMode
     const p = { compound: 'medium', tyreWear: 80, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
     const expected = ACCEL * tractionFactor(80, false);
     assert.ok(Math.abs(effectiveAccel(p, false) - expected) < 1e-9);
+});
+
+test('applyThrottle: Fase 3.1, F1_TYRE_SLIP_MODEL non impostata -> comportamento identico a prima anche da fermo a pieno gas su gomma nuova (baseline invariata), _tractionSlipDebt mai toccato', () => {
+    assert.equal(process.env.F1_TYRE_SLIP_MODEL, undefined);
+    const p = { speed: 0, inputs: { throttle: 1 }, compound: 'medium', tyreWear: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
+    applyThrottle(p, false, 6.2);
+    assert.equal(p.speed, 0.186);
+    assert.equal(p._tractionSlipDebt, undefined, 'a flag spento il debito non deve nemmeno essere creato');
+});
+
+test("applyThrottle: Fase 3.1, F1_TYRE_SLIP_MODEL='1' -> da fermo a pieno gas anche su gomma NUOVA l'accelerazione ottenuta è ridotta (wheelspin, primo tick: debito = eccesso*RISE_RATE)", () => {
+    process.env.F1_TYRE_SLIP_MODEL = '1';
+    try {
+        const p = { speed: 0, inputs: { throttle: 1 }, compound: 'medium', tyreWear: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
+        applyThrottle(p, false, 6.2);
+        const excess = tractionExcess(1, 0, tractionFactor(0, false));
+        const expectedDebt = updateTractionSlipDebt(undefined, excess);
+        const expected = ACCEL * (1 - expectedDebt * TRACTION_SLIP_PENALTY_MAX);
+        assert.ok(p.speed < 0.186, `atteso speed ridotta rispetto a 0.186 (baseline), ottenuto ${p.speed}`);
+        assert.ok(Math.abs(p.speed - expected) < 1e-9, `atteso ${expected}, ottenuto ${p.speed}`);
+        assert.ok(Math.abs(p._tractionSlipDebt - expectedDebt) < 1e-9, `atteso debito ${expectedDebt}, ottenuto ${p._tractionSlipDebt}`);
+    } finally {
+        delete process.env.F1_TYRE_SLIP_MODEL;
+    }
+});
+
+test("applyThrottle: Fase 3.1, F1_TYRE_SLIP_MODEL='1' -> accumulo: tick consecutivi di pieno gas in zona di lancio fanno crescere il debito (non un semplice ricalcolo istantaneo)", () => {
+    process.env.F1_TYRE_SLIP_MODEL = '1';
+    try {
+        const p = { speed: 0, inputs: { throttle: 1 }, compound: 'medium', tyreWear: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
+        applyThrottle(p, false, 6.2);
+        const debtAfterTick1 = p._tractionSlipDebt;
+        p.speed = 0; // resimula un tick successivo nelle stesse condizioni (isola l'accumulo dall'avanzamento di velocità)
+        applyThrottle(p, false, 6.2);
+        const debtAfterTick2 = p._tractionSlipDebt;
+        assert.ok(debtAfterTick2 > debtAfterTick1, `atteso debito crescente con eccesso sostenuto: ${debtAfterTick1} -> ${debtAfterTick2}`);
+    } finally {
+        delete process.env.F1_TYRE_SLIP_MODEL;
+    }
+});
+
+test("applyThrottle: Fase 3.1, F1_TYRE_SLIP_MODEL='1' -> decadimento: uscendo dalla zona di lancio il debito scende gradualmente nei tick successivi, non a zero istantaneo", () => {
+    process.env.F1_TYRE_SLIP_MODEL = '1';
+    try {
+        const p = { speed: 0, inputs: { throttle: 1 }, compound: 'medium', tyreWear: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
+        applyThrottle(p, false, 6.2); // costruisce un debito
+        const debtInZone = p._tractionSlipDebt;
+        assert.ok(debtInZone > 0, 'precondizione: deve esserci un debito da cui recuperare');
+
+        p.speed = 5; // fuori dalla zona di lancio (speedFrac=5/6.2≈0.81 > 0.50): eccesso torna a 0
+        applyThrottle(p, false, 6.2);
+        const debtAfterOneTick = p._tractionSlipDebt;
+        assert.ok(debtAfterOneTick > 0, `atteso debito ancora positivo dopo un solo tick fuori zona (recupero graduale), ottenuto ${debtAfterOneTick}`);
+        assert.ok(debtAfterOneTick < debtInZone, `atteso debito in calo: ${debtInZone} -> ${debtAfterOneTick}`);
+    } finally {
+        delete process.env.F1_TYRE_SLIP_MODEL;
+    }
+});
+
+test("applyThrottle: Fase 3.1, F1_TYRE_SLIP_MODEL='1' -> fuori dalla zona di lancio (speed=4, speedFrac=0.645 > soglia 0.50), gomma DAVVERO fresca, primo tick -> nessun wheelspin (garanzia matematica: demand=throttle non supera mai capacità=1 fuori zona, debito parte da 0)", () => {
+    process.env.F1_TYRE_SLIP_MODEL = '1';
+    try {
+        const p = { speed: 4, inputs: { throttle: 1 }, compound: 'medium', tyreWear: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
+        applyThrottle(p, false, 6.2);
+        const expected = 4 + effectiveAccel(p, false);
+        assert.ok(Math.abs(p.speed - expected) < 1e-9, `atteso nessuna riduzione fuori zona di lancio: ${expected}, ottenuto ${p.speed}`);
+        assert.equal(p._tractionSlipDebt, 0, 'nessun debito accumulato se non c\'è mai stato eccesso');
+    } finally {
+        delete process.env.F1_TYRE_SLIP_MODEL;
+    }
+});
+
+test("applyThrottle: Fase 3.1, F1_TYRE_SLIP_MODEL='1' -> su gomma USURATA la finestra di wheelspin si allarga oltre la zona di lancio storica (piccolo residuo anche a velocità moderata, comportamento documentato, non un bug)", () => {
+    process.env.F1_TYRE_SLIP_MODEL = '1';
+    try {
+        const p = { speed: 4, inputs: { throttle: 1 }, compound: 'medium', tyreWear: 80, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
+        applyThrottle(p, false, 6.2);
+        const noSlipExpected = 4 + effectiveAccel(p, false);
+        assert.ok(p.speed < noSlipExpected, `atteso una riduzione residua rispetto a ${noSlipExpected} (finestra allargata dall'usura), ottenuto ${p.speed}`);
+        assert.ok(Math.abs(p.speed - 4.1699225186187405) < 1e-9, `atteso 4.1699225186187405, ottenuto ${p.speed}`);
+    } finally {
+        delete process.env.F1_TYRE_SLIP_MODEL;
+    }
 });
 
 test('applyCoast: decelera verso zero senza mai superarlo, avanti e in retromarcia', () => {

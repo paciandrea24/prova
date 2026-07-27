@@ -7,6 +7,8 @@
 // docs/superpowers/plans/2026-07-27-f1-vehicle-dynamics-refactor.md),
 // nessuna formula cambiata.
 const { getFrontWingSteerPenalty, getSuspensionNoise } = require('./DamageModel');
+const { brakingFactor } = require('./TyreForceModel');
+const { isTyreSlipModelActive, brakingExcess, STEER_LOCKUP_PENALTY_MAX } = require('./TyreSlipModel');
 
 // Velocità di sterzata dipendente dalla velocità dell'auto (non un unico
 // valore fisso): pieno sterzo a bassa velocità per manovre strette
@@ -20,6 +22,14 @@ const TURN_SPEED_HIGH = 0.052;   // rad/tick alla velocità massima (era 0.048 f
 // Aggiorna p.angle in base a input.steer, velocità corrente (interpolazione
 // TURN_SPEED_LOW..TURN_SPEED_HIGH) e danno (sottosterzo ala + rumore
 // sospensioni). Nessun effetto sotto la soglia di velocità/moto minima.
+//
+// Fase 3.1 (percorso di confronto, F1_TYRE_SLIP_MODEL=1, estensione di scope
+// esplicitamente autorizzata per questo caso): una gomma bloccata in frenata
+// (brakingExcess alto, da TyreSlipModel — stessa grandezza già usata da
+// BrakingModel, nessun modello laterale nuovo) genera meno aderenza
+// laterale, quindi riduce turnRate — NON è sottosterzo/sovrasterzo da
+// richiesta di sterzo eccessiva (sistema a parte, non implementato). A flag
+// spento (default), comportamento bit-per-bit identico a prima.
 function applySteering(p, isQuali, maxSpeed) {
     const { inputs } = p;
     if (Math.abs(p.speed) > 0.01 || (p.vx * p.vx + p.vz * p.vz) > 0.0001) {
@@ -30,7 +40,11 @@ function applySteering(p, isQuali, maxSpeed) {
         // lascia comunque il complemento di FRONT_WING_STEER_PENALTY_MAX di
         // capacità residua, mai zero.
         const steerFactor = isQuali ? 1 : 1 - getFrontWingSteerPenalty(p.damageParts);
-        const turnRate = (TURN_SPEED_LOW + (TURN_SPEED_HIGH - TURN_SPEED_LOW) * speedFrac) * steerFactor;
+        let turnRate = (TURN_SPEED_LOW + (TURN_SPEED_HIGH - TURN_SPEED_LOW) * speedFrac) * steerFactor;
+        if (isTyreSlipModelActive()) {
+            const lockupExcess = brakingExcess(inputs.brake, speedFrac, brakingFactor(p.tyreWear, isQuali));
+            turnRate *= 1 - lockupExcess * STEER_LOCKUP_PENALTY_MAX;
+        }
         const suspensionNoise = isQuali ? 0 : getSuspensionNoise(p.damageParts);
         const steer = inputs.steer + suspensionNoise;
         p.angle += turnRate * dir * steer;
