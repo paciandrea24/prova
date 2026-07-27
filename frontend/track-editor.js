@@ -43,6 +43,45 @@ document.addEventListener('DOMContentLoaded', () => {
     // ====================================================
     let mainPoints = [];
     let pitPoints  = [];
+    // Traguardo esplicito: indipendente da mainPoints/pitPoints (un solo
+    // punto, non una lista). null finché non caricato/impostato — in quel
+    // caso si comporta come oggi (indice 0, angolo dedotto dalla tangente),
+    // vedi rebuild().
+    let startFinish = null; // { x, z, angle }
+    let startFinishMarker = null;
+    let startFinishRotateHandle = null;
+    const startFinishGroup = new THREE.Group();
+    scene.add(startFinishGroup);
+
+    function ensureStartFinishMeshes() {
+        if (startFinishMarker) return;
+        const markerGeo = new THREE.ConeGeometry(3, 8, 4);
+        const markerMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        startFinishMarker = new THREE.Mesh(markerGeo, markerMat);
+        startFinishMarker.userData = { role: 'startFinishMarker' };
+        const handleGeo = new THREE.SphereGeometry(2.5, 12, 12);
+        const handleMat = new THREE.MeshBasicMaterial({ color: 0xe67e22 });
+        startFinishRotateHandle = new THREE.Mesh(handleGeo, handleMat);
+        startFinishRotateHandle.userData = { role: 'startFinishRotateHandle' };
+        startFinishGroup.add(startFinishMarker, startFinishRotateHandle);
+    }
+
+    // Il cono (marker) punta lungo +Z locale di default (ConeGeometry si
+    // sviluppa lungo Y, ruotato qui una volta di 90° su X per sdraiarlo sul
+    // piano orizzontale) — rotation.y = angle lo orienta nel verso di marcia.
+    function updateStartFinishMeshes() {
+        if (!startFinish) { startFinishGroup.visible = false; return; }
+        startFinishGroup.visible = true;
+        ensureStartFinishMeshes();
+        startFinishMarker.position.set(startFinish.x, 1, startFinish.z);
+        startFinishMarker.rotation.set(Math.PI / 2, 0, startFinish.angle);
+        const handleDist = 12;
+        startFinishRotateHandle.position.set(
+            startFinish.x + Math.sin(startFinish.angle) * handleDist,
+            1,
+            startFinish.z + Math.cos(startFinish.angle) * handleDist
+        );
+    }
     let trackMeshGroup = null;
     const markerGroup = new THREE.Group();
     scene.add(markerGroup);
@@ -230,7 +269,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const pts = TrackGeometry.sampleLoop(mainPoints, 500);
             TrackMeshBuilder.buildRibbon(trackMeshGroup, pts, roadHalf, new THREE.MeshStandardMaterial({ color: 0x1e1e1e, roughness: 0.95, side: THREE.DoubleSide }));
             TrackMeshBuilder.buildCurbs(trackMeshGroup, pts, roadHalf, 2.8);
-            TrackMeshBuilder.buildStartLine(trackMeshGroup, pts, roadHalf);
+            const startIdx = startFinish
+                ? TrackGeometry.nearestPoint(pts, startFinish.x, startFinish.z).index
+                : 0;
+            TrackMeshBuilder.buildStartLine(trackMeshGroup, pts, roadHalf, startIdx);
         }
         if (pitPoints.length >= 3 && pitBoxIndex < pitPoints.length) {
             TrackMeshBuilder.buildPitLane(trackMeshGroup, pitPoints, pitRoadHalf, pitBoxIndex);
@@ -368,6 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let panning = false;
     let panLast = { x: 0, y: 0 };
     let triggerDrag = null; // { startHitX, startHitZ, startXMin, startXMax, startZMin, startZMax }
+    let startFinishDrag = null;
 
     // Tenuta aggiornata per poter "riusare" pickMarker anche da un evento
     // tastiera (keydown non porta la posizione del mouse) — vedi tasto B.
@@ -393,6 +436,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (pickImageBody(ev)) imageDrag = { mode: 'move' };
             return;
+        }
+        if (startFinish) {
+            mouseNDC.x = (ev.clientX / window.innerWidth) * 2 - 1;
+            mouseNDC.y = -(ev.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouseNDC, camera);
+            const hits = raycaster.intersectObjects([startFinishMarker, startFinishRotateHandle]);
+            if (hits.length > 0) {
+                startFinishDrag = { mode: hits[0].object === startFinishRotateHandle ? 'rotate' : 'move' };
+                return;
+            }
         }
         const marker = pickMarker(ev);
         if (marker) { dragging = marker.userData; return; }
@@ -455,6 +508,22 @@ document.addEventListener('DOMContentLoaded', () => {
             updateEntryTriggerVisual();
             return;
         }
+        if (startFinishDrag) {
+            const hit = worldFromEvent(ev);
+            if (startFinishDrag.mode === 'move') {
+                startFinish.x = +hit.x.toFixed(2);
+                startFinish.z = +hit.z.toFixed(2);
+            } else {
+                // Stesso calcolo già usato per la maniglia di rotazione
+                // dell'overlay immagine (riga 441): atan2(-dx,-dz) dà
+                // l'angolo nel verso di marcia (Z locale) coerente con
+                // TrackGeometry.tangentAt (tx,tz) usato altrove.
+                const dx = hit.x - startFinish.x, dz = hit.z - startFinish.z;
+                startFinish.angle = Math.atan2(-dx, -dz) + Math.PI;
+            }
+            updateStartFinishMeshes();
+            return;
+        }
         if (!dragging) return;
         const hit = worldFromEvent(ev);
         const list = dragging.list === 'main' ? mainPoints : pitPoints;
@@ -464,7 +533,7 @@ document.addEventListener('DOMContentLoaded', () => {
         rebuild();
     });
 
-    window.addEventListener('mouseup', () => { dragging = null; panning = false; imageDrag = null; triggerDrag = null; });
+    window.addEventListener('mouseup', () => { dragging = null; panning = false; imageDrag = null; triggerDrag = null; startFinishDrag = null; });
 
     renderer.domElement.addEventListener('contextmenu', (ev) => {
         ev.preventDefault();
@@ -570,6 +639,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         pitPoints = Array.isArray(pit.path) ? pit.path.map(p => ({ x: p.x, z: p.z })) : [];
 
+        // Default: se la pista caricata non ha ancora startFinish (piste
+        // esistenti pre-questa modifica), il marker appare alla posizione
+        // del primo control point con angolo dedotto come oggi — nessuna
+        // differenza visibile finché l'utente non lo trascina altrove.
+        if (data.startFinish) {
+            startFinish = { x: data.startFinish.x, z: data.startFinish.z, angle: data.startFinish.angle ?? 0 };
+        } else if (mainPoints.length > 0) {
+            const pts = TrackGeometry.sampleLoop(mainPoints, 500);
+            const { tx, tz } = TrackGeometry.tangentAt(pts, 0, true);
+            startFinish = { x: mainPoints[0].x, z: mainPoints[0].z, angle: Math.atan2(tx, tz) };
+        } else {
+            startFinish = null;
+        }
+        updateStartFinishMeshes();
+
         rebuild();
         fitView();
     }
@@ -668,6 +752,7 @@ document.addEventListener('DOMContentLoaded', () => {
             name: document.getElementById('trackName').value.trim(),
             targetKm: parseFloat(document.getElementById('targetKm').value) || 1,
             roadHalfWidth: parseFloat(document.getElementById('roadHalfWidth').value) || 11,
+            startFinish: startFinish ? { x: startFinish.x, z: startFinish.z, angle: startFinish.angle } : undefined,
             controlPoints: mainPoints,
             pit: {
                 roadHalfWidth: parseFloat(document.getElementById('pitRoadHalfWidth').value) || 5,

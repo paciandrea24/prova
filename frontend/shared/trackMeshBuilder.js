@@ -170,9 +170,9 @@
         }
     }
 
-    function buildStartLine(container, pts, roadHalf) {
-        const p0 = pts[0], p1 = pts[1];
-        const { nx, nz } = TrackGeometry.normalAt(pts, 0, true);
+    function buildStartLine(container, pts, roadHalf, startIndex = 0) {
+        const p0 = pts[startIndex], p1 = pts[(startIndex + 1) % pts.length];
+        const { nx, nz } = TrackGeometry.normalAt(pts, startIndex, true);
 
         const STRIPES = 10;
         const stripeW = (roadHalf * 2) / STRIPES;
