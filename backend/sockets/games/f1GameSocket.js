@@ -6,7 +6,7 @@ const { createBots, updateBotInputs, estimateFinishTime, nearestAheadPlayer } = 
 const TyreModel = require('./physics/TyreModel');
 const {
     TYRE_COMPOUNDS, DEFAULT_COMPOUND, WEAR_LAPS_AT_MEDIUM,
-    tyreOf, applyTyreWear, suggestStrategy
+    tyreOf, suggestStrategy
 } = TyreModel;
 
 const DamageModel = require('./physics/DamageModel');
@@ -22,14 +22,24 @@ const {
 const VehiclePhysics = require('./physics/VehiclePhysics');
 const {
     ACCEL, BRAKE_MULT, TURN_SPEED_HIGH,
-    effectiveMaxSpeed, effectiveGrip, effectiveAccel, effectiveBrakeMult, updateVelocity, integratePosition, applyOffTrackDrag
+    effectiveMaxSpeed, effectiveGrip, effectiveAccel, effectiveBrakeMult
 } = VehiclePhysics;
 
 const CollisionResolver = require('./physics/CollisionResolver');
+const { TRACK_INDEX_WINDOW } = CollisionResolver;
+
+// Facade: unico punto da cui il tick loop qui sotto invoca la simulazione
+// vettura — vedi VehicleDynamics.js. Le altre costanti/funzioni sopra
+// (TYRE_COMPOUNDS, DAMAGE_*, ACCEL, ecc.) restano importate direttamente dai
+// moduli originali: servono altrove in questo file (buildPublicState,
+// module.exports.physics, deps per f1Bot) e non fanno parte del tick loop.
+const VehicleDynamics = require('./physics/VehicleDynamics');
 const {
-    COLLISION_SUBSTEPS, TRACK_INDEX_WINDOW,
-    applyBridgeBarrier, resolveCollisions
-} = CollisionResolver;
+    COLLISION_SUBSTEPS,
+    updateVelocity, integratePosition, applyOffTrackDrag,
+    applyBridgeBarrier, resolveCollisions,
+    applyTyreWear
+} = VehicleDynamics;
 
 const PHYSICS_TICK_MS = 50;
 
