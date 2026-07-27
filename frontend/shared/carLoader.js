@@ -114,6 +114,16 @@
         return tex;
     }
 
+    // Ruote nominate 'wheelHub_FL/FR/RL/RR' (vedi
+    // backend/tools/f1CarVoxelize.py:44-47) o 'wheel_FL' ecc. — suffisso
+    // '_fl'/'_fr' = anteriore, '_rl'/'_rr' = posteriore. Usato per applicare
+    // lo sterzo visivo (frontend/f1.js) solo alle ruote anteriori.
+    function classifyWheelSide(nm) {
+        if (nm.includes('_fl') || nm.includes('_fr')) return 'front';
+        if (nm.includes('_rl') || nm.includes('_rr')) return 'rear';
+        return null;
+    }
+
     // loadCarModel: stessa identica implementazione di f1.js (prima
     // dell'estrazione), con UNA sola differenza di firma — scene/listener/
     // engineBuffer arrivano come terzo parametro (deps) invece che per
@@ -144,6 +154,7 @@
             const hex        = parseInt(playerColor.replace('#', ''), 16);
             const namedWheels = [];
             const allMeshes   = [];
+            const meshSide    = new Map();
 
             model.traverse((child) => {
                 if (!child.isMesh) return;
@@ -165,6 +176,8 @@
                 const nm = (child.name + ' ' + (child.parent?.name || '')).toLowerCase();
                 if (nm.includes('wheel') || nm.includes('tyre') || nm.includes('tire')) {
                     namedWheels.push(child);
+                    const side = classifyWheelSide(nm);
+                    if (side) meshSide.set(child, side);
                 }
             });
 
@@ -173,13 +186,14 @@
             group.add(model);
 
             // Raccogli i nodi PARENT delle ruote (rotazione più corretta del sub-mesh)
-            const wheelParentSet = new Set();
+            const wheelParentSet  = new Set();
+            const wheelSideByNode = new Map();
             for (const wm of namedWheels) {
                 const p = wm.parent;
-                if (p && p.isObject3D && !(p.isMesh) && p !== model && p !== gltf.scene) {
-                    wheelParentSet.add(p);
-                } else {
-                    wheelParentSet.add(wm);
+                const node = (p && p.isObject3D && !(p.isMesh) && p !== model && p !== gltf.scene) ? p : wm;
+                wheelParentSet.add(node);
+                if (meshSide.has(wm) && !wheelSideByNode.has(node)) {
+                    wheelSideByNode.set(node, meshSide.get(wm));
                 }
             }
 
@@ -221,8 +235,15 @@
                 }
             }
 
-            group.userData.wheels   = wheels;
-            group.userData.wheelRot = 0;
+            const frontWheels = wheels.filter((w) => {
+                const side = wheelSideByNode.get(w);
+                if (side) return side === 'front';
+                return new THREE.Box3().setFromObject(w).getCenter(new THREE.Vector3()).z > 0;
+            });
+
+            group.userData.wheels      = wheels;
+            group.userData.frontWheels = frontWheels;
+            group.userData.wheelRot    = 0;
 
             // Loop motore: un solo buffer, mai fermato — pitch e volume
             // vengono regolati ogni frame in animate() in base a velocità
@@ -242,5 +263,5 @@
         }, undefined, (err) => console.error('Errore car model:', err));
     }
 
-    return { loadCarModel };
+    return { loadCarModel, classifyWheelSide };
 });

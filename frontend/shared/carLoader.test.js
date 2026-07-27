@@ -6,3 +6,11 @@ const CarLoader = require('./carLoader.js');
 test('CarLoader espone loadCarModel come funzione', () => {
     assert.equal(typeof CarLoader.loadCarModel, 'function');
 });
+
+test('classifyWheelSide riconosce _FL/_FR come anteriori e _RL/_RR come posteriori', () => {
+    assert.equal(CarLoader.classifyWheelSide('wheelhub_fl tire_wheel'), 'front');
+    assert.equal(CarLoader.classifyWheelSide('wheelhub_fr'), 'front');
+    assert.equal(CarLoader.classifyWheelSide('wheelhub_rl'), 'rear');
+    assert.equal(CarLoader.classifyWheelSide('wheelhub_rr tire_wheel'), 'rear');
+    assert.equal(CarLoader.classifyWheelSide('chassis frame'), null);
+});
