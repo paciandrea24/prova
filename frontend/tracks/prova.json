@@ -1,7 +1,7 @@
 {
     "id": "prova",
     "name": "prova",
-    "targetKm": 5,
+    "targetKm": 24,
     "roadHalfWidth": 11,
     "controlPoints": [
         {
