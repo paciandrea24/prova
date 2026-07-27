@@ -2,7 +2,7 @@ const { activeGames } = require('../../store/activeGames');
 const { lobbies } = require('../../store/lobbies');
 const { loadTrack } = require('./trackLoader');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
-const { createBots, updateBotInputs, estimateFinishTime, nearestAheadPlayer } = require('./f1Bot');
+const { createBots, updateBotInputs, estimateFinishTime, nearestAheadPlayer, BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS } = require('./f1Bot');
 const TyreModel = require('./physics/TyreModel');
 const {
     TYRE_COMPOUNDS, DEFAULT_COMPOUND, WEAR_LAPS_AT_MEDIUM,

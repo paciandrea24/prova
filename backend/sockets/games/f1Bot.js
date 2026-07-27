@@ -447,6 +447,12 @@ const BOT_BRAKING_DISTANCE_MARGIN    = 1.2;
 const BOT_SPEED_MARGIN          = 0.03;  // isteresi throttle/brake attorno alla velocità target
 const BOT_PIT_REACTION_MIN_MS   = 150;
 const BOT_PIT_REACTION_MAX_MS   = 700;
+// Ritardo casuale prima che un bot inizi a reagire al via (vedi
+// f1GameSocket.js::startRaceCountdown, che imposta p.botRaceReactionUntil):
+// nessuna correlazione col ritmo di gara, richiesto esplicitamente — evita
+// che tutti i bot partano nell'esatto stesso tick.
+const BOT_RACE_START_REACTION_MIN_MS = 150;
+const BOT_RACE_START_REACTION_MAX_MS = 500;
 
 // Distanza di scia: senza questo, più bot che seguono la stessa linea di
 // corsa e frenano/accelerano secondo la stessa curvatura convergono a
@@ -723,5 +729,6 @@ module.exports = {
     PALETTE, MAX_GRID_SIZE, DEFAULT_TUNING,
     normalizeAngle, steerToward, lookaheadIndex, apexOffset, windowRadius, cornerApexNear, cornerTargetSpeed, overtakeOffset,
     nearestAheadPlayer, pickPostPitCompound, pickBotColors, estimateFinishTime,
-    createBots, updateBotInputs
+    createBots, updateBotInputs,
+    BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS
 };
