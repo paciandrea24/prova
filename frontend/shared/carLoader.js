@@ -114,13 +114,13 @@
         return tex;
     }
 
-    // Ruote nominate 'wheelHub_FL/FR/RL/RR' (vedi
-    // backend/tools/f1CarVoxelize.py:44-47) o 'wheel_FL' ecc. — suffisso
-    // '_fl'/'_fr' = anteriore, '_rl'/'_rr' = posteriore. Usato per applicare
-    // lo sterzo visivo (frontend/f1.js) solo alle ruote anteriori.
+    // Ruote nominate 'wheelHub_FL/FR/RL/RR' (vedi backend/tools/f1CarBuilder.py,
+    // funzione add_wheel) o 'wheel_FL' ecc. — suffisso '_fl'/'_fr' = anteriore,
+    // '_rl'/'_rr' = posteriore. Usato per applicare lo sterzo visivo
+    // (frontend/f1.js) solo alle ruote anteriori.
     function classifyWheelSide(nm) {
-        if (nm.includes('_fl') || nm.includes('_fr')) return 'front';
-        if (nm.includes('_rl') || nm.includes('_rr')) return 'rear';
+        if (/_(?:fl|fr)(?![a-z])/.test(nm)) return 'front';
+        if (/_(?:rl|rr)(?![a-z])/.test(nm)) return 'rear';
         return null;
     }
 
@@ -235,6 +235,7 @@
                 }
             }
 
+            group.updateMatrixWorld(true);
             const frontWheels = wheels.filter((w) => {
                 const side = wheelSideByNode.get(w);
                 if (side) return side === 'front';
@@ -244,6 +245,15 @@
             group.userData.wheels      = wheels;
             group.userData.frontWheels = frontWheels;
             group.userData.wheelRot    = 0;
+
+            // Ordine Euler 'YXZ' su ogni nodo ruota: lo sterzo (rotation.y,
+            // applicato solo alle ruote anteriori in frontend/f1.js) va
+            // composto PRIMA del rotolamento (rotation.x, su tutte le ruote)
+            // — con l'ordine di default 'XYZ' le due rotazioni si mescolano
+            // e l'asse di rotolamento oscilla fuori dal piano orizzontale
+            // invece di sterzare pulito. Stessa tecnica già usata per
+            // carGroup (vedi frontend/f1.js).
+            for (const w of wheels) w.rotation.order = 'YXZ';
 
             // Loop motore: un solo buffer, mai fermato — pitch e volume
             // vengono regolati ogni frame in animate() in base a velocità

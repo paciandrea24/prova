@@ -14,3 +14,8 @@ test('classifyWheelSide riconosce _FL/_FR come anteriori e _RL/_RR come posterio
     assert.equal(CarLoader.classifyWheelSide('wheelhub_rr tire_wheel'), 'rear');
     assert.equal(CarLoader.classifyWheelSide('chassis frame'), null);
 });
+
+test('classifyWheelSide non confonde _fl/_fr con parole come flap/floor/flange', () => {
+    assert.equal(CarLoader.classifyWheelSide('chassis flap'), null);
+    assert.equal(CarLoader.classifyWheelSide('rear_floor'), null);
+});

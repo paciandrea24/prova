@@ -17,11 +17,11 @@ function makeFakePlayer(steer) {
 }
 
 test('buildPublicState include steerInput preso da p.inputs.steer', () => {
-    const out = f1GameSocket.buildPublicState({ red: makeFakePlayer(0.42) }, false, null);
+    const out = f1GameSocket.physics.buildPublicState({ red: makeFakePlayer(0.42) }, false, null);
     assert.equal(out.red.steerInput, 0.42);
 });
 
 test('buildPublicState: steerInput negativo (sterzo a destra) passa invariato', () => {
-    const out = f1GameSocket.buildPublicState({ blue: makeFakePlayer(-1) }, false, null);
+    const out = f1GameSocket.physics.buildPublicState({ blue: makeFakePlayer(-1) }, false, null);
     assert.equal(out.blue.steerInput, -1);
 });
