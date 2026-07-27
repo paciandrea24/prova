@@ -23,6 +23,14 @@
     // Usata per ritingere il cerchio col colore mescola (vedi loadCarModel).
     const RIM_HUE_MIN = 45;
     const RIM_HUE_MAX = 100;
+    // Floor di saturazione: il texel 20 (RGB 32,31,26 → h=50°, s=0.19) e il
+    // texel 45 (RGB 90,92,88 → h=90°, s=0.04) rientrano nella finestra di
+    // tonalità del cerchio ma sono grigi quasi neutri usati sul battistrada
+    // (residuo di tinta oliva dal bake AO), non cerchio vero — senza questo
+    // floor vengono ritinti a piena saturazione col colore mescola, macchiando
+    // la gomma. Il cerchio vero non scende mai sotto s=0.28 (misurato sulla
+    // palette reale di f1Car.glb) — 0.25 sta a metà tra i due margini.
+    const RIM_SAT_MIN = 0.25;
 
     // Lift di luminosità applicato a OGNI texel (nero, grigio o livrea),
     // stessa curva per tutti — misurato sulla palette reale: anche il "nero"
@@ -107,7 +115,7 @@
         for (let i = 0; i < data.length; i += 4) {
             const [h, s, v] = rgbToHsv(data[i] / 255, data[i + 1] / 255, data[i + 2] / 255);
             const isLivery = !forceNeutral && h <= LIVERY_HUE_MAX && s >= LIVERY_SAT_MIN;
-            const isRim    = forceNeutral && compoundHex != null && h >= RIM_HUE_MIN && h <= RIM_HUE_MAX;
+            const isRim    = forceNeutral && compoundHex != null && h >= RIM_HUE_MIN && h <= RIM_HUE_MAX && s >= RIM_SAT_MIN;
             const liftedV = liftValue(v);
             let outHue, outSat, outVal;
             if (isLivery) {
@@ -286,9 +294,11 @@
             // mescola (es. dopo un pit stop). Nessun effetto su mesh non-ruota
             // (w.userData.pristineTex è undefined per la carrozzeria).
             group.userData.setCompoundColor = function (compoundHex) {
-                for (const w of wheels) {
+                for (const w of namedWheels) {
                     if (!w.isMesh || !w.userData.pristineTex) continue;
+                    const old = w.material.map;
                     w.material.map = recolorLiveryTexture(w.userData.pristineTex, hex, true, compoundHex);
+                    if (old && old !== w.userData.pristineTex) old.dispose();
                     w.material.needsUpdate = true;
                 }
             };
