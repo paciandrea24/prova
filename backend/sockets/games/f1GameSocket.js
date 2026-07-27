@@ -1187,6 +1187,21 @@ function buildPublicState(players, raceStarted, track) {
             tyreWear: p.tyreWear,
             damage:   p.damage,
             damageParts: p.damageParts,
+            // Debug usura/danno (tasto G lato client, vedi frontend/f1.js):
+            // percentuale del potenziale RESIDUO rispetto alla condizione
+            // perfetta (effectiveXxx(p, true) = come se fosse tutto sano,
+            // stesso trucco già usato per bypassare usura/danno in
+            // qualifica), non un valore assoluto — più leggibile per capire
+            // "quanto mi manca" a colpo d'occhio. isQuali=false qui è safe
+            // anche durante una vera qualifica: tyreWear/damageParts sono
+            // sempre a zero in quel contesto, quindi il risultato combacia.
+            debug: {
+                maxSpeedPct: Math.round((effectiveMaxSpeed(p, false) / effectiveMaxSpeed(p, true)) * 100),
+                gripPct:     Math.round((effectiveGrip(p, false) / effectiveGrip(p, true)) * 100),
+                accelPct:    Math.round((effectiveAccel(p, false) / effectiveAccel(p, true)) * 100),
+                brakePct:    Math.round((effectiveBrakeMult(p, false) / effectiveBrakeMult(p, true)) * 100),
+                steerPct:    Math.round((1 - getFrontWingSteerPenalty(p.damageParts)) * 100),
+            },
             // Autopilota corsia box (entrata/uscita): velocità del
             // limitatore, non del giocatore — il client la usa per un
             // rumore motore fisso invece che legato all'accelerazione,

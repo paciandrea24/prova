@@ -82,8 +82,28 @@
         </svg>
     </div>
 
+    <!-- HUD DEBUG (tasto G): usura + i 4 componenti di danno come
+         percentuale di potenziale RESIDUO (100% = sano) — pannello
+         temporaneo per verificare a occhio il modello danno/usura, non
+         pensato per il gameplay normale. Popolato da updateDebugPanel() in
+         f1.js, letto da state.debug (server, buildPublicState). -->
+    <div class="hud f1-panel hud-debug" id="debug-panel" style="display:none;">
+        <div class="hud-debug-title">DEBUG USURA/GUASTI</div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Velocità max</span><span class="hud-mono" id="debug-maxspeed">100%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Aderenza</span><span class="hud-mono" id="debug-grip">100%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Accelerazione</span><span class="hud-mono" id="debug-accel">100%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Frenata</span><span class="hud-mono" id="debug-brake">100%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Sterzo</span><span class="hud-mono" id="debug-steer">100%</span></div>
+        <div class="hud-debug-sep"></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Usura gomme</span><span class="hud-mono" id="debug-tyrewear">0%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Ala anteriore</span><span class="hud-mono" id="debug-frontwing">0%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Fondo</span><span class="hud-mono" id="debug-floor">0%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Motore</span><span class="hud-mono" id="debug-engine">0%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Sospensioni</span><span class="hud-mono" id="debug-suspension">0%</span></div>
+    </div>
+
     <!-- Suggerimento camera -->
-    <div class="camera-hint" id="camera-hint">C: cambia visuale · H: hitbox debug</div>
+    <div class="camera-hint" id="camera-hint">C: cambia visuale · H: hitbox debug · G: debug usura/guasti</div>
 
     <!-- Overlay countdown: testo 3-2-1 per la qualifica, plancia luci per la
          gara (mostrati alternativamente in base alla fase, vedi f1.js) -->

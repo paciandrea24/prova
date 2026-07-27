@@ -353,6 +353,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let raceTotalLaps = 3;      // giri della gara vera (fisso, indipendente dalla fase corrente)
 
     let tyrePanelOpen = false;   // stato locale, mai sincronizzato col server — resettato a chiuso ad ogni f1Countdown
+    let debugPanelOpen = false;   // pannello debug usura/guasti (tasto G), stato locale, mai sincronizzato col server
     let lightsSequenceActive = false;   // true durante la plancia luci del via gara (non in qualifica)
 
     // Interpola verde -> giallo -> rosso in base all'usura (0-100): stessa
@@ -671,6 +672,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    // DEBUG: pannello usura/guasti (tasto G) — mostra/nasconde soltanto,
+    // il contenuto è già aggiornato ad ogni f1StateUpdate indipendentemente
+    // da questo stato (vedi updateDebugPanel), come per showHitboxes.
+    document.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() === 'g') {
+            debugPanelOpen = !debugPanelOpen;
+            document.getElementById('debug-panel').style.display = debugPanelOpen ? 'block' : 'none';
+        }
+    });
+
+    // Popola il pannello debug dai dati già calcolati server-side
+    // (state.debug, vedi buildPublicState in f1GameSocket.js) — nessuna
+    // formula duplicata qui, solo lettura/formattazione.
+    function updateDebugPanel(data) {
+        if (!debugPanelOpen) return;
+        const d = data.debug || {};
+        document.getElementById('debug-maxspeed').textContent = `${d.maxSpeedPct ?? 100}%`;
+        document.getElementById('debug-grip').textContent     = `${d.gripPct ?? 100}%`;
+        document.getElementById('debug-accel').textContent    = `${d.accelPct ?? 100}%`;
+        document.getElementById('debug-brake').textContent    = `${d.brakePct ?? 100}%`;
+        document.getElementById('debug-steer').textContent    = `${d.steerPct ?? 100}%`;
+        document.getElementById('debug-tyrewear').textContent   = `${Math.round(data.tyreWear || 0)}%`;
+        const parts = data.damageParts || {};
+        document.getElementById('debug-frontwing').textContent  = `${Math.round(parts.frontWing || 0)}%`;
+        document.getElementById('debug-floor').textContent      = `${Math.round(parts.floor || 0)}%`;
+        document.getElementById('debug-engine').textContent     = `${Math.round(parts.engine || 0)}%`;
+        document.getElementById('debug-suspension').textContent = `${Math.round(parts.suspension || 0)}%`;
+    }
+
     // ====================================================
     // SOCKET EVENTS
     // ====================================================
@@ -775,6 +805,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 renderTyreVisibility();
                 slipstreamActive = !!data.slipstream;
                 if (slipstreamGroup) slipstreamGroup.visible = slipstreamActive;
+                updateDebugPanel(data);
             }
         }
         updateStandings(state);

@@ -161,7 +161,9 @@ canvas.tyre-preview-canvas {
     border-radius: 4px;
 }
 .f1-standing-row .pos { width: 16px; color: var(--f1-text-dim); font-variant-numeric: tabular-nums; }
-.f1-standing-row .dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.f1-standing-row .dot {
+    width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0;
+}
 .f1-standing-row .gap {
     margin-left: auto; color: var(--f1-text-dim); font-size: 11px;
     font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
@@ -226,14 +228,43 @@ canvas.tyre-preview-canvas {
 .hud-tyre-compound-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .hud-car-top { width: 100%; height: 132px; margin: 2px 0 8px; }
 .hud-car-top svg { width: 100%; height: 100%; display: block; }
-.car-chassis { fill: #2b313c; }
-.car-wing    { fill: #232830; }
+.car-chassis { fill: var(--damage, #2b313c); transition: fill 0.4s ease; }
+.car-wing    { fill: var(--damage, #232830); transition: fill 0.4s ease; }
 .car-halo    { fill: none; stroke: #454e5c; stroke-width: 2; }
 .wheel       { fill: var(--wear, var(--f1-wear-mid)); transition: fill 0.4s ease; }
 .hud-tyre-wear-readout { text-align: center; }
 .hud-tyre-wear-readout .hud-screen { padding: 5px 0 6px; }
 .hud-tyre-wear-readout .hud-mono { font-size: 20px; font-weight: 700; }
 .hud-tyre-wear-readout .hud-eyebrow { margin-top: 4px; }
+
+/* ---- top-center: pannello DEBUG usura/guasti (tasto G), nascosto di
+   default — unica zona libera (standings è top-left, timer/velocità
+   top-right) ---- */
+.hud-debug {
+    top: 14px; left: 50%;
+    transform: translateX(-50%);
+    width: 190px;
+    padding: 10px 14px 12px;
+    pointer-events: none;
+}
+.hud-debug-title {
+    font-family: 'Fredoka', sans-serif;
+    font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+    color: var(--hud-text-dim);
+    text-align: center;
+    margin-bottom: 6px;
+}
+.hud-debug-row {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 10px;
+    padding: 2px 0;
+}
+.hud-debug-row .hud-mono { font-size: 12px; }
+.hud-debug-sep {
+    height: 1px;
+    background: var(--hud-screen-bg);
+    margin: 6px 0;
+}
 
 /* ---- bottom-right: minimappa ---- */
 .hud-minimap {
@@ -346,6 +377,36 @@ canvas.tyre-preview-canvas {
     font-weight: 900;
     line-height: 1;
     flex-shrink: 0;
+}
+
+/* Badge mescola: cerchio VUOTO (bordo + lettera nel colore della mescola
+   corrente, sfondo trasparente), sempre visibile in classifica, aggiornato
+   ad ogni f1StateUpdate — nessun evento dedicato, cambia da solo dopo un
+   pit stop. Il colore è passato via style inline (color) e il bordo lo
+   eredita con currentColor, così lettera e cerchio restano sempre coerenti. */
+.compound-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: transparent;
+    border: 1.5px solid currentColor;
+    box-sizing: border-box;
+    font-size: 9px;
+    font-weight: 700;   /* 900 non è tra i pesi Fredoka caricati (f1.html): il faux-bold sintetizzato rendeva le lettere disallineate/di dimensione incoerente */
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+/* Badge penalità collisione: eredita l'aspetto di .false-start-badge, ma la
+   larghezza è animata via anime.js (f1CollisionPenalty) per fare spazio al
+   testo "+X.Xs" durante l'espansione, non fissa come l'originale. */
+.collision-badge {
+    width: auto;
+    min-width: 14px;
+    padding: 0 2px;
 }
 
 /* Badge "CPU": box neutro accanto al pallino colore per i piloti bot, per
