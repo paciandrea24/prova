@@ -1036,7 +1036,7 @@ module.exports = { MAX_SPEED, ACCEL, FRICTION, effectiveMaxSpeed, effectiveAccel
 - [ ] **Step 4: Eseguire il test, verificare che passi**
 
 Run: `node --test backend/sockets/games/physics/PowertrainModel.test.js`
-Expected: PASS (7/7)
+Expected: PASS (6/6)
 
 - [ ] **Step 5: Riscrivere `backend/sockets/games/physics/VehiclePhysics.js`**:
 
