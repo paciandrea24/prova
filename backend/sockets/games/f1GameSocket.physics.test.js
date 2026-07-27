@@ -317,7 +317,8 @@ test('buildPublicState: espone anche damageParts (per evoluzioni future HUD)', (
             x: 0, z: 0, angle: 0, trackIndex: 0, speed: 0, finished: false, time: null, lap: 0,
             compound: 'medium', tyreWear: 0, damage: 40, damageParts: parts, collisionPenaltyMs: 0,
             pitAutoState: null, falseStart: false, falseStartServed: false,
-            gapToLeaderMs: null, isBot: false, inSlipstream: false
+            gapToLeaderMs: null, isBot: false, inSlipstream: false,
+            inputs: { throttle: 0, brake: 0, steer: 0 }
         }
     };
     const track = { points: [{ x: 0, z: 0 }] };
@@ -342,8 +343,10 @@ test('buildPublicState: espone damage e collisionPenalty (bool) per giocatore', 
         red: {
             x: 0, z: 0, angle: 0, trackIndex: 0, speed: 0, finished: false, time: null, lap: 0,
             compound: 'medium', tyreWear: 0, damage: 42, collisionPenaltyMs: 1500,
+            damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 },
             pitAutoState: null, falseStart: false, falseStartServed: false,
-            gapToLeaderMs: null, isBot: false, inSlipstream: false
+            gapToLeaderMs: null, isBot: false, inSlipstream: false,
+            inputs: { throttle: 0, brake: 0, steer: 0 }
         }
     };
     const track = { points: [{ x: 0, z: 0 }] };

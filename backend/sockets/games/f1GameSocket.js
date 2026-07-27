@@ -1178,6 +1178,7 @@ function buildPublicState(players, raceStarted, track) {
             x: p.x, z: p.z, angle: p.angle,
             trackIndex: p.trackIndex,
             speed:    p.speed,
+            steerInput: p.inputs.steer,
             finished: p.finished,
             time:     p.time,
             lap:      p.lap,
@@ -1245,3 +1246,4 @@ module.exports.physics = {
 
 module.exports.tickGame = tickGame;
 module.exports.TYRE_COMPOUNDS = TYRE_COMPOUNDS;
+module.exports.buildPublicState = buildPublicState;
