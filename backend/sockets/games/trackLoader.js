@@ -67,10 +67,23 @@ function buildTrack(id, raw) {
         racingLineTuning = racelineData.tuning || null;
     }
 
-    const p0 = points[0];
-    const tangent = TrackGeometry.tangentAt(points, 0, true);
-    const normal  = TrackGeometry.normalAt(points, 0, true);
-    const angle   = Math.atan2(tangent.tx, tangent.tz);
+    // startFinishIndex: indice campionato più vicino al traguardo esplicito
+    // (piazzato nell'editor), stessa tecnica già usata per pitEntryIndex più
+    // sotto. Se la pista non ha ancora `startFinish` (piste esistenti non
+    // ancora riaperte nell'editor), resta 0 — comportamento identico a
+    // prima di questa modifica, nessuna rottura.
+    const startFinishIndex = raw.startFinish
+        ? TrackGeometry.nearestPoint(points, raw.startFinish.x, raw.startFinish.z).index
+        : 0;
+    const p0 = points[startFinishIndex];
+    const tangent = TrackGeometry.tangentAt(points, startFinishIndex, true);
+    const normal  = TrackGeometry.normalAt(points, startFinishIndex, true);
+    // Se l'utente ha orientato il traguardo diversamente dalla tangente pura
+    // (linea leggermente obliqua rispetto alla pista) l'angolo esplicito
+    // vince; altrimenti si deduce dalla tangente come sempre.
+    const angle = (raw.startFinish && typeof raw.startFinish.angle === 'number')
+        ? raw.startFinish.angle
+        : Math.atan2(tangent.tx, tangent.tz);
 
     // Punto lungo la tangente di partenza, con un offset laterale lungo la
     // normale — usato sia per lo spawn di qualifica sia per la griglia.
@@ -113,6 +126,7 @@ function buildTrack(id, raw) {
         totalLaps,
         pitPath: raw.pit.path,
         pitEntryIndex,
+        startFinishIndex,
         pitBoxIndex: raw.pit.boxIndex,
         pitRoadHalf: raw.pit.roadHalfWidth,
         pitEntryTrigger: raw.pit.entryTrigger,
@@ -186,6 +200,13 @@ function validateTrackData(data) {
     const triggerHitsPath = data.pit.path.some(pt =>
         pt.x >= et.xMin && pt.x <= et.xMax && pt.z >= et.zMin && pt.z <= et.zMax);
     if (!triggerHitsPath) return 'pit.entryTrigger non intercetta nessun punto della corsia box: il riquadro non corrisponde al vero punto d\'ingresso';
+    // startFinish è opzionale (compatibilità con piste esistenti senza
+    // questo campo), ma se presente deve avere almeno x/z numerici — un
+    // oggetto parziale (es. dimenticato angle, che invece resta opzionale)
+    // andrebbe silenziosamente ignorato più avanti senza questo controllo.
+    if (data.startFinish && (typeof data.startFinish.x !== 'number' || typeof data.startFinish.z !== 'number')) {
+        return 'startFinish non valido (servono almeno x e z numerici)';
+    }
     return null;
 }
 

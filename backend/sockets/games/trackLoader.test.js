@@ -135,3 +135,57 @@ test('listTracks non lancia e restituisce comunque le piste valide in presenza d
         fs.unlinkSync(malformedPath);
     }
 });
+
+test('buildTrack: senza startFinish, startFinishIndex è 0 (comportamento odierno invariato)', () => {
+    const track = loadTrack('monte-rosso');
+    assert.equal(track.startFinishIndex, 0);
+});
+
+test('saveTrack + loadTrack: con startFinish esplicito, qualiSpawn/gridSpawnPoint seguono quel punto (non più il control point 0)', () => {
+    // Quadrato semplice: startFinish sul lato opposto al control point 0,
+    // così un eventuale bug "ignora startFinish e usa comunque indice 0"
+    // produce uno scarto enorme (non un piccolo errore di arrotondamento).
+    const data = Object.assign({}, minimalValidTrackData(), {
+        id: 'test-scratch-startfinish',
+        startFinish: { x: 10, z: 10, angle: 0 }
+    });
+    saveTrack(data);
+    try {
+        const track = loadTrack('test-scratch-startfinish');
+        // Il control point più vicino a (10,10) tra quelli del quadrato di
+        // test (0,0)-(10,0)-(10,10)-(0,10) è l'indice campionato vicino a
+        // (10,10): qualiSpawn deve stare vicino lì, non vicino a (0,0).
+        // La tolleranza di 9 unità copre la variazione geometrica di una
+        // curva Catmull-Rom attorno a un quadrato (il quale arrotonda i
+        // vertici), rimanendo abbastanza stretta da rivelare un bug dove il
+        // valore di startFinish viene ignorato (il che porterebbe a
+        // qualiSpawn vicino a (0,0), scarto di ~14 unità).
+        assert.ok(Math.hypot(track.qualiSpawn.x - 10, track.qualiSpawn.z - 10) < 9,
+            `qualiSpawn troppo lontano da (10,10): ${JSON.stringify(track.qualiSpawn)}`);
+        assert.notEqual(track.startFinishIndex, 0);
+    } finally {
+        deleteTrack('test-scratch-startfinish');
+    }
+});
+
+test('saveTrack: con startFinish.angle esplicito, qualiSpawn.angle usa quel valore invece della tangente dedotta', () => {
+    const data = Object.assign({}, minimalValidTrackData(), {
+        id: 'test-scratch-startfinish-angle',
+        startFinish: { x: 0, z: 0, angle: 1.2345 }
+    });
+    saveTrack(data);
+    try {
+        const track = loadTrack('test-scratch-startfinish-angle');
+        assert.ok(Math.abs(track.qualiSpawn.angle - 1.2345) < 1e-9);
+    } finally {
+        deleteTrack('test-scratch-startfinish-angle');
+    }
+});
+
+test('validateTrackData: startFinish malformato (manca x o z) viene rifiutato', () => {
+    const data = Object.assign({}, minimalValidTrackData(), {
+        id: 'test-scratch-startfinish-bad',
+        startFinish: { z: 0, angle: 0 }
+    });
+    assert.throws(() => saveTrack(data), /startFinish non valido/);
+});
