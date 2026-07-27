@@ -1,21 +1,23 @@
 // backend/sockets/games/physics/VehiclePhysics.js
 //
-// Vehicle Controller / Physics Model: velocità (accelerazione/freno/grip).
-// Sterzo ora in SteeringModel.js, integrazione posizione/drag fuoripista in
-// VehicleMotionModel.js — refactoring architetturale (Rif.
+// Vehicle Controller / Physics Model: velocità (accelerazione/grip). Freno
+// in BrakingModel.js, sterzo in SteeringModel.js, integrazione
+// posizione/drag fuoripista in VehicleMotionModel.js — refactoring
+// architetturale (Rif.
 // docs/superpowers/plans/2026-07-27-f1-vehicle-dynamics-refactor.md),
 // nessuna formula cambiata.
-const { tyreOf, WEAR_SPEED_PENALTY, WEAR_GRIP_PENALTY, WEAR_BRAKE_PENALTY, WEAR_ACCEL_PENALTY, getWearPenaltyFactor } = require('./TyreModel');
+const { tyreOf, WEAR_SPEED_PENALTY, WEAR_GRIP_PENALTY, WEAR_ACCEL_PENALTY, getWearPenaltyFactor } = require('./TyreModel');
 const { getEnginePowerPenalty, getFloorGripPenalty } = require('./DamageModel');
 const { integratePosition, applyOffTrackDrag } = require('./VehicleMotionModel');
 const SteeringModel = require('./SteeringModel');
 const { TURN_SPEED_LOW, TURN_SPEED_HIGH } = SteeringModel;
+const BrakingModel = require('./BrakingModel');
+const { BRAKE_MULT, effectiveBrakeMult } = BrakingModel;
 
 const MAX_SPEED    = 6.2;
 const ACCEL        = 0.186;
 const FRICTION     = 0.120;
 const GRIP         = 0.78;
-const BRAKE_MULT   = 2.17;
 
 function effectiveMaxSpeed(p, isQuali) {
     const wearFactor   = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_SPEED_PENALTY;
@@ -35,22 +37,14 @@ function effectiveAccel(p, isQuali) {
     return ACCEL * wearFactor * engineFactor;
 }
 
-function effectiveBrakeMult(p, isQuali) {
-    const wearFactor = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_BRAKE_PENALTY;
-    return BRAKE_MULT * wearFactor;
-}
-
 function updateVelocity(p, isQuali, slipstreamMult) {
     const { inputs } = p;
     const maxSpeed = effectiveMaxSpeed(p, isQuali) * (slipstreamMult || 1);
     const grip     = effectiveGrip(p, isQuali);
 
     if (inputs.throttle > 0) p.speed = Math.min(p.speed + effectiveAccel(p, isQuali) * inputs.throttle, maxSpeed);
-    else if (inputs.brake > 0) {
-        p.speed = Math.max(p.speed - effectiveAccel(p, isQuali) * effectiveBrakeMult(p, isQuali) * inputs.brake, -maxSpeed / 2);
-        p.vx *= 0.94;
-        p.vz *= 0.94;
-    } else {
+    else if (inputs.brake > 0) BrakingModel.applyBrake(p, isQuali, maxSpeed, effectiveAccel(p, isQuali));
+    else {
         if (p.speed > 0) p.speed = Math.max(p.speed - FRICTION, 0);
         if (p.speed < 0) p.speed = Math.min(p.speed + FRICTION, 0);
     }
