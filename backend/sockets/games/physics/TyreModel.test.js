@@ -3,8 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
     TYRE_COMPOUNDS, DEFAULT_COMPOUND,
-    WEAR_LAPS_AT_MEDIUM, WEAR_OFFTRACK_EXTRA, WEAR_SPEED_PENALTY, WEAR_GRIP_PENALTY,
-    WEAR_BRAKE_PENALTY, WEAR_ACCEL_PENALTY,
+    WEAR_LAPS_AT_MEDIUM, WEAR_OFFTRACK_EXTRA, WEAR_SPEED_PENALTY,
     WEAR_CLIFF_THRESHOLD, WEAR_CLIFF_GENTLE_FRACTION,
     tyreOf, applyTyreWear, suggestStrategy, getWearPenaltyFactor
 } = require('./TyreModel.js');
@@ -73,14 +72,6 @@ test('WEAR_CLIFF_THRESHOLD: costante è 0.60 (60%)', () => {
 
 test('WEAR_CLIFF_GENTLE_FRACTION: costante è 0.25', () => {
     assert.equal(WEAR_CLIFF_GENTLE_FRACTION, 0.25);
-});
-
-test('WEAR_BRAKE_PENALTY: costante è 0.30', () => {
-    assert.equal(WEAR_BRAKE_PENALTY, 0.30);
-});
-
-test('WEAR_ACCEL_PENALTY: costante è 0.20', () => {
-    assert.equal(WEAR_ACCEL_PENALTY, 0.20);
 });
 
 test('tyreOf: in qualifica ritorna la Soft indipendentemente dal compound scelto', () => {

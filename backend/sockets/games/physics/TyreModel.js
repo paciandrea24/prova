@@ -11,7 +11,10 @@
 // veloce ma dura meno, la Hard il contrario. L'usura cresce SOLO con la
 // distanza percorsa (fermo = zero usura, richiesta esplicita), con un piccolo
 // extra fuoripista; a gomme esaurite si perde fino a WEAR_SPEED_PENALTY di
-// velocità massima e WEAR_GRIP_PENALTY di aderenza (più derapate).
+// velocità massima. Trazione/frenata/aderenza in curva sono governate da
+// TyreForceModel (Fase 2B, Rif.
+// docs/superpowers/specs/2026-07-27-f1-tyre-force-model-migration-design.md),
+// non più da penalità dirette qui.
 // ====================================================
 const TYRE_COMPOUNDS = {
     soft:   { label: 'Soft',   color: '#e74c3c', speedMult: 1.05, gripMult: 1.00, wearRate: 1.5 },
@@ -23,9 +26,6 @@ const DEFAULT_COMPOUND = 'medium';
 const WEAR_LAPS_AT_MEDIUM = 5;   // quanti giri dura una Medium (wearRate=1) prima del 100% di usura
 const WEAR_OFFTRACK_EXTRA = 0.02; // piccolo extra per tick fuori pista (oltre a quello da distanza)
 const WEAR_SPEED_PENALTY  = 0.25; // fino a -25% velocità massima a gomme esaurite
-const WEAR_GRIP_PENALTY   = 0.35; // fino a -35% aderenza a gomme esaurite (più derapate)
-const WEAR_BRAKE_PENALTY  = 0.30; // fino a -30% di efficienza frenante a gomma esaurita
-const WEAR_ACCEL_PENALTY  = 0.20; // fino a -20% di trazione in accelerazione a gomma esaurita
 
 // In qualifica TUTTI usano lo spec della Soft (gomma da qualifica, come in F1
 // vera), gomme fresche, a prescindere dalla mescola scelta per la gara — la
@@ -40,9 +40,9 @@ function tyreOf(p, isQuali) {
 // (tyreWear/100) con una curva a due tratti, come il comportamento reale
 // delle gomme F1 moderne: prestazioni quasi piene fino a una soglia, poi un
 // calo marcato e accelerato oltre quella soglia (il "cliff"). Il fattore
-// risultante (0..1) va moltiplicato per le penalità (WEAR_SPEED_PENALTY,
-// WEAR_GRIP_PENALTY, WEAR_ACCEL_PENALTY, WEAR_BRAKE_PENALTY) esattamente
-// come faceva prima (tyreWear/100) — stesso ruolo, curva diversa.
+// risultante (0..1) va moltiplicato per WEAR_SPEED_PENALTY (qui) o dato in
+// pasto a TyreForceModel (trazione/frenata/aderenza in curva, Fase 2B) —
+// stesso ruolo di prima (tyreWear/100), curva diversa.
 // ====================================================
 const WEAR_CLIFF_THRESHOLD = 0.60;       // frazione di usura (0-1) oltre cui inizia il "cliff"
 const WEAR_CLIFF_GENTLE_FRACTION = 0.25; // quota del fattore massimo (1.0) raggiunta ESATTAMENTE alla soglia
@@ -95,8 +95,7 @@ function suggestStrategy(totalLaps) {
 
 module.exports = {
     TYRE_COMPOUNDS, DEFAULT_COMPOUND,
-    WEAR_LAPS_AT_MEDIUM, WEAR_OFFTRACK_EXTRA, WEAR_SPEED_PENALTY, WEAR_GRIP_PENALTY,
-    WEAR_BRAKE_PENALTY, WEAR_ACCEL_PENALTY,
+    WEAR_LAPS_AT_MEDIUM, WEAR_OFFTRACK_EXTRA, WEAR_SPEED_PENALTY,
     WEAR_CLIFF_THRESHOLD, WEAR_CLIFF_GENTLE_FRACTION,
     tyreOf, applyTyreWear, suggestStrategy, getWearPenaltyFactor
 };

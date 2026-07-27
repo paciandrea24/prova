@@ -5,7 +5,7 @@
 // VehiclePhysics.js — refactoring architetturale (Rif.
 // docs/superpowers/plans/2026-07-27-f1-vehicle-dynamics-refactor.md),
 // nessuna formula cambiata.
-const { WEAR_BRAKE_PENALTY, getWearPenaltyFactor } = require('./TyreModel');
+const { brakingFactor } = require('./TyreForceModel');
 
 // Moltiplicatore di ACCEL in frenata (era 1.4 a MAX_SPEED=4.0), scalato ×R²
 // (non ×R) come FRICTION: la decelerazione è un decremento costante per
@@ -14,8 +14,11 @@ const { WEAR_BRAKE_PENALTY, getWearPenaltyFactor } = require('./TyreModel');
 // FRICTION. Vedi docs/superpowers/specs/2026-07-21-f1-velocita-frenata-mescole-design.md.
 const BRAKE_MULT = 2.17;
 
+// Fase 2B (Rif. docs/superpowers/specs/2026-07-27-f1-tyre-force-model-migration-design.md):
+// TyreForceModel.brakingFactor è ora l'UNICA fonte del fattore usura per la
+// frenata — la vecchia WEAR_BRAKE_PENALTY è stata rimossa.
 function effectiveBrakeMult(p, isQuali) {
-    const wearFactor = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_BRAKE_PENALTY;
+    const wearFactor = brakingFactor(p.tyreWear, isQuali);
     return BRAKE_MULT * wearFactor;
 }
 

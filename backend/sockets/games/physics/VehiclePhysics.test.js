@@ -31,20 +31,20 @@ test('updateVelocity: acceleratore + sterzo, gomma fresca, nessun danno', () => 
     assertClose(r.angle, 0.07431, 'angle');
 });
 
-test('updateVelocity: frenata, gomma usurata 80%, danni combinati (ala/fondo/motore)', () => {
+test('updateVelocity: frenata, gomma usurata 80%, danni combinati (ala/fondo/motore) — Fase 2B: valori ricalcolati con TyreForceModel come unica fonte del fattore usura (tarato in 2A.5), non più le WEAR_*_PENALTY legacy rimosse. Anche `angle` cambia leggermente (0.3264038921007012 -> 0.3263983809960395): effetto a catena atteso, non un bug — SteeringModel.applySteering usa `p.speed` DOPO applyBrake, e applyBrake ora usa un effectiveAccel/effectiveBrakeMult diversi.', () => {
     const p = {
         speed: 4, vx: 2, vz: 2, angle: 0.3, compound: 'medium', tyreWear: 80,
         damageParts: { frontWing: 20, floor: 30, engine: 40, suspension: 0 },
         inputs: { throttle: 0, brake: 1, steer: 0.5 }
     };
     const r = run(p, false, 1);
-    assertClose(r.speed, 3.718432165375, 'speed');
-    assertClose(r.vx, 1.5785306274602555, 'vx');
-    assertClose(r.vz, 2.5998276056528784, 'vz');
-    assertClose(r.angle, 0.3264038921007012, 'angle');
+    assertClose(r.speed, 3.720963340736753, 'speed');
+    assertClose(r.vx, 1.5506093011257587, 'vx');
+    assertClose(r.vz, 2.6685559817765974, 'vz');
+    assertClose(r.angle, 0.3263983809960395, 'angle');
 });
 
-test('updateVelocity: coast (nessun input), moto residua, sterzo in coast', () => {
+test('updateVelocity: coast (nessun input), moto residua, sterzo in coast — Fase 2B: vx/vz ricalcolati (grip da TyreForceModel.corneringGripFactor a wear=10); speed/angle invariati (coast e sterzo non dipendono dal fattore usura gomme)', () => {
     const p = {
         speed: 2, vx: 1.5, vz: 0.5, angle: -0.2, compound: 'hard', tyreWear: 10,
         damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 },
@@ -52,8 +52,8 @@ test('updateVelocity: coast (nessun input), moto residua, sterzo in coast', () =
     };
     const r = run(p, false, 1);
     assertClose(r.speed, 1.88, 'speed');
-    assertClose(r.vx, 0.8844276657843817, 'vx');
-    assertClose(r.vz, 0.9047456657753135, 'vz');
+    assertClose(r.vx, 0.8531558085119839, 'vx');
+    assertClose(r.vz, 0.9253072602268824, 'vz');
     assertClose(r.angle, -0.26758146725046916, 'angle');
 });
 

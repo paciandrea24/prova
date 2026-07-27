@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { BRAKE_MULT, effectiveBrakeMult, applyBrake } = require('./BrakingModel');
+const { brakingFactor } = require('./TyreForceModel');
 
 test('BRAKE_MULT: valore storico invariato', () => {
     assert.equal(BRAKE_MULT, 2.17);
@@ -12,14 +13,20 @@ test('effectiveBrakeMult: gomma fresca -> BRAKE_MULT pieno', () => {
     assert.equal(effectiveBrakeMult(p, false), 2.17);
 });
 
-test('effectiveBrakeMult: gomma usurata 80% -> penalità frenata applicata', () => {
+test('effectiveBrakeMult: gomma usurata 80% -> penalità frenata applicata (Fase 2B: da TyreForceModel.brakingFactor, tarato in 2A.5, non più WEAR_BRAKE_PENALTY legacy 1.8851875)', () => {
     const p = { compound: 'medium', tyreWear: 80 };
-    assert.ok(Math.abs(effectiveBrakeMult(p, false) - 1.8851874999999998) < 1e-9);
+    assert.ok(Math.abs(effectiveBrakeMult(p, false) - 1.8377187499999998) < 1e-9);
 });
 
 test("effectiveBrakeMult: in qualifica ignora sempre l'usura", () => {
     const p = { compound: 'medium', tyreWear: 80 };
     assert.equal(effectiveBrakeMult(p, true), 2.17);
+});
+
+test('effectiveBrakeMult: Fase 2B, il fattore usura proviene sempre da TyreForceModel.brakingFactor (nessun ramo legacy residuo)', () => {
+    const p = { compound: 'medium', tyreWear: 80 };
+    const expected = BRAKE_MULT * brakingFactor(80, false);
+    assert.ok(Math.abs(effectiveBrakeMult(p, false) - expected) < 1e-9);
 });
 
 test('applyBrake: frenata piena da velocità 4, gomma fresca -> decelerazione + smorzamento laterale', () => {

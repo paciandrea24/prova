@@ -1,13 +1,15 @@
 // backend/sockets/games/physics/TyreForceModel.test.js
 //
-// Test di caratterizzazione del modulo isolato TyreForceModel — Fase 0
-// (Rif. docs/superpowers/specs/2026-07-27-f1-tyre-force-model-migration-design.md).
-// Il modulo non è collegato a nient'altro: questi test verificano solo il
-// suo comportamento a sé stante.
+// Test di caratterizzazione del modulo isolato TyreForceModel — Fase
+// 0/2A/2A.5/2B (Rif. docs/superpowers/specs/2026-07-27-f1-tyre-force-model-migration-design.md).
+// Dalla Fase 2B è l'unica fonte dei 3 fattori usura per i consumer: non
+// esiste più un "legacy" da confrontare (le WEAR_*_PENALTY sono state
+// rimosse da TyreModel.js).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
     TRACTION_SENSITIVITY, BRAKING_SENSITIVITY, CORNERING_SENSITIVITY,
+    TRACTION_EXPONENT, BRAKING_EXPONENT, CORNERING_EXPONENT,
     tyreGripBudget, tractionFactor, brakingFactor, corneringGripFactor, computeTyreFactors
 } = require('./TyreForceModel.js');
 
@@ -15,10 +17,16 @@ function assertClose(actual, expected, label) {
     assert.ok(Math.abs(actual - expected) < 1e-9, `${label}: atteso ${expected}, ottenuto ${actual}`);
 }
 
-test('TRACTION_SENSITIVITY/BRAKING_SENSITIVITY/CORNERING_SENSITIVITY: valori di partenza identici alle WEAR_*_PENALTY attuali', () => {
-    assert.equal(TRACTION_SENSITIVITY, 0.20);
-    assert.equal(BRAKING_SENSITIVITY, 0.30);
-    assert.equal(CORNERING_SENSITIVITY, 0.35);
+test('TRACTION_SENSITIVITY/BRAKING_SENSITIVITY/CORNERING_SENSITIVITY: valori tarati in Fase 2A.5 (deliberatamente diversi dalle WEAR_*_PENALTY legacy)', () => {
+    assert.equal(TRACTION_SENSITIVITY, 0.25);
+    assert.equal(BRAKING_SENSITIVITY, 0.35);
+    assert.equal(CORNERING_SENSITIVITY, 0.40);
+});
+
+test('TRACTION_EXPONENT/BRAKING_EXPONENT/CORNERING_EXPONENT: reshape per asse tarato in Fase 2A.5', () => {
+    assert.equal(TRACTION_EXPONENT, 1.5);
+    assert.equal(BRAKING_EXPONENT, 1.0);
+    assert.equal(CORNERING_EXPONENT, 0.75);
 });
 
 test('tyreGripBudget: gomma nuova (wear=0) ha budget 1', () => {
@@ -37,24 +45,24 @@ test('tractionFactor: gomma nuova, non quali -> fattore 1', () => {
     assertClose(tractionFactor(0, false), 1, 'traction a wear=0');
 });
 
-test('tractionFactor: usura 80%, non quali -> 0.9125 (identico a PowertrainModel.effectiveAccel oggi)', () => {
-    assertClose(tractionFactor(80, false), 0.9125, 'traction a wear=80');
+test('tractionFactor: usura 80%, non quali -> 0.9276552375880776 (Fase 2A.5: reshape esponente 1.5, resta più pieno del legacy 0.9125 a metà-fine vita gomma)', () => {
+    assertClose(tractionFactor(80, false), 0.9276552375880776, 'traction a wear=80');
 });
 
 test('tractionFactor: gomma esaurita (wear=100), non quali -> 1 - TRACTION_SENSITIVITY', () => {
     assertClose(tractionFactor(100, false), 1 - TRACTION_SENSITIVITY, 'traction a wear=100');
 });
 
-test('brakingFactor: usura 80%, non quali -> 0.86875 (identico a BrakingModel.effectiveBrakeMult oggi)', () => {
-    assertClose(brakingFactor(80, false), 0.86875, 'braking a wear=80');
+test('brakingFactor: usura 80%, non quali -> 0.846875 (Fase 2A.5: reshape esponente 1.0, lineare nel deficit, diverso dal legacy 0.86875)', () => {
+    assertClose(brakingFactor(80, false), 0.846875, 'braking a wear=80');
 });
 
 test('brakingFactor: gomma esaurita (wear=100), non quali -> 1 - BRAKING_SENSITIVITY', () => {
     assertClose(brakingFactor(100, false), 1 - BRAKING_SENSITIVITY, 'braking a wear=100');
 });
 
-test('corneringGripFactor: usura 80%, non quali -> 0.846875 (identico a AerodynamicsModel.effectiveGrip oggi)', () => {
-    assertClose(corneringGripFactor(80, false), 0.846875, 'corneringGrip a wear=80');
+test('corneringGripFactor: usura 80%, non quali -> 0.7848241464670574 (Fase 2A.5: reshape esponente 0.75, già più penalizzato del legacy 0.846875)', () => {
+    assertClose(corneringGripFactor(80, false), 0.7848241464670574, 'corneringGrip a wear=80');
 });
 
 test('corneringGripFactor: gomma esaurita (wear=100), non quali -> 1 - CORNERING_SENSITIVITY', () => {

@@ -5,8 +5,9 @@
 // logica esistente da VehiclePhysics.js — nessun nuovo modello motore
 // introdotto (refactoring architetturale, Rif.
 // docs/superpowers/plans/2026-07-27-f1-vehicle-dynamics-refactor.md).
-const { tyreOf, WEAR_SPEED_PENALTY, WEAR_ACCEL_PENALTY, getWearPenaltyFactor } = require('./TyreModel');
+const { tyreOf, WEAR_SPEED_PENALTY, getWearPenaltyFactor } = require('./TyreModel');
 const { getEnginePowerPenalty } = require('./DamageModel');
+const { tractionFactor } = require('./TyreForceModel');
 
 // Velocità realistica F1: fattore di scala R=1.55 (+55%) applicato a
 // MAX_SPEED/ACCEL/FRICTION rispetto ai valori storici (4.0/0.12/0.050). Vedi
@@ -30,8 +31,12 @@ function effectiveMaxSpeed(p, isQuali) {
     return MAX_SPEED * tyreOf(p, isQuali).speedMult * wearFactor * engineFactor;
 }
 
+// Fase 2B (Rif. docs/superpowers/specs/2026-07-27-f1-tyre-force-model-migration-design.md):
+// TyreForceModel.tractionFactor è ora l'UNICA fonte del fattore usura per la
+// trazione — la vecchia WEAR_ACCEL_PENALTY è stata rimossa (Fase 2A/2A.5
+// l'avevano affiancata/tarata dietro un flag, ora superfluo).
 function effectiveAccel(p, isQuali) {
-    const wearFactor   = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_ACCEL_PENALTY;
+    const wearFactor   = tractionFactor(p.tyreWear, isQuali);
     const engineFactor = isQuali ? 1 : 1 - getEnginePowerPenalty(p.damageParts);
     return ACCEL * wearFactor * engineFactor;
 }
