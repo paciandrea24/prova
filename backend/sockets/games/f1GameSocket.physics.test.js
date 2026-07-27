@@ -355,3 +355,56 @@ test('buildPublicState: espone damage e collisionPenalty (bool) per giocatore', 
     assert.equal(state.red.damage, 42);
     assert.equal(state.red.collisionPenalty, true);
 });
+
+function makeMockIo() {
+    return { to: () => ({ emit: () => {} }) };
+}
+
+test('checkLap: con startFinishIndex non-zero, la zona traguardo e il checkpoint si spostano di conseguenza (non restano fissi a 0/500)', () => {
+    const { physics } = f1GameSocket;
+    const n = 1000;
+    const points = Array.from({ length: n }, (_, i) => ({ x: i, z: 0 }));
+    const startFinishIndex = 300;
+    const track = {
+        points,
+        lapLength: n, // 1 unità per campione, così checkpointWindowFor/finishWindowFor restano piccoli e prevedibili
+        startFinishIndex
+    };
+    const game = { track };
+    const io = makeMockIo();
+
+    // Il giocatore parte esattamente al traguardo esplicito (300), tocca il
+    // checkpoint a metà giro RELATIVO (300+500=800, non il fisso 500) e poi
+    // rientra nella zona traguardo (300): un giro deve contare.
+    const p = { color: 'red', lap: 0, trackIndex: startFinishIndex, checkpointA: false, inFinishZone: false };
+    physics.checkLap(p, 10, io, 'lobby1', game);
+    assert.equal(p.lap, 0, 'non deve contare un giro solo stando fermi al traguardo (nessun checkpoint toccato)');
+
+    p.trackIndex = (startFinishIndex + physics.HALF_LAP_IDX) % n; // 800
+    physics.checkLap(p, 10, io, 'lobby1', game);
+    assert.equal(p.checkpointA, true, 'checkpoint a metà giro relativo deve scattare');
+
+    p.trackIndex = startFinishIndex; // torna a 300
+    p.inFinishZone = false; // simula "appena entrato" nella zona
+    physics.checkLap(p, 10, io, 'lobby1', game);
+    assert.equal(p.lap, 1, 'giro completato tornando al traguardo esplicito (300), non a 0');
+});
+
+test('checkLap: senza startFinishIndex (pista senza startFinish, comportamento odierno), traguardo resta indice 0', () => {
+    const { physics } = f1GameSocket;
+    const n = 1000;
+    const points = Array.from({ length: n }, (_, i) => ({ x: i, z: 0 }));
+    const track = { points, lapLength: n }; // startFinishIndex assente, come le piste esistenti
+    const game = { track };
+    const io = makeMockIo();
+
+    const p = { color: 'red', lap: 0, trackIndex: 0, checkpointA: false, inFinishZone: false };
+    p.trackIndex = physics.HALF_LAP_IDX;
+    physics.checkLap(p, 10, io, 'lobby1', game);
+    assert.equal(p.checkpointA, true);
+
+    p.trackIndex = 0;
+    p.inFinishZone = false;
+    physics.checkLap(p, 10, io, 'lobby1', game);
+    assert.equal(p.lap, 1);
+});

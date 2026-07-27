@@ -1080,12 +1080,13 @@ function circularWithin(idx, target, n, halfWidth) {
 function checkLap(p, totalLaps, io, lobbyId, game) {
     const n   = game.track.points.length;
     const idx = p.trackIndex || 0;
+    const startFinishIndex = game.track.startFinishIndex || 0;
 
-    if (!p.checkpointA && circularWithin(idx, HALF_LAP_IDX, n, checkpointWindowFor(game.track))) {
+    if (!p.checkpointA && circularWithin(idx, (startFinishIndex + HALF_LAP_IDX) % n, n, checkpointWindowFor(game.track))) {
         p.checkpointA = true;
     }
 
-    const inFinishZone = circularWithin(idx, 0, n, finishWindowFor(game.track));
+    const inFinishZone = circularWithin(idx, startFinishIndex, n, finishWindowFor(game.track));
     if (p.checkpointA && inFinishZone && !p.inFinishZone) {
         // Il giocatore ha appena ENTRATO nella zona traguardo → giro completato
         p.lap++;
@@ -1256,7 +1257,7 @@ module.exports.physics = {
     applyDamageSteerNoise, DAMAGE_STEER_NOISE_MAX, effectiveGrip,
     createDamageParts, FRONT_WING_STEER_PENALTY_MAX,
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
-    buildPublicState
+    buildPublicState, checkLap
 };
 
 module.exports.tickGame = tickGame;
