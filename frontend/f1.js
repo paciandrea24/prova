@@ -1313,6 +1313,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // RENDER LOOP — LERP + CAMERA
     // ====================================================
     const LERP = 0.22;
+    // Angolo massimo di rotazione visiva delle ruote anteriori in sterzata
+    // (solo estetico — la fisica reale usa l'input grezzo lato server,
+    // SteeringModel.js — non questo valore). Stesso ordine di grandezza
+    // del clamp ±0.4 rad usato nell'editor di riferimento navigato per
+    // progettare questo effetto. Da tarare a vista in localhost.
+    const MAX_WHEEL_STEER_RAD = 0.35;
 
     // Isteresi sulla soglia "fuori pista" usata per scegliere la sorgente
     // della quota visiva (trackY del punto pista vs terrainHeightAt): senza
@@ -1457,6 +1463,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             v.x     += (target.x     - v.x)     * LERP;
             v.z     += (target.z     - v.z)     * LERP;
             v.angle  = lerpAngle(v.angle || 0, target.angle || 0, LERP);
+            v.steerAngle = (v.steerAngle || 0) + ((target.steerInput || 0) * MAX_WHEEL_STEER_RAD - (v.steerAngle || 0)) * LERP;
 
             const carGroup = color === myColor ? myCarGroup : otherCars[color];
             if (carGroup) {
@@ -1512,6 +1519,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     carGroup.userData.wheelRot = (carGroup.userData.wheelRot || 0) + Math.abs(target.speed || 0) * 1.4;
                     const wr = -carGroup.userData.wheelRot;
                     for (const w of carGroup.userData.wheels) w.rotation.x = wr;
+                }
+                // Sterzo visivo: solo le ruote anteriori ruotano sull'asse
+                // verticale (Y) in base a v.steerAngle (smussato sopra) —
+                // effetto puramente cosmetico, la traiettoria reale resta
+                // quella calcolata dal server su x/z/angle.
+                if (carGroup.userData.frontWheels && carGroup.userData.frontWheels.length > 0) {
+                    for (const w of carGroup.userData.frontWheels) w.rotation.y = v.steerAngle;
                 }
                 // Motore: pitch/volume seguono la velocità REALE in
                 // continuo, con range diversi se l'auto sta accelerando o
