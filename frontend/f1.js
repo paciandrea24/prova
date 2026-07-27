@@ -1527,6 +1527,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (carGroup.userData.frontWheels && carGroup.userData.frontWheels.length > 0) {
                     for (const w of carGroup.userData.frontWheels) w.rotation.y = v.steerAngle;
                 }
+                // Colore cerchio in base alla mescola montata: si rigenera la
+                // texture ruota una sola volta per ogni cambio effettivo (non
+                // ad ogni frame), confrontando col valore già applicato
+                // memorizzato su carGroup.userData.appliedCompound. Prima che
+                // il server sappia la mescola (tyre_select, compound=null) il
+                // controllo non scatta e il cerchio resta al colore originale.
+                if (target.compound && tyreCompoundsInfo && carGroup.userData.setCompoundColor
+                        && carGroup.userData.appliedCompound !== target.compound) {
+                    const info = tyreCompoundsInfo[target.compound];
+                    if (info) {
+                        const compoundHex = parseInt(info.color.replace('#', ''), 16);
+                        carGroup.userData.setCompoundColor(compoundHex);
+                        carGroup.userData.appliedCompound = target.compound;
+                    }
+                }
                 // Motore: pitch/volume seguono la velocità REALE in
                 // continuo, con range diversi se l'auto sta accelerando o
                 // decelerando/rilasciando (anche solo per attrito, senza
