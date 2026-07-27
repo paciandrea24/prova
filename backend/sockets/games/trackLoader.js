@@ -87,6 +87,23 @@ function buildTrack(id, raw) {
         return alongTrack(GRID_START - i * GRID_STAGGER, laneSign * GRID_LANE_OFFSET);
     }
 
+    // Indice campionato del punto pista più vicino al VERO trigger d'ingresso
+    // (non a pitPath[0]: sono due cose diverse in editor — il trigger può
+    // stare su un punto qualunque della corsia box, es. pitPath[1], per
+    // evitare sovrapposizioni con la pista vera). Precalcolato una volta
+    // qui, non ad ogni tick: serve al bot per sapere QUANDO è vicino
+    // all'ingresso box lungo il proprio giro (f1Bot.js, idxUntilPitEntry) —
+    // se questo indice restasse ancorato a pitPath[0] mentre il trigger reale
+    // è più avanti (es. pitPath[1]), la finestra di avvicinamento (e la sua
+    // "nearPitEntry") scadrebbe non appena l'auto supera pitPath[0], PRIMA
+    // di raggiungere il trigger vero — il bot abbandonerebbe la manovra
+    // proprio all'ultimo, tornando di scatto alla guida normale (bug reale,
+    // riprodotto in simulazione su New Monza dopo aver spostato il trigger
+    // al secondo punto della corsia).
+    const triggerCenterX = (raw.pit.entryTrigger.xMin + raw.pit.entryTrigger.xMax) / 2;
+    const triggerCenterZ = (raw.pit.entryTrigger.zMin + raw.pit.entryTrigger.zMax) / 2;
+    const pitEntryIndex = TrackGeometry.nearestPoint(points, triggerCenterX, triggerCenterZ).index;
+
     return {
         id,
         name: raw.name,
@@ -95,6 +112,7 @@ function buildTrack(id, raw) {
         lapLength,
         totalLaps,
         pitPath: raw.pit.path,
+        pitEntryIndex,
         pitBoxIndex: raw.pit.boxIndex,
         pitRoadHalf: raw.pit.roadHalfWidth,
         pitEntryTrigger: raw.pit.entryTrigger,

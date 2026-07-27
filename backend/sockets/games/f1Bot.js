@@ -281,6 +281,30 @@ function nearestAheadPlayer(p, allPlayers, track) {
     return best ? { player: best, gapM: bestGap } : null;
 }
 
+// Velocità-obiettivo "vera" (guardando avanti sulla propria traiettoria) di
+// UN'ALTRA auto nella sua posizione attuale — usata per decidere il
+// sorpasso (vedi updateBotInputs). Confrontare la propria velocità-obiettivo
+// con lo scalare ISTANTANEO dell'auto davanti (com'era prima) dava falsi
+// positivi enormi ogni volta che quell'auto stava frenando per una curva
+// che anche l'inseguitore doveva ancora affrontare: misurato con una
+// simulazione headless (Monza, 6 bot, 8 giri) che la mediana della velocità
+// di avvicinamento nei tentativi era ~50m/s (quasi il tetto di velocità del
+// gioco, impossibile come vero margine di ritmo) — un'illusione dovuta al
+// fotogramma sbagliato, mai un vantaggio reale abbastanza a lungo da
+// completare un sorpasso (finestra media del tentativo ~0.5s). Confrontando
+// invece ritmo-contro-ritmo (questa funzione) la mediana scende a ~7m/s, un
+// vantaggio fisicamente sensato.
+function otherCarTargetSpeed(other, laneSource, track, metersPerSample, brakeDecel, turnRateHigh, effectiveMaxSpeed, cornerSpeedMargin, brakingDistanceMargin) {
+    const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
+    const maxSpeed = effectiveMaxSpeed(other, false);
+    const scanM = (maxSpeed * maxSpeed) / (2 * brakeDecel) * brakingDistanceMargin;
+    const scanSamples = metersToSamples(scanM, track);
+    return cornerTargetSpeed(
+        laneSource, other.trackIndex || 0, scanSamples, localSamples, metersPerSample,
+        other.speed, maxSpeed, brakeDecel, turnRateHigh, cornerSpeedMargin
+    ) * (other.botSpeedFactor || 1) * (other.botLapPaceMult || 1);
+}
+
 // ====================================================
 // STRATEGIA GOMME POST PIT-STOP
 // Pochi giri restanti: la durata non conta più, meglio la mescola più
@@ -291,6 +315,12 @@ function pickPostPitCompound(remainingLaps, wearLapsAtMedium) {
     if (remainingLaps <= 2) return 'soft';
     if (remainingLaps <= wearLapsAtMedium) return 'medium';
     return 'hard';
+}
+
+const BOT_REPAIR_DAMAGE_THRESHOLD = 20;   // % danno oltre cui il bot ripara sempre ai box
+
+function shouldBotRepair(damage, threshold) {
+    return damage >= threshold;
 }
 
 // ====================================================
@@ -343,6 +373,43 @@ function pickBotColors(humanColors, count, rng = Math.random) {
 const BOT_SPEED_FACTOR_MIN    = 0.93, BOT_SPEED_FACTOR_MAX    = 1.0;
 const BOT_PRECISION_NOISE_MIN = 0,    BOT_PRECISION_NOISE_MAX = 0.25;   // rad aggiunti/tolti allo sterzo
 const BOT_PIT_THRESHOLD_MIN   = 60,   BOT_PIT_THRESHOLD_MAX   = 80;     // % usura gomme a cui il bot decide di entrare ai box
+// Distanza (metri, lungo il giro) entro cui un bot che ha deciso di entrare
+// ai box comincia a sfumare il bersaglio dello sterzo verso pitPath[0]
+// invece di seguire solo la traiettoria normale. BUG REALE misurato con una
+// simulazione headless (Monza, 3 giri): puntare la corsia box in linea
+// d'aria da QUALUNQUE punto del circuito nel momento esatto in cui l'usura
+// supera la soglia manda il bot fuori pista per il resto della gara (mai
+// più recuperato, verificato >90s consecutivi fuori pista in simulazione).
+// Restando sulla traiettoria normale finché non si è vicini al vero punto
+// di distacco (pitEntryIndex, precalcolato in trackLoader.js), il bot
+// "punta ai box" solo nell'ultimo tratto, esattamente come farebbe un
+// pilota vero avvicinandosi al box. Valore tarato con la stessa
+// simulazione: 200m dava una correzione troppo stretta (mancava spesso il
+// riquadro d'ingresso, ~40% delle volte), 300m converge in modo affidabile.
+const BOT_PIT_APPROACH_M = 300;
+// Sotto questa distanza (metri) da pitPath[0] si passa dal bersaglio
+// sfumato all'inseguimento diretto di pitPath[1] (dentro il vero riquadro-
+// trigger, verificato) — evita di "arrivare" su pitPath[0] e poi tornare
+// verso la traiettoria normale prima di aver davvero attraversato il
+// riquadro che fa scattare l'ingresso ai box.
+const BOT_PIT_LANE_FOLLOW_M = 25;
+// Su una pista corta (es. Monza, 3 giri) l'usura non arriva mai a
+// botPitThreshold (60-80%) con mescole medium/hard entro fine gara — non è
+// casualità, è la matematica di WEAR_LAPS_AT_MEDIUM/wearRate (misurato: fino
+// a ~58%/~35% di usura a fine gara per medium/hard su Monza, sempre sotto
+// soglia). Un bot così non farebbe mai un pit stop e chiuderebbe sempre in
+// penalità. Rete di sicurezza: se resta solo l'ultimo giro e il bot non ha
+// ancora pittato, forza comunque l'ingresso ai box (un pilota vero, pur con
+// gomme non al limite, sceglierebbe di scontare la sosta obbligatoria
+// piuttosto che la penalità in tempo) — stesso percorso di avvicinamento
+// sicuro sopra, nessuna logica di sterzo duplicata.
+const BOT_FORCE_PIT_LAPS_REMAINING = 1;
+// Durante l'avvicinamento finale ai box la precisione conta più che in
+// pista aperta (il trigger d'ingresso è stretto, ~30×15m): lo stesso
+// rumore di sterzo usato per la guida normale a volte fa mancare il
+// riquadro sul primo passaggio (osservato in simulazione), quindi va
+// ridotto SOLO in quella fase, non ovunque.
+const BOT_PIT_APPROACH_NOISE_SCALE = 0.15;
 // botSpeedFactor è fisso per tutta la gara: da solo produce una griglia
 // già ordinata per ritmo (chi parte davanti è sempre il più veloce), quasi
 // nessun sorpasso tra bot per tutta la gara — richiesto esplicitamente
@@ -350,6 +417,11 @@ const BOT_PIT_THRESHOLD_MIN   = 60,   BOT_PIT_THRESHOLD_MAX   = 80;     // % usu
 // giorno storto, come un pilota vero) rompe l'ordine statico anche a
 // parità di usura gomme/strategia.
 const BOT_LAP_PACE_VARIANCE   = 0.04;   // ±4% di variazione di ritmo da un giro all'altro
+// Su gare corte (es. Monza, 3 giri) ri-estrarre una sola volta a giro dava
+// solo 3 occasioni totali per l'intera gara di un vero distacco di ritmo —
+// pochissime, un solo sorpasso osservato in playtest (richiesta esplicita
+// dell'utente di ripescare più spesso, stessa ampiezza ±4%, non toccata).
+const BOT_LAP_PACE_SEGMENTS   = 4;   // quante volte a giro si ripesca botLapPaceMult
 
 function randRange(min, max, rng) {
     return min + rng() * (max - min);
@@ -409,7 +481,8 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
             botPitReactionScheduled: false,
             botOvertakeSide:        rng() < 0.5 ? 1 : -1,   // spareggio quando l'auto da superare è vicina al centro pista
             botLapSeen:             0,
-            botLapPaceMult:         randRange(1 - BOT_LAP_PACE_VARIANCE, 1 + BOT_LAP_PACE_VARIANCE, rng)
+            botLapPaceMult:         randRange(1 - BOT_LAP_PACE_VARIANCE, 1 + BOT_LAP_PACE_VARIANCE, rng),
+            botRaceReactionUntil:   null   // impostato da startRaceCountdown al via vero (f1GameSocket.js)
         };
         // Auto-conferma la mescola: riusa il gate esistente in f1TyreChoice
         // (game.tyreConfirmed.size >= Object.keys(game.players).length),
@@ -447,10 +520,16 @@ const BOT_BRAKING_DISTANCE_MARGIN    = 1.2;
 const BOT_SPEED_MARGIN          = 0.03;  // isteresi throttle/brake attorno alla velocità target
 const BOT_PIT_REACTION_MIN_MS   = 150;
 const BOT_PIT_REACTION_MAX_MS   = 700;
-// Ritardo casuale prima che un bot inizi a reagire al via (vedi
-// f1GameSocket.js::startRaceCountdown, che imposta p.botRaceReactionUntil):
-// nessuna correlazione col ritmo di gara, richiesto esplicitamente — evita
-// che tutti i bot partano nell'esatto stesso tick.
+// Reazione al via (spegnimento semafori): senza questo, tutti i bot
+// iniziano a spingere sull'acceleratore nell'ESATTO stesso tick fisico in
+// cui game.raceStarted diventa true (tickGame ritorna subito se non è
+// ancora true, quindi updateBotInputs non viene mai chiamata prima — vedi
+// f1GameSocket.js), mentre un umano ha sempre una reazione naturalmente
+// variabile — risultato: griglia di partenza troppo "meccanica". Nessuna
+// correlazione col ritmo di gara del bot (richiesto esplicitamente
+// dall'utente: solo variabilità, non "il più veloce parte apposta peggio").
+// Stesso ordine di grandezza di BOT_PIT_REACTION_MIN/MAX_MS (reazione umana
+// plausibile a uno stimolo atteso).
 const BOT_RACE_START_REACTION_MIN_MS = 150;
 const BOT_RACE_START_REACTION_MAX_MS = 500;
 
@@ -460,14 +539,14 @@ const BOT_RACE_START_REACTION_MAX_MS = 500;
 // che si muovono "in blocco" (effetto trenino osservato in playtest). Un bot
 // che si accorge di un'altra auto entro BOT_FOLLOW_GAP_M subito avanti lungo
 // il tracciato rallenta proporzionalmente, invece di tallonarla identico.
-const BOT_FOLLOW_GAP_M        = 15;
-const BOT_FOLLOW_MIN_FRACTION = 0.55;   // frazione minima di velocità quando si è praticamente addosso a chi precede
+const BOT_FOLLOW_GAP_M        = 30;
+const BOT_FOLLOW_MIN_FRACTION = 0.85;   // frazione minima di velocità quando si è praticamente addosso a chi precede — alta apposta: il bot talloona invece di staccarsi, per restare a ridosso e cercare l'occasione di sorpasso (vedi spec 2026-07-24-f1-bot-aggressivita-sorpassi-design.md)
 // Sorpasso: entro BOT_FOLLOW_GAP_M, se il bot avrebbe margine di velocità
 // libera vero sull'auto che precede (non solo momentaneo, es. lei in
 // frenata per una curva) tenta di superarla scartando di lato invece di
 // limitarsi a rallentare — altrimenti la "skill" di qualifica diventa una
 // posizione fissa per tutta la gara, nessun sorpasso si verifica mai.
-const BOT_OVERTAKE_PACE_MARGIN = 1.05;   // serve almeno il 5% di velocità libera in più per tentare
+const BOT_OVERTAKE_PACE_MARGIN = 1.01;   // serve almeno l'1% di velocità libera in più per tentare (era 5%, poi 2%: un solo sorpasso osservato in playtest su Monza/3 giri, spinto ancora più giù su richiesta esplicita)
 const BOT_OVERTAKE_FRACTION    = 0.55;   // quanto ci si sposta lateralmente (frazione della mezza larghezza pista)
 // Il sorpasso si somma allo spazio pista già "consumato" dal taglio curva
 // (apexOffset): tentarlo mentre si è già in curva stretta può superare la
@@ -518,7 +597,7 @@ const DEFAULT_RACELINE_TUNING = {
 function updateBotInputs(game, deps) {
     const {
         effectiveMaxSpeed, handlePitReactionPress, io, lobbyId, wearLapsAtMedium,
-        accel, brakeMult, turnRateHigh, tuning: tuningOverrides
+        accel, brakeMult, turnRateHigh, tuning: tuningOverrides, slipstreamMaxBoost
     } = deps;
     const tuning = { ...DEFAULT_TUNING, ...(tuningOverrides || {}) };
     const track = game.track;
@@ -529,11 +608,25 @@ function updateBotInputs(game, deps) {
     for (const p of Object.values(game.players)) {
         if (!p.isBot || p.finished) continue;
 
-        // Ri-estrae il ritmo del giro ad ogni cambio di p.lap (giorno
-        // buono/giorno storto, come un pilota vero) — rompe l'ordine
-        // altrimenti statico di una griglia già ordinata per ritmo fisso.
-        if (p.lap !== p.botLapSeen) {
-            p.botLapSeen = p.lap;
+        // Reazione al via ancora in corso (vedi BOT_RACE_START_REACTION_MIN/MAX_MS
+        // e startRaceCountdown in f1GameSocket.js, che imposta questo timestamp
+        // nell'esatto istante in cui si accende il verde): auto ferma, nessun
+        // input, come un pilota che non ha ancora reagito al semaforo.
+        if (p.botRaceReactionUntil && Date.now() < p.botRaceReactionUntil) {
+            p.inputs = { throttle: 0, brake: 0, steer: 0 };
+            continue;
+        }
+
+        // Ri-estrae il ritmo BOT_LAP_PACE_SEGMENTS volte a giro (non più solo
+        // al cambio giro): un identificativo che cresce ad ogni frazione di
+        // giro percorsa (giorno buono/giorno storto più frequente, come un
+        // pilota vero che varia ritmo anche dentro lo stesso giro) — rompe
+        // l'ordine altrimenti statico di una griglia già ordinata per ritmo
+        // fisso, con più occasioni di distacco reale anche su gare corte.
+        const paceSegmentSamples = Math.ceil(track.points.length / BOT_LAP_PACE_SEGMENTS);
+        const paceSegment = p.lap * BOT_LAP_PACE_SEGMENTS + Math.floor((p.trackIndex || 0) / paceSegmentSamples);
+        if (paceSegment !== p.botLapSeen) {
+            p.botLapSeen = paceSegment;
             p.botLapPaceMult = 1 + (Math.random() * 2 - 1) * BOT_LAP_PACE_VARIANCE;
         }
 
@@ -558,16 +651,67 @@ function updateBotInputs(game, deps) {
         // alla linea principale — appena entra nel trigger d'ingresso
         // (inPitEntryZone, già controllato per tutti in tickGame), il
         // server prende il volante come farebbe con un umano.
-        if (game.phase === 'race' && !p.botHeadingToPits && p.tyreWear >= p.botPitThreshold) {
-            p.botHeadingToPits = true;
+        if (game.phase === 'race' && !p.botHeadingToPits && !p.hasPitted) {
             const remainingLaps = Math.max(0, track.totalLaps - p.lap);
-            p.pendingCompound = pickPostPitCompound(remainingLaps, wearLapsAtMedium);
+            const wearThresholdHit = p.tyreWear >= p.botPitThreshold;
+            const mustPitNow = remainingLaps <= BOT_FORCE_PIT_LAPS_REMAINING;
+            if (wearThresholdHit || mustPitNow) {
+                p.botHeadingToPits = true;
+                p.pendingCompound = pickPostPitCompound(remainingLaps, wearLapsAtMedium);
+                p.pendingRepair = shouldBotRepair(p.damage, BOT_REPAIR_DAMAGE_THRESHOLD);
+            }
         }
 
+        // Vicino al vero punto di distacco della corsia box? Distanza IN
+        // AVANTI lungo il giro (non la più corta nei due versi: appena
+        // superato l'ingresso, "vicino" nel verso sbagliato vorrebbe dire
+        // aver già mancato l'entrata, serve aspettare il prossimo giro) —
+        // vedi commento su BOT_PIT_APPROACH_M.
+        const n = track.points.length;
+        const idxUntilPitEntry = ((track.pitEntryIndex - (p.trackIndex || 0)) % n + n) % n;
+        const nearPitEntry = p.botHeadingToPits &&
+            idxUntilPitEntry <= metersToSamples(BOT_PIT_APPROACH_M, track);
+
         let steer, throttle = 0, brake = 0;
-        if (p.botHeadingToPits) {
-            const target = track.pitPath[0];
-            steer = steerToward(p.x, p.z, p.angle, target.x, target.z);
+        if (nearPitEntry) {
+            // pitPath[0] è il punto di raccordo NATURALE (misurato: solo
+            // ~12.5m di scostamento laterale dal centro pista a
+            // pitEntryIndex, contro gli 11m di mezza carreggiata — quindi
+            // praticamente al bordo pista, non un taglio). Il centro del
+            // riquadro-trigger (pitEntryTarget, ~30m di scostamento) era
+            // troppo lontano dalla pista: puntarlo tagliava dritto per il
+            // prato ignorando la curva (segnalato dall'utente in localhost,
+            // "salta l'ultima curva"). Finché non si è molto vicini a
+            // pitPath[0], il bersaglio è sfumato dal punto di inseguimento
+            // NORMALE sulla pista (stesso calcolo della guida normale sotto)
+            // verso pitPath[0] — nessun taglio, solo un cambio di corsia
+            // graduale verso il bordo. Una volta arrivati (distanza < 25m),
+            // si passa a inseguire pitPath[1] (verificato dentro il vero
+            // riquadro-trigger) per attraversarlo con sicurezza, invece di
+            // fermarsi su pitPath[0] che gli sta appena fuori.
+            const distToPitPath0 = Math.hypot(p.x - track.pitPath[0].x, p.z - track.pitPath[0].z);
+            if (distToPitPath0 < BOT_PIT_LANE_FOLLOW_M && track.pitPath[1]) {
+                const wp = track.pitPath[1];
+                steer = steerToward(p.x, p.z, p.angle, wp.x, wp.z);
+            } else {
+                const approachSamples = metersToSamples(BOT_PIT_APPROACH_M, track);
+                const tLinear = 1 - idxUntilPitEntry / approachSamples;   // 0 appena entrati nella finestra, 1 al distacco
+                // Cubica invece di lineare: per la maggior parte della
+                // finestra il bersaglio resta quasi quello della guida
+                // normale (segue la curva reale), lo spostamento vero verso
+                // pitPath[0] si concentra negli ultimi metri — altrimenti
+                // (peso lineare) si taglia l'ultima curva di Monza prima
+                // ancora di essere vicini ai box (segnalato dall'utente).
+                const t = tLinear * tLinear * tLinear;
+                const laneSource   = track.racingLine || track.points;
+                const speedMs      = Math.max(5, botSpeedMs(p.speed));
+                const lookM        = Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * BOT_LOOKAHEAD_TIME_S);
+                const laneTargetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, metersToSamples(lookM, track));
+                const laneTarget   = laneSource[laneTargetIdx];
+                const targetX = laneTarget.x * (1 - t) + track.pitPath[0].x * t;
+                const targetZ = laneTarget.z * (1 - t) + track.pitPath[0].z * t;
+                steer = steerToward(p.x, p.z, p.angle, targetX, targetZ);
+            }
             throttle = 0.6;   // rallenta in ingresso corsia box
         } else if (track.racingLine) {
             // Racing line precalcolata OFFLINE (vedi
@@ -584,7 +728,14 @@ function updateBotInputs(game, deps) {
             // trovati per QUESTA pista specifica, non le costanti fisse
             // valide per il ramo geometrico.
             const rt = { ...DEFAULT_RACELINE_TUNING, ...(track.racingLineTuning || {}) };
-            const maxSpeed = effectiveMaxSpeed(p, isQuali);
+            // p.inSlipstream è il valore del tick FISICO precedente (la scia
+            // viene ricalcolata in tickGame dopo updateBotInputs, non prima —
+            // 20ms di ritardo, trascurabile): senza questo il bot calcola un
+            // tetto di velocità-obiettivo che ignora la scia, e non appena la
+            // fisica lo spinge oltre (fino a +8%, contro un margine di
+            // frenata del 3%) FRENA per tornare al proprio target, buttando
+            // via il vantaggio invece di sfruttarlo per rimontare.
+            const maxSpeed = effectiveMaxSpeed(p, isQuali) * (p.inSlipstream ? (1 + (slipstreamMaxBoost || 0)) : 1);
             const speedMs  = Math.max(5, botSpeedMs(p.speed));
             const lookM    = Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * rt.lookaheadTimeS);
             const lookSamples  = metersToSamples(lookM, track);
@@ -616,7 +767,13 @@ function updateBotInputs(game, deps) {
                     const w = windowRadius(track.racingLine, i1, i2, localArcM);
                     const severity = w ? Math.min(1, track.roadHalf / w.radius) : 0;
                     const cornerIsMild = severity < BOT_OVERTAKE_MAX_CORNER_SEVERITY;
-                    if (cornerIsMild && targetSpeed > ahead.player.speed * BOT_OVERTAKE_PACE_MARGIN) {
+                    // Ritmo-contro-ritmo, non ritmo-contro-fotogramma-a-caso
+                    // (vedi otherCarTargetSpeed).
+                    const leaderTargetSpeed = otherCarTargetSpeed(
+                        ahead.player, track.racingLine, track, metersPerSample, brakeDecel, turnRateHigh,
+                        effectiveMaxSpeed, rt.cornerSpeedMargin, rt.brakingDistanceMargin
+                    );
+                    if (cornerIsMild && targetSpeed > leaderTargetSpeed * BOT_OVERTAKE_PACE_MARGIN) {
                         const overtake = overtakeOffset(
                             track.points, ahead.player.trackIndex || 0, ahead.player.x, ahead.player.z,
                             track.roadHalf, BOT_OVERTAKE_FRACTION, p.botOvertakeSide
@@ -640,7 +797,10 @@ function updateBotInputs(game, deps) {
             if (err > rt.deadband) brake = Math.min(1, (err - rt.deadband) / rt.ramp);
             else if (err < -rt.deadband) throttle = Math.min(1, (-err - rt.deadband) / rt.ramp);
         } else {
-            const maxSpeed = effectiveMaxSpeed(p, isQuali);
+            // Vedi commento sul ramo racing-line sopra: senza il fattore
+            // scia qui il bot frena via il vantaggio della scia invece di
+            // sfruttarlo.
+            const maxSpeed = effectiveMaxSpeed(p, isQuali) * (p.inSlipstream ? (1 + (slipstreamMaxBoost || 0)) : 1);
             const speedMs  = Math.max(5, botSpeedMs(p.speed));   // floor: niente lookahead quasi-zero da fermi (es. alla partenza)
             const lookM    = Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * BOT_LOOKAHEAD_TIME_S);
             const lookSamples  = metersToSamples(lookM, track);
@@ -701,7 +861,13 @@ function updateBotInputs(game, deps) {
                     // o curve dolci (stessa logica di un pilota vero).
                     const apexMag = Math.hypot(apex.dx, apex.dz);
                     const cornerIsMild = apexMag < track.roadHalf * tuning.apexMaxFraction * BOT_OVERTAKE_MAX_CORNER_SEVERITY;
-                    if (cornerIsMild && targetSpeed > ahead.player.speed * BOT_OVERTAKE_PACE_MARGIN) {
+                    // Ritmo-contro-ritmo, non ritmo-contro-fotogramma-a-caso
+                    // (vedi otherCarTargetSpeed).
+                    const leaderTargetSpeed = otherCarTargetSpeed(
+                        ahead.player, track.points, track, metersPerSample, brakeDecel, turnRateHigh,
+                        effectiveMaxSpeed, tuning.cornerSpeedMargin, tuning.brakingDistanceMargin
+                    );
+                    if (cornerIsMild && targetSpeed > leaderTargetSpeed * BOT_OVERTAKE_PACE_MARGIN) {
                         const overtake = overtakeOffset(
                             track.points, ahead.player.trackIndex || 0, ahead.player.x, ahead.player.z,
                             track.roadHalf, BOT_OVERTAKE_FRACTION, p.botOvertakeSide
@@ -718,7 +884,8 @@ function updateBotInputs(game, deps) {
             else if (p.speed > targetSpeed * (1 + BOT_SPEED_MARGIN)) brake = 1;
         }
 
-        steer += (Math.random() * 2 - 1) * p.botPrecisionNoise;
+        const noiseScale = nearPitEntry ? BOT_PIT_APPROACH_NOISE_SCALE : 1;
+        steer += (Math.random() * 2 - 1) * p.botPrecisionNoise * noiseScale;
         steer = Math.max(-1, Math.min(1, steer));
 
         p.inputs = { throttle, brake, steer };
@@ -727,8 +894,8 @@ function updateBotInputs(game, deps) {
 
 module.exports = {
     PALETTE, MAX_GRID_SIZE, DEFAULT_TUNING,
+    BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS,
     normalizeAngle, steerToward, lookaheadIndex, apexOffset, windowRadius, cornerApexNear, cornerTargetSpeed, overtakeOffset,
-    nearestAheadPlayer, pickPostPitCompound, pickBotColors, estimateFinishTime,
-    createBots, updateBotInputs,
-    BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS
+    nearestAheadPlayer, otherCarTargetSpeed, pickPostPitCompound, pickBotColors, estimateFinishTime,
+    createBots, updateBotInputs, shouldBotRepair
 };

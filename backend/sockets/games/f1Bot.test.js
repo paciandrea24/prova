@@ -5,7 +5,7 @@ const {
     PALETTE, normalizeAngle, steerToward, lookaheadIndex, apexOffset,
     cornerTargetSpeed, windowRadius, cornerApexNear, overtakeOffset, nearestAheadPlayer,
     pickPostPitCompound, pickBotColors, estimateFinishTime,
-    updateBotInputs, DEFAULT_TUNING
+    updateBotInputs, DEFAULT_TUNING, shouldBotRepair
 } = require('./f1Bot.js');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 
@@ -305,6 +305,13 @@ test('pickPostPitCompound: molti giri restanti => hard', () => {
     assert.equal(pickPostPitCompound(20, 5), 'hard');
 });
 
+test('shouldBotRepair: ripara solo se il danno è almeno alla soglia', () => {
+    assert.equal(shouldBotRepair(19, 20), false);
+    assert.equal(shouldBotRepair(20, 20), true);
+    assert.equal(shouldBotRepair(0, 20), false);
+    assert.equal(shouldBotRepair(100, 20), true);
+});
+
 test('pickBotColors: esclude i colori umani, ne restituisce esattamente `count` (rng deterministico)', () => {
     const humanColors = ['#E74C3C', '#3498DB'];
     const rng = () => 0;   // sceglie sempre il primo libero rimasto => ordine di PALETTE
@@ -415,4 +422,39 @@ test('updateBotInputs: deps.tuning.apexMaxFraction sovrascrive il default e camb
         Math.abs(pFlat.inputs.steer - pFull.inputs.steer) > 1e-6,
         `atteso sterzo diverso tra apexMaxFraction=0 (${pFlat.inputs.steer}) e =1 (${pFull.inputs.steer})`
     );
+});
+
+test('updateBotInputs: durante la reazione al via il bot resta fermo (nessun input), poi guida normalmente', () => {
+    const points = buildConstantCurveTrack(200, 200, 0);   // rettilineo puro
+    const track = { points, lapLength: 200, roadHalf: 5 };
+    const deps = {
+        effectiveMaxSpeed: () => 6,
+        handlePitReactionPress: () => {},
+        io: { to: () => ({ emit: () => {} }) },
+        lobbyId: 'test',
+        wearLapsAtMedium: 5,
+        accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052
+    };
+
+    function makePlayer(botRaceReactionUntil) {
+        return {
+            x: points[0].x, z: points[0].z, angle: 0,
+            speed: 0, vx: 0, vz: 0,
+            inputs: { throttle: 0, brake: 0, steer: 0 },
+            finished: false, lap: 0, botLapSeen: 0,
+            trackIndex: 0, tyreWear: 0, compound: 'medium',
+            pitting: false, pitAutoState: null, pitPhase: null,
+            isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+            botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false,
+            botRaceReactionUntil
+        };
+    }
+
+    const pWaiting = makePlayer(Date.now() + 60000);   // reazione ancora ben lontana dallo scadere
+    updateBotInputs({ track, phase: 'race', players: { A: pWaiting } }, deps);
+    assert.deepEqual(pWaiting.inputs, { throttle: 0, brake: 0, steer: 0 }, 'atteso fermo mentre reagisce');
+
+    const pReady = makePlayer(Date.now() - 1000);   // reazione già scaduta
+    updateBotInputs({ track, phase: 'race', players: { A: pReady } }, deps);
+    assert.equal(pReady.inputs.throttle, 1, 'atteso guida normale (pieno gas su rettilineo) dopo la reazione');
 });

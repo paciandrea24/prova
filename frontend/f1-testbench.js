@@ -253,6 +253,33 @@
         socket.emit('f1tbSetSpeed', { multiplier: Number(e.target.value) });
     });
 
+    // Telecamera a ciclo tra le auto — tasto N (adattato da f1.js:1337-1350,
+    // solo il ramo 'third', questo strumento non ha bisogno della cockpit-cam).
+    const _camOff  = new THREE.Vector3();
+    const _lookTgt = new THREE.Vector3();
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() !== 'n') return;
+        const colors = Object.keys(otherCars);
+        if (colors.length === 0) return;
+        const currentIdx = colors.indexOf(window.followedColor);
+        window.followedColor = colors[(currentIdx + 1) % colors.length];
+    });
+
+    function updateSpectatorCamera() {
+        const color = window.followedColor;
+        const carGroup = color && otherCars[color];
+        if (!carGroup) return;
+        const pos = carGroup.position;
+        const q   = carGroup.quaternion;
+
+        _camOff.set(0, 5.5, -13);
+        _camOff.applyQuaternion(q);
+        camera.position.copy(pos).add(_camOff);
+        _lookTgt.copy(pos).add(new THREE.Vector3(0, 1.2, 0));
+        camera.lookAt(_lookTgt);
+    }
+
     // Interpolazione posizione/auto, adattata da f1.js (render loop LERP):
     // stessa logica, ma senza il ramo "mia auto" — qui non esiste myColor,
     // ogni colore ricevuto è un'auto "degli altri".
@@ -275,6 +302,7 @@
     function animate() {
         requestAnimationFrame(animate);
         updateCarVisuals();
+        updateSpectatorCamera();
         renderer.render(scene, camera);
     }
     animate();
