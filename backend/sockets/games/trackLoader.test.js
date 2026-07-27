@@ -155,11 +155,13 @@ test('saveTrack + loadTrack: con startFinish esplicito, qualiSpawn/gridSpawnPoin
         // Il control point più vicino a (10,10) tra quelli del quadrato di
         // test (0,0)-(10,0)-(10,10)-(0,10) è l'indice campionato vicino a
         // (10,10): qualiSpawn deve stare vicino lì, non vicino a (0,0).
-        // La tolleranza di 9 unità copre la variazione geometrica di una
-        // curva Catmull-Rom attorno a un quadrato (il quale arrotonda i
-        // vertici), rimanendo abbastanza stretta da rivelare un bug dove il
-        // valore di startFinish viene ignorato (il che porterebbe a
-        // qualiSpawn vicino a (0,0), scarto di ~14 unità).
+        // qualiSpawn = alongTrack(QUALI_LEAD, 0) con QUALI_LEAD=8: è p0 + 8
+        // unità forward lungo la tangente (offset deterministico dalla
+        // definizione di spawn point, non dall'arrotondamento della curva).
+        // La tolleranza di 9 unità copre questo offset di 8 unità più margine,
+        // rimanendo abbastanza stretta da rivelare un bug dove il valore di
+        // startFinish viene ignorato (il che porterebbe a qualiSpawn vicino a
+        // (0,0), scarto di ~14 unità).
         assert.ok(Math.hypot(track.qualiSpawn.x - 10, track.qualiSpawn.z - 10) < 9,
             `qualiSpawn troppo lontano da (10,10): ${JSON.stringify(track.qualiSpawn)}`);
         assert.notEqual(track.startFinishIndex, 0);
