@@ -1,5 +1,47 @@
 # F1 — note tecniche
 
+## Architettura fisica vettura (`backend/sockets/games/physics/`)
+
+Refactoring puramente architetturale (Rif.
+`docs/superpowers/plans/2026-07-27-f1-vehicle-dynamics-refactor.md`), nessuna
+formula/comportamento cambiato: la fisica per-tick è scomposta in moduli
+dedicati invece di un'unica funzione `updateVelocity`.
+
+```
+backend/sockets/games/physics/
+├── TyreModel.js          — mescole, usura, curva "cliff"
+├── DamageModel.js        — danno per componente, collisioni auto-auto/barriera
+├── CollisionResolver.js  — muro ponte/barriera, collisioni auto-auto (SAT/OBB)
+├── PowertrainModel.js    — accelerazione/coast-down (effectiveMaxSpeed, effectiveAccel)
+├── BrakingModel.js       — frenata (effectiveBrakeMult, applyBrake)
+├── SteeringModel.js      — sterzo dipendente da velocità + danno ala/sospensioni
+├── AerodynamicsModel.js  — aderenza/grip (effectiveGrip, applyGripBlend)
+├── VehicleMotionModel.js — integrazione posizione, drag fuoripista
+├── VehiclePhysics.js     — orchestratore puro: compone i 5 moduli sopra in updateVelocity
+└── VehicleDynamics.js    — facade: UNICO punto da cui f1GameSocket.js::tickGame
+                             invoca la simulazione vettura per-tick
+```
+
+**Chi dipende da cosa:** ogni sotto-modulo importa da `TyreModel`/`DamageModel`
+solo ciò che la sua formula usa (es. `BrakingModel` non dipende da
+`DamageModel`, `SteeringModel` non dipende da `TyreModel`) — nessuna
+dipendenza tra sotto-moduli fratelli (es. `BrakingModel.applyBrake` riceve
+l'accelerazione effettiva come parametro dal chiamante invece di importare
+`PowertrainModel`).
+
+**`VehicleDynamics` è il punto unico solo per il tick loop di gioco**
+(`tickGame`): gli strumenti offline (`f1LapSimulator.js`,
+`f1RaceLineOptimizer.js`) continuano a passare da `f1GameSocket.js`'s
+`module.exports.physics` per retrocompatibilità esplicita — non da
+`VehicleDynamics` direttamente.
+
+**Se serve modificare una formula fisica**: il file giusto è quasi sempre uno
+dei 5 sotto-moduli sopra, non più `VehiclePhysics.js` (che dal refactoring in
+poi non contiene più formule proprie, solo la loro composizione nell'ordine
+storico: maxSpeed/grip → motore-o-freno-o-coast → clamp velocità → sterzo →
+blend aerodinamico — quest'ordine NON va cambiato, cambia il risultato anche
+a parità di formule).
+
 ## Racing line precalcolata per i bot (`backend/tools/f1RaceLineOptimizer.js`)
 
 I bot IA seguono, quando disponibile, una **linea di guida precalcolata offline**
