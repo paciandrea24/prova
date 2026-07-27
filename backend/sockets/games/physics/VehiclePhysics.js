@@ -1,26 +1,21 @@
 // backend/sockets/games/physics/VehiclePhysics.js
 //
-// Vehicle Controller / Physics Model: velocità (accelerazione/freno/sterzo/
-// grip). L'integrazione della posizione e il drag fuoripista sono ora in
+// Vehicle Controller / Physics Model: velocità (accelerazione/freno/grip).
+// Sterzo ora in SteeringModel.js, integrazione posizione/drag fuoripista in
 // VehicleMotionModel.js — refactoring architetturale (Rif.
 // docs/superpowers/plans/2026-07-27-f1-vehicle-dynamics-refactor.md),
 // nessuna formula cambiata.
 const { tyreOf, WEAR_SPEED_PENALTY, WEAR_GRIP_PENALTY, WEAR_BRAKE_PENALTY, WEAR_ACCEL_PENALTY, getWearPenaltyFactor } = require('./TyreModel');
-const {
-    getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise
-} = require('./DamageModel');
+const { getEnginePowerPenalty, getFloorGripPenalty } = require('./DamageModel');
 const { integratePosition, applyOffTrackDrag } = require('./VehicleMotionModel');
+const SteeringModel = require('./SteeringModel');
+const { TURN_SPEED_LOW, TURN_SPEED_HIGH } = SteeringModel;
 
-// Velocità realistica F1: fattore di scala R=1.55 (+55%) applicato a
-// MAX_SPEED/ACCEL/FRICTION rispetto ai valori storici (4.0/0.12/0.050).
-// Vedi docs/superpowers/specs/2026-07-21-f1-velocita-frenata-mescole-design.md.
 const MAX_SPEED    = 6.2;
 const ACCEL        = 0.186;
 const FRICTION     = 0.120;
-const TURN_SPEED_LOW  = 0.075;   // rad/tick a velocità quasi nulla
-const TURN_SPEED_HIGH = 0.052;   // rad/tick alla velocità massima
 const GRIP         = 0.78;
-const BRAKE_MULT   = 2.17;   // moltiplicatore di ACCEL in frenata
+const BRAKE_MULT   = 2.17;
 
 function effectiveMaxSpeed(p, isQuali) {
     const wearFactor   = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_SPEED_PENALTY;
@@ -61,15 +56,7 @@ function updateVelocity(p, isQuali, slipstreamMult) {
     }
     if (p.speed > maxSpeed) p.speed = maxSpeed;
 
-    if (Math.abs(p.speed) > 0.01 || (p.vx * p.vx + p.vz * p.vz) > 0.0001) {
-        const dir = p.speed >= 0 ? 1 : -1;
-        const speedFrac = Math.min(1, Math.abs(p.speed) / maxSpeed);
-        const steerFactor = isQuali ? 1 : 1 - getFrontWingSteerPenalty(p.damageParts);
-        const turnRate = (TURN_SPEED_LOW + (TURN_SPEED_HIGH - TURN_SPEED_LOW) * speedFrac) * steerFactor;
-        const suspensionNoise = isQuali ? 0 : getSuspensionNoise(p.damageParts);
-        const steer = inputs.steer + suspensionNoise;
-        p.angle += turnRate * dir * steer;
-    }
+    SteeringModel.applySteering(p, isQuali, maxSpeed);
 
     const fx = Math.sin(p.angle) * p.speed;
     const fz = Math.cos(p.angle) * p.speed;
