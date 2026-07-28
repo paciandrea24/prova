@@ -1548,7 +1548,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // Rotazione ruote basata sulla velocità
                 if (carGroup.userData.wheels && carGroup.userData.wheels.length > 0) {
                     carGroup.userData.wheelRot = (carGroup.userData.wheelRot || 0) + Math.abs(target.speed || 0) * 1.4;
-                    const wr = -carGroup.userData.wheelRot;
+                    const wr = carGroup.userData.wheelRot;
                     for (const w of carGroup.userData.wheels) w.rotation.x = wr;
                 }
                 // Sterzo visivo: solo le ruote anteriori ruotano sull'asse

@@ -136,8 +136,15 @@
         tex.flipY     = sourceTexture.flipY;
         tex.wrapS     = sourceTexture.wrapS;
         tex.wrapT     = sourceTexture.wrapT;
-        tex.magFilter = sourceTexture.magFilter;
-        tex.minFilter = sourceTexture.minFilter;
+        // Sempre NEAREST e senza mipmap: questa texture è una palette di
+        // lookup (256x1 colori diversissimi affiancati), non un'immagine
+        // spaziale — con mipmap/filtro lineare la GPU sfuma colonne
+        // adiacenti a distanza, mescolando i colori di voxel vicini (da qui
+        // la differenza di colore vista in gioco rispetto a Blender, dove
+        // si guarda sempre a piena risoluzione).
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+        tex.generateMipmaps = false;
         tex.encoding  = sourceTexture.encoding;
         tex.needsUpdate = true;
         return tex;
@@ -192,6 +199,13 @@
                 child.material      = child.material.clone();
                 const nm = (child.name + ' ' + (child.parent?.name || '')).toLowerCase();
                 const isWheelMesh = nm.includes('wheel') || nm.includes('tyre') || nm.includes('tire');
+                // Halo e ali restano sempre nere/fisse indipendentemente dal
+                // colore giocatore: alcuni loro texel hanno tonalità che
+                // recolorLiveryTexture classificherebbe come "livrea" (stessa
+                // palette condivisa con la carrozzeria), ma qui va sempre
+                // esclusa la tinta (forceNeutral), senza però entrare tra le
+                // "ruote" (namedWheels/rotazione) più sotto.
+                const isFixedMesh = nm.includes('halo') || nm.includes('wing');
                 // Le gomme non cambiano mai colore col giocatore (una gomma vera
                 // resta nera/grigia): la palette condivisa con la carrozzeria ha
                 // alcuni toni scuri (ombre) che per tonalità/saturazione vengono
@@ -205,7 +219,7 @@
                     child.userData.pristineTex = child.material.map;
                 }
                 if (child.material.map) {
-                    child.material.map = recolorLiveryTexture(child.material.map, hex, isWheelMesh);
+                    child.material.map = recolorLiveryTexture(child.material.map, hex, isWheelMesh || isFixedMesh);
                     child.material.needsUpdate = true;
                 } else {
                     const c = child.material.color;
