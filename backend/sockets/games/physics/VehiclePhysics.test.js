@@ -69,3 +69,68 @@ test('updateVelocity: qualifica ignora usura/danno, con boost scia', () => {
     assertClose(r.vz, 0.26089368754938286, 'vz');
     assertClose(r.angle, 0.014201872576987785, 'angle');
 });
+
+// ---- Fase 4: F1_CORNERING_GRIP_MODEL (Rif. docs/superpowers/specs/2026-07-28-f1-cornering-grip-limit-design.md) ----
+// La regressione a flag spento è già coperta dai 4 test sopra (valori
+// hardcoded calcolati prima di questa fase): il nuovo blocco in
+// updateVelocity è interamente dentro `if (isCorneringGripModelActive())`,
+// che ritorna false di default — quei 4 test restano la prova stessa che
+// non serve duplicarli qui.
+
+test('updateVelocity: F1_CORNERING_GRIP_MODEL acceso, entro il limite (sterzo moderato, gomma fresca) -> comportamento praticamente identico a flag spento (criterio 0/1)', () => {
+    const scenario = () => ({
+        speed: 3, vx: 3, vz: 0, angle: 0, compound: 'medium', tyreWear: 0,
+        damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 },
+        inputs: { throttle: 0, brake: 0, steer: 0.3 }
+    });
+    const off = run(scenario(), false, 1);
+
+    process.env.F1_CORNERING_GRIP_MODEL = '1';
+    try {
+        const on = run(scenario(), false, 1);
+        assertClose(on.vx, off.vx, 'vx invariato entro il limite');
+        assertClose(on.vz, off.vz, 'vz invariato entro il limite');
+    } finally {
+        delete process.env.F1_CORNERING_GRIP_MODEL;
+    }
+});
+
+test('updateVelocity: F1_CORNERING_GRIP_MODEL acceso, oltre il limite (sterzo pieno, velocità massima, gomma usurata) -> vz converge meno verso il muso rispetto a flag spento (grip spinto verso 1 = più ancoraggio alla vecchia direzione = più sottosterzo)', () => {
+    const scenario = () => ({
+        speed: 6.2, vx: 6.2, vz: 0, angle: 0, compound: 'medium', tyreWear: 80,
+        damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 },
+        inputs: { throttle: 0, brake: 0, steer: 1 }
+    });
+    const off = run(scenario(), false, 1);
+
+    process.env.F1_CORNERING_GRIP_MODEL = '1';
+    try {
+        const on = run(scenario(), false, 1);
+        // vz_old=0 in questo scenario: p.vz = vz_old*grip + fz*(1-grip) si
+        // riduce a fz*(1-grip). Con grip spinto verso 1 (più ancoraggio),
+        // (1-grip) si riduce, quindi on.vz deve restare PIÙ INDIETRO
+        // rispetto a off.vz (meno convergenza verso il muso, non di più).
+        assert.ok(on.vz < off.vz, `atteso vz ridotto a flag acceso: off=${off.vz}, on=${on.vz}`);
+        assertClose(on.speed, off.speed, 'speed (scalare) NON deve cambiare: il modello non tocca p.speed');
+        assertClose(on.angle, off.angle, 'angle (turn rate) NON deve cambiare: il modello non tocca SteeringModel');
+    } finally {
+        delete process.env.F1_CORNERING_GRIP_MODEL;
+    }
+});
+
+test('updateVelocity: F1_CORNERING_GRIP_MODEL acceso, isQuali=true -> nessuna riduzione anche con gomma "usurata" (capacità sempre piena in qualifica, coerente con TyreForceModel)', () => {
+    const scenario = () => ({
+        speed: 6.2, vx: 6.2, vz: 0, angle: 0, compound: 'medium', tyreWear: 80,
+        damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 },
+        inputs: { throttle: 0, brake: 0, steer: 1 }
+    });
+    const off = run(scenario(), true, 1);
+
+    process.env.F1_CORNERING_GRIP_MODEL = '1';
+    try {
+        const on = run(scenario(), true, 1);
+        assertClose(on.vz, off.vz, 'in qualifica nessuna riduzione, a prescindere da tyreWear');
+    } finally {
+        delete process.env.F1_CORNERING_GRIP_MODEL;
+    }
+});

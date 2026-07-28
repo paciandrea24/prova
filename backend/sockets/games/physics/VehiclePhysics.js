@@ -11,7 +11,9 @@ const PowertrainModel   = require('./PowertrainModel');
 const BrakingModel      = require('./BrakingModel');
 const SteeringModel     = require('./SteeringModel');
 const AerodynamicsModel = require('./AerodynamicsModel');
+const CorneringGripModel = require('./CorneringGripModel');
 const { integratePosition, applyOffTrackDrag } = require('./VehicleMotionModel');
+const { isCorneringGripModelActive, CORNERING_EXCESS_PENALTY_MAX } = require('./TyreSlipModel');
 
 const { MAX_SPEED, ACCEL, FRICTION, effectiveMaxSpeed, effectiveAccel } = PowertrainModel;
 const { BRAKE_MULT, effectiveBrakeMult } = BrakingModel;
@@ -29,7 +31,7 @@ const { GRIP, effectiveGrip } = AerodynamicsModel;
 function updateVelocity(p, isQuali, slipstreamMult) {
     const { inputs } = p;
     const maxSpeed = effectiveMaxSpeed(p, isQuali) * (slipstreamMult || 1);   // dipende da mescola + usura (Soft fissa in qualifica) + scia
-    const grip     = effectiveGrip(p, isQuali);
+    let grip = effectiveGrip(p, isQuali);
 
     if (inputs.throttle > 0) PowertrainModel.applyThrottle(p, isQuali, maxSpeed);
     else if (inputs.brake > 0) BrakingModel.applyBrake(p, isQuali, maxSpeed, effectiveAccel(p, isQuali));
@@ -41,6 +43,30 @@ function updateVelocity(p, isQuali, slipstreamMult) {
     if (p.speed > maxSpeed) p.speed = maxSpeed;
 
     SteeringModel.applySteering(p, isQuali, maxSpeed);
+
+    // Fase 4 (percorso di confronto, F1_CORNERING_GRIP_MODEL=1): modello di
+    // perdita di CAPACITÀ laterale (non slip angle fisico, vedi
+    // docs/superpowers/specs/2026-07-28-f1-cornering-grip-limit-design.md).
+    //
+    // ATTENZIONE al significato di `grip` in applyGripBlend: NON è "quanto
+    // l'auto insegue il muso", è l'opposto — pesa quanto p.vx/p.vz
+    // RESTANO ancorati alla vecchia direzione invece di convergere verso
+    // il muso (p.vx = p.vx*grip + fx*(1-grip): grip ALTO = più ancoraggio
+    // alla vecchia direzione = PIÙ divergenza muso/velocità reale nel
+    // tempo, cioè PIÙ sottosterzo; grip BASSO = l'auto insegue il muso
+    // quasi perfettamente, zero scivolata). Verificato empiricamente
+    // simulando uno sterzo sostenuto: a grip=0.9 la divergenza cresce
+    // continuamente, a grip=0.4 si stabilizza subito su un valore piccolo.
+    // Per questo, quando la domanda eccede la capacità, l'eccesso deve
+    // SPINGERE grip VERSO 1 (non ridurlo): NON tocca p.speed né p.angle,
+    // l'effetto emerge solo nel blend vx/vz sotto, come scarto crescente
+    // tra dove punta il muso e dove va davvero l'auto (sottosterzo/
+    // scivolata progressiva verso l'esterno). A flag spento (default),
+    // comportamento bit-per-bit identico a prima.
+    if (isCorneringGripModelActive()) {
+        const excess = CorneringGripModel.lateralExcess(p, isQuali, maxSpeed);
+        grip += (1 - grip) * excess * CORNERING_EXCESS_PENALTY_MAX;
+    }
 
     AerodynamicsModel.applyGripBlend(p, grip);
 }

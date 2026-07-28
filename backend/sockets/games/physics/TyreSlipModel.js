@@ -174,11 +174,54 @@ function isTyreSlipModelActive() {
     return process.env.F1_TYRE_SLIP_MODEL === '1';
 }
 
+// Fase 4 (Rif. docs/superpowers/specs/2026-07-28-f1-cornering-grip-limit-design.md):
+// domanda/capacità/eccesso laterale — stesso principio di trazione/frenata
+// sopra, ma NON è un modello di slip angle fisico: è un modello di perdita
+// di CAPACITÀ laterale, applicato come riduzione del grip-blend esistente
+// (vedi CorneringGripModel.js/VehiclePhysics.js). A differenza di
+// trazione/frenata, qui NON c'è un boost di domanda oltre l'input diretto:
+// il criterio di successo esplicito è che la gomma fresca (capacità=1) non
+// venga mai penalizzata nemmeno a sterzo pieno e velocità massima, quindi
+// la domanda non deve mai superare 1 da sola.
+function clampSteer(steer) {
+    return Math.max(-1, Math.min(1, steer));
+}
+
+// 0 a sterzo neutro o auto ferma, cresce con |sterzo| e con la velocità:
+// lo stesso angolo di sterzo chiede più aderenza laterale quanto più forte
+// si va (coerente con la fisica reale: la forza centripeta richiesta
+// cresce con la velocità). Massimo teorico 1, raggiunto solo a sterzo
+// pieno e velocità massima esatti.
+function corneringDemand(steer, speedFrac) {
+    return Math.abs(clampSteer(steer)) * clampFrac(speedFrac);
+}
+
+// Eccesso di aderenza laterale: quanto la domanda supera la capacità
+// disponibile (corneringGripFactor, da TyreForceModel — capacità, non
+// moltiplicatore). 0 se la domanda è entro la capacità disponibile.
+function corneringExcess(steer, speedFrac, corneringCapacity) {
+    return clamp01(corneringDemand(steer, speedFrac) - corneringCapacity);
+}
+
+// Riduzione massima del grip-blend quando l'eccesso è al suo massimo (1).
+// Valore di partenza conservativo (stesso ordine di grandezza delle altre
+// penalità massime sopra) — tarabile in playtest.
+const CORNERING_EXCESS_PENALTY_MAX = 0.40;
+
+// Flag DEDICATO e separato da F1_TYRE_SLIP_MODEL/F1_TYRE_FORCE_MODEL: la
+// capacità laterale è concettualmente distinta (perdita di capacità, non
+// domanda/eccesso di trazione/frenata) e va playtestata/attivata
+// indipendentemente. Stesso pattern di isTyreSlipModelActive sopra.
+function isCorneringGripModelActive() {
+    return process.env.F1_CORNERING_GRIP_MODEL === '1';
+}
+
 module.exports = {
     TRACTION_LAUNCH_THRESHOLD, TRACTION_DEMAND_BOOST,
     TRACTION_SLIP_RISE_RATE, TRACTION_SLIP_DECAY_RATE, TRACTION_SLIP_PENALTY_MAX,
     BRAKING_ZONE_THRESHOLD, BRAKING_DEMAND_BOOST, BRAKING_EXCESS_PENALTY_MAX,
     STEER_LOCKUP_PENALTY_MAX,
     tractionExcess, brakingExcess, updateTractionSlipDebt,
-    isTyreSlipModelActive
+    isTyreSlipModelActive,
+    corneringDemand, corneringExcess, CORNERING_EXCESS_PENALTY_MAX, isCorneringGripModelActive
 };

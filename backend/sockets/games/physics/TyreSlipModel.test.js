@@ -191,3 +191,101 @@ test('isTyreSlipModelActive: indipendente da F1_TYRE_FORCE_MODEL (flag separato,
         delete process.env.F1_TYRE_FORCE_MODEL;
     }
 });
+
+const {
+    corneringDemand, corneringExcess, CORNERING_EXCESS_PENALTY_MAX,
+    isCorneringGripModelActive
+} = require('./TyreSlipModel.js');
+
+// ---- corneringDemand / corneringExcess (Fase 4: capacità laterale, non slip angle fisico) ----
+
+test('corneringDemand: sterzo 0 -> 0 sempre, qualunque velocità', () => {
+    assertClose(corneringDemand(0, 0), 0, 'sterzo 0, fermo');
+    assertClose(corneringDemand(0, 1), 0, 'sterzo 0, velocità massima');
+});
+
+test('corneringDemand: fermo (speedFrac=0) -> 0 sempre, qualunque sterzo', () => {
+    assertClose(corneringDemand(1, 0), 0, 'sterzo pieno, fermo');
+    assertClose(corneringDemand(-1, 0), 0, 'sterzo pieno opposto, fermo');
+});
+
+test('corneringDemand: sterzo pieno a velocità massima -> esattamente 1 (nessun boost, a differenza di trazione/frenata: qui la domanda non deve mai superare la capacità piena=1, vedi criterio 0 della spec)', () => {
+    assertClose(corneringDemand(1, 1), 1, 'sterzo pieno, velocità massima');
+});
+
+test('corneringDemand: simmetrico nel segno dello sterzo (stessa entità, verso opposto)', () => {
+    assertClose(corneringDemand(1, 0.6), corneringDemand(-1, 0.6), 'stesso valore assoluto');
+});
+
+test('corneringDemand: monotono crescente sia in |steer| che in speedFrac', () => {
+    assert.ok(corneringDemand(0.5, 0.5) < corneringDemand(1, 0.5), 'cresce con |steer|');
+    assert.ok(corneringDemand(0.5, 0.5) < corneringDemand(0.5, 1), 'cresce con speedFrac');
+});
+
+test('corneringExcess: domanda entro capacità piena (capacità=1) -> eccesso 0, anche a sterzo/velocità massimi (criterio 0: gomma fresca/qualifica mai penalizzata)', () => {
+    assertClose(corneringExcess(1, 1, 1), 0, 'sterzo pieno, velocità massima, capacità piena');
+    assertClose(corneringExcess(1, 0.5, 1), 0, 'sterzo pieno, velocità media, capacità piena');
+});
+
+test('corneringExcess: capacità ridotta (gomma usurata) -> eccesso positivo nelle stesse condizioni che a capacità piena davano 0', () => {
+    const excess = corneringExcess(1, 1, 0.6);
+    assert.ok(excess > 0, `atteso > 0, ottenuto ${excess}`);
+    assertClose(excess, 0.4, 'eccesso = domanda(1) - capacità(0.6)');
+});
+
+test('corneringExcess: a parità di domanda, cresce (o resta uguale) al diminuire della capacità', () => {
+    const highCap = corneringExcess(1, 1, 0.9);
+    const lowCap  = corneringExcess(1, 1, 0.6);
+    assert.ok(lowCap > highCap, `atteso eccesso maggiore a capacità minore: ${lowCap} vs ${highCap}`);
+});
+
+test('corneringExcess: continuità — nessun salto attorno al punto in cui la domanda supera la capacità', () => {
+    const capacity = 0.7;
+    // speedFrac tale per cui domanda(steer=1, speedFrac) è appena sotto/sopra 0.7
+    const justBelow = corneringExcess(1, 0.699, capacity);
+    const justAbove = corneringExcess(1, 0.701, capacity);
+    assert.ok(Math.abs(justAbove - justBelow) < 0.01, `atteso valori vicini: ${justBelow} vs ${justAbove}`);
+});
+
+test('corneringExcess: resta in [0,1] anche a valori estremi', () => {
+    const excess = corneringExcess(1, 1, 0);
+    assert.ok(excess >= 0 && excess <= 1, `atteso in [0,1], ottenuto ${excess}`);
+    assert.ok(!Number.isNaN(excess), 'atteso non-NaN');
+});
+
+test('CORNERING_EXCESS_PENALTY_MAX: valore di partenza conservativo confermato (stesso ordine di grandezza di BRAKING_EXCESS_PENALTY_MAX/STEER_LOCKUP_PENALTY_MAX)', () => {
+    assert.equal(CORNERING_EXCESS_PENALTY_MAX, 0.40);
+});
+
+// ---- isCorneringGripModelActive ----
+
+test('isCorneringGripModelActive: di default (env var non impostata) è false', () => {
+    assert.equal(process.env.F1_CORNERING_GRIP_MODEL, undefined);
+    assert.equal(isCorneringGripModelActive(), false);
+});
+
+test("isCorneringGripModelActive: true solo quando F1_CORNERING_GRIP_MODEL === '1' esattamente", () => {
+    process.env.F1_CORNERING_GRIP_MODEL = '1';
+    try {
+        assert.equal(isCorneringGripModelActive(), true);
+    } finally {
+        delete process.env.F1_CORNERING_GRIP_MODEL;
+    }
+    process.env.F1_CORNERING_GRIP_MODEL = 'true';
+    try {
+        assert.equal(isCorneringGripModelActive(), false);
+    } finally {
+        delete process.env.F1_CORNERING_GRIP_MODEL;
+    }
+});
+
+test('isCorneringGripModelActive: indipendente da F1_TYRE_SLIP_MODEL/F1_TYRE_FORCE_MODEL (flag dedicato)', () => {
+    process.env.F1_TYRE_SLIP_MODEL = '1';
+    process.env.F1_TYRE_FORCE_MODEL = '1';
+    try {
+        assert.equal(isCorneringGripModelActive(), false, 'gli altri due flag non devono attivare questo');
+    } finally {
+        delete process.env.F1_TYRE_SLIP_MODEL;
+        delete process.env.F1_TYRE_FORCE_MODEL;
+    }
+});
