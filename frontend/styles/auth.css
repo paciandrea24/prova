@@ -1,0 +1,57 @@
+/* frontend/styles/auth.css — pagine login/registrazione (account 4a) */
+
+.auth-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 14px;
+    text-align: left;
+}
+
+.auth-field label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.auth-field input {
+    font-family: 'Fredoka', sans-serif;
+    font-weight: 600;
+    font-size: 16px;
+    border: 3px solid var(--ink);
+    border-radius: 14px;
+    padding: 12px 14px;
+    outline: none;
+    background: #F7F7F7;
+    color: var(--ink);
+    transition: box-shadow 0.1s;
+    width: 100%;
+}
+
+.auth-field input:focus {
+    background: #fff;
+    box-shadow: 3px 3px 0 var(--ink);
+}
+
+.btn-google {
+    background: #fff;
+    color: var(--ink);
+    margin-top: 4px;
+    margin-bottom: 12px;
+}
+
+.auth-switch {
+    margin-top: 4px;
+    text-align: center;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.auth-switch a {
+    color: var(--ink);
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
