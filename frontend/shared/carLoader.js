@@ -215,7 +215,13 @@
                 // comunque la schiarita di luminosità (altrimenti la palette
                 // scura originale si legge come un blob nero indistinguibile,
                 // vedi liftValue) ma MAI la tinta livrea (forceNeutral).
-                if (isWheelMesh && child.material.map) {
+                // Copia pristina salvata per OGNI mesh con texture (non solo
+                // ruote): serve a chi deve campionare l'ombreggiatura
+                // ORIGINALE non ancora ritinta/schiarita da
+                // recolorLiveryTexture — es. frontend/shared/liveryPattern.js
+                // (spike 4b), che altrimenti campionerebbe una texture già
+                // ricolorata due volte in cascata.
+                if (child.material.map) {
                     child.userData.pristineTex = child.material.map;
                 }
                 if (child.material.map) {

@@ -17,6 +17,15 @@
 // noto e già geometria a voxel pulita: le coordinate lat/len/up si
 // derivano direttamente dalla posizione dei vertici e dal passo di
 // griglia già misurato, senza rieseguire la voxelizzazione completa.
+//
+// Il file f1Car.glb NON ha un attributo COLOR_0 (verificato leggendo il
+// JSON grezzo del .glb, non un'ipotesi — un controllo precedente via
+// Blender aveva fatto credere il contrario, probabilmente un artefatto
+// di anteprima di Blender in fase di import, non dato reale del file):
+// il colore/ombreggiatura originale per-voxel si campiona dalla texture
+// via UV (stesso identico approccio di voxel_livery_studio.html), e
+// l'attributo colore per il pattern viene creato da zero, non
+// sovrascritto.
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) module.exports = factory();
     else root.LiveryPattern = factory();
@@ -38,6 +47,30 @@
     // principio (moltiplicativo, non additivo) già validato nel fix dei
     // "voxel neri" in voxel_livery_studio.html.
     const SHADE_FLOOR = 0.22;
+
+    // Classificazione livrea-vs-dettaglio: STESSI valori già misurati e
+    // provati su QUESTO asset in carLoader.js (LIVERY_HUE_MAX/SAT_MIN) —
+    // non i valori di voxel_livery_studio.html (tarati su una palette
+    // diversa). Un texel "non livrea" (cockpit/prese d'aria/dettagli
+    // scuri o desaturati dentro la stessa mesh Chassis/Nose/Plank) NON va
+    // ridipinto col pattern: va lasciato esattamente com'è, altrimenti
+    // sporca sia il colore dominante sia il risultato finale su quei
+    // texel (bug osservato: colore dominante calcolato come nero perché
+    // molti vertici di dettaglio scuro/desaturato, non scartati da una
+    // soglia di sola luminosità, dominavano l'istogramma per numero).
+    const LIVERY_HUE_MAX = 28;
+    const LIVERY_SAT_MIN = 0.2;
+    // La saturazione HSL è instabile vicino al nero: un texel quasi-nero
+    // con minime variazioni per canale (es. r=0.004,g=0.002,b=0.001, un
+    // artefatto di compressione/campionamento, non colore vero) ha
+    // saturazione calcolata alta (è un rapporto relativo alla luminosità,
+    // che esplode vicino a zero) pur essendo visivamente nero puro — senza
+    // questo floor quei texel passavano il controllo hue/sat e dominavano
+    // l'istogramma del colore dominante quantizzandosi tutti a (0,0,0).
+    const LIVERY_LIGHT_MIN = 0.05;
+    function isLiveryTexel(h, s, l) {
+        return l >= LIVERY_LIGHT_MIN && h <= LIVERY_HUE_MAX && s >= LIVERY_SAT_MIN;
+    }
 
     function hexToRgb(hex) {
         return [((hex >> 16) & 0xff) / 255, ((hex >> 8) & 0xff) / 255, (hex & 0xff) / 255];
@@ -75,6 +108,35 @@
         return [hue2rgb(hk + 1 / 3), hue2rgb(hk), hue2rgb(hk - 1 / 3)];
     }
 
+    // Legge la texture-palette in un canvas e restituisce un sampler
+    // nearest (u,v) -> [r,g,b] 0..1. Il file f1Car.glb NON ha un
+    // attributo COLOR_0 (verificato leggendo il JSON del .glb — un
+    // controllo precedente via Blender aveva fatto credere il contrario,
+    // probabilmente un artefatto di anteprima di Blender, non dato reale
+    // del file): il colore/ombreggiatura originale per-voxel esiste SOLO
+    // nella texture, va campionato via UV — stesso approccio già usato in
+    // voxel_livery_studio.html (makeSampler).
+    function makeTextureSampler(map) {
+        const img = map.image;
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        const w = canvas.width, h = canvas.height;
+        const flipY = map.flipY !== false; // default THREE.js: true
+
+        return (u, v) => {
+            let uu = u - Math.floor(u), vv = v - Math.floor(v);
+            const row = flipY ? (1 - vv) : vv;
+            const px = Math.min(w - 1, Math.max(0, Math.floor(uu * w)));
+            const py = Math.min(h - 1, Math.max(0, Math.floor(row * h)));
+            const i = (py * w + px) * 4;
+            return [data[i] / 255, data[i + 1] / 255, data[i + 2] / 255];
+        };
+    }
+
     // Sottoinsieme di prova per lo spike (3 dei 18 pattern dell'editor —
     // uno a strisce continue, uno a soglia laterale, uno su griglia
     // discreta, per coprire i tre stili di calcolo usati dal set intero).
@@ -110,27 +172,65 @@
         // Z = lunghezza, Y = altezza.
         const spanLat = Math.max(1, Math.round(size.x / GRID_STEP));
         const spanLen = Math.max(1, Math.round(size.z / GRID_STEP));
-        const latCenterIdx = (spanLat - 1) / 2;
 
-        // Colore dominante approssimato (media luminosità dei vertex color
-        // originali) — versione semplificata di computeBodyColors()
-        // dell'editor, sufficiente per uno spike di validazione.
-        let sumL = 0, nSample = 0;
+        // Il centro laterale VERO si prende dalla Chassis, non dal centro
+        // della bounding box combinata: verificato con dati reali
+        // (ispezione Blender) che Chassis e Nose condividono lo stesso
+        // centro laterale locale (x=0.016), ma Plank ha un centro diverso
+        // (x=0.0, scarto di mezzo passo di griglia). Usare il centro della
+        // combinazione dei tre lo tira verso quello di Plank, allontanandolo
+        // dal vero asse di simmetria di Chassis/Nose — poco percettibile
+        // sulla Chassis (larga), molto visibile sul Nose (stretto: lo
+        // stesso scarto assoluto è una frazione molto più grande della sua
+        // larghezza) — causa esatta della striscia non centrata osservata.
+        const chassisMesh = paintable.find((m) => (m.name || '').toLowerCase().includes('chassis'));
+        const chassisBox = new THREE.Box3();
+        if (chassisMesh) {
+            chassisMesh.geometry.computeBoundingBox();
+            chassisBox.copy(chassisMesh.geometry.boundingBox);
+        } else {
+            chassisBox.copy(box); // fallback se il modello non ha una mesh "Chassis"
+        }
+        const trueCenterX = (chassisBox.min.x + chassisBox.max.x) / 2;
+        const latCenterIdx = (trueCenterX - box.min.x) / GRID_STEP;
+
+        // Colore dominante: stesso metodo di computeBodyColors()
+        // nell'editor — istogramma dei colori quantizzati (4 bit per
+        // canale), bucket PIÙ FREQUENTE (non una media), escludendo i
+        // texel quasi-neri/desaturati (gomme/dettagli, mai livrea). Una
+        // media semplice era sbagliata: pochi texel scuri (ombre/creste
+        // AO) la spostavano in basso rispetto al colore che copre la
+        // maggior parte della superficie, causando risultati troppo
+        // chiari/lavati (bug osservato: rosso pieno diventato rosa/bianco).
+        // Usa SEMPRE la texture PRISTINA (userData.pristineTex, salvata da
+        // carLoader.js prima del ricolore) — quella già ricolorata da
+        // recolorLiveryTexture è schiarita (fix voxel neri), campionarla
+        // qui rischiarirebbe due volte in cascata.
+        const hist = new Map();
         for (const mesh of paintable) {
-            const col = mesh.geometry.attributes.color;
-            if (!col) continue;
-            for (let i = 0; i < col.count; i++) {
-                const [, , l] = rgbToHsl(col.getX(i), col.getY(i), col.getZ(i));
-                sumL += l;
-                nSample++;
+            const tex = mesh.userData.pristineTex || mesh.material.map;
+            if (!tex || !mesh.geometry.attributes.uv) continue;
+            const sampler = makeTextureSampler(tex);
+            const uv = mesh.geometry.attributes.uv;
+            for (let i = 0; i < uv.count; i++) {
+                const [r, g, b] = sampler(uv.getX(i), uv.getY(i));
+                const [h, s, l] = rgbToHsl(r, g, b);
+                if (!isLiveryTexel(h, s, l)) continue; // dettaglio/trim: non livrea, non conta per il dominante
+                const key = (Math.round(r * 15) * 16 + Math.round(g * 15)) * 16 + Math.round(b * 15);
+                hist.set(key, (hist.get(key) || 0) + 1);
             }
         }
-        const domL = nSample ? sumL / nSample : 0.4;
+        let domL = 0.4;
+        if (hist.size) {
+            const domKey = [...hist.entries()].sort((a, b) => b[1] - a[1])[0][0];
+            const dB = domKey % 16, dG = Math.floor(domKey / 16) % 16, dR = Math.floor(domKey / 256);
+            domL = rgbToHsl(dR / 15, dG / 15, dB / 15)[2];
+        }
 
         for (const mesh of paintable) {
-            const col = mesh.geometry.attributes.color;
-            if (!col) {
-                console.warn('[liveryPattern] mesh senza vertex color:', mesh.name);
+            const tex = mesh.userData.pristineTex || mesh.material.map;
+            if (!tex || !mesh.geometry.attributes.uv) {
+                console.warn('[liveryPattern] mesh senza texture/UV, salto:', mesh.name);
                 continue;
             }
             // Clona la geometria: ogni istanza auto (propria + avversari)
@@ -138,13 +238,36 @@
             // un'auto dipingerebbe tutte le auto che condividono l'asset.
             mesh.geometry = mesh.geometry.clone();
             const pos = mesh.geometry.attributes.position;
-            const outCol = mesh.geometry.attributes.color;
+            const uv = mesh.geometry.attributes.uv;
+            const sampler = makeTextureSampler(tex); // texture PRISTINA, vedi nota sopra
+
+            // Nessun attributo colore nel file: lo creiamo da zero (non
+            // possiamo limitarci a sovrascrivere un attributo esistente
+            // come nell'editor esterno, qui parte vuoto).
+            const colorArray = new Float32Array(pos.count * 3);
 
             const wStripe = Math.max(1, Math.round(spanLat * 0.11));
             const wSplit = Math.max(1, Math.round(spanLat * 0.30));
             const cellSize = Math.max(2, Math.round(spanLat * 0.15));
 
             for (let i = 0; i < pos.count; i++) {
+                // "orig" dalla texture PRISTINA campionata via UV (il file
+                // non ha un attributo colore). Se il texel originale non è
+                // "livrea" (dettaglio/trim scuro o desaturato — cockpit,
+                // prese d'aria, ecc. — stesso criterio hue/sat già provato
+                // in carLoader.js), si tiene il colore originale così com'è:
+                // NON va ridipinto col pattern, esattamente come fa
+                // l'editor esterno coi voxel "locked".
+                const [origR, origG, origB] = sampler(uv.getX(i), uv.getY(i));
+                const [origH, origS, origL] = rgbToHsl(origR, origG, origB);
+
+                if (!isLiveryTexel(origH, origS, origL)) {
+                    colorArray[i * 3] = origR;
+                    colorArray[i * 3 + 1] = origG;
+                    colorArray[i * 3 + 2] = origB;
+                    continue;
+                }
+
                 const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
                 const latIdx = Math.round((x - box.min.x) / GRID_STEP);
                 const lenIdx = Math.round((z - box.min.z) / GRID_STEP);
@@ -176,15 +299,27 @@
                 // Trasferimento ombra: stesso principio moltiplicativo con
                 // floor già validato nel fix "voxel neri" dell'editor
                 // esterno — non clippa mai a luminosità zero.
-                const origL = rgbToHsl(outCol.getX(i), outCol.getY(i), outCol.getZ(i))[2];
                 const [targetH, targetS, targetL] = rgbToHsl(r, g, b);
                 const relShade = origL / Math.max(domL, 0.02);
                 const shadeMult = Math.max(SHADE_FLOOR, relShade);
                 const finalL = Math.max(0, Math.min(1, targetL * shadeMult));
                 const [fr, fg, fb] = hslToRgb(targetH, targetS, finalL);
-                outCol.setXYZ(i, fr, fg, fb);
+                colorArray[i * 3] = fr;
+                colorArray[i * 3 + 1] = fg;
+                colorArray[i * 3 + 2] = fb;
             }
-            outCol.needsUpdate = true;
+            mesh.geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
+            // THREE.js MOLTIPLICA map × vertexColor quando entrambi sono
+            // attivi (non sostituisce) — lasciare la texture rossa già
+            // ricolorata da recolorLiveryTexture avrebbe reso invisibile
+            // il bianco (bianco × rosso = rosso invariato) e visibile solo
+            // come lieve scurimento la fascia accento (accento scuro ×
+            // rosso = rosso scurito) — esattamente il sintomo osservato
+            // ("alone scuro", base sempre rossa). Il colore-pattern deve
+            // essere l'unica fonte: si toglie la texture, il campionatore
+            // sopra ha già estratto i pixel di cui aveva bisogno prima di
+            // questo punto.
+            mesh.material.map = null;
             mesh.material.vertexColors = true;
             mesh.material.needsUpdate = true;
         }
