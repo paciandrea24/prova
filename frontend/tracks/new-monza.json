@@ -3,6 +3,11 @@
     "name": "New Monza",
     "targetKm": 12,
     "roadHalfWidth": 14,
+    "startFinish": {
+        "x": 268.5,
+        "z": 248.67,
+        "angle": -1.5962272980988592
+    },
     "controlPoints": [
         {
             "x": 268.5,

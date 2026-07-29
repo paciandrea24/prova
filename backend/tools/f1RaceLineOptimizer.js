@@ -19,7 +19,17 @@ const fs = require("fs");
 const path = require("path");
 const { loadTrack } = require("../sockets/games/trackLoader.js");
 const { physics } = require("../sockets/games/f1GameSocket.js");
-const { cornerTargetSpeed, lookaheadIndex, normalizeAngle } = require("../sockets/games/f1Bot.js");
+const {
+    cornerTargetSpeed, lookaheadIndex, normalizeAngle,
+    // Prototipo shape-prior (Rif. audit 2026-07-29, opzione B): riusa la
+    // STESSA formula fuori-dentro-fuori già validata per il ramo fallback
+    // runtime (apexOffset/cornerApexNear) come punto di PARTENZA per
+    // l'ottimizzatore, invece di zero ovunque — nessuna nuova formula
+    // geometrica inventata qui. BOT_CURVATURE_LOCAL_M/BOT_APEX_MAX_FRACTION
+    // esportate apposta da f1Bot.js (additivo, comportamento runtime
+    // invariato) per non reinventare gli stessi numeri con un altro nome.
+    apexOffset, BOT_CURVATURE_LOCAL_M, BOT_APEX_MAX_FRACTION
+} = require("../sockets/games/f1Bot.js");
 const TrackGeometry = require("../../frontend/shared/trackGeometry.js");
 
 function steerTowardGain(px, pz, angle, tx, tz, gain) {
@@ -36,6 +46,39 @@ function buildOptimizer(track) {
     const MAX_OFFSET = track.roadHalf * 0.97;   // 1.0 introduce rumore vicino al bordo, 0.85 è troppo prudente — vedi report
 
     function metersToSamples(meters) { return Math.max(1, Math.round(meters * n / track.lapLength)); }
+
+    // ====================================================
+    // PROTOTIPO SHAPE-PRIOR (opzione B, Rif. audit 2026-07-29): inizializza
+    // lineControls con la stessa forma fuori-dentro-fuori già validata a
+    // runtime per il ramo fallback (apexOffset/cornerApexNear), invece di
+    // zero ovunque — l'ottimizzazione sotto (fitness/coordinate
+    // descent/basin-hopping) resta ESATTAMENTE la stessa, cambia solo il
+    // punto di partenza. Nessuna nuova formula geometrica: stessa identica
+    // funzione già usata dal bot quando la pista non ha una racing line.
+    //
+    // Raggio di ricerca dell'apice: stesso ordine di grandezza della
+    // distanza di frenata nel caso peggiore già usata a runtime per
+    // scanSamples (v²/2·decel — vedi cornerTargetSpeed/simulateWithRacingLine
+    // sotto), qui calcolato una sola volta perché il seeding non ha un
+    // contesto di velocità per-tick (è una passata geometrica statica prima
+    // di qualunque simulazione).
+    // ====================================================
+    const SEED_MAX_SPEED = physics.effectiveMaxSpeed({ compound: "medium", tyreWear: 0 }, true);
+    const SEED_BRAKE_DECEL = physics.ACCEL * physics.BRAKE_MULT;
+    const SEED_SEARCH_SAMPLES = metersToSamples((SEED_MAX_SPEED * SEED_MAX_SPEED) / (2 * SEED_BRAKE_DECEL) * 1.2);
+    const SEED_LOCAL_SAMPLES = metersToSamples(BOT_CURVATURE_LOCAL_M);
+
+    function seedGeometricLine(numControls) {
+        const line = new Array(numControls);
+        for (let c = 0; c < numControls; c++) {
+            const idx = Math.round(c * n / numControls) % n;
+            const off = apexOffset(track.points, idx, SEED_SEARCH_SAMPLES, SEED_LOCAL_SAMPLES, metersPerSample, track.roadHalf, BOT_APEX_MAX_FRACTION);
+            const normal = TrackGeometry.normalAt(track.points, idx, true);
+            const scalarOffset = off.dx * normal.nx + off.dz * normal.nz;
+            line[c] = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, scalarOffset));
+        }
+        return line;
+    }
 
     function interpolateControls(controls, targetLen) {
         const m = controls.length;
@@ -183,19 +226,37 @@ function buildOptimizer(track) {
         return { line: s.line.slice(), lookaheadTimeS: s.lookaheadTimeS, steerGain: s.steerGain, cornerSpeedMargin: s.cornerSpeedMargin, brakingDistanceMargin: s.brakingDistanceMargin, deadband: s.deadband, ramp: s.ramp };
     }
 
-    function optimize(hops, log) {
+    function optimize(hops, log, opts) {
+        opts = opts || {};
+        const seedGeometric = !!opts.seedGeometric;
+        // Iterazione 2 (prototipo, Rif. audit 2026-07-29): invece di seminare
+        // SOLO i 15 punti iniziali (poi solo interpolati linearmente ai
+        // livelli successivi), ri-proietta apexOffset DIRETTAMENTE alla
+        // risoluzione di ogni nuovo livello — più punti di controllo = più
+        // fedeltà alla forma fuori-dentro-fuori anche sulle curve brevi, che
+        // a 15 punti/giro possono non avere nemmeno un punto di controllo
+        // dedicato. fitness/coordinateDescent/smoothing/budget invariati,
+        // cambia solo la fonte di state.line ad ogni transizione di livello.
+        const seedMultiResolution = !!opts.seedMultiResolution;
         let state = {
-            line: new Array(LEVELS[0].numControls).fill(0),
+            line: (seedGeometric || seedMultiResolution) ? seedGeometricLine(LEVELS[0].numControls) : new Array(LEVELS[0].numControls).fill(0),
             lookaheadTimeS: 0.6, steerGain: 3.0,
             cornerSpeedMargin: 0.99, brakingDistanceMargin: 1.2,
             deadband: 0.01, ramp: 0.06
         };
         let best = fitness(state);
-        log(`Baseline (centro pista, parametri di gioco di default): ${best}ms`);
+        const seedLabel = seedMultiResolution
+            ? "seed geometrico multi-risoluzione (apexOffset ad ogni livello)"
+            : seedGeometric
+                ? "seed geometrico fuori-dentro-fuori (apexOffset, solo 15 punti iniziali)"
+                : "centro pista";
+        log(`Baseline (${seedLabel}, parametri di gioco di default): ${best}ms`);
 
         for (const level of LEVELS) {
             if (state.line.length !== level.numControls) {
-                state.line = interpolateControls(state.line, level.numControls);
+                state.line = seedMultiResolution
+                    ? seedGeometricLine(level.numControls)
+                    : interpolateControls(state.line, level.numControls);
                 best = fitness(state);
             }
             best = coordinateDescent(state, best, level.rounds, level.stepFrac, GLOBAL_STEP_FRAC);
@@ -230,15 +291,19 @@ function buildOptimizer(track) {
         return { state, best, evalCount: () => evalCount };
     }
 
-    return { optimize, buildRacingLine, MAX_OFFSET, n, evalCountRef: () => evalCount };
+    // seedGeometricLine/fitness esposte per gli script di verifica del
+    // prototipo (Rif. audit 2026-07-29) — non usate dal flusso CLI
+    // standard (run/optimize), che restano invariati.
+    return { optimize, buildRacingLine, seedGeometricLine, fitness, MAX_OFFSET, n, evalCountRef: () => evalCount };
 }
 
-function run(trackId, hops) {
+function run(trackId, hops, opts) {
+    opts = opts || {};
     const track = loadTrack(trackId);
     const opt = buildOptimizer(track);
     console.log(`\n=== ${trackId} (${track.points.length} campioni, ${track.lapLength.toFixed(0)}m, roadHalf=${track.roadHalf}) ===`);
     const t0 = Date.now();
-    const { state, best } = opt.optimize(hops, msg => console.log(`[${trackId}] ${msg}`));
+    const { state, best } = opt.optimize(hops, msg => console.log(`[${trackId}] ${msg}`), opts);
     const elapsedS = (Date.now() - t0) / 1000;
 
     const finalLine = opt.buildRacingLine(state.line);
@@ -254,7 +319,13 @@ function run(trackId, hops) {
     console.log(`[${trackId}] lookaheadTimeS=${state.lookaheadTimeS.toFixed(3)} steerGain=${state.steerGain.toFixed(3)} cornerSpeedMargin=${state.cornerSpeedMargin.toFixed(3)} brakingDistanceMargin=${state.brakingDistanceMargin.toFixed(3)} deadband=${state.deadband.toFixed(4)} ramp=${state.ramp.toFixed(3)}`);
     console.log(`[${trackId}] offset laterale massimo: ${maxLat.toFixed(2)}m (limite ${opt.MAX_OFFSET.toFixed(2)}m, roadHalf ${track.roadHalf}m)`);
 
-    const outFile = path.join(__dirname, `${trackId}-raceline.json`);
+    // outSuffix (prototipo shape-prior, opzione B): scrive in un file
+    // SEPARATO da "<trackId>-raceline.json" quando specificato — non tocca
+    // mai il file di produzione a meno che l'utente non lo scelga esplicitamente
+    // passando lo stesso nome. Formato del file identico in ogni caso
+    // (nessuna modifica al formato raceline.json, come richiesto).
+    const outId = `${trackId}${opts.outSuffix || ""}`;
+    const outFile = path.join(__dirname, `${outId}-raceline.json`);
     fs.writeFileSync(outFile, JSON.stringify({
         trackId, timeMs: best, elapsedS,
         tuning: {
@@ -270,20 +341,26 @@ function run(trackId, hops) {
 function parseArgs(argv) {
     const trackIds = [];
     let hops = 30;
+    let seedGeometric = false;
+    let seedMultiResolution = false;
+    let outSuffix = "";
     for (const arg of argv) {
         if (arg.startsWith("--hops=")) hops = Number(arg.slice("--hops=".length));
+        else if (arg === "--seed-geometric") seedGeometric = true;
+        else if (arg === "--seed-multi-resolution") seedMultiResolution = true;
+        else if (arg.startsWith("--out-suffix=")) outSuffix = arg.slice("--out-suffix=".length);
         else trackIds.push(arg);
     }
-    return { trackIds, hops };
+    return { trackIds, hops, seedGeometric, seedMultiResolution, outSuffix };
 }
 
 if (require.main === module) {
-    const { trackIds, hops } = parseArgs(process.argv.slice(2));
+    const { trackIds, hops, seedGeometric, seedMultiResolution, outSuffix } = parseArgs(process.argv.slice(2));
     if (trackIds.length === 0) {
-        console.error("Uso: node backend/tools/f1RaceLineOptimizer.js <trackId> [<trackId> ...] [--hops=N]");
+        console.error("Uso: node backend/tools/f1RaceLineOptimizer.js <trackId> [<trackId> ...] [--hops=N] [--seed-geometric] [--seed-multi-resolution] [--out-suffix=-seeded]");
         process.exitCode = 1;
     } else {
-        for (const id of trackIds) run(id, hops);
+        for (const id of trackIds) run(id, hops, { seedGeometric, seedMultiResolution, outSuffix });
     }
 }
 

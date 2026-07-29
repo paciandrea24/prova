@@ -19,6 +19,7 @@ const { MAX_SPEED, ACCEL, FRICTION, effectiveMaxSpeed, effectiveAccel } = Powert
 const { BRAKE_MULT, effectiveBrakeMult } = BrakingModel;
 const { TURN_SPEED_LOW, TURN_SPEED_HIGH } = SteeringModel;
 const { GRIP, effectiveGrip } = AerodynamicsModel;
+const { corneringCapacity } = CorneringGripModel;
 
 // ====================================================
 // FISICA
@@ -31,7 +32,9 @@ const { GRIP, effectiveGrip } = AerodynamicsModel;
 function updateVelocity(p, isQuali, slipstreamMult) {
     const { inputs } = p;
     const maxSpeed = effectiveMaxSpeed(p, isQuali) * (slipstreamMult || 1);   // dipende da mescola + usura (Soft fissa in qualifica) + scia
-    let grip = effectiveGrip(p, isQuali);
+    // maxSpeed passato a effectiveGrip (Fase 2, F1_AERO_DOWNFORCE_MODEL=1):
+    // consente il contributo downforce dietro flag, vedi AerodynamicsModel.js.
+    let grip = effectiveGrip(p, isQuali, maxSpeed);
 
     if (inputs.throttle > 0) PowertrainModel.applyThrottle(p, isQuali, maxSpeed);
     else if (inputs.brake > 0) BrakingModel.applyBrake(p, isQuali, maxSpeed, effectiveAccel(p, isQuali));
@@ -73,5 +76,6 @@ function updateVelocity(p, isQuali, slipstreamMult) {
 
 module.exports = {
     MAX_SPEED, ACCEL, FRICTION, TURN_SPEED_LOW, TURN_SPEED_HIGH, GRIP, BRAKE_MULT,
-    effectiveMaxSpeed, effectiveGrip, effectiveAccel, effectiveBrakeMult, updateVelocity, integratePosition, applyOffTrackDrag
+    effectiveMaxSpeed, effectiveGrip, effectiveAccel, effectiveBrakeMult, corneringCapacity,
+    updateVelocity, integratePosition, applyOffTrackDrag
 };

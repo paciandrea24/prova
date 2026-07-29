@@ -70,7 +70,15 @@ function simulateLap(track, opts) {
         physics.updateTrackIndex(p, track);
 
         const idx = p.trackIndex || 0;
-        telemetry.push({ tick, idx, speedKmh: Math.abs(p.speed) * 55, x: p.x, z: p.z });
+        // distanceFromRacingLine/headingVsTangentDeg: già calcolati SOLA
+        // LETTURA da updateBotInputs (vedi trajectoryDiagnostics in
+        // f1Bot.js) — qui solo catturati per l'esperimento di ablation
+        // controller-vs-linea (Rif. audit 2026-07-29), nessun ricalcolo.
+        telemetry.push({
+            tick, idx, speedKmh: Math.abs(p.speed) * 55, x: p.x, z: p.z,
+            distanceFromRacingLine: p._botDebug ? p._botDebug.distanceFromRacingLine : null,
+            headingVsTangentDeg: p._botDebug ? p._botDebug.headingVsTangentDeg : null
+        });
 
         if (!p.checkpointA && physics.circularWithin(idx, physics.HALF_LAP_IDX, n, checkpointWindow)) {
             p.checkpointA = true;

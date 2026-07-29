@@ -22,7 +22,7 @@ const {
 const VehiclePhysics = require('./physics/VehiclePhysics');
 const {
     ACCEL, BRAKE_MULT, TURN_SPEED_HIGH,
-    effectiveMaxSpeed, effectiveGrip, effectiveAccel, effectiveBrakeMult
+    effectiveMaxSpeed, effectiveGrip, effectiveAccel, effectiveBrakeMult, corneringCapacity
 } = VehiclePhysics;
 
 const CollisionResolver = require('./physics/CollisionResolver');
@@ -45,6 +45,13 @@ const {
     applyTyreWear
 } = VehicleDynamics;
 
+// Fase 4 (Rif. docs/superpowers/specs/2026-07-28-f1-aerodynamics-model-design.md):
+// import diretto (non tramite VehicleDynamics/VehiclePhysics, che restano
+// la facade solo per la catena updateVelocity/integratePosition/...) per
+// consultare la formula scia dietro flag di confronto — vedi
+// computeSlipstreamMult più sotto.
+const AerodynamicsModel = require('./physics/AerodynamicsModel');
+
 const PHYSICS_TICK_MS = 50;
 
 // Scia: un'auto che segue da vicino un'altra (stessa distanza lungo la
@@ -57,6 +64,26 @@ const PHYSICS_TICK_MS = 50;
 // playersVisibleTo — un boost da un'auto invisibile sarebbe incomprensibile).
 const SLIPSTREAM_RANGE_M   = 25;
 const SLIPSTREAM_MAX_BOOST = 0.08;   // fino a +8% di velocità massima quasi a contatto
+
+// Fase 4 (percorso di confronto, F1_AERO_SLIPSTREAM_MODEL=1): SOLO il
+// calcolo del moltiplicatore da un gap già noto — la ricerca del gap
+// (nearestAheadPlayer), il loop, l'esclusione qualifica e il flag visivo
+// p.inSlipstream restano nel tick loop sotto, invariati. A flag spento,
+// formula storica invariata bit-per-bit; a flag acceso, delega a
+// AerodynamicsModel.slipstreamFactor (unico proprietario del dominio
+// aero) invece di ricalcolarla qui. Il guard `gapM >= SLIPSTREAM_RANGE_M`
+// qui dentro è ridondante nel tick loop sotto (che già filtra a monte),
+// ma rende la funzione autosufficiente per l'uso/test in isolamento —
+// zero impatto sul comportamento di gioco reale, unico chiamante invariato.
+// Estratta in funzione a parte (invece di restare inline nel tick loop)
+// per essere testabile in isolamento,
+// stesso motivo di ogni altra voce in module.exports.physics.
+function computeSlipstreamMult(gapM) {
+    if (gapM >= SLIPSTREAM_RANGE_M) return 1;
+    return AerodynamicsModel.isAeroSlipstreamModelActive()
+        ? AerodynamicsModel.slipstreamFactor(gapM)
+        : 1 + (1 - gapM / SLIPSTREAM_RANGE_M) * SLIPSTREAM_MAX_BOOST;
+}
 const REJOIN_GRACE = 60000;   // finestra di riconnessione dopo un drop (scheda in background, refresh, rete)
 const GRID_DISPLAY_MS = 8000; // quanto resta a schermo l'animazione POLE + la griglia prima del countdown di gara
 // Il normale flusso qualifica->griglia->gara ha già una pausa naturale
@@ -851,7 +878,11 @@ function tickGame(io, lobbyId, game) {
         effectiveMaxSpeed, handlePitReactionPress, io, lobbyId,
         wearLapsAtMedium: WEAR_LAPS_AT_MEDIUM,
         accel: ACCEL, brakeMult: BRAKE_MULT, turnRateHigh: TURN_SPEED_HIGH,
-        slipstreamMaxBoost: SLIPSTREAM_MAX_BOOST
+        slipstreamMaxBoost: SLIPSTREAM_MAX_BOOST,
+        // Grip-awareness (Rif. docs/superpowers/specs/2026-07-28-f1-bot-grip-awareness-design.md):
+        // passate sempre, il flag F1_BOT_GRIP_AWARENESS che decide se il
+        // bot le consulta vive SOLO in f1Bot.js, mai qui.
+        effectiveBrakeMult, corneringCapacity
     });
 
     const isQuali  = game.phase === 'qualifying';
@@ -878,8 +909,7 @@ function tickGame(io, lobbyId, game) {
         if (!isQuali) {
             const ahead = nearestAheadPlayer(p, players, game.track);
             if (ahead && ahead.gapM < SLIPSTREAM_RANGE_M) {
-                const closeness = 1 - ahead.gapM / SLIPSTREAM_RANGE_M;
-                slipstreamMult = 1 + closeness * SLIPSTREAM_MAX_BOOST;
+                slipstreamMult = computeSlipstreamMult(ahead.gapM);
                 p.inSlipstream = true;   // solo per il badge/effetto visivo lato client, vedi buildPublicState
             }
         }
@@ -1217,7 +1247,13 @@ function buildPublicState(players, raceStarted, track) {
             gapToLeaderMs: (p.gapToLeaderMs != null) ? p.gapToLeaderMs : null,
             isBot: !!p.isBot,
             slipstream: !!p.inSlipstream,
-            collisionPenalty: p.collisionPenaltyMs > 0
+            collisionPenalty: p.collisionPenaltyMs > 0,
+            // Snapshot delle decisioni IA del tick corrente (Rif.
+            // docs/superpowers/specs/2026-07-28-f1-bot-testbench-debug-design.md),
+            // popolato SOLO per i bot da updateBotInputs — mai ricalcolato
+            // qui, solo inoltrato. null per i giocatori umani (p._botDebug
+            // non esiste per loro).
+            botDebug: p._botDebug || null
         };
     }
     return out;
@@ -1257,7 +1293,8 @@ module.exports.physics = {
     applyDamageSteerNoise, DAMAGE_STEER_NOISE_MAX, effectiveGrip,
     createDamageParts, FRONT_WING_STEER_PENALTY_MAX,
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
-    buildPublicState, checkLap
+    buildPublicState, checkLap,
+    computeSlipstreamMult
 };
 
 module.exports.tickGame = tickGame;

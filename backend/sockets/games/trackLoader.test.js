@@ -184,6 +184,72 @@ test('saveTrack: con startFinish.angle esplicito, qualiSpawn.angle usa quel valo
     }
 });
 
+// ---- Warning "startFinish.angle quasi opposto alla tangente geometrica"
+// (Rif. audit 2026-07-29 "verso pista invertito su New Monza"): solo un
+// avviso in console, MAI una correzione automatica del dato — questi test
+// verificano che scatti quando serve e non scatti per un'inclinazione
+// volutamente leggera, non il contenuto esatto del messaggio. ----
+
+const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
+
+function geometricAngleFor(controlPoints, startFinish) {
+    const points = TrackGeometry.sampleLoop(controlPoints, 1000);
+    const idx = TrackGeometry.nearestPoint(points, startFinish.x, startFinish.z).index;
+    const tangent = TrackGeometry.tangentAt(points, idx, true);
+    return Math.atan2(tangent.tx, tangent.tz);
+}
+
+function withCapturedWarnings(fn) {
+    const original = console.warn;
+    const messages = [];
+    console.warn = (msg) => messages.push(msg);
+    try {
+        fn();
+    } finally {
+        console.warn = original;
+    }
+    return messages;
+}
+
+test('loadTrack: startFinish.angle opposto (~180°) alla tangente geometrica genera un warning in console', () => {
+    const controlPoints = minimalValidTrackData().controlPoints;
+    const startFinish = { x: 0, z: 0 };
+    const geometricAngle = geometricAngleFor(controlPoints, startFinish);
+    const data = Object.assign({}, minimalValidTrackData(), {
+        id: 'test-scratch-startfinish-inverted',
+        startFinish: { x: 0, z: 0, angle: geometricAngle + Math.PI }   // deliberatamente opposto
+    });
+    saveTrack(data);
+    try {
+        const messages = withCapturedWarnings(() => loadTrack('test-scratch-startfinish-inverted'));
+        assert.ok(
+            messages.some(m => /test-scratch-startfinish-inverted/.test(m) && /oppost/i.test(m)),
+            `atteso un warning sull'inversione, ottenuto: ${JSON.stringify(messages)}`
+        );
+    } finally {
+        deleteTrack('test-scratch-startfinish-inverted');
+    }
+});
+
+test('loadTrack: startFinish.angle allineato (o con lieve inclinazione) alla tangente NON genera warning', () => {
+    const controlPoints = minimalValidTrackData().controlPoints;
+    const startFinish = { x: 0, z: 0 };
+    const geometricAngle = geometricAngleFor(controlPoints, startFinish);
+    const data = Object.assign({}, minimalValidTrackData(), {
+        id: 'test-scratch-startfinish-aligned',
+        // +10° di inclinazione volontaria (linea leggermente obliqua,
+        // caso esplicitamente previsto e legittimo) — non deve scattare.
+        startFinish: { x: 0, z: 0, angle: geometricAngle + (10 * Math.PI / 180) }
+    });
+    saveTrack(data);
+    try {
+        const messages = withCapturedWarnings(() => loadTrack('test-scratch-startfinish-aligned'));
+        assert.equal(messages.length, 0, `nessun warning atteso, ottenuto: ${JSON.stringify(messages)}`);
+    } finally {
+        deleteTrack('test-scratch-startfinish-aligned');
+    }
+});
+
 test('validateTrackData: startFinish malformato (manca x o z) viene rifiutato', () => {
     const data = Object.assign({}, minimalValidTrackData(), {
         id: 'test-scratch-startfinish-bad',

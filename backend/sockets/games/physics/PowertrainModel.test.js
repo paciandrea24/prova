@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { MAX_SPEED, ACCEL, FRICTION, effectiveMaxSpeed, effectiveAccel, applyThrottle, applyCoast } = require('./PowertrainModel');
 const { tractionFactor } = require('./TyreForceModel');
 const { tractionExcess, updateTractionSlipDebt, TRACTION_SLIP_PENALTY_MAX } = require('./TyreSlipModel');
+const AerodynamicsModel = require('./AerodynamicsModel');
 
 test('costanti storiche invariate', () => {
     assert.equal(MAX_SPEED, 6.2);
@@ -126,6 +127,70 @@ test("applyThrottle: Fase 3.1, F1_TYRE_SLIP_MODEL='1' -> su gomma USURATA la fin
     } finally {
         delete process.env.F1_TYRE_SLIP_MODEL;
     }
+});
+
+// ---- Fase 1 (Rif. docs/superpowers/specs/2026-07-28-f1-aerodynamics-model-design.md):
+// drag longitudinale consultato da AerodynamicsModel dentro effectiveMaxSpeed.
+// Promosso a default ON dopo playtest (Rif.
+// docs/superpowers/plans/2026-07-28-f1-aerodynamics-playtest-plan.md):
+// "non impostato" ora significa ATTIVO; il rollback storico si ottiene con
+// F1_AERO_DRAG_MODEL='0' esplicito. ----
+
+test('effectiveMaxSpeed: default ON -> tetto di velocità ridotto rispetto al rollback esplicito "0"', () => {
+    assert.equal(process.env.F1_AERO_DRAG_MODEL, undefined);
+    const p = { speed: 6.2, compound: 'medium', tyreWear: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
+    const onByDefault = effectiveMaxSpeed(p, false);
+    process.env.F1_AERO_DRAG_MODEL = '0';
+    try {
+        const rollback = effectiveMaxSpeed(p, false);
+        assert.equal(rollback, 6.2, 'rollback esplicito -> comportamento storico');
+        assert.ok(onByDefault < rollback, `atteso tetto ridotto di default: default=${onByDefault}, rollback=${rollback}`);
+    } finally {
+        delete process.env.F1_AERO_DRAG_MODEL;
+    }
+});
+
+test('effectiveMaxSpeed: velocità zero -> drag factor neutro (1), nessuna differenza tra default ON e rollback', () => {
+    const p = { speed: 0, compound: 'medium', tyreWear: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
+    const onByDefault = effectiveMaxSpeed(p, false);
+    process.env.F1_AERO_DRAG_MODEL = '0';
+    try {
+        const rollback = effectiveMaxSpeed(p, false);
+        assert.equal(onByDefault, rollback, 'a velocità zero il drag factor è 1: nessun effetto in entrambi i casi');
+    } finally {
+        delete process.env.F1_AERO_DRAG_MODEL;
+    }
+});
+
+test('effectiveMaxSpeed: default ON, velocità massima -> tetto di velocità ridotto in modo misurabile rispetto al rollback', () => {
+    const p = { speed: 6.2, compound: 'medium', tyreWear: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
+    process.env.F1_AERO_DRAG_MODEL = '0';
+    const off = effectiveMaxSpeed(p, false);
+    delete process.env.F1_AERO_DRAG_MODEL; // torna al default ON
+    const on = effectiveMaxSpeed(p, false);
+    assert.ok(on < off, `atteso tetto ridotto: off=${off}, on=${on}`);
+    const expected = off * AerodynamicsModel.dragFactor(1, false);
+    assert.ok(Math.abs(on - expected) < 1e-9, `atteso ${expected}, ottenuto ${on}`);
+});
+
+test('effectiveMaxSpeed: default ON, p.speed assente -> nessun NaN (fallback a 0, stesso invariante già usato per damageParts)', () => {
+    const p = { compound: 'medium', tyreWear: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
+    const on = effectiveMaxSpeed(p, false);
+    assert.ok(!Number.isNaN(on), 'atteso non-NaN anche senza p.speed');
+    assert.equal(on, 6.2, 'p.speed assente -> trattato come 0 -> drag factor neutro');
+});
+
+// ---- Fase 3 (Rif. docs/superpowers/specs/2026-07-28-f1-aerodynamics-model-design.md):
+// danno aero (ala anteriore -> più drag), passato a dragFactor già esistente.
+// Promosso a default ON insieme al drag — vedi nota sopra. ----
+
+test('effectiveMaxSpeed: default ON (drag+danno), ala anteriore distrutta -> tetto di velocità ridotto ulteriormente rispetto al solo drag da velocità (danno disattivato con "0")', () => {
+    const p = { speed: 6.2, compound: 'medium', tyreWear: 0, damageParts: { frontWing: 100, floor: 0, engine: 0, suspension: 0 } };
+    process.env.F1_AERO_DAMAGE_MODEL = '0';
+    const withoutDamageModel = effectiveMaxSpeed(p, false);
+    delete process.env.F1_AERO_DAMAGE_MODEL; // torna al default ON
+    const withDamageModel = effectiveMaxSpeed(p, false);
+    assert.ok(withDamageModel < withoutDamageModel, `atteso tetto ulteriormente ridotto: senza=${withoutDamageModel}, con=${withDamageModel}`);
 });
 
 test('applyCoast: decelera verso zero senza mai superarlo, avanti e in retromarcia', () => {

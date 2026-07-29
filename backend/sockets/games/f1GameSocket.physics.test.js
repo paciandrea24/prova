@@ -408,3 +408,55 @@ test('checkLap: senza startFinishIndex (pista senza startFinish, comportamento o
     physics.checkLap(p, 10, io, 'lobby1', game);
     assert.equal(p.lap, 1);
 });
+
+// ---- Fase 4 (Rif. docs/superpowers/specs/2026-07-28-f1-aerodynamics-model-design.md):
+// migrazione scia — solo il calcolo del moltiplicatore, non la ricerca del gap ----
+const AerodynamicsModel = require('./physics/AerodynamicsModel');
+
+test('computeSlipstreamMult: F1_AERO_SLIPSTREAM_MODEL non impostato -> formula storica invariata (gap=12.5 -> 1.04)', () => {
+    assert.equal(process.env.F1_AERO_SLIPSTREAM_MODEL, undefined);
+    const { physics } = f1GameSocket;
+    assert.ok(Math.abs(physics.computeSlipstreamMult(12.5) - 1.04) < 1e-9);
+});
+
+test('computeSlipstreamMult: F1_AERO_SLIPSTREAM_MODEL non impostato, gap grande -> nessun effetto (formula storica)', () => {
+    const { physics } = f1GameSocket;
+    assert.equal(physics.computeSlipstreamMult(30), 1);
+});
+
+test('computeSlipstreamMult: F1_AERO_SLIPSTREAM_MODEL="1" -> stesso valore di AerodynamicsModel.slipstreamFactor(gapM)', () => {
+    const { physics } = f1GameSocket;
+    process.env.F1_AERO_SLIPSTREAM_MODEL = '1';
+    try {
+        assert.equal(physics.computeSlipstreamMult(12.5), AerodynamicsModel.slipstreamFactor(12.5));
+        assert.equal(physics.computeSlipstreamMult(0), AerodynamicsModel.slipstreamFactor(0));
+    } finally {
+        delete process.env.F1_AERO_SLIPSTREAM_MODEL;
+    }
+});
+
+test('computeSlipstreamMult: F1_AERO_SLIPSTREAM_MODEL="1" -> delega DAVVERO a slipstreamFactor (spy, non una reimplementazione)', () => {
+    const { physics } = f1GameSocket;
+    const orig = AerodynamicsModel.slipstreamFactor;
+    let calls = 0;
+    AerodynamicsModel.slipstreamFactor = (gapM) => { calls++; return 42; };
+    process.env.F1_AERO_SLIPSTREAM_MODEL = '1';
+    try {
+        const result = physics.computeSlipstreamMult(12.5);
+        assert.equal(calls, 1, 'atteso esattamente una chiamata a slipstreamFactor');
+        assert.equal(result, 42, 'atteso il valore restituito dallo spy, non un ricalcolo locale');
+    } finally {
+        delete process.env.F1_AERO_SLIPSTREAM_MODEL;
+        AerodynamicsModel.slipstreamFactor = orig;
+    }
+});
+
+test('computeSlipstreamMult: F1_AERO_SLIPSTREAM_MODEL="1", gap grande (>= 25) -> nessun effetto', () => {
+    const { physics } = f1GameSocket;
+    process.env.F1_AERO_SLIPSTREAM_MODEL = '1';
+    try {
+        assert.equal(physics.computeSlipstreamMult(30), 1);
+    } finally {
+        delete process.env.F1_AERO_SLIPSTREAM_MODEL;
+    }
+});

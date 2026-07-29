@@ -12,6 +12,7 @@
     let visualState = {};     // color -> {x,z,angle} interpolato
     let serverState = {};     // color -> ultimo stato ricevuto dal server
     let currentTrackPts = null;
+    let currentRacingLine = null;   // array {x,z} dal server (f1tbRacingLine), null se la pista non ne ha una
     window.followedColor = null;   // usato dal Task 9 per la telecamera
 
     // Tutti i socket.on(...) sono registrati QUI, prima di qualunque altra
@@ -33,6 +34,15 @@
         sel.innerHTML = tracks.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
     });
 
+    // Debug visuale traiettoria (Rif. docs/superpowers/specs/2026-07-28-f1-bot-testbench-debug-design.md):
+    // arriva una volta per sessione (subito dopo f1tbStart), null se la
+    // pista non ha una racing line precalcolata — TrajectoryViz.setRacingLine
+    // gestisce già entrambi i casi (rimuove il disegno precedente se presente).
+    socket.on('f1tbRacingLine', (line) => {
+        currentRacingLine = line;
+        TrajectoryViz.setRacingLine(line);
+    });
+
     socket.on('f1StateUpdate', (state) => {
         for (const [color, data] of Object.entries(state)) {
             serverState[color] = data;
@@ -52,6 +62,12 @@
             if (!visualState[color]) visualState[color] = { x: data.x, z: data.z, angle: data.angle };
             if (window.followedColor === null) window.followedColor = color;   // segue la prima auto ricevuta di default
         }
+        // Bot Inspector: sempre l'ultimo stato ricevuto per l'auto SEGUITA in
+        // questo istante (non quella di quando è arrivato l'evento) — se N
+        // cambia auto tra un tick e l'altro, il pannello si aggiorna subito
+        // al prossimo f1StateUpdate senza logica separata.
+        const followed = state[window.followedColor];
+        BotInspector.update(window.followedColor, followed ? followed.botDebug : null);
     });
 
     // ====================================================
@@ -60,6 +76,7 @@
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);
     scene.fog = new THREE.FogExp2(0xadd8e6, 0.0022);
+    TrajectoryViz.init(scene);
 
     const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1200);
 
@@ -233,11 +250,24 @@
         const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH);
         loadScenery(scene, sceneryLayout);
 
+        // Variante racing line sperimentale (verifica C): stringa vuota =
+        // "Ufficiale" = nessun override, il campo non va nemmeno incluso nel
+        // payload (il server tratta racelineVariant assente come "percorso
+        // normale", vedi f1Testbench.js).
+        const racelineVariant = document.getElementById('f1tb-raceline-variant').value;
+
         socket.emit('f1tbStart', {
             trackId,
             botCount: Number(document.getElementById('f1tb-botcount').value),
             tyreWear: Number(document.getElementById('f1tb-tyrewear').value),
-            compound: document.getElementById('f1tb-compound').value
+            compound: document.getElementById('f1tb-compound').value,
+            damageParts: {
+                frontWing:  Number(document.getElementById('f1tb-dmg-frontwing').value),
+                floor:      Number(document.getElementById('f1tb-dmg-floor').value),
+                engine:     Number(document.getElementById('f1tb-dmg-engine').value),
+                suspension: Number(document.getElementById('f1tb-dmg-suspension').value)
+            },
+            ...(racelineVariant ? { racelineVariant } : {})
         });
     });
     document.getElementById('f1tb-stop').addEventListener('click', () => socket.emit('f1tbStop'));
@@ -252,6 +282,15 @@
     document.getElementById('f1tb-speed').addEventListener('change', (e) => {
         socket.emit('f1tbSetSpeed', { multiplier: Number(e.target.value) });
     });
+
+    // Slider danno di partenza: solo aggiornamento dell'etichetta percentuale,
+    // il valore viene letto direttamente dagli input al momento di Avvia
+    // (vedi f1tbStart sopra) — nessuno stato JS duplicato qui.
+    for (const part of ['frontwing', 'floor', 'engine', 'suspension']) {
+        const input = document.getElementById(`f1tb-dmg-${part}`);
+        const label = document.getElementById(`f1tb-dmg-${part}-val`);
+        input.addEventListener('input', () => { label.textContent = input.value; });
+    }
 
     // Telecamera a ciclo tra le auto — tasto N (adattato da f1.js:1337-1350,
     // solo il ramo 'third', questo strumento non ha bisogno della cockpit-cam).
@@ -299,10 +338,34 @@
         }
     }
 
+    // Marker target/lookahead + racing line (Rif.
+    // docs/superpowers/specs/2026-07-28-f1-bot-testbench-debug-design.md):
+    // SOLA lettura di dati già calcolati (_botDebug.target, trackIndex) —
+    // nessuna influenza sulla guida, il bot continua a decidere tramite la
+    // vera tickGame esattamente come senza questo strumento.
+    function updateTrajectoryViz() {
+        const color = window.followedColor;
+        const data = color && serverState[color];
+        const carPos = color && visualState[color];
+        if (!data || !carPos) { TrajectoryViz.hide(); return; }
+
+        const target = data.botDebug ? data.botDebug.target : null;
+        // Stessa linea che il bot sta davvero seguendo in quel ramo (racing
+        // line se la pista ne ha una precalcolata, altrimenti il centro
+        // pista campionato — vedi f1Bot.js): il waypoint mostrato è il punto
+        // sulla linea alla posizione REALE del bot (trackIndex), non al
+        // lookahead già rappresentato dal marker target.
+        const laneSource = currentRacingLine || currentTrackPts;
+        const waypoint = (laneSource && data.trackIndex != null) ? laneSource[data.trackIndex] : null;
+
+        TrajectoryViz.update(carPos, target, waypoint);
+    }
+
     function animate() {
         requestAnimationFrame(animate);
         updateCarVisuals();
         updateSpectatorCamera();
+        updateTrajectoryViz();
         renderer.render(scene, camera);
     }
     animate();

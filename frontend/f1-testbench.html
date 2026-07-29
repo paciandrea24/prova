@@ -16,6 +16,58 @@
         #f1tb-panel .row { display: flex; gap: 4px; margin-top: 8px; }
         #f1tb-panel .row button { flex: 1; }
         #f1tb-hint { position: fixed; bottom: 12px; left: 12px; z-index: 10; color: #8b96a3; font-family: sans-serif; font-size: 12px; }
+
+        /* ============================================================
+           BOT INSPECTOR — Rif. docs/superpowers/specs/2026-07-28-f1-bot-testbench-debug-design.md
+           Ordine di lettura dominante -> dettaglio, come da approvazione utente:
+           1. Stato (grande) 2. Decisione (3 numeri) 3. Comandi (3 barre)
+           4. Fattori limitanti (reason card, mostrate solo se rilevanti).
+           ============================================================ */
+        #f1tb-inspector {
+            position: fixed; top: 12px; right: 12px; z-index: 10; width: 260px;
+            background: rgba(9,11,14,0.9); border: 1px solid rgba(255,255,255,0.14);
+            border-radius: 8px; padding: 14px; color: #f2f4f6; font-family: sans-serif;
+            display: none;   /* mostrato solo quando un'auto è seguita, vedi f1-testbench.js */
+        }
+        #f1tb-insp-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+        #f1tb-insp-swatch { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3); flex: none; }
+        #f1tb-insp-state {
+            font-size: 18px; font-weight: 700; letter-spacing: 0.02em;
+            padding: 3px 8px; border-radius: 5px; background: rgba(255,255,255,0.08);
+        }
+        #f1tb-insp-decision {
+            display: flex; justify-content: space-between; gap: 6px;
+            border-top: 1px solid rgba(255,255,255,0.12); border-bottom: 1px solid rgba(255,255,255,0.12);
+            padding: 10px 0; margin-bottom: 10px;
+        }
+        .f1tb-insp-metric { text-align: center; flex: 1; }
+        .f1tb-insp-metric .f1tb-insp-label { display: block; font-size: 10px; color: #8b96a3; text-transform: uppercase; letter-spacing: 0.05em; }
+        .f1tb-insp-metric .f1tb-insp-value { display: block; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+        #f1tb-insp-commands { margin-bottom: 10px; }
+        .f1tb-insp-bar-row { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+        .f1tb-insp-bar-row .f1tb-insp-label { width: 46px; font-size: 11px; color: #8b96a3; flex: none; }
+        .f1tb-insp-bar { position: relative; flex: 1; height: 9px; border-radius: 5px; background: rgba(255,255,255,0.1); overflow: hidden; }
+        .f1tb-insp-bar .fill { position: absolute; top: 0; bottom: 0; left: 0; width: 0%; border-radius: 5px; transition: width 0.08s linear; }
+        #f1tb-insp-bar-throttle.fill { background: #2ECC71; }
+        #f1tb-insp-bar-brake.fill    { background: #E74C3C; }
+        /* Steer: barra centrata (-1..1), riempimento parte dal centro */
+        .f1tb-insp-bar-centered .fill { left: 50%; width: 0%; background: #3498DB; }
+        /* Traiettoria: distanza dalla racing line + angolo prua vs tangente
+           (Rif. audit 2026-07-29) — stessa metrica riusata di
+           .f1tb-insp-metric, ma più compatta (dato secondario rispetto a
+           velocità/target/max) e con bordo superiore di separazione. */
+        #f1tb-insp-trajectory {
+            display: flex; justify-content: space-between; gap: 6px;
+            border-top: 1px solid rgba(255,255,255,0.12); padding-top: 8px; margin-bottom: 10px;
+        }
+        #f1tb-insp-trajectory .f1tb-insp-value { font-size: 15px; }
+        #f1tb-insp-reasons { display: flex; flex-direction: column; gap: 6px; }
+        .f1tb-insp-reason-card {
+            background: rgba(255,255,255,0.06); border-radius: 5px; padding: 6px 8px;
+            display: flex; justify-content: space-between; align-items: baseline; font-size: 12px;
+        }
+        .f1tb-insp-reason-card .f1tb-insp-reason-label { color: #8b96a3; }
+        .f1tb-insp-reason-card .f1tb-insp-reason-value { font-weight: 600; font-variant-numeric: tabular-nums; }
     </style>
 </head>
 <body>
@@ -39,6 +91,10 @@
             <input id="f1tb-dmg-engine" type="range" min="0" max="100" value="0"></label>
         <label>Sospensioni: <span id="f1tb-dmg-suspension-val">0</span>%
             <input id="f1tb-dmg-suspension" type="range" min="0" max="100" value="0"></label>
+        <label>Racing line <select id="f1tb-raceline-variant">
+            <option value="">Ufficiale</option>
+            <option value="-geoseed-h0">Geo-seed 15 punti (sperimentale)</option>
+        </select></label>
         <div class="row">
             <button id="f1tb-start">Avvia</button>
             <button id="f1tb-stop">Stop</button>
@@ -56,6 +112,58 @@
     </div>
     <div id="f1tb-hint">Tasto N: prossima auto</div>
 
+    <!-- Bot Inspector: 1. stato (grande) 2. decisione (speed/target/max)
+         3. comandi (barre throttle/brake/steer) 4. traiettoria (distanza
+         dalla racing line, angolo prua vs tangente — sempre visibili,
+         audit 2026-07-29) 5. fattori limitanti (reason card, popolate
+         dinamicamente da f1tb-botinspector.js). Nascosto finché nessuna
+         auto è seguita. -->
+    <div id="f1tb-inspector">
+        <div id="f1tb-insp-header">
+            <span id="f1tb-insp-swatch"></span>
+            <span id="f1tb-insp-state">—</span>
+        </div>
+        <div id="f1tb-insp-decision">
+            <div class="f1tb-insp-metric">
+                <span class="f1tb-insp-label">Velocità</span>
+                <span class="f1tb-insp-value" id="f1tb-insp-speed">—</span>
+            </div>
+            <div class="f1tb-insp-metric">
+                <span class="f1tb-insp-label">Target</span>
+                <span class="f1tb-insp-value" id="f1tb-insp-targetspeed">—</span>
+            </div>
+            <div class="f1tb-insp-metric">
+                <span class="f1tb-insp-label">Max</span>
+                <span class="f1tb-insp-value" id="f1tb-insp-maxspeed">—</span>
+            </div>
+        </div>
+        <div id="f1tb-insp-commands">
+            <div class="f1tb-insp-bar-row">
+                <span class="f1tb-insp-label">Throttle</span>
+                <div class="f1tb-insp-bar"><div id="f1tb-insp-bar-throttle" class="fill"></div></div>
+            </div>
+            <div class="f1tb-insp-bar-row">
+                <span class="f1tb-insp-label">Brake</span>
+                <div class="f1tb-insp-bar"><div id="f1tb-insp-bar-brake" class="fill"></div></div>
+            </div>
+            <div class="f1tb-insp-bar-row">
+                <span class="f1tb-insp-label">Steer</span>
+                <div class="f1tb-insp-bar f1tb-insp-bar-centered"><div id="f1tb-insp-bar-steer" class="fill"></div></div>
+            </div>
+        </div>
+        <div id="f1tb-insp-trajectory">
+            <div class="f1tb-insp-metric">
+                <span class="f1tb-insp-label">Dist. da linea</span>
+                <span class="f1tb-insp-value" id="f1tb-insp-distline">—</span>
+            </div>
+            <div class="f1tb-insp-metric">
+                <span class="f1tb-insp-label">Prua vs tangente</span>
+                <span class="f1tb-insp-value" id="f1tb-insp-headingdiff">—</span>
+            </div>
+        </div>
+        <div id="f1tb-insp-reasons"></div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
@@ -63,6 +171,8 @@
     <script src="shared/trackMeshBuilder.js"></script>
     <script src="shared/trackScenery.js"></script>
     <script src="shared/carLoader.js"></script>
+    <script src="f1tb-botinspector.js"></script>
+    <script src="f1tb-trajectoryviz.js"></script>
     <script src="f1-testbench.js"></script>
 </body>
 </html>

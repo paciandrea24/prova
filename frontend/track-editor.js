@@ -50,20 +50,55 @@ document.addEventListener('DOMContentLoaded', () => {
     let startFinish = null; // { x, z, angle }
     let startFinishMarker = null;
     let startFinishRotateHandle = null;
+    let startFinishDirectionArrow = null;
     const startFinishGroup = new THREE.Group();
     scene.add(startFinishGroup);
+
+    // Colore del marker quando l'angolo scelto è (quasi) opposto al verso
+    // geometrico reale — stesso rosso di allarme usato altrove nell'editor,
+    // MAI applicato ai dati (nessuna correzione automatica, solo un
+    // avviso visivo — Rif. audit 2026-07-29 "verso pista invertito").
+    const STARTFINISH_COLOR_OK = 0xffffff;
+    const STARTFINISH_COLOR_MISMATCH = 0xe74c3c;
+    // Stessa soglia (e stesso motivo: non disturbare un traguardo
+    // volutamente leggermente obliquo) del warning runtime gemello in
+    // backend/sockets/games/trackLoader.js — se una delle due cambia,
+    // aggiornare anche l'altra.
+    const STARTFINISH_OPPOSITE_TOLERANCE_DEG = 30;
 
     function ensureStartFinishMeshes() {
         if (startFinishMarker) return;
         const markerGeo = new THREE.ConeGeometry(3, 8, 4);
-        const markerMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const markerMat = new THREE.MeshBasicMaterial({ color: STARTFINISH_COLOR_OK });
         startFinishMarker = new THREE.Mesh(markerGeo, markerMat);
         startFinishMarker.userData = { role: 'startFinishMarker' };
         const handleGeo = new THREE.SphereGeometry(2.5, 12, 12);
         const handleMat = new THREE.MeshBasicMaterial({ color: 0xe67e22 });
         startFinishRotateHandle = new THREE.Mesh(handleGeo, handleMat);
         startFinishRotateHandle.userData = { role: 'startFinishRotateHandle' };
-        startFinishGroup.add(startFinishMarker, startFinishRotateHandle);
+        // Freccia di riferimento (verde): mostra il verso GEOMETRICO reale
+        // della pista (quello che governa davvero trackIndex/lookahead/
+        // cornerTargetSpeed/racingLine — mai l'angolo scelto qui), per
+        // confronto visivo diretto col cono bianco. Non cliccabile/non
+        // trascinabile: solo un riferimento.
+        const arrowGeo = new THREE.ConeGeometry(2, 6, 4);
+        const arrowMat = new THREE.MeshBasicMaterial({ color: 0x2ecc71 });
+        startFinishDirectionArrow = new THREE.Mesh(arrowGeo, arrowMat);
+        startFinishDirectionArrow.userData = { role: 'startFinishDirectionArrow' };
+        startFinishGroup.add(startFinishMarker, startFinishRotateHandle, startFinishDirectionArrow);
+    }
+
+    // Verso geometrico reale nel punto del traguardo — stessa tecnica di
+    // trackLoader.js::buildTrack (nearestPoint + tangentAt), qui ricalcolata
+    // sui punti dell'editor invece che scriverla una volta sola e tenerla
+    // sincronizzata: l'editor non ha un ciclo di render a costo significativo,
+    // ricampionare ad ogni update non è un problema di prestazioni qui.
+    function geometricStartFinishAngle() {
+        if (!startFinish || mainPoints.length < 3) return null;
+        const pts = TrackGeometry.sampleLoop(mainPoints, 500);
+        const idx = TrackGeometry.nearestPoint(pts, startFinish.x, startFinish.z).index;
+        const tangent = TrackGeometry.tangentAt(pts, idx, true);
+        return Math.atan2(tangent.tx, tangent.tz);
     }
 
     // Il cono (marker) punta lungo +Z locale di default (ConeGeometry si
@@ -81,6 +116,27 @@ document.addEventListener('DOMContentLoaded', () => {
             1,
             startFinish.z + Math.cos(startFinish.angle) * handleDist
         );
+
+        // Freccia verde di riferimento + evidenza se il facing scelto è
+        // quasi opposto al verso reale (stessa diagnosi/soglia del warning
+        // gemello in trackLoader.js — MAI una correzione automatica qui,
+        // solo segnalazione: la scelta resta dell'utente).
+        const geometricAngle = geometricStartFinishAngle();
+        let mismatch = false;
+        if (geometricAngle != null) {
+            startFinishDirectionArrow.visible = true;
+            startFinishDirectionArrow.position.set(startFinish.x, 1, startFinish.z);
+            startFinishDirectionArrow.rotation.set(Math.PI / 2, 0, geometricAngle);
+            let diffDeg = (startFinish.angle - geometricAngle) * 180 / Math.PI;
+            while (diffDeg > 180) diffDeg -= 360;
+            while (diffDeg <= -180) diffDeg += 360;
+            mismatch = Math.abs(Math.abs(diffDeg) - 180) < STARTFINISH_OPPOSITE_TOLERANCE_DEG;
+        } else {
+            startFinishDirectionArrow.visible = false;
+        }
+        startFinishMarker.material.color.setHex(mismatch ? STARTFINISH_COLOR_MISMATCH : STARTFINISH_COLOR_OK);
+        const warningEl = document.getElementById('startFinishWarning');
+        if (warningEl) warningEl.style.display = mismatch ? 'block' : 'none';
     }
     let trackMeshGroup = null;
     const markerGroup = new THREE.Group();
@@ -570,6 +626,16 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('clearBtn').addEventListener('click', () => {
         if (document.getElementById('pitMode').checked) pitPoints = []; else mainPoints = [];
         rebuild();
+    });
+    // Imposta l'angolo del traguardo esattamente al verso geometrico reale
+    // (la freccia verde) — non tocca posizione/piste, solo l'orientamento.
+    // No-op silenzioso se non c'è ancora un traguardo piazzato.
+    document.getElementById('startFinishAlignBtn').addEventListener('click', () => {
+        if (!startFinish) return;
+        const geometricAngle = geometricStartFinishAngle();
+        if (geometricAngle == null) return;
+        startFinish.angle = geometricAngle;
+        updateStartFinishMeshes();
     });
     ['roadHalfWidth', 'pitRoadHalfWidth', 'pitBoxIndex'].forEach(id => {
         document.getElementById(id).addEventListener('change', rebuild);

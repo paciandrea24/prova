@@ -42,6 +42,34 @@ storico: maxSpeed/grip → motore-o-freno-o-coast → clamp velocità → sterzo
 blend aerodinamico — quest'ordine NON va cambiato, cambia il risultato anche
 a parità di formule).
 
+## Flag di confronto (percorsi sperimentali dietro env var)
+
+Nessuno di questi era documentato in modo centralizzato prima d'ora (solo
+sparsi tra commenti di codice e i piani/spec di ogni fase) — questa
+tabella è il punto unico da cui partire per sapere cosa esiste e come
+accenderlo. Tutti **spenti di default**; si attivano impostando la env var
+**prima** di avviare il server (`F1_XXX=1 node server.js` dalla cartella
+`backend/`, mai a runtime — vedi nota su `trackLoader`/cache di processo
+in fondo a questo file per lo stesso principio).
+
+| Flag | Letto in | Consumato da | Dipende da |
+|---|---|---|---|
+| `F1_TYRE_SLIP_MODEL` | `TyreSlipModel.isTyreSlipModelActive` | `PowertrainModel.applyThrottle`, `BrakingModel.applyBrake`, `SteeringModel.applySteering` | — |
+| `F1_CORNERING_GRIP_MODEL` | `TyreSlipModel.isCorneringGripModelActive` | `VehiclePhysics.updateVelocity` | — |
+| `F1_AERO_DRAG_MODEL` | `AerodynamicsModel.isAeroDragModelActive` | `PowertrainModel.effectiveMaxSpeed` | — |
+| `F1_AERO_DOWNFORCE_MODEL` | `AerodynamicsModel.isAeroDownforceModelActive` | `AerodynamicsModel.effectiveGrip`, `CorneringGripModel.lateralExcess` | — |
+| `F1_AERO_DAMAGE_MODEL` | `AerodynamicsModel.isAeroDamageModelActive` | `dragFactor`/`downforceFactor` (penalità aggiuntiva da danno ala/fondo) | ha effetto solo se **anche** `F1_AERO_DRAG_MODEL`/`F1_AERO_DOWNFORCE_MODEL` sono attivi |
+| `F1_AERO_SLIPSTREAM_MODEL` | `AerodynamicsModel.isAeroSlipstreamModelActive` | `f1GameSocket.computeSlipstreamMult` | — |
+
+`F1_TYRE_FORCE_MODEL` è **rimosso** (Fase 2B, non esiste più come flag
+attivo: `TyreForceModel` è ora l'unica fonte, sempre attiva) — resta solo
+nei commenti/test come riferimento storico ("non confondere con...").
+`F1_TYRE_SLIP_DEBUG=1` non è un flag di confronto ma un logging di debug
+temporaneo in `PowertrainModel.applyThrottle` (solo umano, non bot) — da
+rimuovere quando l'effetto sarà validato definitivamente.
+
+Rif. design/roadmap Fase Aero: `docs/superpowers/specs/2026-07-28-f1-aerodynamics-model-design.md`.
+
 ## Racing line precalcolata per i bot (`backend/tools/f1RaceLineOptimizer.js`)
 
 I bot IA seguono, quando disponibile, una **linea di guida precalcolata offline**

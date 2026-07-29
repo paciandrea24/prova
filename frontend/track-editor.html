@@ -55,6 +55,18 @@
         <button id="saveGameBtn">Salva nel gioco</button>
         <button id="exportBtn">Esporta JSON (scarica file)</button>
 
+        <div id="startFinishSection">
+            <hr style="border-color: #4b5b6b; margin: 10px 0;">
+            <h1>Traguardo</h1>
+            <div id="startFinishHint" style="font-size: 11px; color: #8b96a3; margin-bottom: 6px;">
+                Cono bianco: verso scelto. Freccia verde: verso reale della pista (quello che useranno davvero i bot).
+            </div>
+            <div id="startFinishWarning" style="display:none; color:#e74c3c; font-size:12px; margin-bottom:6px;">
+                Attenzione: il traguardo punta quasi in verso opposto a quello reale della pista — i bot partiranno e faranno subito un testacoda per raddrizzarsi.
+            </div>
+            <button id="startFinishAlignBtn">Allinea al verso pista</button>
+        </div>
+
         <div id="imgOverlaySection" style="display:none;">
             <hr style="border-color: #4b5b6b; margin: 10px 0;">
             <h1>Immagine di riferimento</h1>

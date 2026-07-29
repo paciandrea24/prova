@@ -96,6 +96,23 @@ function getFrontWingSteerPenalty(parts) {
     return ((parts?.frontWing || 0) / 100) * FRONT_WING_STEER_PENALTY_MAX;
 }
 
+// Fase 3 (Rif. docs/superpowers/specs/2026-07-28-f1-aerodynamics-model-design.md):
+// penalità aero da danno — RIUSANO frontWing/floor esistenti, nessun
+// quinto componente. Stesso pattern lineare 0-100% dei getter sopra.
+// Consultate da AerodynamicsModel.js (dragFactor/downforceFactor), MAI da
+// SteeringModel.js (che continua a usare solo getFrontWingSteerPenalty,
+// fenomeno meccanico separato).
+const FRONT_WING_DRAG_PENALTY_MAX = 0.10; // fino a +10% di drag (ala anteriore rotta disturba il flusso d'aria)
+const FLOOR_DOWNFORCE_PENALTY_MAX = 0.10; // fino a -10% di deportanza (fondo rotto perde carico aerodinamico)
+
+function getFrontWingDragPenalty(parts) {
+    return ((parts?.frontWing || 0) / 100) * FRONT_WING_DRAG_PENALTY_MAX;
+}
+
+function getFloorDownforcePenalty(parts) {
+    return ((parts?.floor || 0) / 100) * FLOOR_DOWNFORCE_PENALTY_MAX;
+}
+
 // Rumore sullo sterzo: a differenza della vecchia applyDamageSteerNoise (che
 // scattava solo oltre una soglia sul danno generico), qui è progressivo fin
 // da subito sul danno alle sospensioni — niente più soglia netta.
@@ -153,8 +170,10 @@ module.exports = {
     DAMAGE_GRIP_THRESHOLD, DAMAGE_STEER_THRESHOLD, DAMAGE_SPEED_PENALTY_MAX, DAMAGE_GRIP_PENALTY_MAX, DAMAGE_STEER_NOISE_MAX,
     applyDamageSteerNoise,
     FRONT_WING_STEER_PENALTY_MAX,
+    FRONT_WING_DRAG_PENALTY_MAX, FLOOR_DOWNFORCE_PENALTY_MAX,
     createDamageParts, addComponentDamage,
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
+    getFrontWingDragPenalty, getFloorDownforcePenalty,
     MIN_COLLISION_SEVERITY, DAMAGE_PER_SEVERITY, DAMAGE_CAP_PER_HIT, VICTIM_DAMAGE_FRACTION,
     COLLISION_PENALTY_PER_SEVERITY, COLLISION_PENALTY_CAP_MS,
     collisionDamageAmount, applyCollisionPenalty, applyCarCollisionDamage, applyBarrierDamage

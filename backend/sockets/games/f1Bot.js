@@ -41,6 +41,30 @@ const BOT_STEER_GAIN = 3.0;
 // indovinare quanto sia stretta ciascuna curva.
 const BOT_CORNER_SPEED_MARGIN = 0.99;
 
+// Esponente di scala tra corneringCapacity (moltiplicatore relativo alla
+// capacità laterale, tarato come termine di corneringExcess — MAI
+// validato come moltiplicatore diretto di una velocità) e cornerTargetSpeed
+// (limite cinematico di tasso di sterzata, non di accelerazione laterale):
+// assumere una proporzionalità 1:1 tra i due è una scelta di design, non
+// un fatto derivato (un vero limite v=√(a_lat×r) scalerebbe con la radice,
+// non linearmente). Valore di partenza 1 (proporzionalità diretta),
+// verificato via simulazione headless prima del playtest — stesso stile
+// di DOWNFORCE_EXPONENT/CORNERING_EXPONENT in AerodynamicsModel.js/
+// TyreForceModel.js. Rif.
+// docs/superpowers/specs/2026-07-28-f1-bot-grip-awareness-design.md.
+const BOT_GRIP_CAPACITY_EXPONENT = 1;
+
+// Flag dedicato, letto SOLO qui in f1Bot.js: la fisica reale
+// (VehiclePhysics/CorneringGripModel/BrakingModel) resta invariata
+// indipendentemente da questo flag, che riguarda solo se il BOT consulta
+// i loro fattori già esistenti per calcolare i propri input — esattamente
+// come un umano non ha mai bisogno di un flag per "sapere" quanto frena
+// la propria auto. Default OFF: nessuna promozione a default-on senza
+// playtest esplicito (stesso pattern di isCorneringGripModelActive).
+function isBotGripAwarenessActive() {
+    return process.env.F1_BOT_GRIP_AWARENESS === '1';
+}
+
 function normalizeAngle(a) {
     while (a > Math.PI) a -= 2 * Math.PI;
     while (a < -Math.PI) a += 2 * Math.PI;
@@ -222,7 +246,7 @@ function cornerApexNear(points, idx, searchSamples, localSamples, metersPerSampl
 // sovrapposte (passo = metà di `localSamples`) e, per ogni curva trovata,
 // si valuta se la distanza rimanente basta ancora per non dover già
 // frenare.
-function cornerTargetSpeed(points, idx, scanSamples, localSamples, metersPerSample, currentSpeed, maxSpeed, brakeDecel, turnRateAtMax, marginFactor) {
+function cornerTargetSpeed(points, idx, scanSamples, localSamples, metersPerSample, currentSpeed, maxSpeed, brakeDecel, turnRateAtMax, marginFactor, gripCapacityFactor = 1) {
     const n = points.length;
     const step = Math.max(1, Math.floor(localSamples / 2));
     const localArcM = localSamples * metersPerSample;
@@ -232,7 +256,10 @@ function cornerTargetSpeed(points, idx, scanSamples, localSamples, metersPerSamp
         const i2 = lookaheadIndex(n, idx, offset + localSamples);
         const w = windowRadius(points, i1, i2, localArcM);
         if (!w) continue;   // praticamente dritto, nessun raggio significativo da questa finestra
-        const cornerSpeed = Math.min(maxSpeed, w.radius * turnRateAtMax * marginFactor);
+        // gripCapacityFactor arriva già scalato dal chiamante (vedi
+        // BOT_GRIP_CAPACITY_EXPONENT in updateBotInputs) — qui è solo un
+        // moltiplicatore diretto, nessuna logica di scala in questa funzione.
+        const cornerSpeed = Math.min(maxSpeed, w.radius * turnRateAtMax * marginFactor * gripCapacityFactor);
         if (cornerSpeed >= currentSpeed) continue;   // già più lenti del necessario per questa curva
         const distanceM = offset * metersPerSample;
         const neededBrakingM = (currentSpeed * currentSpeed - cornerSpeed * cornerSpeed) / (2 * brakeDecel);
@@ -513,6 +540,46 @@ const BOT_LOOKAHEAD_MIN_M            = 10;
 // quel punto, non la distanza di frenata (calcolata dalla fisica reale in
 // updateBotInputs, non più un tempo di anticipo indovinato).
 const BOT_CURVATURE_LOCAL_M          = 12;
+
+// Fase 1 — lookahead adattivo alla curvatura (Rif.
+// docs/superpowers/specs/2026-07-29-f1-bot-adaptive-pursuit-controller-design.md,
+// ipotesi H1/H2/H3 — NON ancora validate). k è un CANDIDATO da verificare
+// con backend/tools/f1AdaptiveLookaheadCheck.js, non un valore derivato o
+// confermato: resta sovrascrivibile per test tramite
+// tuning.adaptiveLookaheadK / racingLineTuning.adaptiveLookaheadK (stessa
+// plumbing già esistente per lookaheadTimeS/steerGain), il valore qui sotto
+// è solo il default quando nessuno lo sovrascrive.
+const BOT_ADAPTIVE_LOOKAHEAD_K     = 0.1;
+// Tetto sui rettilinei (R_locale non misurabile, windowRadius nullo): stesso
+// ordine di grandezza del lookahead attuale a velocità di punta con
+// lookaheadTimeS ufficiale di New Monza (~90 m/s * 0.98s ~= 88m).
+const BOT_ADAPTIVE_LOOKAHEAD_MAX_M = 120;
+
+function isAdaptiveLookaheadActive() {
+    return process.env.F1_BOT_ADAPTIVE_LOOKAHEAD === '1';
+}
+
+// L = sqrt(2 * R_locale * e_target), e_target = k * roadHalf (ipotesi H1/H2,
+// vedi spec). R_locale misurato con windowRadius sulla stessa finestra
+// locale già usata per la severità di sorpasso/apexOffset
+// (BOT_CURVATURE_LOCAL_M) — nessuna nuova misura di curvatura introdotta.
+// Su un rettilineo (windowRadius nullo, curvatura indistinguibile da zero)
+// si usa direttamente il tetto massimo, mai una divisione per curvatura ~0.
+// `laneSource` è la linea che il bot sta davvero seguendo in quel ramo
+// (track.racingLine o track.points), stessa convenzione già in uso altrove
+// in questo file.
+function adaptiveLookaheadMeters(laneSource, trackIndex, track, k) {
+    const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
+    const metersPerSample = track.lapLength / track.points.length;
+    const localArcM = localSamples * metersPerSample;
+    const i2 = lookaheadIndex(track.points.length, trackIndex, localSamples);
+    const w = windowRadius(laneSource, trackIndex, i2, localArcM);
+    if (!w) return BOT_ADAPTIVE_LOOKAHEAD_MAX_M;
+    const eTarget = k * track.roadHalf;
+    const raw = Math.sqrt(2 * w.radius * eTarget);
+    return Math.max(BOT_LOOKAHEAD_MIN_M, Math.min(BOT_ADAPTIVE_LOOKAHEAD_MAX_M, raw));
+}
+
 // Margine sulla distanza di frenata calcolata dalla fisica: oltre il
 // margine "matematico" già insito nel calcolo (v0²−v1²=2·decel·distanza),
 // un 20% extra copre l'imprecisione del rilevamento a campioni discreti.
@@ -577,7 +644,15 @@ function botSpeedMs(speed) {
 const DEFAULT_TUNING = {
     cornerSpeedMargin:     BOT_CORNER_SPEED_MARGIN,
     apexMaxFraction:       BOT_APEX_MAX_FRACTION,
-    brakingDistanceMargin: BOT_BRAKING_DISTANCE_MARGIN
+    brakingDistanceMargin: BOT_BRAKING_DISTANCE_MARGIN,
+    // lookaheadTimeS/steerGain (Rif. audit generalizzazione 2026-07-29,
+    // esperimento f1RacingLineAblation.js): stessi due parametri già
+    // sovrascrivibili per pista via racingLineTuning nel ramo racing-line,
+    // ora sovrascrivibili anche qui per confrontarli sul ramo geometrico
+    // (piste senza racing line precalcolata) — nessun nuovo comportamento
+    // di default, il call site reale non passa mai deps.tuning.
+    lookaheadTimeS:        BOT_LOOKAHEAD_TIME_S,
+    steerGain:             BOT_STEER_GAIN
 };
 
 // Default per track.racingLineTuning quando il file generato da
@@ -594,19 +669,77 @@ const DEFAULT_RACELINE_TUNING = {
     ramp:                  0.06
 };
 
+// Raggio di ricerca (in campioni) del punto più vicino sulla linea per
+// trajectoryDiagnostics sotto — deve coprire lo sfasamento di indice tra
+// centro pista e racing line: track.trackIndex è sempre calcolato sul
+// CENTRO pista (updateTrackIndex in f1GameSocket.js), ma un offset laterale
+// ampio in curva (misurato fino a ~13m su new-monza) sposta di molti
+// campioni quale indice della racing line corrisponde davvero alla
+// posizione più vicina — usare lo stesso indice del centro pista
+// sottostimerebbe grossolanamente quanto bene il bot segue la linea
+// proprio nelle curve più strette (bug reale, trovato durante il primo
+// audit con questo strumento: distanze fino a 40m su una pista larga
+// roadHalf=14m). 50 campioni * ~3.2m/campione (new-monza) ≈ 160m di
+// margine, ben oltre lo sfasamento osservato.
+const TRAJECTORY_DIAG_SEARCH_WINDOW = 50;
+
+// ====================================================
+// DIAGNOSTICA DI TRAIETTORIA (Rif. richiesta utente 2026-07-29, audit guida
+// via banco prova) — SOLA LETTURA: due numeri derivati dallo stato già
+// esistente (p.x/z/angle, p.trackIndex, track.racingLine/points), MAI
+// consultati per decidere throttle/brake/steer. Rispondono a "il bot sta
+// davvero seguendo la linea?" senza dover indovinare guardando lo schermo:
+// - distanceFromRacingLine: distanza dal punto REALMENTE più vicino sulla
+//   linea che il bot dovrebbe seguire (racing line se la pista ne ha una,
+//   altrimenti il centro pista — la stessa `laneSource` usata più sotto per
+//   il lookahead) — ricerca locale attorno al proprio trackIndex, non lo
+//   stesso indice (vedi TRAJECTORY_DIAG_SEARCH_WINDOW sopra sul perché).
+// - headingVsTangentDeg: quanto la prua (p.angle) è ruotata rispetto alla
+//   tangente della linea in quel punto più vicino — vicino a 0° = punta
+//   dritto lungo la linea, valori grandi = sta correggendo/derivando molto.
+// ====================================================
+function trajectoryDiagnostics(p, track) {
+    const laneSource = track.racingLine || track.points;
+    const n = laneSource.length;
+    const seedIdx = p.trackIndex || 0;
+    let bestIdx = seedIdx, bestDist = Infinity;
+    for (let d = -TRAJECTORY_DIAG_SEARCH_WINDOW; d <= TRAJECTORY_DIAG_SEARCH_WINDOW; d++) {
+        const idx = ((seedIdx + d) % n + n) % n;
+        const pt = laneSource[idx];
+        const dist = Math.hypot(p.x - pt.x, p.z - pt.z);
+        if (dist < bestDist) { bestDist = dist; bestIdx = idx; }
+    }
+    const tangent = TrackGeometry.tangentAt(laneSource, bestIdx, true);
+    const tangentAngle = Math.atan2(tangent.tx, tangent.tz);
+    return {
+        distanceFromRacingLine: bestDist,
+        headingVsTangentDeg: normalizeAngle(p.angle - tangentAngle) * 180 / Math.PI
+    };
+}
+
 function updateBotInputs(game, deps) {
     const {
         effectiveMaxSpeed, handlePitReactionPress, io, lobbyId, wearLapsAtMedium,
-        accel, brakeMult, turnRateHigh, tuning: tuningOverrides, slipstreamMaxBoost
+        accel, brakeMult, turnRateHigh, tuning: tuningOverrides, slipstreamMaxBoost,
+        effectiveBrakeMult, corneringCapacity
     } = deps;
     const tuning = { ...DEFAULT_TUNING, ...(tuningOverrides || {}) };
     const track = game.track;
     const isQuali = game.phase === 'qualifying';
     const metersPerSample = track.lapLength / track.points.length;
-    const brakeDecel = accel * brakeMult;   // stessa decelerazione di frenata usata dalla fisica reale
+    // Decelerazione "storica" (costante, non wear-aware): resta l'unica
+    // usata da otherCarTargetSpeed (stima del ritmo dell'auto avanti per i
+    // sorpassi, esplicitamente fuori scope in questa fase — vedi
+    // docs/superpowers/specs/2026-07-28-f1-bot-grip-awareness-design.md)
+    // per garantire che quel calcolo resti byte-identico a prima.
+    const legacyBrakeDecel = accel * brakeMult;
 
     for (const p of Object.values(game.players)) {
         if (!p.isBot || p.finished) continue;
+
+        // Calcolata una volta per bot, prima di ogni ramo/uscita anticipata:
+        // pura diagnostica, non entra in nessuna decisione più sotto.
+        const diag = trajectoryDiagnostics(p, track);
 
         // Reazione al via ancora in corso (vedi BOT_RACE_START_REACTION_MIN/MAX_MS
         // e startRaceCountdown in f1GameSocket.js, che imposta questo timestamp
@@ -614,6 +747,12 @@ function updateBotInputs(game, deps) {
         // input, come un pilota che non ha ancora reagito al semaforo.
         if (p.botRaceReactionUntil && Date.now() < p.botRaceReactionUntil) {
             p.inputs = { throttle: 0, brake: 0, steer: 0 };
+            p._botDebug = {
+                state: 'WAITING_START', speed: p.speed,
+                targetSpeed: null, maxSpeed: null, gripCapacityFactor: null, brakeDecel: null,
+                throttle: 0, brake: 0, steer: 0, target: null, gapToAhead: null,
+                ...diag
+            };
             continue;
         }
 
@@ -643,6 +782,15 @@ function updateBotInputs(game, deps) {
                 const delay = BOT_PIT_REACTION_MIN_MS + t * (BOT_PIT_REACTION_MAX_MS - BOT_PIT_REACTION_MIN_MS);
                 setTimeout(() => handlePitReactionPress(io, lobbyId, game, p), delay);
             }
+            // Nessun input di guida scritto qui (il server/autopilota guida
+            // direttamente): throttle/brake/steer non sono applicabili questo
+            // tick, non si riportano valori residui del tick precedente.
+            p._botDebug = {
+                state: 'PIT_LANE', speed: p.speed,
+                targetSpeed: null, maxSpeed: null, gripCapacityFactor: null, brakeDecel: null,
+                throttle: null, brake: null, steer: null, target: null, gapToAhead: null,
+                ...diag
+            };
             continue;
         }
 
@@ -672,8 +820,26 @@ function updateBotInputs(game, deps) {
         const nearPitEntry = p.botHeadingToPits &&
             idxUntilPitEntry <= metersToSamples(BOT_PIT_APPROACH_M, track);
 
+        // Grip-awareness (Rif. docs/superpowers/specs/2026-07-28-f1-bot-grip-awareness-design.md):
+        // a flag spento (default) resta legacyBrakeDecel, byte-identico a
+        // oggi. effectiveBrakeMult è l'UNICA fonte della fisica di frenata
+        // qui: nessuna formula di decelerazione-da-usura propria.
+        const brakeDecel = isBotGripAwarenessActive()
+            ? accel * effectiveBrakeMult(p, isQuali)
+            : legacyBrakeDecel;
+
+        // Canale di debug (Rif. docs/superpowers/specs/2026-07-28-f1-bot-testbench-debug-design.md):
+        // puro snapshot di valori GIÀ calcolati più sotto, popolato dal ramo
+        // che viene davvero eseguito — nessun ricalcolo, nessuna nuova
+        // formula. `botState` riassume QUALE ramo/percorso è stato preso,
+        // non introduce una decisione nuova.
+        let botState = 'CRUISE';
+        let debugTargetSpeed = null, debugMaxSpeed = null, debugGripCapacityFactor = null;
+        let debugTarget = null, debugGapToAhead = null;
+
         let steer, throttle = 0, brake = 0;
         if (nearPitEntry) {
+            botState = 'PIT_ENTRY';
             // pitPath[0] è il punto di raccordo NATURALE (misurato: solo
             // ~12.5m di scostamento laterale dal centro pista a
             // pitEntryIndex, contro gli 11m di mezza carreggiata — quindi
@@ -693,6 +859,7 @@ function updateBotInputs(game, deps) {
             if (distToPitPath0 < BOT_PIT_LANE_FOLLOW_M && track.pitPath[1]) {
                 const wp = track.pitPath[1];
                 steer = steerToward(p.x, p.z, p.angle, wp.x, wp.z);
+                debugTarget = { x: wp.x, z: wp.z };
             } else {
                 const approachSamples = metersToSamples(BOT_PIT_APPROACH_M, track);
                 const tLinear = 1 - idxUntilPitEntry / approachSamples;   // 0 appena entrati nella finestra, 1 al distacco
@@ -711,6 +878,7 @@ function updateBotInputs(game, deps) {
                 const targetX = laneTarget.x * (1 - t) + track.pitPath[0].x * t;
                 const targetZ = laneTarget.z * (1 - t) + track.pitPath[0].z * t;
                 steer = steerToward(p.x, p.z, p.angle, targetX, targetZ);
+                debugTarget = { x: targetX, z: targetZ };
             }
             throttle = 0.6;   // rallenta in ingresso corsia box
         } else if (track.racingLine) {
@@ -736,12 +904,22 @@ function updateBotInputs(game, deps) {
             // frenata del 3%) FRENA per tornare al proprio target, buttando
             // via il vantaggio invece di sfruttarlo per rimontare.
             const maxSpeed = effectiveMaxSpeed(p, isQuali) * (p.inSlipstream ? (1 + (slipstreamMaxBoost || 0)) : 1);
+            // Grip-awareness: a flag spento resta 1 (nessun effetto).
+            // corneringCapacity è un moltiplicatore RELATIVO alla capacità
+            // laterale (non un grip assoluto) — la scala verso una velocità
+            // non è assunta 1:1, vedi BOT_GRIP_CAPACITY_EXPONENT.
+            const gripCapacityFactor = isBotGripAwarenessActive()
+                ? Math.pow(corneringCapacity(p, isQuali, maxSpeed), BOT_GRIP_CAPACITY_EXPONENT)
+                : 1;
+            debugMaxSpeed = maxSpeed;
+            debugGripCapacityFactor = gripCapacityFactor;
             const speedMs  = Math.max(5, botSpeedMs(p.speed));
             const lookM    = Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * rt.lookaheadTimeS);
             const lookSamples  = metersToSamples(lookM, track);
             const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
             const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
             const target = track.racingLine[targetIdx];
+            debugTarget = { x: target.x, z: target.z };
 
             steer = steerToward(p.x, p.z, p.angle, target.x, target.z, rt.steerGain);
 
@@ -749,7 +927,7 @@ function updateBotInputs(game, deps) {
             const scanSamples = metersToSamples(scanM, track);
             let targetSpeed = cornerTargetSpeed(
                 track.racingLine, p.trackIndex || 0, scanSamples, localSamples, metersPerSample,
-                p.speed, maxSpeed, brakeDecel, turnRateHigh, rt.cornerSpeedMargin
+                p.speed, maxSpeed, brakeDecel, turnRateHigh, rt.cornerSpeedMargin, gripCapacityFactor
             ) * p.botSpeedFactor * p.botLapPaceMult;
 
             if (!isQuali) {
@@ -770,21 +948,26 @@ function updateBotInputs(game, deps) {
                     // Ritmo-contro-ritmo, non ritmo-contro-fotogramma-a-caso
                     // (vedi otherCarTargetSpeed).
                     const leaderTargetSpeed = otherCarTargetSpeed(
-                        ahead.player, track.racingLine, track, metersPerSample, brakeDecel, turnRateHigh,
+                        ahead.player, track.racingLine, track, metersPerSample, legacyBrakeDecel, turnRateHigh,
                         effectiveMaxSpeed, rt.cornerSpeedMargin, rt.brakingDistanceMargin
                     );
+                    debugGapToAhead = ahead.gapM;
                     if (cornerIsMild && targetSpeed > leaderTargetSpeed * BOT_OVERTAKE_PACE_MARGIN) {
                         const overtake = overtakeOffset(
                             track.points, ahead.player.trackIndex || 0, ahead.player.x, ahead.player.z,
                             track.roadHalf, BOT_OVERTAKE_FRACTION, p.botOvertakeSide
                         );
                         steer = steerToward(p.x, p.z, p.angle, target.x + overtake.dx, target.z + overtake.dz, rt.steerGain);
+                        debugTarget = { x: target.x + overtake.dx, z: target.z + overtake.dz };
+                        botState = 'OVERTAKING';
                     } else {
                         const closeness = 1 - ahead.gapM / BOT_FOLLOW_GAP_M;
                         targetSpeed *= 1 - closeness * (1 - BOT_FOLLOW_MIN_FRACTION);
+                        botState = 'FOLLOWING';
                     }
                 }
             }
+            debugTargetSpeed = targetSpeed;
 
             // Controllo proporzionale (non on/off): la racing line è stata
             // ottimizzata assumendo questo tipo di controllo — vedi report,
@@ -801,8 +984,14 @@ function updateBotInputs(game, deps) {
             // scia qui il bot frena via il vantaggio della scia invece di
             // sfruttarlo.
             const maxSpeed = effectiveMaxSpeed(p, isQuali) * (p.inSlipstream ? (1 + (slipstreamMaxBoost || 0)) : 1);
+            // Grip-awareness: stessa logica del ramo racing-line sopra.
+            const gripCapacityFactor = isBotGripAwarenessActive()
+                ? Math.pow(corneringCapacity(p, isQuali, maxSpeed), BOT_GRIP_CAPACITY_EXPONENT)
+                : 1;
+            debugMaxSpeed = maxSpeed;
+            debugGripCapacityFactor = gripCapacityFactor;
             const speedMs  = Math.max(5, botSpeedMs(p.speed));   // floor: niente lookahead quasi-zero da fermi (es. alla partenza)
-            const lookM    = Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * BOT_LOOKAHEAD_TIME_S);
+            const lookM    = Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * tuning.lookaheadTimeS);
             const lookSamples  = metersToSamples(lookM, track);
             const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
             const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
@@ -836,11 +1025,12 @@ function updateBotInputs(game, deps) {
             // cornerApexNear). L'offset risultante resta comunque sommato al
             // punto mirato in anticipo, per una guida fluida.
             const apex = apexOffset(track.points, p.trackIndex || 0, scanSamples, localSamples, metersPerSample, track.roadHalf, tuning.apexMaxFraction);
-            steer = steerToward(p.x, p.z, p.angle, target.x + apex.dx, target.z + apex.dz);
+            steer = steerToward(p.x, p.z, p.angle, target.x + apex.dx, target.z + apex.dz, tuning.steerGain);
+            debugTarget = { x: target.x + apex.dx, z: target.z + apex.dz };
 
             let targetSpeed = cornerTargetSpeed(
                 track.points, p.trackIndex || 0, scanSamples, localSamples, metersPerSample,
-                p.speed, maxSpeed, brakeDecel, turnRateHigh, tuning.cornerSpeedMargin
+                p.speed, maxSpeed, brakeDecel, turnRateHigh, tuning.cornerSpeedMargin, gripCapacityFactor
             ) * p.botSpeedFactor * p.botLapPaceMult;
 
             // Solo in gara: in qualifica ogni pilota corre isolato (un vero
@@ -864,31 +1054,55 @@ function updateBotInputs(game, deps) {
                     // Ritmo-contro-ritmo, non ritmo-contro-fotogramma-a-caso
                     // (vedi otherCarTargetSpeed).
                     const leaderTargetSpeed = otherCarTargetSpeed(
-                        ahead.player, track.points, track, metersPerSample, brakeDecel, turnRateHigh,
+                        ahead.player, track.points, track, metersPerSample, legacyBrakeDecel, turnRateHigh,
                         effectiveMaxSpeed, tuning.cornerSpeedMargin, tuning.brakingDistanceMargin
                     );
+                    debugGapToAhead = ahead.gapM;
                     if (cornerIsMild && targetSpeed > leaderTargetSpeed * BOT_OVERTAKE_PACE_MARGIN) {
                         const overtake = overtakeOffset(
                             track.points, ahead.player.trackIndex || 0, ahead.player.x, ahead.player.z,
                             track.roadHalf, BOT_OVERTAKE_FRACTION, p.botOvertakeSide
                         );
-                        steer = steerToward(p.x, p.z, p.angle, target.x + overtake.dx, target.z + overtake.dz);
+                        steer = steerToward(p.x, p.z, p.angle, target.x + overtake.dx, target.z + overtake.dz, tuning.steerGain);
+                        debugTarget = { x: target.x + overtake.dx, z: target.z + overtake.dz };
+                        botState = 'OVERTAKING';
                     } else {
                         const closeness = 1 - ahead.gapM / BOT_FOLLOW_GAP_M;   // 0 = al limite, 1 = praticamente addosso
                         targetSpeed *= 1 - closeness * (1 - BOT_FOLLOW_MIN_FRACTION);
+                        botState = 'FOLLOWING';
                     }
                 }
             }
+            debugTargetSpeed = targetSpeed;
 
             if (p.speed < targetSpeed * (1 - BOT_SPEED_MARGIN)) throttle = 1;
             else if (p.speed > targetSpeed * (1 + BOT_SPEED_MARGIN)) brake = 1;
         }
+
+        // Rifinitura finale dello stato: se nessun ramo sopra ha già
+        // assegnato uno stato più specifico (PIT_ENTRY/OVERTAKING/FOLLOWING)
+        // e il bot sta effettivamente frenando quel tick, lo stato di
+        // default CRUISE viene precisato in BRAKE_FOR_CORNER — solo una
+        // lettura del valore `brake` già deciso sopra, nessun nuovo calcolo.
+        if (botState === 'CRUISE' && brake > 0) botState = 'BRAKE_FOR_CORNER';
 
         const noiseScale = nearPitEntry ? BOT_PIT_APPROACH_NOISE_SCALE : 1;
         steer += (Math.random() * 2 - 1) * p.botPrecisionNoise * noiseScale;
         steer = Math.max(-1, Math.min(1, steer));
 
         p.inputs = { throttle, brake, steer };
+        p._botDebug = {
+            state: botState,
+            speed: p.speed,
+            targetSpeed: debugTargetSpeed,
+            maxSpeed: debugMaxSpeed,
+            gripCapacityFactor: debugGripCapacityFactor,
+            brakeDecel,
+            throttle, brake, steer,
+            target: debugTarget,
+            gapToAhead: debugGapToAhead,
+            ...diag
+        };
     }
 }
 
@@ -897,5 +1111,7 @@ module.exports = {
     BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS,
     normalizeAngle, steerToward, lookaheadIndex, apexOffset, windowRadius, cornerApexNear, cornerTargetSpeed, overtakeOffset,
     nearestAheadPlayer, otherCarTargetSpeed, pickPostPitCompound, pickBotColors, estimateFinishTime,
-    createBots, updateBotInputs, shouldBotRepair
+    createBots, updateBotInputs, shouldBotRepair, isBotGripAwarenessActive,
+    BOT_CURVATURE_LOCAL_M, BOT_APEX_MAX_FRACTION, trajectoryDiagnostics,
+    adaptiveLookaheadMeters, isAdaptiveLookaheadActive, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M
 };

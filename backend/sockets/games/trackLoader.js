@@ -15,6 +15,12 @@ const QUALI_LEAD = 8;        // unità avanti alla linea di partenza per lo spaw
 const GRID_START = 40;       // unità dietro la linea di partenza per la pole
 const GRID_STAGGER = 5;      // arretramento extra per ogni posizione in griglia
 const GRID_LANE_OFFSET = 4;  // scostamento laterale di ogni corsia dal centro pista
+// Tolleranza per il warning "startFinish.angle quasi opposto al verso
+// geometrico" (vedi buildTrack sotto) — quanto vicino a 180 gradi di
+// differenza far scattare l'avviso. Abbastanza stretta da non disturbare
+// un traguardo volutamente leggermente obliquo (vedi commento su `angle`
+// sotto), abbastanza larga da coprire il caso reale riscontrato (~178°).
+const STARTFINISH_OPPOSITE_TOLERANCE_DEG = 30;
 
 const cache = new Map();
 
@@ -51,6 +57,19 @@ function loadRacelineData(id) {
     }
 }
 
+// Estratta da buildTrack (era inline) per essere riusabile anche da
+// f1Testbench.js — Rif. verifica C, docs/superpowers/specs/2026-07-28-f1-bot-testbench-debug-design.md:
+// il banco prova deve poter costruire una racing line sperimentale da un
+// file di controlli alternativo, riusando ESATTAMENTE questa stessa
+// interpolazione/proiezione, senza duplicarla.
+function buildRacingLineFromControls(points, lineControls) {
+    const offsets = interpolateLineControls(lineControls, points.length);
+    return points.map((pt, i) => {
+        const normal = TrackGeometry.normalAt(points, i, true);
+        return { x: pt.x + normal.nx * offsets[i], z: pt.z + normal.nz * offsets[i] };
+    });
+}
+
 function buildTrack(id, raw) {
     const points = TrackGeometry.sampleLoop(raw.controlPoints, SAMPLES);
     const lapLength = TrackGeometry.lapLength(points);
@@ -59,11 +78,7 @@ function buildTrack(id, raw) {
     const racelineData = loadRacelineData(id);
     let racingLine = null, racingLineTuning = null;
     if (racelineData) {
-        const offsets = interpolateLineControls(racelineData.lineControls, points.length);
-        racingLine = points.map((pt, i) => {
-            const normal = TrackGeometry.normalAt(points, i, true);
-            return { x: pt.x + normal.nx * offsets[i], z: pt.z + normal.nz * offsets[i] };
-        });
+        racingLine = buildRacingLineFromControls(points, racelineData.lineControls);
         racingLineTuning = racelineData.tuning || null;
     }
 
@@ -84,6 +99,26 @@ function buildTrack(id, raw) {
     const angle = (raw.startFinish && typeof raw.startFinish.angle === 'number')
         ? raw.startFinish.angle
         : Math.atan2(tangent.tx, tangent.tz);
+
+    // Verifica preventiva (Rif. audit 2026-07-29 "verso pista invertito su
+    // New Monza"): startFinish.angle è un orientamento LIBERO scelto
+    // nell'editor, mai verificato contro il verso geometrico reale (quello
+    // che governa davvero trackIndex/lookahead/cornerTargetSpeed/racingLine
+    // — la tangente sopra). Se l'utente orienta la maniglia nel verso
+    // opposto per errore, oggi nulla lo segnala finché non si vedono i bot
+    // fare un testacoda in partenza (bug reale riprodotto e diagnosticato
+    // su New Monza). Solo un warning in console: NESSUNA correzione
+    // automatica, per non alterare silenziosamente un dato — la scelta
+    // resta dell'utente, in editor.
+    if (raw.startFinish && typeof raw.startFinish.angle === 'number') {
+        const geometricAngle = Math.atan2(tangent.tx, tangent.tz);
+        let diffDeg = (angle - geometricAngle) * 180 / Math.PI;
+        while (diffDeg > 180) diffDeg -= 360;
+        while (diffDeg <= -180) diffDeg += 360;
+        if (Math.abs(Math.abs(diffDeg) - 180) < STARTFINISH_OPPOSITE_TOLERANCE_DEG) {
+            console.warn(`loadTrack: startFinish.angle della pista "${id}" e' quasi opposto (${diffDeg.toFixed(1)} gradi) al verso geometrico reale del tracciato (tangente ai controlPoints) - probabile inversione, da correggere in editor.`);
+        }
+    }
 
     // Punto lungo la tangente di partenza, con un offset laterale lungo la
     // normale — usato sia per lo spawn di qualifica sia per la griglia.
@@ -239,4 +274,4 @@ function deleteTrack(id) {
     cache.delete(id);
 }
 
-module.exports = { loadTrack, listTracks, saveTrack, deleteTrack };
+module.exports = { loadTrack, listTracks, saveTrack, deleteTrack, loadRacelineData, buildRacingLineFromControls };

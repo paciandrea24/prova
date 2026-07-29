@@ -5,7 +5,8 @@ const {
     PALETTE, normalizeAngle, steerToward, lookaheadIndex, apexOffset,
     cornerTargetSpeed, windowRadius, cornerApexNear, overtakeOffset, nearestAheadPlayer,
     pickPostPitCompound, pickBotColors, estimateFinishTime,
-    updateBotInputs, DEFAULT_TUNING, shouldBotRepair
+    updateBotInputs, DEFAULT_TUNING, shouldBotRepair, isBotGripAwarenessActive, trajectoryDiagnostics,
+    adaptiveLookaheadMeters, isAdaptiveLookaheadActive, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M
 } = require('./f1Bot.js');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 
@@ -186,6 +187,46 @@ test('windowRadius: curva a raggio noto => raggio coerente con arco/angolo', () 
     assert.ok(w.turnSigned > 0, 'curva verso destra (delta>0) => turnSigned positivo, come già verificato per apexOffset');
 });
 
+test('adaptiveLookaheadMeters: rettilineo (windowRadius nullo) => usa il tetto massimo', () => {
+    const points = buildConstantCurveTrack(200, 200, 0);   // dritto per tutti i campioni
+    const track = { points, lapLength: 200, roadHalf: 5 };
+    const L = adaptiveLookaheadMeters(points, 50, track, 0.1);
+    assert.equal(L, BOT_ADAPTIVE_LOOKAHEAD_MAX_M);
+});
+
+test('adaptiveLookaheadMeters: curva a raggio noto => coerente con sqrt(2*R*k*roadHalf) entro i limiti', () => {
+    // raggio geometrico atteso ~= 1/0.05 = 20 (passo unitario => metersPerSample=1,
+    // turn totale sulla finestra locale di 12 campioni = 0.6 rad, ben sotto
+    // pi — niente wraparound). k=1 (non il candidato di default 0.1) scelto
+    // apposta per tenere il risultato atteso (~14.1m) dentro l'intervallo
+    // [BOT_LOOKAHEAD_MIN_M, BOT_ADAPTIVE_LOOKAHEAD_MAX_M] = [10,120]: un k
+    // realistico (es. 0.1) darebbe qui un raw sotto il pavimento e
+    // testerebbe solo il clamp, non la formula stessa.
+    const points = buildConstantCurveTrack(300, 50, 0.05);
+    const track = { points, lapLength: 300, roadHalf: 5 };
+    const k = 1;
+    const L = adaptiveLookaheadMeters(points, 100, track, k);
+    const expectedApprox = Math.sqrt(2 * 20 * k * track.roadHalf);   // sqrt(200) ~= 14.14
+    assert.ok(Math.abs(L - expectedApprox) < 1, `atteso ~${expectedApprox.toFixed(2)}, ottenuto ${L.toFixed(2)}`);
+    assert.ok(L >= BOT_LOOKAHEAD_MIN_M - 1e-9, 'non deve scendere sotto il pavimento minimo');
+    assert.ok(L <= BOT_ADAPTIVE_LOOKAHEAD_MAX_M + 1e-9, 'non deve superare il tetto massimo');
+});
+
+test('adaptiveLookaheadMeters: e_target molto piccolo => clampato al pavimento minimo', () => {
+    // Stessa curva del test precedente (raggio ~20, turn totale sulla
+    // finestra locale = 12*0.05 = 0.6 rad, ben sotto pi — niente wraparound
+    // di normalizeAngle su windowRadius). NON usare un delta più grande per
+    // "stringere" il raggio: con la finestra fissa di 12 campioni
+    // (BOT_CURVATURE_LOCAL_M/metersPerSample), un turn totale vicino o oltre
+    // pi fa avvolgere l'angolo (normalizeAngle) e restituisce un raggio
+    // fittizio MOLTO più grande del vero raggio geometrico — bug di
+    // metodologia già evitato qui scegliendo k piccolo invece del raggio.
+    const points = buildConstantCurveTrack(300, 50, 0.05);
+    const track = { points, lapLength: 300, roadHalf: 5 };
+    const L = adaptiveLookaheadMeters(points, 100, track, 0.001);   // e_target piccolissimo apposta
+    assert.equal(L, BOT_LOOKAHEAD_MIN_M);
+});
+
 test('cornerApexNear: rettilineo puro => null', () => {
     // lookaheadIndex chiude sempre l'array modulo n (corretto per un
     // tracciato vero, che è un loop chiuso) — ma questo rettilineo sintetico
@@ -288,6 +329,52 @@ test('cornerTargetSpeed: già più lenti del necessario => la curva non è più 
     const track = buildConstantCurveTrack(60, 10, 1 / 20);
     const target = cornerTargetSpeed(track, 5, 40, 4, 1, 0.5, 6, 1, 0.05, 1);
     assert.equal(target, 6, `atteso 6 (già più lenti del richiesto dalla curva), ottenuto ${target}`);
+});
+
+// ---- gripCapacityFactor (Rif.
+// docs/superpowers/specs/2026-07-28-f1-bot-grip-awareness-design.md): 11°
+// parametro opzionale, default 1 -> comportamento invariato se omesso. ----
+
+test('cornerTargetSpeed: gripCapacityFactor omesso => identico al comportamento di oggi (default 1)', () => {
+    const track = buildConstantCurveTrack(60, 10, 1 / 20);
+    const withDefault = cornerTargetSpeed(track, 5, 40, 4, 1, 6, 6, 1, 0.05, 1);
+    const withExplicit1 = cornerTargetSpeed(track, 5, 40, 4, 1, 6, 6, 1, 0.05, 1, 1);
+    assert.equal(withDefault, withExplicit1, 'omettere il parametro deve equivalere a passare 1');
+});
+
+test('cornerTargetSpeed: gripCapacityFactor < 1 => velocità di curva più cauta (gomma usurata)', () => {
+    const track = buildConstantCurveTrack(60, 10, 1 / 20);
+    const full = cornerTargetSpeed(track, 5, 40, 4, 1, 6, 6, 1, 0.05, 1, 1);
+    const worn = cornerTargetSpeed(track, 5, 40, 4, 1, 6, 6, 1, 0.05, 1, 0.5);
+    assert.ok(worn < full, `atteso target più basso con capacità ridotta: full=${full}, worn=${worn}`);
+});
+
+test('cornerTargetSpeed: gripCapacityFactor > 1 => velocità di curva più alta (downforce), ma mai oltre maxSpeed', () => {
+    const track = buildConstantCurveTrack(60, 10, 1 / 20);
+    const full = cornerTargetSpeed(track, 5, 40, 4, 1, 6, 6, 1, 0.05, 1, 1);
+    const boosted = cornerTargetSpeed(track, 5, 40, 4, 1, 6, 6, 1, 0.05, 1, 1.15);
+    assert.ok(boosted > full, `atteso target più alto con capacità aumentata: full=${full}, boosted=${boosted}`);
+    assert.ok(boosted <= 6, `mai oltre maxSpeed=6, ottenuto ${boosted}`);
+});
+
+test('isBotGripAwarenessActive: spento di default', () => {
+    delete process.env.F1_BOT_GRIP_AWARENESS;
+    assert.equal(isBotGripAwarenessActive(), false);
+});
+
+test('isBotGripAwarenessActive: attivo solo con "1" esplicito', () => {
+    process.env.F1_BOT_GRIP_AWARENESS = '1';
+    try {
+        assert.equal(isBotGripAwarenessActive(), true);
+    } finally {
+        delete process.env.F1_BOT_GRIP_AWARENESS;
+    }
+    process.env.F1_BOT_GRIP_AWARENESS = 'true';   // non "1" esatto -> resta spento
+    try {
+        assert.equal(isBotGripAwarenessActive(), false, 'solo "1" esatto attiva il flag, stesso pattern di F1_CORNERING_GRIP_MODEL');
+    } finally {
+        delete process.env.F1_BOT_GRIP_AWARENESS;
+    }
 });
 
 test('pickPostPitCompound: pochi giri restanti => soft', () => {
@@ -457,4 +544,287 @@ test('updateBotInputs: durante la reazione al via il bot resta fermo (nessun inp
     const pReady = makePlayer(Date.now() - 1000);   // reazione già scaduta
     updateBotInputs({ track, phase: 'race', players: { A: pReady } }, deps);
     assert.equal(pReady.inputs.throttle, 1, 'atteso guida normale (pieno gas su rettilineo) dopo la reazione');
+});
+
+// ---- Grip-awareness end-to-end (Rif.
+// docs/superpowers/specs/2026-07-28-f1-bot-grip-awareness-design.md):
+// verifica il WIRING dentro updateBotInputs (flag -> deps.corneringCapacity/
+// deps.effectiveBrakeMult consultate o no), non le formule reali di
+// CorneringGripModel/BrakingModel (già coperte da CorneringGripModel.test.js
+// e dal riuso diretto di effectiveBrakeMult). ----
+
+// botLapSeen preimpostato a 0 come nelle fixture updateBotInputs sopra:
+// con lap=0 e trackIndex entro il primo "segmento di ritmo" (paceSegmentSamples
+// = ceil(120/BOT_LAP_PACE_SEGMENTS=4) = 30 > trackIndex=5), paceSegment
+// calcolato è già 0 => nessuna ri-estrazione random di botLapPaceMult al
+// primo tick, risultati deterministici e confrontabili con assert.deepEqual.
+// straightSamples=30 (curva a 25m dal bot, radius≈20) verificato
+// empiricamente come il punto in cui, a velocità 6 e coi mock sotto, gomma
+// fresca non deve ancora frenare (curva fuori dalla propria distanza di
+// frenata) mentre gomma usurata sì (capacità ridotta => distanza di
+// frenata necessaria più lunga) — altrimenti a curva troppo vicina
+// entrambe saturano su brake=1 e il confronto non distinguerebbe nulla.
+function makeGripAwarenessGame(tyreWear, phase = 'race') {
+    const points = buildConstantCurveTrack(120, 30, 1 / 20);
+    const track = {
+        points, lapLength: points.length, roadHalf: 8, totalLaps: 3,
+        pitEntryIndex: 9999, pitPath: [{ x: 0, z: 0 }, { x: 0, z: 0 }]
+    };
+    const p = {
+        x: points[5].x, z: points[5].z, angle: 0,
+        speed: 6, vx: 0, vz: 0,
+        inputs: { throttle: 0, brake: 0, steer: 0 },
+        finished: false, lap: 0, botLapSeen: 0,
+        trackIndex: 5, tyreWear, compound: 'medium', damage: 0,
+        pitting: false, pitAutoState: null, pitPhase: null,
+        isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+        botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false,
+        botPitThreshold: 100, hasPitted: false
+    };
+    return { game: { phase, track, players: { bot1: p } }, p };
+}
+
+function makeGripAwarenessDeps(extra = {}) {
+    return {
+        effectiveMaxSpeed: () => 6,
+        handlePitReactionPress: () => {},
+        io: { to: () => ({ emit: () => {} }) },
+        lobbyId: 'test',
+        wearLapsAtMedium: 5, accel: 1, brakeMult: 1, turnRateHigh: 0.05,
+        slipstreamMaxBoost: 0,
+        // Mock: NON le formule reali (già testate altrove) — solo per
+        // verificare che updateBotInputs le consulti (o no) in base al flag,
+        // con isQuali correttamente inoltrato.
+        effectiveBrakeMult: (pl, isQuali) => isQuali ? 1 : 1 - pl.tyreWear / 200,
+        corneringCapacity: (pl, isQuali) => isQuali ? 1 : 1 - pl.tyreWear / 200,
+        ...extra
+    };
+}
+
+test('updateBotInputs: F1_BOT_GRIP_AWARENESS spento -> comportamento identico indipendentemente da tyreWear', () => {
+    delete process.env.F1_BOT_GRIP_AWARENESS;
+    const fresh = makeGripAwarenessGame(0);
+    const worn = makeGripAwarenessGame(90);
+    updateBotInputs(fresh.game, makeGripAwarenessDeps());
+    updateBotInputs(worn.game, makeGripAwarenessDeps());
+    assert.deepEqual(worn.p.inputs, fresh.p.inputs, 'a flag spento tyreWear non deve influenzare gli input del bot');
+});
+
+test('updateBotInputs: F1_BOT_GRIP_AWARENESS acceso -> gomma usurata frena/rallenta prima di gomma fresca', () => {
+    process.env.F1_BOT_GRIP_AWARENESS = '1';
+    try {
+        const fresh = makeGripAwarenessGame(0);
+        const worn = makeGripAwarenessGame(90);
+        updateBotInputs(fresh.game, makeGripAwarenessDeps());
+        updateBotInputs(worn.game, makeGripAwarenessDeps());
+        assert.notDeepEqual(worn.p.inputs, fresh.p.inputs, 'a flag acceso tyreWear deve influenzare gli input del bot');
+    } finally {
+        delete process.env.F1_BOT_GRIP_AWARENESS;
+    }
+});
+
+test('updateBotInputs: F1_BOT_GRIP_AWARENESS acceso ma isQuali=true -> deps consultate con isQuali=true (mock neutro in questo scenario)', () => {
+    process.env.F1_BOT_GRIP_AWARENESS = '1';
+    try {
+        const fresh = makeGripAwarenessGame(0, 'qualifying');
+        const worn = makeGripAwarenessGame(90, 'qualifying');
+        updateBotInputs(fresh.game, makeGripAwarenessDeps());
+        updateBotInputs(worn.game, makeGripAwarenessDeps());
+        assert.deepEqual(worn.p.inputs, fresh.p.inputs, 'isQuali deve arrivare a true a deps.corneringCapacity/effectiveBrakeMult (il mock lo rende neutro, a differenza delle formule reali dove solo la componente usura è neutra — vedi spec)');
+    } finally {
+        delete process.env.F1_BOT_GRIP_AWARENESS;
+    }
+});
+
+test('updateBotInputs: gomma nuova (tyreWear=0) a flag acceso non è più prudente della gomma nuova a flag spento', () => {
+    // Con questo mock, corneringCapacity/effectiveBrakeMult a tyreWear=0
+    // restano 1 (nominali): il flag acceso non deve MAI produrre un
+    // throttle più basso o un brake più alto rispetto al flag spento in
+    // questa condizione — altrimenti il wiring (segno/ordine dei fattori)
+    // sarebbe sbagliato.
+    delete process.env.F1_BOT_GRIP_AWARENESS;
+    const off = makeGripAwarenessGame(0);
+    updateBotInputs(off.game, makeGripAwarenessDeps());
+    process.env.F1_BOT_GRIP_AWARENESS = '1';
+    try {
+        const on = makeGripAwarenessGame(0);
+        updateBotInputs(on.game, makeGripAwarenessDeps());
+        assert.deepEqual(on.p.inputs, off.p.inputs, 'gomma nuova: nessuna differenza tra flag on/off, il bot non deve diventare più cauto senza motivo fisico');
+    } finally {
+        delete process.env.F1_BOT_GRIP_AWARENESS;
+    }
+});
+
+// ---- _botDebug (Priorità 1/3, canale di debug per il banco prova bot): puro
+// snapshot dei valori già calcolati da updateBotInputs — questi test
+// verificano che il canale rifletta fedelmente le decisioni prese, MAI che
+// introduca nuovi calcoli (le formule sono già coperte dai test sopra). ----
+
+test('_botDebug: throttle/brake/steer coincidono ESATTAMENTE con p.inputs, in ogni scenario', () => {
+    for (const tyreWear of [0, 90]) {
+        for (const flag of [false, true]) {
+            if (flag) process.env.F1_BOT_GRIP_AWARENESS = '1'; else delete process.env.F1_BOT_GRIP_AWARENESS;
+            const { game, p } = makeGripAwarenessGame(tyreWear);
+            updateBotInputs(game, makeGripAwarenessDeps());
+            assert.deepEqual(
+                { throttle: p._botDebug.throttle, brake: p._botDebug.brake, steer: p._botDebug.steer },
+                p.inputs,
+                `_botDebug deve rispecchiare p.inputs (tyreWear=${tyreWear}, flag=${flag})`
+            );
+        }
+    }
+    delete process.env.F1_BOT_GRIP_AWARENESS;
+});
+
+test('_botDebug: stato WAITING_START durante la reazione al via, valori fisici non calcolati => null', () => {
+    const points = buildConstantCurveTrack(200, 200, 0);
+    const track = { points, lapLength: 200, roadHalf: 5 };
+    const deps = {
+        effectiveMaxSpeed: () => 6, handlePitReactionPress: () => {}, io: { to: () => ({ emit: () => {} }) },
+        lobbyId: 'test', wearLapsAtMedium: 5, accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052
+    };
+    const p = {
+        x: points[0].x, z: points[0].z, angle: 0, speed: 0, vx: 0, vz: 0,
+        inputs: { throttle: 0, brake: 0, steer: 0 }, finished: false, lap: 0, botLapSeen: 0,
+        trackIndex: 0, tyreWear: 0, compound: 'medium',
+        pitting: false, pitAutoState: null, pitPhase: null,
+        isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+        botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false,
+        botRaceReactionUntil: Date.now() + 60000
+    };
+    updateBotInputs({ track, phase: 'race', players: { A: p } }, deps);
+    assert.equal(p._botDebug.state, 'WAITING_START');
+    assert.equal(p._botDebug.targetSpeed, null);
+    assert.equal(p._botDebug.maxSpeed, null);
+    assert.equal(p._botDebug.gripCapacityFactor, null);
+    assert.equal(p._botDebug.brakeDecel, null);
+});
+
+test('_botDebug: stato PIT_LANE quando l\'autopilota box guida (nessun input scritto, throttle/brake/steer null)', () => {
+    const points = buildConstantCurveTrack(200, 200, 0);
+    const track = { points, lapLength: 200, roadHalf: 5, pitEntryIndex: 0, pitPath: [{ x: 0, z: 0 }, { x: 0, z: 0 }] };
+    const deps = {
+        effectiveMaxSpeed: () => 6, handlePitReactionPress: () => {}, io: { to: () => ({ emit: () => {} }) },
+        lobbyId: 'test', wearLapsAtMedium: 5, accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052
+    };
+    const p = {
+        x: points[0].x, z: points[0].z, angle: 0, speed: 3.1, vx: 0, vz: 0,
+        inputs: { throttle: 1, brake: 0, steer: 0 }, finished: false, lap: 0, botLapSeen: 0,
+        trackIndex: 0, tyreWear: 0, compound: 'medium',
+        pitting: false, pitAutoState: 'entering', pitPhase: null,
+        isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+        botOvertakeSide: 1, botHeadingToPits: true, botPitReactionScheduled: false
+    };
+    updateBotInputs({ track, phase: 'race', players: { A: p } }, deps);
+    assert.equal(p._botDebug.state, 'PIT_LANE');
+    assert.equal(p._botDebug.throttle, null);
+    assert.equal(p._botDebug.brake, null);
+    assert.equal(p._botDebug.steer, null);
+});
+
+test('_botDebug: stato CRUISE su rettilineo puro (pieno gas, nessuna curva/traffico)', () => {
+    const points = buildConstantCurveTrack(200, 200, 0);
+    const track = { points, lapLength: 200, roadHalf: 5 };
+    const deps = {
+        effectiveMaxSpeed: () => 6, handlePitReactionPress: () => {}, io: { to: () => ({ emit: () => {} }) },
+        lobbyId: 'test', wearLapsAtMedium: 5, accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052
+    };
+    const p = {
+        x: points[0].x, z: points[0].z, angle: 0, speed: 0, vx: 0, vz: 0,
+        inputs: { throttle: 0, brake: 0, steer: 0 }, finished: false, lap: 0, botLapSeen: 0,
+        trackIndex: 0, tyreWear: 0, compound: 'medium',
+        pitting: false, pitAutoState: null, pitPhase: null,
+        isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+        botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false
+    };
+    updateBotInputs({ track, phase: 'race', players: { A: p } }, deps);
+    assert.equal(p._botDebug.state, 'CRUISE');
+    assert.equal(p._botDebug.throttle, 1);
+    assert.equal(p._botDebug.brake, 0);
+    assert.ok(p._botDebug.maxSpeed > 0, 'maxSpeed deve essere valorizzato nel ramo di guida normale');
+    assert.equal(p._botDebug.gripCapacityFactor, 1, 'flag spento => fattore neutro 1, non null (è comunque calcolato)');
+    assert.ok(p._botDebug.brakeDecel > 0, 'brakeDecel deve essere valorizzato nel ramo di guida normale');
+});
+
+test('_botDebug: stato BRAKE_FOR_CORNER quando il bot frena per una curva vicina', () => {
+    const track = { points: buildConstantCurveTrack(60, 5, 1 / 20), lapLength: 60, roadHalf: 5, pitEntryIndex: 9999, pitPath: [{ x: 0, z: 0 }, { x: 0, z: 0 }] };
+    const deps = {
+        effectiveMaxSpeed: () => 6, handlePitReactionPress: () => {}, io: { to: () => ({ emit: () => {} }) },
+        lobbyId: 'test', wearLapsAtMedium: 5, accel: 1, brakeMult: 1, turnRateHigh: 0.05
+    };
+    const p = {
+        x: 0, z: 0, angle: 0, speed: 6, vx: 0, vz: 0,
+        inputs: { throttle: 0, brake: 0, steer: 0 }, finished: false, lap: 0, botLapSeen: 0,
+        trackIndex: 0, tyreWear: 0, compound: 'medium',
+        pitting: false, pitAutoState: null, pitPhase: null,
+        isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+        botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false, botPitThreshold: 100
+    };
+    updateBotInputs({ track, phase: 'race', players: { A: p } }, deps);
+    assert.equal(p._botDebug.brake, 1, 'precondizione: il bot deve stare davvero frenando in questo scenario');
+    assert.equal(p._botDebug.state, 'BRAKE_FOR_CORNER');
+    assert.ok(p._botDebug.targetSpeed < p._botDebug.maxSpeed, 'targetSpeed deve riflettere il limite di curva, sotto maxSpeed');
+});
+
+// ---- trajectoryDiagnostics (Rif. richiesta utente 2026-07-29, audit guida
+// via banco prova): pura lettura, non deve mai influenzare le decisioni del
+// bot (già garantito per costruzione: chiamata una volta e solo spalmata
+// dentro _botDebug, mai letta altrove — questi test verificano solo che i
+// due numeri riflettano correttamente posizione/orientamento reali).
+// trackIndex=30 (non 0): buildConstantCurveTrack non è un vero loop, indice
+// 0 confina con un "giunto" fittizio con l'ultimo campione (stesso
+// avvertimento già documentato sopra per apexOffset/cornerApexNear). ----
+
+test('trajectoryDiagnostics: bot esattamente sulla linea, prua allineata alla tangente => entrambi ~0', () => {
+    const track = { points: buildConstantCurveTrack(60, 60, 0), racingLine: null };   // rettilineo puro lungo +z
+    const p = { x: 0, z: 30, angle: 0, trackIndex: 30 };
+    const diag = trajectoryDiagnostics(p, track);
+    assert.ok(diag.distanceFromRacingLine < 1e-9, `atteso ~0, ottenuto ${diag.distanceFromRacingLine}`);
+    assert.ok(Math.abs(diag.headingVsTangentDeg) < 1e-6, `atteso ~0, ottenuto ${diag.headingVsTangentDeg}`);
+});
+
+test('trajectoryDiagnostics: bot spostato lateralmente dalla linea => distanceFromRacingLine riflette lo scarto reale', () => {
+    const track = { points: buildConstantCurveTrack(60, 60, 0), racingLine: null };
+    const p = { x: 5, z: 30, angle: 0, trackIndex: 30 };
+    const diag = trajectoryDiagnostics(p, track);
+    assert.ok(Math.abs(diag.distanceFromRacingLine - 5) < 1e-6, `atteso ~5, ottenuto ${diag.distanceFromRacingLine}`);
+});
+
+test('trajectoryDiagnostics: prua ruotata di 90° rispetto alla tangente => headingVsTangentDeg ~90', () => {
+    const track = { points: buildConstantCurveTrack(60, 60, 0), racingLine: null };
+    const p = { x: 0, z: 30, angle: Math.PI / 2, trackIndex: 30 };
+    const diag = trajectoryDiagnostics(p, track);
+    assert.ok(Math.abs(diag.headingVsTangentDeg - 90) < 1e-4, `atteso ~90, ottenuto ${diag.headingVsTangentDeg}`);
+});
+
+test('trajectoryDiagnostics: usa track.racingLine come riferimento quando presente, non track.points', () => {
+    const points = buildConstantCurveTrack(60, 60, 0);
+    // Racing line spostata di 3 unità rispetto al centro pista in ogni punto.
+    const racingLine = points.map(pt => ({ x: pt.x + 3, z: pt.z }));
+    const track = { points, racingLine };
+    const p = { x: 3, z: 30, angle: 0, trackIndex: 30 };   // sulla racing line, non sul centro pista
+    const diag = trajectoryDiagnostics(p, track);
+    assert.ok(diag.distanceFromRacingLine < 1e-9, `atteso ~0 (sulla racing line), ottenuto ${diag.distanceFromRacingLine}`);
+});
+
+test('_botDebug: distanceFromRacingLine/headingVsTangentDeg presenti in OGNI stato, non solo nei rami di guida attiva', () => {
+    const points = buildConstantCurveTrack(200, 200, 0);
+    const track = { points, lapLength: 200, roadHalf: 5 };
+    const p = {
+        x: 0, z: 30, angle: 0.05, vx: 0, vz: 0, speed: 0,
+        inputs: { throttle: 0, brake: 0, steer: 0 }, finished: false, lap: 0, botLapSeen: 0,
+        trackIndex: 30, tyreWear: 0, compound: 'medium',
+        pitting: false, pitAutoState: null, pitPhase: null,
+        isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+        botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false,
+        botRaceReactionUntil: Date.now() + 60000   // ramo WAITING_START
+    };
+    const deps = {
+        effectiveMaxSpeed: () => 6, handlePitReactionPress: () => {}, io: { to: () => ({ emit: () => {} }) },
+        lobbyId: 'test', wearLapsAtMedium: 5, accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052
+    };
+    updateBotInputs({ track, phase: 'race', players: { A: p } }, deps);
+    assert.equal(p._botDebug.state, 'WAITING_START');
+    assert.ok(typeof p._botDebug.distanceFromRacingLine === 'number', 'presente anche in WAITING_START, non solo nei rami di guida');
+    assert.ok(typeof p._botDebug.headingVsTangentDeg === 'number', 'presente anche in WAITING_START, non solo nei rami di guida');
 });

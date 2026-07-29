@@ -63,6 +63,45 @@ test('getSuspensionNoise: zero a sospensioni sane, progressivo (nessuna soglia) 
     assert.ok(high > low, 'monotono crescente col danno');
 });
 
+// ---- Fase 3 (Rif. docs/superpowers/specs/2026-07-28-f1-aerodynamics-model-design.md):
+// penalità aero da danno — riusano frontWing/floor, nessun quinto componente ----
+
+test('getFrontWingDragPenalty: 0 a componente sano, MAX a componente distrutto, fallback sicuro', () => {
+    const { getFrontWingDragPenalty, FRONT_WING_DRAG_PENALTY_MAX } = DamageModel;
+    assert.equal(getFrontWingDragPenalty(undefined), 0, 'fallback sicuro senza damageParts (tool offline)');
+    assert.equal(getFrontWingDragPenalty({ frontWing: 0 }), 0);
+    assert.ok(Math.abs(getFrontWingDragPenalty({ frontWing: 100 }) - FRONT_WING_DRAG_PENALTY_MAX) < 1e-9);
+});
+
+test('getFrontWingDragPenalty: lineare nel danno (50% -> metà penalità massima), ignora gli altri componenti', () => {
+    const { getFrontWingDragPenalty, FRONT_WING_DRAG_PENALTY_MAX } = DamageModel;
+    const half = getFrontWingDragPenalty({ frontWing: 50, floor: 100, engine: 100, suspension: 100 });
+    assert.ok(Math.abs(half - FRONT_WING_DRAG_PENALTY_MAX / 2) < 1e-9, 'legge solo frontWing, non gli altri componenti');
+});
+
+test('getFloorDownforcePenalty: 0 a componente sano, MAX a componente distrutto, fallback sicuro', () => {
+    const { getFloorDownforcePenalty, FLOOR_DOWNFORCE_PENALTY_MAX } = DamageModel;
+    assert.equal(getFloorDownforcePenalty(undefined), 0, 'fallback sicuro senza damageParts (tool offline)');
+    assert.equal(getFloorDownforcePenalty({ floor: 0 }), 0);
+    assert.ok(Math.abs(getFloorDownforcePenalty({ floor: 100 }) - FLOOR_DOWNFORCE_PENALTY_MAX) < 1e-9);
+});
+
+test('getFloorDownforcePenalty: ignora frontWing/engine/suspension (isolato al proprio componente)', () => {
+    const { getFloorDownforcePenalty } = DamageModel;
+    assert.equal(getFloorDownforcePenalty({ floor: 0, frontWing: 100, engine: 100, suspension: 100 }), 0);
+});
+
+test('getFloorDownforcePenalty è indipendente da getFloorGripPenalty (costanti diverse, nessuna derivazione incrociata)', () => {
+    const { getFloorDownforcePenalty, getFloorGripPenalty, FLOOR_DOWNFORCE_PENALTY_MAX, DAMAGE_GRIP_PENALTY_MAX } = DamageModel;
+    assert.notEqual(FLOOR_DOWNFORCE_PENALTY_MAX, DAMAGE_GRIP_PENALTY_MAX);
+    assert.notEqual(getFloorDownforcePenalty({ floor: 50 }), getFloorGripPenalty({ floor: 50 }));
+});
+
+test('createDamageParts: resta a 4 componenti, nessun quinto campo aero introdotto', () => {
+    const parts = DamageModel.createDamageParts();
+    assert.deepEqual(Object.keys(parts).sort(), ['engine', 'floor', 'frontWing', 'suspension']);
+});
+
 test('applyCarCollisionDamage/applyBarrierDamage: continuano a mantenere p.damage come numero valido (retrocompatibilità HUD/tool offline)', () => {
     const { applyCarCollisionDamage, applyBarrierDamage } = DamageModel;
     const a = { damage: 0, collisionPenaltyMs: 0, pendingCollisionPenaltyEvents: [] };
