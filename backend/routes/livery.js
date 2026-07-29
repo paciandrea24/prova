@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { verifyFirebaseToken } = require('../auth/verifyFirebaseToken');
 const { saveLivery, getLivery } = require('../store/liveryStore');
+const { generateTheme } = require('../services/themeGenerator');
 
 // POST /api/livery — protetta: salva SOLO la livrea dell'uid verificato
 // dal token, mai un uid letto dal body (evita che un utente salvi la
@@ -18,6 +19,24 @@ router.post('/api/livery', verifyFirebaseToken, async (req, res) => {
     } catch (error) {
         console.error('❌ Errore salvataggio livrea:', error.message);
         res.status(500).json({ error: 'Errore salvataggio livrea' });
+    }
+});
+
+// POST /api/livery/generate-theme — protetta: la chiamata a Gemini ha un
+// costo reale, non va lasciata pubblica (stesso motivo per cui il
+// salvataggio richiede token, qui è per evitare abuso/costo, non
+// impersonificazione).
+router.post('/api/livery/generate-theme', verifyFirebaseToken, async (req, res) => {
+    const { prompt } = req.body || {};
+    if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+        return res.status(400).json({ error: 'prompt mancante o non valido' });
+    }
+    try {
+        const theme = await generateTheme(prompt.trim());
+        res.status(200).json(theme);
+    } catch (error) {
+        console.error('❌ Errore generazione tema:', error.message);
+        res.status(500).json({ error: 'Errore generazione tema' });
     }
 });
 
