@@ -1,6 +1,42 @@
 // frontend/livery.js
 let scene, camera, renderer, controls;
 let carGroup = null;
+let currentParams = { pattern: 'racing_stripes', primary: '#d40000', secondary: '#ffffff', accent: '#101010' };
+
+function hexStringToInt(hex) {
+    return parseInt(hex.replace('#', ''), 16);
+}
+
+// Ricalcola l'anteprima dai valori CORRENTI di currentParams — stessa
+// funzione richiamata sia dai controlli manuali (Step 3) sia dal risultato
+// della generazione AI (Task 5), nessuna logica duplicata.
+function applyCurrentLivery() {
+    if (!carGroup) return;
+    LiveryPattern.applyVoxelLiveryPattern(carGroup, {
+        pattern: currentParams.pattern,
+        primary: hexStringToInt(currentParams.primary),
+        secondary: hexStringToInt(currentParams.secondary),
+        accent: hexStringToInt(currentParams.accent)
+    });
+}
+
+function setActivePatternButton() {
+    document.querySelectorAll('.pattern-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.pattern === currentParams.pattern);
+    });
+}
+
+function applyThemeToControls(theme) {
+    currentParams.pattern = theme.patternStyle;
+    currentParams.primary = theme.primaryPaint;
+    currentParams.secondary = theme.secondaryPaint;
+    currentParams.accent = theme.accentPaint;
+    document.getElementById('col-primary').value = theme.primaryPaint;
+    document.getElementById('col-secondary').value = theme.secondaryPaint;
+    document.getElementById('col-accent').value = theme.accentPaint;
+    setActivePatternButton();
+    applyCurrentLivery();
+}
 
 function showToast(message, type = 'info') {
     let container = document.querySelector('.toast-container');
@@ -96,6 +132,68 @@ document.addEventListener('DOMContentLoaded', () => {
         initScene();
         loadCarForPreview((group) => {
             carGroup = group;
+            // Pre-carica una livrea già salvata, se esiste — 404 (prima
+            // volta) è normale, si resta sui default di currentParams.
+            fetch('/api/livery/' + user.uid)
+                .then((res) => (res.ok ? res.json() : null))
+                .then((doc) => {
+                    if (doc && doc.liveryParams) {
+                        currentParams.pattern = doc.liveryParams.pattern || currentParams.pattern;
+                        currentParams.primary = doc.liveryParams.primary || currentParams.primary;
+                        currentParams.secondary = doc.liveryParams.secondary || currentParams.secondary;
+                        currentParams.accent = doc.liveryParams.accent || currentParams.accent;
+                        document.getElementById('col-primary').value = currentParams.primary;
+                        document.getElementById('col-secondary').value = currentParams.secondary;
+                        document.getElementById('col-accent').value = currentParams.accent;
+                    }
+                    setActivePatternButton();
+                    applyCurrentLivery();
+                })
+                .catch(() => { setActivePatternButton(); applyCurrentLivery(); });
+        });
+
+        document.querySelectorAll('.pattern-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                currentParams.pattern = btn.dataset.pattern;
+                setActivePatternButton();
+                applyCurrentLivery();
+            });
+        });
+        document.getElementById('col-primary').addEventListener('input', (e) => {
+            currentParams.primary = e.target.value; applyCurrentLivery();
+        });
+        document.getElementById('col-secondary').addEventListener('input', (e) => {
+            currentParams.secondary = e.target.value; applyCurrentLivery();
+        });
+        document.getElementById('col-accent').addEventListener('input', (e) => {
+            currentParams.accent = e.target.value; applyCurrentLivery();
+        });
+
+        document.getElementById('btn-save').addEventListener('click', async () => {
+            if (!carGroup) return;
+            const liveryColors = {};
+            carGroup.traverse((child) => {
+                if (child.isMesh && child.geometry.attributes.color) {
+                    liveryColors[child.name] = Array.from(child.geometry.attributes.color.array);
+                }
+            });
+            if (!Object.keys(liveryColors).length) {
+                showToast('Nothing to save yet.', 'error');
+                return;
+            }
+            try {
+                const idToken = await user.getIdToken();
+                const res = await fetch('/api/livery', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                    body: JSON.stringify({ liveryColors, liveryParams: currentParams })
+                });
+                if (!res.ok) throw new Error('save failed: ' + res.status);
+                showToast('Livery saved!', 'success');
+            } catch (err) {
+                console.error('[livery] save error', err);
+                showToast('Could not save livery. Try again.', 'error');
+            }
         });
     });
 });
