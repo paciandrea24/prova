@@ -168,7 +168,14 @@
     // modulo: in f1.js era una variabile di modulo condivisa tra le
     // chiamate, ma ricrearla qui non cambia il comportamento (il costo è
     // trascurabile).
-    function loadCarModel(playerColor, onReady, { scene, listener, engineBuffer }) {
+    // liveryColors (opzionale, 4b/B'): { [meshName]: number[]|Float32Array }
+    // — una tripletta RGB per vertice, stesso ordine dell'attributo
+    // "position" di quella mesh (Chassis/Nose/Plank). Se presente per una
+    // mesh, sovrascrive la tinta-texture di recolorLiveryTexture con
+    // colori-per-voxel già calcolati altrove (non da questa funzione — vedi
+    // docs/superpowers/specs/2026-07-29-f1-livery-precomputed-colors-design.md).
+    // Se assente: comportamento identico a oggi, nessuna regressione.
+    function loadCarModel(playerColor, onReady, { scene, listener, engineBuffer }, liveryColors = null) {
         const loader = new THREE.GLTFLoader();
         loader.load('/assets/custom/f1Car.glb', (gltf) => {
             const group = new THREE.Group();
@@ -235,6 +242,24 @@
                         child.material.roughness = 0.35;
                     }
                 }
+                // Colori-livrea già calcolati (4b/B'): sostituisce la tinta
+                // di recolorLiveryTexture con vertex color veri, già pronti
+                // — nessun calcolo qui, solo "incollaggio". Clona la
+                // geometria: ogni istanza auto (propria e avversari) deve
+                // avere il proprio buffer colore, altrimenti dipingerne una
+                // dipingerebbe tutte quelle che condividono l'asset.
+                const meshLiveryColors = liveryColors && liveryColors[child.name];
+                if (meshLiveryColors) {
+                    child.geometry = child.geometry.clone();
+                    child.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(meshLiveryColors), 3));
+                    // THREE.js moltiplica map × vertexColor quando entrambi
+                    // sono attivi (non sostituisce) — va tolta la texture
+                    // perché il colore-livrea sia l'unica fonte visibile.
+                    child.material.map = null;
+                    child.material.vertexColors = true;
+                    child.material.needsUpdate = true;
+                }
+
                 allMeshes.push(child);
                 if (isWheelMesh) {
                     namedWheels.push(child);

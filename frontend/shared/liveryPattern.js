@@ -1,6 +1,16 @@
 // frontend/shared/liveryPattern.js
 //
-// SPIKE / prototipo: verifica che i pattern multi-colore dell'editor
+// NON PIÙ RICHIAMATO DAL GIOCO (da qui in poi, vedi
+// docs/superpowers/specs/2026-07-29-f1-livery-precomputed-colors-design.md):
+// il calcolo pattern+ombreggiatura è stato congelato UNA TANTUM in
+// frontend/assets/custom/f1CarTestLivery.json e il gioco si limita a
+// caricare/applicare quei colori già pronti (vedi carLoader.js,
+// parametro liveryColors) — nessun calcolo dal vivo in gara. File tenuto
+// come riferimento storico dello spike che ha validato l'approccio con
+// dati reali (vedi [[project_f1_livery_ingame_port]]), non è morto per
+// dimenticanza.
+//
+// SPIKE / prototipo originale: verifica che i pattern multi-colore dell'editor
 // esterno (voxel_livery_studio.html, tool esterno non nel repo) si
 // possano applicare dal vivo sul modello reale del gioco (f1Car.glb)
 // scrivendo vertex color veri, invece di ritingere la texture-palette

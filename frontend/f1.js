@@ -11,6 +11,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
+    // FIXTURE DI TEST (4b/B'): colori-livrea già calcolati una tantum
+    // (vedi docs/superpowers/specs/2026-07-29-f1-livery-precomputed-colors-design.md),
+    // applicati a TUTTE le auto (propria e avversari) per ora — non è
+    // ancora legata a un account/scelta per-giocatore, quella è D/A/C.
+    const TEST_LIVERY_COLORS = await fetch('/assets/custom/f1CarTestLivery.json').then((r) => r.json());
+
     const socket = io({ transports: ['websocket'], upgrade: false });
 
     // Riconnessione (rete instabile, scheda in background riattivata): ri-emette
@@ -295,8 +301,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // recolorLiveryTexture/loadCarModel estratti in frontend/shared/carLoader.js
     // (condiviso col banco prova bot in frontend/f1-testbench.js) — questo è
     // solo un thin wrapper che passa le dipendenze locali.
-    function loadCarModel(playerColor, onReady) {
-        CarLoader.loadCarModel(playerColor, onReady, { scene, listener, engineBuffer });
+    function loadCarModel(playerColor, onReady, liveryColors) {
+        CarLoader.loadCarModel(playerColor, onReady, { scene, listener, engineBuffer }, liveryColors);
     }
 
     // ====================================================
@@ -718,21 +724,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             setLapDisplay(myLap, phase);
         }
 
-        // SPIKE 4b: livrea di prova hardcoded, solo sulla propria auto —
-        // valida che i pattern multi-colore dell'editor esterno si possano
-        // applicare dal vivo scrivendo vertex color veri sul modello reale
-        // (vedi frontend/shared/liveryPattern.js). Nessun salvataggio/rete
-        // ancora: da rimuovere/sostituire quando 4b avrà persistenza reale.
-        const TEST_LIVERY = { pattern: 'racing_stripes', primary: 0xd4111c, secondary: 0xf2f2f2, accent: 0x111318 };
-
         // Idempotente: su un rientro (reconnect senza reload) i modelli esistono
         // già in scena, ricrearli darebbe auto duplicate.
         if (!myCarGroup) loadCarModel(myColor, (g) => {
             myCarGroup = g;
             slipstreamGroup = buildSlipstreamEffect();
             myCarGroup.add(slipstreamGroup);
-            if (typeof LiveryPattern !== 'undefined') LiveryPattern.applyVoxelLiveryPattern(myCarGroup, TEST_LIVERY);
-        });
+        }, TEST_LIVERY_COLORS);
 
         for (const [color, state] of Object.entries(players)) {
             serverState[color] = { x: state.x, z: state.z, angle: state.angle, speed: 0 };
@@ -742,7 +740,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     otherCars[color] = g;
                     g.position.set(state.x, 0, state.z);
                     g.rotation.y = state.angle;
-                });
+                }, TEST_LIVERY_COLORS);
             }
         }
 
@@ -773,7 +771,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateMinimapDot(color, data.x, data.z);
             if (color !== myColor && !otherCars[color] && !visualState[color]) {
                 visualState[color] = { x: data.x, z: data.z, angle: data.angle };
-                loadCarModel(color, (g) => { otherCars[color] = g; });
+                loadCarModel(color, (g) => { otherCars[color] = g; }, TEST_LIVERY_COLORS);
             } else if (!visualState[color]) {
                 visualState[color] = { x: data.x, z: data.z, angle: data.angle };
             }
