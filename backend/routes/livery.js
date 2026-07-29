@@ -31,6 +31,9 @@ router.post('/api/livery/generate-theme', verifyFirebaseToken, async (req, res) 
     if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
         return res.status(400).json({ error: 'prompt mancante o non valido' });
     }
+    if (prompt.trim().length > 200) {
+        return res.status(400).json({ error: 'prompt troppo lungo (max 200 caratteri)' });
+    }
     try {
         const theme = await generateTheme(prompt.trim());
         res.status(200).json(theme);

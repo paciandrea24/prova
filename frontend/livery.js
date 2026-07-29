@@ -3,6 +3,19 @@ let scene, camera, renderer, controls;
 let carGroup = null;
 let currentParams = { pattern: 'racing_stripes', primary: '#d40000', secondary: '#ffffff', accent: '#101010' };
 
+// Debounce per i color picker: l'evento 'input' scatta continuamente
+// mentre si trascina il selettore colore (anche centinaia di volte per un
+// singolo trascinamento) e applyCurrentLivery() clona la geometria delle
+// mesh dipinte ad ogni chiamata (frontend/shared/liveryPattern.js, fuori
+// scope qui) senza disporre la vecchia — senza debounce è un leak di
+// memoria/CPU. Usato SOLO dai listener 'input' dei 3 color picker, non dai
+// pulsanti pattern/preload/AI (quelli scattano una volta sola).
+let applyLiveryDebounceTimer = null;
+function applyCurrentLiveryDebounced() {
+    clearTimeout(applyLiveryDebounceTimer);
+    applyLiveryDebounceTimer = setTimeout(applyCurrentLivery, 80);
+}
+
 function hexStringToInt(hex) {
     return parseInt(hex.replace('#', ''), 16);
 }
@@ -160,13 +173,13 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
         document.getElementById('col-primary').addEventListener('input', (e) => {
-            currentParams.primary = e.target.value; applyCurrentLivery();
+            currentParams.primary = e.target.value; applyCurrentLiveryDebounced();
         });
         document.getElementById('col-secondary').addEventListener('input', (e) => {
-            currentParams.secondary = e.target.value; applyCurrentLivery();
+            currentParams.secondary = e.target.value; applyCurrentLiveryDebounced();
         });
         document.getElementById('col-accent').addEventListener('input', (e) => {
-            currentParams.accent = e.target.value; applyCurrentLivery();
+            currentParams.accent = e.target.value; applyCurrentLiveryDebounced();
         });
 
         document.getElementById('btn-save').addEventListener('click', async () => {

@@ -540,8 +540,14 @@ if (closeBtn) {
 }
 
 // --- LIVERY CUSTOMIZER ---
+// Apertura in una nuova scheda (non window.location.href): una navigazione
+// a pagina intera abbandonerebbe lobby.html, chiudendo la connessione
+// Socket.io e facendo perdere la lobby al giocatore (vedi
+// backend/sockets/socketManager.js, gestione disconnect). Con window.open
+// la scheda originale con la lobby resta viva; l'utente chiude semplicemente
+// la nuova scheda per tornare.
 document.addEventListener('click', (e) => {
     if (e.target && e.target.closest('#livery-mini-btn')) {
-        window.location.href = 'livery.html';
+        window.open('livery.html', '_blank');
     }
 });

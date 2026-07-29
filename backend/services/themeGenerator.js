@@ -158,6 +158,11 @@ async function generateTheme(prompt) {
                 }
             })
         });
+        if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            console.warn(`⚠️ Gemini ha risposto ${res.status}: ${body.slice(0, 300)}`);
+            throw new Error(`Gemini status ${res.status}`);
+        }
         const json = await res.json();
         const txt = json?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!txt) throw new Error('risposta vuota');
