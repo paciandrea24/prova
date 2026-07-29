@@ -195,5 +195,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast('Could not save livery. Try again.', 'error');
             }
         });
+
+        document.getElementById('btn-generate').addEventListener('click', async () => {
+            const prompt = document.getElementById('ai-prompt').value.trim();
+            if (!prompt) {
+                showToast('Write a theme description first.', 'error');
+                return;
+            }
+            const btn = document.getElementById('btn-generate');
+            btn.disabled = true;
+            try {
+                const idToken = await user.getIdToken();
+                const res = await fetch('/api/livery/generate-theme', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                    body: JSON.stringify({ prompt })
+                });
+                if (!res.ok) throw new Error('generate failed: ' + res.status);
+                const theme = await res.json();
+                applyThemeToControls(theme);
+                showToast(`Theme "${theme.themeName}" applied.`, 'success');
+            } catch (err) {
+                console.error('[livery] generate-theme error', err);
+                showToast('Could not generate a theme. Try again.', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+        document.getElementById('ai-prompt').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') document.getElementById('btn-generate').click();
+        });
     });
 });
