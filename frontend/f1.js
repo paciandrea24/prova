@@ -11,6 +11,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
+    // FIXTURE DI TEST (4b/B'): colori-livrea già calcolati una tantum
+    // (vedi docs/superpowers/specs/2026-07-29-f1-livery-precomputed-colors-design.md),
+    // applicati a TUTTE le auto (propria e avversari) per ora — non è
+    // ancora legata a un account/scelta per-giocatore, quella è D/A/C.
+    const TEST_LIVERY_COLORS = await fetch('/assets/custom/f1CarTestLivery.json').then((r) => r.json());
+
     const socket = io({ transports: ['websocket'], upgrade: false });
 
     // Riconnessione (rete instabile, scheda in background riattivata): ri-emette
@@ -295,8 +301,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // recolorLiveryTexture/loadCarModel estratti in frontend/shared/carLoader.js
     // (condiviso col banco prova bot in frontend/f1-testbench.js) — questo è
     // solo un thin wrapper che passa le dipendenze locali.
-    function loadCarModel(playerColor, onReady) {
-        CarLoader.loadCarModel(playerColor, onReady, { scene, listener, engineBuffer });
+    function loadCarModel(playerColor, onReady, liveryColors) {
+        CarLoader.loadCarModel(playerColor, onReady, { scene, listener, engineBuffer }, liveryColors);
     }
 
     // ====================================================
@@ -724,7 +730,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             myCarGroup = g;
             slipstreamGroup = buildSlipstreamEffect();
             myCarGroup.add(slipstreamGroup);
-        });
+        }, TEST_LIVERY_COLORS);
 
         for (const [color, state] of Object.entries(players)) {
             serverState[color] = { x: state.x, z: state.z, angle: state.angle, speed: 0 };
@@ -734,7 +740,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     otherCars[color] = g;
                     g.position.set(state.x, 0, state.z);
                     g.rotation.y = state.angle;
-                });
+                }, TEST_LIVERY_COLORS);
             }
         }
 
@@ -765,7 +771,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateMinimapDot(color, data.x, data.z);
             if (color !== myColor && !otherCars[color] && !visualState[color]) {
                 visualState[color] = { x: data.x, z: data.z, angle: data.angle };
-                loadCarModel(color, (g) => { otherCars[color] = g; });
+                loadCarModel(color, (g) => { otherCars[color] = g; }, TEST_LIVERY_COLORS);
             } else if (!visualState[color]) {
                 visualState[color] = { x: data.x, z: data.z, angle: data.angle };
             }

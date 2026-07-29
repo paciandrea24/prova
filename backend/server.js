@@ -10,6 +10,7 @@ const { Server } = require('socket.io')
 const fs = require('fs');
 
 const lobbyRoutes = require('./routes/lobbyRoutes');
+const liveryRoutes = require('./routes/livery');
 const socketManager = require('./sockets/socketManager');
 
 
@@ -44,15 +45,32 @@ if (process.env.NODE_ENV !== 'production') {
     });
 }
 
+// PRIMA dei parser globali: una livrea reale (~550 KB) sfonda il limite
+// default di express.json() (100kb) — stesso motivo già documentato sopra
+// per /dev/minimap.
+app.use('/api/livery', express.json({ limit: '5mb' }));
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cors());
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 // Usa le route modulari
 app.use('/', lobbyRoutes);
+app.use('/', liveryRoutes);
 
 // Socket.IO
 socketManager(io);
+
+// Errori del body-parser (payload troppo grande o JSON malformato) non
+// passano dagli handler try/catch delle rotte — normalizziamo qui la
+// risposta allo stesso formato JSON {"error": "..."} usato ovunque,
+// invece della pagina HTML di default di Express.
+app.use((err, req, res, next) => {
+    if (err && (err.type === 'entity.too.large' || err.type === 'entity.parse.failed')) {
+        return res.status(err.status || 400).json({ error: 'Corpo della richiesta non valido o troppo grande' });
+    }
+    next(err);
+});
 
 server.listen(3000, () => {
     console.log('✅ Server listening on port 3000');

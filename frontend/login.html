@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Project-W — Log in</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles/index.css" />
+    <link rel="stylesheet" href="styles/auth.css" />
+</head>
+
+<body>
+
+    <div class="scene">
+
+        <header class="hero">
+            <div class="logo-wrap">
+                <span class="logo-project">PROJECT</span><span class="logo-w">-W</span>
+            </div>
+            <p class="tagline">Log in to save your setup.</p>
+        </header>
+
+        <main class="main-panel">
+            <form id="loginForm">
+                <div class="auth-field">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" autocomplete="email" required>
+                </div>
+                <div class="auth-field">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" autocomplete="current-password" required>
+                </div>
+
+                <button type="submit" id="login-btn" class="btn btn-create">Log in</button>
+                <button type="button" id="google-btn" class="btn btn-google">Log in with Google</button>
+
+                <p class="auth-switch">Don't have an account? <a href="register.html">Sign up</a></p>
+
+                <div class="divider"></div>
+                <p class="cancel-link" onclick="window.location.href='index.html'">Back</p>
+            </form>
+        </main>
+
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
+    <script src="shared/firebaseConfig.js" defer></script>
+    <script src="login.js" defer></script>
+</body>
+
+</html>
