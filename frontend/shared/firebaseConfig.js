@@ -18,12 +18,12 @@
 // normale e sicuro che stiano in un file JS pubblico lato client.
 
 const FIREBASE_CONFIG = {
-    apiKey: "REPLACE_ME",
-    authDomain: "REPLACE_ME.firebaseapp.com",
-    projectId: "REPLACE_ME",
-    storageBucket: "REPLACE_ME.appspot.com",
-    messagingSenderId: "REPLACE_ME",
-    appId: "REPLACE_ME"
+    apiKey: "AIzaSyA5LzbXpA1IrfqWEh60B-22WOqX-Wm0xgc",
+    authDomain: "project-w-317da.firebaseapp.com",
+    projectId: "project-w-317da",
+    storageBucket: "project-w-317da.firebasestorage.app",
+    messagingSenderId: "15979582762",
+    appId: "1:15979582762:web:eb655061fe26a0a7e2fa53"
 };
 
 let firebaseAuth = null;
