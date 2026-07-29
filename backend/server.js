@@ -10,6 +10,7 @@ const { Server } = require('socket.io')
 const fs = require('fs');
 
 const lobbyRoutes = require('./routes/lobbyRoutes');
+const liveryRoutes = require('./routes/livery');
 const socketManager = require('./sockets/socketManager');
 
 
@@ -50,6 +51,7 @@ app.use(cors());
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 // Usa le route modulari
 app.use('/', lobbyRoutes);
+app.use('/', liveryRoutes);
 
 // Socket.IO
 socketManager(io);
