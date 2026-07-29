@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Project-W — Livery</title>
+    <link rel="stylesheet" href="styles/index.css">
+    <link rel="stylesheet" href="styles/livery.css">
+</head>
+<body>
+    <div id="livery-canvas-wrap"></div>
+
+    <div id="livery-panel">
+        <h1>Livery Editor</h1>
+
+        <h2>Pattern</h2>
+        <div class="pattern-grid" id="pattern-grid">
+            <button type="button" class="pattern-btn" data-pattern="racing_stripes">Racing Stripes</button>
+            <button type="button" class="pattern-btn" data-pattern="split_sides">Split Sides</button>
+            <button type="button" class="pattern-btn" data-pattern="checkers">Checkers</button>
+            <button type="button" class="pattern-btn" data-pattern="solid">Solid</button>
+        </div>
+
+        <h2>Colors</h2>
+        <div class="color-row"><label>Primary</label><input type="color" id="col-primary" value="#d40000"></div>
+        <div class="color-row"><label>Secondary</label><input type="color" id="col-secondary" value="#ffffff"></div>
+        <div class="color-row"><label>Accent</label><input type="color" id="col-accent" value="#101010"></div>
+
+        <h2>AI Theme</h2>
+        <input type="text" id="ai-prompt" placeholder="e.g. cyberpunk neon">
+        <button type="button" class="btn-wide btn-generate" id="btn-generate">Generate</button>
+
+        <button type="button" class="btn-wide btn-save" id="btn-save">Save</button>
+        <button type="button" class="btn-wide btn-back" onclick="window.location.href='lobby.html'">Back</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="shared/liveryPattern.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
+    <script src="shared/firebaseConfig.js" defer></script>
+    <script src="livery.js" defer></script>
+</body>
+</html>
