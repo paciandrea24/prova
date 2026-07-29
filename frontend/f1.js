@@ -718,12 +718,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             setLapDisplay(myLap, phase);
         }
 
+        // SPIKE 4b: livrea di prova hardcoded, solo sulla propria auto —
+        // valida che i pattern multi-colore dell'editor esterno si possano
+        // applicare dal vivo scrivendo vertex color veri sul modello reale
+        // (vedi frontend/shared/liveryPattern.js). Nessun salvataggio/rete
+        // ancora: da rimuovere/sostituire quando 4b avrà persistenza reale.
+        const TEST_LIVERY = { pattern: 'racing_stripes', primary: 0xd4111c, secondary: 0xf2f2f2, accent: 0x111318 };
+
         // Idempotente: su un rientro (reconnect senza reload) i modelli esistono
         // già in scena, ricrearli darebbe auto duplicate.
         if (!myCarGroup) loadCarModel(myColor, (g) => {
             myCarGroup = g;
             slipstreamGroup = buildSlipstreamEffect();
             myCarGroup.add(slipstreamGroup);
+            if (typeof LiveryPattern !== 'undefined') LiveryPattern.applyVoxelLiveryPattern(myCarGroup, TEST_LIVERY);
         });
 
         for (const [color, state] of Object.entries(players)) {
