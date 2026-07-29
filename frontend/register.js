@@ -23,6 +23,7 @@
         'auth/weak-password': 'Password should be at least 6 characters.'
     };
     function friendlyError(err) {
+        console.error('[auth]', err.code, err.message);
         return ERROR_MESSAGES[err.code] || 'Something went wrong. Please try again.';
     }
 

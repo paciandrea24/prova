@@ -26,9 +26,14 @@
         'auth/wrong-password': 'Wrong password.',
         'auth/invalid-credential': 'Wrong email or password.',
         'auth/too-many-requests': 'Too many attempts. Try again later.',
-        'auth/popup-closed-by-user': 'Google sign-in was cancelled.'
+        'auth/popup-closed-by-user': 'Google sign-in was cancelled.',
+        'auth/unauthorized-domain': 'This domain is not authorized for sign-in yet.',
+        'auth/operation-not-allowed': 'This sign-in method is not enabled.',
+        'auth/popup-blocked': 'Your browser blocked the sign-in popup. Please allow popups and try again.',
+        'auth/network-request-failed': 'Network error. Check your connection and try again.'
     };
     function friendlyError(err) {
+        console.error('[auth]', err.code, err.message);
         return ERROR_MESSAGES[err.code] || 'Something went wrong. Please try again.';
     }
 
