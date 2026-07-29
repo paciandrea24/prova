@@ -246,6 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
             card.addEventListener('click', (e) => {
                 if (selectedColor !== currentHost) return; // solo l'host attuale può scegliere
                 if (e.target.closest('#leaderboard-mini-btn')) return;
+                if (e.target.closest('#livery-mini-btn')) return;
                 showGameSettings(card.dataset.gameId); // Apre semplicemente il modale
             });
         });
@@ -537,3 +538,10 @@ if (closeBtn) {
         document.getElementById('global-leaderboard-modal').style.display = 'none';
     });
 }
+
+// --- LIVERY CUSTOMIZER ---
+document.addEventListener('click', (e) => {
+    if (e.target && e.target.closest('#livery-mini-btn')) {
+        window.location.href = 'livery.html';
+    }
+});
