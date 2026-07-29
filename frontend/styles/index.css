@@ -236,6 +236,52 @@ body::before {
     cursor: not-allowed;
 }
 
+/* ── LOGIN (fisso in alto a destra) ─────────────────── */
+.btn-corner {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10;
+
+    width: auto;
+    display: inline-block;
+    white-space: nowrap;
+
+    font-family: 'Fredoka', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+
+    background: #FFFFFF;
+    color: var(--ink);
+    border: 3px solid var(--ink);
+    border-radius: 999px;
+    padding: 9px 18px;
+    cursor: pointer;
+    box-shadow: 3px 3px 0 var(--ink);
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.btn-corner:hover {
+    transform: translateY(-2px);
+    box-shadow: 3px 5px 0 var(--ink);
+}
+
+.btn-corner:active {
+    transform: translate(3px, 3px);
+    box-shadow: none;
+}
+
+@media (max-width: 480px) {
+    .btn-corner {
+        top: 14px;
+        right: 14px;
+        font-size: 11px;
+        padding: 7px 14px;
+    }
+}
+
 /* Create: sfondo = colore scelto (dinamico) */
 .btn-create {
     background: var(--accent);
