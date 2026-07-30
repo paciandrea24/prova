@@ -244,16 +244,12 @@
                         break;
                     }
                     case 'nose_arrow': {
-                        // v7: v6 assumeva naso = L piccola (come 'flames'),
-                        // ma confermato dal test dell'utente che è l'OPPOSTO
-                        // su questo modello — il primary (assegnato a L<0.15)
-                        // spuntava vicino alla rear wing, l'estremo opposto.
-                        // Naso = L vicino a 1. Mappa a 3 zone: naso (punta) =
-                        // primary, fiancate/sidepods (fascia laterale
-                        // centrale, esclusi entrambi gli estremi) = accent,
-                        // resto del chassis = secondary.
-                        const isNose = L > 0.85;
-                        const isSidepod = !isNose && Math.abs(X) > 0.22 && L > 0.15 && L < 0.75;
+                        // v8: direzione confermata giusta in v7 (naso = L
+                        // vicino a 1), ma la zona naso era troppo piccola
+                        // (solo l'ultimo 15% della lunghezza) — allargata per
+                        // coprire tutto il muso, non solo la punta estrema.
+                        const isNose = L > 0.6;
+                        const isSidepod = !isNose && Math.abs(X) > 0.22 && L > 0.15;
                         if (isNose) col = cPrimary;
                         else if (isSidepod) col = cAccent;
                         else col = cSecondary;
