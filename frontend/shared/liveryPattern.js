@@ -244,15 +244,18 @@
                         break;
                     }
                     case 'nose_arrow': {
-                        // v5: niente più bicolore secondary/accent dentro la
-                        // freccia (v3/v4 provavano a dividerla per larghezza
-                        // o per L, sbagliando entrambe le volte) — tutta la
-                        // sagoma, identica all'originale (stessa formula
-                        // arrowWidth/L<0.55), è accent pieno, come mostrato
-                        // dallo screenshot dell'utente (l'intera forma
-                        // cerchiata deve essere rossa).
-                        const arrowWidth = L * 0.8;
-                        if (Math.abs(X) < arrowWidth && L < 0.55) col = cAccent;
+                        // v6: le versioni precedenti (v1-v5) erano tutte
+                        // variazioni di "freccia bicolore su sfondo
+                        // primary" — non era mai quello che si voleva.
+                        // Mappa a 3 zone vere sull'intera carrozzeria: naso
+                        // (punta, L piccola) = primary, fiancate/sidepods
+                        // (|X| grande, a metà lunghezza) = accent, resto
+                        // del chassis = secondary.
+                        const isNose = L < 0.15;
+                        const isSidepod = !isNose && Math.abs(X) > 0.22 && L < 0.65;
+                        if (isNose) col = cPrimary;
+                        else if (isSidepod) col = cAccent;
+                        else col = cSecondary;
                         break;
                     }
                     case 'airbox_fin': {
