@@ -155,7 +155,7 @@ module.exports = function (io, socket) {
         io.to(lobbyId).emit('gameSelected', { gameId, settings });
     });
 
-    socket.on('joinF1Game', ({ lobbyId, playerColor }) => {
+    socket.on('joinF1Game', ({ lobbyId, playerColor, uid }) => {
         socket.join(lobbyId);
         socket.lobbyId = lobbyId;
         socket.color   = playerColor;
@@ -218,9 +218,13 @@ module.exports = function (io, socket) {
                 console.log(`♻️ [F1] ${playerColor} rientrato entro la grazia (lobby ${lobbyId})`);
             }
             game.players[playerColor].disconnected = false;
+            // Riaggiornato ad ogni rientro: nel frattempo l'utente potrebbe
+            // essersi loggato (o disconnesso) rispetto al join precedente.
+            game.players[playerColor].uid = uid || null;
         } else {
             game.players[playerColor] = {
                 color:           playerColor,
+                uid:             uid || null,   // uid Firebase (null per ospiti/bot) — vedi buildPublicState
                 x:               game.track.qualiSpawn.x,
                 z:               game.track.qualiSpawn.z,
                 angle:           game.track.qualiSpawn.angle,
@@ -1246,6 +1250,12 @@ function buildPublicState(players, raceStarted, track) {
             falseStartServed: !!p.falseStartServed,
             gapToLeaderMs: (p.gapToLeaderMs != null) ? p.gapToLeaderMs : null,
             isBot: !!p.isBot,
+            // uid Firebase del giocatore (null per ospiti/bot): il client lo
+            // usa per recuperare la LIVREA VERA di ogni avversario via
+            // GET /api/livery/:uid, invece di riapplicare la propria a tutti
+            // (vedi frontend/f1.js, loadOtherCar) — bug reale osservato con
+            // più giocatori umani in lobby.
+            uid: p.uid || null,
             slipstream: !!p.inSlipstream,
             collisionPenalty: p.collisionPenaltyMs > 0,
             // Snapshot delle decisioni IA del tick corrente (Rif.

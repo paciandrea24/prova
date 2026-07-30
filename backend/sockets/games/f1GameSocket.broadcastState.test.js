@@ -25,3 +25,15 @@ test('buildPublicState: steerInput negativo (sterzo a destra) passa invariato', 
     const out = f1GameSocket.physics.buildPublicState({ blue: makeFakePlayer(-1) }, false, null);
     assert.equal(out.blue.steerInput, -1);
 });
+
+test('buildPublicState include uid del giocatore, cosi gli avversari possono recuperare la sua livrea vera', () => {
+    const p = makeFakePlayer(0);
+    p.uid = 'firebase-uid-123';
+    const out = f1GameSocket.physics.buildPublicState({ red: p }, false, null);
+    assert.equal(out.red.uid, 'firebase-uid-123');
+});
+
+test('buildPublicState: uid null per bot/ospiti senza account', () => {
+    const out = f1GameSocket.physics.buildPublicState({ red: makeFakePlayer(0) }, false, null);
+    assert.equal(out.red.uid, null);
+});

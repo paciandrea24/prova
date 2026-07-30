@@ -199,6 +199,20 @@
         return null;
     }
 
+    // Template voxel condiviso tra TUTTE le auto con livrea custom: la
+    // geometria (posizione/normali/indici, ~137.000 facce) e la
+    // classificazione per-cella (meshName/locked) dipendono solo dal modello
+    // sorgente f1Car.glb — sempre lo stesso — MAI dal colore scelto dal
+    // giocatore, quindi sono identiche per ogni auto. Ricalcolarle da zero
+    // (Voxelizer.voxelizeModel: campionamento triangoli + costruzione
+    // griglia) per ogni singola auto era il costo reale dietro al lag
+    // segnalato dall'utente in localhost con più auto a livrea personalizzata
+    // in pista contemporaneamente. Calcolata una sola volta al primo
+    // caricamento, poi ogni auto riusa le stesse posizione/normali/indici
+    // (mai mutati dopo il collasso ruote iniziale) e costruisce solo il
+    // proprio attributo colore.
+    let cachedVoxelTemplate = null;
+
     // loadCarModel: stessa identica implementazione di f1.js (prima
     // dell'estrazione), con UNA sola differenza di firma — scene/listener/
     // engineBuffer arrivano come terzo parametro (deps) invece che per
@@ -213,7 +227,10 @@
     // mesh, sovrascrive la tinta-texture di recolorLiveryTexture con
     // colori-per-voxel già calcolati altrove (non da questa funzione — vedi
     // docs/superpowers/specs/2026-07-29-f1-livery-precomputed-colors-design.md).
-    // Se assente: comportamento identico a oggi, nessuna regressione.
+    // Se assente (bot, ospiti, account senza livrea salvata): la carrozzeria
+    // torna al comportamento pre-livree-custom, hue-shift col colore scelto
+    // in lobby (playerColor) — MAI una fixture condivisa uguale per tutti
+    // (bug reale: rendeva bot/ospiti tutti con la stessa identica livrea).
     function loadCarModel(playerColor, onReady, { scene, listener, engineBuffer }, liveryData = null) {
         const loader = new THREE.GLTFLoader();
         loader.load('/assets/custom/f1Car.glb', (gltf) => {
@@ -233,6 +250,9 @@
             const allMeshes = [];
             const meshSide = new Map();
 
+            const colorsArray = (liveryData && liveryData.liveryColors) ? liveryData.liveryColors : liveryData;
+            const hasCustomLivery = !!(colorsArray && colorsArray.length > 0 && typeof Voxelizer !== 'undefined');
+
             // 1. SCANSIONE MESH ORIGINALI E PREPARAZIONE FISICA
             model.traverse((child) => {
                 if (!child.isMesh) return;
@@ -242,6 +262,14 @@
 
                 const nm = (child.name + ' ' + (child.parent?.name || '')).toLowerCase();
                 const isWheelMesh = nm.includes('wheel') || nm.includes('tyre') || nm.includes('tire');
+                // Ali, halo e T-cam restano SEMPRE nere/neutre, mai tinte col
+                // colore giocatore/lobby (nodi reali del modello: Front_Wing,
+                // Rear_Wing, Halo, TCam, Plank — verificato leggendo i node
+                // name dal .glb). Nel fallback senza livrea custom sotto,
+                // senza questa esclusione venivano ritinte col colore di
+                // lobby insieme a Chassis/Nose, apparendo più scure ma
+                // comunque colorate (bug segnalato dall'utente in localhost).
+                const isFixedMesh = nm.includes('halo') || nm.includes('wing') || nm.includes('plank') || nm.includes('tcam');
 
                 if (child.material.map) {
                     child.userData.pristineTex = child.material.map;
@@ -256,55 +284,139 @@
                         child.material.map = recolorLiveryTexture(child.material.map, hex, true);
                         child.material.needsUpdate = true;
                     }
-                } else {
+                } else if (hasCustomLivery) {
                     // TRUCCO MAGICO PER LA FISICA:
                     // Non usiamo child.visible = false, altrimenti il motore fisico la ignora!
                     // Spegniamo solo il MATERIALE. In questo modo il Raycaster e la fisica
-                    // continueranno a usare la carrozzeria originale (leggerissima), 
+                    // continueranno a usare la carrozzeria originale (leggerissima),
                     // ma il giocatore vedrà solo i Voxel sovrapposti!
                     child.material.visible = false;
+                } else {
+                    // Nessuna livrea custom: la carrozzeria resta visibile e
+                    // ritinta col colore di lobby, stesso identico percorso
+                    // già usato sopra per le ruote — forceNeutral=isFixedMesh,
+                    // così Chassis/Nose prendono la tonalità scelta ma
+                    // ali/halo/plank/tcam restano neutre (solo lift di
+                    // luminosità), esattamente come le ruote.
+                    if (child.material.map) {
+                        child.material.map = recolorLiveryTexture(child.material.map, hex, isFixedMesh);
+                        child.material.needsUpdate = true;
+                    }
                 }
                 allMeshes.push(child);
             });
 
             group.add(model);
 
-            // 2. CREAZIONE DEL VESTITO VOXEL
-            try {
-                const colorsArray = (liveryData && liveryData.liveryColors) ? liveryData.liveryColors : liveryData;
+            // 2. CREAZIONE DEL VESTITO VOXEL — solo se esiste una livrea custom valida
+            if (hasCustomLivery) {
+                try {
+                    // Geometria + classificazione: calcolate una sola volta
+                    // (cache di modulo), riusate identiche per ogni auto — vedi
+                    // commento su cachedVoxelTemplate più sopra.
+                    let M = cachedVoxelTemplate;
+                    if (!M) {
+                        M = Voxelizer.voxelizeModel(model);
+                        const templateGeo0 = M.isBufferGeometry ? M : (M.geometry || M);
 
-                if (colorsArray && colorsArray.length > 0 && typeof Voxelizer !== 'undefined') {
-                    const M = Voxelizer.voxelizeModel(model);
-                    const voxelGeo = M.isBufferGeometry ? M : (M.geometry || M);
+                        // --- FIX RUOTE DOPPIE E CENTRO DI MASSA ---
+                        // Collassiamo i voxel delle ruote nel centro logico della
+                        // griglia. Se li mettessimo a (0,0,0) deformeremmo la
+                        // hitbox verso il basso! Fatto una sola volta: la
+                        // posizione è identica per ogni auto (mai per-giocatore).
+                        if (M.meshName && M.faceCell) {
+                            const posArr = templateGeo0.attributes.position.array;
+                            const safeX = M.NX / 2, safeY = M.NY / 2, safeZ = M.NZ / 2;
+                            for (let f = 0; f < M.faceCount; f++) {
+                                const q = M.faceCell[f];
+                                const partName = (M.meshName[q] || '').toLowerCase();
+                                if (partName.includes('wheel') || partName.includes('tyre') || partName.includes('tire')) {
+                                    const offset = f * 12;
+                                    for (let v = 0; v < 4; v++) {
+                                        posArr[offset + v * 3] = safeX;
+                                        posArr[offset + v * 3 + 1] = safeY;
+                                        posArr[offset + v * 3 + 2] = safeZ;
+                                    }
+                                }
+                            }
+                            templateGeo0.attributes.position.needsUpdate = true;
+                        }
+                        cachedVoxelTemplate = M;
+                    }
+
+                    // Geometria PER QUESTA auto: posizione/normali/indici
+                    // riusati per riferimento dal template condiviso (mai
+                    // mutati dopo il collasso ruote sopra), colore invece
+                    // sempre nuovo — è l'unico dato specifico del giocatore.
+                    const templateGeo = M.isBufferGeometry ? M : (M.geometry || M);
+                    const voxelGeo = new THREE.BufferGeometry();
+                    voxelGeo.setAttribute('position', templateGeo.attributes.position);
+                    if (templateGeo.attributes.normal) voxelGeo.setAttribute('normal', templateGeo.attributes.normal);
+                    if (templateGeo.index) voxelGeo.setIndex(templateGeo.index);
                     voxelGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colorsArray), 3));
 
-                    // --- FIX RUOTE DOPPIE E CENTRO DI MASSA ---
+                    // Ali/halo/plank/tcam neutralizzate PER QUESTA auto: il
+                    // colore, a differenza della geometria sopra, è specifico
+                    // del giocatore e va ricalcolato per ognuna.
                     if (M.meshName && M.faceCell) {
-                        const posArr = voxelGeo.attributes.position.array;
-
-                        // Collassiamo i voxel delle ruote nel centro logico della griglia.
-                        // Se li mettessimo a (0,0,0) deformeremmo la hitbox verso il basso!
-                        const safeX = M.NX / 2;
-                        const safeY = M.NY / 2;
-                        const safeZ = M.NZ / 2;
+                        const colorArr = voxelGeo.attributes.color.array;
+                        const tempColor = new THREE.Color();
 
                         for (let f = 0; f < M.faceCount; f++) {
                             const q = M.faceCell[f];
                             const partName = (M.meshName[q] || '').toLowerCase();
 
-                            if (partName.includes('wheel') || partName.includes('tyre') || partName.includes('tire')) {
+                            if ((partName.includes('wing') || partName.includes('halo') || partName.includes('plank') || partName.includes('tcam')) && M.locked[q]) {
+                                // Neutralizziamo ali/halo/plank/tcam (stessa
+                                // formula del fallback bot/ospite: tonalità
+                                // invariata, desaturata, luminosità sollevata).
+                                // Doppio filtro, non uno solo:
+                                // 1) partName limita lo scope a queste 4 parti:
+                                //    Chassis/Nose non entrano MAI qui, qualunque
+                                //    sia il colore scelto dal giocatore.
+                                // 2) M.locked[q] — calcolato da Voxelizer sul
+                                //    colore ORIGINALE/fresco del modello (M.orig,
+                                //    campionato una sola volta nella cache sopra),
+                                //    MAI sul colore salvato in colorsArray —
+                                //    decide se la cella è fisicamente nera nel
+                                //    modello sorgente. Due tentativi precedenti
+                                //    falliti qui: testare lum/sat sul colore
+                                //    SALVATO schiariva per errore un primary
+                                //    scuro scelto dal giocatore (es. #1a1a1a
+                                //    appariva grigio); usare solo partName (voto
+                                //    a maggioranza tra i triangoli campionati in
+                                //    ogni cella) etichettava "front_wing" alcune
+                                //    celle di confine visivamente Nose,
+                                //    producendo voxel difettosi. M.locked, che
+                                //    riflette il colore fisico originale (non il
+                                //    voto sul nome-mesh né la scelta del
+                                //    giocatore), evita entrambi.
                                 const offset = f * 12;
                                 for (let v = 0; v < 4; v++) {
-                                    posArr[offset + v * 3] = safeX;
-                                    posArr[offset + v * 3 + 1] = safeY;
-                                    posArr[offset + v * 3 + 2] = safeZ;
+                                    const idx = offset + v * 3;
+
+                                    // ATTENZIONE spazio colore: colorArr qui è
+                                    // LINEARE (Voxelizer applica
+                                    // convertSRGBToLinear in campionamento,
+                                    // vedi voxelizer.js), mentre
+                                    // recolorLiveryTexture lavora su byte
+                                    // canvas sRGB grezzi — andata/ritorno in
+                                    // sRGB per usare la stessa formula nello
+                                    // stesso spazio del fallback.
+                                    tempColor.setRGB(colorArr[idx], colorArr[idx + 1], colorArr[idx + 2]);
+                                    tempColor.convertLinearToSRGB();
+                                    const [h, s, val] = rgbToHsv(tempColor.r, tempColor.g, tempColor.b);
+                                    const [nr, ng, nb] = hsvToRgb(h, desaturateForBlack(s), liftValue(val));
+                                    tempColor.setRGB(nr, ng, nb);
+                                    tempColor.convertSRGBToLinear();
+                                    colorArr[idx] = tempColor.r; colorArr[idx + 1] = tempColor.g; colorArr[idx + 2] = tempColor.b;
                                 }
                             }
                         }
-                        voxelGeo.attributes.position.needsUpdate = true;
-                        voxelGeo.computeBoundingBox();
-                        voxelGeo.computeBoundingSphere();
+                        voxelGeo.attributes.color.needsUpdate = true;
                     }
+                    voxelGeo.computeBoundingBox();
+                    voxelGeo.computeBoundingSphere();
 
                     const voxelMat = new THREE.MeshStandardMaterial({
                         vertexColors: true,
@@ -326,17 +438,15 @@
                     }
 
                     group.add(voxelMesh);
-                } else {
-                    // Fallback di sicurezza: se la livrea fallisce, riaccendiamo il materiale originale
+                } catch (err) {
+                    // Estremo: il Voxelizer è esploso nonostante colorsArray valido.
+                    // Riaccendiamo il materiale pristine (non ritinto) piuttosto che
+                    // lasciare l'auto invisibile.
+                    console.error("[F1] Errore critico nel Voxelizer:", err);
                     allMeshes.forEach(m => {
                         if (m.material) m.material.visible = true;
                     });
                 }
-            } catch (err) {
-                console.error("[F1] Errore critico nel Voxelizer:", err);
-                allMeshes.forEach(m => {
-                    if (m.material) m.material.visible = true;
-                });
             }
 
             // 3. RECUPERO NODI DELLE RUOTE E LOGICA FISICA

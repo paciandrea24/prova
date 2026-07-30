@@ -40,13 +40,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log("[F1] Giocatore ospite, nessuna livrea da caricare.");
     }
 
-    // 3. Fallback: se l'utente non è loggato, o non ha salvato nulla, usiamo quella di test
-    if (!loadedLivery) {
-        console.log("[F1] Utilizzo livrea di fallback/test.");
-        loadedLivery = await fetch('/assets/custom/f1CarTestLivery.json').then((r) => r.json());
-    }
-
-    // 4. Assegniamo i dati alla costante originale, così il resto del file f1.js non si rompe!
+    // 3. NESSUN fallback a una fixture JSON condivisa: se non c'è una livrea
+    // salvata (ospite, o account senza livrea) loadedLivery resta null e
+    // CarLoader.loadCarModel colora la carrozzeria col colore scelto in
+    // lobby (myColor) — stesso comportamento di bot e altri ospiti, e stesso
+    // comportamento del gioco prima delle livree custom. Usare una fixture
+    // fissa qui produceva la stessa identica livrea rossa per chiunque non
+    // avesse un account con livrea salvata (bug reale osservato in
+    // localhost: bot e guest tutti con la stessa livrea).
     const TEST_LIVERY_COLORS = loadedLivery;
     // --- FINE GESTIONE LIVREA ---
 
@@ -55,7 +56,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Riconnessione
     socket.io.on('reconnect', () => {
         socket.emit('joinLobby', { lobbyId, color: myColor });
-        socket.emit('joinF1Game', { lobbyId, playerColor: myColor });
+        socket.emit('joinF1Game', { lobbyId, playerColor: myColor, uid: user ? user.uid : null });
     });
 
     // ====================================================
@@ -453,6 +454,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     const visualState = {};
     const otherCars = {};
 
+    // Livrea VERA di ogni avversario (bug reale: prima si applicava sempre
+    // TEST_LIVERY_COLORS, cioè la propria, a tutte le auto altrui). Cache per
+    // uid: più colori/rejoin possono condividere lo stesso uid nel tempo, un
+    // solo fetch basta. pendingCarLoads evita doppio loadCarModel per lo
+    // stesso colore mentre il fetch è ancora in volo (il player object arriva
+    // ad ogni tick, ~20Hz, ben prima che GLTF+livrea siano pronti).
+    const liveryCacheByUid = new Map();   // uid -> Promise<livery|null>
+    const pendingCarLoads = new Set();    // color attualmente in caricamento
+
+    function fetchLiveryForUid(uid) {
+        if (!uid) return Promise.resolve(null);
+        if (!liveryCacheByUid.has(uid)) {
+            liveryCacheByUid.set(uid, fetch(`/api/livery/${uid}`)
+                .then((r) => (r.ok ? r.json() : null))
+                .catch(() => null));
+        }
+        return liveryCacheByUid.get(uid);
+    }
+
+    // Carica l'auto di un avversario con la SUA livrea vera. Se uid è null
+    // (bot/ospite) o non ha nulla di salvato, livery resta null: CarLoader
+    // colora la carrozzeria col colore scelto in lobby (color), MAI con una
+    // fixture condivisa (produceva la stessa livrea per tutti i bot/ospiti)
+    // e MAI con TEST_LIVERY_COLORS (che è la livrea di chi guarda, non un default).
+    async function loadOtherCar(color, uid, onReady) {
+        if (otherCars[color] || pendingCarLoads.has(color)) return;
+        pendingCarLoads.add(color);
+        const livery = await fetchLiveryForUid(uid);
+        if (otherCars[color]) { pendingCarLoads.delete(color); return; }   // creata nel frattempo
+        loadCarModel(color, (g) => {
+            pendingCarLoads.delete(color);
+            onReady(g);
+        }, livery);
+    }
+
     // Motore: per ogni auto (mia e altrui) approssimo "sta
     // accelerando/decelerando" da una variazione di velocità rispetto
     // all'ultimo valore osservato — vale anche per me: se rilascio
@@ -768,11 +804,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             serverState[color] = { x: state.x, z: state.z, angle: state.angle, speed: 0 };
             if (!visualState[color]) visualState[color] = { ...serverState[color] };
             if (color !== myColor && !otherCars[color]) {
-                loadCarModel(color, (g) => {
+                loadOtherCar(color, state.uid, (g) => {
                     otherCars[color] = g;
                     g.position.set(state.x, 0, state.z);
                     g.rotation.y = state.angle;
-                }, TEST_LIVERY_COLORS);
+                });
             }
         }
 
@@ -803,7 +839,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateMinimapDot(color, data.x, data.z);
             if (color !== myColor && !otherCars[color] && !visualState[color]) {
                 visualState[color] = { x: data.x, z: data.z, angle: data.angle };
-                loadCarModel(color, (g) => { otherCars[color] = g; }, TEST_LIVERY_COLORS);
+                loadOtherCar(color, data.uid, (g) => { otherCars[color] = g; });
             } else if (!visualState[color]) {
                 visualState[color] = { x: data.x, z: data.z, angle: data.angle };
             }
@@ -1376,7 +1412,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // listener fosse registrato ed essere perso (schermata bloccata sul cielo
     // blu, "certe volte" — bug segnalato dall'utente).
     socket.emit('joinLobby', { lobbyId, color: myColor });
-    socket.emit('joinF1Game', { lobbyId, playerColor: myColor });
+    socket.emit('joinF1Game', { lobbyId, playerColor: myColor, uid: user ? user.uid : null });
 
     // ====================================================
     // RENDER LOOP — LERP + CAMERA
