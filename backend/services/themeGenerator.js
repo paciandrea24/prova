@@ -7,14 +7,17 @@
 // sarebbe, quindi la chiave resta server-side (process.env.GEMINI_API_KEY),
 // mai spedita al browser.
 //
-// patternStyle copre tutti e 18 i pattern di frontend/shared/liveryPattern.js
+// patternStyle copre tutti e 29 i pattern di frontend/shared/liveryPattern.js
 // (stesso elenco/ordine dei pulsanti in frontend/livery.html) — inizialmente
-// (4b/D) erano solo 4, gli altri 14 non erano ancora portati; ora che lo
-// sono (liveryPattern.js li implementa tutti), niente più li esclude qui.
+// (4b/D) erano solo 4, poi portati tutti e 18 dell'editor esterno di
+// riferimento, poi aggiunti gli 11 "realistici F1"/"sci-fi voxel art"
+// forniti dall'utente — niente più li esclude qui.
 const SUPPORTED_PATTERNS = [
     'solid', 'racing_stripes', 'split_sides', 'gradient', 'halves', 'diagonal',
     'abstract', 'top_deck', 'tricolor', 'checkers', 'camo', 'waves',
-    'pinstripe', 'flames', 'tiger', 'digital_rain', 'patchwork', 'speed_lines'
+    'pinstripe', 'flames', 'tiger', 'digital_rain', 'patchwork', 'speed_lines',
+    'aero_skirt', 'sidepod_sweep', 'nose_arrow', 'airbox_fin', 'dynamic_slashes',
+    'dither', 'chevron', 'honeycomb', 'shatter', 'circuit', 'wireframe'
 ];
 
 // Stessa PRNG deterministica dell'editor esterno (riga ~498 del file
@@ -145,7 +148,18 @@ const PATTERN_DESCRIPTIONS = [
     'tiger (strisce irregolari appuntite stile tigre/zebra)',
     'digital_rain (colonne verticali stile codice che cade, es. Matrix)',
     'patchwork (blocchi/toppe irregolari a mosaico)',
-    'speed_lines (strisce orizzontali allungate che suggeriscono velocità)'
+    'speed_lines (strisce orizzontali allungate che suggeriscono velocità)',
+    'aero_skirt (sottile linea di accento in basso lungo la fiancata, stile Aston Martin/Mercedes)',
+    'sidepod_sweep (taglio diagonale sulle pance laterali)',
+    'nose_arrow (freccia colorata sul musetto anteriore)',
+    'airbox_fin (cofano motore e airbox a contrasto, stile Haas/McLaren)',
+    'dynamic_slashes (tagli obliqui dinamici lungo tutta la carrozzeria)',
+    'dither (sfumatura a gradini, effetto pixel art)',
+    'chevron (frecce convergenti, stile sci-fi)',
+    'honeycomb (struttura a nido d\'ape/fibra di carbonio)',
+    'shatter (tagli geometrici irregolari incrociati)',
+    'circuit (strisce elettroniche ad angoli retti, stile circuito stampato)',
+    'wireframe (solo i bordi/estremi della carrozzeria evidenziati, stile Tron)'
 ].join(', ');
 
 // Chiamata Gemini (proxata dal backend). Se manca GEMINI_API_KEY, se la

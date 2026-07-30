@@ -213,6 +213,91 @@
                         else if (streak > 0.95 - (L * 0.5) && row % 3 === 0) col = cAccent;
                         break;
                     }
+                    // === STILI REALISTICI F1 ===
+                    case 'aero_skirt': {
+                        // Sottile linea di accento in basso (es. Aston Martin, Mercedes)
+                        if (U > 0.06 && U < 0.12) col = cAccent;
+                        else if (U <= 0.06) col = cSecondary;
+                        break;
+                    }
+                    case 'sidepod_sweep': {
+                        // Taglio diagonale sulle pance laterali
+                        // Se i voxel sono molto esterni (fiancate) e sotto la linea diagonale
+                        if (Math.abs(X) > 0.15 && U < (1.1 - L * 1.5)) col = cSecondary;
+                        break;
+                    }
+                    case 'nose_arrow': {
+                        // Freccia colorata che segue la larghezza del musetto anteriore
+                        const arrowWidth = L * 0.8;
+                        if (Math.abs(X) < arrowWidth && L < 0.55) col = cSecondary;
+                        else if (Math.abs(X) < arrowWidth + 0.05 && L < 0.58) col = cAccent;
+                        break;
+                    }
+                    case 'airbox_fin': {
+                        // Cofano motore e airbox a contrasto (es. Haas, McLaren)
+                        if (U > 0.45 && L > 0.35) col = cSecondary;
+                        if (U > 0.5 && L > 0.45 && Math.abs(X) < 0.05) col = cAccent;
+                        break;
+                    }
+                    case 'dynamic_slashes': {
+                        // Tagli dritti obliqui lungo tutta la carrozzeria
+                        const slash = L + U * 0.6;
+                        if (slash > 0.6 && slash < 0.75) col = cSecondary;
+                        else if (slash > 0.8 && slash < 0.85) col = cAccent;
+                        else if (slash > 0.95 && slash < 1.15) col = cSecondary;
+                        break;
+                    }
+
+                    // === STILI SCI-FI / VOXEL ART ===
+                    case 'dither': {
+                        // Sfumatura "a gradini" tipica della pixel art
+                        const isEven = (M.lat[q] + M.len[q] + M.up[q]) % 2 === 0;
+                        if (L > 0.6) col = cSecondary;
+                        else if (L > 0.4 && isEven) col = cSecondary;
+                        else if (L > 0.2 && !isEven && Math.abs(X) > 0.2) col = cAccent;
+                        break;
+                    }
+                    case 'chevron': {
+                        // Frecce convergenti in stile sci-fi
+                        const wave = (L + Math.abs(X) * 1.5) * 6.0;
+                        if (wave % 1.0 < 0.25) col = cSecondary;
+                        else if (wave % 1.0 < 0.35) col = cAccent;
+                        break;
+                    }
+                    case 'honeycomb': {
+                        // Struttura finto nido d'ape / fibra di carbonio
+                        const hx = M.lat[q] % 5;
+                        const hl = M.len[q] % 5;
+                        const hu = M.up[q] % 5;
+                        if ((hx === 0 || hl === 0 || hu === 0) && (hx + hl + hu) > 2) col = cAccent;
+                        else if (hx === 1 || hl === 1) col = cSecondary;
+                        break;
+                    }
+                    case 'shatter': {
+                        // Tagli geometrici irregolari incrociati
+                        const shatterVal = Math.sin(X * 40.0) * Math.cos(L * 30.0) + Math.sin(U * 20.0);
+                        if (Math.abs(shatterVal) < 0.15) col = cAccent;
+                        else if (shatterVal > 0.8) col = cSecondary;
+                        break;
+                    }
+                    case 'circuit': {
+                        // Strisce elettroniche ad angoli retti (90°)
+                        const cx = M.lat[q] % 10;
+                        const cl = M.len[q] % 10;
+                        const cu = M.up[q] % 10;
+                        if (cx === 0 && cl > 2) col = cAccent;
+                        else if (cl === 0 && cu > 2) col = cSecondary;
+                        else if (cx === 2 && cu === 2) col = cAccent;
+                        break;
+                    }
+                    case 'wireframe': {
+                        // Evidenzia solo i bordi estremi della macchina in stile "Tron"
+                        const edgeX = Math.abs(X) > 0.42;
+                        const edgeU = U > 0.85 || U < 0.15;
+                        if (edgeX && edgeU) col = cAccent;
+                        else if (edgeX || edgeU) col = cSecondary;
+                        break;
+                    }
                     default:
                         break; // 'solid' e altri non gestiti restano cPrimary
                 }

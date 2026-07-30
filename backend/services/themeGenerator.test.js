@@ -2,12 +2,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { generateTheme, localTheme, SUPPORTED_PATTERNS } = require('./themeGenerator');
 
-test('SUPPORTED_PATTERNS: tutti e 18 i pattern di liveryPattern.js', () => {
+test('SUPPORTED_PATTERNS: tutti e 29 i pattern di liveryPattern.js', () => {
     assert.deepEqual([...SUPPORTED_PATTERNS].sort(), [
         'abstract', 'camo', 'checkers', 'diagonal', 'digital_rain', 'flames',
         'gradient', 'halves', 'patchwork', 'pinstripe', 'racing_stripes',
         'solid', 'speed_lines', 'split_sides', 'tiger', 'top_deck',
-        'tricolor', 'waves'
+        'tricolor', 'waves',
+        'aero_skirt', 'sidepod_sweep', 'nose_arrow', 'airbox_fin',
+        'dynamic_slashes', 'dither', 'chevron', 'honeycomb', 'shatter',
+        'circuit', 'wireframe'
     ].sort());
 });
 
