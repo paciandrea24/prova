@@ -153,11 +153,15 @@
                         break;
                     }
                     case 'checkers': {
+                        // Scacchiera a 3 tinte (primary/secondary/accent in
+                        // rotazione) invece del classico bicolore.
                         const size = Math.max(2, Math.round(M.spanLat * 0.15));
                         const cx = Math.floor(M.lat[q] / size);
                         const cl = Math.floor(M.len[q] / size);
                         const cu = Math.floor(M.up[q] / size);
-                        if ((cx + cl + cu) % 2 === 0) col = cSecondary;
+                        const parity = (cx + cl + cu) % 3;
+                        if (parity === 1) col = cSecondary;
+                        else if (parity === 2) col = cAccent;
                         break;
                     }
                     case 'camo': {
@@ -240,10 +244,19 @@
                         break;
                     }
                     case 'nose_arrow': {
-                        // Freccia colorata che segue la larghezza del musetto anteriore
+                        // Freccia piena in secondary con un sottile bordo
+                        // accent SOLO sul perimetro. Bug della v1: il bordo
+                        // usava un range di L più esteso (0.58) di quello del
+                        // riempimento (0.55) — per L tra i due, l'accent
+                        // copriva l'intera larghezza della freccia invece di
+                        // restare un bordo sottile (si vedeva un blocco pieno
+                        // di accent al posto del primary di sfondo). Stesso
+                        // range di L per entrambi, ora è sempre e solo un
+                        // bordo.
                         const arrowWidth = L * 0.8;
-                        if (Math.abs(X) < arrowWidth && L < 0.55) col = cSecondary;
-                        else if (Math.abs(X) < arrowWidth + 0.05 && L < 0.58) col = cAccent;
+                        const inArrow = L < 0.55;
+                        if (inArrow && Math.abs(X) < arrowWidth) col = cSecondary;
+                        else if (inArrow && Math.abs(X) < arrowWidth + 0.05) col = cAccent;
                         break;
                     }
                     case 'airbox_fin': {
@@ -263,8 +276,13 @@
 
                     // === STILI SCI-FI / VOXEL ART ===
                     case 'dither': {
-                        // Sfumatura "a gradini" tipica della pixel art
-                        const isEven = (M.lat[q] + M.len[q] + M.up[q]) % 2 === 0;
+                        // Sfumatura "a gradini" tipica della pixel art —
+                        // celle di dithering larghe (blocchi, non voxel per
+                        // voxel: l'alternanza a livello di singolo voxel era
+                        // troppo fine, si leggeva come rumore/quadrettatura
+                        // invece che come una vera sfumatura a gradini).
+                        const cellSize = Math.max(2, Math.round(M.spanLat * 0.1));
+                        const isEven = (Math.floor(M.lat[q] / cellSize) + Math.floor(M.len[q] / cellSize) + Math.floor(M.up[q] / cellSize)) % 2 === 0;
                         if (L > 0.6) col = cSecondary;
                         else if (L > 0.4 && isEven) col = cSecondary;
                         else if (L > 0.2 && !isEven && Math.abs(X) > 0.2) col = cAccent;
@@ -294,24 +312,30 @@
                         break;
                     }
                     case 'circuit': {
-                        // Strisce elettroniche ad angoli retti (90°)
+                        // Strisce elettroniche ad angoli retti (90°) —
+                        // linee CONTINUE: la v1 aveva un "vuoto" periodico
+                        // (`cl > 2` / `cu > 2`) pensato come giunzioni, ma si
+                        // leggeva solo come linee spezzate/interrotte.
                         const cx = M.lat[q] % 10;
                         const cl = M.len[q] % 10;
-                        const cu = M.up[q] % 10;
-                        if (cx === 0 && cl > 2) col = cAccent;
-                        else if (cl === 0 && cu > 2) col = cSecondary;
-                        else if (cx === 2 && cu === 2) col = cAccent;
+                        if (cx === 0) col = cAccent;
+                        else if (cl === 0) col = cSecondary;
                         break;
                     }
                     case 'wireframe': {
-                        // Evidenzia solo i bordi estremi della macchina in
-                        // stile "Tron". Niente più accent (l'angolo dove
-                        // scattava, larghezza massima E cima/fondo insieme,
-                        // conteneva solo un paio di voxel reali, un dettaglio
-                        // invisibile/inutile) — resta un pattern a 2 colori.
-                        const edgeX = Math.abs(X) > 0.42;
-                        const edgeU = U > 0.85 || U < 0.15;
-                        if (edgeX || edgeU) col = cSecondary;
+                        // Riscritto: la versione "solo bordi estremi" restava
+                        // quasi ovunque primary (solo un accenno vicino
+                        // all'airbox, dove la carrozzeria tocca davvero gli
+                        // estremi), leggibile come "solid" col resto.
+                        // Griglia di linee orizzontali+verticali sottili su
+                        // tutta la carrozzeria — evoca meglio un vero
+                        // wireframe stile "Tron", incroci in accent.
+                        const stepU = Math.max(2, Math.round(M.spanUp * 0.16));
+                        const stepLat = Math.max(2, Math.round(M.spanLat * 0.2));
+                        const onU = M.up[q] % stepU === 0;
+                        const onLat = M.lat[q] % stepLat === 0;
+                        if (onU && onLat) col = cAccent;
+                        else if (onU || onLat) col = cSecondary;
                         break;
                     }
                     default:
