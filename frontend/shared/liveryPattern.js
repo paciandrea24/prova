@@ -244,21 +244,15 @@
                         break;
                     }
                     case 'nose_arrow': {
-                        // v4: stessa identica sagoma a freccia della v1
-                        // (riempimento fino a arrowWidth, che cresce con L —
-                        // nessun bordo, nessuna larghezza fissa aggiunta in
-                        // v3, era un cambio più invasivo del necessario).
-                        // Cambia solo QUALE parte è secondary e quale accent:
-                        // la punta vicino al muso (L piccola) resta
-                        // secondary, il resto del riempimento — quello che
-                        // si allarga verso i sidepod — diventa accent pieno
-                        // invece di restare secondary/bianco.
+                        // v5: niente più bicolore secondary/accent dentro la
+                        // freccia (v3/v4 provavano a dividerla per larghezza
+                        // o per L, sbagliando entrambe le volte) — tutta la
+                        // sagoma, identica all'originale (stessa formula
+                        // arrowWidth/L<0.55), è accent pieno, come mostrato
+                        // dallo screenshot dell'utente (l'intera forma
+                        // cerchiata deve essere rossa).
                         const arrowWidth = L * 0.8;
-                        const inArrow = L < 0.55;
-                        const nearTip = L < 0.2;
-                        if (inArrow && Math.abs(X) < arrowWidth) {
-                            col = nearTip ? cSecondary : cAccent;
-                        }
+                        if (Math.abs(X) < arrowWidth && L < 0.55) col = cAccent;
                         break;
                     }
                     case 'airbox_fin': {
