@@ -244,19 +244,22 @@
                         break;
                     }
                     case 'nose_arrow': {
-                        // Freccia piena in secondary con un sottile bordo
-                        // accent SOLO sul perimetro. Bug della v1: il bordo
-                        // usava un range di L più esteso (0.58) di quello del
-                        // riempimento (0.55) — per L tra i due, l'accent
-                        // copriva l'intera larghezza della freccia invece di
-                        // restare un bordo sottile (si vedeva un blocco pieno
-                        // di accent al posto del primary di sfondo). Stesso
-                        // range di L per entrambi, ora è sempre e solo un
+                        // v3: la v2 (bordo sottile) in pratica si vedeva
+                        // come una larga fascia di secondary che si allarga
+                        // con L fin dentro ai sidepods, con l'accent ridotto
+                        // a un filo appena percettibile sul bordo — l'opposto
+                        // di quello che si voleva (screenshot: bianco/
+                        // secondary che invade i sidepod invece del rosso/
+                        // accent pieno). Ora la punta stretta al centro
+                        // resta secondary A LARGHEZZA FISSA (non cresce con
+                        // L), mentre tutta l'ala più larga intorno — quella
+                        // che raggiunge i sidepod — è accent PIENO, non un
                         // bordo.
-                        const arrowWidth = L * 0.8;
+                        const tipWidth = 0.12;
+                        const wingWidth = L * 0.8;
                         const inArrow = L < 0.55;
-                        if (inArrow && Math.abs(X) < arrowWidth) col = cSecondary;
-                        else if (inArrow && Math.abs(X) < arrowWidth + 0.05) col = cAccent;
+                        if (inArrow && Math.abs(X) < tipWidth) col = cSecondary;
+                        else if (inArrow && Math.abs(X) < wingWidth) col = cAccent;
                         break;
                     }
                     case 'airbox_fin': {
