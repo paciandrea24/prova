@@ -328,6 +328,7 @@ body::before {
 }
 
 .game-card {
+    position: relative;
     background: var(--surface);
     border: 3px solid var(--ink);
     border-radius: 16px;
@@ -350,18 +351,31 @@ body::before {
     box-shadow: none;
 }
 
+/* Il "disabilitato" per i non-host si ottiene con un velo semi-trasparente
+   sopra al contenuto (::before), non con opacity/filter sull'intera carta:
+   opacity/filter sul genitore appiattiscono in un unico livello anche i
+   figli (i mini-pulsanti livrea/leaderboard), quindi nessun override sul
+   figlio può "smacchiarli" — restavano visivamente sbiaditi anche se già
+   cliccabili. Il velo copre solo icona/titolo (z-index sotto ai
+   mini-pulsanti), che restano quindi nitidi e riconoscibili come attivi. */
 .game-card.disabled {
-    opacity: 0.35;
     cursor: not-allowed;
+}
+.game-card.disabled::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: rgba(242, 241, 239, 0.65);
     pointer-events: none;
-    filter: grayscale(60%);
+    z-index: 1;
 }
 .game-card.disabled #leaderboard-mini-btn,
 .game-card.disabled #livery-mini-btn {
+    position: relative;
+    z-index: 2;
     pointer-events: auto;
     cursor: pointer;
-    opacity: 1;
-    filter: none;
 }
 
 .g-icon {
