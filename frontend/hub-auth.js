@@ -4,9 +4,13 @@
         const link = document.getElementById('auth-link');
         if (!link) return;
 
+        function loginUrl() {
+            return 'login.html?returnTo=' + encodeURIComponent(ReturnTo.hereAsReturnTo());
+        }
+
         function showLoggedOut() {
             link.textContent = 'Login';
-            link.onclick = () => { window.location.href = 'login.html'; };
+            link.onclick = () => { window.location.href = loginUrl(); };
         }
 
         if (typeof firebaseAuth === 'undefined' || !firebaseAuth) {

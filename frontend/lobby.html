@@ -26,6 +26,7 @@
             <i data-lucide="gamepad-2" style="width:16px;height:16px;vertical-align:middle;stroke-width:2.5;"></i>
             Playground
         </button>
+        <button id="auth-link" type="button" class="btn-auth">Login</button>
         <button id="leave-lobby-btn" class="btn-leave">Leave</button>
     </div>
 
@@ -228,5 +229,10 @@
 <script>lucide.createIcons();</script>
 <script src="lobby.js" defer></script>
 <script src="playground.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
+<script src="shared/firebaseConfig.js" defer></script>
+<script src="shared/returnTo.js" defer></script>
+<script src="hub-auth.js" defer></script>
 </body>
 </html>
