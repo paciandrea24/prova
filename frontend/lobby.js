@@ -23,8 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
         trivia: { questions: 10, time: 30, category: 'general' },
         racing: { mode: 'championship', numTracks: 3, trackName: 'Monza' },
         football: { maxGoals: 3 },
-        deduction: { impostors: 1 },
-        spleef: { mapSize: 20 },
         fps: { rounds: 5 }, // round FISSI a 5 (il server ignora comunque questo valore)
         f1: { mode: 'championship', trackId: 'monte-rosso', botsEnabled: 'true' }
     };
@@ -71,7 +69,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 3. Setup Socket.io
     const socket = io();
-    window.lobbySocket = socket; // esposto per playground.js (stessa connessione, socket.color già impostato lato server)
     socket.emit('joinLobby', { lobbyId: lobbyId, color: selectedColor });
 
     socket.on('gameSelected', (data) => {
@@ -84,8 +81,6 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (gameId === 'bomb') targetPage = '/bomb.html';
         else if (gameId === 'football') targetPage = '/football.html';
         else if (data.gameId === 'footballMulti') targetPage = '/footballMulti.html';
-        else if (gameId === 'deduction') targetPage = '/deduction.html';
-        else if (gameId === 'spleef') targetPage = '/spleef.html';
         else if (gameId === 'fps') targetPage = '/fps.html';
         else if (gameId === 'f1') targetPage = '/f1.html';
 
@@ -290,8 +285,6 @@ document.addEventListener('DOMContentLoaded', () => {
             racing: '🏎️ Racing Settings',
             bomb: '💣 Bomb Settings',
             football: '⚽ Football Settings',
-            deduction: '🔪 Deduction Settings',
-            spleef: '⛏️ Spleef Settings',
             fps: '🎯 FPS Settings',
             f1: '🏎️ F1 3D Settings'
         };

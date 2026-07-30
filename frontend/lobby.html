@@ -22,10 +22,6 @@
             <span id="lobby-id-value" class="lobby-id-code">…</span>
         </div>
 
-        <button id="playground-btn" class="btn-playground">
-            <i data-lucide="gamepad-2" style="width:16px;height:16px;vertical-align:middle;stroke-width:2.5;"></i>
-            Playground
-        </button>
         <button id="auth-link" type="button" class="btn-auth">Login</button>
         <button id="leave-lobby-btn" class="btn-leave">Leave</button>
     </div>
@@ -70,22 +66,12 @@
                 <span class="g-title">Football</span>
             </div>
 
-            <div class="game-card" data-game-id="deduction">
-                <i data-lucide="search" class="g-icon"></i>
-                <span class="g-title">Deduction</span>
-            </div>
-
             <div class="game-card" data-game-id="f1" style="position:relative;">
                 <i data-lucide="gauge" class="g-icon"></i>
                 <span class="g-title">F1</span>
                 <button id="livery-mini-btn" class="btn-lb" title="Customize Livery">
                     <i data-lucide="palette"></i>
                 </button>
-            </div>
-
-            <div class="game-card" data-game-id="spleef">
-                <i data-lucide="shovel" class="g-icon"></i>
-                <span class="g-title">Spleef</span>
             </div>
 
             <div class="game-card" data-game-id="fps">
@@ -154,12 +140,6 @@
                 <div class="setting-row"><span>Players</span><select id="football-maxPlayers"><option value="2">2 (1v1)</option></select></div>
                 <div class="setting-row"><span>Goals</span><select id="football-maxGoals"><option value="3">3</option><option value="5">5</option><option value="10">10</option></select></div>
             </div>
-            <div class="settings-section" id="deduction-settings" style="display:none;">
-                <div class="setting-row"><span>Impostors</span><select id="deduction-impostors"><option value="1">1</option><option value="2">2</option></select></div>
-            </div>
-            <div class="settings-section" id="spleef-settings" style="display:none;">
-                <div class="setting-row"><span>Arena</span><select id="spleef-mapSize"><option value="15">Small (15×15)</option><option value="20" selected>Medium (20×20)</option><option value="25">Large (25×25)</option></select></div>
-            </div>
             <div class="settings-section" id="fps-settings" style="display:none;">
                 <div class="setting-row"><span>Rounds</span><span style="font-weight:bold;">5</span></div>
             </div>
@@ -210,25 +190,9 @@
     </div>
 </div>
 
-<!-- OVERLAY: PLAYGROUND 3D -->
-<div id="playground-overlay">
-    <canvas id="playground-canvas"></canvas>
-    <button id="playground-exit-btn">
-        <i data-lucide="door-open" style="width:16px;height:16px;vertical-align:middle;stroke-width:2.5;margin-right:6px;"></i>Esci
-    </button>
-    <div id="playground-hint">
-        <span>🖱️ Click per muovere la telecamera</span>
-        <span>·</span>
-        <span>WASD per rotolare</span>
-        <span>·</span>
-        <span>Scontrati con gli altri!</span>
-    </div>
-</div>
-
 <script src="/socket.io/socket.io.js"></script>
 <script>lucide.createIcons();</script>
 <script src="lobby.js" defer></script>
-<script src="playground.js" defer></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
 <script src="shared/firebaseConfig.js" defer></script>

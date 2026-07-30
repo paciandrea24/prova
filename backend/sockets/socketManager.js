@@ -6,12 +6,9 @@ const racingGameSocket = require('./games/racingGameSocket');
 const bombGameSocket = require('./games/bombGameSocket');
 const footballGameSocket = require('./games/footballGameSocket');
 const footballMultiGameSocket = require('./games/footballMultiGameSocket');
-const deductionGameSocket = require('./games/deductionGameSocket');
-const spleefGameSocket = require('./games/spleefGameSocket')
 const fpsGameSocket = require('./games/fpsGameSocket');
 const f1GameSocket = require('./games/f1GameSocket');
 const f1Testbench = require('./games/f1Testbench');
-const playgroundGameSocket = require('./games/playgroundGameSocket');
 
 // IMPORTANTE: Importiamo lo store delle lobby per poterle modificare
 const { lobbies, users, destroyTimers } = require('../store/lobbies');
@@ -178,11 +175,8 @@ module.exports = function (io) {
         bombGameSocket(io, socket);
         footballGameSocket(io, socket);
         footballMultiGameSocket(io, socket);
-        deductionGameSocket(io, socket);
-        spleefGameSocket(io, socket);
         fpsGameSocket(io, socket);
         f1GameSocket(io, socket);
         f1Testbench(io, socket);
-        playgroundGameSocket(io, socket);
     });
 };

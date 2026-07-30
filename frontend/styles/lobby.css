@@ -126,28 +126,6 @@ body::before {
     color: var(--yellow);
 }
 
-.btn-playground {
-    margin-left: auto;
-    font-family: 'Fredoka', sans-serif;
-    font-weight: 700;
-    font-size: 15px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    background: none;
-    color: var(--green);
-    border: 3px solid var(--green);
-    border-radius: 12px;
-    padding: 8px 18px;
-    cursor: pointer;
-    box-shadow: 4px 4px 0 var(--green);
-    transition: transform 0.1s, box-shadow 0.1s, background 0.1s, color 0.1s;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-}
-.btn-playground:hover  { background: var(--green); color: #fff; transform: translateY(-2px); box-shadow: 4px 6px 0 var(--green); }
-.btn-playground:active { transform: translate(4px,4px); box-shadow: none; }
-
 .btn-leave {
     margin-left: 0;
     font-family: 'Fredoka', sans-serif;
@@ -168,7 +146,7 @@ body::before {
 .btn-leave:active { transform: translate(4px,4px); box-shadow: none; }
 
 .btn-auth {
-    margin-left: 0;
+    margin-left: auto;
     font-family: 'Fredoka', sans-serif;
     font-weight: 700;
     font-size: 15px;
@@ -391,8 +369,6 @@ body::before {
 .game-card[data-game-id="racing"]    .g-icon { stroke: #FF3B5C; fill: rgba(255,  59,  92, 0.18); }
 .game-card[data-game-id="bomb"]      .g-icon { stroke: #E67E22; fill: rgba(230, 126,  34, 0.18); }
 .game-card[data-game-id="football"]  .g-icon { stroke: #2ECC71; fill: rgba( 46, 204, 113, 0.18); }
-.game-card[data-game-id="deduction"] .g-icon { stroke: #6C5CE7; fill: rgba(108,  92, 231, 0.18); }
-.game-card[data-game-id="spleef"]    .g-icon { stroke: #17BEBB; fill: rgba( 23, 190, 187, 0.18); }
 .game-card[data-game-id="fps"]       .g-icon { stroke: #C0392B; fill: rgba(192,  57,  43, 0.18); }
 .game-card[data-game-id="f1"]        .g-icon { stroke: #2D6CDF; fill: rgba( 45, 108, 223, 0.18); }
 
@@ -508,7 +484,7 @@ body::before {
 .chat-input::placeholder { color: var(--muted); }
 
 .btn-send {
-    background: var(--my-color);
+    background: var(--host-color);
     color: #fff;
     border: 3px solid var(--ink);
     border-radius: 12px;
@@ -588,7 +564,7 @@ body::before {
     padding: 24px;
     width: 100%;
     max-width: 500px;
-    box-shadow: 7px 7px 0 var(--my-color);
+    box-shadow: 7px 7px 0 var(--host-color);
     display: flex;
     flex-direction: column;
     max-height: 86vh;
@@ -718,60 +694,4 @@ body::before {
 }
 @media (max-width: 500px) {
     .games-grid { grid-template-columns: 1fr; }
-}
-
-/* ─── PLAYGROUND OVERLAY ─────────────────────────────────────── */
-#playground-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 2000;
-    display: none;
-    background: #1a1a2e;
-}
-
-#playground-canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-}
-
-#playground-exit-btn {
-    position: absolute;
-    top: 16px;
-    right: 20px;
-    font-family: 'Fredoka', sans-serif;
-    font-weight: 700;
-    font-size: 15px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    background: none;
-    color: var(--red);
-    border: 3px solid var(--red);
-    border-radius: 12px;
-    padding: 8px 18px;
-    cursor: pointer;
-    box-shadow: 4px 4px 0 var(--red);
-    transition: transform 0.1s, box-shadow 0.1s, background 0.1s, color 0.1s;
-    display: inline-flex;
-    align-items: center;
-    z-index: 2010;
-}
-#playground-exit-btn:hover  { background: var(--red); color: #fff; transform: translateY(-2px); box-shadow: 4px 6px 0 var(--red); }
-#playground-exit-btn:active { transform: translate(4px,4px); box-shadow: none; }
-
-#playground-hint {
-    position: absolute;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    color: rgba(255, 255, 255, 0.55);
-    font-family: 'Fredoka', sans-serif;
-    font-size: 14px;
-    font-weight: 600;
-    pointer-events: none;
-    white-space: nowrap;
-    z-index: 2010;
 }
