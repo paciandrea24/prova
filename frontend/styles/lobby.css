@@ -356,7 +356,8 @@ body::before {
     pointer-events: none;
     filter: grayscale(60%);
 }
-.game-card.disabled #leaderboard-mini-btn {
+.game-card.disabled #leaderboard-mini-btn,
+.game-card.disabled #livery-mini-btn {
     pointer-events: auto;
     cursor: pointer;
     opacity: 1;
