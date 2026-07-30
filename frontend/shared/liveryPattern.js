@@ -118,7 +118,11 @@
                         else if (dLat >= wSplit - 1) col = cAccent;
                         break;
                     case 'gradient':
-                        t = clamp((L - 0.15) / 0.7, 0, 1);
+                        // Punta del muso in accent puro (bypassa l'interpolazione
+                        // t, che ignora sempre col/cAccent) — solo un tocco,
+                        // il resto resta la sfumata primary->secondary.
+                        if (L < 0.06) col = cAccent;
+                        else t = clamp((L - 0.15) / 0.7, 0, 1);
                         break;
                     case 'halves': {
                         const mid = Math.round(M.spanLen * 0.52);
@@ -153,11 +157,16 @@
                         break;
                     }
                     case 'checkers': {
+                        // Scacchiera a 3 tinte (primary/secondary/accent in
+                        // rotazione) invece del classico bicolore — un tocco
+                        // di accent anche qui.
                         const size = Math.max(2, Math.round(M.spanLat * 0.15));
                         const cx = Math.floor(M.lat[q] / size);
                         const cl = Math.floor(M.len[q] / size);
                         const cu = Math.floor(M.up[q] / size);
-                        if ((cx + cl + cu) % 2 === 0) col = cSecondary;
+                        const parity = (cx + cl + cu) % 3;
+                        if (parity === 1) col = cSecondary;
+                        else if (parity === 2) col = cAccent;
                         break;
                     }
                     case 'camo': {
@@ -173,8 +182,13 @@
                         break;
                     }
                     case 'pinstripe': {
+                        // Ogni terza riga è accent invece di secondary — un
+                        // tocco di accent senza stravolgere il ritmo delle righe.
                         const step = Math.max(3, Math.round(M.spanLat * 0.12));
-                        if (dLat % step === 0 && dLat !== 0) col = cSecondary;
+                        if (dLat % step === 0 && dLat !== 0) {
+                            const stripeIdx = Math.round(dLat / step);
+                            col = (stripeIdx % 3 === 0) ? cAccent : cSecondary;
+                        }
                         break;
                     }
                     case 'flames': {
@@ -215,15 +229,32 @@
                     }
                     // === STILI REALISTICI F1 ===
                     case 'aero_skirt': {
-                        // Sottile linea di accento in basso (es. Aston Martin, Mercedes)
-                        if (U > 0.06 && U < 0.12) col = cAccent;
-                        else if (U <= 0.06) col = cSecondary;
+                        // Riscritto: le soglie originali (U tra 0.06 e 0.12,
+                        // normalizzate 0-1 sull'intera altezza) davano una
+                        // fascia larga meno di un voxel su molte risoluzioni
+                        // (arrotondava a zero righe reali) proprio nella zona
+                        // più bassa dell'auto, la più soggetta a celle
+                        // "locked" (scure/gomma, escluse dal pattern) — il
+                        // risultato era indistinguibile da 'solid'. Ora le
+                        // soglie sono in RIGHE VOXEL reali (M.up/M.spanUp,
+                        // mai frazionarie: Math.max(1,...) garantisce sempre
+                        // almeno una riga) e la fascia parte un po' più in
+                        // alto del fondo assoluto, dentro il pannello della
+                        // fiancata invece che nell'ombra del sottoscocca.
+                        const skirtRow = Math.max(1, Math.round(M.spanUp * 0.10));
+                        const bandRows = Math.max(1, Math.round(M.spanUp * 0.06));
+                        if (M.up[q] <= skirtRow) col = cSecondary;
+                        else if (M.up[q] <= skirtRow + bandRows) col = cAccent;
                         break;
                     }
                     case 'sidepod_sweep': {
-                        // Taglio diagonale sulle pance laterali
-                        // Se i voxel sono molto esterni (fiancate) e sotto la linea diagonale
-                        if (Math.abs(X) > 0.15 && U < (1.1 - L * 1.5)) col = cSecondary;
+                        // Sottile filo accent lungo il bordo del taglio
+                        // diagonale, oltre al riempimento secondary.
+                        const boundary = 1.1 - L * 1.5;
+                        if (Math.abs(X) > 0.15) {
+                            if (U < boundary && U > boundary - 0.05) col = cAccent;
+                            else if (U < boundary) col = cSecondary;
+                        }
                         break;
                     }
                     case 'nose_arrow': {
@@ -291,9 +322,15 @@
                         break;
                     }
                     case 'wireframe': {
-                        // Evidenzia solo i bordi estremi della macchina in stile "Tron"
-                        const edgeX = Math.abs(X) > 0.42;
-                        const edgeU = U > 0.85 || U < 0.15;
+                        // Evidenzia solo i bordi estremi della macchina in
+                        // stile "Tron" — soglie allargate rispetto
+                        // all'originale (0.42/0.85/0.15): l'angolo dove
+                        // ENTRAMBE le condizioni erano vere (accent) era
+                        // troppo stretto per contenere voxel reali su una
+                        // carrozzeria che si assottiglia verso l'alto/il
+                        // basso, restava sempre e solo secondary.
+                        const edgeX = Math.abs(X) > 0.35;
+                        const edgeU = U > 0.75 || U < 0.25;
                         if (edgeX && edgeU) col = cAccent;
                         else if (edgeX || edgeU) col = cSecondary;
                         break;
