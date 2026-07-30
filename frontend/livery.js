@@ -213,34 +213,45 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         initScene();
-        loadCarForPreview((model, mesh) => {
+
+        // Modello (.glb + voxelizzazione) e livrea salvata caricati IN
+        // PARALLELO, non più uno dopo l'altro: prima l'auto compariva
+        // subito con i colori di default (per non mostrarla nera, col
+        // buffer colore a zero) e veniva ridipinta con quelli veri solo
+        // dopo che la fetch della livrea finiva — un lampo di colore
+        // sbagliato per un paio di secondi, notato dall'utente. Ora la
+        // mesh resta invisibile finché non sappiamo davvero quali colori
+        // applicare, poi appare già colorata correttamente al primo
+        // frame; aspettare le due cose insieme invece che in sequenza è
+        // anche più veloce nel caso comune (tempo totale = il più lento
+        // dei due, non la somma).
+        const modelReady = new Promise((resolve) => {
+            loadCarForPreview((model, mesh) => {
+                mesh.visible = false;
+                resolve({ model, mesh });
+            });
+        });
+        // Pre-carica una livrea già salvata, se esiste — 404 (prima volta)
+        // è normale, si resta sui default di currentParams.
+        const liveryReady = fetch('/api/livery/' + user.uid)
+            .then((res) => (res.ok ? res.json() : null))
+            .catch(() => null);
+
+        Promise.all([modelReady, liveryReady]).then(([{ model, mesh }, doc]) => {
             M = model;
             voxelMesh = mesh;
-            // Dipinge subito con i default: il buffer colore della mesh
-            // appena costruita parte a zero (nero pieno) finché non viene
-            // chiamato applyLivery() almeno una volta — senza questo, per
-            // tutta la durata del fetch sottostante (rete lenta inclusa)
-            // si vedrebbe l'auto completamente nera. Se esiste una livrea
-            // salvata, viene ridipinta subito dopo con i suoi parametri.
+            if (doc && doc.liveryParams) {
+                currentParams.pattern = doc.liveryParams.pattern || currentParams.pattern;
+                currentParams.primary = doc.liveryParams.primary || currentParams.primary;
+                currentParams.secondary = doc.liveryParams.secondary || currentParams.secondary;
+                currentParams.accent = doc.liveryParams.accent || currentParams.accent;
+                document.getElementById('col-primary').value = currentParams.primary;
+                document.getElementById('col-secondary').value = currentParams.secondary;
+                document.getElementById('col-accent').value = currentParams.accent;
+            }
+            setActivePatternButton();
             applyCurrentLivery();
-            // Pre-carica una livrea già salvata, se esiste — 404 (prima
-            // volta) è normale, si resta sui default di currentParams.
-            fetch('/api/livery/' + user.uid)
-                .then((res) => (res.ok ? res.json() : null))
-                .then((doc) => {
-                    if (doc && doc.liveryParams) {
-                        currentParams.pattern = doc.liveryParams.pattern || currentParams.pattern;
-                        currentParams.primary = doc.liveryParams.primary || currentParams.primary;
-                        currentParams.secondary = doc.liveryParams.secondary || currentParams.secondary;
-                        currentParams.accent = doc.liveryParams.accent || currentParams.accent;
-                        document.getElementById('col-primary').value = currentParams.primary;
-                        document.getElementById('col-secondary').value = currentParams.secondary;
-                        document.getElementById('col-accent').value = currentParams.accent;
-                    }
-                    setActivePatternButton();
-                    applyCurrentLivery();
-                })
-                .catch(() => { setActivePatternButton(); applyCurrentLivery(); });
+            mesh.visible = true;
         });
 
         document.querySelectorAll('.pattern-btn').forEach((btn) => {
