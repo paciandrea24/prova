@@ -244,15 +244,16 @@
                         break;
                     }
                     case 'nose_arrow': {
-                        // v6: le versioni precedenti (v1-v5) erano tutte
-                        // variazioni di "freccia bicolore su sfondo
-                        // primary" — non era mai quello che si voleva.
-                        // Mappa a 3 zone vere sull'intera carrozzeria: naso
-                        // (punta, L piccola) = primary, fiancate/sidepods
-                        // (|X| grande, a metà lunghezza) = accent, resto
-                        // del chassis = secondary.
-                        const isNose = L < 0.15;
-                        const isSidepod = !isNose && Math.abs(X) > 0.22 && L < 0.65;
+                        // v7: v6 assumeva naso = L piccola (come 'flames'),
+                        // ma confermato dal test dell'utente che è l'OPPOSTO
+                        // su questo modello — il primary (assegnato a L<0.15)
+                        // spuntava vicino alla rear wing, l'estremo opposto.
+                        // Naso = L vicino a 1. Mappa a 3 zone: naso (punta) =
+                        // primary, fiancate/sidepods (fascia laterale
+                        // centrale, esclusi entrambi gli estremi) = accent,
+                        // resto del chassis = secondary.
+                        const isNose = L > 0.85;
+                        const isSidepod = !isNose && Math.abs(X) > 0.22 && L > 0.15 && L < 0.75;
                         if (isNose) col = cPrimary;
                         else if (isSidepod) col = cAccent;
                         else col = cSecondary;
