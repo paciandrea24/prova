@@ -244,22 +244,21 @@
                         break;
                     }
                     case 'nose_arrow': {
-                        // v3: la v2 (bordo sottile) in pratica si vedeva
-                        // come una larga fascia di secondary che si allarga
-                        // con L fin dentro ai sidepods, con l'accent ridotto
-                        // a un filo appena percettibile sul bordo — l'opposto
-                        // di quello che si voleva (screenshot: bianco/
-                        // secondary che invade i sidepod invece del rosso/
-                        // accent pieno). Ora la punta stretta al centro
-                        // resta secondary A LARGHEZZA FISSA (non cresce con
-                        // L), mentre tutta l'ala più larga intorno — quella
-                        // che raggiunge i sidepod — è accent PIENO, non un
-                        // bordo.
-                        const tipWidth = 0.12;
-                        const wingWidth = L * 0.8;
+                        // v4: stessa identica sagoma a freccia della v1
+                        // (riempimento fino a arrowWidth, che cresce con L —
+                        // nessun bordo, nessuna larghezza fissa aggiunta in
+                        // v3, era un cambio più invasivo del necessario).
+                        // Cambia solo QUALE parte è secondary e quale accent:
+                        // la punta vicino al muso (L piccola) resta
+                        // secondary, il resto del riempimento — quello che
+                        // si allarga verso i sidepod — diventa accent pieno
+                        // invece di restare secondary/bianco.
+                        const arrowWidth = L * 0.8;
                         const inArrow = L < 0.55;
-                        if (inArrow && Math.abs(X) < tipWidth) col = cSecondary;
-                        else if (inArrow && Math.abs(X) < wingWidth) col = cAccent;
+                        const nearTip = L < 0.2;
+                        if (inArrow && Math.abs(X) < arrowWidth) {
+                            col = nearTip ? cSecondary : cAccent;
+                        }
                         break;
                     }
                     case 'airbox_fin': {
