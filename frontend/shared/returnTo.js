@@ -65,5 +65,18 @@
         }
     }
 
-    return { isValid, parseReturnTo, buildHereAsReturnTo, read, hereAsReturnTo, wireAuthPage };
+    // Da chiamare dopo un login/registrazione riuscito. Se questa scheda è
+    // stata aperta via window.open (es. dal pulsante Login in lobby.html,
+    // per non perdere la connessione Socket.io della lobby navigando via —
+    // vedi hub-auth.js), si chiude da sola: la scheda d'origine rileva il
+    // login da sola tramite la sincronizzazione cross-tab di Firebase.
+    // window.close() su una scheda aperta con navigazione normale (es. da
+    // index.html) fallisce silenziosamente per restrizioni del browser: in
+    // quel caso si procede con la normale redirect a returnTo.
+    function finishAuth() {
+        window.close();
+        setTimeout(() => { window.location.href = read() || 'index.html'; }, 50);
+    }
+
+    return { isValid, parseReturnTo, buildHereAsReturnTo, read, hereAsReturnTo, wireAuthPage, finishAuth };
 });

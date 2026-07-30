@@ -47,7 +47,7 @@
             }
 
             firebaseAuth.createUserWithEmailAndPassword(email, password)
-                .then(() => { window.location.href = ReturnTo.read() || 'index.html'; })
+                .then(() => { ReturnTo.finishAuth(); })
                 .catch((err) => showToast(friendlyError(err), 'error'));
         });
     });
