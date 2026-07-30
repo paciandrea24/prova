@@ -45,6 +45,16 @@ function applyThemeToControls(theme) {
     applyCurrentLivery();
 }
 
+// Disabilita il pulsante e mostra una rotella al posto del testo (vedi
+// .btn-wide.is-loading in styles/livery.css) mentre una richiesta è in
+// volo — Save e Generate possono impiegare un attimo (il primo serializza
+// e spedisce l'intero array voxel, il secondo aspetta Gemini), senza
+// feedback l'utente pensa che il click non sia andato a buon fine.
+function setButtonLoading(btn, isLoading) {
+    btn.disabled = isLoading;
+    btn.classList.toggle('is-loading', isLoading);
+}
+
 function showToast(message, type = 'info') {
     let container = document.querySelector('.toast-container');
     if (!container) {
@@ -252,15 +262,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('btn-save').addEventListener('click', async () => {
             if (!M) return;
-            // Un solo array piatto (l'intera geometria voxel è ormai una
-            // mesh unica, non più una mesh separata per parte come nello
-            // schema pre-voxelizzazione) — vedi
-            // docs/superpowers/specs/2026-07-29-f1-livery-precomputed-colors-design.md
-            // per il perché si salva il colore già calcolato invece dei
-            // soli parametri: rifare la voxelizzazione ad ogni caricamento
-            // in gara, per ogni auto, sarebbe troppo costoso lato client.
-            const liveryColors = Array.from(M.geometry.attributes.color.array);
+            const btn = document.getElementById('btn-save');
+            setButtonLoading(btn, true);
             try {
+                // Un solo array piatto (l'intera geometria voxel è ormai una
+                // mesh unica, non più una mesh separata per parte come nello
+                // schema pre-voxelizzazione) — vedi
+                // docs/superpowers/specs/2026-07-29-f1-livery-precomputed-colors-design.md
+                // per il perché si salva il colore già calcolato invece dei
+                // soli parametri: rifare la voxelizzazione ad ogni caricamento
+                // in gara, per ogni auto, sarebbe troppo costoso lato client.
+                // È anche il motivo per cui il salvataggio richiede un attimo
+                // (array enorme da serializzare e spedire): setButtonLoading
+                // mostra una rotella per farlo capire, non basta disabilitare
+                // silenziosamente il pulsante (bug segnalato dall'utente:
+                // senza feedback pensava che il click non fosse andato a
+                // buon fine e ricliccava più volte).
+                const liveryColors = Array.from(M.geometry.attributes.color.array);
                 const idToken = await user.getIdToken();
                 const res = await fetch('/api/livery', {
                     method: 'POST',
@@ -272,6 +290,8 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (err) {
                 console.error('[livery] save error', err);
                 showToast('Could not save livery. Try again.', 'error');
+            } finally {
+                setButtonLoading(btn, false);
             }
         });
 
@@ -282,7 +302,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             const btn = document.getElementById('btn-generate');
-            btn.disabled = true;
+            setButtonLoading(btn, true);
             try {
                 const idToken = await user.getIdToken();
                 const res = await fetch('/api/livery/generate-theme', {
@@ -298,7 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('[livery] generate-theme error', err);
                 showToast('Could not generate a theme. Try again.', 'error');
             } finally {
-                btn.disabled = false;
+                setButtonLoading(btn, false);
             }
         });
         document.getElementById('ai-prompt').addEventListener('keydown', (e) => {

@@ -42,3 +42,27 @@ html, body { margin: 0; height: 100%; overflow: hidden; font-family: sans-serif;
 #livery-panel-footer .btn-wide:first-child { margin-top: 0; }
 #livery-panel .btn-save { background: #2ecc71; color: #101010; font-weight: 600; }
 #livery-panel .btn-back { background: #3a3a45; color: #ecf0f1; }
+
+/* Rotella di caricamento su Save/Generate mentre la richiesta è in volo
+   (vedi setButtonLoading in livery.js): il testo del pulsante diventa
+   trasparente, la rotella prende il suo posto al centro — niente emoji,
+   solo un anello CSS animato. */
+#livery-panel button.btn-wide.is-loading {
+    color: transparent;
+    position: relative;
+    cursor: default;
+}
+#livery-panel button.btn-wide.is-loading::after {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 16px; height: 16px;
+    margin: -8px 0 0 -8px;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: btn-spin 0.7s linear infinite;
+}
+@keyframes btn-spin {
+    to { transform: rotate(360deg); }
+}
