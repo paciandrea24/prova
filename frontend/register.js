@@ -28,6 +28,8 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+        ReturnTo.wireAuthPage();
+
         if (typeof firebaseAuth === 'undefined' || !firebaseAuth) {
             showToast('Firebase is not configured yet.', 'error');
             return;
@@ -45,7 +47,7 @@
             }
 
             firebaseAuth.createUserWithEmailAndPassword(email, password)
-                .then(() => { window.location.href = 'index.html'; })
+                .then(() => { window.location.href = ReturnTo.read() || 'index.html'; })
                 .catch((err) => showToast(friendlyError(err), 'error'));
         });
     });

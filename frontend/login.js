@@ -38,6 +38,8 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+        ReturnTo.wireAuthPage();
+
         if (typeof firebaseAuth === 'undefined' || !firebaseAuth) {
             showToast('Firebase is not configured yet.', 'error');
             return;
@@ -48,14 +50,14 @@
             const email = document.getElementById('email').value.trim();
             const password = document.getElementById('password').value;
             firebaseAuth.signInWithEmailAndPassword(email, password)
-                .then(() => { window.location.href = 'index.html'; })
+                .then(() => { window.location.href = ReturnTo.read() || 'index.html'; })
                 .catch((err) => showToast(friendlyError(err), 'error'));
         });
 
         document.getElementById('google-btn').addEventListener('click', () => {
             const provider = new firebase.auth.GoogleAuthProvider();
             firebaseAuth.signInWithPopup(provider)
-                .then(() => { window.location.href = 'index.html'; })
+                .then(() => { window.location.href = ReturnTo.read() || 'index.html'; })
                 .catch((err) => showToast(friendlyError(err), 'error'));
         });
     });
