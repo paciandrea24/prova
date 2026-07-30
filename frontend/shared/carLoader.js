@@ -60,9 +60,9 @@
         const d = max - min;
         let h = 0;
         if (d !== 0) {
-            if (max === r)      h = ((g - b) / d) % 6;
+            if (max === r) h = ((g - b) / d) % 6;
             else if (max === g) h = (b - r) / d + 2;
-            else                h = (r - g) / d + 4;
+            else h = (r - g) / d + 4;
             h *= 60;
             if (h < 0) h += 360;
         }
@@ -75,19 +75,19 @@
         const x = c * (1 - Math.abs((h / 60) % 2 - 1));
         const m = v - c;
         let r1, g1, b1;
-        if      (h < 60)  [r1, g1, b1] = [c, x, 0];
+        if (h < 60) [r1, g1, b1] = [c, x, 0];
         else if (h < 120) [r1, g1, b1] = [x, c, 0];
         else if (h < 180) [r1, g1, b1] = [0, c, x];
         else if (h < 240) [r1, g1, b1] = [0, x, c];
         else if (h < 300) [r1, g1, b1] = [x, 0, c];
-        else              [r1, g1, b1] = [c, 0, x];
+        else[r1, g1, b1] = [c, 0, x];
         return [r1 + m, g1 + m, b1 + m];
     }
 
     function recolorLiveryTexture(sourceTexture, hex, forceNeutral = false, compoundHex = null) {
         const img = sourceTexture.image;
         const canvas = document.createElement('canvas');
-        canvas.width  = img.width;
+        canvas.width = img.width;
         canvas.height = img.height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0);
@@ -115,7 +115,7 @@
         for (let i = 0; i < data.length; i += 4) {
             const [h, s, v] = rgbToHsv(data[i] / 255, data[i + 1] / 255, data[i + 2] / 255);
             const isLivery = !forceNeutral && h <= LIVERY_HUE_MAX && s >= LIVERY_SAT_MIN;
-            const isRim    = forceNeutral && compoundHex != null && h >= RIM_HUE_MIN && h <= RIM_HUE_MAX && s >= RIM_SAT_MIN;
+            const isRim = forceNeutral && compoundHex != null && h >= RIM_HUE_MIN && h <= RIM_HUE_MAX && s >= RIM_SAT_MIN;
             const liftedV = liftValue(v);
             let outHue, outSat, outVal;
             if (isLivery) {
@@ -126,16 +126,16 @@
                 outHue = h; outSat = desaturateForBlack(s); outVal = liftedV;
             }
             const [nr, ng, nb] = hsvToRgb(outHue, outSat, outVal);
-            data[i]     = Math.round(nr * 255);
+            data[i] = Math.round(nr * 255);
             data[i + 1] = Math.round(ng * 255);
             data[i + 2] = Math.round(nb * 255);
         }
         ctx.putImageData(imageData, 0, 0);
 
         const tex = new THREE.CanvasTexture(canvas);
-        tex.flipY     = sourceTexture.flipY;
-        tex.wrapS     = sourceTexture.wrapS;
-        tex.wrapT     = sourceTexture.wrapT;
+        tex.flipY = sourceTexture.flipY;
+        tex.wrapS = sourceTexture.wrapS;
+        tex.wrapT = sourceTexture.wrapT;
         // Sempre NEAREST e senza mipmap: questa texture è una palette di
         // lookup (256x1 colori diversissimi affiancati), non un'immagine
         // spaziale — con mipmap/filtro lineare la GPU sfuma colonne
@@ -145,9 +145,48 @@
         tex.magFilter = THREE.NearestFilter;
         tex.minFilter = THREE.NearestFilter;
         tex.generateMipmaps = false;
-        tex.encoding  = sourceTexture.encoding;
+        tex.encoding = sourceTexture.encoding;
         tex.needsUpdate = true;
         return tex;
+    }
+
+    // Tinta di default per-vertice (geometry.attributes.color / COLOR_0)
+    // per le mesh che non hanno più una texture-palette (Chassis/Nose/Plank
+    // del modello rifatto): senza questo ramo cadevano nel fallback
+    // "materiale bianco puro" (tinta uniforme su material.color), che poi
+    // si MOLTIPLICA per il colore-per-vertice già cotto nel file (COLOR_0),
+    // producendo una livrea scura/appiattita.
+    //
+    // A DIFFERENZA di recolorLiveryTexture (che tinge SOLO i texel in
+    // [0,LIVERY_HUE_MAX] di una texture-palette rosso-livrea, lasciando
+    // intatti gli altri come "dettaglio"), qui NON si filtra per hue/sat:
+    // verificato leggendo il COLOR_0 grezzo del .glb che il colore
+    // originale di queste mesh non è affatto un rosso con dettagli scuri,
+    // è un vero pattern mimetico multi-tono su tutta la superficie — con
+    // quel filtro oltre l'80% dei vertici restava escluso dalla tinta e si
+    // vedeva il mimetico originale sotto qualunque colore scelto (stesso
+    // bug osservato nell'editor, vedi liveryPattern.js). Quando
+    // forceNeutral è attivo (ruote/halo/wing, se mai passassero da questo
+    // ramo) resta comunque neutro: nessuna tinta, solo lift di luminosità.
+    // Muta l'array in place — il chiamante deve aver già clonato la
+    // geometria/l'attributo prima di invocarla, altrimenti tinge anche
+    // l'asset condiviso da tutte le istanze auto.
+    function recolorLiveryVertexColors(colorAttr, hex, forceNeutral = false) {
+        const [targetHue, targetSat, targetVal] = rgbToHsv(((hex >> 16) & 0xff) / 255, ((hex >> 8) & 0xff) / 255, (hex & 0xff) / 255);
+        const arr = colorAttr.array;
+        for (let i = 0; i < arr.length; i += 3) {
+            const [h, s, v] = rgbToHsv(arr[i], arr[i + 1], arr[i + 2]);
+            const liftedV = liftValue(v);
+            let outHue, outSat, outVal;
+            if (!forceNeutral) {
+                outHue = targetHue; outSat = targetSat; outVal = targetVal * liftedV;
+            } else {
+                outHue = h; outSat = desaturateForBlack(s); outVal = liftedV;
+            }
+            const [nr, ng, nb] = hsvToRgb(outHue, outSat, outVal);
+            arr[i] = nr; arr[i + 1] = ng; arr[i + 2] = nb;
+        }
+        colorAttr.needsUpdate = true;
     }
 
     // Ruote nominate 'wheelHub_FL/FR/RL/RR' (vedi backend/tools/f1CarBuilder.py,
@@ -175,18 +214,13 @@
     // colori-per-voxel già calcolati altrove (non da questa funzione — vedi
     // docs/superpowers/specs/2026-07-29-f1-livery-precomputed-colors-design.md).
     // Se assente: comportamento identico a oggi, nessuna regressione.
-    function loadCarModel(playerColor, onReady, { scene, listener, engineBuffer }, liveryColors = null) {
+    function loadCarModel(playerColor, onReady, { scene, listener, engineBuffer }, liveryData = null) {
         const loader = new THREE.GLTFLoader();
         loader.load('/assets/custom/f1Car.glb', (gltf) => {
             const group = new THREE.Group();
             const model = gltf.scene;
             model.scale.set(3.5, 3.5, 3.5);
 
-            // Il nodo radice del GLB ha un pivot non centrato sull'asset (translation
-            // locale non nulla): senza compensarlo la mesh visibile risulta spostata
-            // rispetto al centro logico (group), che è quello usato da fisica, hitbox
-            // e camera — causa del disallineamento "auto qui, hitbox là" osservato in
-            // gioco. Ricentriamo sul bounding box reale (x/z al centro, y a terra).
             model.updateMatrixWorld(true);
             const carBBox0 = new THREE.Box3().setFromObject(model);
             const carCenter0 = carBBox0.getCenter(new THREE.Vector3());
@@ -194,86 +228,119 @@
             model.position.z -= carCenter0.z;
             model.position.y -= carBBox0.min.y;
 
-            const hex        = parseInt(playerColor.replace('#', ''), 16);
+            const hex = parseInt(playerColor.replace('#', ''), 16);
             const namedWheels = [];
-            const allMeshes   = [];
-            const meshSide    = new Map();
+            const allMeshes = [];
+            const meshSide = new Map();
 
+            // 1. SCANSIONE MESH ORIGINALI E PREPARAZIONE FISICA
             model.traverse((child) => {
                 if (!child.isMesh) return;
-                child.castShadow    = true;
+                child.castShadow = true;
                 child.receiveShadow = true;
-                child.material      = child.material.clone();
+                child.material = child.material.clone();
+
                 const nm = (child.name + ' ' + (child.parent?.name || '')).toLowerCase();
                 const isWheelMesh = nm.includes('wheel') || nm.includes('tyre') || nm.includes('tire');
-                // Halo e ali restano sempre nere/fisse indipendentemente dal
-                // colore giocatore: alcuni loro texel hanno tonalità che
-                // recolorLiveryTexture classificherebbe come "livrea" (stessa
-                // palette condivisa con la carrozzeria), ma qui va sempre
-                // esclusa la tinta (forceNeutral), senza però entrare tra le
-                // "ruote" (namedWheels/rotazione) più sotto.
-                const isFixedMesh = nm.includes('halo') || nm.includes('wing');
-                // Le gomme non cambiano mai colore col giocatore (una gomma vera
-                // resta nera/grigia): la palette condivisa con la carrozzeria ha
-                // alcuni toni scuri (ombre) che per tonalità/saturazione vengono
-                // classificati come "livrea" da recolorLiveryTexture — corretto
-                // sulla carrozzeria, sbagliato sulle ruote (macchie del colore
-                // giocatore sui voxel gomma/cerchio). Sulle mesh ruota si applica
-                // comunque la schiarita di luminosità (altrimenti la palette
-                // scura originale si legge come un blob nero indistinguibile,
-                // vedi liftValue) ma MAI la tinta livrea (forceNeutral).
-                // Copia pristina salvata per OGNI mesh con texture (non solo
-                // ruote): serve a chi deve campionare l'ombreggiatura
-                // ORIGINALE non ancora ritinta/schiarita da
-                // recolorLiveryTexture — es. frontend/shared/liveryPattern.js
-                // (spike 4b), che altrimenti campionerebbe una texture già
-                // ricolorata due volte in cascata.
+
                 if (child.material.map) {
                     child.userData.pristineTex = child.material.map;
                 }
-                if (child.material.map) {
-                    child.material.map = recolorLiveryTexture(child.material.map, hex, isWheelMesh || isFixedMesh);
-                    child.material.needsUpdate = true;
-                } else {
-                    const c = child.material.color;
-                    if (c.r > 0.85 && c.g > 0.85 && c.b > 0.85) {
-                        child.material.color.setHex(hex);
-                        child.material.metalness = 0.4;
-                        child.material.roughness = 0.35;
-                    }
-                }
-                // Colori-livrea già calcolati (4b/B'): sostituisce la tinta
-                // di recolorLiveryTexture con vertex color veri, già pronti
-                // — nessun calcolo qui, solo "incollaggio". Clona la
-                // geometria: ogni istanza auto (propria e avversari) deve
-                // avere il proprio buffer colore, altrimenti dipingerne una
-                // dipingerebbe tutte quelle che condividono l'asset.
-                const meshLiveryColors = liveryColors && liveryColors[child.name];
-                if (meshLiveryColors) {
-                    child.geometry = child.geometry.clone();
-                    child.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(meshLiveryColors), 3));
-                    // THREE.js moltiplica map × vertexColor quando entrambi
-                    // sono attivi (non sostituisce) — va tolta la texture
-                    // perché il colore-livrea sia l'unica fonte visibile.
-                    child.material.map = null;
-                    child.material.vertexColors = true;
-                    child.material.needsUpdate = true;
-                }
 
-                allMeshes.push(child);
                 if (isWheelMesh) {
                     namedWheels.push(child);
                     const side = classifyWheelSide(nm);
                     if (side) meshSide.set(child, side);
-                }
-            });
 
-            console.log('[F1] Mesh nel modello:', allMeshes.map(m => `"${m.name}"`).join(', '));
+                    if (child.material.map) {
+                        child.material.map = recolorLiveryTexture(child.material.map, hex, true);
+                        child.material.needsUpdate = true;
+                    }
+                } else {
+                    // TRUCCO MAGICO PER LA FISICA:
+                    // Non usiamo child.visible = false, altrimenti il motore fisico la ignora!
+                    // Spegniamo solo il MATERIALE. In questo modo il Raycaster e la fisica
+                    // continueranno a usare la carrozzeria originale (leggerissima), 
+                    // ma il giocatore vedrà solo i Voxel sovrapposti!
+                    child.material.visible = false;
+                }
+                allMeshes.push(child);
+            });
 
             group.add(model);
 
-            // Raccogli i nodi PARENT delle ruote (rotazione più corretta del sub-mesh)
-            const wheelParentSet  = new Set();
+            // 2. CREAZIONE DEL VESTITO VOXEL
+            try {
+                const colorsArray = (liveryData && liveryData.liveryColors) ? liveryData.liveryColors : liveryData;
+
+                if (colorsArray && colorsArray.length > 0 && typeof Voxelizer !== 'undefined') {
+                    const M = Voxelizer.voxelizeModel(model);
+                    const voxelGeo = M.isBufferGeometry ? M : (M.geometry || M);
+                    voxelGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colorsArray), 3));
+
+                    // --- FIX RUOTE DOPPIE E CENTRO DI MASSA ---
+                    if (M.meshName && M.faceCell) {
+                        const posArr = voxelGeo.attributes.position.array;
+
+                        // Collassiamo i voxel delle ruote nel centro logico della griglia.
+                        // Se li mettessimo a (0,0,0) deformeremmo la hitbox verso il basso!
+                        const safeX = M.NX / 2;
+                        const safeY = M.NY / 2;
+                        const safeZ = M.NZ / 2;
+
+                        for (let f = 0; f < M.faceCount; f++) {
+                            const q = M.faceCell[f];
+                            const partName = (M.meshName[q] || '').toLowerCase();
+
+                            if (partName.includes('wheel') || partName.includes('tyre') || partName.includes('tire')) {
+                                const offset = f * 12;
+                                for (let v = 0; v < 4; v++) {
+                                    posArr[offset + v * 3] = safeX;
+                                    posArr[offset + v * 3 + 1] = safeY;
+                                    posArr[offset + v * 3 + 2] = safeZ;
+                                }
+                            }
+                        }
+                        voxelGeo.attributes.position.needsUpdate = true;
+                        voxelGeo.computeBoundingBox();
+                        voxelGeo.computeBoundingSphere();
+                    }
+
+                    const voxelMat = new THREE.MeshStandardMaterial({
+                        vertexColors: true,
+                        roughness: 0.25,
+                        metalness: 0.35
+                    });
+
+                    const voxelMesh = new THREE.Mesh(voxelGeo, voxelMat);
+                    voxelMesh.castShadow = true;
+                    voxelMesh.receiveShadow = true;
+
+                    // SALVATAGGIO PRESTAZIONI E FISICA:
+                    // Impediamo al motore di calcolare urti su questi 137.000 cubetti.
+                    voxelMesh.raycast = function () { };
+
+                    voxelMesh.scale.setScalar(M.voxelSize || 1);
+                    if (M.gridOrigin) {
+                        voxelMesh.position.copy(M.gridOrigin);
+                    }
+
+                    group.add(voxelMesh);
+                } else {
+                    // Fallback di sicurezza: se la livrea fallisce, riaccendiamo il materiale originale
+                    allMeshes.forEach(m => {
+                        if (m.material) m.material.visible = true;
+                    });
+                }
+            } catch (err) {
+                console.error("[F1] Errore critico nel Voxelizer:", err);
+                allMeshes.forEach(m => {
+                    if (m.material) m.material.visible = true;
+                });
+            }
+
+            // 3. RECUPERO NODI DELLE RUOTE E LOGICA FISICA
+            const wheelParentSet = new Set();
             const wheelSideByNode = new Map();
             for (const wm of namedWheels) {
                 const p = wm.parent;
@@ -284,7 +351,6 @@
                 }
             }
 
-            // Fallback bounding-box se non trovate per nome
             let wheels = [...wheelParentSet];
             if (wheels.length < 2 && allMeshes.length > 1) {
                 const carBB = new THREE.Box3().setFromObject(group);
@@ -293,23 +359,14 @@
                     const bb = new THREE.Box3().setFromObject(m);
                     return bb.getCenter(new THREE.Vector3()).y < thresh;
                 });
-                console.log('[F1] Ruote per BB:', wheels.length);
             }
 
-            // Fallback finale: ruote cilindriche sintetiche — solo se il
-            // modello ha più mesh separate (indizio che le ruote ci sono ma
-            // non sono state trovate); su una mesh voxel unica (allMeshes.length
-            // === 1) le ruote sono già disegnate nel modello stesso, aggiungerne
-            // di finte creerebbe cilindri scoordinati sovrapposti.
             if (wheels.length < 2 && allMeshes.length > 1) {
-                console.log('[F1] Nessuna ruota separata trovata → aggiungo ruote fake');
                 const wGeo = new THREE.CylinderGeometry(0.88, 0.88, 0.65, 16);
                 const wMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.95, metalness: 0.1 });
                 const wPos = [
-                    [-2.7, 0.88,  3.6],   // anteriore sinistra
-                    [ 2.7, 0.88,  3.6],   // anteriore destra
-                    [-2.7, 0.88, -3.4],   // posteriore sinistra
-                    [ 2.7, 0.88, -3.4],   // posteriore destra
+                    [-2.7, 0.88, 3.6], [2.7, 0.88, 3.6],
+                    [-2.7, 0.88, -3.4], [2.7, 0.88, -3.4],
                 ];
                 wheels = [];
                 for (const [wx, wy, wz] of wPos) {
@@ -329,15 +386,10 @@
                 return new THREE.Box3().setFromObject(w).getCenter(new THREE.Vector3()).z > 0;
             });
 
-            group.userData.wheels      = wheels;
+            group.userData.wheels = wheels;
             group.userData.frontWheels = frontWheels;
-            group.userData.wheelRot    = 0;
+            group.userData.wheelRot = 0;
 
-            // Rigenera la texture ruota col colore mescola richiesto, partendo
-            // sempre dalla copia non processata (mai dalla texture già
-            // ricolorata) per evitare degradazione cumulativa ad ogni cambio
-            // mescola (es. dopo un pit stop). Nessun effetto su mesh non-ruota
-            // (w.userData.pristineTex è undefined per la carrozzeria).
             group.userData.setCompoundColor = function (compoundHex) {
                 for (const w of namedWheels) {
                     if (!w.isMesh || !w.userData.pristineTex) continue;
@@ -348,18 +400,8 @@
                 }
             };
 
-            // Ordine Euler 'YXZ' su ogni nodo ruota: lo sterzo (rotation.y,
-            // applicato solo alle ruote anteriori in frontend/f1.js) va
-            // composto PRIMA del rotolamento (rotation.x, su tutte le ruote)
-            // — con l'ordine di default 'XYZ' le due rotazioni si mescolano
-            // e l'asse di rotolamento oscilla fuori dal piano orizzontale
-            // invece di sterzare pulito. Stessa tecnica già usata per
-            // carGroup (vedi frontend/f1.js).
             for (const w of wheels) w.rotation.order = 'YXZ';
 
-            // Loop motore: un solo buffer, mai fermato — pitch e volume
-            // vengono regolati ogni frame in animate() in base a velocità
-            // e stato accelerando/decelerando.
             const engineSound = new THREE.PositionalAudio(listener);
             engineSound.setBuffer(engineBuffer);
             engineSound.setLoop(true);

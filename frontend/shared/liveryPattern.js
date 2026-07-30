@@ -1,337 +1,301 @@
 // frontend/shared/liveryPattern.js
 //
-// Algoritmo pattern+ombreggiatura per la livrea F1, validato con dati reali
-// nello spike di B' (vedi [[project_f1_livery_ingame_port]]) e ora
-// richiamato attivamente da frontend/livery.js (4b/D) — non più solo
-// riferimento storico. Il gioco in gara (carLoader.js) continua a NON
-// richiamarlo: carica colori-per-voxel già calcolati e salvati da questa
-// pagina (vedi docs/superpowers/specs/2026-07-29-f1-livery-precomputed-colors-design.md),
-// nessun ricalcolo dal vivo in pista.
-//
-// SPIKE / prototipo originale: verifica che i pattern multi-colore dell'editor
-// esterno (voxel_livery_studio.html, tool esterno non nel repo) si
-// possano applicare dal vivo sul modello reale del gioco (f1Car.glb)
-// scrivendo vertex color veri, invece di ritingere la texture-palette
-// (che recolorLiveryTexture in carLoader.js può fare solo in modo
-// uniforme, non per pattern posizionali — un colore diverso a
-// sinistra/destra o avanti/dietro non è ottenibile da quella tecnica).
-//
-// Non tocca salvataggio/rete: prende un oggetto livrea FISSO passato
-// dal chiamante e lo applica solo al carGroup passato (pensato per un
-// test hardcoded sulla propria auto, vedi f1.js).
-//
-// A differenza dell'editor (che deve voxelizzare mesh arbitrarie
-// sconosciute campionando triangoli in una griglia), qui il modello è
-// noto e già geometria a voxel pulita: le coordinate lat/len/up si
-// derivano direttamente dalla posizione dei vertici e dal passo di
-// griglia già misurato, senza rieseguire la voxelizzazione completa.
-//
-// Il file f1Car.glb NON ha un attributo COLOR_0 (verificato leggendo il
-// JSON grezzo del .glb, non un'ipotesi — un controllo precedente via
-// Blender aveva fatto credere il contrario, probabilmente un artefatto
-// di anteprima di Blender in fase di import, non dato reale del file):
-// il colore/ombreggiatura originale per-voxel si campiona dalla texture
-// via UV (stesso identico approccio di voxel_livery_studio.html), e
-// l'attributo colore per il pattern viene creato da zero, non
-// sovrascritto.
+// Porting diretto di computeBodyColors()/isBody()/computeBase()/
+// applyLivery() da voxel_livery_studio.html (editor esterno di
+// riferimento, non nel repo — vedi [[project_f1_livery_ingame_port]]).
+// Opera sul modello voxel prodotto da frontend/shared/voxelizer.js (M:
+// un cella-per-voxel con colore originale/lock/lat/len/up + una mesh a
+// facce indipendenti, 4 vertici tutti suoi per faccia) — MAI sulla mesh
+// originale scolpita a mano: dipingere quest'ultima direttamente (tentativo
+// di questa stessa sessione, poi abbandonato) sbava inevitabilmente sulle
+// superfici curve, perché i vertici sono condivisi tra facce vicine e un
+// singolo triangolo può avere i suoi angoli su due lati diversi di un
+// confine di pattern. Con la mesh voxel del Voxelizer questo non può
+// succedere per costruzione: ogni faccia riceve UN SOLO colore, scritto
+// una volta su tutti i suoi 4 vertici.
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) module.exports = factory();
     else root.LiveryPattern = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
 
-    // Mesh "carrozzeria" dipingibili col pattern — ruote/ali/halo/tcam
-    // restano fuori, trattate come oggi da recolorLiveryTexture in
-    // carLoader.js (sempre neutre/fisse).
-    const PAINTABLE_NAMES = ['chassis', 'nose', 'plank'];
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-    // Passo di griglia misurato su f1Car.glb (0.032 unità nello spazio
-    // locale della geometria, PRIMA della scala 3.5x che loadCarModel
-    // applica al gruppo — i rapporti usati qui sotto sono comunque
-    // invarianti alla scala, ma il valore assoluto del passo va misurato
-    // in questo stesso spazio locale non scalato).
-    const GRID_STEP = 0.032;
-
-    // Nessuna riga di luminosità può mai azzerarsi del tutto — stesso
-    // principio (moltiplicativo, non additivo) già validato nel fix dei
-    // "voxel neri" in voxel_livery_studio.html.
+    // Luminosita' minima (come frazione della luminosita' del colore
+    // scelto) che un voxel puo' assumere per via dell'ombra/AO originale —
+    // evita che il blend moltiplicativo scenda mai a luminosita' zero
+    // (nero puro) su colori target scuri.
     const SHADE_FLOOR = 0.22;
 
-    // Classificazione livrea-vs-dettaglio: STESSI valori già misurati e
-    // provati su QUESTO asset in carLoader.js (LIVERY_HUE_MAX/SAT_MIN) —
-    // non i valori di voxel_livery_studio.html (tarati su una palette
-    // diversa). Un texel "non livrea" (cockpit/prese d'aria/dettagli
-    // scuri o desaturati dentro la stessa mesh Chassis/Nose/Plank) NON va
-    // ridipinto col pattern: va lasciato esattamente com'è, altrimenti
-    // sporca sia il colore dominante sia il risultato finale su quei
-    // texel (bug osservato: colore dominante calcolato come nero perché
-    // molti vertici di dettaglio scuro/desaturato, non scartati da una
-    // soglia di sola luminosità, dominavano l'istogramma per numero).
-    const LIVERY_HUE_MAX = 28;
-    const LIVERY_SAT_MIN = 0.2;
-    // La saturazione HSL è instabile vicino al nero: un texel quasi-nero
-    // con minime variazioni per canale (es. r=0.004,g=0.002,b=0.001, un
-    // artefatto di compressione/campionamento, non colore vero) ha
-    // saturazione calcolata alta (è un rapporto relativo alla luminosità,
-    // che esplode vicino a zero) pur essendo visivamente nero puro — senza
-    // questo floor quei texel passavano il controllo hue/sat e dominavano
-    // l'istogramma del colore dominante quantizzandosi tutti a (0,0,0).
-    const LIVERY_LIGHT_MIN = 0.05;
-    function isLiveryTexel(h, s, l) {
-        return l >= LIVERY_LIGHT_MIN && h <= LIVERY_HUE_MAX && s >= LIVERY_SAT_MIN;
-    }
-
-    function hexToRgb(hex) {
-        return [((hex >> 16) & 0xff) / 255, ((hex >> 8) & 0xff) / 255, (hex & 0xff) / 255];
-    }
-
-    function rgbToHsl(r, g, b) {
-        const max = Math.max(r, g, b), min = Math.min(r, g, b);
-        let h = 0, s = 0;
-        const l = (max + min) / 2;
-        const d = max - min;
-        if (d !== 0) {
-            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-            if (max === r) h = ((g - b) / d) % 6;
-            else if (max === g) h = (b - r) / d + 2;
-            else h = (r - g) / d + 4;
-            h *= 60;
-            if (h < 0) h += 360;
-        }
-        return [h, s, l];
-    }
-
-    function hslToRgb(h, s, l) {
-        if (s === 0) return [l, l, l];
-        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-        const p = 2 * l - q;
-        const hk = h / 360;
-        function hue2rgb(t) {
-            if (t < 0) t += 1;
-            if (t > 1) t -= 1;
-            if (t < 1 / 6) return p + (q - p) * 6 * t;
-            if (t < 1 / 2) return q;
-            if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-            return p;
-        }
-        return [hue2rgb(hk + 1 / 3), hue2rgb(hk), hue2rgb(hk - 1 / 3)];
-    }
-
-    // Legge la texture-palette in un canvas e restituisce un sampler
-    // nearest (u,v) -> [r,g,b] 0..1. Il file f1Car.glb NON ha un
-    // attributo COLOR_0 (verificato leggendo il JSON del .glb — un
-    // controllo precedente via Blender aveva fatto credere il contrario,
-    // probabilmente un artefatto di anteprima di Blender, non dato reale
-    // del file): il colore/ombreggiatura originale per-voxel esiste SOLO
-    // nella texture, va campionato via UV — stesso approccio già usato in
-    // voxel_livery_studio.html (makeSampler).
-    function makeTextureSampler(map) {
-        const img = map.image;
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-        const w = canvas.width, h = canvas.height;
-        const flipY = map.flipY !== false; // default THREE.js: true
-
-        return (u, v) => {
-            let uu = u - Math.floor(u), vv = v - Math.floor(v);
-            const row = flipY ? (1 - vv) : vv;
-            const px = Math.min(w - 1, Math.max(0, Math.floor(uu * w)));
-            const py = Math.min(h - 1, Math.max(0, Math.floor(row * h)));
-            const i = (py * w + px) * 4;
-            return [data[i] / 255, data[i + 1] / 255, data[i + 2] / 255];
+    function mulberry32(a) {
+        return function () {
+            a |= 0; a = a + 0x6D2B79F5 | 0;
+            let t = Math.imul(a ^ a >>> 15, 1 | a);
+            t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+            return ((t ^ t >>> 14) >>> 0) / 4294967296;
         };
     }
 
-    // Sottoinsieme di prova per lo spike (3 dei 18 pattern dell'editor —
-    // uno a strisce continue, uno a soglia laterale, uno su griglia
-    // discreta, per coprire i tre stili di calcolo usati dal set intero).
-    function applyVoxelLiveryPattern(carGroup, params) {
-        const { pattern, primary, secondary, accent } = params;
-        const cPrimary = hexToRgb(primary);
-        const cSecondary = hexToRgb(secondary);
-        const cAccent = hexToRgb(accent);
 
-        const paintable = [];
-        carGroup.traverse((child) => {
-            if (!child.isMesh) return;
-            const nm = (child.name || '').toLowerCase();
-            if (PAINTABLE_NAMES.some((n) => nm.includes(n))) paintable.push(child);
-        });
-        if (!paintable.length) {
-            console.warn('[liveryPattern] nessuna mesh carrozzeria trovata su', carGroup.name || carGroup);
-            return;
-        }
-
-        // Bounding box combinata: Chassis/Nose/Plank condividono la stessa
-        // origine locale (pivot [0,0,0] per tutte e tre, verificato via
-        // ispezione Blender su f1Car.glb), quindi le loro bounding box
-        // locali sono già nello stesso sistema di coordinate.
-        const box = new THREE.Box3();
-        for (const mesh of paintable) {
-            mesh.geometry.computeBoundingBox();
-            box.union(mesh.geometry.boundingBox);
-        }
-        const size = box.getSize(new THREE.Vector3());
-        // Orientamento noto di QUESTO modello (verificato via ispezione
-        // Blender, non generico come nell'editor): X = laterale,
-        // Z = lunghezza, Y = altezza.
-        const spanLat = Math.max(1, Math.round(size.x / GRID_STEP));
-        const spanLen = Math.max(1, Math.round(size.z / GRID_STEP));
-
-        // Il centro laterale VERO si prende dalla Chassis, non dal centro
-        // della bounding box combinata: verificato con dati reali
-        // (ispezione Blender) che Chassis e Nose condividono lo stesso
-        // centro laterale locale (x=0.016), ma Plank ha un centro diverso
-        // (x=0.0, scarto di mezzo passo di griglia). Usare il centro della
-        // combinazione dei tre lo tira verso quello di Plank, allontanandolo
-        // dal vero asse di simmetria di Chassis/Nose — poco percettibile
-        // sulla Chassis (larga), molto visibile sul Nose (stretto: lo
-        // stesso scarto assoluto è una frazione molto più grande della sua
-        // larghezza) — causa esatta della striscia non centrata osservata.
-        const chassisMesh = paintable.find((m) => (m.name || '').toLowerCase().includes('chassis'));
-        const chassisBox = new THREE.Box3();
-        if (chassisMesh) {
-            chassisMesh.geometry.computeBoundingBox();
-            chassisBox.copy(chassisMesh.geometry.boundingBox);
-        } else {
-            chassisBox.copy(box); // fallback se il modello non ha una mesh "Chassis"
-        }
-        const trueCenterX = (chassisBox.min.x + chassisBox.max.x) / 2;
-        const latCenterIdx = (trueCenterX - box.min.x) / GRID_STEP;
-
-        // Colore dominante: stesso metodo di computeBodyColors()
-        // nell'editor — istogramma dei colori quantizzati (4 bit per
-        // canale), bucket PIÙ FREQUENTE (non una media), escludendo i
-        // texel quasi-neri/desaturati (gomme/dettagli, mai livrea). Una
-        // media semplice era sbagliata: pochi texel scuri (ombre/creste
-        // AO) la spostavano in basso rispetto al colore che copre la
-        // maggior parte della superficie, causando risultati troppo
-        // chiari/lavati (bug osservato: rosso pieno diventato rosa/bianco).
-        // Usa SEMPRE la texture PRISTINA (userData.pristineTex, salvata da
-        // carLoader.js prima del ricolore) — quella già ricolorata da
-        // recolorLiveryTexture è schiarita (fix voxel neri), campionarla
-        // qui rischiarirebbe due volte in cascata.
+    // Colori dominanti (per capire cos'e' carrozzeria e cos'e' dettaglio):
+    // istogramma dei colori quantizzati (4 bit/canale) tra i voxel NON
+    // "locked" (gomme/parti nere, vedi voxelizer.js), bucket piu' frequente.
+    function computeBodyColors(M) {
         const hist = new Map();
-        for (const mesh of paintable) {
-            const tex = mesh.userData.pristineTex || mesh.material.map;
-            if (!tex || !mesh.geometry.attributes.uv) continue;
-            const sampler = makeTextureSampler(tex);
-            const uv = mesh.geometry.attributes.uv;
-            for (let i = 0; i < uv.count; i++) {
-                const [r, g, b] = sampler(uv.getX(i), uv.getY(i));
-                const [h, s, l] = rgbToHsl(r, g, b);
-                if (!isLiveryTexel(h, s, l)) continue; // dettaglio/trim: non livrea, non conta per il dominante
-                const key = (Math.round(r * 15) * 16 + Math.round(g * 15)) * 16 + Math.round(b * 15);
-                hist.set(key, (hist.get(key) || 0) + 1);
-            }
+        for (let q = 0; q < M.n; q++) {
+            if (M.locked[q]) continue;
+            const r = Math.round(M.orig[q * 3] * 15), g = Math.round(M.orig[q * 3 + 1] * 15), b = Math.round(M.orig[q * 3 + 2] * 15);
+            const k = (r * 16 + g) * 16 + b;
+            hist.set(k, (hist.get(k) || 0) + 1);
         }
-        let domL = 0.4;
-        if (hist.size) {
-            const domKey = [...hist.entries()].sort((a, b) => b[1] - a[1])[0][0];
+        const sorted = [...hist.entries()].sort((a, b) => b[1] - a[1]);
+        const total = [...hist.values()].reduce((a, b) => a + b, 0) || 1;
+
+        if (sorted.length > 0) {
+            const domKey = sorted[0][0];
             const dB = domKey % 16, dG = Math.floor(domKey / 16) % 16, dR = Math.floor(domKey / 256);
-            domL = rgbToHsl(dR / 15, dG / 15, dB / 15)[2];
+            const domColor = new THREE.Color(dR / 15, dG / 15, dB / 15);
+
+            // ASSICURATI CHE NON CI SIA NESSUN domColor.convertLinearToSRGB() QUI!
+
+            M.domHSL = { h: 0, s: 0, l: 0 };
+            domColor.getHSL(M.domHSL);
+        } else {
+            M.domHSL = { h: 0, s: 0, l: 0.5 };
         }
 
-        for (const mesh of paintable) {
-            const tex = mesh.userData.pristineTex || mesh.material.map;
-            if (!tex || !mesh.geometry.attributes.uv) {
-                console.warn('[liveryPattern] mesh senza texture/UV, salto:', mesh.name);
-                continue;
-            }
-            // Clona la geometria: ogni istanza auto (propria + avversari)
-            // deve avere il proprio buffer colore, altrimenti dipingere
-            // un'auto dipingerebbe tutte le auto che condividono l'asset.
-            mesh.geometry = mesh.geometry.clone();
-            const pos = mesh.geometry.attributes.position;
-            const uv = mesh.geometry.attributes.uv;
-            const sampler = makeTextureSampler(tex); // texture PRISTINA, vedi nota sopra
+        const body = new Set();
+        let acc = 0;
+        for (const [k, c] of sorted) {
+            body.add(k); acc += c;
+            if (acc / total > 0.55 || body.size >= 4) break;
+        }
+        M.bodyKeys = body;
+    }
+    function isBody(M, q) {
+        if (!M.bodyKeys) return true;
+        const r = Math.round(M.orig[q * 3] * 15), g = Math.round(M.orig[q * 3 + 1] * 15), b = Math.round(M.orig[q * 3 + 2] * 15);
+        return M.bodyKeys.has((r * 16 + g) * 16 + b);
+    }
 
-            // Nessun attributo colore nel file: lo creiamo da zero (non
-            // possiamo limitarci a sovrascrivere un attributo esistente
-            // come nell'editor esterno, qui parte vuoto).
-            const colorArray = new Float32Array(pos.count * 3);
+    // Colore-livrea per ogni voxel (prima dell'ombreggiatura/trasferimento
+    // saturazione, applicati in applyLivery). Stesso set di pattern
+    // dell'editor di riferimento.
+    function computeBase(M, params) {
+        // Nota r128 (three.js su questo progetto, non 0.160 come l'editor
+        // di riferimento): niente color-management esplicito, i valori hex
+        // sono usati così come sono — stessa convenzione già seguita da
+        // carLoader.js altrove nel progetto.
+        const cPrimary = new THREE.Color(params.primary).convertSRGBToLinear();
+        const cSecondary = new THREE.Color(params.secondary).convertSRGBToLinear();
+        const cAccent = new THREE.Color(params.accent).convertSRGBToLinear();
 
-            const wStripe = Math.max(1, Math.round(spanLat * 0.11));
-            const wSplit = Math.max(1, Math.round(spanLat * 0.30));
-            const cellSize = Math.max(2, Math.round(spanLat * 0.15));
+        const latC = (M.spanLat - 1) / 2;
+        const wStripe = Math.max(1, Math.round(M.spanLat * 0.11));
+        const wSplit = Math.max(1, Math.round(M.spanLat * 0.30));
+        const rnd = mulberry32(M.n * 7 + 13);
+        const noise = [];
+        for (let i = 0; i < 24; i++) noise.push(rnd());
 
-            for (let i = 0; i < pos.count; i++) {
-                // "orig" dalla texture PRISTINA campionata via UV (il file
-                // non ha un attributo colore). Se il texel originale non è
-                // "livrea" (dettaglio/trim scuro o desaturato — cockpit,
-                // prese d'aria, ecc. — stesso criterio hue/sat già provato
-                // in carLoader.js), si tiene il colore originale così com'è:
-                // NON va ridipinto col pattern, esattamente come fa
-                // l'editor esterno coi voxel "locked".
-                const [origR, origG, origB] = sampler(uv.getX(i), uv.getY(i));
-                const [origH, origS, origL] = rgbToHsl(origR, origG, origB);
+        if (!M.base) M.base = new Float32Array(M.n * 3);
 
-                if (!isLiveryTexel(origH, origS, origL)) {
-                    colorArray[i * 3] = origR;
-                    colorArray[i * 3 + 1] = origG;
-                    colorArray[i * 3 + 2] = origB;
-                    continue;
-                }
+        for (let q = 0; q < M.n; q++) {
+            let r, g, b;
+            const keep = params.keepDetails ? (M.locked[q] || !isBody(M, q)) : M.locked[q];
+            if (keep) {
+                r = M.orig[q * 3]; g = M.orig[q * 3 + 1]; b = M.orig[q * 3 + 2];
+            } else {
+                const dLat = Math.abs(M.lat[q] - latC);
+                const L = M.nLen[q], U = M.nUp[q], X = M.nLat[q];
+                let col = cPrimary, t = -1;
 
-                const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-                const latIdx = Math.round((x - box.min.x) / GRID_STEP);
-                const lenIdx = Math.round((z - box.min.z) / GRID_STEP);
-                const upIdx = Math.round((y - box.min.y) / GRID_STEP);
-                const dLat = Math.abs(latIdx - latCenterIdx);
-
-                let r = cPrimary[0], g = cPrimary[1], b = cPrimary[2];
-
-                switch (pattern) {
+                switch (params.pattern) {
                     case 'racing_stripes':
-                        if (dLat <= wStripe) { r = cSecondary[0]; g = cSecondary[1]; b = cSecondary[2]; }
-                        else if (dLat <= wStripe + 1) { r = cAccent[0]; g = cAccent[1]; b = cAccent[2]; }
+                        if (dLat <= wStripe) col = cSecondary;
+                        else if (dLat <= wStripe + 1) col = cAccent;
                         break;
                     case 'split_sides':
-                        if (dLat >= wSplit) { r = cSecondary[0]; g = cSecondary[1]; b = cSecondary[2]; }
-                        else if (dLat >= wSplit - 1) { r = cAccent[0]; g = cAccent[1]; b = cAccent[2]; }
+                        if (dLat >= wSplit) col = cSecondary;
+                        else if (dLat >= wSplit - 1) col = cAccent;
                         break;
+                    case 'gradient':
+                        t = clamp((L - 0.15) / 0.7, 0, 1);
+                        break;
+                    case 'halves': {
+                        const mid = Math.round(M.spanLen * 0.52);
+                        if (M.len[q] > mid) col = cSecondary;
+                        else if (M.len[q] > mid - 1) col = cAccent;
+                        break;
+                    }
+                    case 'diagonal': {
+                        const per = Math.max(4, Math.round(M.spanLen * 0.13));
+                        const ph = ((M.len[q] + M.lat[q] * 2 + M.up[q]) % per + per) % per;
+                        if (ph < per * 0.45) col = cSecondary;
+                        else if (ph < per * 0.45 + 1) col = cAccent;
+                        break;
+                    }
+                    case 'abstract': {
+                        const s = Math.sin(L * 9.0 + noise[0] * 6.28) + Math.sin(X * 11.0 + noise[1] * 6.28) * 0.8
+                            + Math.sin(U * 7.0 + noise[2] * 6.28) * 0.6;
+                        col = s > 0.15 ? cSecondary : (s < -0.6 ? cAccent : cPrimary);
+                        break;
+                    }
+                    case 'top_deck': {
+                        const lim = Math.round(M.spanUp * 0.58);
+                        if (M.up[q] > lim) col = cSecondary;
+                        else if (M.up[q] > lim - 1) col = cAccent;
+                        break;
+                    }
+                    case 'tricolor': {
+                        const p1 = Math.round(M.spanLen * 0.33);
+                        const p2 = Math.round(M.spanLen * 0.66);
+                        if (M.len[q] > p2) col = cSecondary;
+                        else if (M.len[q] > p1) col = cAccent;
+                        break;
+                    }
                     case 'checkers': {
-                        const cx = Math.floor(latIdx / cellSize);
-                        const cl = Math.floor(lenIdx / cellSize);
-                        const cu = Math.floor(upIdx / cellSize);
-                        if ((cx + cl + cu) % 2 === 0) { r = cSecondary[0]; g = cSecondary[1]; b = cSecondary[2]; }
+                        const size = Math.max(2, Math.round(M.spanLat * 0.15));
+                        const cx = Math.floor(M.lat[q] / size);
+                        const cl = Math.floor(M.len[q] / size);
+                        const cu = Math.floor(M.up[q] / size);
+                        if ((cx + cl + cu) % 2 === 0) col = cSecondary;
+                        break;
+                    }
+                    case 'camo': {
+                        const n1 = Math.sin(X * 18.0 + noise[3] * 10) * Math.cos(L * 15.0 + noise[4] * 10) + Math.sin(U * 12.0 + noise[5] * 10);
+                        if (n1 > 0.6) col = cSecondary;
+                        else if (n1 < -0.6) col = cAccent;
+                        break;
+                    }
+                    case 'waves': {
+                        const wave = Math.sin(L * 15.0 + noise[6] * 6.28) * 0.25;
+                        if (U > 0.5 + wave) col = cSecondary;
+                        else if (U > 0.4 + wave) col = cAccent;
+                        break;
+                    }
+                    case 'pinstripe': {
+                        const step = Math.max(3, Math.round(M.spanLat * 0.12));
+                        if (dLat % step === 0 && dLat !== 0) col = cSecondary;
+                        break;
+                    }
+                    case 'flames': {
+                        const jagged = Math.sin(X * 25.0 + noise[7] * 10) * 0.15 + Math.cos(U * 20.0 + noise[8] * 5) * 0.1;
+                        if (L < 0.25 + jagged) col = cSecondary;
+                        else if (L < 0.32 + jagged) col = cAccent;
+                        break;
+                    }
+                    case 'tiger': {
+                        const stripe = Math.sin(L * 35.0 + Math.sin(U * 12.0) * 1.5 + noise[9] * 5);
+                        if (stripe > 0.65) col = cSecondary;
+                        else if (stripe > 0.45) col = cAccent;
+                        break;
+                    }
+                    case 'digital_rain': {
+                        const rain = Math.sin(X * 45.0) * Math.sin(L * 50.0 + U * 8.0 + noise[10] * 20);
+                        if (rain > 0.85) col = cSecondary;
+                        else if (rain > 0.65) col = cAccent;
+                        break;
+                    }
+                    case 'patchwork': {
+                        const blockX = Math.floor(M.lat[q] / 6);
+                        const blockL = Math.floor(M.len[q] / 9);
+                        const blockU = Math.floor(M.up[q] / 5);
+                        const randVal = Math.sin(blockX * 12.33 + blockL * 45.66 + blockU * 78.99 + noise[11]) * 10000;
+                        const dec = randVal - Math.floor(randVal);
+                        if (dec > 0.7) col = cSecondary;
+                        else if (dec > 0.4) col = cAccent;
+                        break;
+                    }
+                    case 'speed_lines': {
+                        const row = Math.floor(M.up[q] / 2);
+                        const rowOffset = Math.sin(row * 4.7 + noise[12] * 10) * 15.0;
+                        const streak = Math.cos(L * 20.0 + rowOffset);
+                        if (streak > 0.8 - (L * 0.6) && row % 2 === 0) col = cSecondary;
+                        else if (streak > 0.95 - (L * 0.5) && row % 3 === 0) col = cAccent;
                         break;
                     }
                     default:
-                        break; // altri pattern non ancora portati in questo spike
+                        break; // 'solid' e altri non gestiti restano cPrimary
                 }
-
-                // Trasferimento ombra: stesso principio moltiplicativo con
-                // floor già validato nel fix "voxel neri" dell'editor
-                // esterno — non clippa mai a luminosità zero.
-                const [targetH, targetS, targetL] = rgbToHsl(r, g, b);
-                const relShade = origL / Math.max(domL, 0.02);
-                const shadeMult = Math.max(SHADE_FLOOR, relShade);
-                const finalL = Math.max(0, Math.min(1, targetL * shadeMult));
-                const [fr, fg, fb] = hslToRgb(targetH, targetS, finalL);
-                colorArray[i * 3] = fr;
-                colorArray[i * 3 + 1] = fg;
-                colorArray[i * 3 + 2] = fb;
+                if (t >= 0) {
+                    r = cPrimary.r + (cSecondary.r - cPrimary.r) * t;
+                    g = cPrimary.g + (cSecondary.g - cPrimary.g) * t;
+                    b = cPrimary.b + (cSecondary.b - cPrimary.b) * t;
+                } else {
+                    r = col.r; g = col.g; b = col.b;
+                }
             }
-            mesh.geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
-            // THREE.js MOLTIPLICA map × vertexColor quando entrambi sono
-            // attivi (non sostituisce) — lasciare la texture rossa già
-            // ricolorata da recolorLiveryTexture avrebbe reso invisibile
-            // il bianco (bianco × rosso = rosso invariato) e visibile solo
-            // come lieve scurimento la fascia accento (accento scuro ×
-            // rosso = rosso scurito) — esattamente il sintomo osservato
-            // ("alone scuro", base sempre rossa). Il colore-pattern deve
-            // essere l'unica fonte: si toglie la texture, il campionatore
-            // sopra ha già estratto i pixel di cui aveva bisogno prima di
-            // questo punto.
-            mesh.material.map = null;
-            mesh.material.vertexColors = true;
-            mesh.material.needsUpdate = true;
+            M.base[q * 3] = r; M.base[q * 3 + 1] = g; M.base[q * 3 + 2] = b;
         }
     }
 
-    return { applyVoxelLiveryPattern };
+    // Scrive i colori definitivi nella geometria voxel: ombreggiatura
+    // (trasferimento moltiplicativo dell'AO originale, mai a zero) +
+    // trasferimento saturazione (un voxel originale smorto/desaturato
+    // smorza anche il colore-pattern scelto). Stesso identico principio
+    // dell'editor di riferimento — un solo colore per FACCIA, scritto sui
+    // suoi 4 vertici (mai condivisi con la faccia vicina): zero sbavature.
+    function applyLivery(M, params) {
+        computeBodyColors(M);
+        computeBase(M, params);
+
+        const col = M.geometry.attributes.color;
+        const arr = col.array;
+
+        for (let f = 0; f < M.faceCount; f++) {
+            const q = M.faceCell[f];
+            let r = M.base[q * 3], g = M.base[q * 3 + 1], b = M.base[q * 3 + 2];
+
+            const keep = params.keepDetails ? (M.locked[q] || !isBody(M, q)) : M.locked[q];
+
+            if (keep) {
+                r = M.orig[q * 3]; g = M.orig[q * 3 + 1]; b = M.orig[q * 3 + 2];
+
+                if (!params.showOriginal) {
+                    const tempColor = new THREE.Color(r, g, b);
+
+                    // Nessuna conversione qui! Usiamo il lineare puro come nella r160
+                    const hsl = { h: 0, s: 0, l: 0 };
+                    tempColor.getHSL(hsl);
+
+                    let hueDist = Math.abs(hsl.h - M.domHSL.h);
+                    if (hueDist > 0.5) hueDist = 1 - hueDist;
+
+                    // Il fix delle ruote (hsl.s < 0.3) resta attivo e protegge il giallo!
+                    if ((hsl.l < 0.28 && hsl.s < 0.3) || (hsl.l < 0.5 && hueDist < 0.08)) {
+                        tempColor.setHSL(0, 0, hsl.l);
+                        r = tempColor.r; g = tempColor.g; b = tempColor.b;
+                    }
+                }
+
+            } else {
+                const origColor = new THREE.Color(M.orig[q * 3], M.orig[q * 3 + 1], M.orig[q * 3 + 2]);
+                const origHSL = { h: 0, s: 0, l: 0 };
+                origColor.getHSL(origHSL);
+
+                const targetColor = new THREE.Color(r, g, b);
+                const targetHSL = { h: 0, s: 0, l: 0 };
+                targetColor.getHSL(targetHSL);
+
+                // Grazie ai valori Lineari, relShade ora potrà superare l'1.0
+                // e creare le sfumature chiare sul naso dell'auto!
+                const relShade = origHSL.l / Math.max(M.domHSL.l, 0.02);
+                const shadeMult = Math.max(SHADE_FLOOR, relShade);
+                const finalL = Math.max(0, Math.min(1, targetHSL.l * shadeMult));
+
+                let finalS = targetHSL.s;
+                if (origHSL.s < 0.25) finalS = targetHSL.s * (origHSL.s / 0.25);
+
+                targetColor.setHSL(targetHSL.h, finalS, finalL);
+                r = targetColor.r; g = targetColor.g; b = targetColor.b;
+            }
+
+            const o = f * 12;
+            for (let v = 0; v < 4; v++) {
+                arr[o + v * 3] = r; arr[o + v * 3 + 1] = g; arr[o + v * 3 + 2] = b;
+            }
+        }
+        col.needsUpdate = true;
+    }
+
+    return { applyLivery };
 });

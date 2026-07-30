@@ -11,16 +11,48 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    // FIXTURE DI TEST (4b/B'): colori-livrea già calcolati una tantum
-    // (vedi docs/superpowers/specs/2026-07-29-f1-livery-precomputed-colors-design.md),
-    // applicati a TUTTE le auto (propria e avversari) per ora — non è
-    // ancora legata a un account/scelta per-giocatore, quella è D/A/C.
-    const TEST_LIVERY_COLORS = await fetch('/assets/custom/f1CarTestLivery.json').then((r) => r.json());
+    // --- INIZIO GESTIONE FIREBASE E LIVREA ---
+    let loadedLivery = null;
+
+    // 1. Aspettiamo (in modo asincrono) che Firebase inizializzi l'auth e ci dica se siamo loggati
+    const user = await new Promise((resolve) => {
+        const unsubscribe = firebase.auth().onAuthStateChanged((u) => {
+            unsubscribe(); // Ci basta saperlo una volta all'avvio
+            resolve(u);
+        });
+    });
+
+    // 2. Se siamo loggati, proviamo a prendere la nostra livrea dal database
+    if (user) {
+        console.log("[F1] Utente loggato in gara:", user.uid);
+        try {
+            const res = await fetch(`/api/livery/${user.uid}`);
+            if (res.ok) {
+                loadedLivery = await res.json();
+                console.log("[F1] Livrea personale caricata con successo!");
+            } else {
+                console.warn("[F1] Livrea non trovata nel database.");
+            }
+        } catch (e) {
+            console.error("[F1] Errore durante il fetch della livrea:", e);
+        }
+    } else {
+        console.log("[F1] Giocatore ospite, nessuna livrea da caricare.");
+    }
+
+    // 3. Fallback: se l'utente non è loggato, o non ha salvato nulla, usiamo quella di test
+    if (!loadedLivery) {
+        console.log("[F1] Utilizzo livrea di fallback/test.");
+        loadedLivery = await fetch('/assets/custom/f1CarTestLivery.json').then((r) => r.json());
+    }
+
+    // 4. Assegniamo i dati alla costante originale, così il resto del file f1.js non si rompe!
+    const TEST_LIVERY_COLORS = loadedLivery;
+    // --- FINE GESTIONE LIVREA ---
 
     const socket = io({ transports: ['websocket'], upgrade: false });
 
-    // Riconnessione (rete instabile, scheda in background riattivata): ri-emette
-    // il join così il server annulla il timer di grazia e reintegra l'auto.
+    // Riconnessione
     socket.io.on('reconnect', () => {
         socket.emit('joinLobby', { lobbyId, color: myColor });
         socket.emit('joinF1Game', { lobbyId, playerColor: myColor });
@@ -40,8 +72,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.NoToneMapping;
     document.body.appendChild(renderer.domElement);
 
     // ====================================================
@@ -55,12 +87,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     scene.add(sun.target);
     sun.castShadow = true;
     sun.shadow.mapSize.set(4096, 4096);
-    sun.shadow.camera.near  =  1;
-    sun.shadow.camera.far   = 600;
-    sun.shadow.camera.left  = -300;
-    sun.shadow.camera.right =  300;
-    sun.shadow.camera.top   =  300;
-    sun.shadow.camera.bottom= -300;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 600;
+    sun.shadow.camera.left = -300;
+    sun.shadow.camera.right = 300;
+    sun.shadow.camera.top = 300;
+    sun.shadow.camera.bottom = -300;
     sun.shadow.bias = -0.0005;
     scene.add(sun);
 
@@ -69,12 +101,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // (vedi frontend/tracks/), stessa geometria usata dal server tramite
     // backend/sockets/games/trackLoader.js.
     // ====================================================
-    const trackRes  = await fetch(`/tracks/${trackId}.json`);
+    const trackRes = await fetch(`/tracks/${trackId}.json`);
     const trackData = await trackRes.json();
 
-    const ROAD_HALF    = trackData.roadHalfWidth;
-    const CURB_W       = 2.8;
-    const BARRIER_D    = ROAD_HALF + CURB_W + 1.2;
+    const ROAD_HALF = trackData.roadHalfWidth;
+    const CURB_W = 2.8;
+    const BARRIER_D = ROAD_HALF + CURB_W + 1.2;
     // Il terrapieno deve iniziare esattamente dal bordo esterno del cordolo
     // (non da BARRIER_D, che è 1.2 unità più in là, dove sta la barriera):
     // altrimenti resta scoperta una fascia sottile tra cordolo e barriera —
@@ -86,10 +118,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // partenza, da tarare a vista (pendenza troppo ripida/dolce si aggiusta
     // solo qui, non in TrackGeometry.terrainHeightAt/TrackMeshBuilder).
     const EMBANKMENT_WIDTH = 45;
-    const PIT_PATH     = trackData.pit.path;
+    const PIT_PATH = trackData.pit.path;
 
     const N_SAMPLES = 1000;
-    const trackPts  = TrackGeometry.sampleLoop(trackData.controlPoints, N_SAMPLES);
+    const trackPts = TrackGeometry.sampleLoop(trackData.controlPoints, N_SAMPLES);
 
     // ====================================================
     // MINIMAPPA — contorno pista + corsia box in SVG, generati una tantum
@@ -224,15 +256,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // stesso approccio già usato per il prato di sfondo qui sopra.
     // ====================================================
     const SCENERY_ASSET_PATHS = {
-        treeLarge:            '/assets/kenney/treeLarge.glb',
-        treeSmall:             '/assets/kenney/treeSmall.glb',
-        grandStand:            '/assets/kenney/grandStand.glb',
-        grandStandAwning:      '/assets/kenney/grandStandAwning.glb',
-        grandStandCovered:     '/assets/kenney/grandStandCovered.glb',
-        billboard:             '/assets/kenney/billboard.glb',
-        billboardLow:          '/assets/kenney/billboardLow.glb',
-        pitsGarageClosed:      '/assets/kenney/pitsGarageClosed.glb',
-        pitsOffice:            '/assets/kenney/pitsOffice.glb',
+        treeLarge: '/assets/kenney/treeLarge.glb',
+        treeSmall: '/assets/kenney/treeSmall.glb',
+        grandStand: '/assets/kenney/grandStand.glb',
+        grandStandAwning: '/assets/kenney/grandStandAwning.glb',
+        grandStandCovered: '/assets/kenney/grandStandCovered.glb',
+        billboard: '/assets/kenney/billboard.glb',
+        billboardLow: '/assets/kenney/billboardLow.glb',
+        pitsGarageClosed: '/assets/kenney/pitsGarageClosed.glb',
+        pitsOffice: '/assets/kenney/pitsOffice.glb',
     };
 
     function loadScenery(container, layout) {
@@ -255,7 +287,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 for (const mesh of meshes) {
                     const im = new THREE.InstancedMesh(mesh.geometry, mesh.material.clone(), items.length);
                     im.frustumCulled = false;
-                    im.castShadow    = true;
+                    im.castShadow = true;
                     im.receiveShadow = true;
                     const localMatrix = mesh.matrixWorld;
 
@@ -317,8 +349,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // larghezza, ±3.6 di lunghezza sono l'ingombro reale del modello).
     // ====================================================
     const SLIPSTREAM_STREAK_LENGTH = 2.4;
-    const SLIPSTREAM_STREAK_Z0     = -4.0;   // appena dietro il paraurti posteriore
-    const SLIPSTREAM_DASH_SPEED    = 0.045;
+    const SLIPSTREAM_STREAK_Z0 = -4.0;   // appena dietro il paraurti posteriore
+    const SLIPSTREAM_DASH_SPEED = 0.045;
     const SLIPSTREAM_STREAK_OFFSETS = [
         { x: -1.6, y: 0.9 }, { x: 1.6, y: 0.9 },
         { x: -0.8, y: 1.3 }, { x: 0.8, y: 1.3 },
@@ -347,15 +379,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ====================================================
     // STATO DI GIOCO
     // ====================================================
-    let myCarGroup       = null;
-    let slipstreamGroup  = null;
+    let myCarGroup = null;
+    let slipstreamGroup = null;
     let slipstreamActive = false;
-    let cameraMode    = 'third';
-    let isRacing      = false;
-    let localStart    = null;
-    let myFinalTime   = null;
-    let hostColor     = null;
-    let currentPhase  = null;   // tyre_select | qualifying | grid_display | race
+    let cameraMode = 'third';
+    let isRacing = false;
+    let localStart = null;
+    let myFinalTime = null;
+    let hostColor = null;
+    let currentPhase = null;   // tyre_select | qualifying | grid_display | race
     let raceTotalLaps = 3;      // giri della gara vera (fisso, indipendente dalla fase corrente)
 
     let tyrePanelOpen = false;   // stato locale, mai sincronizzato col server — resettato a chiuso ad ogni f1Countdown
@@ -366,8 +398,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // scala già usata nel mockup approvato dall'utente.
     function wearColor(pct) {
         const stops = [
-            [0,   [79, 191, 130]],
-            [55,  [217, 178, 60]],
+            [0, [79, 191, 130]],
+            [55, [217, 178, 60]],
             [100, [198, 91, 82]],
         ];
         for (let i = 0; i < stops.length - 1; i++) {
@@ -387,14 +419,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // esteso a seconda di tyrePanelOpen, mai entrambi.
     function renderTyreVisibility() {
         const closedEl = document.getElementById('tyre-closed');
-        const openEl   = document.getElementById('tyre-open');
+        const openEl = document.getElementById('tyre-open');
         if (currentPhase !== 'race') {
             closedEl.style.display = 'none';
-            openEl.style.display   = 'none';
+            openEl.style.display = 'none';
             return;
         }
         closedEl.style.display = tyrePanelOpen ? 'none' : 'flex';
-        openEl.style.display   = tyrePanelOpen ? 'block' : 'none';
+        openEl.style.display = tyrePanelOpen ? 'block' : 'none';
     }
 
     // Mostra il giro CORRENTE che si sta guidando (convenzione vera F1: durante
@@ -419,7 +451,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const serverState = {};
     const visualState = {};
-    const otherCars   = {};
+    const otherCars = {};
 
     // Motore: per ogni auto (mia e altrui) approssimo "sta
     // accelerando/decelerando" da una variazione di velocità rispetto
@@ -431,11 +463,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // rete. Niente più cambio marcia sonoro: il clunk sintetizzato (onda
     // quadra) stonava col nuovo motore reale e veniva percepito come un
     // "colpo" indesiderato — rimosso su richiesta dell'utente.
-    const engineActiveSince      = {};
+    const engineActiveSince = {};
     const engineLastCheckedSpeed = {};
-    const engineAccelerating    = {};
-    const ENGINE_ACTIVE_HOLD_MS     = 400;
-    const ENGINE_SPEED_DELTA_EPS    = 0.02;
+    const engineAccelerating = {};
+    const ENGINE_ACTIVE_HOLD_MS = 400;
+    const ENGINE_SPEED_DELTA_EPS = 0.02;
 
     // ====================================================
     // DEBUG: hitbox visibili (tasto H) — stessi valori di CAR_HALF_LENGTH/
@@ -449,10 +481,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function getHitboxMesh(color) {
         if (hitboxMeshes[color]) return hitboxMeshes[color];
-        const geo   = new THREE.BoxGeometry(HITBOX_HALF_WID * 2, HITBOX_HEIGHT, HITBOX_HALF_LEN * 2);
+        const geo = new THREE.BoxGeometry(HITBOX_HALF_WID * 2, HITBOX_HEIGHT, HITBOX_HALF_LEN * 2);
         const edges = new THREE.EdgesGeometry(geo);
-        const mat   = new THREE.LineBasicMaterial({ color: color === myColor ? 0x00ff00 : 0xff0000 });
-        const mesh  = new THREE.LineSegments(edges, mat);
+        const mat = new THREE.LineBasicMaterial({ color: color === myColor ? 0x00ff00 : 0xff0000 });
+        const mesh = new THREE.LineSegments(edges, mat);
         mesh.position.y = HITBOX_HEIGHT / 2;
         scene.add(mesh);
         hitboxMeshes[color] = mesh;
@@ -463,7 +495,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // SELEZIONE MESCOLA
     // ====================================================
     let tyreSelectActive = false;   // true mentre siamo in fase tyre_select: la camera orbita sul tracciato
-    let tyreOrbitAngle   = 0;
+    let tyreOrbitAngle = 0;
     let myCompoundChoice = null;
     let tyreCompoundsInfo = null;   // { hard:{...}, medium:{...}, soft:{...} }, ricevuto una volta in f1Setup
 
@@ -695,15 +727,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!debugPanelOpen) return;
         const d = data.debug || {};
         document.getElementById('debug-maxspeed').textContent = `${d.maxSpeedPct ?? 100}%`;
-        document.getElementById('debug-grip').textContent     = `${d.gripPct ?? 100}%`;
-        document.getElementById('debug-accel').textContent    = `${d.accelPct ?? 100}%`;
-        document.getElementById('debug-brake').textContent    = `${d.brakePct ?? 100}%`;
-        document.getElementById('debug-steer').textContent    = `${d.steerPct ?? 100}%`;
-        document.getElementById('debug-tyrewear').textContent   = `${Math.round(data.tyreWear || 0)}%`;
+        document.getElementById('debug-grip').textContent = `${d.gripPct ?? 100}%`;
+        document.getElementById('debug-accel').textContent = `${d.accelPct ?? 100}%`;
+        document.getElementById('debug-brake').textContent = `${d.brakePct ?? 100}%`;
+        document.getElementById('debug-steer').textContent = `${d.steerPct ?? 100}%`;
+        document.getElementById('debug-tyrewear').textContent = `${Math.round(data.tyreWear || 0)}%`;
         const parts = data.damageParts || {};
-        document.getElementById('debug-frontwing').textContent  = `${Math.round(parts.frontWing || 0)}%`;
-        document.getElementById('debug-floor').textContent      = `${Math.round(parts.floor || 0)}%`;
-        document.getElementById('debug-engine').textContent     = `${Math.round(parts.engine || 0)}%`;
+        document.getElementById('debug-frontwing').textContent = `${Math.round(parts.frontWing || 0)}%`;
+        document.getElementById('debug-floor').textContent = `${Math.round(parts.floor || 0)}%`;
+        document.getElementById('debug-engine').textContent = `${Math.round(parts.engine || 0)}%`;
         document.getElementById('debug-suspension').textContent = `${Math.round(parts.suspension || 0)}%`;
     }
 
@@ -711,7 +743,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // SOCKET EVENTS
     // ====================================================
     socket.on('f1Setup', ({ players, trackName, hostColor: hc, totalLaps, phase, raceStarted, elapsed,
-                            compounds, strategy, myCompound, tyreConfirmed, tyreTotal }) => {
+        compounds, strategy, myCompound, tyreConfirmed, tyreTotal }) => {
         if (compounds) tyreCompoundsInfo = compounds;
         if (phase) currentPhase = phase;
         if (hc) hostColor = hc;
@@ -747,8 +779,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Rientro a gara già in corso: riprende il cronometro dal punto giusto
         // senza rivedere il countdown (che è già passato per tutti gli altri).
         if (raceStarted) {
-            isRacing    = true;
-            localStart  = Date.now() - (elapsed || 0);
+            isRacing = true;
+            localStart = Date.now() - (elapsed || 0);
             document.getElementById('countdown-overlay').style.display = 'none';
             document.getElementById('timer-speed-panel').style.display = (phase === 'qualifying' || phase === 'race') ? 'flex' : 'none';
         }
@@ -795,7 +827,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const info = tyreCompoundsInfo[data.compound];
                 if (info) {
                     const wear = Math.round(data.tyreWear || 0);
-                    const col  = wearColor(wear);
+                    const col = wearColor(wear);
                     document.getElementById('tyre-icon-closed').style.background = col;
                     document.getElementById('tyre-compound-dot').style.background = info.color;
                     document.getElementById('tyre-compound-label').textContent = info.label.toUpperCase();
@@ -824,7 +856,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (ms == null) return '';
         const totalDeci = Math.round(ms / 100);
         const s10 = totalDeci % 600;
-        const m   = Math.floor(totalDeci / 600);
+        const m = Math.floor(totalDeci / 600);
         const secStr = (s10 / 10).toFixed(1);
         return m > 0 ? `+${m}:${secStr.padStart(4, '0')}` : `+${secStr}`;
     }
@@ -833,11 +865,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const standingRowEls = {};     // color -> riga DOM persistente (mai ricreata finché il pilota resta in gara)
 
     const STANDING_ROW_HEIGHT = 24;   // deve corrispondere all'altezza reale di .f1-standing-row (padding incluso)
-    const STANDING_LIFT_PX    = 16;   // quanto la riga di chi sorpassa si "alza" oltre lo slot di arrivo, a metà animazione
+    const STANDING_LIFT_PX = 16;   // quanto la riga di chi sorpassa si "alza" oltre lo slot di arrivo, a metà animazione
 
     function renderStandingRowContent(rowEl, color, d) {
         const compoundLetter = { soft: 'S', medium: 'M', hard: 'H' }[d.compound] || '';
-        const compoundColor  = (tyreCompoundsInfo && tyreCompoundsInfo[d.compound] && tyreCompoundsInfo[d.compound].color) || '#888';
+        const compoundColor = (tyreCompoundsInfo && tyreCompoundsInfo[d.compound] && tyreCompoundsInfo[d.compound].color) || '#888';
         rowEl.innerHTML = `
             <span class="pos">${d.position}</span>
             <span class="dot" style="background:${color};"></span>
@@ -977,7 +1009,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     socket.on('f1Countdown', (data) => {
-        isRacing    = false;
+        isRacing = false;
         myFinalTime = null;
         if (tyreSelectActive) exitTyrePreview();   // la qualifica sta per partire: fine anteprima tracciato
         tyreSelectActive = false;
@@ -991,15 +1023,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('podium-modal').style.display = 'none';
         document.getElementById('pole-overlay').style.display = 'none';
         document.getElementById('tyre-select-overlay').style.display = 'none';
-        const overlay  = document.getElementById('countdown-overlay');
-        const num      = document.getElementById('countdown-number');
-        const trackEl  = document.getElementById('countdown-track');
-        const labelEl  = document.getElementById('countdown-label');
+        const overlay = document.getElementById('countdown-overlay');
+        const num = document.getElementById('countdown-number');
+        const trackEl = document.getElementById('countdown-track');
+        const labelEl = document.getElementById('countdown-label');
         const lightsBoard = document.getElementById('lights-board');
         if (data?.trackName) trackEl.textContent = data.trackName;
         labelEl.textContent = data?.label || '';
         overlay.style.background = 'rgba(0,0,0,0.65)';
-        overlay.style.display    = 'flex';
+        overlay.style.display = 'flex';
 
         if (data?.phase === 'race') {
             // Plancia luci: 5 bulbi spenti, si accendono uno alla volta ogni
@@ -1030,13 +1062,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     socket.on('f1RaceStarted', (data) => {
-        isRacing             = true;
+        isRacing = true;
         lightsSequenceActive = false;
         myFinalTime = null;
         if (data?.phase) currentPhase = data.phase;
-        localStart  = Date.now() - (data?.syncTime || 0);
+        localStart = Date.now() - (data?.syncTime || 0);
         const overlay = document.getElementById('countdown-overlay');
-        const num     = document.getElementById('countdown-number');
+        const num = document.getElementById('countdown-number');
         const lightsBoard = document.getElementById('lights-board');
         if (data?.phase === 'race') {
             // Le 5 luci si spengono tutte insieme, sincronizzate con l'arrivo
@@ -1093,7 +1125,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // posizione (es. "P4") in un colore neutro — vedi f1QualiEnded.
     function playRevealAnimation(fullText, isPole) {
         const overlay = document.getElementById('pole-overlay');
-        const textEl  = document.getElementById('pole-text');
+        const textEl = document.getElementById('pole-text');
         overlay.style.display = 'flex';
         textEl.style.color = isPole ? '#f1c40f' : 'var(--hud-text)';
         textEl.innerHTML = fullText.split('').map(ch =>
@@ -1118,12 +1150,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // prossimo f1Countdown, vedi handler sopra).
     socket.on('f1QualiEnded', ({ grid }) => {
         const myPos = (grid || []).findIndex(e => e.color === myColor) + 1;
-        if (myPos === 1)      playRevealAnimation('POOOOOOOOOOLE', true);
-        else if (myPos > 1)   playRevealAnimation(`P${myPos}`, false);
+        if (myPos === 1) playRevealAnimation('POOOOOOOOOOLE', true);
+        else if (myPos > 1) playRevealAnimation(`P${myPos}`, false);
 
         const modal = document.getElementById('podium-modal');
         const title = document.getElementById('podium-title');
-        const list  = document.getElementById('podium-list');
+        const list = document.getElementById('podium-list');
         title.textContent = '🏁 GRIGLIA DI PARTENZA 🏁';
         list.innerHTML = (grid || []).map((entry, i) => {
             const t = entry.time;
@@ -1148,7 +1180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     socket.on('f1RaceEnded', (data) => {
         isRacing = false;
         const modal = document.getElementById('podium-modal');
-        const list  = document.getElementById('podium-list');
+        const list = document.getElementById('podium-list');
         // Ripristina il titolo statico (f1QualiEnded lo sovrascrive con "GRIGLIA
         // DI PARTENZA" per la schermata di qualifica).
         document.getElementById('podium-title').textContent = '🏁 RACE FINISHED 🏁';
@@ -1174,9 +1206,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             li.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px 5px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:18px;';
             li.innerHTML = `
                 <div style="display:flex;align-items:center;gap:12px;">
-                    <span style="font-weight:900;width:26px;color:${i===0?'#f1c40f':i===1?'#95a5a6':i===2?'#d35400':'var(--hud-text)'}">${i+1}°</span>
+                    <span style="font-weight:900;width:26px;color:${i === 0 ? '#f1c40f' : i === 1 ? '#95a5a6' : i === 2 ? '#d35400' : 'var(--hud-text)'}">${i + 1}°</span>
                     <span style="display:inline-block;width:20px;height:20px;background:${entry.color};border-radius:50%;border:2px solid var(--hud-surface);"></span>
-                    <span style="font-size:13px;font-weight:bold;">${entry.color===myColor?'(YOU)':''}</span>
+                    <span style="font-size:13px;font-weight:bold;">${entry.color === myColor ? '(YOU)' : ''}</span>
                     ${entry.pitPenalty ? '<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+30s NO PIT</span>' : ''}
                     ${entry.falseStart ? '<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+5s FALSE START</span>' : ''}
                     ${entry.collisionPenaltyMs > 0 ? `<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+${(entry.collisionPenaltyMs / 1000).toFixed(1)}s COLLISIONI</span>` : ''}
@@ -1186,19 +1218,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         modal.style.display = 'flex';
-        const single   = document.getElementById('single-mode-controls');
+        const single = document.getElementById('single-mode-controls');
         const autoText = document.getElementById('auto-return-text');
         if (data.isSingleMode) {
             autoText.style.display = 'none';
             single.style.display = 'flex';
-            document.getElementById('restart-race-btn').onclick  = () => socket.emit('f1RestartRace', lobbyId);
+            document.getElementById('restart-race-btn').onclick = () => socket.emit('f1RestartRace', lobbyId);
             document.getElementById('back-to-lobby-btn').onclick = () => socket.emit('f1ReturnToLobby', lobbyId);
             if (myColor !== hostColor) {
                 document.getElementById('restart-race-btn').style.display = 'none';
-                document.getElementById('back-to-lobby-btn').textContent  = 'Torna alla Lobby';
+                document.getElementById('back-to-lobby-btn').textContent = 'Torna alla Lobby';
             }
         } else {
-            single.style.display   = 'none';
+            single.style.display = 'none';
             autoText.style.display = 'block';
             if (data.isFinal) {
                 let secs = 8;
@@ -1250,13 +1282,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // server tratta i due casi con la stessa formula. Un solo invio
     // "throttled" per frame (vedi maybeSendInputs in animate()) copre sia
     // i cambi da tastiera che il flusso continuo del gamepad.
-    const keys   = { w: false, a: false, s: false, d: false };
+    const keys = { w: false, a: false, s: false, d: false };
     const inputs = { throttle: 0, brake: 0, steer: 0 };
 
     function applyKeys() {
         inputs.throttle = keys.w ? 1 : 0;
-        inputs.brake    = keys.s ? 1 : 0;
-        inputs.steer    = (keys.a ? 1 : 0) + (keys.d ? -1 : 0);
+        inputs.brake = keys.s ? 1 : 0;
+        inputs.steer = (keys.a ? 1 : 0) + (keys.d ? -1 : 0);
     }
 
     document.addEventListener('keydown', (e) => {
@@ -1309,8 +1341,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!isRacing && !lightsSequenceActive) return;
         const now = performance.now();
         const changed = Math.abs(inputs.throttle - lastSent.throttle) > SEND_EPS ||
-                        Math.abs(inputs.brake    - lastSent.brake)    > SEND_EPS ||
-                        Math.abs(inputs.steer    - lastSent.steer)    > SEND_EPS;
+            Math.abs(inputs.brake - lastSent.brake) > SEND_EPS ||
+            Math.abs(inputs.steer - lastSent.steer) > SEND_EPS;
         if (changed && now - lastSendTime >= SEND_MIN_MS) {
             sendInputs();
             lastSent = { ...inputs };
@@ -1330,9 +1362,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 else if (pitting) socket.emit('f1PitReactionPress', { lobbyId, playerColor: myColor });
             },
             onCameraToggle: () => { cameraMode = cameraMode === 'third' ? 'first' : 'third'; },
-            onNavLeft:      () => tyreNav(-1),
-            onNavRight:     () => tyreNav(1),
-            onTyreToggle:   () => { tyrePanelOpen = !tyrePanelOpen; renderTyreVisibility(); },
+            onNavLeft: () => tyreNav(-1),
+            onNavRight: () => tyreNav(1),
+            onTyreToggle: () => { tyrePanelOpen = !tyrePanelOpen; renderTyreVisibility(); },
         });
     }
 
@@ -1372,18 +1404,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function lerpAngle(a, b, t) {
         let d = b - a;
-        while (d >  Math.PI) d -= Math.PI * 2;
+        while (d > Math.PI) d -= Math.PI * 2;
         while (d < -Math.PI) d += Math.PI * 2;
         return a + d * t;
     }
 
-    const _camOff  = new THREE.Vector3();
+    const _camOff = new THREE.Vector3();
     const _lookTgt = new THREE.Vector3();
 
     function updateCamera() {
         if (!myCarGroup) return;
         const pos = myCarGroup.position;
-        const q   = myCarGroup.quaternion;
+        const q = myCarGroup.quaternion;
 
         if (cameraMode === 'third') {
             _camOff.set(0, 5.5, -13);
@@ -1401,8 +1433,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             // poco sopra e poco dietro quel punto, inclinata verso il basso
             // così l'halo compare in basso nell'inquadratura invece di
             // riempirla (era troppo vicino/dentro la mesh a y=1.85, z=0.3).
-            const COCKPIT_HEIGHT    = 1.95;  // ~0.16m sopra l'apice halo misurato (1.79)
-            const COCKPIT_Z         = -0.5;  // appena dietro l'apice halo misurato (-0.49)
+            const COCKPIT_HEIGHT = 1.95;  // ~0.16m sopra l'apice halo misurato (1.79)
+            const COCKPIT_Z = -0.5;  // appena dietro l'apice halo misurato (-0.49)
             const COCKPIT_PITCH_DEG = 10;    // inclinazione verso il basso
             const COCKPIT_LOOK_DIST = 30;
 
@@ -1410,7 +1442,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             _camOff.applyQuaternion(q);
             camera.position.copy(pos).add(_camOff);
 
-            const pitchRad  = COCKPIT_PITCH_DEG * Math.PI / 180;
+            const pitchRad = COCKPIT_PITCH_DEG * Math.PI / 180;
             const lookDropY = Math.tan(pitchRad) * (COCKPIT_LOOK_DIST - COCKPIT_Z);
             _lookTgt.set(0, COCKPIT_HEIGHT - lookDropY, COCKPIT_LOOK_DIST);
             _lookTgt.applyQuaternion(q);
@@ -1427,7 +1459,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // gestire N istanze anime.js parallele è inutilmente complesso, e
     // getPointAtLength nativo basta da solo per posizionare un punto.
     const minimapTrackEl = document.getElementById('minimap-track');
-    const minimapPitEl   = document.getElementById('minimap-pit');
+    const minimapPitEl = document.getElementById('minimap-pit');
     const minimapT = minimapTransform([...trackPts, ...PIT_PTS]);
     minimapTrackEl.setAttribute('d', minimapPathString(trackPts, minimapT, true));
     minimapPitEl.setAttribute('d', minimapPathString(PIT_PTS, minimapT, false));
@@ -1456,7 +1488,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function updateMinimapDot(color, x, z) {
         const dot = ensureMinimapDot(color);
         const nearTrack = TrackGeometry.nearestPoint(trackPts, x, z);
-        const nearPit   = TrackGeometry.nearestPoint(PIT_PTS, x, z);
+        const nearPit = TrackGeometry.nearestPoint(PIT_PTS, x, z);
 
         let pt;
         if (nearPit.dist < nearTrack.dist) {
@@ -1482,8 +1514,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const gp = F1GamepadInput.poll();
             if (gp && gp.connected) {
                 inputs.throttle = gp.throttle;
-                inputs.brake    = gp.brake;
-                inputs.steer    = gp.steer;
+                inputs.brake = gp.brake;
+                inputs.steer = gp.steer;
             }
         }
         maybeSendInputs();
@@ -1497,9 +1529,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const v = visualState[color];
             if (!v) continue;
 
-            v.x     += (target.x     - v.x)     * LERP;
-            v.z     += (target.z     - v.z)     * LERP;
-            v.angle  = lerpAngle(v.angle || 0, target.angle || 0, LERP);
+            v.x += (target.x - v.x) * LERP;
+            v.z += (target.z - v.z) * LERP;
+            v.angle = lerpAngle(v.angle || 0, target.angle || 0, LERP);
             v.steerAngle = (v.steerAngle || 0) + ((target.steerInput || 0) * MAX_WHEEL_STEER_RAD - (v.steerAngle || 0)) * LERP;
 
             const carGroup = color === myColor ? myCarGroup : otherCars[color];
@@ -1545,8 +1577,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ? TrackGeometry.terrainHeightAt(groundPts, target.x, target.z, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH)
                     : (trackPts[idx].y || 0);
 
-                v.y     = (v.y     || 0) + (targetY - (v.y || 0)) * LERP;
-                v.pitch = (v.pitch || 0) + (trackPitchAt(idx)      - (v.pitch || 0)) * LERP;
+                v.y = (v.y || 0) + (targetY - (v.y || 0)) * LERP;
+                v.pitch = (v.pitch || 0) + (trackPitchAt(idx) - (v.pitch || 0)) * LERP;
                 carGroup.position.set(v.x, v.y, v.z);
                 carGroup.rotation.order = 'YXZ';
                 carGroup.rotation.x = v.pitch;
@@ -1571,7 +1603,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // il server sappia la mescola (tyre_select, compound=null) il
                 // controllo non scatta e il cerchio resta al colore originale.
                 if (target.compound && tyreCompoundsInfo && carGroup.userData.setCompoundColor
-                        && carGroup.userData.appliedCompound !== target.compound) {
+                    && carGroup.userData.appliedCompound !== target.compound) {
                     const info = tyreCompoundsInfo[target.compound];
                     if (info) {
                         const compoundHex = parseInt(info.color.replace('#', ''), 16);
@@ -1589,9 +1621,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // costante ma il motore gira comunque, anche se non stai
                 // guidando tu in quella fase.
                 if (carGroup.userData.engineSound) {
-                    const spd     = target.speed || 0;
+                    const spd = target.speed || 0;
                     const actxNow = listener.context.currentTime;
-                    const RAMP      = 0.08;   // costante di tempo rampa volume (setTargetAtTime), evita click
+                    const RAMP = 0.08;   // costante di tempo rampa volume (setTargetAtTime), evita click
                     // Il playbackRate salta tra due formule diverse
                     // (accelerando/decelerando) nello stesso istante in cui
                     // lo stato cambia — un salto anche di 0.6 a frac≈1. La
@@ -1603,14 +1635,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     let targetRate, targetVolume, frac;
 
                     if (target.pitLimiter) {
-                        targetRate   = 0.9;
+                        targetRate = 0.9;
                         targetVolume = 0.15;
-                        frac         = 0.25;   // regime fisso e basso, coerente col limitatore
+                        frac = 0.25;   // regime fisso e basso, coerente col limitatore
                     } else {
                         const now = performance.now();
                         const prevChecked = engineLastCheckedSpeed[color];
                         const magPrev = Math.abs(prevChecked ?? spd);
-                        const magNow  = Math.abs(spd);
+                        const magNow = Math.abs(spd);
                         if (prevChecked === undefined || Math.abs(magNow - magPrev) > ENGINE_SPEED_DELTA_EPS) {
                             engineActiveSince[color] = now;
                             engineLastCheckedSpeed[color] = spd;
@@ -1644,10 +1676,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                         frac = Math.min(1, magNow / ENGINE_REF_MAX_SPEED);
                         if (accelerating) {
-                            targetRate   = 0.8 + frac * 0.9;                    // 0.8x fermo → 1.7x a tutta velocità
+                            targetRate = 0.8 + frac * 0.9;                    // 0.8x fermo → 1.7x a tutta velocità
                             targetVolume = active ? (0.09 + frac * 0.30) : 0;
                         } else {
-                            targetRate   = 0.6 + frac * 0.5;                    // 0.6x fermo → 1.1x a tutta velocità, più cupo
+                            targetRate = 0.6 + frac * 0.5;                    // 0.6x fermo → 1.1x a tutta velocità, più cupo
                             targetVolume = active ? (0.05 + frac * 0.14) : 0;
                         }
                     }
@@ -1664,11 +1696,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (isRacing && localStart) {
-            const t  = myFinalTime !== null ? myFinalTime : (Date.now() - localStart);
-            const m  = Math.floor(t / 60000);
-            const s  = Math.floor((t % 60000) / 1000);
+            const t = myFinalTime !== null ? myFinalTime : (Date.now() - localStart);
+            const m = Math.floor(t / 60000);
+            const s = Math.floor((t % 60000) / 1000);
             const ms = t % 1000;
-            timerEl.textContent = `${m}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
+            timerEl.textContent = `${m}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
             // Colore: verde a tempo fissato, altrimenti nessun override così
             // resta il colore chiaro di .hud-mono — il vecchio #2C3E50 (blu
             // navy, pensato per il pannello chiaro pre-redesign) era quasi
@@ -1678,7 +1710,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (tyreSelectActive) updateTyreSelectCamera();
-        else                  updateCamera();
+        else updateCamera();
         renderer.render(scene, camera);
     }
 

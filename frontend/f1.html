@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="it">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./styles/f1.css">
 </head>
+
 <body>
 
     <!-- HUD: classifica + giri — top-left, un pannello solo. Popolato da
@@ -49,24 +51,26 @@
         </div>
         <div class="hud-car-top">
             <svg viewBox="0 0 64 122">
-                <rect class="wheel" id="wFL" x="4"  y="16" width="11" height="22" rx="3"></rect>
+                <rect class="wheel" id="wFL" x="4" y="16" width="11" height="22" rx="3"></rect>
                 <rect class="wheel" id="wFR" x="49" y="16" width="11" height="22" rx="3"></rect>
-                <rect class="wheel" id="wRL" x="2"  y="88" width="12" height="24" rx="3"></rect>
+                <rect class="wheel" id="wRL" x="2" y="88" width="12" height="24" rx="3"></rect>
                 <rect class="wheel" id="wRR" x="50" y="88" width="12" height="24" rx="3"></rect>
                 <polygon class="car-chassis" stroke-linejoin="round" points="
                     32,6   38,20  38,42  44,52  44,90  37,102 37,113
                     27,113 27,102 20,90  20,52  26,42  26,20" />
-                <rect class="car-wing" x="12" y="13"  width="40" height="3.5" rx="1.5"></rect>
+                <rect class="car-wing" x="12" y="13" width="40" height="3.5" rx="1.5"></rect>
                 <rect class="car-wing" x="10" y="115" width="44" height="4.5" rx="1.5"></rect>
                 <circle class="car-halo" cx="32" cy="47" r="7"></circle>
             </svg>
         </div>
         <div class="hud-tyre-wear-readout">
-            <div class="hud-screen"><span class="hud-mono" id="tyre-wear-value">0</span><span class="hud-mono">%</span></div>
+            <div class="hud-screen"><span class="hud-mono" id="tyre-wear-value">0</span><span class="hud-mono">%</span>
+            </div>
             <span class="hud-eyebrow">Usura</span>
         </div>
         <div class="hud-tyre-wear-readout">
-            <div class="hud-screen"><span class="hud-mono" id="damage-value">0</span><span class="hud-mono">%</span></div>
+            <div class="hud-screen"><span class="hud-mono" id="damage-value">0</span><span class="hud-mono">%</span>
+            </div>
             <span class="hud-eyebrow">Danni</span>
         </div>
     </div>
@@ -89,17 +93,27 @@
          f1.js, letto da state.debug (server, buildPublicState). -->
     <div class="hud f1-panel hud-debug" id="debug-panel" style="display:none;">
         <div class="hud-debug-title">DEBUG USURA/GUASTI</div>
-        <div class="hud-debug-row"><span class="hud-eyebrow">Velocità max</span><span class="hud-mono" id="debug-maxspeed">100%</span></div>
-        <div class="hud-debug-row"><span class="hud-eyebrow">Aderenza</span><span class="hud-mono" id="debug-grip">100%</span></div>
-        <div class="hud-debug-row"><span class="hud-eyebrow">Accelerazione</span><span class="hud-mono" id="debug-accel">100%</span></div>
-        <div class="hud-debug-row"><span class="hud-eyebrow">Frenata</span><span class="hud-mono" id="debug-brake">100%</span></div>
-        <div class="hud-debug-row"><span class="hud-eyebrow">Sterzo</span><span class="hud-mono" id="debug-steer">100%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Velocità max</span><span class="hud-mono"
+                id="debug-maxspeed">100%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Aderenza</span><span class="hud-mono"
+                id="debug-grip">100%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Accelerazione</span><span class="hud-mono"
+                id="debug-accel">100%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Frenata</span><span class="hud-mono"
+                id="debug-brake">100%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Sterzo</span><span class="hud-mono"
+                id="debug-steer">100%</span></div>
         <div class="hud-debug-sep"></div>
-        <div class="hud-debug-row"><span class="hud-eyebrow">Usura gomme</span><span class="hud-mono" id="debug-tyrewear">0%</span></div>
-        <div class="hud-debug-row"><span class="hud-eyebrow">Ala anteriore</span><span class="hud-mono" id="debug-frontwing">0%</span></div>
-        <div class="hud-debug-row"><span class="hud-eyebrow">Fondo</span><span class="hud-mono" id="debug-floor">0%</span></div>
-        <div class="hud-debug-row"><span class="hud-eyebrow">Motore</span><span class="hud-mono" id="debug-engine">0%</span></div>
-        <div class="hud-debug-row"><span class="hud-eyebrow">Sospensioni</span><span class="hud-mono" id="debug-suspension">0%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Usura gomme</span><span class="hud-mono"
+                id="debug-tyrewear">0%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Ala anteriore</span><span class="hud-mono"
+                id="debug-frontwing">0%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Fondo</span><span class="hud-mono"
+                id="debug-floor">0%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Motore</span><span class="hud-mono"
+                id="debug-engine">0%</span></div>
+        <div class="hud-debug-row"><span class="hud-eyebrow">Sospensioni</span><span class="hud-mono"
+                id="debug-suspension">0%</span></div>
     </div>
 
     <!-- Suggerimento camera -->
@@ -141,12 +155,14 @@
          padding:18px 16px; flex-direction:column; gap:12px;">
         <div id="pitstop-status" style="font-size:18px; font-weight:900; letter-spacing:1px;">AI BOX</div>
         <div id="pitstop-instructions" style="font-size:13px; color:#ecf0f1;"></div>
-        <div id="pitstop-react-prompt" style="display:none; font-size:34px; font-weight:900; color:#2ecc71;">PREMI SPAZIO!</div>
+        <div id="pitstop-react-prompt" style="display:none; font-size:34px; font-weight:900; color:#2ecc71;">PREMI
+            SPAZIO!</div>
         <div id="pitstop-result" style="font-size:15px; color:#f1c40f; font-weight:700;"></div>
         <div style="font-size:12px; color:#95a5a6;">Mescola per il resto della gara:</div>
         <div id="pitstop-cards" style="display:flex; justify-content:center; gap:10px;"></div>
         <div id="pitstop-repair-toggle" style="display:none; margin-top:10px; cursor:pointer; user-select:none;">
-            <label style="display:flex; align-items:center; justify-content:center; gap:8px; font-size:14px; color:#ecf0f1;">
+            <label
+                style="display:flex; align-items:center; justify-content:center; gap:8px; font-size:14px; color:#ecf0f1;">
                 <input type="checkbox" id="pitstop-repair-checkbox">
                 <span id="pitstop-repair-label">Ripara danni</span>
             </label>
@@ -179,8 +195,7 @@
         <div class="modal-content menu-panel-neu">
             <h2>🌟 NEW WORLD RECORD! 🌟</h2>
             <p style="font-weight:600; font-size:1.2rem;">Best time on this track!<br>Enter 3 initials:</p>
-            <input type="text" id="record-name-input" maxlength="3" autocomplete="off"
-                style="font-family:'Fredoka'; font-size:2rem; font-weight:bold; text-align:center;
+            <input type="text" id="record-name-input" maxlength="3" autocomplete="off" style="font-family:'Fredoka'; font-size:2rem; font-weight:bold; text-align:center;
                        width:100px; padding:10px; border:3px solid #2C3E50; border-radius:12px;
                        text-transform:uppercase; margin:15px 0;">
             <br>
@@ -202,6 +217,11 @@
     <script src="shared/trackScenery.js?v=20260722d"></script>
     <script src="shared/carLoader.js?v=20260729b"></script>
     <script src="f1Gamepad.js?v=20260723a"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
+    <script src="shared/voxelizer.js?v=20260730a"></script>
+    <script src="/shared/firebaseConfig.js" defer></script>
     <script src="f1.js?v=20260729d"></script>
 </body>
+
 </html>

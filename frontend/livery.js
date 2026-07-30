@@ -1,36 +1,30 @@
 // frontend/livery.js
 let scene, camera, renderer, controls;
-let carGroup = null;
+let M = null;          // modello voxel (da Voxelizer.voxelizeModel) — vedi shared/voxelizer.js
+let voxelMesh = null;   // THREE.Mesh costruita su M.geometry
+let displayRoot = null; // gruppo di sola inquadratura (scala/centra per la preview)
 let currentParams = { pattern: 'racing_stripes', primary: '#d40000', secondary: '#ffffff', accent: '#101010' };
 
 // Debounce per i color picker: l'evento 'input' scatta continuamente
 // mentre si trascina il selettore colore (anche centinaia di volte per un
-// singolo trascinamento) e applyCurrentLivery() clona la geometria delle
-// mesh dipinte ad ogni chiamata (frontend/shared/liveryPattern.js, fuori
-// scope qui) senza disporre la vecchia — senza debounce è un leak di
-// memoria/CPU. Usato SOLO dai listener 'input' dei 3 color picker, non dai
-// pulsanti pattern/preload/AI (quelli scattano una volta sola).
+// singolo trascinamento) e applyCurrentLivery() ricalcola colore per ogni
+// faccia del modello voxel — poco costoso ma comunque non gratis, niente
+// debounce = decine di ricalcoli inutili per trascinamento.
 let applyLiveryDebounceTimer = null;
 function applyCurrentLiveryDebounced() {
     clearTimeout(applyLiveryDebounceTimer);
     applyLiveryDebounceTimer = setTimeout(applyCurrentLivery, 80);
 }
 
-function hexStringToInt(hex) {
-    return parseInt(hex.replace('#', ''), 16);
-}
-
-// Ricalcola l'anteprima dai valori CORRENTI di currentParams — stessa
-// funzione richiamata sia dai controlli manuali (Step 3) sia dal risultato
-// della generazione AI (Task 5), nessuna logica duplicata.
+// Ricalcola la livrea dai valori CORRENTI di currentParams — stessa
+// funzione richiamata sia dai controlli manuali sia dal risultato della
+// generazione AI, nessuna logica duplicata. LiveryPattern.applyLivery
+// opera sul modello voxel M (non sulla mesh originale scolpita a mano):
+// stesso principio dell'editor esterno di riferimento, un solo colore per
+// faccia, zero sbavature tra voxel adiacenti.
 function applyCurrentLivery() {
-    if (!carGroup) return;
-    LiveryPattern.applyVoxelLiveryPattern(carGroup, {
-        pattern: currentParams.pattern,
-        primary: hexStringToInt(currentParams.primary),
-        secondary: hexStringToInt(currentParams.secondary),
-        accent: hexStringToInt(currentParams.accent)
-    });
+    if (!M) return;
+    LiveryPattern.applyLivery(M, currentParams);
 }
 
 function setActivePatternButton() {
@@ -65,24 +59,80 @@ function showToast(message, type = 'info') {
     setTimeout(() => toast.remove(), 4000);
 }
 
+// Scena/luci/renderer: stessa identica configurazione dell'editor esterno
+// di riferimento (voxel_livery_studio.html) — è quello il "look" a cui
+// puntiamo, non un'estetica nostra. Uniche differenze: API r128 (questo
+// progetto è fermo a three@0.128, l'editor di riferimento usa 0.160 con
+// outputColorSpace/SRGBColorSpace — qui l'equivalente r128 è
+// outputEncoding/sRGBEncoding) e OrbitControls/GLTFLoader globali invece
+// che import ESM.
 function initScene() {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x14141a);
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.9);
-    sun.position.set(10, 20, 10);
-    scene.add(sun);
 
-    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(8, 5, 8);
+    // Fix: Converte il colore di sfondo in Lineare
+    scene.background = new THREE.Color('#14151a').convertSRGBToLinear();
+
+    scene.add(new THREE.AmbientLight(0xffffff, 1.2)); // Il bianco non ha bisogno di conversione
+
+    // Fix: Converte i colori della HemisphereLight
+    const hemiLight = new THREE.HemisphereLight(0xbed2ff, 0x2b2722, 1.0);
+    hemiLight.color.convertSRGBToLinear();
+    hemiLight.groundColor.convertSRGBToLinear();
+    scene.add(hemiLight);
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
+    keyLight.position.set(65, 115, 75);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(2048, 2048);
+    keyLight.shadow.camera.near = 1;
+    keyLight.shadow.camera.far = 400;
+    keyLight.shadow.camera.left = -110;
+    keyLight.shadow.camera.right = 110;
+    keyLight.shadow.camera.top = 110;
+    keyLight.shadow.camera.bottom = -110;
+    keyLight.shadow.bias = -0.0009;
+    scene.add(keyLight);
+
+    // Fix: Converte il colore della FillLight
+    const fillLight = new THREE.DirectionalLight(0x9ab8ff, 0.6);
+    fillLight.color.convertSRGBToLinear();
+    fillLight.position.set(-75, 45, -65);
+    scene.add(fillLight);
+
+    // Fix: Converte il colore del materiale del pavimento
+    const floorColor = new THREE.Color('#0c0d10').convertSRGBToLinear();
+    const floor = new THREE.Mesh(
+        new THREE.CircleGeometry(420, 64),
+        new THREE.MeshStandardMaterial({ color: floorColor, roughness: 0.85, metalness: 0.0 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    displayRoot = new THREE.Group();
+    scene.add(displayRoot);
+
+    camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.5, 4000);
+    camera.position.set(-78, 48, 92);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputEncoding = THREE.sRGBEncoding; // r128: equivalente di outputColorSpace=SRGBColorSpace
+    renderer.toneMapping = THREE.NoToneMapping;
+    // Forza la r128 a usare lo stesso calcolo fotometrico della r160
+    renderer.physicallyCorrectLights = true;
     document.getElementById('livery-canvas-wrap').appendChild(renderer.domElement);
 
     controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 0.8, 0);
     controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.target.set(0, 12, 0);
+    controls.maxPolarAngle = Math.PI / 2 - 0.02;
+    controls.minDistance = 15;
+    controls.maxDistance = 400;
 
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
@@ -97,38 +147,48 @@ function initScene() {
     })();
 }
 
-// Loader dedicato e leggero — a differenza di carLoader.js::loadCarModel
-// NON gestisce audio motore posizionale, rotazione ruote o colore mescola
-// gomme (tutta roba di gara non pertinente a una pagina di sola
-// personalizzazione). Fa solo ciò che liveryPattern.js richiede: centrare
-// il modello e salvare pristineTex per ogni mesh con texture.
+// Materiale della mesh voxel — stesso dell'editor di riferimento
+// (matLit): vertexColors true (i colori vengono dalla geometria, non da
+// una texture), roughness/metalness fissi per un look "verniciato" pulito.
+const voxelMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.25, metalness: 0.35 });
+
+// Carica il .glb, lo VOXELIZZA (frontend/shared/voxelizer.js — stessa
+// pipeline dell'editor esterno di riferimento: niente più tentativi di
+// dipingere la mesh scolpita a mano direttamente, che sbava sempre sulle
+// superfici curve) e inquadra il risultato in scena, esattamente come fa
+// rebuild() nell'editor di riferimento (scala/centra sul bounding box,
+// indipendente dalle unità del file sorgente).
 function loadCarForPreview(onReady) {
     const loader = new THREE.GLTFLoader();
     loader.load('/assets/custom/f1Car.glb', (gltf) => {
-        const group = new THREE.Group();
-        const model = gltf.scene;
-        model.scale.set(3.5, 3.5, 3.5);
+        let model;
+        try {
+            model = Voxelizer.voxelizeModel(gltf.scene);
+        } catch (err) {
+            console.error('[livery] voxelizzazione fallita:', err);
+            showToast('Could not process the car model.', 'error');
+            return;
+        }
 
-        model.updateMatrixWorld(true);
-        const bbox0 = new THREE.Box3().setFromObject(model);
-        const center0 = bbox0.getCenter(new THREE.Vector3());
-        model.position.x -= center0.x;
-        model.position.z -= center0.z;
-        model.position.y -= bbox0.min.y;
+        const mesh = new THREE.Mesh(model.geometry, voxelMaterial);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.scale.setScalar(model.voxelSize);
+        mesh.position.copy(model.gridOrigin);
 
-        model.traverse((child) => {
-            if (!child.isMesh) return;
-            child.castShadow = true;
-            child.receiveShadow = true;
-            child.material = child.material.clone();
-            if (child.material.map) {
-                child.userData.pristineTex = child.material.map;
-            }
-        });
+        displayRoot.clear();
+        displayRoot.add(mesh);
+        displayRoot.scale.setScalar(1);
+        displayRoot.position.set(0, 0, 0);
+        const box = new THREE.Box3().setFromObject(mesh);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        const s = 70 / Math.max(size.x, size.y, size.z);
+        displayRoot.scale.setScalar(s);
+        displayRoot.position.set(-center.x * s, -box.min.y * s, -center.z * s);
+        controls.target.set(0, size.y * s * 0.45, 0);
 
-        group.add(model);
-        scene.add(group);
-        onReady(group);
+        onReady(model, mesh);
     }, undefined, (err) => console.error('Errore caricamento modello livery:', err));
 }
 
@@ -143,8 +203,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         initScene();
-        loadCarForPreview((group) => {
-            carGroup = group;
+        loadCarForPreview((model, mesh) => {
+            M = model;
+            voxelMesh = mesh;
+            // Dipinge subito con i default: il buffer colore della mesh
+            // appena costruita parte a zero (nero pieno) finché non viene
+            // chiamato applyLivery() almeno una volta — senza questo, per
+            // tutta la durata del fetch sottostante (rete lenta inclusa)
+            // si vedrebbe l'auto completamente nera. Se esiste una livrea
+            // salvata, viene ridipinta subito dopo con i suoi parametri.
+            applyCurrentLivery();
             // Pre-carica una livrea già salvata, se esiste — 404 (prima
             // volta) è normale, si resta sui default di currentParams.
             fetch('/api/livery/' + user.uid)
@@ -183,17 +251,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         document.getElementById('btn-save').addEventListener('click', async () => {
-            if (!carGroup) return;
-            const liveryColors = {};
-            carGroup.traverse((child) => {
-                if (child.isMesh && child.geometry.attributes.color) {
-                    liveryColors[child.name] = Array.from(child.geometry.attributes.color.array);
-                }
-            });
-            if (!Object.keys(liveryColors).length) {
-                showToast('Nothing to save yet.', 'error');
-                return;
-            }
+            if (!M) return;
+            // Un solo array piatto (l'intera geometria voxel è ormai una
+            // mesh unica, non più una mesh separata per parte come nello
+            // schema pre-voxelizzazione) — vedi
+            // docs/superpowers/specs/2026-07-29-f1-livery-precomputed-colors-design.md
+            // per il perché si salva il colore già calcolato invece dei
+            // soli parametri: rifare la voxelizzazione ad ogni caricamento
+            // in gara, per ogni auto, sarebbe troppo costoso lato client.
+            const liveryColors = Array.from(M.geometry.attributes.color.array);
             try {
                 const idToken = await user.getIdToken();
                 const res = await fetch('/api/livery', {
