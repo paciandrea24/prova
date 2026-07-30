@@ -2,9 +2,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { generateTheme, localTheme, SUPPORTED_PATTERNS } = require('./themeGenerator');
 
-test('SUPPORTED_PATTERNS: esattamente i 4 pattern di questa fase', () => {
-    assert.deepEqual([...SUPPORTED_PATTERNS].sort(),
-        ['checkers', 'racing_stripes', 'solid', 'split_sides'].sort());
+test('SUPPORTED_PATTERNS: tutti e 18 i pattern di liveryPattern.js', () => {
+    assert.deepEqual([...SUPPORTED_PATTERNS].sort(), [
+        'abstract', 'camo', 'checkers', 'diagonal', 'digital_rain', 'flames',
+        'gradient', 'halves', 'patchwork', 'pinstripe', 'racing_stripes',
+        'solid', 'speed_lines', 'split_sides', 'tiger', 'top_deck',
+        'tricolor', 'waves'
+    ].sort());
 });
 
 test('localTheme: stesso prompt due volte -> stesso risultato (deterministico)', () => {
@@ -13,7 +17,7 @@ test('localTheme: stesso prompt due volte -> stesso risultato (deterministico)',
     assert.deepEqual(a, b);
 });
 
-test('localTheme: prompt generico -> patternStyle sempre tra i 4 supportati', () => {
+test('localTheme: prompt generico -> patternStyle sempre tra i pattern supportati', () => {
     const prompts = ['blu oceano', 'foresta di notte', 'xyz123', 'una macchina veloce'];
     for (const p of prompts) {
         const t = localTheme(p);
@@ -32,12 +36,10 @@ test('localTheme: tema nominato con pattern originale GIA\' supportato (ferrari 
     assert.equal(t.primaryPaint, '#d40000');
 });
 
-test('localTheme: tema nominato con pattern originale NON supportato viene rimappato (cyberpunk era "diagonal")', () => {
+test('localTheme: tema nominato usa il suo pattern originale ora che e\' supportato (cyberpunk -> diagonal)', () => {
     const t = localTheme('atmosfera cyberpunk');
     assert.equal(t.themeName, 'cyberpunk');
-    assert.ok(SUPPORTED_PATTERNS.includes(t.patternStyle));
-    assert.notEqual(t.patternStyle, 'diagonal');
-    // Stesso colore palette originale, solo il pattern cambia
+    assert.equal(t.patternStyle, 'diagonal');
     assert.equal(t.primaryPaint, '#12043a');
 });
 

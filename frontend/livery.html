@@ -14,39 +14,45 @@
     <div id="livery-panel">
         <h1>Livery Editor</h1>
 
-        <h2>Pattern</h2>
-        <div class="pattern-grid" id="pattern-grid">
-            <button type="button" class="pattern-btn" data-pattern="solid">Solid</button>
-            <button type="button" class="pattern-btn" data-pattern="racing_stripes">Racing Stripes</button>
-            <button type="button" class="pattern-btn" data-pattern="split_sides">Split Sides</button>
-            <button type="button" class="pattern-btn" data-pattern="gradient">Gradient</button>
-            <button type="button" class="pattern-btn" data-pattern="halves">Halves</button>
-            <button type="button" class="pattern-btn" data-pattern="diagonal">Diagonal</button>
-            <button type="button" class="pattern-btn" data-pattern="abstract">Abstract</button>
-            <button type="button" class="pattern-btn" data-pattern="top_deck">Top Deck</button>
-            <button type="button" class="pattern-btn" data-pattern="tricolor">Tricolor</button>
-            <button type="button" class="pattern-btn" data-pattern="checkers">Checkers</button>
-            <button type="button" class="pattern-btn" data-pattern="camo">Camo</button>
-            <button type="button" class="pattern-btn" data-pattern="waves">Waves</button>
-            <button type="button" class="pattern-btn" data-pattern="pinstripe">Pinstripe</button>
-            <button type="button" class="pattern-btn" data-pattern="flames">Flames</button>
-            <button type="button" class="pattern-btn" data-pattern="tiger">Tiger</button>
-            <button type="button" class="pattern-btn" data-pattern="digital_rain">Digital Rain</button>
-            <button type="button" class="pattern-btn" data-pattern="patchwork">Patchwork</button>
-            <button type="button" class="pattern-btn" data-pattern="speed_lines">Speed Lines</button>
+        <div id="livery-panel-scroll">
+            <h2>AI Theme</h2>
+            <input type="text" id="ai-prompt" placeholder="e.g. cyberpunk neon" autocomplete="off">
+            <button type="button" class="btn-wide btn-generate" id="btn-generate">Generate</button>
+
+            <h2>Colors</h2>
+            <div class="color-row">
+                <div class="color-swatch"><label for="col-primary">Primary</label><input type="color" id="col-primary" value="#d40000"></div>
+                <div class="color-swatch"><label for="col-secondary">Secondary</label><input type="color" id="col-secondary" value="#ffffff"></div>
+                <div class="color-swatch"><label for="col-accent">Accent</label><input type="color" id="col-accent" value="#101010"></div>
+            </div>
+
+            <h2>Pattern</h2>
+            <div class="pattern-grid" id="pattern-grid">
+                <button type="button" class="pattern-btn" data-pattern="solid">Solid</button>
+                <button type="button" class="pattern-btn" data-pattern="racing_stripes">Racing Stripes</button>
+                <button type="button" class="pattern-btn" data-pattern="split_sides">Split Sides</button>
+                <button type="button" class="pattern-btn" data-pattern="gradient">Gradient</button>
+                <button type="button" class="pattern-btn" data-pattern="halves">Halves</button>
+                <button type="button" class="pattern-btn" data-pattern="diagonal">Diagonal</button>
+                <button type="button" class="pattern-btn" data-pattern="abstract">Abstract</button>
+                <button type="button" class="pattern-btn" data-pattern="top_deck">Top Deck</button>
+                <button type="button" class="pattern-btn" data-pattern="tricolor">Tricolor</button>
+                <button type="button" class="pattern-btn" data-pattern="checkers">Checkers</button>
+                <button type="button" class="pattern-btn" data-pattern="camo">Camo</button>
+                <button type="button" class="pattern-btn" data-pattern="waves">Waves</button>
+                <button type="button" class="pattern-btn" data-pattern="pinstripe">Pinstripe</button>
+                <button type="button" class="pattern-btn" data-pattern="flames">Flames</button>
+                <button type="button" class="pattern-btn" data-pattern="tiger">Tiger</button>
+                <button type="button" class="pattern-btn" data-pattern="digital_rain">Digital Rain</button>
+                <button type="button" class="pattern-btn" data-pattern="patchwork">Patchwork</button>
+                <button type="button" class="pattern-btn" data-pattern="speed_lines">Speed Lines</button>
+            </div>
         </div>
 
-        <h2>Colors</h2>
-        <div class="color-row"><label>Primary</label><input type="color" id="col-primary" value="#d40000"></div>
-        <div class="color-row"><label>Secondary</label><input type="color" id="col-secondary" value="#ffffff"></div>
-        <div class="color-row"><label>Accent</label><input type="color" id="col-accent" value="#101010"></div>
-
-        <h2>AI Theme</h2>
-        <input type="text" id="ai-prompt" placeholder="e.g. cyberpunk neon" autocomplete="off">
-        <button type="button" class="btn-wide btn-generate" id="btn-generate">Generate</button>
-
-        <button type="button" class="btn-wide btn-save" id="btn-save">Save</button>
-        <button type="button" class="btn-wide btn-back" onclick="window.close()">Back</button>
+        <div id="livery-panel-footer">
+            <button type="button" class="btn-wide btn-save" id="btn-save">Save</button>
+            <button type="button" class="btn-wide btn-back" onclick="window.close()">Back</button>
+        </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
