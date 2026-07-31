@@ -61,9 +61,14 @@ const PHYSICS_TICK_MS = 50;
 // misurabile senza questo. Logga una media ogni TICK_PERF_LOG_EVERY tick,
 // per lobby, poi resetta l'accumulo.
 const TICK_PERF_LOG_EVERY = 100;   // ~5s a 20Hz
+const TICK_STALL_THRESHOLD_MS = 15;   // 30% del budget di 50ms: log immediato, per capire COSA c'era in corso
 const tickPerfStats = new Map();   // lobbyId -> { sum, max, count }
 
-function recordTickDuration(lobbyId, playerCount, ms) {
+function recordTickDuration(lobbyId, playerCount, phase, ms) {
+    if (ms >= TICK_STALL_THRESHOLD_MS) {
+        const mem = process.memoryUsage();
+        console.log(`[F1 perf][STALL] lobby=${lobbyId} phase=${phase} tick=${ms.toFixed(2)}ms heapUsed=${(mem.heapUsed / 1048576).toFixed(1)}MB rss=${(mem.rss / 1048576).toFixed(1)}MB`);
+    }
     let s = tickPerfStats.get(lobbyId);
     if (!s) { s = { sum: 0, max: 0, count: 0 }; tickPerfStats.set(lobbyId, s); }
     s.sum += ms;
@@ -316,7 +321,7 @@ module.exports = function (io, socket) {
                 const t0 = process.hrtime.bigint();
                 tickGame(io, lobbyId, game);
                 const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-                recordTickDuration(lobbyId, Object.keys(game.players).length, ms);
+                recordTickDuration(lobbyId, Object.keys(game.players).length, game.phase, ms);
             }, PHYSICS_TICK_MS);
             startTyreSelect(io, lobbyId, game);
         }
