@@ -307,7 +307,7 @@ module.exports = function (io, socket) {
             grid: game.grid,
             raceStarted: game.raceStarted,
             elapsed: (game.raceStarted && game.raceStartTime) ? (Date.now() - game.raceStartTime) : 0,
-            players: buildPublicState(playersVisibleTo(game, playerColor), game.raceStarted, game.track),
+            players: buildPublicState(playersVisibleTo(game, playerColor), game.raceStarted, game.track, game),
             compounds: TYRE_COMPOUNDS,
             strategy: suggestStrategy(totalLaps),
             myCompound: game.players[playerColor].compound,
@@ -899,11 +899,11 @@ function broadcastState(io, lobbyId, game, raceStartedFlag) {
         for (const color of Object.keys(game.players)) {
             const sid = game.socketByColor[color];
             if (!sid) continue;
-            io.to(sid).emit('f1StateUpdate', buildPublicState(playersVisibleTo(game, color), raceStartedFlag, game.track));
+            io.to(sid).emit('f1StateUpdate', buildPublicState(playersVisibleTo(game, color), raceStartedFlag, game.track, game));
         }
         return;
     }
-    io.to(lobbyId).emit('f1StateUpdate', buildPublicState(playersVisibleTo(game, null), raceStartedFlag, game.track));
+    io.to(lobbyId).emit('f1StateUpdate', buildPublicState(playersVisibleTo(game, null), raceStartedFlag, game.track, game));
 }
 
 // ====================================================
@@ -1001,6 +1001,33 @@ function tickGame(io, lobbyId, game) {
     for (const p of autoPiloted) {
         updatePitAutopilot(io, lobbyId, game, p);
         updateTrackIndex(p, game.track);
+        // checkLap MANCAVA qui (girava solo per `racing`): il tracciato del
+        // traguardo può passare vicino/attraverso la corsia box, quindi un
+        // giro completato mentre l'autopilota guida verso/fuori dai box non
+        // veniva mai rilevato — segnalato dall'utente come "giro perso" ai
+        // box. trackIndex è già aggiornato dalla riga sopra, checkLap lo usa.
+        checkLap(p, totalLaps, io, lobbyId, game);
+    }
+
+    // DIAGNOSTICA TEMPORANEA (da rimuovere a bug risolto): la classifica live
+    // lato client mostra un'auto scavalcare tutti per un solo tick e tornare
+    // subito al valore di prima — dato che progressScore (lap*n+trackIndex)
+    // non può mai calare per un giro vero (p.lap non decrementa mai), un salto
+    // seguito da un ritorno esatto allo stesso valore è un trackIndex sporco
+    // per un tick, non una gara vera. Sospetto principale: la corsia box (vedi
+    // updateTrackIndex sull'autopilota qui sopra, cerca il punto pista PIÙ
+    // VICINO alla posizione fisica sulla corsia box, che è una strada diversa
+    // dal tracciato — non c'è garanzia che resti "vicina" nello spazio indice).
+    for (const p of players) {
+        if (p.finished) continue;
+        const score = progressScore(p, game.track);
+        if (p._lastProgressScore !== undefined) {
+            const delta = score - p._lastProgressScore;
+            if (delta < -20 || delta > 50) {
+                console.log(`[F1 rank][SOSPETTO] ${p.color} progressScore ${p._lastProgressScore}->${score} (delta=${delta}) lap=${p.lap} trackIndex=${p.trackIndex} pitting=${p.pitting} pitAutoState=${p.pitAutoState} x=${p.x.toFixed(1)} z=${p.z.toFixed(1)}`);
+            }
+        }
+        p._lastProgressScore = score;
     }
 
     // Distacco dal leader: stima da distanza/velocità, ricalcolata ogni
@@ -1121,6 +1148,14 @@ const HALF_LAP_IDX = Math.floor(N_SAMPLES / 2);
 // massimo ~4 unità/tick a velocità massima).
 const CHECKPOINT_WINDOW_M = 112;
 const FINISH_WINDOW_M = 6;
+// Sotto questa distanza (in metri di progressScore) un cambio di posizione
+// in classifica NON viene accettato: due auto molto vicine possono scavalcarsi
+// avanti e indietro di pochissimo tick dopo tick (frenata, sterzata, scia),
+// senza questa soglia la classifica live "sfarfalla" — segnalato dall'utente
+// come "salti" nel pannello classifica, più visibili quando il gruppo si
+// compatta (uscita pit, subito dopo un giro). Il tempo/risultato finale di
+// gara non dipende da questo: viene da checkLap/p.time, non da position.
+const RANK_SWAP_HYSTERESIS_M = 2.5;
 
 function updateTrackIndex(p, track) {
     p.trackIndex = TrackGeometry.nearestIndexNear(track.points, p.trackIndex || 0, p.x, p.z, TRACK_INDEX_WINDOW);
@@ -1134,12 +1169,59 @@ function finishWindowFor(track) {
     return Math.max(1, Math.round(FINISH_WINDOW_M * track.points.length / track.lapLength));
 }
 
-// Punteggio di avanzamento: lap*N+indice cresce in modo continuo attraverso il
-// giro (l'indice si azzera esattamente quando lap incrementa, stesso tick,
-// perché entrambi derivano dalla stessa p.x/p.z). Un giocatore finished ha
-// sempre punteggio più alto di uno ancora in gara (lap==totalLaps domina).
+// Punteggio di avanzamento: lap*N+indice, pensato per crescere in modo
+// continuo attraverso il giro. MA l'indice NON si azzera per forza nello
+// stesso tick in cui checkLap incrementa lap: la finestra traguardo è
+// circolare (vedi finishWindowFor) e accetta il lato "appena prima" del giro
+// (es. indice 995 su 1000) tanto quanto il lato "appena dopo" (indice 5) —
+// se il giro scatta mentre l'indice è ancora sul lato "prima", per un tick
+// il punteggio include un giro intero di troppo (+N), poi si autocorregge al
+// tick dopo quando l'indice raggiunge davvero lo zero. Sintomo osservato:
+// la classifica live scavalca tutti per un istante e torna giù da sola —
+// MAI un vero sorpasso che si disfa (lap non decrementa mai). Corretto
+// riconoscendo la stessa finestra "ambigua" usata da checkLap e trattandola
+// come fine del giro PRECEDENTE ai fini del punteggio. Non applicato ai
+// giocatori finished: il loro trackIndex resta congelato per sempre da quel
+// tick in poi (mai più aggiornato), quindi se corretto qui rischierebbe di
+// restare sbagliato in permanenza invece di autocorreggersi al tick dopo.
 function progressScore(p, track) {
-    return p.lap * track.points.length + (p.trackIndex || 0);
+    const n = track.points.length;
+    const idx = p.trackIndex || 0;
+    if (p.finished || p.lap <= 0) return p.lap * n + idx;
+    // Distanza circolare percorsa oltre il traguardo (non necessariamente
+    // indice 0 — vedi startFinishIndex, es. test2.json usa 2): un valore
+    // piccolo è appena dopo il traguardo (giro corrente, nessuna correzione);
+    // un valore vicino a N è ancora "appena prima" nel giro precedente.
+    const sf = track.startFinishIndex || 0;
+    const distPastFinish = ((idx - sf) % n + n) % n;
+    const ambiguousHighSide = distPastFinish >= n - finishWindowFor(track);
+    const effectiveLap = ambiguousHighSide ? p.lap - 1 : p.lap;
+    return effectiveLap * n + idx;
+}
+
+function rankHysteresisWindow(track) {
+    return Math.max(1, Math.round(RANK_SWAP_HYSTERESIS_M * track.points.length / track.lapLength));
+}
+
+// Ordina i colori per progressScore, ma sotto RANK_SWAP_HYSTERESIS_M
+// preserva l'ordine precedente (prevOrder) invece di scambiarli — vedi
+// commento sulla costante. Comparator non rigorosamente transitivo (il
+// classico compromesso di ogni classifica con isteresi), accettabile con
+// pochi giocatori quasi mai in terna quasi-pari esatta.
+function stableRankOrder(prevOrder, players, track) {
+    const scores = {};
+    for (const p of Object.values(players)) scores[p.color] = progressScore(p, track);
+    const prevRank = {};
+    (prevOrder || []).forEach((color, i) => { prevRank[color] = i; });
+    const window = rankHysteresisWindow(track);
+
+    return Object.keys(players).sort((colorA, colorB) => {
+        const diff = scores[colorB] - scores[colorA];   // ordine decrescente per punteggio
+        if (Math.abs(diff) > window) return diff;
+        const ra = prevRank[colorA], rb = prevRank[colorB];
+        if (ra === undefined || rb === undefined) return diff;   // nuovo in classifica: nessun ordine precedente da preservare
+        return ra - rb;
+    });
 }
 
 // Distanza circolare minima tra due indici su un loop di `n` campioni.
@@ -1244,14 +1326,19 @@ function endRace(io, lobbyId, game) {
 // ====================================================
 // HELPERS
 // ====================================================
-function buildPublicState(players, raceStarted, track) {
+function buildPublicState(players, raceStarted, track, game) {
     const out = {};
 
     // Classifica: calcolata solo a gara avviata (prima non ha senso, tutti fermi
     // allo spawn). ranked.indexOf è O(M) per giocatore ma M è al più 8 → irrilevante.
+    // Ordine con isteresi (vedi stableRankOrder/RANK_SWAP_HYSTERESIS_M):
+    // persistito su game.stableRankOrder tra una chiamata e l'altra, altrimenti
+    // l'isteresi non avrebbe memoria di cosa preservare.
     let ranked = [];
     if (raceStarted) {
-        ranked = Object.values(players).sort((a, b) => progressScore(b, track) - progressScore(a, track));
+        const order = stableRankOrder(game.stableRankOrder, players, track);
+        game.stableRankOrder = order;
+        ranked = order.map(color => players[color]).filter(Boolean);
     }
 
     for (const [color, p] of Object.entries(players)) {
