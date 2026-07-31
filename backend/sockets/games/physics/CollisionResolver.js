@@ -17,8 +17,8 @@ const { MIN_COLLISION_SEVERITY, applyCarCollisionDamage, applyBarrierDamage } = 
 // gioco -> metà 1.74 x 3.58. Prima erano 1.3/2.4, tarate sul vecchio kart
 // Kenney molto più piccolo — con quelle le ruote posteriori del modello
 // nuovo restavano fuori dall'hitbox.
-const CAR_HALF_LENGTH  = 3.58;  // metà lunghezza, asse avanti/dietro (locale Z)
-const CAR_HALF_WIDTH   = 1.74;  // metà larghezza, asse fianchi (locale X)
+const CAR_HALF_LENGTH = 3.58;  // metà lunghezza, asse avanti/dietro (locale Z)
+const CAR_HALF_WIDTH = 1.74;  // metà larghezza, asse fianchi (locale X)
 const COLLISION_BOUNCE = 0.6;  // quota della velocità normale scambiata all'urto (bump arcade, non elastico puro)
 
 // A MAX_SPEED (6.2/tick) due auto che si avvicinano chiudono fino a 12.4
@@ -165,7 +165,7 @@ function carAxes(p) {
     const s = Math.sin(p.angle), c = Math.cos(p.angle);
     return {
         forward: { x: s, z: c },    // asse lunghezza (muso/coda)
-        right:   { x: c, z: -s }    // asse larghezza (fianchi)
+        right: { x: c, z: -s }    // asse larghezza (fianchi)
     };
 }
 
@@ -174,16 +174,24 @@ function projectOBB(p, axes, axis) {
     const centerProj = p.x * axis.x + p.z * axis.z;
     const radius =
         Math.abs(axes.forward.x * axis.x + axes.forward.z * axis.z) * CAR_HALF_LENGTH +
-        Math.abs(axes.right.x   * axis.x + axes.right.z   * axis.z) * CAR_HALF_WIDTH;
+        Math.abs(axes.right.x * axis.x + axes.right.z * axis.z) * CAR_HALF_WIDTH;
     return { min: centerProj - radius, max: centerProj + radius };
 }
 
 const CAR_MAX_REACH = (CAR_HALF_LENGTH + CAR_HALF_WIDTH) * 2;   // scarto rapido, upper bound grossolano
 
 function resolveCollisions(players) {
+    // PRE-CALCOLO: Eseguito una sola volta per sotto-step, per auto. O(n)
+    const axesByIndex = players.map(p => carAxes(p));
+
     for (let i = 0; i < players.length; i++) {
         for (let j = i + 1; j < players.length; j++) {
-            const a = players[i], b = players[j];
+            const a = players[i];
+            const b = players[j];
+
+            // LETTURA: Costo praticamente zero. O(1)
+            const axesA = axesByIndex[i];
+            const axesB = axesByIndex[j];
 
             const dx = b.x - a.x, dz = b.z - a.z;
             if (dx * dx + dz * dz > CAR_MAX_REACH * CAR_MAX_REACH) {
@@ -193,10 +201,10 @@ function resolveCollisions(players) {
 
             const axesA = carAxes(a);
             const axesB = carAxes(b);
-            const axes  = [axesA.forward, axesA.right, axesB.forward, axesB.right];
+            const axes = [axesA.forward, axesA.right, axesB.forward, axesB.right];
 
             let minOverlap = Infinity;
-            let mtvAxis    = null;
+            let mtvAxis = null;
 
             let separated = false;
             for (const axis of axes) {

@@ -53,6 +53,7 @@ const {
 const AerodynamicsModel = require('./physics/AerodynamicsModel');
 
 const PHYSICS_TICK_MS = 50;
+const BROADCAST_EVERY_N_TICKS = 2; // 20Hz fisica -> 10Hz rete
 
 // Scia: un'auto che segue da vicino un'altra (stessa distanza lungo la
 // pista già usata per il "seguire" dei bot, non una posizione laterale)
@@ -62,7 +63,7 @@ const PHYSICS_TICK_MS = 50;
 // per rendere più frequenti i sorpassi: chi insegue recupera terreno.
 // Solo in GARA (mai in qualifica, dove ogni pilota corre isolato — vedi
 // playersVisibleTo — un boost da un'auto invisibile sarebbe incomprensibile).
-const SLIPSTREAM_RANGE_M   = 25;
+const SLIPSTREAM_RANGE_M = 25;
 const SLIPSTREAM_MAX_BOOST = 0.08;   // fino a +8% di velocità massima quasi a contatto
 
 // Fase 4 (percorso di confronto, F1_AERO_SLIPSTREAM_MODEL=1): SOLO il
@@ -109,7 +110,7 @@ function inPitEntryZone(p, track) {
     return p.x >= t.xMin && p.x <= t.xMax && p.z >= t.zMin && p.z <= t.zMax;
 }
 
-const TYRE_SELECT_MS   = 20000;   // tempo per scegliere prima che scatti la mescola di default
+const TYRE_SELECT_MS = 20000;   // tempo per scegliere prima che scatti la mescola di default
 
 // ====================================================
 // MINIGIOCO DI REAZIONE AL PIT STOP
@@ -118,22 +119,22 @@ const TYRE_SELECT_MS   = 20000;   // tempo per scegliere prima che scatti la mes
 // rete, limite accettato). Premere prima del segnale = falsa partenza, sosta
 // alla durata massima.
 // ====================================================
-const PIT_GO_DELAY_MIN  = 1000, PIT_GO_DELAY_MAX  = 3000;   // attesa casuale prima del segnale
-const PIT_REACTION_BEST = 150,  PIT_REACTION_WORST = 800;   // ms: sotto/sopra questi si satura
+const PIT_GO_DELAY_MIN = 1000, PIT_GO_DELAY_MAX = 3000;   // attesa casuale prima del segnale
+const PIT_REACTION_BEST = 150, PIT_REACTION_WORST = 800;   // ms: sotto/sopra questi si satura
 // 2.0s-3.0s: range realistico da gioco F1 (richiesto dall'utente, che
 // trovava 3.0s-7.0s troppo lento anche a reazione ottima).
-const PIT_DURATION_MIN  = 2000, PIT_DURATION_MAX   = 3000;  // durata sosta risultante
-const PIT_PENALTY_MS    = 30000;   // penalità se non si fa MAI pit stop in gara (regola F1 vera)
+const PIT_DURATION_MIN = 2000, PIT_DURATION_MAX = 3000;  // durata sosta risultante
+const PIT_PENALTY_MS = 30000;   // penalità se non si fa MAI pit stop in gara (regola F1 vera)
 const REPAIR_MS_PER_DAMAGE_PCT = 150;   // ms extra di sosta per ogni % di danno riparato
 
 // Semaforo di partenza (solo gara, mai in qualifica): 5 luci, una ogni
 // LIGHT_INTERVAL_MS, poi un'attesa casuale prima che si spengano tutte
 // insieme = via (come in F1 vera — l'attesa casuale impedisce di "contare"
 // il ritmo e accelerare a colpo sicuro).
-const LIGHT_COUNT       = 5;
+const LIGHT_COUNT = 5;
 const LIGHT_INTERVAL_MS = 1000;
-const LIGHTS_ALL_ON_MS  = (LIGHT_COUNT - 1) * LIGHT_INTERVAL_MS;   // 4000: tutte accese
-const HOLD_MIN_MS       = 200, HOLD_MAX_MS = 3000;
+const LIGHTS_ALL_ON_MS = (LIGHT_COUNT - 1) * LIGHT_INTERVAL_MS;   // 4000: tutte accese
+const HOLD_MIN_MS = 200, HOLD_MAX_MS = 3000;
 const FALSE_START_PENALTY_MS = 5000;
 
 const GAP_RECALC_MS = 3500;   // ricalcolo distacco dal leader — non serve più frequente, è una stima
@@ -158,13 +159,13 @@ module.exports = function (io, socket) {
     socket.on('joinF1Game', ({ lobbyId, playerColor, uid }) => {
         socket.join(lobbyId);
         socket.lobbyId = lobbyId;
-        socket.color   = playerColor;
+        socket.color = playerColor;
         // Marca QUESTO socket come partecipante reale alla gara. Serve al guard
         // del disconnect qui sotto per distinguerlo dai vecchi socket-lobby.
         socket.data.joinedF1 = true;
 
         if (!activeGames.has(lobbyId)) {
-            const lobby   = lobbies.get(lobbyId);
+            const lobby = lobbies.get(lobbyId);
             const trackId = (lobby && lobby.gameSettings && lobby.gameSettings.trackId) || 'monte-rosso';
             let track;
             try {
@@ -174,25 +175,25 @@ module.exports = function (io, socket) {
                 track = loadTrack('monte-rosso');
             }
             activeGames.set(lobbyId, {
-                gameId:            'f1',   // marca il tipo: gli handler condivisi (disconnect) NON devono toccare partite di altri giochi
-                track:             track,
-                phase:             'tyre_select',   // tyre_select -> qualifying -> grid_display -> race -> race_end
-                players:           {},
-                socketByColor:     {},   // color -> socket.id CORRENTE, per gli emit personalizzati in qualifica
-                tick:              null,
-                raceStarted:       false,
-                raceEnded:         false,
-                raceStartTime:     null,
-                lastGapRecalc:     0,      // timestamp ultimo ricalcolo distacco dal leader (vedi GAP_RECALC_MS)
-                endTimeout:        null,
-                qualiEnded:        false,
-                qualiEndTimeout:   null,   // timer di sicurezza: dà agli altri il tempo di finire il giro se qualcuno resta molto indietro
+                gameId: 'f1',   // marca il tipo: gli handler condivisi (disconnect) NON devono toccare partite di altri giochi
+                track: track,
+                phase: 'tyre_select',   // tyre_select -> qualifying -> grid_display -> race -> race_end
+                players: {},
+                socketByColor: {},   // color -> socket.id CORRENTE, per gli emit personalizzati in qualifica
+                tick: null,
+                raceStarted: false,
+                raceEnded: false,
+                raceStartTime: null,
+                lastGapRecalc: 0,      // timestamp ultimo ricalcolo distacco dal leader (vedi GAP_RECALC_MS)
+                endTimeout: null,
+                qualiEnded: false,
+                qualiEndTimeout: null,   // timer di sicurezza: dà agli altri il tempo di finire il giro se qualcuno resta molto indietro
                 tyreSelectTimeout: null,
-                tyreConfirmed:     new Set(),   // color di chi ha già scelto/confermato la mescola
-                grid:              null,   // ordine di partenza determinato dalla qualifica (array di colori)
-                hostColor:         lobby ? lobby.host : playerColor,
-                settings:          lobby ? (lobby.gameSettings || {}) : {},
-                rejoinTimers:      {},   // color -> timeout di rimozione definitiva dopo un drop
+                tyreConfirmed: new Set(),   // color di chi ha già scelto/confermato la mescola
+                grid: null,   // ordine di partenza determinato dalla qualifica (array di colori)
+                hostColor: lobby ? lobby.host : playerColor,
+                settings: lobby ? (lobby.gameSettings || {}) : {},
+                rejoinTimers: {},   // color -> timeout di rimozione definitiva dopo un drop
                 // Disattiva trajectoryDiagnostics + p._botDebug in updateBotInputs
                 // (f1Bot.js): telemetria IA usata SOLO dal banco prova
                 // (f1Testbench.js, che imposta il proprio game senza questo
@@ -200,7 +201,7 @@ module.exports = function (io, socket) {
                 // gioco vero. Costo reale su Render con più bot attivi
                 // (scansione O(101) per bot per tick, sempre gratis prima
                 // d'ora) per un dato che nessuno guardava in produzione.
-                debugEnabled:      false
+                debugEnabled: false
             });
 
             // Riempie la griglia con bot fino a MAX_GRID_SIZE (6), se
@@ -209,9 +210,9 @@ module.exports = function (io, socket) {
             createBots(activeGames.get(lobbyId), lobby, TYRE_COMPOUNDS);
         }
 
-        const game       = activeGames.get(lobbyId);
-        const totalLaps  = game.track.totalLaps;
-        const isRejoin   = !!game.players[playerColor];
+        const game = activeGames.get(lobbyId);
+        const totalLaps = game.track.totalLaps;
+        const isRejoin = !!game.players[playerColor];
 
         // Aggiornato ad OGNI join/rejoin: il socket.id cambia ad ogni riconnessione,
         // serve sempre l'ultimo per gli emit personalizzati durante la qualifica.
@@ -231,62 +232,62 @@ module.exports = function (io, socket) {
             game.players[playerColor].uid = uid || null;
         } else {
             game.players[playerColor] = {
-                color:           playerColor,
-                uid:             uid || null,   // uid Firebase (null per ospiti/bot) — vedi buildPublicState
-                x:               game.track.qualiSpawn.x,
-                z:               game.track.qualiSpawn.z,
-                angle:           game.track.qualiSpawn.angle,
-                speed:           0,
-                vx:              0,
-                vz:              0,
-                inputs:          { throttle: 0, brake: 0, steer: 0 },
-                finished:        false,
-                time:            null,
-                lap:             0,
-                checkpointA:     false,
-                inFinishZone:    false,
-                disconnected:    false,
-                trackIndex:      0,
-                compound:        null,   // scelto in tyre_select (null finché non conferma)
-                tyreWear:        0,
-                pitting:         false,   // true = fermo ai box, fisica congelata
-                pitPhase:        null,    // waiting -> go -> done (null fuori dal pit stop)
-                pitGoTime:       null,    // timestamp server di invio del segnale "vai"
-                pitGoTimer:      null,
+                color: playerColor,
+                uid: uid || null,   // uid Firebase (null per ospiti/bot) — vedi buildPublicState
+                x: game.track.qualiSpawn.x,
+                z: game.track.qualiSpawn.z,
+                angle: game.track.qualiSpawn.angle,
+                speed: 0,
+                vx: 0,
+                vz: 0,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+                finished: false,
+                time: null,
+                lap: 0,
+                checkpointA: false,
+                inFinishZone: false,
+                disconnected: false,
+                trackIndex: 0,
+                compound: null,   // scelto in tyre_select (null finché non conferma)
+                tyreWear: 0,
+                pitting: false,   // true = fermo ai box, fisica congelata
+                pitPhase: null,    // waiting -> go -> done (null fuori dal pit stop)
+                pitGoTime: null,    // timestamp server di invio del segnale "vai"
+                pitGoTimer: null,
                 pendingCompound: null,    // mescola scelta ai box, applicata a fine sosta
-                hasPitted:       false,   // per l'obbligo di almeno un pit stop in gara
-                pitPenalty:      false,   // true se ha preso la penalità per non aver fatto pit stop
-                falseStart:      false,   // true se ha accelerato mentre le luci erano accese (resta true per tutta la gara, indicatore storico)
+                hasPitted: false,   // per l'obbligo di almeno un pit stop in gara
+                pitPenalty: false,   // true se ha preso la penalità per non aver fatto pit stop
+                falseStart: false,   // true se ha accelerato mentre le luci erano accese (resta true per tutta la gara, indicatore storico)
                 falseStartServed: false,  // true una volta scontata la penalità al primo pit stop
-                gapToLeaderMs:   null,    // stima distacco dal leader in ms, null per il leader stesso o prima del primo ricalcolo
-                pitAutoState:    null,    // 'entering' | 'exiting' | null — autopilota corsia box
-                pitPathIndex:    0,       // prossimo waypoint del percorso box (track.pitPath) verso cui puntare
-                inSlipstream:    false,   // bonus di velocità in scia attivo in questo tick (solo effetto visivo lato client)
-                damage:                  0,       // 0-100, come tyreWear — solo in gara (vedi assignGridSpawns/checkLap). Derivato dal massimo dei 4 componenti di damageParts.
-                damageParts:             createDamageParts(),   // { frontWing, floor, engine, suspension }, 0-100 ciascuno — vedi DamageModel.js Cap. 3.8. Ri-creato ad ogni assignGridSpawns/repair ai box, mai condiviso per riferimento.
-                collisionPenaltyMs:      0,       // penalità di tempo accumulata per collisioni causate, sommata a p.time al traguardo
-                pendingRepair:           false,   // scelta fatta ai box, applicata a fine sosta come pendingCompound
-                carContacts:             new Set(),   // colori con cui è ATTUALMENTE a contatto (rileva un urto NUOVO)
-                wallContact:             false,   // true se attualmente appoggiato a un muro ponte
+                gapToLeaderMs: null,    // stima distacco dal leader in ms, null per il leader stesso o prima del primo ricalcolo
+                pitAutoState: null,    // 'entering' | 'exiting' | null — autopilota corsia box
+                pitPathIndex: 0,       // prossimo waypoint del percorso box (track.pitPath) verso cui puntare
+                inSlipstream: false,   // bonus di velocità in scia attivo in questo tick (solo effetto visivo lato client)
+                damage: 0,       // 0-100, come tyreWear — solo in gara (vedi assignGridSpawns/checkLap). Derivato dal massimo dei 4 componenti di damageParts.
+                damageParts: createDamageParts(),   // { frontWing, floor, engine, suspension }, 0-100 ciascuno — vedi DamageModel.js Cap. 3.8. Ri-creato ad ogni assignGridSpawns/repair ai box, mai condiviso per riferimento.
+                collisionPenaltyMs: 0,       // penalità di tempo accumulata per collisioni causate, sommata a p.time al traguardo
+                pendingRepair: false,   // scelta fatta ai box, applicata a fine sosta come pendingCompound
+                carContacts: new Set(),   // colori con cui è ATTUALMENTE a contatto (rileva un urto NUOVO)
+                wallContact: false,   // true se attualmente appoggiato a un muro ponte
                 pendingCollisionPenaltyEvents: [],   // ms in attesa di notifica al client, drenata da tickGame
             };
         }
 
         socket.emit('f1Setup', {
             playerColor,
-            hostColor:     game.hostColor,
-            trackName:     game.track.name,
+            hostColor: game.hostColor,
+            trackName: game.track.name,
             totalLaps,
-            phase:         game.phase,
-            grid:          game.grid,
-            raceStarted:   game.raceStarted,
-            elapsed:       (game.raceStarted && game.raceStartTime) ? (Date.now() - game.raceStartTime) : 0,
-            players:       buildPublicState(playersVisibleTo(game, playerColor), game.raceStarted, game.track),
-            compounds:     TYRE_COMPOUNDS,
-            strategy:      suggestStrategy(totalLaps),
-            myCompound:    game.players[playerColor].compound,
+            phase: game.phase,
+            grid: game.grid,
+            raceStarted: game.raceStarted,
+            elapsed: (game.raceStarted && game.raceStartTime) ? (Date.now() - game.raceStartTime) : 0,
+            players: buildPublicState(playersVisibleTo(game, playerColor), game.raceStarted, game.track),
+            compounds: TYRE_COMPOUNDS,
+            strategy: suggestStrategy(totalLaps),
+            myCompound: game.players[playerColor].compound,
             tyreConfirmed: game.tyreConfirmed.size,
-            tyreTotal:     Object.keys(game.players).length
+            tyreTotal: Object.keys(game.players).length
         });
 
         // Tick e prima fase (scelta mescola) solo al primo giocatore
@@ -377,8 +378,8 @@ module.exports = function (io, socket) {
         // la fisica sotto assume i range dichiarati.
         game.players[playerColor].inputs = {
             throttle: Math.max(0, Math.min(1, Number(inputs.throttle) || 0)),
-            brake:    Math.max(0, Math.min(1, Number(inputs.brake)    || 0)),
-            steer:    Math.max(-1, Math.min(1, Number(inputs.steer)   || 0)),
+            brake: Math.max(0, Math.min(1, Number(inputs.brake) || 0)),
+            steer: Math.max(-1, Math.min(1, Number(inputs.steer) || 0)),
         };
     });
 
@@ -475,11 +476,11 @@ function hardRemoveF1Player(io, lobbyId, color) {
     if (lobby) {
         lobby.players = lobby.players.filter(c => c !== color);
         if (lobby.host === color && lobby.players.length > 0) {
-            lobby.host     = lobby.players[0];
+            lobby.host = lobby.players[0];
             game.hostColor = lobby.host;
             io.to(lobbyId).emit('message', {
                 message: `👑 ${lobby.host} è il nuovo Host della stanza!`,
-                type:    'system'
+                type: 'system'
             });
             io.to(lobbyId).emit('lobbyUpdated', { players: lobby.players, host: lobby.host });
         }
@@ -529,8 +530,8 @@ function startTyreSelect(io, lobbyId, game) {
 // altrui) → GRIGLIA → GARA
 // ====================================================
 function startQualifying(io, lobbyId, game) {
-    game.phase       = 'qualifying';
-    game.qualiEnded  = false;
+    game.phase = 'qualifying';
+    game.qualiEnded = false;
     game.raceStarted = false;
     // Tutti allo stesso identico punto (vedi game.track.qualiSpawn), a
     // prescindere da dove fossero prima (già impostato alla creazione, ma qui
@@ -546,7 +547,7 @@ function startQualifying(io, lobbyId, game) {
     setTimeout(() => {
         const g = activeGames.get(lobbyId);
         if (!g) return;
-        g.raceStarted   = true;
+        g.raceStarted = true;
         g.raceStartTime = Date.now();
         console.log(`🏎️ [F1] Qualifica avviata (lobby ${lobbyId})`);
         io.to(lobbyId).emit('f1RaceStarted', { syncTime: 0, phase: 'qualifying' });
@@ -567,7 +568,7 @@ function endQualifying(io, lobbyId, game) {
     const n = game.track.points.length;
     for (const p of Object.values(game.players)) {
         if (p.time === null && p.isBot) {
-            const elapsed  = Date.now() - game.raceStartTime;
+            const elapsed = Date.now() - game.raceStartTime;
             const progress = (p.lap * n + (p.trackIndex || 0)) / n;   // totalLaps quali = 1
             p.time = estimateFinishTime(elapsed, progress);
         }
@@ -590,7 +591,7 @@ function endQualifying(io, lobbyId, game) {
     // null nel pannello griglia.
     const qualiTimes = ranked.map(p => ({ color: p.color, time: p.time }));
 
-    game.phase       = 'grid_display';
+    game.phase = 'grid_display';
     game.raceStarted = false;
     // Assegnati SUBITO, non alla fine della finestra di visualizzazione: senza
     // questo, per tutta la durata di GRID_DISPLAY_MS i giocatori restavano
@@ -611,10 +612,10 @@ function endQualifying(io, lobbyId, game) {
 }
 
 function startRaceCountdown(io, lobbyId, game) {
-    game.phase                = 'race';
-    game.raceEnded            = false;
-    game.raceStarted          = false;
-    game.raceStartTime        = null;
+    game.phase = 'race';
+    game.raceEnded = false;
+    game.raceStarted = false;
+    game.raceStartTime = null;
     game.lightsSequenceActive = true;   // finestra di rilevamento falsa partenza, vedi tickGame
 
     // Azzera l'input di TUTTI prima di aprire la finestra di rilevamento:
@@ -630,7 +631,7 @@ function startRaceCountdown(io, lobbyId, game) {
     // f1RaceStarted per spegnere le luci — evita qualunque rischio di
     // disallineamento dovuto alla latenza di rete rispetto a un timer
     // locale indipendente.
-    const holdMs  = HOLD_MIN_MS + Math.random() * (HOLD_MAX_MS - HOLD_MIN_MS);
+    const holdMs = HOLD_MIN_MS + Math.random() * (HOLD_MAX_MS - HOLD_MIN_MS);
     const totalMs = LIGHTS_ALL_ON_MS + holdMs;
 
     io.to(lobbyId).emit('f1Countdown', { trackName: game.track.name, label: 'GARA', phase: 'race' });
@@ -639,7 +640,7 @@ function startRaceCountdown(io, lobbyId, game) {
         const g = activeGames.get(lobbyId);
         if (!g) return;
         g.lightsSequenceActive = false;
-        g.raceStarted   = true;
+        g.raceStarted = true;
         g.raceStartTime = Date.now();
         // Reazione al via per i bot: ognuno resta fermo per un ritardo
         // casuale (nessuna correlazione col ritmo di gara, richiesto
@@ -718,7 +719,7 @@ function startPitLaneEntry(io, lobbyId, game, p) {
 // bassa — apposta lenta, per dare tempo di scegliere la mescola durante il
 // tragitto (soprattutto in ingresso).
 function updatePitAutopilot(io, lobbyId, game, p) {
-    const track  = game.track;
+    const track = game.track;
     const target = track.pitPath[p.pitPathIndex];
     const dx = target.x - p.x, dz = target.z - p.z;
     const dist = Math.hypot(dx, dz);
@@ -752,7 +753,7 @@ function updatePitAutopilot(io, lobbyId, game, p) {
 // Il giocatore è arrivato alla casella (via autopilota): attesa casuale, poi
 // il segnale "vai" SOLO al suo socket (nessuno spoiler per gli altri).
 function startPitStop(io, lobbyId, game, p) {
-    p.pitting  = true;
+    p.pitting = true;
     p.speed = 0; p.vx = 0; p.vz = 0;
     p.pitPhase = 'waiting';
 
@@ -762,7 +763,7 @@ function startPitStop(io, lobbyId, game, p) {
     const delay = PIT_GO_DELAY_MIN + Math.random() * (PIT_GO_DELAY_MAX - PIT_GO_DELAY_MIN);
     p.pitGoTimer = setTimeout(() => {
         if (!p.pitting) return;   // nel frattempo la sosta è già finita/annullata
-        p.pitPhase  = 'go';
+        p.pitPhase = 'go';
         p.pitGoTime = Date.now();
         const s = game.socketByColor[p.color];
         if (s) io.to(s).emit('f1PitReactionGo');
@@ -813,10 +814,10 @@ function handlePitReactionPress(io, lobbyId, game, p) {
 // fuori dalla corsia).
 function completePitStop(io, lobbyId, game, p) {
     if (!p.pitting) return;   // difensivo (es. gara finita nel frattempo)
-    p.pitting   = false;
-    p.pitPhase  = null;
+    p.pitting = false;
+    p.pitPhase = null;
     p.pitGoTime = null;
-    p.tyreWear  = 0;
+    p.tyreWear = 0;
     p.hasPitted = true;
     if (p.pendingCompound) { p.compound = p.pendingCompound; p.pendingCompound = null; }
     if (p.pendingRepair) { p.damage = 0; p.damageParts = createDamageParts(); }
@@ -872,6 +873,13 @@ function broadcastState(io, lobbyId, game, raceStartedFlag) {
 // TICK FISICO
 // ====================================================
 function tickGame(io, lobbyId, game) {
+    // --- INIZIO MODIFICA (PUNTO 5) ---
+    // Contatore per gestire la frequenza di invio (invia 1 volta ogni 2 tick)
+    game._tickCounter = (game._tickCounter || 0) + 1;
+    const BROADCAST_EVERY_N_TICKS = 2;
+    const isBroadcastTick = (game._tickCounter % BROADCAST_EVERY_N_TICKS === 0);
+    // --- FINE MODIFICA ---
+
     if (!game.raceStarted) {
         // Falsa partenza: il client inizia a inviare l'input dell'acceleratore
         // già durante la sequenza luci (vedi Task 3), ma la fisica qui sotto
@@ -882,7 +890,13 @@ function tickGame(io, lobbyId, game) {
                 if (!p.falseStart && p.inputs.throttle > 0.05) p.falseStart = true;
             }
         }
-        broadcastState(io, lobbyId, game, false);
+
+        // --- INIZIO MODIFICA (PUNTO 5) ---
+        // Diradiamo il broadcast anche prima della partenza
+        if (isBroadcastTick) {
+            broadcastState(io, lobbyId, game, false);
+        }
+        // --- FINE MODIFICA ---
         return;
     }
 
@@ -897,16 +911,16 @@ function tickGame(io, lobbyId, game) {
         effectiveBrakeMult, corneringCapacity
     });
 
-    const isQuali  = game.phase === 'qualifying';
+    const isQuali = game.phase === 'qualifying';
     // In qualifica si fa UN giro secco; in gara i giri sono quelli della pista caricata.
     const totalLaps = isQuali ? 1 : game.track.totalLaps;
-    const players    = Object.values(game.players);
+    const players = Object.values(game.players);
     // In qualifica corrono TUTTI in parallelo (isolati solo visivamente, non
     // fisicamente: nessuna collisione tra loro — vedi sotto). Chi è fermo ai
     // box (pitting) o guidato dall'autopilota (pitAutoState) resta escluso
     // dalla fisica normale come un giocatore finished, ma — come i finished —
     // resta un ostacolo per resolveCollisions.
-    const racing      = players.filter(p => !p.finished && !p.pitting && !p.pitAutoState);
+    const racing = players.filter(p => !p.finished && !p.pitting && !p.pitAutoState);
     const autoPiloted = players.filter(p => p.pitAutoState);
 
     // Velocità (accelerazione/freno/sterzo/grip): una volta per tick, come prima.
@@ -1006,23 +1020,31 @@ function tickGame(io, lobbyId, game) {
         }
     }
 
+    // --- INIZIO MODIFICA FINALE (PUNTO 5) ---
+
+    // 1. Calcolo prima se la sessione sta per finire in QUESTO ESATTO TICK
+    const connectedHumans = players.filter(p => !p.disconnected && !p.isBot);
+
+    const isEndingQuali = isQuali && !game.qualiEnded && connectedHumans.length > 0 && connectedHumans.every(p => p.finished);
+    const isEndingRace = game.phase === 'race' && !game.raceEnded && connectedHumans.length > 0 && connectedHumans.every(p => p.finished);
+    const sessionIsEnding = isEndingQuali || isEndingRace;
+
     // Trasmesso PRIMA del controllo di fine sessione qui sotto: altrimenti
     // l'ultimo giocatore che finisce (tipicamente chi non fa la pole, essendo
     // il più lento) innesca endQualifying/endRace nello stesso tick in cui il
     // suo `finished` diventa true, e quel `return` faceva saltare proprio la
     // trasmissione con il suo stato finale — il client non riceveva mai
     // finished/time e il cronometro continuava a scorrere sullo sfondo.
-    broadcastState(io, lobbyId, game, true);
+
+    // 2. Invio lo stato se è un tick consentito (1 su 2), OPPURE se la gara sta finendo.
+    // In questo modo i client ricevono al 100% l'ultimo stato e fermano il cronometro.
+    if (isBroadcastTick || sessionIsEnding) {
+        broadcastState(io, lobbyId, game, true);
+    }
 
     // Notifica live di ogni penalità da collisione appena accumulata (Task
-    // 2/3): DOPO broadcastState, non prima — il client deve già avere il
-    // badge "!" nel DOM (aggiunto da renderStandingRowContent in risposta a
-    // collisionPenalty:true nello stato appena ricevuto) prima di ricevere
-    // il trigger di animazione, altrimenti sul primissimo incidente della
-    // gara l'elemento .collision-badge non esisterebbe ancora e l'animazione
-    // verrebbe silenziosamente ignorata. Una alla volta, nell'ordine in cui
-    // sono avvenute nel tick — la coda resta quasi sempre vuota (0-1
-    // elementi), niente di costoso qui.
+    // 2/3): DOPO broadcastState, non prima - il client deve già avere il
+    // badge "!" nel DOM [...]
     for (const p of players) {
         if (!p.pendingCollisionPenaltyEvents.length) continue;
         for (const penaltyMs of p.pendingCollisionPenaltyEvents) {
@@ -1033,25 +1055,16 @@ function tickGame(io, lobbyId, game) {
         p.pendingCollisionPenaltyEvents.length = 0;
     }
 
-    // Fine sessione (qualifica o gara): tutti i giocatori UMANI CONNESSI
-    // hanno finito (chi è in grazia con l'auto ferma non blocca la
-    // chiusura; c'è comunque un timer di sicurezza per chi resta indietro
-    // senza essersi disconnesso). I bot NON bloccano la chiusura: un bot
-    // lento o fuori pista non deve tenere in attesa un giocatore umano che
-    // ha già finito — i bot restano comunque in gara, semplicemente non
-    // contano per questo gate.
-    const connectedHumans = players.filter(p => !p.disconnected && !p.isBot);
-    if (isQuali) {
-        if (!game.qualiEnded && connectedHumans.length > 0 && connectedHumans.every(p => p.finished)) {
-            endQualifying(io, lobbyId, game);
-            return;
-        }
-    } else if (game.phase === 'race') {
-        if (!game.raceEnded && connectedHumans.length > 0 && connectedHumans.every(p => p.finished)) {
-            endRace(io, lobbyId, game);
-            return;
-        }
+    // Fine sessione (qualifica o gara):
+    // 3. Ora uso semplicemente i boolean che ho calcolato prima.
+    if (isEndingQuali) {
+        endQualifying(io, lobbyId, game);
+        return;
+    } else if (isEndingRace) {
+        endRace(io, lobbyId, game);
+        return;
     }
+    // --- FINE MODIFICA FINALE ---
 }
 
 // ====================================================
@@ -1065,8 +1078,8 @@ function tickGame(io, lobbyId, game) {
 // ====================================================
 // Il numero di campioni è sempre SAMPLES=1000 (vedi trackLoader.js),
 // indipendentemente dalla pista: questo indice resta una costante globale.
-const N_SAMPLES     = 1000;
-const HALF_LAP_IDX  = Math.floor(N_SAMPLES / 2);
+const N_SAMPLES = 1000;
+const HALF_LAP_IDX = Math.floor(N_SAMPLES / 2);
 // Tolleranze del checkpoint anti-taglio e del traguardo espresse in METRI
 // fisici, convertite in campioni in base alla lunghezza REALE della pista
 // caricata (vedi checkpointWindowFor()/finishWindowFor()) — invariata su
@@ -1082,7 +1095,7 @@ const HALF_LAP_IDX  = Math.floor(N_SAMPLES / 2);
 // il rilevamento tra un tick e l'altro del server (l'auto percorre al
 // massimo ~4 unità/tick a velocità massima).
 const CHECKPOINT_WINDOW_M = 112;
-const FINISH_WINDOW_M     = 6;
+const FINISH_WINDOW_M = 6;
 
 function updateTrackIndex(p, track) {
     p.trackIndex = TrackGeometry.nearestIndexNear(track.points, p.trackIndex || 0, p.x, p.z, TRACK_INDEX_WINDOW);
@@ -1120,7 +1133,7 @@ function circularWithin(idx, target, n, halfWidth) {
 // dati invece che da coordinate scritte a mano per una singola pista.
 // ====================================================
 function checkLap(p, totalLaps, io, lobbyId, game) {
-    const n   = game.track.points.length;
+    const n = game.track.points.length;
     const idx = p.trackIndex || 0;
     const startFinishIndex = game.track.startFinishIndex || 0;
 
@@ -1132,12 +1145,12 @@ function checkLap(p, totalLaps, io, lobbyId, game) {
     if (p.checkpointA && inFinishZone && !p.inFinishZone) {
         // Il giocatore ha appena ENTRATO nella zona traguardo → giro completato
         p.lap++;
-        p.checkpointA  = false;
+        p.checkpointA = false;
         console.log(`🏁 [F1] ${p.color} giro ${p.lap}/${totalLaps} (lobby ${lobbyId})`);
 
         if (p.lap >= totalLaps) {
             p.finished = true;
-            p.time     = Date.now() - game.raceStartTime;
+            p.time = Date.now() - game.raceStartTime;
             // Obbligo di almeno un pit stop in gara (regola vera F1): chi non
             // ha mai cambiato gomme prende una penalità in tempo a fine gara,
             // non viene bloccato né squalificato.
@@ -1189,7 +1202,7 @@ function endRace(io, lobbyId, game) {
     // costruzione: totalLaps*n domina), poi chi è ancora in pista in
     // ordine di posizione corrente. totalTime resta null per questi ultimi
     // — il client mostra la posizione, non un tempo inventato.
-    const finished   = Object.values(game.players).filter(p => p.time !== null);
+    const finished = Object.values(game.players).filter(p => p.time !== null);
     const unfinished = Object.values(game.players).filter(p => p.time === null);
     const podium = [
         ...finished.sort((a, b) => a.time - b.time),
@@ -1197,9 +1210,9 @@ function endRace(io, lobbyId, game) {
     ].map(p => ({ color: p.color, totalTime: p.time, pitPenalty: !!p.pitPenalty, falseStart: !!p.falseStart, collisionPenaltyMs: p.collisionPenaltyMs || 0 }));
     io.to(lobbyId).emit('f1RaceEnded', {
         podium,
-        isFinal:      true,
+        isFinal: true,
         isSingleMode: (game.settings || {}).mode === 'single',
-        trackName:    game.track.name
+        trackName: game.track.name
     });
 }
 
@@ -1220,15 +1233,15 @@ function buildPublicState(players, raceStarted, track) {
         out[color] = {
             x: p.x, z: p.z, angle: p.angle,
             trackIndex: p.trackIndex,
-            speed:    p.speed,
+            speed: p.speed,
             steerInput: p.inputs?.steer ?? 0,
             finished: p.finished,
-            time:     p.time,
-            lap:      p.lap,
+            time: p.time,
+            lap: p.lap,
             position: raceStarted ? ranked.findIndex(r => r.color === color) + 1 : null,
             compound: p.compound,
             tyreWear: p.tyreWear,
-            damage:   p.damage,
+            damage: p.damage,
             damageParts: p.damageParts,
             // Debug usura/danno (tasto G lato client, vedi frontend/f1.js):
             // percentuale del potenziale RESIDUO rispetto alla condizione
@@ -1240,10 +1253,10 @@ function buildPublicState(players, raceStarted, track) {
             // sempre a zero in quel contesto, quindi il risultato combacia.
             debug: {
                 maxSpeedPct: Math.round((effectiveMaxSpeed(p, false) / effectiveMaxSpeed(p, true)) * 100),
-                gripPct:     Math.round((effectiveGrip(p, false) / effectiveGrip(p, true)) * 100),
-                accelPct:    Math.round((effectiveAccel(p, false) / effectiveAccel(p, true)) * 100),
-                brakePct:    Math.round((effectiveBrakeMult(p, false) / effectiveBrakeMult(p, true)) * 100),
-                steerPct:    Math.round((1 - getFrontWingSteerPenalty(p.damageParts)) * 100),
+                gripPct: Math.round((effectiveGrip(p, false) / effectiveGrip(p, true)) * 100),
+                accelPct: Math.round((effectiveAccel(p, false) / effectiveAccel(p, true)) * 100),
+                brakePct: Math.round((effectiveBrakeMult(p, false) / effectiveBrakeMult(p, true)) * 100),
+                steerPct: Math.round((1 - getFrontWingSteerPenalty(p.damageParts)) * 100),
             },
             // Autopilota corsia box (entrata/uscita): velocità del
             // limitatore, non del giocatore — il client la usa per un
