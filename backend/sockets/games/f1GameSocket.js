@@ -53,7 +53,6 @@ const {
 const AerodynamicsModel = require('./physics/AerodynamicsModel');
 
 const PHYSICS_TICK_MS = 50;
-const BROADCAST_EVERY_N_TICKS = 2; // 20Hz fisica -> 10Hz rete
 
 // Scia: un'auto che segue da vicino un'altra (stessa distanza lungo la
 // pista già usata per il "seguire" dei bot, non una posizione laterale)
@@ -873,13 +872,6 @@ function broadcastState(io, lobbyId, game, raceStartedFlag) {
 // TICK FISICO
 // ====================================================
 function tickGame(io, lobbyId, game) {
-    // --- INIZIO MODIFICA (PUNTO 5) ---
-    // Contatore per gestire la frequenza di invio (invia 1 volta ogni 2 tick)
-    game._tickCounter = (game._tickCounter || 0) + 1;
-    const BROADCAST_EVERY_N_TICKS = 2;
-    const isBroadcastTick = (game._tickCounter % BROADCAST_EVERY_N_TICKS === 0);
-    // --- FINE MODIFICA ---
-
     if (!game.raceStarted) {
         // Falsa partenza: il client inizia a inviare l'input dell'acceleratore
         // già durante la sequenza luci (vedi Task 3), ma la fisica qui sotto
@@ -890,13 +882,7 @@ function tickGame(io, lobbyId, game) {
                 if (!p.falseStart && p.inputs.throttle > 0.05) p.falseStart = true;
             }
         }
-
-        // --- INIZIO MODIFICA (PUNTO 5) ---
-        // Diradiamo il broadcast anche prima della partenza
-        if (isBroadcastTick) {
-            broadcastState(io, lobbyId, game, false);
-        }
-        // --- FINE MODIFICA ---
+        broadcastState(io, lobbyId, game, false);
         return;
     }
 
@@ -1020,31 +1006,23 @@ function tickGame(io, lobbyId, game) {
         }
     }
 
-    // --- INIZIO MODIFICA FINALE (PUNTO 5) ---
-
-    // 1. Calcolo prima se la sessione sta per finire in QUESTO ESATTO TICK
-    const connectedHumans = players.filter(p => !p.disconnected && !p.isBot);
-
-    const isEndingQuali = isQuali && !game.qualiEnded && connectedHumans.length > 0 && connectedHumans.every(p => p.finished);
-    const isEndingRace = game.phase === 'race' && !game.raceEnded && connectedHumans.length > 0 && connectedHumans.every(p => p.finished);
-    const sessionIsEnding = isEndingQuali || isEndingRace;
-
     // Trasmesso PRIMA del controllo di fine sessione qui sotto: altrimenti
     // l'ultimo giocatore che finisce (tipicamente chi non fa la pole, essendo
     // il più lento) innesca endQualifying/endRace nello stesso tick in cui il
     // suo `finished` diventa true, e quel `return` faceva saltare proprio la
     // trasmissione con il suo stato finale — il client non riceveva mai
     // finished/time e il cronometro continuava a scorrere sullo sfondo.
-
-    // 2. Invio lo stato se è un tick consentito (1 su 2), OPPURE se la gara sta finendo.
-    // In questo modo i client ricevono al 100% l'ultimo stato e fermano il cronometro.
-    if (isBroadcastTick || sessionIsEnding) {
-        broadcastState(io, lobbyId, game, true);
-    }
+    broadcastState(io, lobbyId, game, true);
 
     // Notifica live di ogni penalità da collisione appena accumulata (Task
-    // 2/3): DOPO broadcastState, non prima - il client deve già avere il
-    // badge "!" nel DOM [...]
+    // 2/3): DOPO broadcastState, non prima — il client deve già avere il
+    // badge "!" nel DOM (aggiunto da renderStandingRowContent in risposta a
+    // collisionPenalty:true nello stato appena ricevuto) prima di ricevere
+    // il trigger di animazione, altrimenti sul primissimo incidente della
+    // gara l'elemento .collision-badge non esisterebbe ancora e l'animazione
+    // verrebbe silenziosamente ignorata. Una alla volta, nell'ordine in cui
+    // sono avvenute nel tick — la coda resta quasi sempre vuota (0-1
+    // elementi), niente di costoso qui.
     for (const p of players) {
         if (!p.pendingCollisionPenaltyEvents.length) continue;
         for (const penaltyMs of p.pendingCollisionPenaltyEvents) {
@@ -1055,16 +1033,25 @@ function tickGame(io, lobbyId, game) {
         p.pendingCollisionPenaltyEvents.length = 0;
     }
 
-    // Fine sessione (qualifica o gara):
-    // 3. Ora uso semplicemente i boolean che ho calcolato prima.
-    if (isEndingQuali) {
-        endQualifying(io, lobbyId, game);
-        return;
-    } else if (isEndingRace) {
-        endRace(io, lobbyId, game);
-        return;
+    // Fine sessione (qualifica o gara): tutti i giocatori UMANI CONNESSI
+    // hanno finito (chi è in grazia con l'auto ferma non blocca la
+    // chiusura; c'è comunque un timer di sicurezza per chi resta indietro
+    // senza essersi disconnesso). I bot NON bloccano la chiusura: un bot
+    // lento o fuori pista non deve tenere in attesa un giocatore umano che
+    // ha già finito — i bot restano comunque in gara, semplicemente non
+    // contano per questo gate.
+    const connectedHumans = players.filter(p => !p.disconnected && !p.isBot);
+    if (isQuali) {
+        if (!game.qualiEnded && connectedHumans.length > 0 && connectedHumans.every(p => p.finished)) {
+            endQualifying(io, lobbyId, game);
+            return;
+        }
+    } else if (game.phase === 'race') {
+        if (!game.raceEnded && connectedHumans.length > 0 && connectedHumans.every(p => p.finished)) {
+            endRace(io, lobbyId, game);
+            return;
+        }
     }
-    // --- FINE MODIFICA FINALE ---
 }
 
 // ====================================================

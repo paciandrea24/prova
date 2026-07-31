@@ -181,15 +181,9 @@ function projectOBB(p, axes, axis) {
 const CAR_MAX_REACH = (CAR_HALF_LENGTH + CAR_HALF_WIDTH) * 2;   // scarto rapido, upper bound grossolano
 
 function resolveCollisions(players) {
-    const axesByIndex = players.map(p => carAxes(p));
-
     for (let i = 0; i < players.length; i++) {
         for (let j = i + 1; j < players.length; j++) {
             const a = players[i], b = players[j];
-
-            // Usiamo il pre-calcolo (Dichiara axesA e axesB QUI e solo qui)
-            const axesA = axesByIndex[i];
-            const axesB = axesByIndex[j];
 
             const dx = b.x - a.x, dz = b.z - a.z;
             if (dx * dx + dz * dz > CAR_MAX_REACH * CAR_MAX_REACH) {
@@ -197,6 +191,8 @@ function resolveCollisions(players) {
                 continue;   // troppo distanti, salta il SAT
             }
 
+            const axesA = carAxes(a);
+            const axesB = carAxes(b);
             const axes = [axesA.forward, axesA.right, axesB.forward, axesB.right];
 
             let minOverlap = Infinity;
