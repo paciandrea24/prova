@@ -70,11 +70,15 @@
     // per non perdere la connessione Socket.io della lobby navigando via —
     // vedi hub-auth.js), si chiude da sola: la scheda d'origine rileva il
     // login da sola tramite la sincronizzazione cross-tab di Firebase.
-    // window.close() su una scheda aperta con navigazione normale (es. da
-    // index.html) fallisce silenziosamente per restrizioni del browser: in
-    // quel caso si procede con la normale redirect a returnTo.
+    // Guardia esplicita su window.opener: senza, window.close() chiude
+    // ANCHE una scheda aperta con navigazione normale se ha history.length
+    // 1 (es. link diretto a login.html, o livery.js che naviga same-tab) —
+    // non fallisce silenziosamente come si potrebbe assumere. Bug reale
+    // riscontrato in produzione (2026-07-31): chiudeva l'intera pagina.
     function finishAuth() {
-        window.close();
+        if (window.opener) {
+            window.close();
+        }
         setTimeout(() => { window.location.href = read() || 'index.html'; }, 50);
     }
 
