@@ -353,6 +353,38 @@ canvas.tyre-preview-canvas {
     line-height: 1.6;
 }
 
+/* Pulsante riparazione danni ai box: stesso linguaggio neumorfico/toggle
+   delle tyre-card (bagliore verde = selezionato), ma pill compatta invece
+   di una card larga — è un singolo on/off, non una scelta tra 3. */
+.repair-btn {
+    display: inline-block;
+    padding: 10px 20px;
+    border-radius: 12px;
+    background: var(--hud-surface);
+    box-shadow:
+        4px 4px 10px var(--hud-shadow-dk),
+        -4px -4px 9px var(--hud-shadow-lt);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--hud-text);
+    transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+    user-select: none;
+}
+
+.repair-btn:hover {
+    transform: translateY(-2px);
+    background: #232a35;
+}
+
+.repair-btn.selected {
+    box-shadow:
+        4px 4px 10px var(--hud-shadow-dk),
+        -4px -4px 9px var(--hud-shadow-lt),
+        0 0 0 2px rgba(46,204,113,0.55);
+    color: #2ecc71;
+}
+
 /* Classifica live (posizioni in gara) */
 .standings-box {
     display: flex;

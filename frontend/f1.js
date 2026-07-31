@@ -664,6 +664,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ====================================================
     let pitting = false;   // true SOLO durante la sosta vera e propria (minigioco attivo)
 
+    // Pulsante "Ripara danni" (stile tyre-card: bagliore verde = selezionato),
+    // niente più checkbox — un checkbox col focus si deseleziona da solo alla
+    // pressione di Spazio (usato per la reazione pit), inoltre l'utente
+    // voleva uno stile coerente con gli altri pulsanti del pannello.
+    // Funzione condivisa: la richiama sia il click sia il tasto R1 da
+    // controller (vedi F1GamepadInput.setCallbacks/onRepairToggle sotto).
+    function toggleRepairChoice() {
+        const repairToggle = document.getElementById('pitstop-repair-toggle');
+        const repairBtn = document.getElementById('pitstop-repair-btn');
+        if (!repairToggle || !repairBtn || repairToggle.style.display === 'none') return;
+        const nowSelected = !repairBtn.classList.contains('selected');
+        repairBtn.classList.toggle('selected', nowSelected);
+        socket.emit('f1PitRepairChoice', { lobbyId, playerColor: myColor, repair: nowSelected });
+    }
+
     socket.on('f1PitLaneEntered', () => {
         const panel = document.getElementById('pitstop-panel');
         panel.style.display = 'flex';
@@ -676,16 +691,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const myDamage = (serverState[myColor] && serverState[myColor].damage) || 0;
         const repairToggle = document.getElementById('pitstop-repair-toggle');
-        const repairCheckbox = document.getElementById('pitstop-repair-checkbox');
-        const repairLabel = document.getElementById('pitstop-repair-label');
+        const repairBtn = document.getElementById('pitstop-repair-btn');
         if (myDamage > 0) {
             const estSecs = ((myDamage * 150) / 1000).toFixed(1);   // 150 = REPAIR_MS_PER_DAMAGE_PCT lato server
-            repairLabel.textContent = `Ripara danni (+${estSecs}s)`;
-            repairToggle.style.display = 'block';
-            repairCheckbox.checked = false;
-            repairCheckbox.onchange = () => {
-                socket.emit('f1PitRepairChoice', { lobbyId, playerColor: myColor, repair: repairCheckbox.checked });
-            };
+            repairBtn.textContent = `Ripara danni (+${estSecs}s)`;
+            repairBtn.classList.remove('selected');
+            repairToggle.style.display = 'flex';
+            repairBtn.onclick = toggleRepairChoice;
         } else {
             repairToggle.style.display = 'none';
         }
@@ -735,6 +747,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // "bruciarsi" l'unico tentativo premendo troppo presto per curiosità.
     document.addEventListener('keydown', (e) => {
         if (pitting && e.code === 'Space') {
+            // Senza preventDefault, se la checkbox riparazione ha il focus
+            // (ce l'ha appena la clicchi) il browser la de-seleziona da solo
+            // alla pressione di Spazio — comportamento nativo dell'elemento,
+            // in aggiunta a (non al posto di) l'emit qui sotto. Segnalato
+            // dall'utente: "premo spazio per la reazione e mi si deseleziona
+            // la riparazione danni".
+            e.preventDefault();
             socket.emit('f1PitReactionPress', { lobbyId, playerColor: myColor });
         }
     });
@@ -744,6 +763,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             tyrePanelOpen = !tyrePanelOpen;
             renderTyreVisibility();
         }
+    });
+
+    // Tasto R = riparazione danni ai box da tastiera (stessa funzione del
+    // click sul pulsante e di R1 da controller) — segnalato dall'utente,
+    // prima esisteva solo il tasto controller. toggleRepairChoice ignora la
+    // pressione da sola se il pannello riparazione non è visibile.
+    document.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() === 'r') toggleRepairChoice();
     });
 
     // DEBUG: pannello usura/guasti (tasto G) — mostra/nasconde soltanto,
@@ -987,6 +1014,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 const rowEl = standingRowEls[color];
                 const deltaPx = (oldIdx - newIdx) * STANDING_ROW_HEIGHT;
+
+                // DIAGNOSTICA TEMPORANEA (da rimuovere a bug risolto): la riga
+                // del leader "salta" senza lotte vicine — non si trova la causa
+                // leggendo solo il codice, serve vedere ordine prima/dopo nel
+                // momento esatto in cui scatta. Vedi F12 → Console.
+                console.log('[F1 standings]', color === myColor ? 'IO' : color,
+                    'oldIdx=', oldIdx, 'newIdx=', newIdx,
+                    'lastOrder=', lastStandingsOrder, 'newOrder=', newOrder);
 
                 // Sorpassi ravvicinati possono far scattare due animazioni sulla
                 // stessa riga prima che la prima finisca (es. sorpassa e viene
@@ -1401,6 +1436,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             onNavLeft: () => tyreNav(-1),
             onNavRight: () => tyreNav(1),
             onTyreToggle: () => { tyrePanelOpen = !tyrePanelOpen; renderTyreVisibility(); },
+            // Nessun tasto controller per la scelta riparazione danni ai
+            // box prima d'ora — segnalato dall'utente. Stessa funzione
+            // richiamata dal click sul pulsante (vedi toggleRepairChoice
+            // sopra, dichiarata prima di f1PitLaneEntered).
+            onRepairToggle: toggleRepairChoice,
         });
     }
 

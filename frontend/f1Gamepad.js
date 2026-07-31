@@ -3,8 +3,8 @@
 // Espone F1GamepadInput (globale); caricato prima di f1.js.
 // Mappatura fissa in stile PlayStation (stick sx = sterzo, R2/L2 = gas/freno,
 // X = conferma/reazione pit, Triangolo = cambio camera, D-pad sx/dx =
-// navigazione schede mescola). Nessun pannello di rimappatura: se servirà
-// si aggiunge in seguito.
+// navigazione schede mescola, L1 = pannello gomme, R1 = riparazione danni ai
+// box). Nessun pannello di rimappatura: se servirà si aggiunge in seguito.
 
 const F1GamepadInput = (() => {
 
@@ -14,6 +14,7 @@ const F1GamepadInput = (() => {
     const BTN_CONFIRM   = 0;   // X / Cross — reazione pit O conferma mescola (dipende dalla fase)
     const BTN_CAMERA    = 3;   // Triangolo / Y
     const BTN_TYRE_TOGGLE = 4;   // L1 — apri/chiudi il pannello gomme (mappatura standard Gamepad API: index 4 = LB/L1)
+    const BTN_REPAIR_TOGGLE = 5;   // R1 — spunta/togli la riparazione danni ai box (simmetrico a L1), index 5 = RB/R1
     const BTN_DPAD_LEFT  = 14;
     const BTN_DPAD_RIGHT = 15;
 
@@ -26,12 +27,13 @@ const F1GamepadInput = (() => {
     let prevDpadL   = false;
     let prevDpadR   = false;
     let prevTyre    = false;
+    let prevRepair  = false;
     let cbs = {};
 
     window.addEventListener('gamepadconnected', (e) => {
         connected = true;
         gpIdx = e.gamepad.index;
-        prevConfirm = prevCamera = prevDpadL = prevDpadR = prevTyre = false;
+        prevConfirm = prevCamera = prevDpadL = prevDpadR = prevTyre = prevRepair = false;
     });
 
     window.addEventListener('gamepaddisconnected', (e) => {
@@ -77,6 +79,10 @@ const F1GamepadInput = (() => {
         const tyreNow = (gp.buttons[BTN_TYRE_TOGGLE] || { pressed: false }).pressed;
         if (tyreNow && !prevTyre && cbs.onTyreToggle) cbs.onTyreToggle();
         prevTyre = tyreNow;
+
+        const repairNow = (gp.buttons[BTN_REPAIR_TOGGLE] || { pressed: false }).pressed;
+        if (repairNow && !prevRepair && cbs.onRepairToggle) cbs.onRepairToggle();
+        prevRepair = repairNow;
 
         const dpadLNow = (gp.buttons[BTN_DPAD_LEFT]  || { pressed: false }).pressed;
         if (dpadLNow && !prevDpadL && cbs.onNavLeft) cbs.onNavLeft();
