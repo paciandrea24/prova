@@ -181,6 +181,11 @@ function projectOBB(p, axes, axis) {
 const CAR_MAX_REACH = (CAR_HALF_LENGTH + CAR_HALF_WIDTH) * 2;   // scarto rapido, upper bound grossolano
 
 function resolveCollisions(players) {
+    // Calcolato una sola volta per auto per sotto-step, invece che una volta
+    // per OGNI coppia in cui l'auto compare (con N auto, ogni auto compare
+    // in N-1 coppie: stesso seno/coseno ricalcolato N-1 volte invece di 1).
+    const axesByIndex = players.map(carAxes);
+
     for (let i = 0; i < players.length; i++) {
         for (let j = i + 1; j < players.length; j++) {
             const a = players[i], b = players[j];
@@ -191,8 +196,8 @@ function resolveCollisions(players) {
                 continue;   // troppo distanti, salta il SAT
             }
 
-            const axesA = carAxes(a);
-            const axesB = carAxes(b);
+            const axesA = axesByIndex[i];
+            const axesB = axesByIndex[j];
             const axes = [axesA.forward, axesA.right, axesB.forward, axesB.right];
 
             let minOverlap = Infinity;

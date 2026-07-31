@@ -54,6 +54,27 @@ const AerodynamicsModel = require('./physics/AerodynamicsModel');
 
 const PHYSICS_TICK_MS = 50;
 
+// Diagnostica costo reale del tick fisico (ms CPU per tickGame), per avere
+// numeri concreti su Render invece di giudicare il lag "a sensazione" — ha
+// causato un tentativo di ottimizzazione fallito (broadcast diradato) la cui
+// vera causa (nessuna predizione client-side, non il costo del tick) non era
+// misurabile senza questo. Logga una media ogni TICK_PERF_LOG_EVERY tick,
+// per lobby, poi resetta l'accumulo.
+const TICK_PERF_LOG_EVERY = 100;   // ~5s a 20Hz
+const tickPerfStats = new Map();   // lobbyId -> { sum, max, count }
+
+function recordTickDuration(lobbyId, playerCount, ms) {
+    let s = tickPerfStats.get(lobbyId);
+    if (!s) { s = { sum: 0, max: 0, count: 0 }; tickPerfStats.set(lobbyId, s); }
+    s.sum += ms;
+    if (ms > s.max) s.max = ms;
+    s.count++;
+    if (s.count >= TICK_PERF_LOG_EVERY) {
+        console.log(`[F1 perf] lobby=${lobbyId} players=${playerCount} tick avg=${(s.sum / s.count).toFixed(2)}ms max=${s.max.toFixed(2)}ms (ultimi ${s.count})`);
+        tickPerfStats.delete(lobbyId);
+    }
+}
+
 // Scia: un'auto che segue da vicino un'altra (stessa distanza lungo la
 // pista già usata per il "seguire" dei bot, non una posizione laterale)
 // ottiene un bonus di velocità massima, tanto più grande quanto più è
@@ -291,7 +312,12 @@ module.exports = function (io, socket) {
 
         // Tick e prima fase (scelta mescola) solo al primo giocatore
         if (!game.tick) {
-            game.tick = setInterval(() => tickGame(io, lobbyId, game), PHYSICS_TICK_MS);
+            game.tick = setInterval(() => {
+                const t0 = process.hrtime.bigint();
+                tickGame(io, lobbyId, game);
+                const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+                recordTickDuration(lobbyId, Object.keys(game.players).length, ms);
+            }, PHYSICS_TICK_MS);
             startTyreSelect(io, lobbyId, game);
         }
     });
@@ -416,6 +442,7 @@ module.exports = function (io, socket) {
             if (game.tyreSelectTimeout) clearTimeout(game.tyreSelectTimeout);
             if (game.rejoinTimers) Object.values(game.rejoinTimers).forEach(clearTimeout);
             activeGames.delete(lobbyId);
+            tickPerfStats.delete(lobbyId);
         }
         io.to(lobbyId).emit('f1RedirectToLobby');
     });
@@ -485,7 +512,13 @@ function hardRemoveF1Player(io, lobbyId, color) {
         }
     }
 
-    if (Object.keys(game.players).length === 0) {
+    // Anche a zero UMANI (bot esclusi) la partita va chiusa: i bot non
+    // vengono mai rimossi da qui, quindi senza questo controllo una lobby
+    // abbandonata (ultimo umano rimosso a grazia scaduta, solo bot rimasti)
+    // continuava a ticchettare per sempre a 20Hz — CPU sprecata su Render
+    // finché non si riavviava il server, anche con zero client connessi.
+    const noHumansLeft = !Object.values(game.players).some(p => !p.isBot);
+    if (Object.keys(game.players).length === 0 || noHumansLeft) {
         clearInterval(game.tick);
         if (game.endTimeout) clearTimeout(game.endTimeout);
         if (game.qualiEndTimeout) clearTimeout(game.qualiEndTimeout);
