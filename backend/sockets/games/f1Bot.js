@@ -734,12 +734,25 @@ function updateBotInputs(game, deps) {
     // per garantire che quel calcolo resti byte-identico a prima.
     const legacyBrakeDecel = accel * brakeMult;
 
+    // Diagnostica/telemetria IA (trajectoryDiagnostics + p._botDebug): SOLO
+    // lettura, mai consultata per decidere throttle/brake/steer (vedi i
+    // commenti sopra trajectoryDiagnostics), ma trajectoryDiagnostics scansiona
+    // fino a 101 campioni pista con Math.hypot per bot ogni tick — costo reale
+    // e non trascurabile su Render con più bot attivi, per un dato che serve
+    // SOLO al banco prova (frontend/f1-testbench.js, unico consumatore di
+    // botDebug — mai letto dal client di gioco vero, frontend/f1.js). Attiva
+    // per default (game.debugEnabled !== false) così i test esistenti e il
+    // banco prova (che non impostano il campo) restano invariati; le partite
+    // reali lo disattivano esplicitamente (vedi activeGames.set in
+    // f1GameSocket.js).
+    const debugEnabled = game.debugEnabled !== false;
+
     for (const p of Object.values(game.players)) {
         if (!p.isBot || p.finished) continue;
 
         // Calcolata una volta per bot, prima di ogni ramo/uscita anticipata:
         // pura diagnostica, non entra in nessuna decisione più sotto.
-        const diag = trajectoryDiagnostics(p, track);
+        const diag = debugEnabled ? trajectoryDiagnostics(p, track) : null;
 
         // Reazione al via ancora in corso (vedi BOT_RACE_START_REACTION_MIN/MAX_MS
         // e startRaceCountdown in f1GameSocket.js, che imposta questo timestamp
@@ -747,12 +760,12 @@ function updateBotInputs(game, deps) {
         // input, come un pilota che non ha ancora reagito al semaforo.
         if (p.botRaceReactionUntil && Date.now() < p.botRaceReactionUntil) {
             p.inputs = { throttle: 0, brake: 0, steer: 0 };
-            p._botDebug = {
+            p._botDebug = debugEnabled ? {
                 state: 'WAITING_START', speed: p.speed,
                 targetSpeed: null, maxSpeed: null, gripCapacityFactor: null, brakeDecel: null,
                 throttle: 0, brake: 0, steer: 0, target: null, gapToAhead: null,
                 ...diag
-            };
+            } : null;
             continue;
         }
 
@@ -785,12 +798,12 @@ function updateBotInputs(game, deps) {
             // Nessun input di guida scritto qui (il server/autopilota guida
             // direttamente): throttle/brake/steer non sono applicabili questo
             // tick, non si riportano valori residui del tick precedente.
-            p._botDebug = {
+            p._botDebug = debugEnabled ? {
                 state: 'PIT_LANE', speed: p.speed,
                 targetSpeed: null, maxSpeed: null, gripCapacityFactor: null, brakeDecel: null,
                 throttle: null, brake: null, steer: null, target: null, gapToAhead: null,
                 ...diag
-            };
+            } : null;
             continue;
         }
 
@@ -1091,7 +1104,7 @@ function updateBotInputs(game, deps) {
         steer = Math.max(-1, Math.min(1, steer));
 
         p.inputs = { throttle, brake, steer };
-        p._botDebug = {
+        p._botDebug = debugEnabled ? {
             state: botState,
             speed: p.speed,
             targetSpeed: debugTargetSpeed,
@@ -1102,7 +1115,7 @@ function updateBotInputs(game, deps) {
             target: debugTarget,
             gapToAhead: debugGapToAhead,
             ...diag
-        };
+        } : null;
     }
 }
 

@@ -192,7 +192,15 @@ module.exports = function (io, socket) {
                 grid:              null,   // ordine di partenza determinato dalla qualifica (array di colori)
                 hostColor:         lobby ? lobby.host : playerColor,
                 settings:          lobby ? (lobby.gameSettings || {}) : {},
-                rejoinTimers:      {}   // color -> timeout di rimozione definitiva dopo un drop
+                rejoinTimers:      {},   // color -> timeout di rimozione definitiva dopo un drop
+                // Disattiva trajectoryDiagnostics + p._botDebug in updateBotInputs
+                // (f1Bot.js): telemetria IA usata SOLO dal banco prova
+                // (f1Testbench.js, che imposta il proprio game senza questo
+                // campo e quindi resta al default "on"), mai dal client di
+                // gioco vero. Costo reale su Render con più bot attivi
+                // (scansione O(101) per bot per tick, sempre gratis prima
+                // d'ora) per un dato che nessuno guardava in produzione.
+                debugEnabled:      false
             });
 
             // Riempie la griglia con bot fino a MAX_GRID_SIZE (6), se
