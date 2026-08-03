@@ -6,7 +6,8 @@ const {
     cornerTargetSpeed, windowRadius, cornerApexNear, overtakeOffset, nearestAheadPlayer,
     pickPostPitCompound, pickBotColors, estimateFinishTime,
     updateBotInputs, DEFAULT_TUNING, shouldBotRepair, isBotGripAwarenessActive, trajectoryDiagnostics,
-    adaptiveLookaheadMeters, isAdaptiveLookaheadActive, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M
+    adaptiveLookaheadMeters, isAdaptiveLookaheadActive, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
+    setLookaheadFormulaOverride
 } = require('./f1Bot.js');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 
@@ -225,6 +226,59 @@ test('adaptiveLookaheadMeters: e_target molto piccolo => clampato al pavimento m
     const track = { points, lapLength: 300, roadHalf: 5 };
     const L = adaptiveLookaheadMeters(points, 100, track, 0.001);   // e_target piccolissimo apposta
     assert.equal(L, BOT_LOOKAHEAD_MIN_M);
+});
+
+test('adaptiveLookaheadMeters: setLookaheadFormulaOverride(null) => identico alla formula A', () => {
+    // Stessa curva/k del test "curva a raggio noto" sopra — riusa lo stesso
+    // caso già verificato per la formula A, qui per verificare che
+    // l'override esplicitamente resettato a null (non solo mai toccato)
+    // dia lo stesso risultato — Rif. review hook diagnostico Task 4.
+    const points = buildConstantCurveTrack(300, 50, 0.05);
+    const track = { points, lapLength: 300, roadHalf: 5 };
+    const k = 1;
+    setLookaheadFormulaOverride(null);
+    const L = adaptiveLookaheadMeters(points, 100, track, k);
+    const expectedApprox = Math.sqrt(2 * 20 * k * track.roadHalf);
+    assert.ok(Math.abs(L - expectedApprox) < 1, `atteso ~${expectedApprox.toFixed(2)} (formula A), ottenuto ${L.toFixed(2)}`);
+});
+
+test('adaptiveLookaheadMeters: override attivo => sostituisce la formula A in modo deterministico, riceve tutti gli argomenti', () => {
+    const points = buildConstantCurveTrack(300, 50, 0.05);
+    const track = { points, lapLength: 300, roadHalf: 5 };
+    let received = null;
+    try {
+        setLookaheadFormulaOverride((laneSource, trackIndex, trk, k, speedMs) => {
+            received = { laneSource, trackIndex, trk, k, speedMs };
+            return 42; // valore sentinella, impossibile da produrre con la formula A su questo input
+        });
+        const L = adaptiveLookaheadMeters(points, 100, track, 0.05, 33);
+        assert.equal(L, 42, 'il valore restituito deve essere ESATTAMENTE quello dell\'override, nessun post-processing di adaptiveLookaheadMeters sopra');
+        assert.equal(received.laneSource, points);
+        assert.equal(received.trackIndex, 100);
+        assert.equal(received.trk, track);
+        assert.equal(received.k, 0.05);
+        assert.equal(received.speedMs, 33, 'speedMs deve arrivare intatto all\'override');
+    } finally {
+        setLookaheadFormulaOverride(null);
+    }
+});
+
+test('adaptiveLookaheadMeters: reset dell\'override (setLookaheadFormulaOverride(null)) ripristina la formula A', () => {
+    const points = buildConstantCurveTrack(300, 50, 0.05);
+    const track = { points, lapLength: 300, roadHalf: 5 };
+    const k = 1;
+    let L;
+    try {
+        setLookaheadFormulaOverride(() => 999); // "sporca" il risultato, diverso da qualunque valore di A qui
+        L = adaptiveLookaheadMeters(points, 100, track, k);
+        assert.equal(L, 999, 'override deve essere davvero attivo prima del reset');
+    } finally {
+        setLookaheadFormulaOverride(null);
+    }
+    const afterReset = adaptiveLookaheadMeters(points, 100, track, k);
+    const expectedApprox = Math.sqrt(2 * 20 * k * track.roadHalf);
+    assert.notEqual(afterReset, 999, 'dopo il reset non deve più restituire il valore sporcato dall\'override');
+    assert.ok(Math.abs(afterReset - expectedApprox) < 1, `dopo il reset atteso ~${expectedApprox.toFixed(2)} (formula A), ottenuto ${afterReset.toFixed(2)}`);
 });
 
 test('cornerApexNear: rettilineo puro => null', () => {
@@ -509,6 +563,140 @@ test('updateBotInputs: deps.tuning.apexMaxFraction sovrascrive il default e camb
         Math.abs(pFlat.inputs.steer - pFull.inputs.steer) > 1e-6,
         `atteso sterzo diverso tra apexMaxFraction=0 (${pFlat.inputs.steer}) e =1 (${pFull.inputs.steer})`
     );
+});
+
+test('updateBotInputs: F1_BOT_ADAPTIVE_LOOKAHEAD spento => lookahead identico a prima (ramo racing-line)', () => {
+    const points = buildConstantCurveTrack(300, 50, 0.05);
+    const racingLineTuning = { lookaheadTimeS: 0.6, steerGain: 3.0, cornerSpeedMargin: 0.99, brakingDistanceMargin: 1.2, deadband: 0.01, ramp: 0.06 };
+    const track = { points, racingLine: points, racingLineTuning, lapLength: 300, roadHalf: 5 };
+    const deps = {
+        effectiveMaxSpeed: () => 6,
+        handlePitReactionPress: () => {},
+        io: { to: () => ({ emit: () => {} }) },
+        lobbyId: 'test',
+        wearLapsAtMedium: 5,
+        accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052
+    };
+    const p = {
+        x: points[100].x, z: points[100].z, angle: 0,
+        speed: 3, vx: 0, vz: 0,
+        inputs: { throttle: 0, brake: 0, steer: 0 },
+        finished: false, lap: 0, botLapSeen: 0,
+        trackIndex: 100, tyreWear: 0, compound: 'medium',
+        pitting: false, pitAutoState: null, pitPhase: null,
+        isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+        botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false
+    };
+
+    delete process.env.F1_BOT_ADAPTIVE_LOOKAHEAD;
+    updateBotInputs({ track, phase: 'qualifying', players: { A: p } }, deps);
+
+    const speedMs = Math.max(5, Math.abs(p.speed) * 55 / 3.6);
+    const lookM = Math.max(10, speedMs * racingLineTuning.lookaheadTimeS);
+    const lookSamples = Math.max(1, Math.round(lookM * points.length / track.lapLength));
+    const expectedIdx = lookaheadIndex(points.length, 100, lookSamples);
+
+    assert.equal(p._botDebug.target.x, points[expectedIdx].x);
+    assert.equal(p._botDebug.target.z, points[expectedIdx].z);
+});
+
+test('updateBotInputs: F1_BOT_ADAPTIVE_LOOKAHEAD acceso => target diverso da flag spento su curva stretta (ramo racing-line)', () => {
+    const points = buildConstantCurveTrack(300, 50, 0.1);   // raggio stretto ~10
+    const racingLineTuning = { lookaheadTimeS: 0.6, steerGain: 3.0, cornerSpeedMargin: 0.99, brakingDistanceMargin: 1.2, deadband: 0.01, ramp: 0.06 };
+    const track = { points, racingLine: points, racingLineTuning, lapLength: 300, roadHalf: 5 };
+    const deps = {
+        effectiveMaxSpeed: () => 6,
+        handlePitReactionPress: () => {},
+        io: { to: () => ({ emit: () => {} }) },
+        lobbyId: 'test',
+        wearLapsAtMedium: 5,
+        accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052
+    };
+    function makePlayer() {
+        return {
+            x: points[100].x, z: points[100].z, angle: 0, speed: 3, vx: 0, vz: 0,
+            inputs: { throttle: 0, brake: 0, steer: 0 }, finished: false, lap: 0, botLapSeen: 0,
+            trackIndex: 100, tyreWear: 0, compound: 'medium', pitting: false, pitAutoState: null, pitPhase: null,
+            isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+            botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false
+        };
+    }
+
+    const pOff = makePlayer();
+    delete process.env.F1_BOT_ADAPTIVE_LOOKAHEAD;
+    updateBotInputs({ track, phase: 'qualifying', players: { A: pOff } }, deps);
+
+    const pOn = makePlayer();
+    process.env.F1_BOT_ADAPTIVE_LOOKAHEAD = '1';
+    try {
+        updateBotInputs({ track, phase: 'qualifying', players: { A: pOn } }, deps);
+    } finally {
+        delete process.env.F1_BOT_ADAPTIVE_LOOKAHEAD;
+    }
+
+    assert.notEqual(pOn._botDebug.target.x, pOff._botDebug.target.x);
+});
+
+test('updateBotInputs: F1_BOT_ADAPTIVE_LOOKAHEAD spento => lookahead identico a prima (ramo geometrico, senza racing line)', () => {
+    const points = buildConstantCurveTrack(300, 50, 0.05);
+    const track = { points, lapLength: 300, roadHalf: 5 };
+    const deps = {
+        effectiveMaxSpeed: () => 6,
+        handlePitReactionPress: () => {}, io: { to: () => ({ emit: () => {} }) }, lobbyId: 'test',
+        wearLapsAtMedium: 5, accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052,
+        tuning: { apexMaxFraction: 0 }
+    };
+    const p = {
+        x: points[100].x, z: points[100].z, angle: 0, speed: 3, vx: 0, vz: 0,
+        inputs: { throttle: 0, brake: 0, steer: 0 }, finished: false, lap: 0, botLapSeen: 0,
+        trackIndex: 100, tyreWear: 0, compound: 'medium', pitting: false, pitAutoState: null, pitPhase: null,
+        isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+        botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false
+    };
+
+    delete process.env.F1_BOT_ADAPTIVE_LOOKAHEAD;
+    updateBotInputs({ track, phase: 'qualifying', players: { A: p } }, deps);
+
+    const speedMs = Math.max(5, Math.abs(p.speed) * 55 / 3.6);
+    const lookM = Math.max(10, speedMs * 0.6);   // DEFAULT_TUNING.lookaheadTimeS === BOT_LOOKAHEAD_TIME_S
+    const lookSamples = Math.max(1, Math.round(lookM * points.length / track.lapLength));
+    const expectedIdx = lookaheadIndex(points.length, 100, lookSamples);
+
+    assert.equal(p._botDebug.target.x, points[expectedIdx].x);
+    assert.equal(p._botDebug.target.z, points[expectedIdx].z);
+});
+
+test('updateBotInputs: F1_BOT_ADAPTIVE_LOOKAHEAD acceso => target diverso da flag spento su curva stretta (ramo geometrico)', () => {
+    const points = buildConstantCurveTrack(300, 50, 0.1);
+    const track = { points, lapLength: 300, roadHalf: 5 };
+    const deps = {
+        effectiveMaxSpeed: () => 6, handlePitReactionPress: () => {}, io: { to: () => ({ emit: () => {} }) },
+        lobbyId: 'test', wearLapsAtMedium: 5, accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052,
+        tuning: { apexMaxFraction: 0 }
+    };
+    function makePlayer() {
+        return {
+            x: points[100].x, z: points[100].z, angle: 0, speed: 3, vx: 0, vz: 0,
+            inputs: { throttle: 0, brake: 0, steer: 0 }, finished: false, lap: 0, botLapSeen: 0,
+            trackIndex: 100, tyreWear: 0, compound: 'medium', pitting: false, pitAutoState: null, pitPhase: null,
+            isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+            botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false
+        };
+    }
+
+    const pOff = makePlayer();
+    delete process.env.F1_BOT_ADAPTIVE_LOOKAHEAD;
+    updateBotInputs({ track, phase: 'qualifying', players: { A: pOff } }, deps);
+
+    const pOn = makePlayer();
+    process.env.F1_BOT_ADAPTIVE_LOOKAHEAD = '1';
+    try {
+        updateBotInputs({ track, phase: 'qualifying', players: { A: pOn } }, deps);
+    } finally {
+        delete process.env.F1_BOT_ADAPTIVE_LOOKAHEAD;
+    }
+
+    assert.notEqual(pOn._botDebug.target.x, pOff._botDebug.target.x);
 });
 
 test('updateBotInputs: durante la reazione al via il bot resta fermo (nessun input), poi guida normalmente', () => {

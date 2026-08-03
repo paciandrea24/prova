@@ -28,7 +28,7 @@
 |---|---|
 | `backend/sockets/games/f1Bot.js` | Modificato: aggiunge helper puro `adaptiveLookaheadMeters` + costanti candidate + flag (Task 1); aggiunge `adaptiveLookaheadK` a `DEFAULT_TUNING`/`DEFAULT_RACELINE_TUNING` e collega l'helper in entrambi i rami di `updateBotInputs` (Task 2). Nessun altro comportamento tocco. |
 | `backend/sockets/games/f1Bot.test.js` | Modificato: unit test isolati sull'helper (Task 1) + test di integrazione parità flag-off/differenza flag-on su entrambi i rami (Task 2). |
-| `backend/tools/f1AdaptiveLookaheadCheck.js` | Nuovo: strumento headless di verifica Fase 1 — sweep di poche candidate `k`, controllo DNF su 4 piste, confronto quantitativo vs baseline su New Monza/monte-rosso, valutazione automatica contro i criteri del piano (Task 4). |
+| `backend/tools/f1AdaptiveLookaheadCheck.js` | Nuovo: strumento **diagnostico** (non più un semplice "verifica candidato") per confronto tra variante A (lookahead adattivo attuale, floor fisso) e variante B (stesso lookahead con `L_min(v)`, esiste SOLO nel diagnostico), raccolta di metriche di tracking (distanza/heading) E di stabilità (oscillazione sterzo/target, per fascia di velocità), a supporto della validazione/falsificazione di H2 (Task 4). Il tool non modifica il controller reale: legge/esercita `f1Bot.js` così com'è, la variante B è una reimplementazione locale della sola formula del floor. |
 
 Nessun file racing line ufficiale (`*-raceline.json`), nessun file in `frontend/`, nessun file dell'ottimizzatore (`f1RaceLineOptimizer.js`) viene toccato da questo piano.
 
@@ -383,166 +383,237 @@ Nessun commit in questo task (nessun file cambiato).
 
 ---
 
-### Task 4: Strumento di verifica Fase 1 (`f1AdaptiveLookaheadCheck.js`)
+### Task 4: Confronto diagnostico lookahead adattivo — validare/falsificare H2
+
+> **Scopo aggiornato** (Rif. review diagnostica del piano, successiva a Task 1/2 —
+> Task 1 e Task 2 restano completati e invariati). Non più *"verificare se il
+> lookahead adattivo supera i criteri della Fase 1"*, ma **costruire un
+> confronto diagnostico tra due ipotesi di lookahead e raccogliere metriche
+> sufficienti a validare O falsificare H2** — comprese metriche di stabilità
+> del controllo che i criteri originari (distanza media/picco, DNF, tempo) da
+> soli non possono rilevare.
+>
+> **Perché questo cambiamento**: la review diagnostica ha trovato due
+> problemi distinti, nessuno dei due nel codice già scritto (Task 1/2, che
+> restano corretti così come sono):
+> 1. La spec (`docs/superpowers/specs/2026-07-29-f1-bot-adaptive-pursuit-controller-design.md`,
+>    sezione "Architettura target") scrive `L(s) = clamp(√(2·R_locale·e_target),
+>    L_min(v), L_max)` — **`L_min` funzione della velocità**. La tabella
+>    parametri della stessa spec, poco sotto, e l'implementazione Task 1
+>    (`BOT_LOOKAHEAD_MIN_M`, costante fissa) trattano invece `L_min` come
+>    costante globale. È un'incoerenza interna della spec, non un errore di
+>    implementazione — Task 1/2 hanno seguito correttamente la tabella
+>    parametri, ma la formula dell'architettura target dice altro.
+> 2. I criteri quantitativi di Fase 1 (distanza media/picco, DNF/lockup,
+>    tempo) sono tutti statistiche aggregate di fine giro — nessuno è
+>    sensibile a oscillazione/instabilità del comando di sterzo, che la
+>    teoria del pure-pursuit indica come il rischio più plausibile di un
+>    lookahead completamente indipendente dalla velocità. Un controller
+>    "nervoso" potrebbe passare tutti i criteri attuali pur introducendo una
+>    regressione qualitativa reale, mai misurata.
+>
+> Questo task non decide se H2 è vera o falsa nella sua forma attuale, né
+> implementa una correzione nel controller reale — costruisce lo strumento
+> che permette di deciderlo con dati.
 
 **Files:**
 - Create: `backend/tools/f1AdaptiveLookaheadCheck.js`
+- Modify (solo se lo Step 0 lo conferma necessario): `backend/tools/f1LapSimulator.js` — eventuale aggiunta di `steer`/`target` al `telemetry.push` già esistente (~riga 77), nessun nuovo calcolo nel motore.
 
 **Interfaces:**
-- Consuma: `loadTrack` (`trackLoader.js`), `simulateLap` (`f1LapSimulator.js`).
-- Produce: report a console; `module.exports = { runOnce, checkTrack, checkDnf }` per riuso/test futuri.
+- Consuma: `loadTrack` (`trackLoader.js`), `simulateLap` (`f1LapSimulator.js`), telemetria per-tick (`distanceFromRacingLine`, `headingVsTangentDeg`, `speedKmh` già presenti; `steer`/`target` se lo Step 0 ne conferma la necessità e li aggiunge).
+- Produce: report a console che confronta **due varianti fianco a fianco** (non una sola), con le metriche estese sotto; `module.exports` da definire in Step 3, coerente con lo stile già in uso nel resto del file (funzioni pure riusabili, stesso pattern di `f1RacingLineAblation.js`).
 
-- [ ] **Step 1: Scrivi lo strumento**
+- [ ] **Step 0: Audit telemetria — cosa è già disponibile, cosa richiede estensione**
 
-```javascript
-// backend/tools/f1AdaptiveLookaheadCheck.js
-//
-// Verifica Fase 1 (Rif. docs/superpowers/specs/2026-07-29-f1-bot-adaptive-pursuit-controller-design.md
-// e docs/superpowers/plans/2026-07-29-f1-bot-adaptive-lookahead-fase1.md): confronta
-// il lookahead adattivo (F1_BOT_ADAPTIVE_LOOKAHEAD=1, steerGain INVARIATO)
-// contro il comportamento attuale, su New Monza (ramo racing-line) e
-// monte-rosso (ramo geometrico fallback), sweepando poche candidate k (non
-// una ricerca esaustiva) — e verifica l'assenza di DNF/lockup su TUTTE le
-// piste attuali per ogni candidata. Applica i criteri quantitativi della
-// spec (riduzione ≥ 1/3 della combinazione empirica già misurata in
-// f1RacingLineAblation.js, nessun DNF, costo tempo ≤ +3%).
-//
-// Uso: node backend/tools/f1AdaptiveLookaheadCheck.js
-const { loadTrack } = require('../sockets/games/trackLoader.js');
-const { simulateLap } = require('./f1LapSimulator.js');
+Prima di scrivere qualunque riga dello strumento, verificare in
+`backend/tools/f1LapSimulator.js` (funzione `simulateLap`, blocco
+`telemetry.push`, ~riga 77) quali campi sono già catturati per tick:
+- **Già presenti**: `distanceFromRacingLine`, `headingVsTangentDeg`,
+  `speedKmh`, `idx`, `x`, `z`.
+- **Da verificare se servono alle metriche dello Step 2, e se sì aggiungere**:
+  `steer` e `target` (`{x, z}`) — già calcolati ogni tick da
+  `updateBotInputs` dentro `p._botDebug` (`f1Bot.js`, blocco
+  `p._botDebug = debugEnabled ? {...}` in fondo alla funzione), **non**
+  copiati oggi in `telemetry`. Se servono, l'estensione è una singola
+  aggiunta al `telemetry.push` esistente — nessuna modifica a `f1Bot.js`,
+  nessun nuovo calcolo nel motore, solo esposizione di un dato già prodotto.
 
-const K_CANDIDATES = [0.05, 0.1, 0.15];
+Esito di questo step: elenco preciso dei campi mancanti (se presenti) prima
+di procedere allo Step 3.
 
-// Soglie derivate dai risultati già misurati in f1RacingLineAblation.js
-// (Braccio 1, combinazione lookahead÷2+steerGain×1.75): 1/3 della riduzione
-// osservata lì, per pista — vedi Global Constraints del piano.
-const CRITERIA = {
-    'new-monza':   { minAvgDistReductionFrac: 0.46 / 3, minPeakDistReductionFrac: 0.30 / 3, maxTimeCostFrac: 0.03 },
-    'monte-rosso': { minAvgDistReductionFrac: 0.21 / 3, minPeakDistReductionFrac: 0.39 / 3, maxTimeCostFrac: 0.03 }
-};
-const ALL_TRACKS_FOR_DNF_CHECK = ['new-monza', 'monte-rosso', 'prova', 'test2'];
+- [ ] **Step 1: Definire le due varianti da confrontare**
 
-function stats(telemetry) {
-    let sumDist = 0, peakDist = 0, sumHead = 0, peakHead = 0, count = 0;
-    for (const t of telemetry) {
-        if (t.distanceFromRacingLine == null) continue;
-        count++;
-        sumDist += t.distanceFromRacingLine;
-        if (t.distanceFromRacingLine > peakDist) peakDist = t.distanceFromRacingLine;
-        const h = Math.abs(t.headingVsTangentDeg);
-        sumHead += h;
-        if (h > peakHead) peakHead = h;
-    }
-    return { avgDist: sumDist / count, peakDist, avgHead: sumHead / count, peakHead };
-}
-
-// Applica l'override di k nella stessa plumbing già esistente:
-// racingLineTuning per le piste con racing line ufficiale, deps.tuning per
-// quelle senza (stesso pattern di f1RacingLineAblation.js).
-function runOnce(trackId, kOverride) {
-    const track = loadTrack(trackId);
-    const hasLine = !!track.racingLine;
-    const trackForRun = (kOverride != null && hasLine)
-        ? { ...track, racingLineTuning: { ...track.racingLineTuning, adaptiveLookaheadK: kOverride } }
-        : track;
-    const tuning = (kOverride != null && !hasLine) ? { adaptiveLookaheadK: kOverride } : undefined;
-    const r = simulateLap(trackForRun, { speedFactor: 1, paceMult: 1, precisionNoise: 0, safetyCapS: 60, tuning });
-    if (!r.finished) return { finished: false };
-    return { finished: true, timeMs: r.timeMs, ...stats(r.telemetry) };
-}
-
-function checkDnf(k) {
-    const rows = [];
-    for (const trackId of ALL_TRACKS_FOR_DNF_CHECK) {
-        process.env.F1_BOT_ADAPTIVE_LOOKAHEAD = '1';
-        const r = runOnce(trackId, k);
-        delete process.env.F1_BOT_ADAPTIVE_LOOKAHEAD;
-        rows.push({ trackId, finished: r.finished });
-    }
-    return rows;
-}
-
-function checkTrack(trackId, k) {
-    delete process.env.F1_BOT_ADAPTIVE_LOOKAHEAD;
-    const baseline = runOnce(trackId, null);
-
-    process.env.F1_BOT_ADAPTIVE_LOOKAHEAD = '1';
-    const adaptive = runOnce(trackId, k);
-    delete process.env.F1_BOT_ADAPTIVE_LOOKAHEAD;
-
-    if (!baseline.finished || !adaptive.finished) return { trackId, k, dnf: true };
-
-    const avgDistReductionFrac = (baseline.avgDist - adaptive.avgDist) / baseline.avgDist;
-    const peakDistReductionFrac = (baseline.peakDist - adaptive.peakDist) / baseline.peakDist;
-    const timeCostFrac = (adaptive.timeMs - baseline.timeMs) / baseline.timeMs;
-
-    const criteria = CRITERIA[trackId];
-    const pass = !!criteria &&
-        avgDistReductionFrac >= criteria.minAvgDistReductionFrac &&
-        peakDistReductionFrac >= criteria.minPeakDistReductionFrac &&
-        timeCostFrac <= criteria.maxTimeCostFrac;
-
-    return { trackId, k, dnf: false, baseline, adaptive, avgDistReductionFrac, peakDistReductionFrac, timeCostFrac, pass };
-}
-
-function main() {
-    console.log('=== Fase 1: verifica lookahead adattivo (sterzo invariato) ===\n');
-
-    console.log('--- Assenza di DNF/lockup su tutte le piste, per candidata k ---');
-    for (const k of K_CANDIDATES) {
-        const rows = checkDnf(k);
-        const allOk = rows.every(r => r.finished);
-        console.log(`k=${k}: ${rows.map(r => `${r.trackId}=${r.finished ? 'OK' : 'DNF'}`).join('  ')}  ${allOk ? '[PASS]' : '[FAIL]'}`);
-    }
-
-    console.log('\n--- Metriche vs baseline (New Monza + monte-rosso), per candidata k ---');
-    for (const trackId of Object.keys(CRITERIA)) {
-        console.log(`\n${trackId}:`);
-        for (const k of K_CANDIDATES) {
-            const r = checkTrack(trackId, k);
-            if (r.dnf) { console.log(`  k=${k}: DNF — non valutabile`); continue; }
-            console.log(
-                `  k=${k}: tempo=${r.adaptive.timeMs}ms (${(r.timeCostFrac * 100).toFixed(1)}%)  ` +
-                `distMedia ${r.baseline.avgDist.toFixed(2)}->${r.adaptive.avgDist.toFixed(2)}m (${(r.avgDistReductionFrac * 100).toFixed(1)}%)  ` +
-                `distPicco ${r.baseline.peakDist.toFixed(2)}->${r.adaptive.peakDist.toFixed(2)}m (${(r.peakDistReductionFrac * 100).toFixed(1)}%)  ` +
-                `${r.pass ? '[PASS criteri Fase 1]' : '[FAIL criteri Fase 1]'}`
-            );
-        }
-    }
-}
-
-if (require.main === module) main();
-
-module.exports = { runOnce, checkTrack, checkDnf };
+**Variante A — implementazione attuale** (quella già wired in Task 2,
+invariata, nessuna modifica):
 ```
+L = clamp(sqrt(2 * R_locale * e_target), BOT_LOOKAHEAD_MIN_M, BOT_ADAPTIVE_LOOKAHEAD_MAX_M)
+```
+Lo strumento la esercita così com'è, dietro `F1_BOT_ADAPTIVE_LOOKAHEAD=1`,
+esattamente come già previsto da Task 2 — nessuna modifica a `f1Bot.js`.
 
-- [ ] **Step 2: Smoke test manuale**
+**Variante B — diagnostica, esiste SOLO nello strumento**: stessa formula
+geometrica, ma il floor fisso `BOT_LOOKAHEAD_MIN_M` è sostituito da un
+limite inferiore dipendente dalla velocità `L_min(v)`, coerente con
+l'architettura target scritta nella spec (mai implementata):
+```
+L = clamp(sqrt(2 * R_locale * e_target), L_min(v), BOT_ADAPTIVE_LOOKAHEAD_MAX_M)
+```
+Vincoli su B, non negoziabili in questo task:
+- **Non modifica `f1Bot.js`**, non modifica `adaptiveLookaheadMeters` né la
+  sua API, non introduce nessun nuovo flag/parametro nel controller reale —
+  vive come funzione/override locale dentro
+  `f1AdaptiveLookaheadCheck.js` (es. reimplementazione della sola formula
+  del floor, riusando `windowRadius`/`metersToSamples` già esportati da
+  `f1Bot.js` come fa oggi `adaptiveLookaheadMeters`).
+- Serve solo come esperimento diagnostico per confrontare A vs B — non è
+  una proposta di implementazione né un'anticipazione di Fase 2.
+- **La forma precisa di `L_min(v)`** (candidato discusso in sede di review
+  teorica: `v · T_min`, con `T_min` nuova costante candidata; non l'unica
+  forma possibile) **sarà definita durante l'implementazione dello
+  strumento (Step 3), non in questo documento.**
+
+- [ ] **Step 2: Estendere le metriche richieste dal tool**
+
+Oltre alle metriche già previste dal piano originale:
+- `avgDist`, `peakDist` (da `distanceFromRacingLine`)
+- `avgHead`, `peakHead` (da `headingVsTangentDeg`)
+- tempo sul giro (`timeMs`)
+- DNF/lockup (`finished`)
+
+aggiungere le metriche di stabilità emerse dalla review diagnostica:
+- **deviazione standard dell'errore di prua** (`headingVsTangentDeg`) — non
+  solo media/picco: distingue un errore che cresce e torna a zero in modo
+  pulito (una curva vera) da un errore che oscilla rapidamente attorno a
+  zero (nervosismo).
+- **inversioni di segno dell'errore di prua per secondo** (zero-crossing
+  rate) — proxy diretto di frequenza di oscillazione.
+- **variazione tick-su-tick del comando sterzo** (`|steer_t − steer_{t-1}|`,
+  media e picco) — **se esposto dalla telemetry** (dipende dall'esito dello
+  Step 0).
+- **variazione del target lookahead tick-su-tick** (distanza tra `target`
+  consecutivi, media e picco) — **se esposto dalla telemetry** (dipende
+  dall'esito dello Step 0).
+- **statistiche separate per fascia di velocità** (bucket su `speedKmh`,
+  es. terzili bassa/media/alta): ripetere TUTTE le metriche sopra per
+  fascia, non solo sull'intero giro — un'instabilità concentrata solo ad
+  alta velocità si annacqua altrimenti nella media di giro, che è
+  esattamente l'ipotesi in discussione.
+
+Tutte derivabili da dati già calcolati dal motore (nessuna nuova fisica) —
+l'unico costo eventuale è l'estensione identificata allo Step 0.
+
+- [ ] **Step 3: Scrivi lo strumento**
+
+Implementa `backend/tools/f1AdaptiveLookaheadCheck.js` (e l'eventuale
+estensione di `f1LapSimulator.js` decisa allo Step 0) secondo Step 1/Step 2:
+esegue A e B su tutte le piste headless disponibili (verificare l'elenco
+reale al momento dell'implementazione — nota separatamente: `test2`
+non è più caricabile, sostituita da `baku` nella working tree, problema
+esistente fuori scope per questo task), stampa un confronto fianco a fianco
+per ogni candidata (di `k` per A, del parametro equivalente scelto per B —
+Step 1), incluse le metriche di stabilità per fascia di velocità.
+
+A differenza della versione precedente di questo piano, questo step non
+viene dettagliato riga per riga in questo documento: la forma esatta di B
+(Step 1) e l'esito dell'audit telemetria (Step 0) determinano
+l'implementazione — fissarla ora, prima di quelle decisioni, sarebbe
+prematuro.
+
+**Criteri decisionali aggiornati** (si applicano al confronto A/B prodotto
+da questo strumento — non modificano i criteri formali della spec, sezione
+"Fase 1", che restano l'autorità per l'avanzamento a Fase 2; aggiungono un
+livello di verifica operativo più severo prima di dichiararli soddisfatti):
+Non basta più che la variante A soddisfi da sola le soglie quantitative
+originarie (riduzione distanza media ≥ 1/3 della combinazione empirica,
+nessun DNF, costo tempo ≤ +3% — Rif. Global Constraints del piano e sezione
+"Fase 1" della spec). Il confronto A vs B deve anche mostrare che A non
+introduce peggioramenti significativi di stabilità rispetto a B, in
+particolare nelle fasce di velocità alta: se A mostra deviazione
+standard/inversioni di segno dell'errore di prua, o variazione tick-su-tick
+di sterzo/target, sistematicamente peggiori di B proprio nella fascia di
+velocità alta, è un segnale che H2 nella sua forma "solo curvatura" è
+insufficiente — anche se le metriche di distanza/tempo originarie fossero
+soddisfatte. Non viene fissata qui una soglia numerica di "peggioramento
+significativo": va stabilita in Task 5, confrontando l'ordine di grandezza
+osservato tra A e B sui dati reali, non a priori senza dati.
+
+- [ ] **Step 4: Smoke test manuale**
 
 Run: `node backend/tools/f1AdaptiveLookaheadCheck.js`
-Expected: lo script termina senza eccezioni e stampa il report completo (sezione DNF + sezione metriche per new-monza e monte-rosso, per ognuna delle 3 candidate k).
+Expected: lo script termina senza eccezioni e stampa il confronto A/B
+completo (DNF + metriche originarie + metriche di stabilità, per fascia di
+velocità) su tutte le piste disponibili.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add backend/tools/f1AdaptiveLookaheadCheck.js
-git commit -m "F1: aggiunge strumento di verifica Fase 1 (lookahead adattivo vs baseline, criteri quantitativi spec)"
+git add backend/tools/f1AdaptiveLookaheadCheck.js backend/tools/f1LapSimulator.js
+git commit -m "F1: strumento diagnostico Fase 1 — confronto A (floor fisso) vs B (L_min(v)) con metriche di stabilità"
 ```
+(Il secondo file solo se lo Step 0 ha richiesto l'estensione della telemetria.)
 
 ---
 
 ### Task 5: Esecuzione finale e report (nessun codice)
 
+> **Scopo aggiornato** (coerente col nuovo Task 4): il report finale non
+> valuta più solo "se il candidato passa i criteri della Fase 1" — deve
+> presentare il confronto diagnostico completo tra variante A e variante B
+> e la sua interpretazione, non solo un esito binario pass/fail su A da
+> sola.
+
 - [ ] **Step 1: Esegui lo strumento e raccogli l'output completo**
 
 Run: `node backend/tools/f1AdaptiveLookaheadCheck.js`
 
-- [ ] **Step 2: Valuta ogni candidata k contro i criteri del piano (Global Constraints)**
+Raccogliere l'output per ENTRAMBE le varianti (A e B), tutte le candidate
+(`k` per A, parametro equivalente per B — Step 1 del Task 4), tutte le
+piste disponibili, incluse le metriche di stabilità per fascia di velocità
+(Step 2 del Task 4).
 
-Per ogni k in `[0.05, 0.1, 0.15]`: DNF su tutte e 4 le piste? Soglie di riduzione media/picco raggiunte su New Monza e monte-rosso? Costo tempo entro +3%?
+- [ ] **Step 2: Costruisci il confronto A vs B**
 
-- [ ] **Step 3: Riporta all'utente**
+Il report deve coprire, non solo un singolo pass/fail:
+- **confronto variante A vs variante B** — stessa candidata/pista, fianco a
+  fianco;
+- **effetto sulle metriche di tracking** (distanza media/picco dalla linea,
+  errore di prua) — le stesse della Fase 1 originaria, dalla spec e dalle
+  Global Constraints di questo piano;
+- **effetto sulle metriche di stabilità** (deviazione standard e inversioni
+  di segno dell'errore di prua, variazione tick-su-tick di sterzo/target —
+  se esposte dalla telemetry, Step 0 del Task 4), **in particolare nelle
+  fasce di velocità alta**;
+- **eventuali trade-off** tra le tre dimensioni (es. A riduce di più la
+  distanza media ma peggiora la stabilità ad alta velocità rispetto a B; o
+  B è più stabile ma costa più tempo sul giro) — riportarli esplicitamente,
+  non nasconderli dietro una media aggregata;
+- assenza di DNF/lockup su tutte le piste disponibili, per entrambe le
+  varianti;
+- costo in tempo sul giro, per entrambe le varianti.
 
-Presenta la tabella risultati, indica quali candidate k (se esiste almeno una) soddisfano TUTTI i criteri simultaneamente su entrambe le piste, e **fermati**: non procedere alla Fase 2 (sterzo geometrico) senza conferma esplicita dell'utente, indipendentemente dall'esito.
+- [ ] **Step 3: Riporta all'utente e proponi una decisione tra tre esiti**
+
+Presenta il confronto completo (non solo la tabella dei criteri originari)
+e indica quale dei tre esiti i dati supportano:
+- **a) mantenere A** — se A soddisfa i criteri di tracking della Fase 1 E
+  non mostra peggioramenti di stabilità significativi rispetto a B (Rif.
+  "Criteri decisionali aggiornati", Task 4);
+- **b) adottare B come base** — se B soddisfa gli stessi criteri di
+  tracking E risolve un peggioramento di stabilità reale osservato su A;
+  passare da diagnostico-solo-nello-strumento a wiring reale in `f1Bot.js`
+  è però una modifica al controller e NON è coperta da questo piano —
+  richiederebbe un piano successivo dedicato, non un'estensione implicita
+  di questo Task 5;
+- **c) modificare la formula prima di procedere** — se né A né B
+  soddisfano i criteri di tracking, o se entrambe mostrano instabilità
+  significativa: H2 nella forma testata (con o senza `L_min(v)`) è
+  insufficiente, si torna a raffinare `L(s)` (Rif. spec, "Se il criterio
+  non è soddisfatto") prima di ripetere.
+
+In ogni caso **fermati**: non procedere alla Fase 2 (sterzo geometrico) né
+a un eventuale wiring di B nel controller reale senza conferma esplicita
+dell'utente, indipendentemente dall'esito.
 
 ---
 

@@ -70,14 +70,19 @@ function simulateLap(track, opts) {
         physics.updateTrackIndex(p, track);
 
         const idx = p.trackIndex || 0;
-        // distanceFromRacingLine/headingVsTangentDeg: già calcolati SOLA
-        // LETTURA da updateBotInputs (vedi trajectoryDiagnostics in
-        // f1Bot.js) — qui solo catturati per l'esperimento di ablation
-        // controller-vs-linea (Rif. audit 2026-07-29), nessun ricalcolo.
+        // distanceFromRacingLine/headingVsTangentDeg/steer/target: già
+        // calcolati SOLA LETTURA da updateBotInputs (vedi trajectoryDiagnostics
+        // e p._botDebug in f1Bot.js) — qui solo catturati per diagnostica
+        // (ablation controller-vs-linea, Rif. audit 2026-07-29; stabilità
+        // lookahead adattivo, Rif. Task 4 Step 0), nessun ricalcolo. steer/
+        // target possono essere `null` in stati che non guidano (WAITING_START,
+        // PIT_LANE) — vedi f1Bot.js, gestire lo skip lato consumatore.
         telemetry.push({
             tick, idx, speedKmh: Math.abs(p.speed) * 55, x: p.x, z: p.z,
             distanceFromRacingLine: p._botDebug ? p._botDebug.distanceFromRacingLine : null,
-            headingVsTangentDeg: p._botDebug ? p._botDebug.headingVsTangentDeg : null
+            headingVsTangentDeg: p._botDebug ? p._botDebug.headingVsTangentDeg : null,
+            steer: p._botDebug ? p._botDebug.steer : null,
+            target: p._botDebug ? p._botDebug.target : null
         });
 
         if (!p.checkpointA && physics.circularWithin(idx, physics.HALF_LAP_IDX, n, checkpointWindow)) {

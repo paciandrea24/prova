@@ -559,6 +559,32 @@ function isAdaptiveLookaheadActive() {
     return process.env.F1_BOT_ADAPTIVE_LOOKAHEAD === '1';
 }
 
+// Hook diagnostico SOLO per backend/tools/f1AdaptiveLookaheadCheck.js (Task 4,
+// confronto A/B): permette di sostituire l'INTERA formula di
+// adaptiveLookaheadMeters con una variante alternativa, per guidare un giro
+// simulato reale con quella variante senza duplicare updateBotInputs. Mai
+// letto dal call site di produzione (f1GameSocket.js non lo tocca mai, non
+// lo importa nemmeno). `null` di default: adaptiveLookaheadMeters resta
+// byte-identica alla formula A in ogni altro contesto (partite reali, banco
+// prova, test esistenti).
+let _lookaheadFormulaOverride = null;
+function setLookaheadFormulaOverride(fn) {
+    _lookaheadFormulaOverride = fn;
+}
+
+// Floor dinamico L_speed(v) = max(5, v_ms * BOT_ADAPTIVE_LOOKAHEAD_T_MIN),
+// SOLO sul ramo racing-line (Rif. audit diagnostico round 1-4, sessione
+// odierna: il floor fisso BOT_LOOKAHEAD_MIN_M sottoperforma sistematicamente
+// lì — su 5 run/pista, tempo/distanza-media/head-std migliorano oltre il
+// rumore run-to-run su New Monza e Prova, senza mai peggiorare — mentre sul
+// ramo geometrico il floor fisso resta l'opzione migliore, in modo
+// altrettanto robusto — verificato con lo stesso protocollo su
+// monte-rosso/baku). Costante GLOBALE apposta (non per pista, non per
+// track.racingLineTuning): rappresenta un limite dinamico di veicolo/loop
+// di controllo, non un parametro di tracciato — Rif. review teorica
+// pure-pursuit della stessa sessione.
+const BOT_ADAPTIVE_LOOKAHEAD_T_MIN = 0.3;
+
 // L = sqrt(2 * R_locale * e_target), e_target = k * roadHalf (ipotesi H1/H2,
 // vedi spec). R_locale misurato con windowRadius sulla stessa finestra
 // locale già usata per la severità di sorpasso/apexOffset
@@ -567,8 +593,13 @@ function isAdaptiveLookaheadActive() {
 // si usa direttamente il tetto massimo, mai una divisione per curvatura ~0.
 // `laneSource` è la linea che il bot sta davvero seguendo in quel ramo
 // (track.racingLine o track.points), stessa convenzione già in uso altrove
-// in questo file.
-function adaptiveLookaheadMeters(laneSource, trackIndex, track, k) {
+// in questo file. `speedMs` (5° parametro, opzionale): usato SOLO dal floor
+// dinamico del ramo racing-line sotto — il ramo geometrico lo ignora, resta
+// esattamente la formula originaria (floor fisso).
+function adaptiveLookaheadMeters(laneSource, trackIndex, track, k, speedMs) {
+    if (_lookaheadFormulaOverride) {
+        return _lookaheadFormulaOverride(laneSource, trackIndex, track, k, speedMs);
+    }
     const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
     const metersPerSample = track.lapLength / track.points.length;
     const localArcM = localSamples * metersPerSample;
@@ -577,6 +608,14 @@ function adaptiveLookaheadMeters(laneSource, trackIndex, track, k) {
     if (!w) return BOT_ADAPTIVE_LOOKAHEAD_MAX_M;
     const eTarget = k * track.roadHalf;
     const raw = Math.sqrt(2 * w.radius * eTarget);
+    // Stessa condizione che già seleziona il ramo in updateBotInputs: qui
+    // vale solo per la SORGENTE di lookahead effettivamente in uso in
+    // questa chiamata, non per l'esistenza della pista in astratto.
+    const isRacingLine = !!track.racingLine && laneSource === track.racingLine;
+    if (isRacingLine) {
+        const lSpeed = Math.max(5, (speedMs || 0) * BOT_ADAPTIVE_LOOKAHEAD_T_MIN);
+        return Math.min(BOT_ADAPTIVE_LOOKAHEAD_MAX_M, Math.max(lSpeed, raw));
+    }
     return Math.max(BOT_LOOKAHEAD_MIN_M, Math.min(BOT_ADAPTIVE_LOOKAHEAD_MAX_M, raw));
 }
 
@@ -652,7 +691,8 @@ const DEFAULT_TUNING = {
     // (piste senza racing line precalcolata) — nessun nuovo comportamento
     // di default, il call site reale non passa mai deps.tuning.
     lookaheadTimeS:        BOT_LOOKAHEAD_TIME_S,
-    steerGain:             BOT_STEER_GAIN
+    steerGain:             BOT_STEER_GAIN,
+    adaptiveLookaheadK:    BOT_ADAPTIVE_LOOKAHEAD_K
 };
 
 // Default per track.racingLineTuning quando il file generato da
@@ -663,6 +703,7 @@ const DEFAULT_TUNING = {
 const DEFAULT_RACELINE_TUNING = {
     lookaheadTimeS:        BOT_LOOKAHEAD_TIME_S,
     steerGain:             BOT_STEER_GAIN,
+    adaptiveLookaheadK:    BOT_ADAPTIVE_LOOKAHEAD_K,
     cornerSpeedMargin:     BOT_CORNER_SPEED_MARGIN,
     brakingDistanceMargin: BOT_BRAKING_DISTANCE_MARGIN,
     deadband:              0.01,
@@ -927,7 +968,9 @@ function updateBotInputs(game, deps) {
             debugMaxSpeed = maxSpeed;
             debugGripCapacityFactor = gripCapacityFactor;
             const speedMs  = Math.max(5, botSpeedMs(p.speed));
-            const lookM    = Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * rt.lookaheadTimeS);
+            const lookM    = isAdaptiveLookaheadActive()
+                ? adaptiveLookaheadMeters(track.racingLine, p.trackIndex || 0, track, rt.adaptiveLookaheadK, speedMs)
+                : Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * rt.lookaheadTimeS);
             const lookSamples  = metersToSamples(lookM, track);
             const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
             const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
@@ -1004,7 +1047,9 @@ function updateBotInputs(game, deps) {
             debugMaxSpeed = maxSpeed;
             debugGripCapacityFactor = gripCapacityFactor;
             const speedMs  = Math.max(5, botSpeedMs(p.speed));   // floor: niente lookahead quasi-zero da fermi (es. alla partenza)
-            const lookM    = Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * tuning.lookaheadTimeS);
+            const lookM    = isAdaptiveLookaheadActive()
+                ? adaptiveLookaheadMeters(track.points, p.trackIndex || 0, track, tuning.adaptiveLookaheadK, speedMs)
+                : Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * tuning.lookaheadTimeS);
             const lookSamples  = metersToSamples(lookM, track);
             const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
             const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
@@ -1126,5 +1171,6 @@ module.exports = {
     nearestAheadPlayer, otherCarTargetSpeed, pickPostPitCompound, pickBotColors, estimateFinishTime,
     createBots, updateBotInputs, shouldBotRepair, isBotGripAwarenessActive,
     BOT_CURVATURE_LOCAL_M, BOT_APEX_MAX_FRACTION, trajectoryDiagnostics,
-    adaptiveLookaheadMeters, isAdaptiveLookaheadActive, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M
+    adaptiveLookaheadMeters, isAdaptiveLookaheadActive, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
+    BOT_ADAPTIVE_LOOKAHEAD_T_MIN, setLookaheadFormulaOverride
 };
