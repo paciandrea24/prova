@@ -488,6 +488,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     const visualState = {};
     const otherCars = {};
 
+    // Un box colorato per pilota lungo la corsia box (vedi
+    // docs/superpowers/specs/2026-08-03-f1-pit-boxes-design.md). Caricato
+    // pigramente al primo f1StateUpdate che porta un pitBoxSlot per quel
+    // colore — non sincrono con la scenografia statica (sceneryLayout più
+    // sopra), perché lo stato dei giocatori non è ancora noto in quel punto
+    // del caricamento pagina.
+    const pitBoxes = {};
+    const pendingPitBoxLoads = new Set();
+    const PIT_BOX_OFFSET_MARGIN = 6;   // stessa distanza usata per gli edifici box decorativi (trackScenery.js)
+
+    // totalCount = numero di piloti effettivamente in gara in questo
+    // momento (Object.keys(state).length durante la fase 'race', dove
+    // playersVisibleTo lato server restituisce SEMPRE tutti i giocatori) —
+    // deve combaciare con l'N usato da TrackGeometry.pitBoxAnchors lato
+    // server in assignGridSpawns, altrimenti il box non sarebbe allineato
+    // col punto dove l'auto si ferma davvero.
+    function loadPlayerPitBox(color, slot, totalCount) {
+        if (pitBoxes[color] || pendingPitBoxLoads.has(color)) return;
+        pendingPitBoxLoads.add(color);
+
+        const anchor = TrackGeometry.pitBoxAnchors(trackData.pit.path, trackData.pit.boxIndex, totalCount)[slot];
+        const nx = -anchor.tz, nz = anchor.tx;   // normale, perpendicolare alla tangente della corsia
+
+        // Stessa tecnica di trackScenery.js::buildPaddockLayout: tra le due
+        // direzioni normali, si sceglie quella che allontana di più dal
+        // centro del circuito (lato "verso l'esterno").
+        const distPlus = TrackGeometry.nearestPoint(trackPts, anchor.x + nx, anchor.z + nz).dist;
+        const distMinus = TrackGeometry.nearestPoint(trackPts, anchor.x - nx, anchor.z - nz).dist;
+        const side = distPlus >= distMinus ? 1 : -1;
+
+        const offset = trackData.pit.roadHalfWidth + PIT_BOX_OFFSET_MARGIN;
+        const bx = anchor.x + nx * offset * side, bz = anchor.z + nz * offset * side;
+        const rotY = Math.atan2(anchor.x - bx, anchor.z - bz);   // guarda verso la corsia
+
+        PitBoxLoader.loadPitBoxModel(color, { x: bx, y: 0, z: bz, rotY }, (model) => {
+            scene.add(model);
+            pitBoxes[color] = model;
+            pendingPitBoxLoads.delete(color);
+        });
+    }
+
     // Livrea VERA di ogni avversario (bug reale: prima si applicava sempre
     // TEST_LIVERY_COLORS, cioè la propria, a tutte le auto altrui). Cache per
     // uid: più colori/rejoin possono condividere lo stesso uid nel tempo, un
@@ -898,6 +939,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         for (const [color, data] of Object.entries(state)) {
             serverState[color] = data;
             updateMinimapDot(color, data.x, data.z);
+            if (data.pitBoxSlot != null) loadPlayerPitBox(color, data.pitBoxSlot, Object.keys(state).length);
             if (color !== myColor && !otherCars[color] && !visualState[color]) {
                 visualState[color] = { x: data.x, z: data.z, angle: data.angle };
                 loadOtherCar(color, data.uid, (g) => { otherCars[color] = g; });
