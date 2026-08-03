@@ -494,3 +494,61 @@ test('computeSlipstreamMult: F1_AERO_SLIPSTREAM_MODEL="1", gap grande (>= 25) ->
         delete process.env.F1_AERO_SLIPSTREAM_MODEL;
     }
 });
+
+// ---- Review finale (Fix 3): autopilota pit-stop a due tratti, per non
+// tagliare la curva della corsia box su pitBoxIndex ----
+const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
+
+test('updatePitAutopilot: con una piega di 90° esattamente su pitBoxIndex, l\'ingresso verso l\'anchor personale resta vicino alla corsia (non taglia la curva)', () => {
+    const { physics } = f1GameSocket;
+
+    // Corsia box a L: piega di 90° ESATTAMENTE nel punto pitBoxIndex (1) —
+    // lo scenario worst-case descritto dalla review finale (misurato fino
+    // a 32° su baku.json; qui esagerato a 90° per un margine di sicurezza
+    // netto nell'asserzione).
+    const pitPath = [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 50, z: 50 }];
+    const pitBoxIndex = 1;
+    const roadHalfWidth = 3.5;
+
+    // Slot fuori centro (indice 2 su 3, il più lontano dal vertice): con la
+    // vecchia logica (salto diretto da un waypoint lontano all'anchor,
+    // saltando l'intero vertice) è esattamente lo slot che tagliava di più
+    // la curva — vedi backend/sockets/games/f1GameSocket.js pre-fix e lo
+    // script di verifica in docs/superpowers/sdd/.../final-review-fix-report.md.
+    const anchor = TrackGeometry.pitBoxAnchors(pitPath, pitBoxIndex, 3)[2];
+    const sampledPitPts = TrackGeometry.sampleOpenPath(pitPath, 300);   // per misurare la distanza dalla vera sede stradale
+
+    const fakeTrack = { pitPath, pitBoxIndex, roadHalfWidth };
+    const io = { to: () => ({ emit: () => {} }) };
+    const game = { track: fakeTrack, socketByColor: {} };
+
+    // Il giocatore entra nella corsia box: pitPathIndex parte da 1 (il
+    // waypoint 0 è il punto di distacco, dove più o meno si trova già —
+    // vedi startPitLaneEntry), posizione iniziale vicino a pitPath[0].
+    const p = {
+        color: 'red', x: 0, z: 0, angle: 0, speed: 0, vx: 0, vz: 0,
+        pitAutoState: 'entering', pitPathIndex: 1, pitBoxFinalApproach: false,
+        pitBoxAnchor: anchor, pitting: false, pitPhase: null
+    };
+
+    const tolerance = roadHalfWidth + 1;   // stessa tolleranza indicata nel piano di fix
+    let maxDeviation = 0;
+    let ticks = 0;
+    // Fino a quando l'autopilota di INGRESSO non ha finito (diventa 'null' e
+    // avvia la sosta, vedi startPitStop) o al massimo 500 tick di sicurezza.
+    while (p.pitAutoState === 'entering' && ticks < 500) {
+        physics.updatePitAutopilot(io, 'testLobby', game, p);
+        const nearest = TrackGeometry.nearestPoint(sampledPitPts, p.x, p.z);
+        maxDeviation = Math.max(maxDeviation, nearest.dist);
+        ticks++;
+    }
+    // startPitStop (chiamata dall'ultimo tick sopra) arma un vero
+    // setTimeout casuale (PIT_GO_DELAY_MIN..MAX): va ripulito subito, non
+    // deve restare pendente dopo la fine del test.
+    if (p.pitGoTimer) { clearTimeout(p.pitGoTimer); p.pitGoTimer = null; }
+
+    assert.ok(ticks < 500, 'autopilota non ha mai raggiunto la casella (loop infinito?)');
+    assert.ok(p.pitting, 'atteso che la sosta sia partita (arrivo confermato all\'anchor)');
+    assert.ok(maxDeviation <= tolerance,
+        `l'auto si è allontanata ${maxDeviation.toFixed(2)} unità dalla corsia box (tolleranza ${tolerance}) — sintomo esatto del bug pre-fix: taglio diretto della curva su pitBoxIndex`);
+});

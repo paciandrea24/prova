@@ -125,8 +125,9 @@
     // frontend/shared/pitBoxLoader.js): i box colorati reali di ogni
     // pilota occupano questo tratto della corsia box, un edificio/
     // cartellone decorativo lì finirebbe dentro/sopra un modello vero.
-    // Coerente con PIT_BOX_SPACING=8 in trackGeometry.js per un numero di
-    // box ben oltre l'attuale MAX_GRID_SIZE=6 (backend/sockets/games/f1Bot.js).
+    // Coerente con PIT_BOX_SPACING=8 in trackGeometry.js: margine sufficiente
+    // per una decina di box (34/8 ≈ 4 per lato dal centro), oltre l'attuale
+    // MAX_GRID_SIZE=6 (backend/sockets/games/f1Bot.js) ma non "ben oltre".
     const PIT_BOX_ZONE_HALFLEN = 34;
 
     const POND_RADIUS    = 9;
@@ -325,7 +326,7 @@
     // uniformi nel riquadro attorno al tracciato, filtrati per restare in
     // una fascia libera fuori dal corridoio pista/box e a distanza minima
     // dagli altri oggetti già accettati (di qualunque categoria).
-    function buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter) {
+    function buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxPt) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist);
@@ -338,6 +339,7 @@
             if (dTrack.dist < barrierDist + NATURE_MIN_MARGIN) continue;
             if (dTrack.dist > barrierDist + NATURE_MAX_MARGIN) continue;
             if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + PIT_NATURE_MARGIN) continue;
+            if (Math.hypot(x - playerBoxPt.x, z - playerBoxPt.z) < PIT_BOX_ZONE_HALFLEN) continue;
             if (isTooCloseToAny(accepted, x, z, NATURE_MIN_SPACING)) continue;
 
             const asset = weightedPick(rng, NATURE_ASSETS);
@@ -352,7 +354,7 @@
     // Tentativo singolo (non garantito) di piazzare un laghetto: cerca un
     // punto con un raggio libero sufficiente attorno; se non lo trova entro
     // il budget di tentativi, nessun laghetto su questo tracciato.
-    function findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter) {
+    function findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxPt) {
         const groundPts = trackPts.filter(p => !p.bridge);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist);
 
@@ -364,6 +366,7 @@
             if (dTrack.dist < barrierDist + NATURE_MIN_MARGIN + POND_RADIUS) continue;
             if (dTrack.dist > barrierDist + NATURE_MAX_MARGIN) continue;
             if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + PIT_NATURE_MARGIN + POND_RADIUS) continue;
+            if (Math.hypot(x - playerBoxPt.x, z - playerBoxPt.z) < PIT_BOX_ZONE_HALFLEN) continue;
             if (isTooCloseToAny(accepted, x, z, POND_CLEARANCE)) continue;
 
             const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
@@ -394,13 +397,13 @@
         const accepted  = [...paddock, ...mainStand];
         const grandstand = buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankOuter);
 
-        const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter);
-        const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter);
+        const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxPt);
+        const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxPt);
 
         const layout = [...paddock, ...mainStand, ...grandstand, ...nature];
         if (pond) layout.push(pond);
         return layout;
     }
 
-    return { generateLayout, hashString, mulberry32 };
+    return { generateLayout, hashString, mulberry32, PIT_BUILDING_OFFSET_MARGIN };
 });

@@ -166,15 +166,19 @@ test('nessun cartellone sponsor del rettilineo di partenza finisce dentro la cor
     }
 });
 
-test('nessun oggetto paddock (cartellone o edificio box) finisce dentro la zona box giocatore', () => {
+test('nessun oggetto scenografico (paddock, natura, laghetto, tribune...) finisce dentro la zona box giocatore', () => {
+    // Copre TUTTE le categorie del layout, non solo 'paddock': natura
+    // (alberi/rocce) e laghetto usano lo stesso scatter casuale e possono
+    // finire nella zona box giocatore esattamente come gli edifici/
+    // cartelloni del paddock se non applicano lo stesso controllo (bug
+    // trovato dalla review finale — vedi buildNatureLayout/findPondSpot).
     const { trackPts, pitPts } = buildReal();
     const layout = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D);
     const boxPt = monteRosso.pit.path[monteRosso.pit.boxIndex];
-    const paddock = layout.filter(i => i.category === 'paddock');
-    assert.ok(paddock.length > 0);
-    for (const p of paddock) {
-        const d = Math.hypot(p.x - boxPt.x, p.z - boxPt.z);
-        assert.ok(d >= 34 - 1e-6, `oggetto paddock troppo vicino alla zona box giocatore: ${d}`);
+    assert.ok(layout.length > 0);
+    for (const item of layout) {
+        const d = Math.hypot(item.x - boxPt.x, item.z - boxPt.z);
+        assert.ok(d >= 34 - 1e-6, `oggetto '${item.category}'/${item.asset} troppo vicino alla zona box giocatore: ${d}`);
     }
 });
 

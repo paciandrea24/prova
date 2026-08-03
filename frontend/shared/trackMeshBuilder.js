@@ -200,20 +200,31 @@
 
     // pitControlPoints: punti di controllo GREZZI (non campionati) della
     // corsia box, presi da pit.path del JSON.
-    function buildPitLane(container, pitControlPoints, pitRoadHalf, pitBoxIndex) {
+    // drawBoxMarker (default true): il riquadro giallo semitrasparente su
+    // pitBoxIndex era il SOLO indicatore visivo del box quando era un
+    // punto unico condiviso da tutti i piloti. Ora ogni pilota ha il
+    // proprio box 3D colorato (vedi frontend/f1.js, loadPlayerPitBox), reso
+    // in gara nel punto vero — il riquadro lì diventerebbe fuorviante
+    // (quasi nessun pilota si ferma davvero lì). Resta utile SOLO
+    // nell'editor tracciato (track-editor.js), per vedere dove sta
+    // pitBoxIndex mentre lo si modifica: da lì la chiamata resta col
+    // default true, invariata.
+    function buildPitLane(container, pitControlPoints, pitRoadHalf, pitBoxIndex, drawBoxMarker = true) {
         const pitPts = TrackGeometry.sampleOpenPath(pitControlPoints, 300);
 
         buildOpenRibbon(container, pitPts, pitRoadHalf, new THREE.MeshStandardMaterial({
             color: 0x3a3a3a, roughness: 0.95, side: THREE.DoubleSide
         }));
 
-        const boxPos = pitControlPoints[pitBoxIndex];
-        const boxMesh = new THREE.Mesh(
-            new THREE.BoxGeometry(pitRoadHalf * 1.7, 0.03, 15),
-            new THREE.MeshStandardMaterial({ color: 0xf1c40f, roughness: 0.9, transparent: true, opacity: 0.55 })
-        );
-        boxMesh.position.set(boxPos.x, 0.04, boxPos.z);
-        container.add(boxMesh);
+        if (drawBoxMarker) {
+            const boxPos = pitControlPoints[pitBoxIndex];
+            const boxMesh = new THREE.Mesh(
+                new THREE.BoxGeometry(pitRoadHalf * 1.7, 0.03, 15),
+                new THREE.MeshStandardMaterial({ color: 0xf1c40f, roughness: 0.9, transparent: true, opacity: 0.55 })
+            );
+            boxMesh.position.set(boxPos.x, 0.04, boxPos.z);
+            container.add(boxMesh);
+        }
 
         const lineMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
         function addLine(pt, dirPt) {

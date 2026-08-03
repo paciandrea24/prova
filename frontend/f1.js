@@ -192,7 +192,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     TrackMeshBuilder.buildCurbs(scene, trackPts, ROAD_HALF, CURB_W);
     TrackMeshBuilder.buildBarriers(scene, trackPts, BARRIER_D);
     TrackMeshBuilder.buildStartLine(scene, trackPts, ROAD_HALF);
-    TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex);
+    // drawBoxMarker=false: il riquadro giallo unico su boxIndex era il solo
+    // indicatore visivo quando il box era un punto condiviso da tutti; ora
+    // ogni pilota ha il proprio box 3D colorato (vedi loadPlayerPitBox,
+    // caricato pigramente per gara), che ne prende il posto in gara —
+    // resta true di default per l'editor tracciato (track-editor.js).
+    TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex, false);
 
     // ====================================================
     // AUDIO MOTORE — un solo loop di 4s di un vero motore d'auto,
@@ -496,19 +501,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     // del caricamento pagina.
     const pitBoxes = {};
     const pendingPitBoxLoads = new Set();
-    const PIT_BOX_OFFSET_MARGIN = 6;   // stessa distanza usata per gli edifici box decorativi (trackScenery.js)
 
-    // totalCount = numero di piloti effettivamente in gara in questo
-    // momento (Object.keys(state).length durante la fase 'race', dove
-    // playersVisibleTo lato server restituisce SEMPRE tutti i giocatori) —
-    // deve combaciare con l'N usato da TrackGeometry.pitBoxAnchors lato
-    // server in assignGridSpawns, altrimenti il box non sarebbe allineato
-    // col punto dove l'auto si ferma davvero.
-    function loadPlayerPitBox(color, slot, totalCount) {
+    // Il server manda già l'anchor calcolato (assignGridSpawns →
+    // TrackGeometry.pitBoxAnchors), il client si limita a posizionare/
+    // ruotare il modello: niente più bisogno di ricalcolare/duplicare la
+    // stessa geometria lato client, niente più rischio di disallineamento
+    // se il conteggio giocatori cambia a gara in corso (prima si
+    // ricalcolava da pitBoxSlot + Object.keys(state).length, che poteva
+    // divergere dall'N usato lato server in assignGridSpawns dopo una
+    // rimozione mid-race — game.grid non viene mai potato — causando un
+    // box disallineato o, peggio, un accesso fuori indice che mandava in
+    // eccezione l'handler f1StateUpdate — bug trovato dalla review finale).
+    function loadPlayerPitBox(color, anchor) {
         if (pitBoxes[color] || pendingPitBoxLoads.has(color)) return;
         pendingPitBoxLoads.add(color);
 
-        const anchor = TrackGeometry.pitBoxAnchors(trackData.pit.path, trackData.pit.boxIndex, totalCount)[slot];
         const nx = -anchor.tz, nz = anchor.tx;   // normale, perpendicolare alla tangente della corsia
 
         // Stessa tecnica di trackScenery.js::buildPaddockLayout: tra le due
@@ -518,7 +525,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const distMinus = TrackGeometry.nearestPoint(trackPts, anchor.x - nx, anchor.z - nz).dist;
         const side = distPlus >= distMinus ? 1 : -1;
 
-        const offset = trackData.pit.roadHalfWidth + PIT_BOX_OFFSET_MARGIN;
+        const offset = trackData.pit.roadHalfWidth + TrackScenery.PIT_BUILDING_OFFSET_MARGIN;
         const bx = anchor.x + nx * offset * side, bz = anchor.z + nz * offset * side;
         const rotY = Math.atan2(anchor.x - bx, anchor.z - bz);   // guarda verso la corsia
 
@@ -526,6 +533,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             scene.add(model);
             pitBoxes[color] = model;
             pendingPitBoxLoads.delete(color);
+        }, () => {
+            pendingPitBoxLoads.delete(color);   // permette un nuovo tentativo al prossimo state update (vedi pitBoxLoader.js)
         });
     }
 
@@ -939,7 +948,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         for (const [color, data] of Object.entries(state)) {
             serverState[color] = data;
             updateMinimapDot(color, data.x, data.z);
-            if (data.pitBoxSlot != null) loadPlayerPitBox(color, data.pitBoxSlot, Object.keys(state).length);
+            if (data.pitBoxAnchor) loadPlayerPitBox(color, data.pitBoxAnchor);
             if (color !== myColor && !otherCars[color] && !visualState[color]) {
                 visualState[color] = { x: data.x, z: data.z, angle: data.angle };
                 loadOtherCar(color, data.uid, (g) => { otherCars[color] = g; });

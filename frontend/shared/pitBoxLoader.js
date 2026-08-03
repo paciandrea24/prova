@@ -84,7 +84,14 @@
     // geometria della corsia box. Niente InstancedMesh/materiale condiviso
     // come per la scenografia decorativa (loadScenery in f1.js): ogni box
     // ha un colore diverso.
-    function loadPitBoxModel(playerColor, placement, onReady) {
+    // onError (opzionale): senza, un fallimento di caricamento (rete,
+    // 404...) restava un console.error muto — combinato con la guardia
+    // pendingPitBoxLoads lato chiamante (frontend/f1.js), quel colore non
+    // veniva MAI più ritentato per il resto della gara (box mancante in
+    // permanenza). Chiamato al posto di — non in aggiunta a — console.error,
+    // così il chiamante può liberare la propria guardia e ritentare al
+    // prossimo state update, mantenendo comunque un log.
+    function loadPitBoxModel(playerColor, placement, onReady, onError) {
         const loader = new THREE.GLTFLoader();
         const hex = parseInt(playerColor.replace('#', ''), 16);
         loader.load('/assets/custom/f1PitBox.glb', (gltf) => {
@@ -102,7 +109,10 @@
             model.position.set(placement.x, placement.y || 0, placement.z);
             model.rotation.y = placement.rotY;
             onReady(model);
-        }, undefined, (err) => console.error('[F1] Errore caricando f1PitBox.glb:', err));
+        }, undefined, (err) => {
+            console.error('[F1] Errore caricando f1PitBox.glb:', err);
+            if (onError) onError(err);
+        });
     }
 
     return { loadPitBoxModel, recolorPitBoxTexture, isRedTexel };

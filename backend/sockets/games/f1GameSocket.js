@@ -729,7 +729,7 @@ function assignGridSpawns(game) {
         p.pendingCompound = null; p.hasPitted = false; p.pitPenalty = false;
         p.falseStart = false; p.falseStartServed = false;
         p.gapToLeaderMs = null;
-        p.pitAutoState = null; p.pitPathIndex = 0;
+        p.pitAutoState = null; p.pitPathIndex = 0; p.pitBoxFinalApproach = false;
         p.pitBoxSlot = i;
         p.pitBoxAnchor = boxAnchors[i];
         p.inputs = { throttle: 0, brake: 0, steer: 0 };
@@ -763,15 +763,51 @@ function startPitLaneEntry(io, lobbyId, game, p) {
 // Sposta l'auto verso il prossimo waypoint del percorso box (track.pitPath) a velocità fissa e
 // bassa — apposta lenta, per dare tempo di scegliere la mescola durante il
 // tragitto (soprattutto in ingresso).
+//
+// Due tratti (Fix review finale, vedi
+// docs/superpowers/specs/2026-08-03-f1-pit-boxes-design.md): il walk sui
+// waypoint grezzi (track.pitPath) arriva SEMPRE fino al vero vertice
+// condiviso pitPath[pitBoxIndex] — esattamente come prima di questa
+// feature, preservando la sterzata già corretta/testata sulle curve
+// condivise — poi UN solo hop breve, locale al segmento del vertice,
+// verso/dall'anchor personale del pilota (p.pitBoxFinalApproach). Un
+// salto diretto da un waypoint precedente/successivo lontano fino
+// all'anchor (versione precedente) tagliava fuori l'eventuale curva della
+// corsia proprio in quel punto, portando l'auto fuori dalla sede
+// stradale (misurato: fino a 7 unità su una corsia larga 3.5 di
+// roadHalfWidth, su piste con un piegone marcato a boxIndex).
 function updatePitAutopilot(io, lobbyId, game, p) {
     const track = game.track;
-    // All'arrivo sul punto condiviso pitBoxIndex, il bersaglio finale
-    // diventa l'anchor personale del pilota (assegnato in
-    // assignGridSpawns), non più il punto unico condiviso da tutti — vedi
-    // docs/superpowers/specs/2026-08-03-f1-pit-boxes-design.md.
-    const target = (p.pitPathIndex === track.pitBoxIndex && p.pitBoxAnchor)
-        ? p.pitBoxAnchor
-        : track.pitPath[p.pitPathIndex];
+
+    if (p.pitBoxFinalApproach && p.pitBoxAnchor) {
+        const target = (p.pitAutoState === 'entering') ? p.pitBoxAnchor : track.pitPath[track.pitBoxIndex];
+        const dx = target.x - p.x, dz = target.z - p.z;
+        const dist = Math.hypot(dx, dz);
+
+        if (dist < PIT_AUTO_ARRIVE_DIST) {
+            p.x = target.x; p.z = target.z;
+            p.speed = 0; p.vx = 0; p.vz = 0;
+            p.pitBoxFinalApproach = false;
+
+            if (p.pitAutoState === 'entering') {
+                p.pitAutoState = null;   // arrivato alla casella personale: la sosta prende il posto dell'autopilota
+                startPitStop(io, lobbyId, game, p);
+            }
+            // se 'exiting': arrivato al vertice pitBoxIndex, il prossimo tick
+            // riprende il walk normale dei waypoint successivi (pitPathIndex
+            // è già puntato la waypoint giusto, vedi completePitStop)
+            return;
+        }
+
+        p.angle = Math.atan2(dx, dz);
+        p.x += (dx / dist) * PIT_AUTO_SPEED;
+        p.z += (dz / dist) * PIT_AUTO_SPEED;
+        p.speed = PIT_AUTO_SPEED;
+        p.vx = 0; p.vz = 0;
+        return;
+    }
+
+    const target = track.pitPath[p.pitPathIndex];
     const dx = target.x - p.x, dz = target.z - p.z;
     const dist = Math.hypot(dx, dz);
 
@@ -780,8 +816,7 @@ function updatePitAutopilot(io, lobbyId, game, p) {
         p.speed = 0; p.vx = 0; p.vz = 0;
 
         if (p.pitPathIndex === track.pitBoxIndex && p.pitAutoState === 'entering') {
-            p.pitAutoState = null;   // arrivato: la sosta prende il posto dell'autopilota
-            startPitStop(io, lobbyId, game, p);
+            p.pitBoxFinalApproach = true;   // prossimo tick: hop verso l'anchor personale
             return;
         }
 
@@ -878,7 +913,8 @@ function completePitStop(io, lobbyId, game, p) {
     if (sid) io.to(sid).emit('f1PitStopFinished', { compound: p.compound });
 
     p.pitAutoState = 'exiting';
-    p.pitPathIndex = game.track.pitBoxIndex + 1;   // continua dal waypoint successivo alla casella
+    p.pitBoxFinalApproach = true;   // primo tick di uscita: hop dall'anchor al vertice pitBoxIndex
+    p.pitPathIndex = game.track.pitBoxIndex + 1;   // waypoint da cui riprende il walk normale dopo il rientro al vertice
 }
 
 // Stato visibile ad UN determinato giocatore (viewerColor):
@@ -1381,6 +1417,17 @@ function buildPublicState(players, raceStarted, track, game) {
             // usa per posizionare il modello 3D del box di questo pilota
             // (frontend/f1.js, loadPlayerPitBox).
             pitBoxSlot: (p.pitBoxSlot != null) ? p.pitBoxSlot : null,
+            // Anchor {x,z,tx,tz} già calcolato server-side (assignGridSpawns
+            // → TrackGeometry.pitBoxAnchors): il client lo usa direttamente
+            // per posizionare/ruotare il modello 3D del box (frontend/f1.js,
+            // loadPlayerPitBox), invece di ricalcolarlo da pitBoxSlot +
+            // conteggio giocatori LATO CLIENT — quel conteggio poteva
+            // disallinearsi da game.grid.length dopo una rimozione a gara in
+            // corso (game.grid non viene mai potato), causando box
+            // disegnati nel punto sbagliato o un accesso fuori indice che
+            // mandava in eccezione l'handler f1StateUpdate (vedi review
+            // finale). pitBoxSlot resta comunque, utile per debug/HUD.
+            pitBoxAnchor: p.pitBoxAnchor || null,
             // uid Firebase del giocatore (null per ospiti/bot): il client lo
             // usa per recuperare la LIVREA VERA di ogni avversario via
             // GET /api/livery/:uid, invece di riapplicare la propria a tutti
@@ -1435,7 +1482,8 @@ module.exports.physics = {
     createDamageParts, FRONT_WING_STEER_PENALTY_MAX,
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
     buildPublicState, checkLap,
-    computeSlipstreamMult
+    computeSlipstreamMult,
+    updatePitAutopilot, PIT_AUTO_SPEED, PIT_AUTO_ARRIVE_DIST
 };
 
 module.exports.tickGame = tickGame;
