@@ -701,6 +701,12 @@ function startRaceCountdown(io, lobbyId, game) {
 // game.grid (entrati dopo la fine della qualifica) vengono accodati in fondo.
 function assignGridSpawns(game) {
     const order = [...game.grid, ...Object.keys(game.players).filter(c => !game.grid.includes(c))];
+    // Un box giocatore per partecipante (vedi TrackGeometry.pitBoxAnchors +
+    // docs/superpowers/specs/2026-08-03-f1-pit-boxes-design.md): calcolato
+    // una volta per gara, sullo stesso ordine di griglia usato per lo
+    // spawn, così due piloti ai box insieme non finiscono più nello stesso
+    // punto fisico (prima: tutti su track.pitBoxIndex).
+    const boxAnchors = TrackGeometry.pitBoxAnchors(game.track.pitPath, game.track.pitBoxIndex, order.length);
     order.forEach((color, i) => {
         const p = game.players[color];
         if (!p) return;
@@ -724,6 +730,8 @@ function assignGridSpawns(game) {
         p.falseStart = false; p.falseStartServed = false;
         p.gapToLeaderMs = null;
         p.pitAutoState = null; p.pitPathIndex = 0;
+        p.pitBoxSlot = i;
+        p.pitBoxAnchor = boxAnchors[i];
         p.inputs = { throttle: 0, brake: 0, steer: 0 };
         // Stato bot transitorio: un bot ancora diretto ai box (non ancora
         // entrato nel trigger) alla fine della gara precedente non deve
@@ -757,7 +765,13 @@ function startPitLaneEntry(io, lobbyId, game, p) {
 // tragitto (soprattutto in ingresso).
 function updatePitAutopilot(io, lobbyId, game, p) {
     const track = game.track;
-    const target = track.pitPath[p.pitPathIndex];
+    // All'arrivo sul punto condiviso pitBoxIndex, il bersaglio finale
+    // diventa l'anchor personale del pilota (assegnato in
+    // assignGridSpawns), non più il punto unico condiviso da tutti — vedi
+    // docs/superpowers/specs/2026-08-03-f1-pit-boxes-design.md.
+    const target = (p.pitPathIndex === track.pitBoxIndex && p.pitBoxAnchor)
+        ? p.pitBoxAnchor
+        : track.pitPath[p.pitPathIndex];
     const dx = target.x - p.x, dz = target.z - p.z;
     const dist = Math.hypot(dx, dz);
 
@@ -1362,6 +1376,11 @@ function buildPublicState(players, raceStarted, track, game) {
             falseStartServed: !!p.falseStartServed,
             gapToLeaderMs: (p.gapToLeaderMs != null) ? p.gapToLeaderMs : null,
             isBot: !!p.isBot,
+            // Indice del box assegnato per questa gara (vedi
+            // assignGridSpawns/TrackGeometry.pitBoxAnchors) — il client lo
+            // usa per posizionare il modello 3D del box di questo pilota
+            // (frontend/f1.js, loadPlayerPitBox).
+            pitBoxSlot: (p.pitBoxSlot != null) ? p.pitBoxSlot : null,
             // uid Firebase del giocatore (null per ospiti/bot): il client lo
             // usa per recuperare la LIVREA VERA di ogni avversario via
             // GET /api/livery/:uid, invece di riapplicare la propria a tutti

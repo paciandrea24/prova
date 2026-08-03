@@ -48,7 +48,11 @@ test('integratePosition: sposta x/z in base a vx/vz e dt', () => {
 
 test('assignGridSpawns: azzera damage/collisionPenaltyMs/pendingRepair/contatti a inizio gara vera', () => {
     const { physics } = f1GameSocket;
-    const fakeTrack = { gridSpawnPoint: (i) => ({ x: i, z: 0, angle: 0 }) };
+    const fakeTrack = {
+        gridSpawnPoint: (i) => ({ x: i, z: 0, angle: 0 }),
+        pitPath: [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }],
+        pitBoxIndex: 2
+    };
     const p = {
         color: 'red', damage: 42, collisionPenaltyMs: 3000, pendingRepair: true,
         carContacts: new Set(['blue']), wallContact: true,
@@ -69,6 +73,36 @@ test('assignGridSpawns: azzera damage/collisionPenaltyMs/pendingRepair/contatti 
     assert.equal(p.carContacts.size, 0);
     assert.equal(p.wallContact, false);
     assert.equal(p.pendingCollisionPenaltyEvents.length, 0);
+    assert.equal(p.pitBoxSlot, 0);
+    assert.ok(p.pitBoxAnchor && typeof p.pitBoxAnchor.x === 'number', 'atteso pitBoxAnchor assegnato');
+});
+
+test('assignGridSpawns: due piloti in griglia ottengono pitBoxAnchor diversi (non più lo stesso punto condiviso)', () => {
+    const { physics } = f1GameSocket;
+    const fakeTrack = {
+        gridSpawnPoint: (i) => ({ x: i, z: 0, angle: 0 }),
+        pitPath: [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }],
+        pitBoxIndex: 2
+    };
+    function makePlayer(color) {
+        return {
+            color, damage: 0, collisionPenaltyMs: 0, pendingRepair: false,
+            carContacts: new Set(), wallContact: false, pendingCollisionPenaltyEvents: [],
+            finished: false, time: null, lap: 0, checkpointA: false, inFinishZone: false,
+            trackIndex: 0, tyreWear: 0, pitGoTimer: null, pitting: false, pitPhase: null,
+            pitGoTime: null, pendingCompound: null, hasPitted: false, pitPenalty: false,
+            falseStart: false, falseStartServed: false, gapToLeaderMs: null,
+            pitAutoState: null, pitPathIndex: 0, inputs: { throttle: 0, brake: 0, steer: 0 }
+        };
+    }
+    const red = makePlayer('red'), blue = makePlayer('blue');
+    const game = { grid: ['red', 'blue'], players: { red, blue }, track: fakeTrack };
+
+    physics.assignGridSpawns(game);
+
+    assert.notEqual(red.pitBoxSlot, blue.pitBoxSlot);
+    assert.ok(red.pitBoxAnchor.x !== blue.pitBoxAnchor.x || red.pitBoxAnchor.z !== blue.pitBoxAnchor.z,
+        'i due piloti devono avere pitBoxAnchor in punti diversi');
 });
 
 test('collisionDamageAmount: proporzionale alla severità, cappato a DAMAGE_CAP_PER_HIT', () => {
