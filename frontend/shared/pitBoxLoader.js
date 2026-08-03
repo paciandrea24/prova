@@ -96,6 +96,12 @@
         const hex = parseInt(playerColor.replace('#', ''), 16);
         loader.load('/assets/custom/f1PitBox.glb', (gltf) => {
             const model = gltf.scene;
+            // Stesso moltiplicatore di loadCarModel (carLoader.js): il file
+            // .glb grezzo è piccolo di suo, l'utente ha modellato il box
+            // confrontandolo con l'auto importata alla sua dimensione
+            // grezza (non ancora ingrandita) — serve lo stesso fattore per
+            // restare proporzionato all'auto vista in gioco.
+            model.scale.set(3.5, 3.5, 3.5);
             model.traverse((child) => {
                 if (!child.isMesh) return;
                 child.castShadow = true;
@@ -107,7 +113,14 @@
                 }
             });
             model.position.set(placement.x, placement.y || 0, placement.z);
-            model.rotation.y = placement.rotY;
+            // -90°: il modello ha l'apertura del garage modellata lungo
+            // l'asse locale +X, non +Z come si aspetta la convenzione di
+            // rotY usata nel resto del progetto (verificato sull'auto,
+            // dove rotation.y = atan2(dx,dz) senza correzioni funziona
+            // solo se il "fronte" del modello è +Z) — misurato importando
+            // il .glb grezzo in Blender e osservando dall'alto verso quale
+            // asse punta l'apertura/insegna.
+            model.rotation.y = placement.rotY - Math.PI / 2;
             onReady(model);
         }, undefined, (err) => {
             console.error('[F1] Errore caricando f1PitBox.glb:', err);
