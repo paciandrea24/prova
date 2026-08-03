@@ -178,7 +178,7 @@ test('nessun oggetto scenografico (paddock, natura, laghetto, tribune...) finisc
     assert.ok(layout.length > 0);
     for (const item of layout) {
         const d = Math.hypot(item.x - boxPt.x, item.z - boxPt.z);
-        assert.ok(d >= 34 - 1e-6, `oggetto '${item.category}'/${item.asset} troppo vicino alla zona box giocatore: ${d}`);
+        assert.ok(d >= 55 - 1e-6, `oggetto '${item.category}'/${item.asset} troppo vicino alla zona box giocatore: ${d}`);
     }
 });
 

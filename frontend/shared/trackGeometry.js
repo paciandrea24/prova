@@ -256,7 +256,13 @@
     // Catmull-Rom campionata usata per il rendering): backend e frontend
     // richiamano questa stessa funzione con gli stessi input, garantendo che
     // l'auto si fermi esattamente davanti al proprio box.
-    const PIT_BOX_SPACING = 8;
+    // Valore misurato sul modello REALE renderizzato in gioco (non sul file
+    // .glb grezzo): f1PitBox.glb ha ingombro grezzo ~6.2×6m in pianta, ma
+    // pitBoxLoader.js applica un fattore 3.5x (stesso della macchina, vedi
+    // loadCarModel) → ingombro reale in gioco ~21.7×21m. 8m (basato sul solo
+    // file grezzo, prima di scoprire che serviva il fattore 3.5x) faceva
+    // sovrapporre i box tra loro — verificato in playtest dall'utente.
+    const PIT_BOX_SPACING = 24;
 
     // Cammina lungo la spezzata `pitPath` di `distance` metri (con segno) a
     // partire dal punto boxIndex; oltre gli estremi della corsia si ferma

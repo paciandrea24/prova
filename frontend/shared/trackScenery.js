@@ -125,10 +125,24 @@
     // frontend/shared/pitBoxLoader.js): i box colorati reali di ogni
     // pilota occupano questo tratto della corsia box, un edificio/
     // cartellone decorativo lì finirebbe dentro/sopra un modello vero.
-    // Coerente con PIT_BOX_SPACING=8 in trackGeometry.js: margine sufficiente
-    // per una decina di box (34/8 ≈ 4 per lato dal centro), oltre l'attuale
-    // MAX_GRID_SIZE=6 (backend/sockets/games/f1Bot.js) ma non "ben oltre".
-    const PIT_BOX_ZONE_HALFLEN = 34;
+    // Con PIT_BOX_SPACING=24 in trackGeometry.js (misurato sull'ingombro
+    // reale in gioco del modello, ~21.7×21m dopo lo scale 3.5x in
+    // pitBoxLoader.js) e l'attuale MAX_GRID_SIZE=6
+    // (backend/sockets/games/f1Bot.js), i box più esterni arrivano a ±60m
+    // dal centro: la copertura TEORICA completa (±60 + mezzo ingombro box)
+    // sarebbe ~75, ma su piste compatte (monte-rosso, verificato per
+    // misura diretta) la tribuna principale/i cartelloni di partenza
+    // stanno già a 58-60m dal punto box — un raggio così ampio azzererebbe
+    // del tutto la scenografia decorativa vicino alla partenza invece di
+    // limitarsi a diradarla. 55 è il compromesso verificato sulle 3 piste
+    // testabili (monte-rosso, new-monza, prova — baku ha un bug
+    // preesistente e scollegato che ne impedisce la generazione
+    // scenografica, vedi nota separata): riduce le sovrapposizioni più
+    // vicine al centro della fila box senza svuotare la scenografia di
+    // partenza sulle piste più compatte. Non è garanzia assoluta sui box
+    // più esterni della fila su piste corte — accettabile, stesso spirito
+    // "best effort" già usato per lo scatter natura/laghetto.
+    const PIT_BOX_ZONE_HALFLEN = 55;
 
     const POND_RADIUS    = 9;
     const POND_ATTEMPTS  = 60;
