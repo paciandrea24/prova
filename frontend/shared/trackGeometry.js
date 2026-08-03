@@ -248,6 +248,75 @@
         return { nx: -tz, nz: tx };
     }
 
+    // Spaziatura reale (metri) tra un box giocatore e il successivo lungo la
+    // corsia box — vedi frontend/shared/pitBoxLoader.js e
+    // docs/superpowers/specs/2026-08-03-f1-pit-boxes-design.md. Si cammina
+    // sulla SPEZZATA di pitPath (gli stessi punti di controllo grezzi usati
+    // dall'autopilota server-side in f1GameSocket.js, non la curva
+    // Catmull-Rom campionata usata per il rendering): backend e frontend
+    // richiamano questa stessa funzione con gli stessi input, garantendo che
+    // l'auto si fermi esattamente davanti al proprio box.
+    const PIT_BOX_SPACING = 8;
+
+    // Cammina lungo la spezzata `pitPath` di `distance` metri (con segno) a
+    // partire dal punto boxIndex; oltre gli estremi della corsia si ferma
+    // (clamp) invece di uscire dall'array.
+    function walkPitPath(pitPath, boxIndex, distance) {
+        let idx = boxIndex;
+        let remaining = distance;
+        if (remaining >= 0) {
+            while (idx < pitPath.length - 1) {
+                const segLen = dist(pitPath[idx], pitPath[idx + 1]);
+                if (segLen === 0 || remaining <= segLen) {
+                    const f = segLen === 0 ? 0 : remaining / segLen;
+                    return {
+                        x: pitPath[idx].x + (pitPath[idx + 1].x - pitPath[idx].x) * f,
+                        z: pitPath[idx].z + (pitPath[idx + 1].z - pitPath[idx].z) * f,
+                        fromIdx: idx, toIdx: idx + 1
+                    };
+                }
+                remaining -= segLen;
+                idx++;
+            }
+            const last = pitPath.length - 1;
+            return { x: pitPath[last].x, z: pitPath[last].z, fromIdx: Math.max(0, last - 1), toIdx: last };
+        }
+        remaining = -remaining;
+        while (idx > 0) {
+            const segLen = dist(pitPath[idx - 1], pitPath[idx]);
+            if (segLen === 0 || remaining <= segLen) {
+                const f = segLen === 0 ? 0 : remaining / segLen;
+                return {
+                    x: pitPath[idx].x + (pitPath[idx - 1].x - pitPath[idx].x) * f,
+                    z: pitPath[idx].z + (pitPath[idx - 1].z - pitPath[idx].z) * f,
+                    fromIdx: idx - 1, toIdx: idx
+                };
+            }
+            remaining -= segLen;
+            idx--;
+        }
+        return { x: pitPath[0].x, z: pitPath[0].z, fromIdx: 0, toIdx: Math.min(1, pitPath.length - 1) };
+    }
+
+    // count posizioni equispaziate lungo la corsia box, centrate su
+    // boxIndex — una per pilota (vedi assignGridSpawns in
+    // f1GameSocket.js). Restituisce anche la tangente locale (tx,tz
+    // normalizzata) per offsettare/ruotare il modello del box lateralmente
+    // (frontend/f1.js, loadPlayerPitBox).
+    function pitBoxAnchors(pitPath, boxIndex, count) {
+        const mid = (count - 1) / 2;
+        const anchors = [];
+        for (let i = 0; i < count; i++) {
+            const offset = (i - mid) * PIT_BOX_SPACING;
+            const { x, z, fromIdx, toIdx } = walkPitPath(pitPath, boxIndex, offset);
+            const a = pitPath[fromIdx], b = pitPath[toIdx];
+            const tx = b.x - a.x, tz = b.z - a.z;
+            const tlen = Math.hypot(tx, tz) || 1;
+            anchors.push({ x, z, tx: tx / tlen, tz: tz / tlen });
+        }
+        return anchors;
+    }
+
     return {
         sampleLoop,
         sampleOpenPath,
@@ -258,6 +327,7 @@
         terrainHeightAt,
         splitByBridge,
         tangentAt,
-        normalAt
+        normalAt,
+        pitBoxAnchors
     };
 });

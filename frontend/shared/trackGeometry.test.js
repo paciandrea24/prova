@@ -163,3 +163,36 @@ test('splitByBridge: arco ponte a cavallo del bordo dell\'array -> uno spezzone 
     assert.equal(groundRuns[0].closed, false);
     assert.deepEqual(groundRuns[0].indices, [2, 3, 4, 5, 6, 7]);
 });
+
+test('pitBoxAnchors restituisce esattamente count posizioni', () => {
+    const path = [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }];
+    const anchors = TrackGeometry.pitBoxAnchors(path, 2, 6);
+    assert.equal(anchors.length, 6);
+});
+
+test('pitBoxAnchors centra le posizioni su boxIndex, spaziate di 8 metri', () => {
+    const path = [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }];
+    const anchors = TrackGeometry.pitBoxAnchors(path, 2, 3);
+    assert.ok(Math.abs(anchors[0].x - 92) < 1e-6, `atteso x=92, trovato ${anchors[0].x}`);
+    assert.ok(Math.abs(anchors[1].x - 100) < 1e-6, `atteso x=100 (boxIndex), trovato ${anchors[1].x}`);
+    assert.ok(Math.abs(anchors[2].x - 108) < 1e-6, `atteso x=108, trovato ${anchors[2].x}`);
+    for (const a of anchors) assert.equal(a.z, 0);
+});
+
+test('pitBoxAnchors resta dentro i limiti della corsia anche con molti box (clamp agli estremi)', () => {
+    const path = [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }];
+    const anchors = TrackGeometry.pitBoxAnchors(path, 2, 51);
+    for (const a of anchors) {
+        assert.ok(a.x >= -1e-6 && a.x <= 150 + 1e-6, `x fuori dai limiti della corsia: ${a.x}`);
+    }
+});
+
+test('pitBoxAnchors restituisce la tangente normalizzata della corsia', () => {
+    const path = [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }];
+    const anchors = TrackGeometry.pitBoxAnchors(path, 2, 3);
+    for (const a of anchors) {
+        const len = Math.hypot(a.tx, a.tz);
+        assert.ok(Math.abs(len - 1) < 1e-6, `tangente non normalizzata: ${len}`);
+        assert.ok(Math.abs(a.tx - 1) < 1e-6 && Math.abs(a.tz) < 1e-6, 'tangente attesa lungo +x su corsia dritta');
+    }
+});
