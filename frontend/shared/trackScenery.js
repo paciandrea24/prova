@@ -121,6 +121,14 @@
     // profondita' billboard (~1.44 a scala 6) con margine.
     const PADDOCK_PIT_CLEARANCE = 4;
 
+    // Zona box giocatore (vedi TrackGeometry.pitBoxAnchors,
+    // frontend/shared/pitBoxLoader.js): i box colorati reali di ogni
+    // pilota occupano questo tratto della corsia box, un edificio/
+    // cartellone decorativo lì finirebbe dentro/sopra un modello vero.
+    // Coerente con PIT_BOX_SPACING=8 in trackGeometry.js per un numero di
+    // box ben oltre l'attuale MAX_GRID_SIZE=6 (backend/sockets/games/f1Bot.js).
+    const PIT_BOX_ZONE_HALFLEN = 34;
+
     const POND_RADIUS    = 9;
     const POND_ATTEMPTS  = 60;
     const POND_CLEARANCE = 16;
@@ -140,7 +148,7 @@
     // + edifici box (pitsGarageClosed/pitsOffice alternati) lungo la corsia
     // box. Nessun PRNG: posizioni deterministiche a intervalli fissi, area
     // "propria" non condivisa con lo scatter natura.
-    function buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, mainSide, embankOuter) {
+    function buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, mainSide, embankOuter, playerBoxPt) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const n = trackPts.length;
@@ -170,6 +178,7 @@
                 // (verificato per misura diretta). Si scarta lo slot invece
                 // di ricollocarlo altrove.
                 if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + PADDOCK_PIT_CLEARANCE) continue;
+                if (Math.hypot(x - playerBoxPt.x, z - playerBoxPt.z) < PIT_BOX_ZONE_HALFLEN) continue;
 
                 const rotY = Math.atan2(p.x - x, p.z - z);
                 const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
@@ -191,6 +200,7 @@
             const side = distPlus >= distMinus ? 1 : -1;
             const offset = pitRoadHalf + PIT_BUILDING_OFFSET_MARGIN;
             const x = p.x + nx * offset * side, z = p.z + nz * offset * side;
+            if (Math.hypot(x - playerBoxPt.x, z - playerBoxPt.z) < PIT_BOX_ZONE_HALFLEN) continue;
             const rotY = Math.atan2(p.x - x, p.z - z);
             const asset = (altBuilding % 2 === 0) ? 'pitsGarageClosed' : 'pitsOffice';
             altBuilding++;
@@ -377,8 +387,9 @@
         const pitRoadHalf = trackData.pit.roadHalfWidth;
         const side = mainStandSide(trackPts, pitPts);
         const embankOuter = barrierDist + embankmentWidth;
+        const playerBoxPt = trackData.pit.path[trackData.pit.boxIndex];
 
-        const paddock   = buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankOuter);
+        const paddock   = buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankOuter, playerBoxPt);
         const mainStand = buildMainGrandstandLayout(trackPts, barrierDist, side, embankOuter);
         const accepted  = [...paddock, ...mainStand];
         const grandstand = buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankOuter);
