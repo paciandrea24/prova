@@ -1009,27 +1009,6 @@ function tickGame(io, lobbyId, game) {
         checkLap(p, totalLaps, io, lobbyId, game);
     }
 
-    // DIAGNOSTICA TEMPORANEA (da rimuovere a bug risolto): la classifica live
-    // lato client mostra un'auto scavalcare tutti per un solo tick e tornare
-    // subito al valore di prima — dato che progressScore (lap*n+trackIndex)
-    // non può mai calare per un giro vero (p.lap non decrementa mai), un salto
-    // seguito da un ritorno esatto allo stesso valore è un trackIndex sporco
-    // per un tick, non una gara vera. Sospetto principale: la corsia box (vedi
-    // updateTrackIndex sull'autopilota qui sopra, cerca il punto pista PIÙ
-    // VICINO alla posizione fisica sulla corsia box, che è una strada diversa
-    // dal tracciato — non c'è garanzia che resti "vicina" nello spazio indice).
-    for (const p of players) {
-        if (p.finished) continue;
-        const score = progressScore(p, game.track);
-        if (p._lastProgressScore !== undefined) {
-            const delta = score - p._lastProgressScore;
-            if (delta < -20 || delta > 50) {
-                console.log(`[F1 rank][SOSPETTO] ${p.color} progressScore ${p._lastProgressScore}->${score} (delta=${delta}) lap=${p.lap} trackIndex=${p.trackIndex} pitting=${p.pitting} pitAutoState=${p.pitAutoState} x=${p.x.toFixed(1)} z=${p.z.toFixed(1)}`);
-            }
-        }
-        p._lastProgressScore = score;
-    }
-
     // Distacco dal leader: stima da distanza/velocità, ricalcolata ogni
     // GAP_RECALC_MS e riusata fino al prossimo giro — non serve precisione
     // al millisecondo, un vero timing per-checkpoint sarebbe uno sforzo
