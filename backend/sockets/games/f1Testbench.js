@@ -98,6 +98,7 @@ function createTestbenchSession({ trackId, botCount, tyreWear, compound, damageP
         socketByColor: {},
         raceStarted: true,
         raceStartTime: Date.now(),
+        raceTick: 0,   // Rif. f1GameSocket.js: p.time/elapsed ora contano i tick fisici, non Date.now()
         raceEnded: false,
         qualiEnded: true,
         lightsSequenceActive: false

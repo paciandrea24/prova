@@ -209,6 +209,17 @@ module.exports = function (io, socket) {
                 raceStarted: false,
                 raceEnded: false,
                 raceStartTime: null,
+                // Tempo di gara "vero" contato in tick fisici, non con
+                // Date.now() — Rif. docs/f1-notes.md: setInterval(50ms) non
+                // scatta mai con precisione perfetta, quindi Date.now() -
+                // raceStartTime gonfia il tempo mostrato rispetto a quello
+                // che la fisica ha realmente simulato (misurato: ~27% in più
+                // su questa macchina). raceTick * PHYSICS_TICK_MS combacia
+                // ESATTAMENTE con backend/tools/f1LapSimulator.js, che conta
+                // tick allo stesso modo — necessario perché i tempi umani
+                // registrati in game reale siano confrontabili col tempo bot
+                // calcolato offline (Rif. Task 11 del piano F1 bot Fase 1).
+                raceTick: 0,
                 lastGapRecalc: 0,      // timestamp ultimo ricalcolo distacco dal leader (vedi GAP_RECALC_MS)
                 endTimeout: null,
                 qualiEnded: false,
@@ -306,7 +317,7 @@ module.exports = function (io, socket) {
             phase: game.phase,
             grid: game.grid,
             raceStarted: game.raceStarted,
-            elapsed: (game.raceStarted && game.raceStartTime) ? (Date.now() - game.raceStartTime) : 0,
+            elapsed: game.raceStarted ? (game.raceTick * PHYSICS_TICK_MS) : 0,
             players: buildPublicState(playersVisibleTo(game, playerColor), game.raceStarted, game.track, game),
             compounds: TYRE_COMPOUNDS,
             strategy: suggestStrategy(totalLaps),
@@ -586,6 +597,7 @@ function startQualifying(io, lobbyId, game) {
         if (!g) return;
         g.raceStarted = true;
         g.raceStartTime = Date.now();
+        g.raceTick = 0;
         console.log(`🏎️ [F1] Qualifica avviata (lobby ${lobbyId})`);
         io.to(lobbyId).emit('f1RaceStarted', { syncTime: 0, phase: 'qualifying' });
     }, 3000);
@@ -605,7 +617,7 @@ function endQualifying(io, lobbyId, game) {
     const n = game.track.points.length;
     for (const p of Object.values(game.players)) {
         if (p.time === null && p.isBot) {
-            const elapsed = Date.now() - game.raceStartTime;
+            const elapsed = game.raceTick * PHYSICS_TICK_MS;
             const progress = (p.lap * n + (p.trackIndex || 0)) / n;   // totalLaps quali = 1
             p.time = estimateFinishTime(elapsed, progress);
         }
@@ -653,6 +665,7 @@ function startRaceCountdown(io, lobbyId, game) {
     game.raceEnded = false;
     game.raceStarted = false;
     game.raceStartTime = null;
+    game.raceTick = 0;
     game.lightsSequenceActive = true;   // finestra di rilevamento falsa partenza, vedi tickGame
 
     // Azzera l'input di TUTTI prima di aprire la finestra di rilevamento:
@@ -679,6 +692,7 @@ function startRaceCountdown(io, lobbyId, game) {
         g.lightsSequenceActive = false;
         g.raceStarted = true;
         g.raceStartTime = Date.now();
+        g.raceTick = 0;
         // Reazione al via per i bot: ognuno resta fermo per un ritardo
         // casuale (nessuna correlazione col ritmo di gara, richiesto
         // esplicitamente) prima che updateBotInputs inizi a guidarlo — senza
@@ -923,6 +937,11 @@ function tickGame(io, lobbyId, game) {
         broadcastState(io, lobbyId, game, false);
         return;
     }
+
+    // Contatore di tick fisici dalla partenza — Rif. game.raceTick sopra:
+    // usato al posto di Date.now() ovunque serva un tempo di gara
+    // confrontabile col simulatore.
+    game.raceTick++;
 
     updateBotInputs(game, {
         effectiveMaxSpeed, handlePitReactionPress, io, lobbyId,
@@ -1257,7 +1276,7 @@ function checkLap(p, totalLaps, io, lobbyId, game) {
 
         if (p.lap >= totalLaps) {
             p.finished = true;
-            p.time = Date.now() - game.raceStartTime;
+            p.time = game.raceTick * PHYSICS_TICK_MS;
             // Obbligo di almeno un pit stop in gara (regola vera F1): chi non
             // ha mai cambiato gomme prende una penalità in tempo a fine gara,
             // non viene bloccato né squalificato.

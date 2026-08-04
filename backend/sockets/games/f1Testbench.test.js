@@ -4,6 +4,39 @@ const assert = require('node:assert/strict');
 const { validateTestbenchScenario } = require('./f1Testbench.js');
 const { listTracks } = require('./trackLoader.js');
 
+// Pista temporanea SENZA racing line precalcolata, usata dai test che
+// verificano il comportamento "nessuna racing line" — Rif. Task 6 del piano
+// F1 bot Fase 1: prima monte-rosso non aveva una racing line ufficiale e
+// fungeva da fixture per questo caso, ma ora ce l'ha (regenerata insieme
+// alle altre 3 piste reali), quindi questi test devono costruirsi la
+// propria pista senza racing line invece di dipendere da quale pista reale
+// non ne ha una in un dato momento (fragile: si è già rotto una volta).
+const NO_RACELINE_TRACK_ID = 'test-no-raceline-fixture';
+function buildNoRacelineTrackData() {
+    const n = 12;
+    const controlPoints = Array.from({ length: n }, (_, i) => {
+        const theta = (i / n) * 2 * Math.PI;
+        return { x: 100 * Math.cos(theta), z: 100 * Math.sin(theta) };
+    });
+    return {
+        id: NO_RACELINE_TRACK_ID,
+        name: 'Test No Raceline',
+        targetKm: 1,
+        roadHalfWidth: 10,
+        controlPoints,
+        pit: {
+            roadHalfWidth: 5,
+            boxIndex: 1,
+            entryTrigger: { xMin: 90, xMax: 110, zMin: -10, zMax: 10 },
+            path: [
+                { x: 100, z: 0 },
+                { x: 105, z: 5 },
+                { x: 110, z: 10 }
+            ]
+        }
+    };
+}
+
 test('validateTestbenchScenario: scenario valido passa', () => {
     const trackId = listTracks()[0].id;
     const result = validateTestbenchScenario({ trackId, botCount: 4, tyreWear: 30, compound: 'medium' });
@@ -187,17 +220,23 @@ test('f1tbStart su pista CON racing line precalcolata -> emette f1tbRacingLine c
 });
 
 test('f1tbStart su pista SENZA racing line precalcolata -> emette f1tbRacingLine null', (t, done) => {
-    const socket = makeFakeSocket();
-    const io = { to: () => ({ emit: () => {} }) };
-    registerTestbench(io, socket);
+    const { saveTrack, deleteTrack } = require('./trackLoader.js');
+    saveTrack(buildNoRacelineTrackData());
+    try {
+        const socket = makeFakeSocket();
+        const io = { to: () => ({ emit: () => {} }) };
+        registerTestbench(io, socket);
 
-    let racingLine = undefined;
-    socket.emit = (event, payload) => { if (event === 'f1tbRacingLine') racingLine = payload; };
+        let racingLine = undefined;
+        socket.emit = (event, payload) => { if (event === 'f1tbRacingLine') racingLine = payload; };
 
-    socket.listeners('f1tbStart')[0]({ trackId: 'monte-rosso', botCount: 2, tyreWear: 0, compound: 'medium' });
+        socket.listeners('f1tbStart')[0]({ trackId: NO_RACELINE_TRACK_ID, botCount: 2, tyreWear: 0, compound: 'medium' });
 
-    assert.equal(racingLine, null);
-    done();
+        assert.equal(racingLine, null);
+        done();
+    } finally {
+        deleteTrack(NO_RACELINE_TRACK_ID);
+    }
 });
 
 // ---- racelineVariant (verifica C, prototipo shape-prior — Rif.
@@ -211,11 +250,11 @@ test('f1tbStart su pista SENZA racing line precalcolata -> emette f1tbRacingLine
 const fs = require('node:fs');
 const path = require('node:path');
 const VARIANT_SUFFIX = '-f1testbench-testvariant';
-const VARIANT_FILE = path.join(__dirname, '..', '..', 'tools', `monte-rosso${VARIANT_SUFFIX}-raceline.json`);
+const VARIANT_FILE = path.join(__dirname, '..', '..', 'tools', `${NO_RACELINE_TRACK_ID}${VARIANT_SUFFIX}-raceline.json`);
 
 function writeVariantFile() {
     fs.writeFileSync(VARIANT_FILE, JSON.stringify({
-        trackId: 'monte-rosso', timeMs: 12345, elapsedS: 1,
+        trackId: NO_RACELINE_TRACK_ID, timeMs: 12345, elapsedS: 1,
         tuning: { lookaheadTimeS: 0.6, steerGain: 3.0, cornerSpeedMargin: 0.99, brakingDistanceMargin: 1.2, deadband: 0.01, ramp: 0.06 },
         lineControls: [3, -3, 3, -3, 3, -3, 3, -3, 3, -3, 3, -3, 3, -3, 3]
     }, null, 2));
@@ -231,29 +270,31 @@ test('validateTestbenchScenario: racelineVariant che non corrisponde a nessun fi
 });
 
 test('validateTestbenchScenario + createTestbenchSession: racelineVariant valido viene applicato SENZA mutare la cache di trackLoader', () => {
+    const { loadTrack, saveTrack, deleteTrack } = require('./trackLoader.js');
+    saveTrack(buildNoRacelineTrackData());
     writeVariantFile();
     try {
-        const { loadTrack } = require('./trackLoader.js');
         const { createTestbenchSession } = require('./f1Testbench.js');
 
-        const before = loadTrack('monte-rosso');   // monte-rosso non ha racing line ufficiale (verificato nell'audit)
-        assert.equal(before.racingLine, null, 'precondizione: monte-rosso non ha una racing line ufficiale');
+        const before = loadTrack(NO_RACELINE_TRACK_ID);
+        assert.equal(before.racingLine, null, 'precondizione: la pista di test non ha una racing line ufficiale');
 
-        const validation = validateTestbenchScenario({ trackId: 'monte-rosso', botCount: 2, tyreWear: 0, compound: 'medium', racelineVariant: VARIANT_SUFFIX });
+        const validation = validateTestbenchScenario({ trackId: NO_RACELINE_TRACK_ID, botCount: 2, tyreWear: 0, compound: 'medium', racelineVariant: VARIANT_SUFFIX });
         assert.deepEqual(validation, { valid: true });
 
-        const game = createTestbenchSession({ trackId: 'monte-rosso', botCount: 2, tyreWear: 0, compound: 'medium', racelineVariant: VARIANT_SUFFIX });
+        const game = createTestbenchSession({ trackId: NO_RACELINE_TRACK_ID, botCount: 2, tyreWear: 0, compound: 'medium', racelineVariant: VARIANT_SUFFIX });
         assert.ok(Array.isArray(game.track.racingLine) && game.track.racingLine.length > 0, 'la sessione deve avere la racing line sperimentale');
 
         // La chiamata di verità: ri-chiedere la pista a trackLoader (stesso
         // oggetto cacheato usato da ogni partita vera) deve restituire
         // ANCORA racingLine=null — se questo fallisce, la sessione ha
         // corrotto lo stato condiviso con le partite reali.
-        const after = loadTrack('monte-rosso');
+        const after = loadTrack(NO_RACELINE_TRACK_ID);
         assert.equal(after.racingLine, null, 'la cache di trackLoader NON deve essere mutata dalla sessione sperimentale');
         assert.equal(after, before, 'deve restare lo stesso identico oggetto in cache (===), non solo un valore uguale');
     } finally {
         removeVariantFile();
+        deleteTrack(NO_RACELINE_TRACK_ID);
     }
 });
 
