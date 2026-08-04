@@ -619,6 +619,41 @@ function adaptiveLookaheadMeters(laneSource, trackIndex, track, k, speedMs) {
     return Math.max(BOT_LOOKAHEAD_MIN_M, Math.min(BOT_ADAPTIVE_LOOKAHEAD_MAX_M, raw));
 }
 
+// Fase 1 — cervello di guida condiviso (Rif.
+// docs/superpowers/specs/2026-08-04-f1-bot-unified-driving-policy-design.md):
+// decide sterzo e velocità-obiettivo per seguire al meglio la racing line DA
+// SOLO — nessuna dipendenza da altri giocatori, pit stop, socket. Estratta
+// dal ramo racing-line di updateBotInputs per essere riusata IDENTICA anche
+// da backend/tools/f1RaceLineOptimizer.js (Task 5): prima l'ottimizzatore
+// valutava le candidate di linea con una propria copia più vecchia
+// (lookahead a tempo fisso) — le due implementazioni si erano scollegate.
+// `track.racingLine` è la linea da seguire: nel gioco vero è sempre la
+// stessa caricata da trackLoader.js; l'ottimizzatore la sostituisce con ogni
+// candidata in valutazione tramite una vista del tracciato (stesso campo).
+// Non include botSpeedFactor/botLapPaceMult (varianza di ritmo per-bot, un
+// concetto di gara) né l'aggiustamento sorpasso/scia (multi-auto): il
+// chiamante reale li applica DOPO aver ricevuto targetSpeed da qui.
+function computeSoloRacingLineInputs(p, track, rt, maxSpeed, brakeDecel, turnRateHigh, gripCapacityFactor) {
+    const metersPerSample = track.lapLength / track.points.length;
+    const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
+    const speedMs = Math.max(5, botSpeedMs(p.speed));
+    const lookM = adaptiveLookaheadMeters(track.racingLine, p.trackIndex || 0, track, rt.adaptiveLookaheadK, speedMs);
+    const lookSamples = metersToSamples(lookM, track);
+    const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
+    const target = track.racingLine[targetIdx];
+
+    const steer = steerToward(p.x, p.z, p.angle, target.x, target.z, rt.steerGain);
+
+    const scanM = (maxSpeed * maxSpeed) / (2 * brakeDecel) * rt.brakingDistanceMargin;
+    const scanSamples = metersToSamples(scanM, track);
+    const targetSpeed = cornerTargetSpeed(
+        track.racingLine, p.trackIndex || 0, scanSamples, localSamples, metersPerSample,
+        p.speed, maxSpeed, brakeDecel, turnRateHigh, rt.cornerSpeedMargin, gripCapacityFactor
+    );
+
+    return { steer, target, targetSpeed, localSamples };
+}
+
 // Margine sulla distanza di frenata calcolata dalla fisica: oltre il
 // margine "matematico" già insito nel calcolo (v0²−v1²=2·decel·distanza),
 // un 20% extra copre l'imprecisione del rilevamento a campioni discreti.
@@ -958,33 +993,25 @@ function updateBotInputs(game, deps) {
             // frenata del 3%) FRENA per tornare al proprio target, buttando
             // via il vantaggio invece di sfruttarlo per rimontare.
             const maxSpeed = effectiveMaxSpeed(p, isQuali) * (p.inSlipstream ? (1 + (slipstreamMaxBoost || 0)) : 1);
-            // Grip-awareness: a flag spento resta 1 (nessun effetto).
-            // corneringCapacity è un moltiplicatore RELATIVO alla capacità
-            // laterale (non un grip assoluto) — la scala verso una velocità
-            // non è assunta 1:1, vedi BOT_GRIP_CAPACITY_EXPONENT.
+            // Grip-awareness: a flag spento resta 1 (nessun effetto) — Rif.
+            // Task 3 di questo piano per la rimozione del flag (non ancora
+            // fatta qui: questo task riguarda solo il lookahead).
             const gripCapacityFactor = isBotGripAwarenessActive()
                 ? Math.pow(corneringCapacity(p, isQuali, maxSpeed), BOT_GRIP_CAPACITY_EXPONENT)
                 : 1;
             debugMaxSpeed = maxSpeed;
             debugGripCapacityFactor = gripCapacityFactor;
-            const speedMs  = Math.max(5, botSpeedMs(p.speed));
-            const lookM    = isAdaptiveLookaheadActive()
-                ? adaptiveLookaheadMeters(track.racingLine, p.trackIndex || 0, track, rt.adaptiveLookaheadK, speedMs)
-                : Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * rt.lookaheadTimeS);
-            const lookSamples  = metersToSamples(lookM, track);
-            const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
-            const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
-            const target = track.racingLine[targetIdx];
+
+            // Lookahead adattivo ora permanente in questo ramo (Fase 1 —
+            // cervello di guida unificato): niente più flag, e la logica è
+            // condivisa con l'ottimizzatore offline via computeSoloRacingLineInputs.
+            const solo = computeSoloRacingLineInputs(p, track, rt, maxSpeed, brakeDecel, turnRateHigh, gripCapacityFactor);
+            const target = solo.target;
+            const localSamples = solo.localSamples;   // riusato più sotto per il sorpasso (windowRadius) — evita di ricalcolarlo
+            steer = solo.steer;
             debugTarget = { x: target.x, z: target.z };
 
-            steer = steerToward(p.x, p.z, p.angle, target.x, target.z, rt.steerGain);
-
-            const scanM = (maxSpeed * maxSpeed) / (2 * brakeDecel) * rt.brakingDistanceMargin;
-            const scanSamples = metersToSamples(scanM, track);
-            let targetSpeed = cornerTargetSpeed(
-                track.racingLine, p.trackIndex || 0, scanSamples, localSamples, metersPerSample,
-                p.speed, maxSpeed, brakeDecel, turnRateHigh, rt.cornerSpeedMargin, gripCapacityFactor
-            ) * p.botSpeedFactor * p.botLapPaceMult;
+            let targetSpeed = solo.targetSpeed * p.botSpeedFactor * p.botLapPaceMult;
 
             if (!isQuali) {
                 const ahead = nearestAheadPlayer(p, Object.values(game.players), track);
@@ -1172,5 +1199,5 @@ module.exports = {
     createBots, updateBotInputs, shouldBotRepair, isBotGripAwarenessActive,
     BOT_CURVATURE_LOCAL_M, BOT_APEX_MAX_FRACTION, trajectoryDiagnostics,
     adaptiveLookaheadMeters, isAdaptiveLookaheadActive, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
-    BOT_ADAPTIVE_LOOKAHEAD_T_MIN, setLookaheadFormulaOverride
+    BOT_ADAPTIVE_LOOKAHEAD_T_MIN, setLookaheadFormulaOverride, computeSoloRacingLineInputs
 };
