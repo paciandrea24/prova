@@ -20,7 +20,6 @@ const path = require("path");
 const { loadTrack } = require("../sockets/games/trackLoader.js");
 const { physics } = require("../sockets/games/f1GameSocket.js");
 const {
-    cornerTargetSpeed, lookaheadIndex, normalizeAngle,
     // Prototipo shape-prior (Rif. audit 2026-07-29, opzione B): riusa la
     // STESSA formula fuori-dentro-fuori già validata per il ramo fallback
     // runtime (apexOffset/cornerApexNear) come punto di PARTENZA per
@@ -28,17 +27,15 @@ const {
     // geometrica inventata qui. BOT_CURVATURE_LOCAL_M/BOT_APEX_MAX_FRACTION
     // esportate apposta da f1Bot.js (additivo, comportamento runtime
     // invariato) per non reinventare gli stessi numeri con un altro nome.
-    apexOffset, BOT_CURVATURE_LOCAL_M, BOT_APEX_MAX_FRACTION
+    apexOffset, BOT_CURVATURE_LOCAL_M, BOT_APEX_MAX_FRACTION,
+    // Fase 1 — cervello di guida unificato (Rif.
+    // docs/superpowers/specs/2026-08-04-f1-bot-unified-driving-policy-design.md):
+    // la STESSA funzione usata dal bot in gara valuta ogni candidata di
+    // linea, invece di una copia separata (steerTowardGain/cornerTargetSpeed
+    // a mano, rimossa in questo task).
+    computeSoloRacingLineInputs, BOT_GRIP_CAPACITY_EXPONENT
 } = require("../sockets/games/f1Bot.js");
 const TrackGeometry = require("../../frontend/shared/trackGeometry.js");
-
-function steerTowardGain(px, pz, angle, tx, tz, gain) {
-    const dx = tx - px, dz = tz - pz;
-    if (Math.abs(dx) < 1e-6 && Math.abs(dz) < 1e-6) return 0;
-    const desired = Math.atan2(dx, dz);
-    const diff = normalizeAngle(desired - angle);
-    return Math.max(-1, Math.min(1, diff * gain));
-}
 
 function buildOptimizer(track) {
     const n = track.points.length;
@@ -110,6 +107,19 @@ function buildOptimizer(track) {
             speed: 0, vx: 0, vz: 0, inputs: { throttle: 0, brake: 0, steer: 0 },
             trackIndex: 0, compound: "medium", tyreWear: 0
         };
+        // Vista del tracciato con la linea CANDIDATA come racingLine: stesso
+        // oggetto `track` reale (pitPath/roadHalf/lapLength/points invariati),
+        // solo racingLine sostituita — computeSoloRacingLineInputs e
+        // adaptiveLookaheadMeters riconoscono il ramo racing-line tramite
+        // identità con track.racingLine (Rif. f1Bot.js), quindi la vista deve
+        // esporla con questo nome esatto.
+        const trackView = { ...track, racingLine };
+        const rt = {
+            lookaheadTimeS: state.lookaheadTimeS, steerGain: state.steerGain,
+            adaptiveLookaheadK: state.adaptiveLookaheadK,
+            cornerSpeedMargin: state.cornerSpeedMargin, brakingDistanceMargin: state.brakingDistanceMargin,
+            deadband: state.deadband, ramp: state.ramp
+        };
         const brakeDecel = physics.ACCEL * physics.BRAKE_MULT;
         const checkpointWindow = physics.checkpointWindowFor(track);
         const finishWindow = physics.finishWindowFor(track);
@@ -118,26 +128,14 @@ function buildOptimizer(track) {
 
         for (let tick = 0; tick < maxTicks; tick++) {
             const maxSpeed = physics.effectiveMaxSpeed(p, true);
-            const speedMs = Math.max(5, Math.abs(p.speed) * 55 / 3.6);
-            const lookM = Math.max(10, speedMs * state.lookaheadTimeS);
-            const lookSamples = metersToSamples(lookM);
-            const localSamples = metersToSamples(12);
-            const targetIdx = lookaheadIndex(n, p.trackIndex || 0, lookSamples);
-            const target = racingLine[targetIdx];
+            const gripCapacityFactor = Math.pow(physics.corneringCapacity(p, true, maxSpeed), BOT_GRIP_CAPACITY_EXPONENT);
+            const solo = computeSoloRacingLineInputs(p, trackView, rt, maxSpeed, brakeDecel, physics.TURN_SPEED_HIGH, gripCapacityFactor);
 
-            const steer = steerTowardGain(p.x, p.z, p.angle, target.x, target.z, state.steerGain);
-            const scanM = (maxSpeed * maxSpeed) / (2 * brakeDecel) * state.brakingDistanceMargin;
-            const scanSamples = metersToSamples(scanM);
-            const targetSpeed = cornerTargetSpeed(
-                racingLine, p.trackIndex || 0, scanSamples, localSamples, metersPerSample,
-                p.speed, maxSpeed, brakeDecel, physics.TURN_SPEED_HIGH, state.cornerSpeedMargin
-            );
-
-            const err = (p.speed - targetSpeed) / maxSpeed;
+            const err = (p.speed - solo.targetSpeed) / maxSpeed;
             let throttle = 0, brake = 0;
-            if (err > state.deadband) brake = Math.min(1, (err - state.deadband) / state.ramp);
-            else if (err < -state.deadband) throttle = Math.min(1, (-err - state.deadband) / state.ramp);
-            p.inputs = { throttle, brake, steer };
+            if (err > rt.deadband) brake = Math.min(1, (err - rt.deadband) / rt.ramp);
+            else if (err < -rt.deadband) throttle = Math.min(1, (-err - rt.deadband) / rt.ramp);
+            p.inputs = { throttle, brake, steer: solo.steer };
 
             physics.updateVelocity(p, true, 1);
             for (let s = 0; s < physics.COLLISION_SUBSTEPS; s++) {
@@ -171,6 +169,7 @@ function buildOptimizer(track) {
         }
         list.push({ get: () => state.lookaheadTimeS, set: v => { state.lookaheadTimeS = v; }, min: 0.25, max: 1.3, isLine: false });
         list.push({ get: () => state.steerGain, set: v => { state.steerGain = v; }, min: 1.0, max: 7.0, isLine: false });
+        list.push({ get: () => state.adaptiveLookaheadK, set: v => { state.adaptiveLookaheadK = v; }, min: 0.02, max: 0.4, isLine: false });
         list.push({ get: () => state.cornerSpeedMargin, set: v => { state.cornerSpeedMargin = v; }, min: 0.80, max: 1.0, isLine: false });
         list.push({ get: () => state.brakingDistanceMargin, set: v => { state.brakingDistanceMargin = v; }, min: 0.85, max: 1.4, isLine: false });
         list.push({ get: () => state.deadband, set: v => { state.deadband = v; }, min: 0.0, max: 0.06, isLine: false });
@@ -223,7 +222,7 @@ function buildOptimizer(track) {
 
     function rand(min, max) { return min + Math.random() * (max - min); }
     function cloneState(s) {
-        return { line: s.line.slice(), lookaheadTimeS: s.lookaheadTimeS, steerGain: s.steerGain, cornerSpeedMargin: s.cornerSpeedMargin, brakingDistanceMargin: s.brakingDistanceMargin, deadband: s.deadband, ramp: s.ramp };
+        return { line: s.line.slice(), lookaheadTimeS: s.lookaheadTimeS, steerGain: s.steerGain, adaptiveLookaheadK: s.adaptiveLookaheadK, cornerSpeedMargin: s.cornerSpeedMargin, brakingDistanceMargin: s.brakingDistanceMargin, deadband: s.deadband, ramp: s.ramp };
     }
 
     function optimize(hops, log, opts) {
@@ -240,7 +239,7 @@ function buildOptimizer(track) {
         const seedMultiResolution = !!opts.seedMultiResolution;
         let state = {
             line: (seedGeometric || seedMultiResolution) ? seedGeometricLine(LEVELS[0].numControls) : new Array(LEVELS[0].numControls).fill(0),
-            lookaheadTimeS: 0.6, steerGain: 3.0,
+            lookaheadTimeS: 0.6, steerGain: 3.0, adaptiveLookaheadK: 0.1,
             cornerSpeedMargin: 0.99, brakingDistanceMargin: 1.2,
             deadband: 0.01, ramp: 0.06
         };
@@ -275,6 +274,7 @@ function buildOptimizer(track) {
             }
             if (Math.random() < 0.3) state.lookaheadTimeS = Math.max(0.25, Math.min(1.3, state.lookaheadTimeS + rand(-0.2, 0.2)));
             if (Math.random() < 0.3) state.steerGain = Math.max(1.0, Math.min(7.0, state.steerGain + rand(-1.2, 1.2)));
+            if (Math.random() < 0.3) state.adaptiveLookaheadK = Math.max(0.02, Math.min(0.4, state.adaptiveLookaheadK + rand(-0.05, 0.05)));
             if (Math.random() < 0.3) state.cornerSpeedMargin = Math.max(0.80, Math.min(1.0, state.cornerSpeedMargin + rand(-0.08, 0.08)));
             if (Math.random() < 0.3) state.brakingDistanceMargin = Math.max(0.85, Math.min(1.4, state.brakingDistanceMargin + rand(-0.15, 0.15)));
 
@@ -316,7 +316,7 @@ function run(trackId, hops, opts) {
     }
 
     console.log(`[${trackId}] RISULTATO: ${best}ms (${(best / 1000).toFixed(2)}s) in ${elapsedS.toFixed(1)}s di calcolo`);
-    console.log(`[${trackId}] lookaheadTimeS=${state.lookaheadTimeS.toFixed(3)} steerGain=${state.steerGain.toFixed(3)} cornerSpeedMargin=${state.cornerSpeedMargin.toFixed(3)} brakingDistanceMargin=${state.brakingDistanceMargin.toFixed(3)} deadband=${state.deadband.toFixed(4)} ramp=${state.ramp.toFixed(3)}`);
+    console.log(`[${trackId}] lookaheadTimeS=${state.lookaheadTimeS.toFixed(3)} steerGain=${state.steerGain.toFixed(3)} adaptiveLookaheadK=${state.adaptiveLookaheadK.toFixed(3)} cornerSpeedMargin=${state.cornerSpeedMargin.toFixed(3)} brakingDistanceMargin=${state.brakingDistanceMargin.toFixed(3)} deadband=${state.deadband.toFixed(4)} ramp=${state.ramp.toFixed(3)}`);
     console.log(`[${trackId}] offset laterale massimo: ${maxLat.toFixed(2)}m (limite ${opt.MAX_OFFSET.toFixed(2)}m, roadHalf ${track.roadHalf}m)`);
 
     // outSuffix (prototipo shape-prior, opzione B): scrive in un file
@@ -330,6 +330,7 @@ function run(trackId, hops, opts) {
         trackId, timeMs: best, elapsedS,
         tuning: {
             lookaheadTimeS: state.lookaheadTimeS, steerGain: state.steerGain,
+            adaptiveLookaheadK: state.adaptiveLookaheadK,
             cornerSpeedMargin: state.cornerSpeedMargin, brakingDistanceMargin: state.brakingDistanceMargin,
             deadband: state.deadband, ramp: state.ramp
         },

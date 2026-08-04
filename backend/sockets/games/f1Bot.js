@@ -1167,5 +1167,5 @@ module.exports = {
     createBots, updateBotInputs, shouldBotRepair,
     BOT_CURVATURE_LOCAL_M, BOT_APEX_MAX_FRACTION, trajectoryDiagnostics,
     adaptiveLookaheadMeters, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
-    BOT_ADAPTIVE_LOOKAHEAD_T_MIN, computeSoloRacingLineInputs
+    BOT_ADAPTIVE_LOOKAHEAD_T_MIN, computeSoloRacingLineInputs, BOT_GRIP_CAPACITY_EXPONENT
 };
