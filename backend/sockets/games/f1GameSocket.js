@@ -1426,7 +1426,7 @@ function resetPlayers(game) {
 module.exports.physics = {
     PHYSICS_TICK_MS, COLLISION_SUBSTEPS,
     ACCEL, BRAKE_MULT, TURN_SPEED_HIGH, HALF_LAP_IDX,
-    effectiveMaxSpeed, effectiveAccel, effectiveBrakeMult, updateVelocity, integratePosition,
+    effectiveMaxSpeed, effectiveAccel, effectiveBrakeMult, corneringCapacity, updateVelocity, integratePosition,
     applyOffTrackDrag, applyBridgeBarrier, updateTrackIndex,
     circularWithin, checkpointWindowFor, finishWindowFor,
     assignGridSpawns,

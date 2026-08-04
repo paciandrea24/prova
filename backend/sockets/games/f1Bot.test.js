@@ -566,7 +566,9 @@ test('updateBotInputs: deps.tuning.apexMaxFraction sovrascrive il default e camb
         io: { to: () => ({ emit: () => {} }) },
         lobbyId: 'test',
         wearLapsAtMedium: 5,
-        accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052
+        accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052,
+        corneringCapacity: () => 1,
+        effectiveBrakeMult: () => 1
     };
 
     function makePlayer() {
@@ -606,7 +608,9 @@ test('updateBotInputs: ramo racing-line usa il lookahead adattivo alla curvatura
         io: { to: () => ({ emit: () => {} }) },
         lobbyId: 'test',
         wearLapsAtMedium: 5,
-        accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052
+        accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052,
+        corneringCapacity: () => 1,
+        effectiveBrakeMult: () => 1
     };
     const p = {
         x: points[100].x, z: points[100].z, angle: 0,
@@ -635,7 +639,9 @@ test('updateBotInputs: ramo geometrico usa il lookahead adattivo alla curvatura 
     const deps = {
         effectiveMaxSpeed: () => 6, handlePitReactionPress: () => {}, io: { to: () => ({ emit: () => {} }) },
         lobbyId: 'test', wearLapsAtMedium: 5, accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052,
-        tuning: { apexMaxFraction: 0 }
+        tuning: { apexMaxFraction: 0 },
+        corneringCapacity: () => 1,
+        effectiveBrakeMult: () => 1
     };
     const p = {
         x: points[100].x, z: points[100].z, angle: 0, speed: 3, vx: 0, vz: 0,
@@ -664,7 +670,9 @@ test('updateBotInputs: durante la reazione al via il bot resta fermo (nessun inp
         io: { to: () => ({ emit: () => {} }) },
         lobbyId: 'test',
         wearLapsAtMedium: 5,
-        accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052
+        accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052,
+        corneringCapacity: () => 1,
+        effectiveBrakeMult: () => 1
     };
 
     function makePlayer(botRaceReactionUntil) {
@@ -745,58 +753,28 @@ function makeGripAwarenessDeps(extra = {}) {
     };
 }
 
-test('updateBotInputs: F1_BOT_GRIP_AWARENESS spento -> comportamento identico indipendentemente da tyreWear', () => {
-    delete process.env.F1_BOT_GRIP_AWARENESS;
+test('updateBotInputs: gomma usurata frena/rallenta prima di gomma fresca (grip-awareness sempre attivo)', () => {
     const fresh = makeGripAwarenessGame(0);
     const worn = makeGripAwarenessGame(90);
     updateBotInputs(fresh.game, makeGripAwarenessDeps());
     updateBotInputs(worn.game, makeGripAwarenessDeps());
-    assert.deepEqual(worn.p.inputs, fresh.p.inputs, 'a flag spento tyreWear non deve influenzare gli input del bot');
+    assert.notDeepEqual(worn.p.inputs, fresh.p.inputs, 'tyreWear deve sempre influenzare gli input del bot');
 });
 
-test('updateBotInputs: F1_BOT_GRIP_AWARENESS acceso -> gomma usurata frena/rallenta prima di gomma fresca', () => {
-    process.env.F1_BOT_GRIP_AWARENESS = '1';
-    try {
-        const fresh = makeGripAwarenessGame(0);
-        const worn = makeGripAwarenessGame(90);
-        updateBotInputs(fresh.game, makeGripAwarenessDeps());
-        updateBotInputs(worn.game, makeGripAwarenessDeps());
-        assert.notDeepEqual(worn.p.inputs, fresh.p.inputs, 'a flag acceso tyreWear deve influenzare gli input del bot');
-    } finally {
-        delete process.env.F1_BOT_GRIP_AWARENESS;
-    }
+test('updateBotInputs: isQuali=true -> deps consultate con isQuali=true (mock neutro in questo scenario)', () => {
+    const fresh = makeGripAwarenessGame(0, 'qualifying');
+    const worn = makeGripAwarenessGame(90, 'qualifying');
+    updateBotInputs(fresh.game, makeGripAwarenessDeps());
+    updateBotInputs(worn.game, makeGripAwarenessDeps());
+    assert.deepEqual(worn.p.inputs, fresh.p.inputs, 'isQuali deve arrivare a true a deps.corneringCapacity/effectiveBrakeMult (il mock lo rende neutro, a differenza delle formule reali dove solo la componente usura è neutra — vedi spec)');
 });
 
-test('updateBotInputs: F1_BOT_GRIP_AWARENESS acceso ma isQuali=true -> deps consultate con isQuali=true (mock neutro in questo scenario)', () => {
-    process.env.F1_BOT_GRIP_AWARENESS = '1';
-    try {
-        const fresh = makeGripAwarenessGame(0, 'qualifying');
-        const worn = makeGripAwarenessGame(90, 'qualifying');
-        updateBotInputs(fresh.game, makeGripAwarenessDeps());
-        updateBotInputs(worn.game, makeGripAwarenessDeps());
-        assert.deepEqual(worn.p.inputs, fresh.p.inputs, 'isQuali deve arrivare a true a deps.corneringCapacity/effectiveBrakeMult (il mock lo rende neutro, a differenza delle formule reali dove solo la componente usura è neutra — vedi spec)');
-    } finally {
-        delete process.env.F1_BOT_GRIP_AWARENESS;
-    }
-});
-
-test('updateBotInputs: gomma nuova (tyreWear=0) a flag acceso non è più prudente della gomma nuova a flag spento', () => {
-    // Con questo mock, corneringCapacity/effectiveBrakeMult a tyreWear=0
-    // restano 1 (nominali): il flag acceso non deve MAI produrre un
-    // throttle più basso o un brake più alto rispetto al flag spento in
-    // questa condizione — altrimenti il wiring (segno/ordine dei fattori)
-    // sarebbe sbagliato.
-    delete process.env.F1_BOT_GRIP_AWARENESS;
-    const off = makeGripAwarenessGame(0);
-    updateBotInputs(off.game, makeGripAwarenessDeps());
-    process.env.F1_BOT_GRIP_AWARENESS = '1';
-    try {
-        const on = makeGripAwarenessGame(0);
-        updateBotInputs(on.game, makeGripAwarenessDeps());
-        assert.deepEqual(on.p.inputs, off.p.inputs, 'gomma nuova: nessuna differenza tra flag on/off, il bot non deve diventare più cauto senza motivo fisico');
-    } finally {
-        delete process.env.F1_BOT_GRIP_AWARENESS;
-    }
+test('updateBotInputs: gomma nuova (tyreWear=0) non è più prudente di un fattore di grip nominale esplicito', () => {
+    const nominal = makeGripAwarenessGame(0);
+    updateBotInputs(nominal.game, makeGripAwarenessDeps());
+    const legacy = makeGripAwarenessGame(0);
+    updateBotInputs(legacy.game, { ...makeGripAwarenessDeps(), corneringCapacity: () => 1, effectiveBrakeMult: () => 1 });
+    assert.deepEqual(nominal.p.inputs, legacy.p.inputs, 'gomma nuova: nessuna differenza rispetto a un fattore di grip nominale esplicito, il bot non deve diventare più cauto senza motivo fisico');
 });
 
 // ---- _botDebug (Priorità 1/3, canale di debug per il banco prova bot): puro
@@ -806,18 +784,14 @@ test('updateBotInputs: gomma nuova (tyreWear=0) a flag acceso non è più pruden
 
 test('_botDebug: throttle/brake/steer coincidono ESATTAMENTE con p.inputs, in ogni scenario', () => {
     for (const tyreWear of [0, 90]) {
-        for (const flag of [false, true]) {
-            if (flag) process.env.F1_BOT_GRIP_AWARENESS = '1'; else delete process.env.F1_BOT_GRIP_AWARENESS;
-            const { game, p } = makeGripAwarenessGame(tyreWear);
-            updateBotInputs(game, makeGripAwarenessDeps());
-            assert.deepEqual(
-                { throttle: p._botDebug.throttle, brake: p._botDebug.brake, steer: p._botDebug.steer },
-                p.inputs,
-                `_botDebug deve rispecchiare p.inputs (tyreWear=${tyreWear}, flag=${flag})`
-            );
-        }
+        const { game, p } = makeGripAwarenessGame(tyreWear);
+        updateBotInputs(game, makeGripAwarenessDeps());
+        assert.deepEqual(
+            { throttle: p._botDebug.throttle, brake: p._botDebug.brake, steer: p._botDebug.steer },
+            p.inputs,
+            `_botDebug deve rispecchiare p.inputs (tyreWear=${tyreWear})`
+        );
     }
-    delete process.env.F1_BOT_GRIP_AWARENESS;
 });
 
 test('_botDebug: stato WAITING_START durante la reazione al via, valori fisici non calcolati => null', () => {
@@ -871,7 +845,9 @@ test('_botDebug: stato CRUISE su rettilineo puro (pieno gas, nessuna curva/traff
     const track = { points, lapLength: 200, roadHalf: 5 };
     const deps = {
         effectiveMaxSpeed: () => 6, handlePitReactionPress: () => {}, io: { to: () => ({ emit: () => {} }) },
-        lobbyId: 'test', wearLapsAtMedium: 5, accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052
+        lobbyId: 'test', wearLapsAtMedium: 5, accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052,
+        corneringCapacity: () => 1,
+        effectiveBrakeMult: () => 1
     };
     const p = {
         x: points[0].x, z: points[0].z, angle: 0, speed: 0, vx: 0, vz: 0,
@@ -894,7 +870,9 @@ test('_botDebug: stato BRAKE_FOR_CORNER quando il bot frena per una curva vicina
     const track = { points: buildConstantCurveTrack(60, 5, 1 / 20), lapLength: 60, roadHalf: 5, pitEntryIndex: 9999, pitPath: [{ x: 0, z: 0 }, { x: 0, z: 0 }] };
     const deps = {
         effectiveMaxSpeed: () => 6, handlePitReactionPress: () => {}, io: { to: () => ({ emit: () => {} }) },
-        lobbyId: 'test', wearLapsAtMedium: 5, accel: 1, brakeMult: 1, turnRateHigh: 0.05
+        lobbyId: 'test', wearLapsAtMedium: 5, accel: 1, brakeMult: 1, turnRateHigh: 0.05,
+        corneringCapacity: () => 1,
+        effectiveBrakeMult: () => 1
     };
     const p = {
         x: 0, z: 0, angle: 0, speed: 6, vx: 0, vz: 0,

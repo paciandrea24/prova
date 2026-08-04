@@ -909,13 +909,11 @@ function updateBotInputs(game, deps) {
         const nearPitEntry = p.botHeadingToPits &&
             idxUntilPitEntry <= metersToSamples(BOT_PIT_APPROACH_M, track);
 
-        // Grip-awareness (Rif. docs/superpowers/specs/2026-07-28-f1-bot-grip-awareness-design.md):
-        // a flag spento (default) resta legacyBrakeDecel, byte-identico a
-        // oggi. effectiveBrakeMult è l'UNICA fonte della fisica di frenata
-        // qui: nessuna formula di decelerazione-da-usura propria.
-        const brakeDecel = isBotGripAwarenessActive()
-            ? accel * effectiveBrakeMult(p, isQuali)
-            : legacyBrakeDecel;
+        // Grip-awareness ora permanente (Fase 1 — cervello di guida
+        // unificato): niente più flag, brakeDecel riflette sempre l'usura
+        // reale della gomma. legacyBrakeDecel resta solo per otherCarTargetSpeed
+        // (stima del ritmo dell'auto avanti, esplicitamente fuori scope qui).
+        const brakeDecel = accel * effectiveBrakeMult(p, isQuali);
 
         // Canale di debug (Rif. docs/superpowers/specs/2026-07-28-f1-bot-testbench-debug-design.md):
         // puro snapshot di valori GIÀ calcolati più sotto, popolato dal ramo
@@ -993,12 +991,11 @@ function updateBotInputs(game, deps) {
             // frenata del 3%) FRENA per tornare al proprio target, buttando
             // via il vantaggio invece di sfruttarlo per rimontare.
             const maxSpeed = effectiveMaxSpeed(p, isQuali) * (p.inSlipstream ? (1 + (slipstreamMaxBoost || 0)) : 1);
-            // Grip-awareness: a flag spento resta 1 (nessun effetto) — Rif.
-            // Task 3 di questo piano per la rimozione del flag (non ancora
-            // fatta qui: questo task riguarda solo il lookahead).
-            const gripCapacityFactor = isBotGripAwarenessActive()
-                ? Math.pow(corneringCapacity(p, isQuali, maxSpeed), BOT_GRIP_CAPACITY_EXPONENT)
-                : 1;
+            // Grip-awareness ora permanente (Fase 1 — cervello di guida
+            // unificato): niente più flag, il bot conosce sempre il proprio
+            // grip reale. corneringCapacity è un moltiplicatore RELATIVO alla
+            // capacità laterale (non un grip assoluto) — vedi BOT_GRIP_CAPACITY_EXPONENT.
+            const gripCapacityFactor = Math.pow(corneringCapacity(p, isQuali, maxSpeed), BOT_GRIP_CAPACITY_EXPONENT);
             debugMaxSpeed = maxSpeed;
             debugGripCapacityFactor = gripCapacityFactor;
 
@@ -1068,9 +1065,7 @@ function updateBotInputs(game, deps) {
             // sfruttarlo.
             const maxSpeed = effectiveMaxSpeed(p, isQuali) * (p.inSlipstream ? (1 + (slipstreamMaxBoost || 0)) : 1);
             // Grip-awareness: stessa logica del ramo racing-line sopra.
-            const gripCapacityFactor = isBotGripAwarenessActive()
-                ? Math.pow(corneringCapacity(p, isQuali, maxSpeed), BOT_GRIP_CAPACITY_EXPONENT)
-                : 1;
+            const gripCapacityFactor = Math.pow(corneringCapacity(p, isQuali, maxSpeed), BOT_GRIP_CAPACITY_EXPONENT);
             debugMaxSpeed = maxSpeed;
             debugGripCapacityFactor = gripCapacityFactor;
             const speedMs  = Math.max(5, botSpeedMs(p.speed));   // floor: niente lookahead quasi-zero da fermi (es. alla partenza)

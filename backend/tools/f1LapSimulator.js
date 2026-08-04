@@ -50,6 +50,10 @@ function simulateLap(track, opts) {
         accel: physics.ACCEL,
         brakeMult: physics.BRAKE_MULT,
         turnRateHigh: physics.TURN_SPEED_HIGH,
+        // Grip-awareness ora permanente in updateBotInputs (Fase 1): queste
+        // due dipendenze non sono più opzionali, servono sempre.
+        effectiveBrakeMult: physics.effectiveBrakeMult,
+        corneringCapacity: physics.corneringCapacity,
         tuning: opts.tuning
     };
 
