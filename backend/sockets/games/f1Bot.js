@@ -61,6 +61,18 @@ function normalizeAngle(a) {
     return a;
 }
 
+// Distanza minima da un punto (x,z) a un rettangolo allineato agli assi
+// {xMin,xMax,zMin,zMax} — 0 se il punto è dentro. Usata per scegliere quale
+// waypoint del percorso box (pitPath[0] o pitPath[1]) sta effettivamente più
+// vicino al riquadro-trigger, invece di assumere sempre lo stesso (Rif. Task
+// 8, bug new-monza vs prova/baku/monte-rosso: il waypoint "vicino al box"
+// non è lo stesso indice su tutte le piste).
+function distToRectXZ(point, rect) {
+    const dx = Math.max(rect.xMin - point.x, 0, point.x - rect.xMax);
+    const dz = Math.max(rect.zMin - point.z, 0, point.z - rect.zMax);
+    return Math.hypot(dx, dz);
+}
+
 // Sterzo (-1..1) per puntare dalla posizione attuale (px,pz), con heading
 // `angle` (stessa convenzione della fisica: vettore = (sin(angle),
 // cos(angle))), verso il punto (tx,tz). `gain` opzionale (default
@@ -404,6 +416,15 @@ const BOT_PIT_THRESHOLD_MIN   = 60,   BOT_PIT_THRESHOLD_MAX   = 80;     // % usu
 // simulazione: 200m dava una correzione troppo stretta (mancava spesso il
 // riquadro d'ingresso, ~40% delle volte), 300m converge in modo affidabile.
 const BOT_PIT_APPROACH_M = 300;
+// Quanti metri di anticipo servono, PER METRO di scostamento laterale tra
+// linea principale e corsia box, per convergere in tempo dentro il
+// rettangolo-trigger — misurato: new-monza (scostamento minore) funzionava
+// già con l'anticipo fisso precedente, monte-rosso/prova (scostamento
+// maggiore) no (Rif. backend/tools/f1PitEntryCheck.js, Task 7). Candidato
+// iniziale, da verificare/aumentare con quello strumento su tutte le piste
+// prima di considerare questo task chiuso — non un valore derivato
+// matematicamente, una misura empirica come BOT_ADAPTIVE_LOOKAHEAD_K.
+const PIT_CONVERGENCE_LEAD_FACTOR = 5;
 // Sotto questa distanza (metri) da pitPath[0] si passa dal bersaglio
 // sfumato all'inseguimento diretto di pitPath[1] (dentro il vero riquadro-
 // trigger, verificato) — evita di "arrivare" su pitPath[0] e poi tornare
@@ -909,32 +930,86 @@ function updateBotInputs(game, deps) {
             // pitPath[0], il bersaglio è sfumato dal punto di inseguimento
             // NORMALE sulla pista (stesso calcolo della guida normale sotto)
             // verso pitPath[0] — nessun taglio, solo un cambio di corsia
-            // graduale verso il bordo. Una volta arrivati (distanza < 25m),
-            // si passa a inseguire pitPath[1] (verificato dentro il vero
-            // riquadro-trigger) per attraversarlo con sicurezza, invece di
-            // fermarsi su pitPath[0] che gli sta appena fuori.
-            const distToPitPath0 = Math.hypot(p.x - track.pitPath[0].x, p.z - track.pitPath[0].z);
-            if (distToPitPath0 < BOT_PIT_LANE_FOLLOW_M && track.pitPath[1]) {
+            // graduale verso il bordo. Una volta DENTRO il vero
+            // riquadro-trigger, si passa a inseguire pitPath[1] per
+            // attraversarlo con sicurezza invece di fermarsi su pitPath[0].
+            //
+            // Investigazione Task 8 (f1PitEntryCheck.js su prova/baku dopo il
+            // primo fix di questo task): scattare su pitPath[1] a raggio fisso
+            // (distanza da pitPath[0], indipendente dal box) presume che il
+            // segmento pitPath[0]->pitPath[1] resti dentro il riquadro-trigger
+            // per tutta la sua lunghezza — vero per new-monza/monte-rosso
+            // (misurato: z quasi costante lungo il segmento, dentro il range
+            // del box), falso per prova/baku, dove il segmento esce dal box
+            // sull'asse trasversale (tracciato con backend/tools/f1PitEntryCheck.js:
+            // il bot arrivava a ~15m da pitPath[0], poi pitPath[1] lo tirava
+            // via prima di attraversare). Il ramo `else` sotto (cubica, Task 8)
+            // converge già DA SOLO a pitPath[0] quando t=1 — un ramo
+            // intermedio "punta dritto a pitPath[0] sotto 25m" è stato provato
+            // e scartato: ridondante con quella convergenza ma senza il suo
+            // lookahead, produceva un ingresso molto più lento/irregolare su
+            // new-monza (pitPath[0] lì sta ~37m fuori dal box, quindi punterebbe
+            // dritto verso un bersaglio che non è nemmeno dentro il riquadro).
+            // Restare sempre sul ramo cubico finché non si è FISICAMENTE nel
+            // riquadro-trigger, e solo allora passare a inseguire pitPath[1],
+            // risolveva prova/baku/monte-rosso ma REGREDIVA new-monza: lì è
+            // pitPath[0] (non pitPath[1]) a stare ~37m fuori dal box, quindi
+            // convergere su pitPath[0] fa orbitare il bot attorno a un punto
+            // che non è mai dentro il riquadro (tracciato con
+            // backend/tools/f1PitEntryCheck.js + diagnostica per-tick:
+            // arrivava a 1.45m da pitPath[0] senza mai essere dentro il box,
+            // poi girava attorno). La regola che vale per TUTTE e 4 le piste,
+            // derivata dalla geometria reale invece che ipotizzata: l'ancora
+            // del blend cubico è QUALE dei due waypoint del percorso box
+            // (pitPath[0] o pitPath[1]) sta geometricamente più vicino al
+            // riquadro-trigger — per prova/baku/monte-rosso è pitPath[0]
+            // (dentro il box), per new-monza è pitPath[1] (anch'esso dentro,
+            // pitPath[0] lì è quello fuori). Una volta DENTRO il riquadro, si
+            // passa comunque a inseguire pitPath[1] per proseguire nella
+            // corsia box.
+            const trig = track.pitEntryTrigger;
+            const insideTrigger = !!trig && p.x >= trig.xMin && p.x <= trig.xMax && p.z >= trig.zMin && p.z <= trig.zMax;
+            if (insideTrigger && track.pitPath[1]) {
                 const wp = track.pitPath[1];
                 steer = steerToward(p.x, p.z, p.angle, wp.x, wp.z);
                 debugTarget = { x: wp.x, z: wp.z };
             } else {
+                const laneSource = track.racingLine || track.points;
                 const approachSamples = metersToSamples(BOT_PIT_APPROACH_M, track);
-                const tLinear = 1 - idxUntilPitEntry / approachSamples;   // 0 appena entrati nella finestra, 1 al distacco
+
+                const anchor = (trig && track.pitPath[1] && distToRectXZ(track.pitPath[1], trig) < distToRectXZ(track.pitPath[0], trig))
+                    ? track.pitPath[1]
+                    : track.pitPath[0];
+
+                // Distanza laterale reale tra la linea principale e l'ancora
+                // (fissa per questa pista, non per-tick): quanto più è
+                // grande, tanto più anticipo serve per convergere in tempo —
+                // non un'unica finestra buona per tutte le piste (Rif. bug
+                // monte-rosso/prova, Task 7/8 di questo piano).
+                const mainAtEntry = laneSource[track.pitEntryIndex] || laneSource[laneSource.length - 1];
+                const splitGapM = Math.hypot(mainAtEntry.x - anchor.x, mainAtEntry.z - anchor.z);
+                const convergenceLeadSamples = metersToSamples(Math.max(BOT_PIT_LANE_FOLLOW_M, splitGapM * PIT_CONVERGENCE_LEAD_FACTOR), track);
+                const denomSamples = Math.max(1, approachSamples - convergenceLeadSamples);
+                // Converge del tutto (t=1) con convergenceLeadSamples di
+                // anticipo PRIMA del vero punto d'ingresso, non esattamente
+                // lì come prima — dà tempo all'auto di essere già vicina
+                // all'ancora quando trackIndex raggiunge pitEntryIndex.
+                const tLinear = idxUntilPitEntry <= convergenceLeadSamples
+                    ? 1
+                    : Math.max(0, 1 - (idxUntilPitEntry - convergenceLeadSamples) / denomSamples);
                 // Cubica invece di lineare: per la maggior parte della
                 // finestra il bersaglio resta quasi quello della guida
                 // normale (segue la curva reale), lo spostamento vero verso
-                // pitPath[0] si concentra negli ultimi metri — altrimenti
-                // (peso lineare) si taglia l'ultima curva di Monza prima
-                // ancora di essere vicini ai box (segnalato dall'utente).
+                // l'ancora si concentra negli ultimi metri — altrimenti (peso
+                // lineare) si taglia l'ultima curva prima ancora di essere
+                // vicini ai box (segnalato dall'utente su New Monza).
                 const t = tLinear * tLinear * tLinear;
-                const laneSource   = track.racingLine || track.points;
                 const speedMs      = Math.max(5, botSpeedMs(p.speed));
                 const lookM        = Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * BOT_LOOKAHEAD_TIME_S);
                 const laneTargetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, metersToSamples(lookM, track));
                 const laneTarget   = laneSource[laneTargetIdx];
-                const targetX = laneTarget.x * (1 - t) + track.pitPath[0].x * t;
-                const targetZ = laneTarget.z * (1 - t) + track.pitPath[0].z * t;
+                const targetX = laneTarget.x * (1 - t) + anchor.x * t;
+                const targetZ = laneTarget.z * (1 - t) + anchor.z * t;
                 steer = steerToward(p.x, p.z, p.angle, targetX, targetZ);
                 debugTarget = { x: targetX, z: targetZ };
             }
