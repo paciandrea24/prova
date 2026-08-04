@@ -343,12 +343,18 @@ function parseArgs(argv) {
     const trackIds = [];
     let hops = 30;
     let seedGeometric = false;
-    let seedMultiResolution = false;
+    // Default true (Fase 1 — Rif. audit shape-prior 2026-07-29, esito
+    // adottato): partire dalla forma fuori-dentro-fuori geometrica ad ogni
+    // risoluzione riduce il rischio di un ottimo locale mediocre rispetto a
+    // partire da zero ovunque. `--seed-multi-resolution=0` per tornare
+    // eccezionalmente al comportamento precedente (solo per confronto).
+    let seedMultiResolution = true;
     let outSuffix = "";
     for (const arg of argv) {
         if (arg.startsWith("--hops=")) hops = Number(arg.slice("--hops=".length));
         else if (arg === "--seed-geometric") seedGeometric = true;
         else if (arg === "--seed-multi-resolution") seedMultiResolution = true;
+        else if (arg === "--seed-multi-resolution=0") seedMultiResolution = false;
         else if (arg.startsWith("--out-suffix=")) outSuffix = arg.slice("--out-suffix=".length);
         else trackIds.push(arg);
     }
