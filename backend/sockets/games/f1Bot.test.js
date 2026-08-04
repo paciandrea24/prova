@@ -629,13 +629,12 @@ test('updateBotInputs: ramo racing-line usa il lookahead adattivo alla curvatura
     assert.notEqual(p._botDebug.target.x, points[legacyIdx].x, 'il target deve venire dal lookahead adattivo, non dalla formula a tempo fisso legacy');
 });
 
-test('updateBotInputs: F1_BOT_ADAPTIVE_LOOKAHEAD spento => lookahead identico a prima (ramo geometrico, senza racing line)', () => {
-    const points = buildConstantCurveTrack(300, 50, 0.05);
+test('updateBotInputs: ramo geometrico usa il lookahead adattivo alla curvatura (non più il tempo fisso legacy)', () => {
+    const points = buildConstantCurveTrack(300, 50, 0.1);
     const track = { points, lapLength: 300, roadHalf: 5 };
     const deps = {
-        effectiveMaxSpeed: () => 6,
-        handlePitReactionPress: () => {}, io: { to: () => ({ emit: () => {} }) }, lobbyId: 'test',
-        wearLapsAtMedium: 5, accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052,
+        effectiveMaxSpeed: () => 6, handlePitReactionPress: () => {}, io: { to: () => ({ emit: () => {} }) },
+        lobbyId: 'test', wearLapsAtMedium: 5, accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052,
         tuning: { apexMaxFraction: 0 }
     };
     const p = {
@@ -646,49 +645,14 @@ test('updateBotInputs: F1_BOT_ADAPTIVE_LOOKAHEAD spento => lookahead identico a 
         botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false
     };
 
-    delete process.env.F1_BOT_ADAPTIVE_LOOKAHEAD;
     updateBotInputs({ track, phase: 'qualifying', players: { A: p } }, deps);
 
     const speedMs = Math.max(5, Math.abs(p.speed) * 55 / 3.6);
-    const lookM = Math.max(10, speedMs * 0.6);   // DEFAULT_TUNING.lookaheadTimeS === BOT_LOOKAHEAD_TIME_S
-    const lookSamples = Math.max(1, Math.round(lookM * points.length / track.lapLength));
-    const expectedIdx = lookaheadIndex(points.length, 100, lookSamples);
+    const legacyLookM = Math.max(10, speedMs * 0.6);   // DEFAULT_TUNING.lookaheadTimeS
+    const legacyLookSamples = Math.max(1, Math.round(legacyLookM * points.length / track.lapLength));
+    const legacyIdx = lookaheadIndex(points.length, 100, legacyLookSamples);
 
-    assert.equal(p._botDebug.target.x, points[expectedIdx].x);
-    assert.equal(p._botDebug.target.z, points[expectedIdx].z);
-});
-
-test('updateBotInputs: F1_BOT_ADAPTIVE_LOOKAHEAD acceso => target diverso da flag spento su curva stretta (ramo geometrico)', () => {
-    const points = buildConstantCurveTrack(300, 50, 0.1);
-    const track = { points, lapLength: 300, roadHalf: 5 };
-    const deps = {
-        effectiveMaxSpeed: () => 6, handlePitReactionPress: () => {}, io: { to: () => ({ emit: () => {} }) },
-        lobbyId: 'test', wearLapsAtMedium: 5, accel: 0.186, brakeMult: 2.17, turnRateHigh: 0.052,
-        tuning: { apexMaxFraction: 0 }
-    };
-    function makePlayer() {
-        return {
-            x: points[100].x, z: points[100].z, angle: 0, speed: 3, vx: 0, vz: 0,
-            inputs: { throttle: 0, brake: 0, steer: 0 }, finished: false, lap: 0, botLapSeen: 0,
-            trackIndex: 100, tyreWear: 0, compound: 'medium', pitting: false, pitAutoState: null, pitPhase: null,
-            isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
-            botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false
-        };
-    }
-
-    const pOff = makePlayer();
-    delete process.env.F1_BOT_ADAPTIVE_LOOKAHEAD;
-    updateBotInputs({ track, phase: 'qualifying', players: { A: pOff } }, deps);
-
-    const pOn = makePlayer();
-    process.env.F1_BOT_ADAPTIVE_LOOKAHEAD = '1';
-    try {
-        updateBotInputs({ track, phase: 'qualifying', players: { A: pOn } }, deps);
-    } finally {
-        delete process.env.F1_BOT_ADAPTIVE_LOOKAHEAD;
-    }
-
-    assert.notEqual(pOn._botDebug.target.x, pOff._botDebug.target.x);
+    assert.notEqual(p._botDebug.target.x, points[legacyIdx].x, 'il target deve venire dal lookahead adattivo, non dalla formula a tempo fisso legacy');
 });
 
 test('updateBotInputs: durante la reazione al via il bot resta fermo (nessun input), poi guida normalmente', () => {

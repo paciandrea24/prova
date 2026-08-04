@@ -1074,9 +1074,11 @@ function updateBotInputs(game, deps) {
             debugMaxSpeed = maxSpeed;
             debugGripCapacityFactor = gripCapacityFactor;
             const speedMs  = Math.max(5, botSpeedMs(p.speed));   // floor: niente lookahead quasi-zero da fermi (es. alla partenza)
-            const lookM    = isAdaptiveLookaheadActive()
-                ? adaptiveLookaheadMeters(track.points, p.trackIndex || 0, track, tuning.adaptiveLookaheadK, speedMs)
-                : Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * tuning.lookaheadTimeS);
+            // Lookahead adattivo ora permanente anche qui (Fase 1 — cervello
+            // di guida unificato): niente più flag. Non estratto in
+            // computeSoloRacingLineInputs — l'ottimizzatore offline non
+            // simula mai questo ramo (nessun file -raceline.json prodotto).
+            const lookM    = adaptiveLookaheadMeters(track.points, p.trackIndex || 0, track, tuning.adaptiveLookaheadK, speedMs);
             const lookSamples  = metersToSamples(lookM, track);
             const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
             const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
