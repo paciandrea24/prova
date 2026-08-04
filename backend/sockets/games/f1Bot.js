@@ -54,16 +54,6 @@ const BOT_CORNER_SPEED_MARGIN = 0.99;
 // docs/superpowers/specs/2026-07-28-f1-bot-grip-awareness-design.md.
 const BOT_GRIP_CAPACITY_EXPONENT = 1;
 
-// Flag dedicato, letto SOLO qui in f1Bot.js: la fisica reale
-// (VehiclePhysics/CorneringGripModel/BrakingModel) resta invariata
-// indipendentemente da questo flag, che riguarda solo se il BOT consulta
-// i loro fattori già esistenti per calcolare i propri input — esattamente
-// come un umano non ha mai bisogno di un flag per "sapere" quanto frena
-// la propria auto. Default OFF: nessuna promozione a default-on senza
-// playtest esplicito (stesso pattern di isCorneringGripModelActive).
-function isBotGripAwarenessActive() {
-    return process.env.F1_BOT_GRIP_AWARENESS === '1';
-}
 
 function normalizeAngle(a) {
     while (a > Math.PI) a -= 2 * Math.PI;
@@ -555,22 +545,6 @@ const BOT_ADAPTIVE_LOOKAHEAD_K     = 0.1;
 // lookaheadTimeS ufficiale di New Monza (~90 m/s * 0.98s ~= 88m).
 const BOT_ADAPTIVE_LOOKAHEAD_MAX_M = 120;
 
-function isAdaptiveLookaheadActive() {
-    return process.env.F1_BOT_ADAPTIVE_LOOKAHEAD === '1';
-}
-
-// Hook diagnostico SOLO per backend/tools/f1AdaptiveLookaheadCheck.js (Task 4,
-// confronto A/B): permette di sostituire l'INTERA formula di
-// adaptiveLookaheadMeters con una variante alternativa, per guidare un giro
-// simulato reale con quella variante senza duplicare updateBotInputs. Mai
-// letto dal call site di produzione (f1GameSocket.js non lo tocca mai, non
-// lo importa nemmeno). `null` di default: adaptiveLookaheadMeters resta
-// byte-identica alla formula A in ogni altro contesto (partite reali, banco
-// prova, test esistenti).
-let _lookaheadFormulaOverride = null;
-function setLookaheadFormulaOverride(fn) {
-    _lookaheadFormulaOverride = fn;
-}
 
 // Floor dinamico L_speed(v) = max(5, v_ms * BOT_ADAPTIVE_LOOKAHEAD_T_MIN),
 // SOLO sul ramo racing-line (Rif. audit diagnostico round 1-4, sessione
@@ -597,9 +571,6 @@ const BOT_ADAPTIVE_LOOKAHEAD_T_MIN = 0.3;
 // dinamico del ramo racing-line sotto — il ramo geometrico lo ignora, resta
 // esattamente la formula originaria (floor fisso).
 function adaptiveLookaheadMeters(laneSource, trackIndex, track, k, speedMs) {
-    if (_lookaheadFormulaOverride) {
-        return _lookaheadFormulaOverride(laneSource, trackIndex, track, k, speedMs);
-    }
     const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
     const metersPerSample = track.lapLength / track.points.length;
     const localArcM = localSamples * metersPerSample;
@@ -1193,8 +1164,8 @@ module.exports = {
     BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS,
     normalizeAngle, steerToward, lookaheadIndex, apexOffset, windowRadius, cornerApexNear, cornerTargetSpeed, overtakeOffset,
     nearestAheadPlayer, otherCarTargetSpeed, pickPostPitCompound, pickBotColors, estimateFinishTime,
-    createBots, updateBotInputs, shouldBotRepair, isBotGripAwarenessActive,
+    createBots, updateBotInputs, shouldBotRepair,
     BOT_CURVATURE_LOCAL_M, BOT_APEX_MAX_FRACTION, trajectoryDiagnostics,
-    adaptiveLookaheadMeters, isAdaptiveLookaheadActive, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
-    BOT_ADAPTIVE_LOOKAHEAD_T_MIN, setLookaheadFormulaOverride, computeSoloRacingLineInputs
+    adaptiveLookaheadMeters, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
+    BOT_ADAPTIVE_LOOKAHEAD_T_MIN, computeSoloRacingLineInputs
 };

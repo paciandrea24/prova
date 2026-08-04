@@ -5,9 +5,9 @@ const {
     PALETTE, normalizeAngle, steerToward, lookaheadIndex, apexOffset,
     cornerTargetSpeed, windowRadius, cornerApexNear, overtakeOffset, nearestAheadPlayer,
     pickPostPitCompound, pickBotColors, estimateFinishTime,
-    updateBotInputs, DEFAULT_TUNING, shouldBotRepair, isBotGripAwarenessActive, trajectoryDiagnostics,
-    adaptiveLookaheadMeters, isAdaptiveLookaheadActive, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
-    setLookaheadFormulaOverride, computeSoloRacingLineInputs
+    updateBotInputs, DEFAULT_TUNING, shouldBotRepair, trajectoryDiagnostics,
+    adaptiveLookaheadMeters, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
+    computeSoloRacingLineInputs
 } = require('./f1Bot.js');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 
@@ -228,59 +228,6 @@ test('adaptiveLookaheadMeters: e_target molto piccolo => clampato al pavimento m
     assert.equal(L, BOT_LOOKAHEAD_MIN_M);
 });
 
-test('adaptiveLookaheadMeters: setLookaheadFormulaOverride(null) => identico alla formula A', () => {
-    // Stessa curva/k del test "curva a raggio noto" sopra — riusa lo stesso
-    // caso già verificato per la formula A, qui per verificare che
-    // l'override esplicitamente resettato a null (non solo mai toccato)
-    // dia lo stesso risultato — Rif. review hook diagnostico Task 4.
-    const points = buildConstantCurveTrack(300, 50, 0.05);
-    const track = { points, lapLength: 300, roadHalf: 5 };
-    const k = 1;
-    setLookaheadFormulaOverride(null);
-    const L = adaptiveLookaheadMeters(points, 100, track, k);
-    const expectedApprox = Math.sqrt(2 * 20 * k * track.roadHalf);
-    assert.ok(Math.abs(L - expectedApprox) < 1, `atteso ~${expectedApprox.toFixed(2)} (formula A), ottenuto ${L.toFixed(2)}`);
-});
-
-test('adaptiveLookaheadMeters: override attivo => sostituisce la formula A in modo deterministico, riceve tutti gli argomenti', () => {
-    const points = buildConstantCurveTrack(300, 50, 0.05);
-    const track = { points, lapLength: 300, roadHalf: 5 };
-    let received = null;
-    try {
-        setLookaheadFormulaOverride((laneSource, trackIndex, trk, k, speedMs) => {
-            received = { laneSource, trackIndex, trk, k, speedMs };
-            return 42; // valore sentinella, impossibile da produrre con la formula A su questo input
-        });
-        const L = adaptiveLookaheadMeters(points, 100, track, 0.05, 33);
-        assert.equal(L, 42, 'il valore restituito deve essere ESATTAMENTE quello dell\'override, nessun post-processing di adaptiveLookaheadMeters sopra');
-        assert.equal(received.laneSource, points);
-        assert.equal(received.trackIndex, 100);
-        assert.equal(received.trk, track);
-        assert.equal(received.k, 0.05);
-        assert.equal(received.speedMs, 33, 'speedMs deve arrivare intatto all\'override');
-    } finally {
-        setLookaheadFormulaOverride(null);
-    }
-});
-
-test('adaptiveLookaheadMeters: reset dell\'override (setLookaheadFormulaOverride(null)) ripristina la formula A', () => {
-    const points = buildConstantCurveTrack(300, 50, 0.05);
-    const track = { points, lapLength: 300, roadHalf: 5 };
-    const k = 1;
-    let L;
-    try {
-        setLookaheadFormulaOverride(() => 999); // "sporca" il risultato, diverso da qualunque valore di A qui
-        L = adaptiveLookaheadMeters(points, 100, track, k);
-        assert.equal(L, 999, 'override deve essere davvero attivo prima del reset');
-    } finally {
-        setLookaheadFormulaOverride(null);
-    }
-    const afterReset = adaptiveLookaheadMeters(points, 100, track, k);
-    const expectedApprox = Math.sqrt(2 * 20 * k * track.roadHalf);
-    assert.notEqual(afterReset, 999, 'dopo il reset non deve più restituire il valore sporcato dall\'override');
-    assert.ok(Math.abs(afterReset - expectedApprox) < 1, `dopo il reset atteso ~${expectedApprox.toFixed(2)} (formula A), ottenuto ${afterReset.toFixed(2)}`);
-});
-
 test('computeSoloRacingLineInputs: su rettilineo punta dritto e non frena (targetSpeed satura a maxSpeed)', () => {
     const points = buildConstantCurveTrack(300, 200, 0);   // tutto dritto
     const track = { points, racingLine: points, lapLength: 300, roadHalf: 5 };
@@ -440,26 +387,6 @@ test('cornerTargetSpeed: gripCapacityFactor > 1 => velocità di curva più alta 
     const boosted = cornerTargetSpeed(track, 5, 40, 4, 1, 6, 6, 1, 0.05, 1, 1.15);
     assert.ok(boosted > full, `atteso target più alto con capacità aumentata: full=${full}, boosted=${boosted}`);
     assert.ok(boosted <= 6, `mai oltre maxSpeed=6, ottenuto ${boosted}`);
-});
-
-test('isBotGripAwarenessActive: spento di default', () => {
-    delete process.env.F1_BOT_GRIP_AWARENESS;
-    assert.equal(isBotGripAwarenessActive(), false);
-});
-
-test('isBotGripAwarenessActive: attivo solo con "1" esplicito', () => {
-    process.env.F1_BOT_GRIP_AWARENESS = '1';
-    try {
-        assert.equal(isBotGripAwarenessActive(), true);
-    } finally {
-        delete process.env.F1_BOT_GRIP_AWARENESS;
-    }
-    process.env.F1_BOT_GRIP_AWARENESS = 'true';   // non "1" esatto -> resta spento
-    try {
-        assert.equal(isBotGripAwarenessActive(), false, 'solo "1" esatto attiva il flag, stesso pattern di F1_CORNERING_GRIP_MODEL');
-    } finally {
-        delete process.env.F1_BOT_GRIP_AWARENESS;
-    }
 });
 
 test('pickPostPitCompound: pochi giri restanti => soft', () => {
