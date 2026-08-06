@@ -192,7 +192,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     TrackMeshBuilder.buildCurbs(scene, trackPts, ROAD_HALF, CURB_W);
     TrackMeshBuilder.buildBarriers(scene, trackPts, BARRIER_D);
     TrackMeshBuilder.buildStartLine(scene, trackPts, ROAD_HALF);
-    TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex);
+    // drawBoxMarker=false: il riquadro giallo unico su boxIndex era il solo
+    // indicatore visivo quando il box era un punto condiviso da tutti; ora
+    // ogni pilota ha il proprio box 3D colorato (vedi loadPlayerPitBox,
+    // caricato pigramente per gara), che ne prende il posto in gara —
+    // resta true di default per l'editor tracciato (track-editor.js).
+    TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex, false);
 
     // ====================================================
     // AUDIO MOTORE — un solo loop di 4s di un vero motore d'auto,
@@ -339,42 +344,76 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // ====================================================
-    // EFFETTO SCIA — linee tratteggiate dietro l'auto, visibili solo
-    // quando il server segnala il bonus di velocità in scia (f1StateUpdate
-    // → slipstream), SOLO sulla propria auto (richiesta esplicita
-    // dell'utente). L'effetto di "scorrimento" è dato da dashOffset
-    // animato ad ogni frame (THREE.LineDashedMaterial), non da geometria
-    // che si muove — più leggero e senza bisogno di logica di reset.
-    // Coordinate nello stesso spazio locale non scalato del group esterno
-    // (vedi wheels sintetiche sopra, z negativo = retro auto: ±2.7 di
-    // larghezza, ±3.6 di lunghezza sono l'ingombro reale del modello).
+    // EFFETTO SCIA — piccoli voxel che simulano il vento dietro l'auto
+    // (prima erano linee tratteggiate, sostituite su richiesta esplicita
+    // dell'utente con qualcosa in stile "boxy" coerente col resto degli
+    // asset). Visibile solo quando il server segnala il bonus di velocità
+    // in scia (f1StateUpdate → slipstream), SOLO sulla propria auto (come
+    // l'effetto precedente). Pool fisso di cubetti riciclati: ognuno nasce
+    // appena dietro al paraurti, deriva all'indietro con un po' di
+    // turbolenza laterale/verticale, si rimpicciolisce fino a sparire, poi
+    // rinasce — nessuna vera trasparenza per-istanza (non supportata dai
+    // materiali base di InstancedMesh in questa versione di Three.js), la
+    // dissolvenza è resa restringendo la scala. Un'unica InstancedMesh =
+    // una sola draw call per tutti i cubetti, economico. Coordinate nello
+    // stesso spazio locale non scalato del group esterno (vedi wheels
+    // sintetiche sopra, z negativo = retro auto).
     // ====================================================
-    const SLIPSTREAM_STREAK_LENGTH = 2.4;
-    const SLIPSTREAM_STREAK_Z0 = -4.0;   // appena dietro il paraurti posteriore
-    const SLIPSTREAM_DASH_SPEED = 0.045;
-    const SLIPSTREAM_STREAK_OFFSETS = [
-        { x: -1.6, y: 0.9 }, { x: 1.6, y: 0.9 },
-        { x: -0.8, y: 1.3 }, { x: 0.8, y: 1.3 },
-        { x: -2.2, y: 0.6 }, { x: 2.2, y: 0.6 }
-    ];
-    const slipstreamMaterial = new THREE.LineDashedMaterial({
-        color: 0xbfe8ff, transparent: true, opacity: 0.65,
-        dashSize: 0.5, gapSize: 0.35
+    const SLIPSTREAM_VOXEL_COUNT = 22;
+    const SLIPSTREAM_VOXEL_SIZE = 0.16;
+    const SLIPSTREAM_SPAWN_Z = -3.9;          // appena dietro il paraurti posteriore
+    const SLIPSTREAM_SPAWN_SPREAD_X = 1.1;    // mezza larghezza di spawn
+    const SLIPSTREAM_SPAWN_SPREAD_Y = 0.5;
+    const SLIPSTREAM_SPAWN_CENTER_Y = 0.7;
+    const SLIPSTREAM_DRIFT_Z = 0.09;          // velocità all'indietro, per frame
+    const SLIPSTREAM_TURBULENCE = 0.012;      // scarto laterale/verticale casuale, per frame
+    const SLIPSTREAM_LIFE_FRAMES = 55;        // durata di un cubetto prima di rinascere
+
+    const slipstreamVoxelMaterial = new THREE.MeshBasicMaterial({
+        color: 0xdfe3e6, transparent: true, opacity: 0.55
     });
+    const slipstreamVoxelGeometry = new THREE.BoxGeometry(1, 1, 1);
+    const _slipstreamDummy = new THREE.Object3D();
+
+    function spawnSlipstreamVoxel(state, i) {
+        state.x[i] = (Math.random() - 0.5) * SLIPSTREAM_SPAWN_SPREAD_X * 2;
+        state.y[i] = SLIPSTREAM_SPAWN_CENTER_Y + (Math.random() - 0.5) * SLIPSTREAM_SPAWN_SPREAD_Y * 2;
+        state.z[i] = SLIPSTREAM_SPAWN_Z - Math.random() * 1.5;   // sfalsati lungo la scia, non tutti insieme
+        state.age[i] = Math.random() * SLIPSTREAM_LIFE_FRAMES;   // sfalsati anche nel tempo di vita
+        state.baseScale[i] = 0.6 + Math.random() * 0.7;
+    }
 
     function buildSlipstreamEffect() {
-        const group = new THREE.Group();
-        SLIPSTREAM_STREAK_OFFSETS.forEach(o => {
-            const geo = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(o.x, o.y, SLIPSTREAM_STREAK_Z0),
-                new THREE.Vector3(o.x, o.y, SLIPSTREAM_STREAK_Z0 - SLIPSTREAM_STREAK_LENGTH)
-            ]);
-            const line = new THREE.Line(geo, slipstreamMaterial);
-            line.computeLineDistances();
-            group.add(line);
-        });
-        group.visible = false;
-        return group;
+        const mesh = new THREE.InstancedMesh(slipstreamVoxelGeometry, slipstreamVoxelMaterial, SLIPSTREAM_VOXEL_COUNT);
+        mesh.visible = false;
+        const state = { x: [], y: [], z: [], age: [], baseScale: [] };
+        for (let i = 0; i < SLIPSTREAM_VOXEL_COUNT; i++) spawnSlipstreamVoxel(state, i);
+        mesh.userData.slipstreamState = state;
+        return mesh;
+    }
+
+    function updateSlipstreamVoxels(mesh) {
+        const state = mesh.userData.slipstreamState;
+        for (let i = 0; i < SLIPSTREAM_VOXEL_COUNT; i++) {
+            state.age[i]++;
+            if (state.age[i] >= SLIPSTREAM_LIFE_FRAMES) {
+                spawnSlipstreamVoxel(state, i);
+            } else {
+                state.z[i] -= SLIPSTREAM_DRIFT_Z;
+                state.x[i] += (Math.random() - 0.5) * SLIPSTREAM_TURBULENCE;
+                state.y[i] += (Math.random() - 0.5) * SLIPSTREAM_TURBULENCE;
+            }
+            const lifeT = state.age[i] / SLIPSTREAM_LIFE_FRAMES;   // 0 appena nato -> 1 a fine vita
+            // Cresce appena nato, si restringe verso la fine (dissolvenza via scala,
+            // vedi commento sopra sul perché niente vera trasparenza per-istanza).
+            const fade = lifeT < 0.15 ? (lifeT / 0.15) : (1 - (lifeT - 0.15) / 0.85);
+            const scale = SLIPSTREAM_VOXEL_SIZE * state.baseScale[i] * Math.max(0, fade);
+            _slipstreamDummy.position.set(state.x[i], state.y[i], state.z[i]);
+            _slipstreamDummy.scale.setScalar(scale);
+            _slipstreamDummy.updateMatrix();
+            mesh.setMatrixAt(i, _slipstreamDummy.matrix);
+        }
+        mesh.instanceMatrix.needsUpdate = true;
     }
 
     // ====================================================
@@ -453,6 +492,55 @@ document.addEventListener('DOMContentLoaded', async () => {
     const serverState = {};
     const visualState = {};
     const otherCars = {};
+
+    // Un box colorato per pilota lungo la corsia box (vedi
+    // docs/superpowers/specs/2026-08-03-f1-pit-boxes-design.md). Caricato
+    // pigramente al primo f1StateUpdate che porta un pitBoxSlot per quel
+    // colore — non sincrono con la scenografia statica (sceneryLayout più
+    // sopra), perché lo stato dei giocatori non è ancora noto in quel punto
+    // del caricamento pagina.
+    const pitBoxes = {};
+    const pendingPitBoxLoads = new Set();
+
+    // Il server manda già l'anchor calcolato (assignGridSpawns →
+    // TrackGeometry.pitBoxAnchors), il client si limita a posizionare/
+    // ruotare il modello: niente più bisogno di ricalcolare/duplicare la
+    // stessa geometria lato client, niente più rischio di disallineamento
+    // se il conteggio giocatori cambia a gara in corso (prima si
+    // ricalcolava da pitBoxSlot + Object.keys(state).length, che poteva
+    // divergere dall'N usato lato server in assignGridSpawns dopo una
+    // rimozione mid-race — game.grid non viene mai potato — causando un
+    // box disallineato o, peggio, un accesso fuori indice che mandava in
+    // eccezione l'handler f1StateUpdate — bug trovato dalla review finale).
+    function loadPlayerPitBox(color, anchor) {
+        if (pitBoxes[color] || pendingPitBoxLoads.has(color)) return;
+        pendingPitBoxLoads.add(color);
+
+        const nx = -anchor.tz, nz = anchor.tx;   // normale, perpendicolare alla tangente della corsia
+
+        // Stessa tecnica di trackScenery.js::buildPaddockLayout: tra le due
+        // direzioni normali, si sceglie quella che allontana di più dal
+        // centro del circuito (lato "verso l'esterno").
+        const distPlus = TrackGeometry.nearestPoint(trackPts, anchor.x + nx, anchor.z + nz).dist;
+        const distMinus = TrackGeometry.nearestPoint(trackPts, anchor.x - nx, anchor.z - nz).dist;
+        const side = distPlus >= distMinus ? 1 : -1;
+
+        // PitBoxLoader.PIT_BOX_OFFSET_MARGIN (non TrackScenery.PIT_BUILDING_OFFSET_MARGIN,
+        // tarato sui piccoli edifici decorativi Kenney): il box giocatore
+        // reale è molto più grande, serve un margine che tenga conto del
+        // suo ingombro misurato — vedi commento in pitBoxLoader.js.
+        const offset = trackData.pit.roadHalfWidth + PitBoxLoader.PIT_BOX_OFFSET_MARGIN;
+        const bx = anchor.x + nx * offset * side, bz = anchor.z + nz * offset * side;
+        const rotY = Math.atan2(anchor.x - bx, anchor.z - bz);   // guarda verso la corsia
+
+        PitBoxLoader.loadPitBoxModel(color, { x: bx, y: 0, z: bz, rotY }, (model) => {
+            scene.add(model);
+            pitBoxes[color] = model;
+            pendingPitBoxLoads.delete(color);
+        }, () => {
+            pendingPitBoxLoads.delete(color);   // permette un nuovo tentativo al prossimo state update (vedi pitBoxLoader.js)
+        });
+    }
 
     // Livrea VERA di ogni avversario (bug reale: prima si applicava sempre
     // TEST_LIVERY_COLORS, cioè la propria, a tutte le auto altrui). Cache per
@@ -864,6 +952,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         for (const [color, data] of Object.entries(state)) {
             serverState[color] = data;
             updateMinimapDot(color, data.x, data.z);
+            if (data.pitBoxAnchor) loadPlayerPitBox(color, data.pitBoxAnchor);
             if (color !== myColor && !otherCars[color] && !visualState[color]) {
                 visualState[color] = { x: data.x, z: data.z, angle: data.angle };
                 loadOtherCar(color, data.uid, (g) => { otherCars[color] = g; });
@@ -1014,14 +1103,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 const rowEl = standingRowEls[color];
                 const deltaPx = (oldIdx - newIdx) * STANDING_ROW_HEIGHT;
-
-                // DIAGNOSTICA TEMPORANEA (da rimuovere a bug risolto): la riga
-                // del leader "salta" senza lotte vicine — non si trova la causa
-                // leggendo solo il codice, serve vedere ordine prima/dopo nel
-                // momento esatto in cui scatta. Vedi F12 → Console.
-                console.log('[F1 standings]', color === myColor ? 'IO' : color,
-                    'oldIdx=', oldIdx, 'newIdx=', newIdx,
-                    'lastOrder=', lastStandingsOrder, 'newOrder=', newOrder);
 
                 // Sorpassi ravvicinati possono far scattare due animazioni sulla
                 // stessa riga prima che la prima finisca (es. sorpassa e viene
@@ -1596,10 +1677,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         maybeSendInputs();
 
-        // Effetto scia: le linee non si muovono, "scorrono" tramite
-        // dashOffset animato (vedi buildSlipstreamEffect) — nessuna
-        // geometria da aggiornare, solo quando l'effetto è attivo.
-        if (slipstreamActive) slipstreamMaterial.dashOffset -= SLIPSTREAM_DASH_SPEED;
+        // Effetto scia: aggiorna il pool di voxel (vedi updateSlipstreamVoxels)
+        // solo quando l'effetto è attivo — nessun lavoro quando non serve.
+        if (slipstreamActive && slipstreamGroup) updateSlipstreamVoxels(slipstreamGroup);
 
         for (const [color, target] of Object.entries(serverState)) {
             const v = visualState[color];

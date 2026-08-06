@@ -48,7 +48,11 @@ test('integratePosition: sposta x/z in base a vx/vz e dt', () => {
 
 test('assignGridSpawns: azzera damage/collisionPenaltyMs/pendingRepair/contatti a inizio gara vera', () => {
     const { physics } = f1GameSocket;
-    const fakeTrack = { gridSpawnPoint: (i) => ({ x: i, z: 0, angle: 0 }) };
+    const fakeTrack = {
+        gridSpawnPoint: (i) => ({ x: i, z: 0, angle: 0 }),
+        pitPath: [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }],
+        pitBoxIndex: 2
+    };
     const p = {
         color: 'red', damage: 42, collisionPenaltyMs: 3000, pendingRepair: true,
         carContacts: new Set(['blue']), wallContact: true,
@@ -69,6 +73,36 @@ test('assignGridSpawns: azzera damage/collisionPenaltyMs/pendingRepair/contatti 
     assert.equal(p.carContacts.size, 0);
     assert.equal(p.wallContact, false);
     assert.equal(p.pendingCollisionPenaltyEvents.length, 0);
+    assert.equal(p.pitBoxSlot, 0);
+    assert.ok(p.pitBoxAnchor && typeof p.pitBoxAnchor.x === 'number', 'atteso pitBoxAnchor assegnato');
+});
+
+test('assignGridSpawns: due piloti in griglia ottengono pitBoxAnchor diversi (non più lo stesso punto condiviso)', () => {
+    const { physics } = f1GameSocket;
+    const fakeTrack = {
+        gridSpawnPoint: (i) => ({ x: i, z: 0, angle: 0 }),
+        pitPath: [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }],
+        pitBoxIndex: 2
+    };
+    function makePlayer(color) {
+        return {
+            color, damage: 0, collisionPenaltyMs: 0, pendingRepair: false,
+            carContacts: new Set(), wallContact: false, pendingCollisionPenaltyEvents: [],
+            finished: false, time: null, lap: 0, checkpointA: false, inFinishZone: false,
+            trackIndex: 0, tyreWear: 0, pitGoTimer: null, pitting: false, pitPhase: null,
+            pitGoTime: null, pendingCompound: null, hasPitted: false, pitPenalty: false,
+            falseStart: false, falseStartServed: false, gapToLeaderMs: null,
+            pitAutoState: null, pitPathIndex: 0, inputs: { throttle: 0, brake: 0, steer: 0 }
+        };
+    }
+    const red = makePlayer('red'), blue = makePlayer('blue');
+    const game = { grid: ['red', 'blue'], players: { red, blue }, track: fakeTrack };
+
+    physics.assignGridSpawns(game);
+
+    assert.notEqual(red.pitBoxSlot, blue.pitBoxSlot);
+    assert.ok(red.pitBoxAnchor.x !== blue.pitBoxAnchor.x || red.pitBoxAnchor.z !== blue.pitBoxAnchor.z,
+        'i due piloti devono avere pitBoxAnchor in punti diversi');
 });
 
 test('collisionDamageAmount: proporzionale alla severità, cappato a DAMAGE_CAP_PER_HIT', () => {
@@ -459,4 +493,106 @@ test('computeSlipstreamMult: F1_AERO_SLIPSTREAM_MODEL="1", gap grande (>= 25) ->
     } finally {
         delete process.env.F1_AERO_SLIPSTREAM_MODEL;
     }
+});
+
+// ---- Review finale (Fix 3): autopilota pit-stop a due tratti, per non
+// tagliare la curva della corsia box su pitBoxIndex ----
+const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
+
+test('updatePitAutopilot: con una piega di 90° esattamente su pitBoxIndex, l\'ingresso verso l\'anchor personale resta vicino alla corsia (non taglia la curva)', () => {
+    const { physics } = f1GameSocket;
+
+    // Corsia box a L: piega di 90° ESATTAMENTE nel punto pitBoxIndex (1) —
+    // lo scenario worst-case descritto dalla review finale (misurato fino
+    // a 32° su baku.json; qui esagerato a 90° per un margine di sicurezza
+    // netto nell'asserzione).
+    const pitPath = [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 50, z: 50 }];
+    const pitBoxIndex = 1;
+    const roadHalfWidth = 3.5;
+
+    // Slot fuori centro (indice 2 su 3, il più lontano dal vertice): con la
+    // vecchia logica (salto diretto da un waypoint lontano all'anchor,
+    // saltando l'intero vertice) è esattamente lo slot che tagliava di più
+    // la curva — vedi backend/sockets/games/f1GameSocket.js pre-fix e lo
+    // script di verifica in docs/superpowers/sdd/.../final-review-fix-report.md.
+    const anchor = TrackGeometry.pitBoxAnchors(pitPath, pitBoxIndex, 3)[2];
+    const sampledPitPts = TrackGeometry.sampleOpenPath(pitPath, 300);   // per misurare la distanza dalla vera sede stradale
+
+    const fakeTrack = { pitPath, pitBoxIndex, roadHalfWidth };
+    const io = { to: () => ({ emit: () => {} }) };
+    const game = { track: fakeTrack, socketByColor: {} };
+
+    // Il giocatore entra nella corsia box: pitPathIndex parte da 1 (il
+    // waypoint 0 è il punto di distacco, dove più o meno si trova già —
+    // vedi startPitLaneEntry), posizione iniziale vicino a pitPath[0].
+    const p = {
+        color: 'red', x: 0, z: 0, angle: 0, speed: 0, vx: 0, vz: 0,
+        pitAutoState: 'entering', pitPathIndex: 1, pitBoxFinalApproach: false,
+        pitBoxAnchor: anchor, pitting: false, pitPhase: null
+    };
+
+    const tolerance = roadHalfWidth + 1;   // stessa tolleranza indicata nel piano di fix
+    let maxDeviation = 0;
+    let ticks = 0;
+    // Fino a quando l'autopilota di INGRESSO non ha finito (diventa 'null' e
+    // avvia la sosta, vedi startPitStop) o al massimo 500 tick di sicurezza.
+    while (p.pitAutoState === 'entering' && ticks < 500) {
+        physics.updatePitAutopilot(io, 'testLobby', game, p);
+        const nearest = TrackGeometry.nearestPoint(sampledPitPts, p.x, p.z);
+        maxDeviation = Math.max(maxDeviation, nearest.dist);
+        ticks++;
+    }
+    // startPitStop (chiamata dall'ultimo tick sopra) arma un vero
+    // setTimeout casuale (PIT_GO_DELAY_MIN..MAX): va ripulito subito, non
+    // deve restare pendente dopo la fine del test.
+    if (p.pitGoTimer) { clearTimeout(p.pitGoTimer); p.pitGoTimer = null; }
+
+    assert.ok(ticks < 500, 'autopilota non ha mai raggiunto la casella (loop infinito?)');
+    assert.ok(p.pitting, 'atteso che la sosta sia partita (arrivo confermato all\'anchor)');
+    assert.ok(maxDeviation <= tolerance,
+        `l'auto si è allontanata ${maxDeviation.toFixed(2)} unità dalla corsia box (tolleranza ${tolerance}) — sintomo esatto del bug pre-fix: taglio diretto della curva su pitBoxIndex`);
+});
+
+// ---- Fix "avanti-indietro" (segnalato in playtest, 2026-08-04): un box
+// PRIMA di pitBoxIndex nel verso di marcia non deve mai far superare il
+// proprio box all'auto per poi farla tornare indietro ----
+test('updatePitAutopilot: un pilota col box PRIMA di pitBoxIndex si ferma lì senza mai proseguire fino al vertice condiviso', () => {
+    const { physics } = f1GameSocket;
+
+    // Corsia box dritta, waypoint ogni 10 unità: pitBoxIndex a metà (5).
+    const pitPath = Array.from({ length: 11 }, (_, i) => ({ x: i * 10, z: 0 }));
+    const pitBoxIndex = 5;
+    const roadHalfWidth = 3.5;
+
+    // Slot 0 su 3: offset negativo (mid=1 -> (0-1)*24=-24), il box
+    // personale finisce PRIMA di pitBoxIndex lungo il verso di marcia —
+    // esattamente il caso che con la vecchia logica (target fisso
+    // pitPath[pitBoxIndex]) costringeva l'auto a superare il proprio box e
+    // poi tornare indietro nel balzo finale.
+    const anchor = TrackGeometry.pitBoxAnchors(pitPath, pitBoxIndex, 3)[0];
+    assert.ok(anchor.fromIdx < pitBoxIndex, 'precondizione del test: il box deve trovarsi prima del vertice');
+
+    const fakeTrack = { pitPath, pitBoxIndex, roadHalfWidth };
+    const io = { to: () => ({ emit: () => {} }) };
+    const game = { track: fakeTrack, socketByColor: {} };
+
+    const p = {
+        color: 'red', x: 0, z: 0, angle: 0, speed: 0, vx: 0, vz: 0,
+        pitAutoState: 'entering', pitPathIndex: 1, pitBoxFinalApproach: false,
+        pitBoxAnchor: anchor, pitting: false, pitPhase: null
+    };
+
+    let maxPitPathIndexSeen = p.pitPathIndex;
+    let ticks = 0;
+    while (p.pitAutoState === 'entering' && ticks < 500) {
+        physics.updatePitAutopilot(io, 'testLobby', game, p);
+        maxPitPathIndexSeen = Math.max(maxPitPathIndexSeen, p.pitPathIndex);
+        ticks++;
+    }
+    if (p.pitGoTimer) { clearTimeout(p.pitGoTimer); p.pitGoTimer = null; }
+
+    assert.ok(ticks < 500, 'autopilota non ha mai raggiunto la casella (loop infinito?)');
+    assert.ok(p.pitting, 'atteso che la sosta sia partita');
+    assert.equal(maxPitPathIndexSeen, anchor.fromIdx,
+        `l'autopilota ha camminato fino al waypoint ${maxPitPathIndexSeen}, oltre il fromIdx del proprio box (${anchor.fromIdx}) — segno che è passato dal vertice condiviso pitBoxIndex (${pitBoxIndex}) invece di fermarsi al proprio box`);
 });

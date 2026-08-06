@@ -715,6 +715,12 @@ function startRaceCountdown(io, lobbyId, game) {
 // game.grid (entrati dopo la fine della qualifica) vengono accodati in fondo.
 function assignGridSpawns(game) {
     const order = [...game.grid, ...Object.keys(game.players).filter(c => !game.grid.includes(c))];
+    // Un box giocatore per partecipante (vedi TrackGeometry.pitBoxAnchors +
+    // docs/superpowers/specs/2026-08-03-f1-pit-boxes-design.md): calcolato
+    // una volta per gara, sullo stesso ordine di griglia usato per lo
+    // spawn, così due piloti ai box insieme non finiscono più nello stesso
+    // punto fisico (prima: tutti su track.pitBoxIndex).
+    const boxAnchors = TrackGeometry.pitBoxAnchors(game.track.pitPath, game.track.pitBoxIndex, order.length);
     order.forEach((color, i) => {
         const p = game.players[color];
         if (!p) return;
@@ -737,7 +743,9 @@ function assignGridSpawns(game) {
         p.pendingCompound = null; p.hasPitted = false; p.pitPenalty = false;
         p.falseStart = false; p.falseStartServed = false;
         p.gapToLeaderMs = null;
-        p.pitAutoState = null; p.pitPathIndex = 0;
+        p.pitAutoState = null; p.pitPathIndex = 0; p.pitBoxFinalApproach = false;
+        p.pitBoxSlot = i;
+        p.pitBoxAnchor = boxAnchors[i];
         p.inputs = { throttle: 0, brake: 0, steer: 0 };
         // Stato bot transitorio: un bot ancora diretto ai box (non ancora
         // entrato nel trigger) alla fine della gara precedente non deve
@@ -769,8 +777,68 @@ function startPitLaneEntry(io, lobbyId, game, p) {
 // Sposta l'auto verso il prossimo waypoint del percorso box (track.pitPath) a velocità fissa e
 // bassa — apposta lenta, per dare tempo di scegliere la mescola durante il
 // tragitto (soprattutto in ingresso).
+//
+// Due tratti (Fix review finale, vedi
+// docs/superpowers/specs/2026-08-03-f1-pit-boxes-design.md): il walk sui
+// waypoint grezzi (track.pitPath) arriva fino a p.pitBoxAnchor.fromIdx —
+// esattamente come prima di questa feature, preservando la sterzata già
+// corretta/testata sulle curve condivise — poi UN solo hop breve, locale
+// al segmento [fromIdx, fromIdx+1] che contiene l'anchor, verso/dall'anchor
+// personale del pilota (p.pitBoxFinalApproach). Un salto diretto da un
+// waypoint precedente/successivo lontano fino all'anchor (versione
+// precedente) tagliava fuori l'eventuale curva della corsia proprio in
+// quel punto, portando l'auto fuori dalla sede stradale (misurato: fino a
+// 7 unità su una corsia larga 3.5 di roadHalfWidth, su piste con un
+// piegone marcato a boxIndex).
+//
+// IMPORTANTE: si usa fromIdx del box personale, NON il vertice condiviso
+// pitBoxIndex — pitBoxAnchors distribuisce i box SIMMETRICAMENTE attorno a
+// boxIndex (metà prima, metà dopo lungo il verso di marcia). Instradare
+// tutti fino al vertice condiviso prima del balzo finale (versione
+// precedente) faceva sì che un pilota col box PRIMA del vertice ci
+// arrivasse comunque, superando così il proprio box, per poi dover
+// tornare indietro nel balzo finale — bug segnalato in playtest ("va
+// avanti e poi indietro"). Con fromIdx proprio del pilota, il walk in
+// avanti si ferma esattamente al segmento del proprio box, mai oltre.
 function updatePitAutopilot(io, lobbyId, game, p) {
     const track = game.track;
+
+    if (p.pitBoxFinalApproach && p.pitBoxAnchor) {
+        // 'entering': balzo dal waypoint fromIdx verso l'anchor personale.
+        // 'exiting': balzo inverso, dall'anchor verso pitPath[fromIdx+1] —
+        // il waypoint SUCCESSIVO al proprio box (non più il vertice
+        // condiviso pitBoxIndex: un box con fromIdx < pitBoxIndex deve
+        // rientrare in avanti verso il proprio segmento, non verso un
+        // vertice che potrebbe trovarsi oltre, dietro di sé).
+        const target = (p.pitAutoState === 'entering')
+            ? p.pitBoxAnchor
+            : track.pitPath[p.pitBoxAnchor.fromIdx + 1];
+        const dx = target.x - p.x, dz = target.z - p.z;
+        const dist = Math.hypot(dx, dz);
+
+        if (dist < PIT_AUTO_ARRIVE_DIST) {
+            p.x = target.x; p.z = target.z;
+            p.speed = 0; p.vx = 0; p.vz = 0;
+            p.pitBoxFinalApproach = false;
+
+            if (p.pitAutoState === 'entering') {
+                p.pitAutoState = null;   // arrivato alla casella personale: la sosta prende il posto dell'autopilota
+                startPitStop(io, lobbyId, game, p);
+            }
+            // se 'exiting': arrivato al waypoint fromIdx+1, il prossimo tick
+            // riprende il walk normale dei waypoint successivi (pitPathIndex
+            // è già puntato la waypoint giusto, vedi completePitStop)
+            return;
+        }
+
+        p.angle = Math.atan2(dx, dz);
+        p.x += (dx / dist) * PIT_AUTO_SPEED;
+        p.z += (dz / dist) * PIT_AUTO_SPEED;
+        p.speed = PIT_AUTO_SPEED;
+        p.vx = 0; p.vz = 0;
+        return;
+    }
+
     const target = track.pitPath[p.pitPathIndex];
     const dx = target.x - p.x, dz = target.z - p.z;
     const dist = Math.hypot(dx, dz);
@@ -779,9 +847,8 @@ function updatePitAutopilot(io, lobbyId, game, p) {
         p.x = target.x; p.z = target.z;
         p.speed = 0; p.vx = 0; p.vz = 0;
 
-        if (p.pitPathIndex === track.pitBoxIndex && p.pitAutoState === 'entering') {
-            p.pitAutoState = null;   // arrivato: la sosta prende il posto dell'autopilota
-            startPitStop(io, lobbyId, game, p);
+        if (p.pitAutoState === 'entering' && p.pitBoxAnchor && p.pitPathIndex === p.pitBoxAnchor.fromIdx) {
+            p.pitBoxFinalApproach = true;   // prossimo tick: hop verso l'anchor personale
             return;
         }
 
@@ -878,7 +945,12 @@ function completePitStop(io, lobbyId, game, p) {
     if (sid) io.to(sid).emit('f1PitStopFinished', { compound: p.compound });
 
     p.pitAutoState = 'exiting';
-    p.pitPathIndex = game.track.pitBoxIndex + 1;   // continua dal waypoint successivo alla casella
+    // Primo tick di uscita: hop dall'anchor personale a pitPath[fromIdx+1] —
+    // non più il vertice condiviso pitBoxIndex (vedi updatePitAutopilot):
+    // un box con fromIdx < pitBoxIndex deve rientrare in avanti sul proprio
+    // segmento, non su un vertice che potrebbe stargli dietro.
+    p.pitBoxFinalApproach = true;
+    p.pitPathIndex = p.pitBoxAnchor.fromIdx + 1;   // waypoint da cui riprende il walk normale dopo il rientro
 }
 
 // Stato visibile ad UN determinato giocatore (viewerColor):
@@ -1026,27 +1098,6 @@ function tickGame(io, lobbyId, game) {
         // veniva mai rilevato — segnalato dall'utente come "giro perso" ai
         // box. trackIndex è già aggiornato dalla riga sopra, checkLap lo usa.
         checkLap(p, totalLaps, io, lobbyId, game);
-    }
-
-    // DIAGNOSTICA TEMPORANEA (da rimuovere a bug risolto): la classifica live
-    // lato client mostra un'auto scavalcare tutti per un solo tick e tornare
-    // subito al valore di prima — dato che progressScore (lap*n+trackIndex)
-    // non può mai calare per un giro vero (p.lap non decrementa mai), un salto
-    // seguito da un ritorno esatto allo stesso valore è un trackIndex sporco
-    // per un tick, non una gara vera. Sospetto principale: la corsia box (vedi
-    // updateTrackIndex sull'autopilota qui sopra, cerca il punto pista PIÙ
-    // VICINO alla posizione fisica sulla corsia box, che è una strada diversa
-    // dal tracciato — non c'è garanzia che resti "vicina" nello spazio indice).
-    for (const p of players) {
-        if (p.finished) continue;
-        const score = progressScore(p, game.track);
-        if (p._lastProgressScore !== undefined) {
-            const delta = score - p._lastProgressScore;
-            if (delta < -20 || delta > 50) {
-                console.log(`[F1 rank][SOSPETTO] ${p.color} progressScore ${p._lastProgressScore}->${score} (delta=${delta}) lap=${p.lap} trackIndex=${p.trackIndex} pitting=${p.pitting} pitAutoState=${p.pitAutoState} x=${p.x.toFixed(1)} z=${p.z.toFixed(1)}`);
-            }
-        }
-        p._lastProgressScore = score;
     }
 
     // Distacco dal leader: stima da distanza/velocità, ricalcolata ogni
@@ -1402,6 +1453,22 @@ function buildPublicState(players, raceStarted, track, game) {
             falseStartServed: !!p.falseStartServed,
             gapToLeaderMs: (p.gapToLeaderMs != null) ? p.gapToLeaderMs : null,
             isBot: !!p.isBot,
+            // Indice del box assegnato per questa gara (vedi
+            // assignGridSpawns/TrackGeometry.pitBoxAnchors) — il client lo
+            // usa per posizionare il modello 3D del box di questo pilota
+            // (frontend/f1.js, loadPlayerPitBox).
+            pitBoxSlot: (p.pitBoxSlot != null) ? p.pitBoxSlot : null,
+            // Anchor {x,z,tx,tz} già calcolato server-side (assignGridSpawns
+            // → TrackGeometry.pitBoxAnchors): il client lo usa direttamente
+            // per posizionare/ruotare il modello 3D del box (frontend/f1.js,
+            // loadPlayerPitBox), invece di ricalcolarlo da pitBoxSlot +
+            // conteggio giocatori LATO CLIENT — quel conteggio poteva
+            // disallinearsi da game.grid.length dopo una rimozione a gara in
+            // corso (game.grid non viene mai potato), causando box
+            // disegnati nel punto sbagliato o un accesso fuori indice che
+            // mandava in eccezione l'handler f1StateUpdate (vedi review
+            // finale). pitBoxSlot resta comunque, utile per debug/HUD.
+            pitBoxAnchor: p.pitBoxAnchor || null,
             // uid Firebase del giocatore (null per ospiti/bot): il client lo
             // usa per recuperare la LIVREA VERA di ogni avversario via
             // GET /api/livery/:uid, invece di riapplicare la propria a tutti
@@ -1456,7 +1523,8 @@ module.exports.physics = {
     createDamageParts, FRONT_WING_STEER_PENALTY_MAX,
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
     buildPublicState, checkLap,
-    computeSlipstreamMult
+    computeSlipstreamMult,
+    updatePitAutopilot, PIT_AUTO_SPEED, PIT_AUTO_ARRIVE_DIST
 };
 
 module.exports.tickGame = tickGame;

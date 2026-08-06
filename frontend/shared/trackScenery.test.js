@@ -166,6 +166,28 @@ test('nessun cartellone sponsor del rettilineo di partenza finisce dentro la cor
     }
 });
 
+test('nessun oggetto scenografico (paddock, natura, laghetto, tribune...) finisce dentro la zona box giocatore', () => {
+    // Copre TUTTE le categorie del layout, non solo 'paddock': natura
+    // (alberi/rocce) e laghetto usano lo stesso scatter casuale e possono
+    // finire nella zona box giocatore esattamente come gli edifici/
+    // cartelloni del paddock se non applicano lo stesso controllo (bug
+    // trovato dalla review finale — vedi buildNatureLayout/findPondSpot).
+    //
+    // Verifica contro l'ingombro REALE di ogni box (non un raggio fisso
+    // da un solo punto centrale, vedi bug playtest 2026-08-04: un raggio
+    // attorno a pitBoxIndex non copriva i box più esterni della fila).
+    const { trackPts, pitPts } = buildReal();
+    const layout = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D);
+    const pitRoadHalf = monteRosso.pit.roadHalfWidth;
+    const boxAnchors = TrackGeometry.pitBoxAnchors(monteRosso.pit.path, monteRosso.pit.boxIndex, TrackScenery.PLAYER_BOX_MAX_COUNT);
+    const footprints = boxAnchors.map(a => TrackScenery.playerBoxFootprintCorners(a, trackPts, pitRoadHalf));
+    assert.ok(layout.length > 0);
+    for (const item of layout) {
+        assert.ok(!TrackScenery.insidePlayerBoxFootprint(item.x, item.z, footprints),
+            `oggetto '${item.category}'/${item.asset} a (${item.x.toFixed(1)},${item.z.toFixed(1)}) cade dentro l'ingombro reale di un box giocatore`);
+    }
+});
+
 test('gli oggetti natura usano la quota del terrapieno (sfuma con la distanza), non la quota pista pura', () => {
     const E = 20;
     const ctrl = [];
