@@ -417,12 +417,12 @@
         {
             "x": 26.49,
             "z": -384.69,
-            "bridge": true
+            "bridge": false
         },
         {
             "x": 78.63,
             "z": -356.12,
-            "bridge": true
+            "bridge": false
         }
     ],
     "pit": {
