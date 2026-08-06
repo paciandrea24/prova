@@ -24,22 +24,43 @@ const STARTFINISH_OPPOSITE_TOLERANCE_DEG = 30;
 
 const cache = new Map();
 
+// Catmull-Rom uniforme 1D (4 punti di controllo, derivata continua) — stessa
+// filosofia della spline centripeta già usata da TrackGeometry.evalSegment
+// per il tracciato base, qui applicata a un valore scalare (offset laterale)
+// invece che a punti x/z. Sostituisce l'interpolazione LINEARE precedente:
+// linea a tratti = derivata (curvatura) discontinua a ogni punto di
+// controllo, che la finestra di misura della curvatura del bot (BOT_CURVATURE_LOCAL_M,
+// spesso più stretta della spaziatura tra i punti di controllo) legge come
+// una serie di curve fantasma anche nei tratti dritti — causa verificata di
+// letture di velocità/lookahead rumorose lontano da qualunque curva reale
+// (Rif. audit 2026-08-06). Passa ESATTAMENTE per ogni punto di controllo
+// (a differenza di uno smoothing a media mobile, che sposterebbe la linea
+// da quanto misurato/validato dall'ottimizzatore).
+function catmullRom1D(p0, p1, p2, p3, t) {
+    const t2 = t * t, t3 = t2 * t;
+    return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+}
+
 // Racing line precalcolata offline (vedi backend/tools/f1RaceLineOptimizer.js
 // + docs/superpowers/specs/2026-07-24-f1-bot-cornering-redesign-design.md):
 // opzionale, `${id}-raceline.json` con {tuning, lineControls}. lineControls è
 // un array corto di punti di controllo (offset laterale dal centro pista),
 // interpolato qui sull'intero campionamento della pista — stessa identica
-// interpolazione usata dall'ottimizzatore per costruirla, altrimenti la linea
-// che il bot segue in gara non sarebbe quella davvero misurata offline.
+// interpolazione usata dall'ottimizzatore per costruirla (vedi
+// interpolateControls in f1RaceLineOptimizer.js, DEVE restare in sync con
+// questa), altrimenti la linea che il bot segue in gara non sarebbe quella
+// davvero misurata/validata offline.
 function interpolateLineControls(controls, targetLen) {
     const m = controls.length;
     const out = new Array(targetLen);
     for (let i = 0; i < targetLen; i++) {
         const cf = i * m / targetLen;
-        const c0 = Math.floor(cf) % m;
-        const c1 = (c0 + 1) % m;
+        const c1 = Math.floor(cf) % m;
         const t = cf - Math.floor(cf);
-        out[i] = controls[c0] * (1 - t) + controls[c1] * t;
+        const c0 = ((c1 - 1) % m + m) % m;
+        const c2 = (c1 + 1) % m;
+        const c3 = (c1 + 2) % m;
+        out[i] = catmullRom1D(controls[c0], controls[c1], controls[c2], controls[c3], t);
     }
     return out;
 }

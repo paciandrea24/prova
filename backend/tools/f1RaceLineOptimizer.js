@@ -77,15 +77,26 @@ function buildOptimizer(track) {
         return line;
     }
 
+    // Catmull-Rom uniforme 1D — DEVE restare identica a interpolateLineControls
+    // in trackLoader.js (Rif. commento lì): l'ottimizzatore deve valutare
+    // esattamente la stessa curva che il bot seguirà in gara, altrimenti la
+    // fitness misurata qui non corrisponde al comportamento reale.
+    function catmullRom1D(p0, p1, p2, p3, t) {
+        const t2 = t * t, t3 = t2 * t;
+        return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+    }
+
     function interpolateControls(controls, targetLen) {
         const m = controls.length;
         const out = new Array(targetLen);
         for (let i = 0; i < targetLen; i++) {
             const cf = i * m / targetLen;
-            const c0 = Math.floor(cf) % m;
-            const c1 = (c0 + 1) % m;
+            const c1 = Math.floor(cf) % m;
             const t = cf - Math.floor(cf);
-            out[i] = controls[c0] * (1 - t) + controls[c1] * t;
+            const c0 = ((c1 - 1) % m + m) % m;
+            const c2 = (c1 + 1) % m;
+            const c3 = (c1 + 2) % m;
+            out[i] = catmullRom1D(controls[c0], controls[c1], controls[c2], controls[c3], t);
         }
         return out;
     }
@@ -170,8 +181,17 @@ function buildOptimizer(track) {
         list.push({ get: () => state.lookaheadTimeS, set: v => { state.lookaheadTimeS = v; }, min: 0.25, max: 1.3, isLine: false });
         list.push({ get: () => state.steerGain, set: v => { state.steerGain = v; }, min: 1.0, max: 7.0, isLine: false });
         list.push({ get: () => state.adaptiveLookaheadK, set: v => { state.adaptiveLookaheadK = v; }, min: 0.02, max: 0.4, isLine: false });
-        list.push({ get: () => state.cornerSpeedMargin, set: v => { state.cornerSpeedMargin = v; }, min: 0.80, max: 1.0, isLine: false });
-        list.push({ get: () => state.brakingDistanceMargin, set: v => { state.brakingDistanceMargin = v; }, min: 0.85, max: 1.4, isLine: false });
+        // Limiti ampliati (Task 11, chiusura gap dall'umano): margine=1.0 era
+        // il limite geometrico ESATTO, ma la velocità reale insegue l'angolo
+        // con un filtro (GRIP<1 in updateVelocity — vedi commento su
+        // BOT_CORNER_SPEED_MARGIN in f1Bot.js), quindi il raggio davvero
+        // percorso è un po' più ampio di quello puramente geometrico: c'è
+        // margine fisico per spingersi leggermente oltre 1.0/sotto 0.85 in
+        // sicurezza. Va verificato per ogni pista con f1LapSimulator.js
+        // (nessun DNF/testacoda) prima di accettare un valore fuori dal
+        // vecchio range — non un ampliamento a sensazione.
+        list.push({ get: () => state.cornerSpeedMargin, set: v => { state.cornerSpeedMargin = v; }, min: 0.80, max: 1.15, isLine: false });
+        list.push({ get: () => state.brakingDistanceMargin, set: v => { state.brakingDistanceMargin = v; }, min: 0.75, max: 1.4, isLine: false });
         list.push({ get: () => state.deadband, set: v => { state.deadband = v; }, min: 0.0, max: 0.06, isLine: false });
         list.push({ get: () => state.ramp, set: v => { state.ramp = v; }, min: 0.02, max: 0.18, isLine: false });
         return list;
@@ -237,30 +257,45 @@ function buildOptimizer(track) {
         // dedicato. fitness/coordinateDescent/smoothing/budget invariati,
         // cambia solo la fonte di state.line ad ogni transizione di livello.
         const seedMultiResolution = !!opts.seedMultiResolution;
-        let state = {
-            line: (seedGeometric || seedMultiResolution) ? seedGeometricLine(LEVELS[0].numControls) : new Array(LEVELS[0].numControls).fill(0),
-            lookaheadTimeS: 0.6, steerGain: 3.0, adaptiveLookaheadK: 0.1,
-            cornerSpeedMargin: 0.99, brakingDistanceMargin: 1.2,
-            deadband: 0.01, ramp: 0.06
-        };
-        let best = fitness(state);
-        const seedLabel = seedMultiResolution
-            ? "seed geometrico multi-risoluzione (apexOffset ad ogni livello)"
-            : seedGeometric
-                ? "seed geometrico fuori-dentro-fuori (apexOffset, solo 15 punti iniziali)"
-                : "centro pista";
-        log(`Baseline (${seedLabel}, parametri di gioco di default): ${best}ms`);
+        let state, best;
+        // Ripresa da checkpoint (Rif. richiesta utente, run interrotto a
+        // metà): salta seeding+LEVELS, che hanno già fatto il loro lavoro
+        // nel run originale — riparte direttamente nel loop di basin-hopping
+        // con la linea/tuning esatti del checkpoint. `best` è SEMPRE
+        // ricalcolato con `fitness`, mai preso dal campo `timeMs` del file
+        // (Rif. feedback_background_process_verify_before_trust: non
+        // fidarsi di un valore salvato senza riverificarlo).
+        if (opts.resumeState) {
+            state = cloneState(opts.resumeState);
+            best = fitness(state);
+            log(`Ripreso da checkpoint: ${best}ms`);
+        } else {
+            state = {
+                line: (seedGeometric || seedMultiResolution) ? seedGeometricLine(LEVELS[0].numControls) : new Array(LEVELS[0].numControls).fill(0),
+                lookaheadTimeS: 0.6, steerGain: 3.0, adaptiveLookaheadK: 0.1,
+                cornerSpeedMargin: 0.99, brakingDistanceMargin: 1.2,
+                deadband: 0.01, ramp: 0.06
+            };
+            best = fitness(state);
+            const seedLabel = seedMultiResolution
+                ? "seed geometrico multi-risoluzione (apexOffset ad ogni livello)"
+                : seedGeometric
+                    ? "seed geometrico fuori-dentro-fuori (apexOffset, solo 15 punti iniziali)"
+                    : "centro pista";
+            log(`Baseline (${seedLabel}, parametri di gioco di default): ${best}ms`);
 
-        for (const level of LEVELS) {
-            if (state.line.length !== level.numControls) {
-                state.line = seedMultiResolution
-                    ? seedGeometricLine(level.numControls)
-                    : interpolateControls(state.line, level.numControls);
-                best = fitness(state);
+            for (const level of LEVELS) {
+                if (state.line.length !== level.numControls) {
+                    state.line = seedMultiResolution
+                        ? seedGeometricLine(level.numControls)
+                        : interpolateControls(state.line, level.numControls);
+                    best = fitness(state);
+                }
+                best = coordinateDescent(state, best, level.rounds, level.stepFrac, GLOBAL_STEP_FRAC);
+                log(`Livello ${level.numControls} punti: ${best}ms  [valutazioni: ${evalCount}]`);
             }
-            best = coordinateDescent(state, best, level.rounds, level.stepFrac, GLOBAL_STEP_FRAC);
-            log(`Livello ${level.numControls} punti: ${best}ms  [valutazioni: ${evalCount}]`);
         }
+        if (opts.onImprovement) opts.onImprovement(state, best);
 
         for (let hop = 0; hop < hops; hop++) {
             const snapshot = cloneState(state);
@@ -275,14 +310,15 @@ function buildOptimizer(track) {
             if (Math.random() < 0.3) state.lookaheadTimeS = Math.max(0.25, Math.min(1.3, state.lookaheadTimeS + rand(-0.2, 0.2)));
             if (Math.random() < 0.3) state.steerGain = Math.max(1.0, Math.min(7.0, state.steerGain + rand(-1.2, 1.2)));
             if (Math.random() < 0.3) state.adaptiveLookaheadK = Math.max(0.02, Math.min(0.4, state.adaptiveLookaheadK + rand(-0.05, 0.05)));
-            if (Math.random() < 0.3) state.cornerSpeedMargin = Math.max(0.80, Math.min(1.0, state.cornerSpeedMargin + rand(-0.08, 0.08)));
-            if (Math.random() < 0.3) state.brakingDistanceMargin = Math.max(0.85, Math.min(1.4, state.brakingDistanceMargin + rand(-0.15, 0.15)));
+            if (Math.random() < 0.3) state.cornerSpeedMargin = Math.max(0.80, Math.min(1.15, state.cornerSpeedMargin + rand(-0.08, 0.08)));
+            if (Math.random() < 0.3) state.brakingDistanceMargin = Math.max(0.75, Math.min(1.4, state.brakingDistanceMargin + rand(-0.15, 0.15)));
 
             let f = fitness(state);
             f = coordinateDescent(state, f, 4, 0.15, 0.2);
             if (f < best) {
                 best = f;
                 log(`Basin-hop ${hop + 1}/${hops}: MIGLIORATO a ${best}ms`);
+                if (opts.onImprovement) opts.onImprovement(state, best);
             } else {
                 state = snapshot;
             }
@@ -297,13 +333,57 @@ function buildOptimizer(track) {
     return { optimize, buildRacingLine, seedGeometricLine, fitness, MAX_OFFSET, n, evalCountRef: () => evalCount };
 }
 
+// Stesso identico formato scritto sia dal checkpoint automatico (durante
+// l'ottimizzazione, Rif. nota "salva e riprendi") sia dal file finale —
+// prima erano due letterali duplicati, uno solo qui evita che divergano.
+function serializeRaceline(trackId, state, timeMs, elapsedS) {
+    return {
+        trackId, timeMs, elapsedS,
+        tuning: {
+            lookaheadTimeS: state.lookaheadTimeS, steerGain: state.steerGain,
+            adaptiveLookaheadK: state.adaptiveLookaheadK,
+            cornerSpeedMargin: state.cornerSpeedMargin, brakingDistanceMargin: state.brakingDistanceMargin,
+            deadband: state.deadband, ramp: state.ramp
+        },
+        lineControls: state.line
+    };
+}
+
 function run(trackId, hops, opts) {
     opts = opts || {};
     const track = loadTrack(trackId);
     const opt = buildOptimizer(track);
     console.log(`\n=== ${trackId} (${track.points.length} campioni, ${track.lapLength.toFixed(0)}m, roadHalf=${track.roadHalf}) ===`);
     const t0 = Date.now();
-    const { state, best } = opt.optimize(hops, msg => console.log(`[${trackId}] ${msg}`), opts);
+
+    // Checkpoint automatico: un run lungo (hops alti) può richiedere
+    // decine di minuti, interrompibile in qualunque momento (chiusura
+    // terminale/PC) — senza questo, tutto il progresso andava perso perché
+    // il file veniva scritto SOLO a fine run (Rif. richiesta utente,
+    // interruzione a metà di un run da 200 hop). Scritto ad ogni
+    // miglioramento reale, stesso formato del file finale: riprendibile con
+    // `--resume=<path>`.
+    const outId = `${trackId}${opts.outSuffix || ""}`;
+    const checkpointFile = path.join(__dirname, `${outId}-checkpoint.json`);
+    const onImprovement = (state, best) => {
+        const elapsedS = (Date.now() - t0) / 1000;
+        fs.writeFileSync(checkpointFile, JSON.stringify(serializeRaceline(trackId, state, best, elapsedS), null, 2));
+    };
+
+    let resumeState = null;
+    if (opts.resume) {
+        const parsed = JSON.parse(fs.readFileSync(opts.resume, 'utf8'));
+        resumeState = {
+            line: parsed.lineControls.slice(),
+            lookaheadTimeS: parsed.tuning.lookaheadTimeS, steerGain: parsed.tuning.steerGain,
+            adaptiveLookaheadK: parsed.tuning.adaptiveLookaheadK,
+            cornerSpeedMargin: parsed.tuning.cornerSpeedMargin, brakingDistanceMargin: parsed.tuning.brakingDistanceMargin,
+            deadband: parsed.tuning.deadband, ramp: parsed.tuning.ramp
+        };
+        console.log(`[${trackId}] ripreso da ${opts.resume} (era a ${parsed.timeMs}ms) — ${hops} hop aggiuntivi da qui`);
+    }
+
+    const { state, best } = opt.optimize(hops, msg => console.log(`[${trackId}] ${msg}`), { ...opts, resumeState, onImprovement });
     const elapsedS = (Date.now() - t0) / 1000;
 
     const finalLine = opt.buildRacingLine(state.line);
@@ -324,19 +404,13 @@ function run(trackId, hops, opts) {
     // mai il file di produzione a meno che l'utente non lo scelga esplicitamente
     // passando lo stesso nome. Formato del file identico in ogni caso
     // (nessuna modifica al formato raceline.json, come richiesto).
-    const outId = `${trackId}${opts.outSuffix || ""}`;
     const outFile = path.join(__dirname, `${outId}-raceline.json`);
-    fs.writeFileSync(outFile, JSON.stringify({
-        trackId, timeMs: best, elapsedS,
-        tuning: {
-            lookaheadTimeS: state.lookaheadTimeS, steerGain: state.steerGain,
-            adaptiveLookaheadK: state.adaptiveLookaheadK,
-            cornerSpeedMargin: state.cornerSpeedMargin, brakingDistanceMargin: state.brakingDistanceMargin,
-            deadband: state.deadband, ramp: state.ramp
-        },
-        lineControls: state.line
-    }, null, 2));
+    fs.writeFileSync(outFile, JSON.stringify(serializeRaceline(trackId, state, best, elapsedS), null, 2));
     console.log(`[${trackId}] scritto ${outFile}`);
+    // Il checkpoint ha svolto il suo scopo (run completato normalmente,
+    // risultato finale già scritto sopra) — rimosso per non lasciare due
+    // file quasi identici a fine run.
+    if (fs.existsSync(checkpointFile)) fs.unlinkSync(checkpointFile);
 }
 
 function parseArgs(argv) {
@@ -350,24 +424,31 @@ function parseArgs(argv) {
     // eccezionalmente al comportamento precedente (solo per confronto).
     let seedMultiResolution = true;
     let outSuffix = "";
+    let resume = null;
     for (const arg of argv) {
         if (arg.startsWith("--hops=")) hops = Number(arg.slice("--hops=".length));
         else if (arg === "--seed-geometric") seedGeometric = true;
         else if (arg === "--seed-multi-resolution") seedMultiResolution = true;
         else if (arg === "--seed-multi-resolution=0") seedMultiResolution = false;
         else if (arg.startsWith("--out-suffix=")) outSuffix = arg.slice("--out-suffix=".length);
+        else if (arg.startsWith("--resume=")) resume = arg.slice("--resume=".length);
         else trackIds.push(arg);
     }
-    return { trackIds, hops, seedGeometric, seedMultiResolution, outSuffix };
+    return { trackIds, hops, seedGeometric, seedMultiResolution, outSuffix, resume };
 }
 
 if (require.main === module) {
-    const { trackIds, hops, seedGeometric, seedMultiResolution, outSuffix } = parseArgs(process.argv.slice(2));
+    const { trackIds, hops, seedGeometric, seedMultiResolution, outSuffix, resume } = parseArgs(process.argv.slice(2));
     if (trackIds.length === 0) {
-        console.error("Uso: node backend/tools/f1RaceLineOptimizer.js <trackId> [<trackId> ...] [--hops=N] [--seed-geometric] [--seed-multi-resolution] [--out-suffix=-seeded]");
+        console.error("Uso: node backend/tools/f1RaceLineOptimizer.js <trackId> [<trackId> ...] [--hops=N] [--seed-geometric] [--seed-multi-resolution] [--out-suffix=-seeded] [--resume=<path-checkpoint.json>]");
         process.exitCode = 1;
     } else {
-        for (const id of trackIds) run(id, hops, { seedGeometric, seedMultiResolution, outSuffix });
+        // --resume ha senso solo per UNA pista alla volta (il checkpoint è
+        // specifico di un run) — se l'utente passa più trackId con --resume,
+        // verrebbe applicato (erroneamente) a ognuno: non un caso d'uso
+        // previsto, ma non vale la pena bloccarlo esplicitamente per un
+        // tool interno a un solo utente.
+        for (const id of trackIds) run(id, hops, { seedGeometric, seedMultiResolution, outSuffix, resume });
     }
 }
 
