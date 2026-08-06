@@ -308,7 +308,15 @@
     // boxIndex — una per pilota (vedi assignGridSpawns in
     // f1GameSocket.js). Restituisce anche la tangente locale (tx,tz
     // normalizzata) per offsettare/ruotare il modello del box lateralmente
-    // (frontend/f1.js, loadPlayerPitBox).
+    // (frontend/f1.js, loadPlayerPitBox), e fromIdx (indice del waypoint di
+    // pitPath appena PRIMA dell'anchor, nel verso di marcia): serve
+    // all'autopilota server-side (f1GameSocket.js::updatePitAutopilot) per
+    // sapere fino a che waypoint camminare in avanti prima del balzo finale
+    // verso il proprio box — box con offset negativo (prima di boxIndex
+    // lungo il verso di marcia) hanno fromIdx < boxIndex, altrimenti
+    // l'autopilota li farebbe passare oltre il proprio box fino al vertice
+    // condiviso per poi tornare indietro (bug osservato in playtest: l'auto
+    // va avanti, poi inverte per raggiungere il box).
     function pitBoxAnchors(pitPath, boxIndex, count) {
         const mid = (count - 1) / 2;
         const anchors = [];
@@ -318,7 +326,7 @@
             const a = pitPath[fromIdx], b = pitPath[toIdx];
             const tx = b.x - a.x, tz = b.z - a.z;
             const tlen = Math.hypot(tx, tz) || 1;
-            anchors.push({ x, z, tx: tx / tlen, tz: tz / tlen });
+            anchors.push({ x, z, tx: tx / tlen, tz: tz / tlen, fromIdx });
         }
         return anchors;
     }

@@ -124,25 +124,70 @@
     // Zona box giocatore (vedi TrackGeometry.pitBoxAnchors,
     // frontend/shared/pitBoxLoader.js): i box colorati reali di ogni
     // pilota occupano questo tratto della corsia box, un edificio/
-    // cartellone decorativo lì finirebbe dentro/sopra un modello vero.
-    // Con PIT_BOX_SPACING=24 in trackGeometry.js (misurato sull'ingombro
-    // reale in gioco del modello, ~21.7×21m dopo lo scale 3.5x in
-    // pitBoxLoader.js) e l'attuale MAX_GRID_SIZE=6
-    // (backend/sockets/games/f1Bot.js), i box più esterni arrivano a ±60m
-    // dal centro: la copertura TEORICA completa (±60 + mezzo ingombro box)
-    // sarebbe ~75, ma su piste compatte (monte-rosso, verificato per
-    // misura diretta) la tribuna principale/i cartelloni di partenza
-    // stanno già a 58-60m dal punto box — un raggio così ampio azzererebbe
-    // del tutto la scenografia decorativa vicino alla partenza invece di
-    // limitarsi a diradarla. 55 è il compromesso verificato sulle 3 piste
-    // testabili (monte-rosso, new-monza, prova — baku ha un bug
-    // preesistente e scollegato che ne impedisce la generazione
-    // scenografica, vedi nota separata): riduce le sovrapposizioni più
-    // vicine al centro della fila box senza svuotare la scenografia di
-    // partenza sulle piste più compatte. Non è garanzia assoluta sui box
-    // più esterni della fila su piste corte — accettabile, stesso spirito
-    // "best effort" già usato per lo scatter natura/laghetto.
-    const PIT_BOX_ZONE_HALFLEN = 55;
+    // cartellone/albero/laghetto decorativo lì finirebbe dentro/sopra un
+    // modello vero. Un raggio fisso attorno al solo punto pitBoxIndex
+    // (versione precedente, PIT_BOX_ZONE_HALFLEN=55) non copriva i box più
+    // esterni della fila (arrivano a ±60m con MAX_GRID_SIZE pieno) —
+    // bug osservato in playtest: edifici decorativi generati dentro i box
+    // reali. Sostituito da un test punto-in-poligono contro l'ingombro
+    // REALE di ciascun box (vedi playerBoxFootprintCorners/
+    // insidePlayerBoxFootprint sotto): preciso indipendentemente dalla
+    // posizione del box lungo la fila, niente più raggio da ritarare.
+    //
+    // Ingombro reale (world-space, bbox locale PRE-rotazione, già scalata
+    // 3.5x) e margine di offset dalla corsia — STESSI valori di
+    // frontend/shared/pitBoxLoader.js (PIT_BOX_OFFSET_MARGIN) per lo
+    // stesso modello f1PitBox.glb, misurati con un'ispezione Blender
+    // headless del .glb reale (origine al centro geometrico, non
+    // simmetrica: fronte/apertura lungo +X locale a x=3.2 grezzo -> 11.2
+    // scalato, retro a x=-3.0 -> -10.5, lati a z=±3.0 -> ±10.5). Se il
+    // modello o lo scale cambiano, aggiornare ANCHE pitBoxLoader.js.
+    const PLAYER_BOX_LOCAL_BOUNDS = { xMin: -10.5, xMax: 11.2, zMin: -10.5, zMax: 10.5 };
+    const PLAYER_BOX_OFFSET_MARGIN = 13.2;
+    // Un po' di respiro visivo oltre il vero muro del box, per non far
+    // spuntare un albero/cartellone letteralmente a contatto.
+    const PLAYER_BOX_CLEARANCE = 3;
+    // MAX_GRID_SIZE (backend/sockets/games/f1Bot.js): la scenografia viene
+    // generata una volta al caricamento pista, PRIMA di sapere quanti
+    // giocatori parteciperanno davvero — si esclude lo spazio per il caso
+    // peggiore (griglia piena), non per il conteggio reale della partita.
+    const PLAYER_BOX_MAX_COUNT = 6;
+
+    // Angoli mondo dell'ingombro del box giocatore per un dato anchor —
+    // stessa trasformazione di pitBoxLoader.js::loadPitBoxModel
+    // (rotazione -90° perché l'apertura è modellata lungo +X locale, non
+    // +Z), con PLAYER_BOX_CLEARANCE di margine extra su tutti i lati.
+    function playerBoxFootprintCorners(anchor, trackPts, pitRoadHalf) {
+        const nx = -anchor.tz, nz = anchor.tx;
+        const distPlus  = TrackGeometry.nearestPoint(trackPts, anchor.x + nx, anchor.z + nz).dist;
+        const distMinus = TrackGeometry.nearestPoint(trackPts, anchor.x - nx, anchor.z - nz).dist;
+        const side = distPlus >= distMinus ? 1 : -1;
+        const offset = pitRoadHalf + PLAYER_BOX_OFFSET_MARGIN;
+        const bx = anchor.x + nx * offset * side, bz = anchor.z + nz * offset * side;
+        const rotY = Math.atan2(anchor.x - bx, anchor.z - bz);
+
+        const theta = rotY - Math.PI / 2;
+        const cos = Math.cos(theta), sin = Math.sin(theta);
+        const c = PLAYER_BOX_CLEARANCE;
+        const { xMin, xMax, zMin, zMax } = PLAYER_BOX_LOCAL_BOUNDS;
+        return [[xMin - c, zMin - c], [xMax + c, zMin - c], [xMax + c, zMax + c], [xMin - c, zMax + c]]
+            .map(([lx, lz]) => ({ x: bx + lx * cos + lz * sin, z: bz - lx * sin + lz * cos }));
+    }
+
+    // Test punto-in-poligono (ray casting): true se (x,z) cade dentro
+    // l'ingombro reale di ALMENO uno dei box giocatore.
+    function insidePlayerBoxFootprint(x, z, footprints) {
+        for (const poly of footprints) {
+            let inside = false;
+            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                const xi = poly[i].x, zi = poly[i].z, xj = poly[j].x, zj = poly[j].z;
+                const intersect = ((zi > z) !== (zj > z)) && (x < (xj - xi) * (z - zi) / (zj - zi) + xi);
+                if (intersect) inside = !inside;
+            }
+            if (inside) return true;
+        }
+        return false;
+    }
 
     const POND_RADIUS    = 9;
     const POND_ATTEMPTS  = 60;
@@ -163,7 +208,7 @@
     // + edifici box (pitsGarageClosed/pitsOffice alternati) lungo la corsia
     // box. Nessun PRNG: posizioni deterministiche a intervalli fissi, area
     // "propria" non condivisa con lo scatter natura.
-    function buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, mainSide, embankOuter, playerBoxPt) {
+    function buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, mainSide, embankOuter, playerBoxFootprints) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const n = trackPts.length;
@@ -193,7 +238,7 @@
                 // (verificato per misura diretta). Si scarta lo slot invece
                 // di ricollocarlo altrove.
                 if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + PADDOCK_PIT_CLEARANCE) continue;
-                if (Math.hypot(x - playerBoxPt.x, z - playerBoxPt.z) < PIT_BOX_ZONE_HALFLEN) continue;
+                if (insidePlayerBoxFootprint(x, z, playerBoxFootprints)) continue;
 
                 const rotY = Math.atan2(p.x - x, p.z - z);
                 const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
@@ -215,7 +260,7 @@
             const side = distPlus >= distMinus ? 1 : -1;
             const offset = pitRoadHalf + PIT_BUILDING_OFFSET_MARGIN;
             const x = p.x + nx * offset * side, z = p.z + nz * offset * side;
-            if (Math.hypot(x - playerBoxPt.x, z - playerBoxPt.z) < PIT_BOX_ZONE_HALFLEN) continue;
+            if (insidePlayerBoxFootprint(x, z, playerBoxFootprints)) continue;
             const rotY = Math.atan2(p.x - x, p.z - z);
             const asset = (altBuilding % 2 === 0) ? 'pitsGarageClosed' : 'pitsOffice';
             altBuilding++;
@@ -340,7 +385,7 @@
     // uniformi nel riquadro attorno al tracciato, filtrati per restare in
     // una fascia libera fuori dal corridoio pista/box e a distanza minima
     // dagli altri oggetti già accettati (di qualunque categoria).
-    function buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxPt) {
+    function buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist);
@@ -353,7 +398,7 @@
             if (dTrack.dist < barrierDist + NATURE_MIN_MARGIN) continue;
             if (dTrack.dist > barrierDist + NATURE_MAX_MARGIN) continue;
             if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + PIT_NATURE_MARGIN) continue;
-            if (Math.hypot(x - playerBoxPt.x, z - playerBoxPt.z) < PIT_BOX_ZONE_HALFLEN) continue;
+            if (insidePlayerBoxFootprint(x, z, playerBoxFootprints)) continue;
             if (isTooCloseToAny(accepted, x, z, NATURE_MIN_SPACING)) continue;
 
             const asset = weightedPick(rng, NATURE_ASSETS);
@@ -368,7 +413,7 @@
     // Tentativo singolo (non garantito) di piazzare un laghetto: cerca un
     // punto con un raggio libero sufficiente attorno; se non lo trova entro
     // il budget di tentativi, nessun laghetto su questo tracciato.
-    function findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxPt) {
+    function findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints) {
         const groundPts = trackPts.filter(p => !p.bridge);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist);
 
@@ -380,7 +425,7 @@
             if (dTrack.dist < barrierDist + NATURE_MIN_MARGIN + POND_RADIUS) continue;
             if (dTrack.dist > barrierDist + NATURE_MAX_MARGIN) continue;
             if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + PIT_NATURE_MARGIN + POND_RADIUS) continue;
-            if (Math.hypot(x - playerBoxPt.x, z - playerBoxPt.z) < PIT_BOX_ZONE_HALFLEN) continue;
+            if (insidePlayerBoxFootprint(x, z, playerBoxFootprints)) continue;
             if (isTooCloseToAny(accepted, x, z, POND_CLEARANCE)) continue;
 
             const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
@@ -404,20 +449,28 @@
         const pitRoadHalf = trackData.pit.roadHalfWidth;
         const side = mainStandSide(trackPts, pitPts);
         const embankOuter = barrierDist + embankmentWidth;
-        const playerBoxPt = trackData.pit.path[trackData.pit.boxIndex];
+        // Ingombro reale di ciascun box giocatore (caso peggiore,
+        // PLAYER_BOX_MAX_COUNT box pieni — vedi commento sopra): calcolato
+        // una volta qui, riusato per escludere paddock/natura/laghetto da
+        // tutta la fila reale, non solo dal punto centrale pitBoxIndex.
+        const boxAnchors = TrackGeometry.pitBoxAnchors(trackData.pit.path, trackData.pit.boxIndex, PLAYER_BOX_MAX_COUNT);
+        const playerBoxFootprints = boxAnchors.map(a => playerBoxFootprintCorners(a, trackPts, pitRoadHalf));
 
-        const paddock   = buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankOuter, playerBoxPt);
+        const paddock   = buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankOuter, playerBoxFootprints);
         const mainStand = buildMainGrandstandLayout(trackPts, barrierDist, side, embankOuter);
         const accepted  = [...paddock, ...mainStand];
         const grandstand = buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankOuter);
 
-        const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxPt);
-        const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxPt);
+        const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints);
+        const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints);
 
         const layout = [...paddock, ...mainStand, ...grandstand, ...nature];
         if (pond) layout.push(pond);
         return layout;
     }
 
-    return { generateLayout, hashString, mulberry32, PIT_BUILDING_OFFSET_MARGIN };
+    return {
+        generateLayout, hashString, mulberry32, PIT_BUILDING_OFFSET_MARGIN,
+        playerBoxFootprintCorners, insidePlayerBoxFootprint, PLAYER_BOX_MAX_COUNT
+    };
 });

@@ -172,13 +172,19 @@ test('nessun oggetto scenografico (paddock, natura, laghetto, tribune...) finisc
     // finire nella zona box giocatore esattamente come gli edifici/
     // cartelloni del paddock se non applicano lo stesso controllo (bug
     // trovato dalla review finale — vedi buildNatureLayout/findPondSpot).
+    //
+    // Verifica contro l'ingombro REALE di ogni box (non un raggio fisso
+    // da un solo punto centrale, vedi bug playtest 2026-08-04: un raggio
+    // attorno a pitBoxIndex non copriva i box più esterni della fila).
     const { trackPts, pitPts } = buildReal();
     const layout = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D);
-    const boxPt = monteRosso.pit.path[monteRosso.pit.boxIndex];
+    const pitRoadHalf = monteRosso.pit.roadHalfWidth;
+    const boxAnchors = TrackGeometry.pitBoxAnchors(monteRosso.pit.path, monteRosso.pit.boxIndex, TrackScenery.PLAYER_BOX_MAX_COUNT);
+    const footprints = boxAnchors.map(a => TrackScenery.playerBoxFootprintCorners(a, trackPts, pitRoadHalf));
     assert.ok(layout.length > 0);
     for (const item of layout) {
-        const d = Math.hypot(item.x - boxPt.x, item.z - boxPt.z);
-        assert.ok(d >= 55 - 1e-6, `oggetto '${item.category}'/${item.asset} troppo vicino alla zona box giocatore: ${d}`);
+        assert.ok(!TrackScenery.insidePlayerBoxFootprint(item.x, item.z, footprints),
+            `oggetto '${item.category}'/${item.asset} a (${item.x.toFixed(1)},${item.z.toFixed(1)}) cade dentro l'ingombro reale di un box giocatore`);
     }
 });
 

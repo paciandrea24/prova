@@ -525,7 +525,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const distMinus = TrackGeometry.nearestPoint(trackPts, anchor.x - nx, anchor.z - nz).dist;
         const side = distPlus >= distMinus ? 1 : -1;
 
-        const offset = trackData.pit.roadHalfWidth + TrackScenery.PIT_BUILDING_OFFSET_MARGIN;
+        // PitBoxLoader.PIT_BOX_OFFSET_MARGIN (non TrackScenery.PIT_BUILDING_OFFSET_MARGIN,
+        // tarato sui piccoli edifici decorativi Kenney): il box giocatore
+        // reale è molto più grande, serve un margine che tenga conto del
+        // suo ingombro misurato — vedi commento in pitBoxLoader.js.
+        const offset = trackData.pit.roadHalfWidth + PitBoxLoader.PIT_BOX_OFFSET_MARGIN;
         const bx = anchor.x + nx * offset * side, bz = anchor.z + nz * offset * side;
         const rotY = Math.atan2(anchor.x - bx, anchor.z - bz);   // guarda verso la corsia
 

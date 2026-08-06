@@ -14,6 +14,22 @@
     const RED_HUE_MAX = 20;
     const RED_SAT_MIN = 0.3;
 
+    // Distanza dal centro-corsia box alla cui piazzare il box (offset
+    // laterale) — misurata con un'ispezione Blender headless del vero
+    // f1PitBox.glb (bounding box world-space): origine del modello al
+    // centro geometrico, apertura/fronte lungo +X locale fino a x=3.2
+    // (grezzo) -> 3.2*3.5 = 11.2m dall'origine dopo lo scale 3.5x di
+    // loadPitBoxModel. Con l'origine al centro del box, il fronte del
+    // modello sfora di 11.2m rispetto al punto in cui viene piazzato:
+    // riusare TrackScenery.PIT_BUILDING_OFFSET_MARGIN (6, tarato sui
+    // piccoli edifici decorativi Kenney) piazzava il fronte del box dentro
+    // la carreggiata della corsia box — bug segnalato in playtest ("si
+    // passa attraverso i box"). 2m di margine oltre l'ingombro reale del
+    // modello, per un piccolo respiro visivo dal bordo strada.
+    const PIT_BOX_FRONT_HALF_DEPTH = 11.2;
+    const PIT_BOX_CLEARANCE = 2;
+    const PIT_BOX_OFFSET_MARGIN = PIT_BOX_FRONT_HALF_DEPTH + PIT_BOX_CLEARANCE;
+
     function rgbToHsv(r, g, b) {
         const max = Math.max(r, g, b), min = Math.min(r, g, b);
         const d = max - min;
@@ -128,5 +144,5 @@
         });
     }
 
-    return { loadPitBoxModel, recolorPitBoxTexture, isRedTexel };
+    return { loadPitBoxModel, recolorPitBoxTexture, isRedTexel, PIT_BOX_OFFSET_MARGIN };
 });

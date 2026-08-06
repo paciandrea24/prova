@@ -766,21 +766,39 @@ function startPitLaneEntry(io, lobbyId, game, p) {
 //
 // Due tratti (Fix review finale, vedi
 // docs/superpowers/specs/2026-08-03-f1-pit-boxes-design.md): il walk sui
-// waypoint grezzi (track.pitPath) arriva SEMPRE fino al vero vertice
-// condiviso pitPath[pitBoxIndex] — esattamente come prima di questa
-// feature, preservando la sterzata già corretta/testata sulle curve
-// condivise — poi UN solo hop breve, locale al segmento del vertice,
-// verso/dall'anchor personale del pilota (p.pitBoxFinalApproach). Un
-// salto diretto da un waypoint precedente/successivo lontano fino
-// all'anchor (versione precedente) tagliava fuori l'eventuale curva della
-// corsia proprio in quel punto, portando l'auto fuori dalla sede
-// stradale (misurato: fino a 7 unità su una corsia larga 3.5 di
-// roadHalfWidth, su piste con un piegone marcato a boxIndex).
+// waypoint grezzi (track.pitPath) arriva fino a p.pitBoxAnchor.fromIdx —
+// esattamente come prima di questa feature, preservando la sterzata già
+// corretta/testata sulle curve condivise — poi UN solo hop breve, locale
+// al segmento [fromIdx, fromIdx+1] che contiene l'anchor, verso/dall'anchor
+// personale del pilota (p.pitBoxFinalApproach). Un salto diretto da un
+// waypoint precedente/successivo lontano fino all'anchor (versione
+// precedente) tagliava fuori l'eventuale curva della corsia proprio in
+// quel punto, portando l'auto fuori dalla sede stradale (misurato: fino a
+// 7 unità su una corsia larga 3.5 di roadHalfWidth, su piste con un
+// piegone marcato a boxIndex).
+//
+// IMPORTANTE: si usa fromIdx del box personale, NON il vertice condiviso
+// pitBoxIndex — pitBoxAnchors distribuisce i box SIMMETRICAMENTE attorno a
+// boxIndex (metà prima, metà dopo lungo il verso di marcia). Instradare
+// tutti fino al vertice condiviso prima del balzo finale (versione
+// precedente) faceva sì che un pilota col box PRIMA del vertice ci
+// arrivasse comunque, superando così il proprio box, per poi dover
+// tornare indietro nel balzo finale — bug segnalato in playtest ("va
+// avanti e poi indietro"). Con fromIdx proprio del pilota, il walk in
+// avanti si ferma esattamente al segmento del proprio box, mai oltre.
 function updatePitAutopilot(io, lobbyId, game, p) {
     const track = game.track;
 
     if (p.pitBoxFinalApproach && p.pitBoxAnchor) {
-        const target = (p.pitAutoState === 'entering') ? p.pitBoxAnchor : track.pitPath[track.pitBoxIndex];
+        // 'entering': balzo dal waypoint fromIdx verso l'anchor personale.
+        // 'exiting': balzo inverso, dall'anchor verso pitPath[fromIdx+1] —
+        // il waypoint SUCCESSIVO al proprio box (non più il vertice
+        // condiviso pitBoxIndex: un box con fromIdx < pitBoxIndex deve
+        // rientrare in avanti verso il proprio segmento, non verso un
+        // vertice che potrebbe trovarsi oltre, dietro di sé).
+        const target = (p.pitAutoState === 'entering')
+            ? p.pitBoxAnchor
+            : track.pitPath[p.pitBoxAnchor.fromIdx + 1];
         const dx = target.x - p.x, dz = target.z - p.z;
         const dist = Math.hypot(dx, dz);
 
@@ -793,7 +811,7 @@ function updatePitAutopilot(io, lobbyId, game, p) {
                 p.pitAutoState = null;   // arrivato alla casella personale: la sosta prende il posto dell'autopilota
                 startPitStop(io, lobbyId, game, p);
             }
-            // se 'exiting': arrivato al vertice pitBoxIndex, il prossimo tick
+            // se 'exiting': arrivato al waypoint fromIdx+1, il prossimo tick
             // riprende il walk normale dei waypoint successivi (pitPathIndex
             // è già puntato la waypoint giusto, vedi completePitStop)
             return;
@@ -815,7 +833,7 @@ function updatePitAutopilot(io, lobbyId, game, p) {
         p.x = target.x; p.z = target.z;
         p.speed = 0; p.vx = 0; p.vz = 0;
 
-        if (p.pitPathIndex === track.pitBoxIndex && p.pitAutoState === 'entering') {
+        if (p.pitAutoState === 'entering' && p.pitBoxAnchor && p.pitPathIndex === p.pitBoxAnchor.fromIdx) {
             p.pitBoxFinalApproach = true;   // prossimo tick: hop verso l'anchor personale
             return;
         }
@@ -913,8 +931,12 @@ function completePitStop(io, lobbyId, game, p) {
     if (sid) io.to(sid).emit('f1PitStopFinished', { compound: p.compound });
 
     p.pitAutoState = 'exiting';
-    p.pitBoxFinalApproach = true;   // primo tick di uscita: hop dall'anchor al vertice pitBoxIndex
-    p.pitPathIndex = game.track.pitBoxIndex + 1;   // waypoint da cui riprende il walk normale dopo il rientro al vertice
+    // Primo tick di uscita: hop dall'anchor personale a pitPath[fromIdx+1] —
+    // non più il vertice condiviso pitBoxIndex (vedi updatePitAutopilot):
+    // un box con fromIdx < pitBoxIndex deve rientrare in avanti sul proprio
+    // segmento, non su un vertice che potrebbe stargli dietro.
+    p.pitBoxFinalApproach = true;
+    p.pitPathIndex = p.pitBoxAnchor.fromIdx + 1;   // waypoint da cui riprende il walk normale dopo il rientro
 }
 
 // Stato visibile ad UN determinato giocatore (viewerColor):
