@@ -622,3 +622,70 @@ dell'utente, indipendentemente dall'esito.
 - Nessun task di questo piano tocca `backend/tools/f1RaceLineOptimizer.js` o alcun file `*-raceline.json` — coerente col vincolo "Fase 4 unica a toccarli".
 - Nessun task introduce o modifica `steerGain` — resta root nel piano di Fase 2, non qui.
 - Se un test del Task 2 fallisce in modo inatteso (es. il target coincide anche a flag acceso), non forzare l'assert: verificare prima se il raggio scelto nel test produce davvero un lookahead diverso da quello legacy per quella combinazione di velocità/roadHalf/k di default — aggiustare il raggio della curva sintetica nel test, non l'implementazione, a meno che l'ispezione riveli un bug reale.
+
+---
+
+## Nota aperta (2026-08-04) — i bot non entrano mai fisicamente ai box su monte-rosso/prova
+
+Scoperta lavorando sul branch `worktree-f1-pit-boxes` (box giocatore lungo la
+corsia box, piano separato `2026-08-03-f1-pit-boxes.md`): NON è un
+regressione di quel lavoro, **confermato riproducibile anche sul codice
+originale prima di quel branch** (stesso comportamento con e senza le
+modifiche box). È un bug preesistente e scollegato nello sterzo del bot
+verso l'ingresso ai box (`nearPitEntry` in `f1Bot.js`, non toccato dal
+lavoro sui box), che riguarda proprio l'area di questo piano — da qui la
+nota qui invece che nel piano box.
+
+**Riproduzione headless** (nessun browser, fisica reale del server):
+`createBots` + `physics.assignGridSpawns` su un `game` finto, poi
+`f1GameSocket.tickGame(io, lobbyId, game)` in loop (con `botPitThreshold`
+forzato basso per non aspettare 60-80% di usura reale). Confrontare le due
+varianti:
+- loop stretto sincrono → sufficiente per vedere SE il bot attraversa
+  `inPitEntryZone` (nessuna fisica real-time coinvolta in quella parte);
+- loop con `setInterval` reale a `PHYSICS_TICK_MS` → necessario SOLO se si
+  vuole osservare il minigioco di reazione fino in fondo (`startPitStop`/
+  `handlePitReactionPress`/`completePitStop` usano `setTimeout` a tempo di
+  parete reale, non tick simulati — un loop sincrono troppo veloce li lascia
+  "in sospeso" per sempre, falso negativo da non confondere col bug vero).
+
+**Risultato per pista** (6 bot, soglia usura forzata bassa):
+- **new-monza**: OK — i bot entrano ai box e completano la sosta.
+- **monte-rosso** e **prova**: i bot segnalano `botHeadingToPits=true` (la
+  decisione di pittare scatta) ma non attraversano MAI il rettangolo
+  `track.pitEntryTrigger` — girano per tutta la gara (4-5 giri) senza mai
+  pittare.
+- **baku**: lo script di riproduzione va in timeout/loop — sospetto un
+  problema di dati a monte ancora più a monte (coerente con il bug
+  scollegato già annotato per la scenografia di questa pista), da
+  verificare separatamente prima di guardare l'ingresso ai box.
+
+**Causa specifica misurata su monte-rosso**: quando l'indice-pista del bot
+raggiunge `track.pitEntryIndex` (907), la sua posizione reale è `x≈-64.4,
+z≈88.6` — ma `track.pitEntryTrigger` arriva solo fino a `zMax=81.5` (il
+rettangolo trigger è `xMin:-67.67, xMax:-49.58, zMin:66.5, zMax:81.5`). Il
+bot sta ancora convergendo lateralmente verso `pitPath[0]`
+(`{x:-62.48,z:73.78}`) quando il suo `trackIndex` supera già
+`pitEntryIndex` — il bersaglio sfumato in `nearPitEntry`
+(`BOT_PIT_APPROACH_M=300`) non porta l'auto fisicamente dentro il
+rettangolo in tempo per QUESTA geometria di raccordo. La distanza laterale
+dal punto della linea principale al centro del trigger è simile tra le
+piste (~22-26m su tutte e 3, non è "solo" una questione di offset più
+grande) — la differenza va cercata nella curvatura/tangente del raccordo
+vicino a `pitEntryIndex`, non ancora isolata.
+
+**Da NON fare**: ritoccare `BOT_PIT_APPROACH_M` o la curva di blend a
+sensazione — vedi `feedback_bot_ai_physics_over_heuristics` (4 round di
+tuning a sensazione hanno già peggiorato le cose in passato su quest'area,
+un modello fisico esatto ha risolto in un colpo solo). Prima capire la
+geometria esatta (tangente/curvatura del raccordo pista→corsia box su
+monte-rosso/prova vs new-monza), poi eventualmente estendere/adattare la
+finestra di blend o il trigger stesso sulla base di quella misura — non a
+tentativi.
+
+**Ripartire da qui domani**: isolare la geometria del raccordo (tangente
+alla linea principale e a `pitPath` nell'intorno di `pitEntryIndex`) per
+new-monza (funziona) vs monte-rosso/prova (non funziona), capire cosa
+distingue le due situazioni, poi decidere se il fix è nel trigger
+(`pit.entryTrigger`, dato editor) o nella logica di blend del bot
+(`nearPitEntry`, codice).
