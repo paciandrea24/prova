@@ -424,8 +424,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     let slipstreamActive = false;
     let cameraMode = 'third';
     let isRacing = false;
-    let localStart = null;
     let myFinalTime = null;
+    // Tempo trascorso "vero" per il timer HUD live (Rif. 2026-08-07):
+    // ANCORATO a state[myColor].elapsedMs (conteggio di tick fisici lato
+    // server, la STESSA fonte usata per il tempo finale — vedi checkLap),
+    // ma tra un f1StateUpdate e il prossimo (~50ms, a volte di più per il
+    // jitter del tick loop — vedi nota su PHYSICS_TICK_MS) il rendering
+    // (~60fps) estrapola in avanti con Date.now() dall'ultimo aggancio:
+    // altrimenti il numero "scatta" a salti di 50/150ms invece di scorrere
+    // liscio (segnalato dall'utente). Ri-agganciato ad ogni tick reale, non
+    // può quindi derivare come il vecchio Date.now()-localStart.
+    let myLiveElapsedMs = null;
+    let myLiveElapsedSyncedAt = null;
+    // Sessione di qualifica "ancora aperta" agli occhi del client — driven
+    // SOLO dagli eventi di ciclo vita (mai da target.finished, vedi sotto),
+    // per il pannello "in attesa degli altri piloti". Rif. 2026-08-07,
+    // terzo giro: durante 'grid_display' (il pannello coi tempi di tutti)
+    // playersVisibleTo() lato server ritorna ESPLICITAMENTE {} per quella
+    // fase (f1GameSocket.js) — nessun f1StateUpdate arriva più finché non
+    // si passa a 'race', quindi target.finished per il proprio colore resta
+    // congelato a true per TUTTA la durata della griglia (non ~1 tick come
+    // creduto al giro precedente): un mostra/nascondi basato sullo stato
+    // "vivo" del giocatore non può funzionare in questa fase, serve sapere
+    // se la sessione è chiusa indipendentemente da quel dato.
+    let qualiSessionOpen = false;
     let hostColor = null;
     let currentPhase = null;   // tyre_select | qualifying | grid_display | race
     let raceTotalLaps = 3;      // giri della gara vera (fisso, indipendente dalla fase corrente)
@@ -897,6 +919,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         compounds, strategy, myCompound, tyreConfirmed, tyreTotal }) => {
         if (compounds) tyreCompoundsInfo = compounds;
         if (phase) currentPhase = phase;
+        // Rientro a metà qualifica (reconnect): senza questo qualiSessionOpen
+        // resterebbe false (valore iniziale), e l'overlay "in attesa" non
+        // comparirebbe mai anche se la sessione è davvero aperta — l'unico
+        // altro punto che lo apre è f1Countdown, che non rifira per chi si
+        // ricollega a sessione già in corso.
+        if (phase) qualiSessionOpen = (phase === 'qualifying');
         if (hc) hostColor = hc;
         if (totalLaps) {
             // totalLaps qui è SEMPRE quello della gara vera (il server lo manda
@@ -928,10 +956,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         // Rientro a gara già in corso: riprende il cronometro dal punto giusto
-        // senza rivedere il countdown (che è già passato per tutti gli altri).
+        // senza rivedere il countdown (che è già passato per tutti gli altri)
+        // — myLiveElapsedMs si popola da solo al prossimo f1StateUpdate,
+        // nessun calcolo locale da seminare qui.
         if (raceStarted) {
             isRacing = true;
-            localStart = Date.now() - (elapsed || 0);
             document.getElementById('countdown-overlay').style.display = 'none';
             document.getElementById('timer-speed-panel').style.display = (phase === 'qualifying' || phase === 'race') ? 'flex' : 'none';
         }
@@ -1163,6 +1192,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     socket.on('f1Countdown', (data) => {
         isRacing = false;
         myFinalTime = null;
+        myLiveElapsedMs = null;
+        myLiveElapsedSyncedAt = null;
         if (tyreSelectActive) exitTyrePreview();   // la qualifica sta per partire: fine anteprima tracciato
         tyreSelectActive = false;
         clearTyreNav();
@@ -1174,6 +1205,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         // con GRID_DISPLAY_MS/TYRE_SELECT_MS del server.
         document.getElementById('podium-modal').style.display = 'none';
         document.getElementById('pole-overlay').style.display = 'none';
+        // true solo per il countdown che apre una qualifica; il countdown di
+        // gara (data.phase==='race') la chiude anche come rete di sicurezza,
+        // ridondante con f1QualiEnded qui sotto ma innocuo.
+        qualiSessionOpen = (data?.phase === 'qualifying');
+        document.getElementById('quali-waiting-overlay').style.display = 'none';
         document.getElementById('tyre-select-overlay').style.display = 'none';
         const overlay = document.getElementById('countdown-overlay');
         const num = document.getElementById('countdown-number');
@@ -1214,11 +1250,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     socket.on('f1RaceStarted', (data) => {
+        // SOLO se questo è il via della GARA: questo evento scatta anche al
+        // via della qualifica stessa (data.phase==='qualifying', il momento
+        // esatto in cui il pannello deve poter comparire) — un reset
+        // incondizionato qui la chiudeva nell'istante stesso in cui si
+        // apriva, quindi non compariva mai (bug reale introdotto nel giro
+        // precedente, segnalato dall'utente: "non esce più").
+        if (data?.phase === 'race') qualiSessionOpen = false;
         isRacing = true;
         lightsSequenceActive = false;
         myFinalTime = null;
+        myLiveElapsedMs = null;
+        myLiveElapsedSyncedAt = null;
         if (data?.phase) currentPhase = data.phase;
-        localStart = Date.now() - (data?.syncTime || 0);
         const overlay = document.getElementById('countdown-overlay');
         const num = document.getElementById('countdown-number');
         const lightsBoard = document.getElementById('lights-board');
@@ -1300,7 +1344,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     // poi la griglia di partenza completa (riusa il modal del podio) per il
     // resto della finestra prima del countdown di gara (si chiude da sé al
     // prossimo f1Countdown, vedi handler sopra).
+    // Finestra di grazia di fine qualifica (Rif. design 2026-08-07): NON
+    // mostra il conteggio (anche "X su N" anonimo può far intuire il proprio
+    // piazzamento prima della rivelazione — segnalato dall'utente) — l'unico
+    // uso di questo evento è nascondere l'overlay appena TUTTI (bot compresi)
+    // hanno tagliato il traguardo, senza aspettare f1QualiEnded (che arriva
+    // comunque un istante dopo, stesso tick server): senza questo l'overlay
+    // poteva restare a schermo un frame in più, sovrapposto alla griglia finale.
+    socket.on('f1QualiWaiting', ({ finished, total }) => {
+        if (finished >= total) {
+            qualiSessionOpen = false;
+            document.getElementById('quali-waiting-overlay').style.display = 'none';
+        }
+    });
+
     socket.on('f1QualiEnded', ({ grid }) => {
+        // Chiusura DEFINITIVA (non lo stato del giocatore, vedi dichiarazione
+        // di qualiSessionOpen sopra): da qui in poi, per tutta 'grid_display'
+        // (il pannello coi tempi che sta per aprirsi qui sotto), il server
+        // non manda più nessun f1StateUpdate — senza questo flag il pannello
+        // "in attesa" resterebbe sovrapposto alla griglia per l'intera durata.
+        qualiSessionOpen = false;
+        document.getElementById('quali-waiting-overlay').style.display = 'none';
         const myPos = (grid || []).findIndex(e => e.color === myColor) + 1;
         if (myPos === 1) playRevealAnimation('POOOOOOOOOOLE', true);
         else if (myPos > 1) playRevealAnimation(`P${myPos}`, false);
@@ -1847,12 +1912,46 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (color === myColor) {
                 speedEl.textContent = Math.round(Math.abs(target.speed || 0) * 55);
-                if (target.finished && target.time) myFinalTime = target.time;
+                // Questo è animate(), girato a ~60fps: target è la stessa
+                // istanza di serverState[color] finché non arriva un NUOVO
+                // f1StateUpdate (~ogni 50ms) — riagganciare qui SOLO quando
+                // il valore è davvero cambiato, altrimenti Date.now() si
+                // resetta ad ogni frame e l'estrapolazione sotto non ha mai
+                // il tempo di accumularsi (bug reale, causa dei salti di
+                // 50/150ms segnalati dall'utente).
+                if (typeof target.elapsedMs === 'number' && target.elapsedMs !== myLiveElapsedMs) {
+                    myLiveElapsedMs = target.elapsedMs;
+                    myLiveElapsedSyncedAt = Date.now();
+                }
+                if (target.finished && target.time) {
+                    myFinalTime = target.time;
+                }
+                // Overlay "in attesa degli altri piloti": mostrato solo se la
+                // sessione è ancora aperta (qualiSessionOpen, chiuso SOLO da
+                // eventi di ciclo vita — mai da target.finished, vedi
+                // dichiarazione della variabile). Rif. 2026-08-07, terzo
+                // giro: durante 'grid_display' (il pannello coi tempi che
+                // segue f1QualiEnded) il server smette di mandare
+                // f1StateUpdate del tutto (playersVisibleTo ritorna {} per
+                // quella fase) — quindi target.finished per il proprio
+                // colore resta congelato true per l'INTERA durata della
+                // griglia, non pochi tick: un mostra/nascondi basato solo su
+                // target.finished (tentativo precedente) restava sovrapposto
+                // al pannello dei tempi per tutti gli 8 secondi. qualiSessionOpen
+                // si autocorregge SEMPRE su eventi certi (mai su un dato che
+                // può congelarsi), quindi qui basta leggerlo.
+                document.getElementById('quali-waiting-overlay').style.display =
+                    (qualiSessionOpen && target.finished && target.time) ? 'flex' : 'none';
             }
         }
 
-        if (isRacing && localStart) {
-            const t = myFinalTime !== null ? myFinalTime : (Date.now() - localStart);
+        if (isRacing && myLiveElapsedMs !== null) {
+            // Estrapolazione locale dall'ultimo aggancio reale (vedi sopra):
+            // scorre liscio ad ogni frame invece di restare fermo fino al
+            // prossimo tick del server, ma resta ancorato al tempo VERO
+            // (mai driftare come il vecchio Date.now()-localStart, perché si
+            // ri-sincronizza ad ogni tick reale, non solo all'inizio).
+            const t = myFinalTime !== null ? myFinalTime : (myLiveElapsedMs + (Date.now() - myLiveElapsedSyncedAt));
             const m = Math.floor(t / 60000);
             const s = Math.floor((t % 60000) / 1000);
             const ms = t % 1000;

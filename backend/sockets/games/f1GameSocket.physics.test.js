@@ -356,7 +356,7 @@ test('buildPublicState: espone anche damageParts (per evoluzioni future HUD)', (
         }
     };
     const track = { points: [{ x: 0, z: 0 }] };
-    const state = physics.buildPublicState(players, false, track);
+    const state = physics.buildPublicState(players, false, track, { raceTick: 0 });
     assert.deepEqual(state.red.damageParts, parts);
 });
 
@@ -384,7 +384,7 @@ test('buildPublicState: espone damage e collisionPenalty (bool) per giocatore', 
         }
     };
     const track = { points: [{ x: 0, z: 0 }] };
-    const state = physics.buildPublicState(players, false, track);
+    const state = physics.buildPublicState(players, false, track, { raceTick: 0 });
 
     assert.equal(state.red.damage, 42);
     assert.equal(state.red.collisionPenalty, true);
@@ -441,6 +441,101 @@ test('checkLap: senza startFinishIndex (pista senza startFinish, comportamento o
     p.inFinishZone = false;
     physics.checkLap(p, 10, io, 'lobby1', game);
     assert.equal(p.lap, 1);
+});
+
+test('checkLap: tempo finale interpola la frazione esatta di tick in cui si attraversa il traguardo, non arrotonda al bordo del tick da 50ms', () => {
+    const { physics } = f1GameSocket;
+    const n = 1000;
+    const points = Array.from({ length: n }, (_, i) => ({ x: i, z: 0 })); // rettilineo lungo x, tangente (1,0) in ogni punto interno
+    const startFinishIndex = 300;
+    const track = { points, lapLength: n, startFinishIndex };
+    const game = { track, raceTick: 20 };
+    const io = makeMockIo();
+
+    const p = {
+        color: 'red', lap: 9, checkpointA: true, inFinishZone: false,
+        trackIndex: startFinishIndex,
+        // Attraversamento esattamente a metà tra la posizione dell'inizio
+        // tick (prevX, prima della linea a x=300) e quella di fine tick
+        // (x, dopo la linea): il traguardo (x=300) cade a metà strada.
+        prevX: 299.5, prevZ: 0, x: 300.5, z: 0
+    };
+    physics.checkLap(p, 10, io, 'lobby1', game);
+    assert.equal(p.lap, 10);
+    assert.equal(p.finished, true);
+    // raceTick=20 -> il tick copre l'intervallo [950,1000]ms; attraversamento
+    // a metà -> 975ms, non 1000ms (game.raceTick * 50 puro).
+    assert.equal(p.time, 975);
+});
+
+test('checkLap: senza prevX/prevZ (compatibilità con chiamate esistenti), il tempo finale resta il vecchio raceTick*PHYSICS_TICK_MS', () => {
+    const { physics } = f1GameSocket;
+    const n = 1000;
+    const points = Array.from({ length: n }, (_, i) => ({ x: i, z: 0 }));
+    const startFinishIndex = 300;
+    const track = { points, lapLength: n, startFinishIndex };
+    const game = { track, raceTick: 20 };
+    const io = makeMockIo();
+
+    const p = {
+        color: 'red', lap: 9, checkpointA: true, inFinishZone: false,
+        trackIndex: startFinishIndex
+    };
+    physics.checkLap(p, 10, io, 'lobby1', game);
+    assert.equal(p.finished, true);
+    assert.equal(p.time, 1000);
+});
+
+test('checkLap: caso REALE — finishWindowFor è larga diversi metri, "appena entrato in zona" scatta PRIMA della vera linea, il tempo va estrapolato oltre il bordo del tick (frazione > 1), non prima', () => {
+    // Bug trovato simulando una sessione vera end-to-end (non dal test sopra,
+    // che aveva l'attraversamento e l'ingresso finestra coincidenti nello
+    // stesso tick per costruzione — caso raro nella realtà). Qui l'auto è
+    // ENTRATA nella finestra (idx=295, dentro il margine di finishWindowFor)
+    // ma è ancora 5 unità (prevX=293) / 3 unità (x=296) PRIMA della vera
+    // linea (300): il vecchio codice avrebbe timbrato il tempo qui, troppo
+    // presto. La frazione corretta stima quanti tick servono ANCORA, alla
+    // velocità di questo tick, per raggiungere davvero la linea.
+    const { physics } = f1GameSocket;
+    const n = 1000;
+    const points = Array.from({ length: n }, (_, i) => ({ x: i, z: 0 }));
+    const startFinishIndex = 300;
+    const track = { points, lapLength: n, startFinishIndex };
+    const game = { track, raceTick: 20 };
+    const io = makeMockIo();
+
+    const p = {
+        color: 'red', lap: 9, checkpointA: true, inFinishZone: false,
+        trackIndex: 295,   // dentro finishWindowFor (finestra di alcune unità attorno a 300)
+        prevX: 293, prevZ: 0, x: 296, z: 0   // moto di 3 unità/tick verso la linea (300), ancora non raggiunta
+    };
+    physics.checkLap(p, 10, io, 'lobby1', game);
+    assert.equal(p.finished, true);
+    // s0=-7, s1=-4, denom=3, t=7/3 -> tempo = (19 + 7/3)*50 = 1066.67 -> 1067ms
+    assert.equal(p.time, 1067);
+    // Sopra al vecchio raceTick*PHYSICS_TICK_MS (1000ms): la vera linea viene
+    // raggiunta DOPO il tick di ingresso finestra, mai prima.
+    assert.ok(p.time > game.raceTick * physics.PHYSICS_TICK_MS);
+});
+
+test('checkLap: estrapolazione fuori da ogni limite plausibile (>40 tick) ricade sul vecchio comportamento, mai un numero inventato', () => {
+    const { physics } = f1GameSocket;
+    const n = 1000;
+    const points = Array.from({ length: n }, (_, i) => ({ x: i, z: 0 }));
+    const startFinishIndex = 300;
+    const track = { points, lapLength: n, startFinishIndex };
+    const game = { track, raceTick: 20 };
+    const io = makeMockIo();
+
+    const p = {
+        color: 'red', lap: 9, checkpointA: true, inFinishZone: false,
+        trackIndex: 295,
+        // Spostamento di 1 unità/tick da molto lontano (s0=-101): servirebbero
+        // >40 tick per raggiungere la linea, oltre il limite di fiducia.
+        prevX: 198, prevZ: 0, x: 199, z: 0
+    };
+    physics.checkLap(p, 10, io, 'lobby1', game);
+    assert.equal(p.finished, true);
+    assert.equal(p.time, 1000);
 });
 
 // ---- Fase 4 (Rif. docs/superpowers/specs/2026-07-28-f1-aerodynamics-model-design.md):

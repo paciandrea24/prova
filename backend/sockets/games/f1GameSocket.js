@@ -112,6 +112,16 @@ function computeSlipstreamMult(gapM) {
 }
 const REJOIN_GRACE = 60000;   // finestra di riconnessione dopo un drop (scheda in background, refresh, rete)
 const GRID_DISPLAY_MS = 8000; // quanto resta a schermo l'animazione POLE + la griglia prima del countdown di gara
+// Finestra di grazia di fine qualifica (Rif. design 2026-08-07): quando
+// tutti gli umani connessi finiscono, la sessione NON chiude subito — resta
+// aperta fino a QUALI_GRACE_MS in più (o finché anche i bot finiscono,
+// quello che avviene prima), dando ai bot ancora in pista una possibilità
+// reale di tagliare il traguardo invece di ricevere quasi sempre un tempo
+// stimato (vedi estimateFinishTime in endQualifying). Stesso valore di
+// GRID_DISPLAY_MS non per necessità tecnica, solo perché è già il tempo a
+// cui i giocatori sono abituati tra una fase e l'altra.
+const QUALI_GRACE_MS = 8000;
+const QUALI_GRACE_TICKS = Math.round(QUALI_GRACE_MS / PHYSICS_TICK_MS);
 // Il normale flusso qualifica->griglia->gara ha già una pausa naturale
 // (GRID_DISPLAY_MS) tra la fine di una sessione e l'inizio della prossima,
 // tempo per staccare il piede dall'acceleratore. "Riprova" (modalità
@@ -580,6 +590,8 @@ function startTyreSelect(io, lobbyId, game) {
 function startQualifying(io, lobbyId, game) {
     game.phase = 'qualifying';
     game.qualiEnded = false;
+    game.qualiGraceEndTick = null;
+    game.qualiLastWaitingFinished = null;
     game.raceStarted = false;
     // Tutti allo stesso identico punto (vedi game.track.qualiSpawn), a
     // prescindere da dove fossero prima (già impostato alla creazione, ma qui
@@ -992,6 +1004,24 @@ function broadcastState(io, lobbyId, game, raceStartedFlag) {
     io.to(lobbyId).emit('f1StateUpdate', buildPublicState(playersVisibleTo(game, null), raceStartedFlag, game.track, game));
 }
 
+// Contatore live "X su N piloti al traguardo" durante la finestra di grazia
+// di fine qualifica (Rif. design 2026-08-07): NON rivela chi è arrivato né
+// con che tempo (playersVisibleTo isola comunque ognuno alla propria auto
+// in qualifica — questo è un evento a parte, apposta neutro) — solo per
+// dare un segnale vero che qualcosa sta succedendo, invece di uno schermo
+// fermo. Trasmesso a tutta la lobby (nessuna informazione sensibile), solo
+// quando il conteggio cambia rispetto all'ultimo emesso: il gate cambia al
+// massimo una volta per bot arrivato, non serve spammare un evento ogni
+// tick per 8 secondi buoni.
+function broadcastQualiWaitingCount(io, lobbyId, game) {
+    const players = Object.values(game.players);
+    const finished = players.filter(p => p.finished).length;
+    const total = players.length;
+    if (game.qualiLastWaitingFinished === finished) return;
+    game.qualiLastWaitingFinished = finished;
+    io.to(lobbyId).emit('f1QualiWaiting', { finished, total });
+}
+
 // ====================================================
 // TICK FISICO
 // ====================================================
@@ -1030,6 +1060,13 @@ function tickGame(io, lobbyId, game) {
     // In qualifica si fa UN giro secco; in gara i giri sono quelli della pista caricata.
     const totalLaps = isQuali ? 1 : game.track.totalLaps;
     const players = Object.values(game.players);
+    // Posizione "di inizio tick", prima di qualunque integrazione: unico
+    // input per interpolare la frazione esatta di tick in cui si attraversa
+    // il traguardo (vedi checkLap/computeFinishCrossingFraction) — senza
+    // questo il tempo finale può solo cadere sul bordo del tick (multiplo
+    // di PHYSICS_TICK_MS), che è quanto segnalato dall'utente come "scarti
+    // di 50/150ms, non tempi reali" nel riepilogo griglia.
+    for (const p of players) { p.prevX = p.x; p.prevZ = p.z; }
     // In qualifica corrono TUTTI in parallelo (isolati solo visivamente, non
     // fisicamente: nessuna collisione tra loro — vedi sotto). Chi è fermo ai
     // box (pitting) o guidato dall'autopilota (pitAutoState) resta escluso
@@ -1168,18 +1205,32 @@ function tickGame(io, lobbyId, game) {
         p.pendingCollisionPenaltyEvents.length = 0;
     }
 
-    // Fine sessione (qualifica o gara): tutti i giocatori UMANI CONNESSI
-    // hanno finito (chi è in grazia con l'auto ferma non blocca la
-    // chiusura; c'è comunque un timer di sicurezza per chi resta indietro
-    // senza essersi disconnesso). I bot NON bloccano la chiusura: un bot
-    // lento o fuori pista non deve tenere in attesa un giocatore umano che
-    // ha già finito — i bot restano comunque in gara, semplicemente non
-    // contano per questo gate.
+    // Fine sessione: tutti i giocatori UMANI CONNESSI hanno finito (chi è in
+    // grazia con l'auto ferma non blocca la chiusura; c'è comunque un timer
+    // di sicurezza per chi resta indietro senza essersi disconnesso). I bot
+    // NON bloccano la chiusura: un bot lento o fuori pista non deve tenere
+    // in attesa un giocatore umano che ha già finito — i bot restano
+    // comunque in gara, semplicemente non contano per questo gate.
+    //
+    // In QUALIFICA questo non chiude subito la sessione: apre invece una
+    // finestra di grazia (QUALI_GRACE_TICKS) durante cui i bot continuano a
+    // guidare normalmente, con una possibilità reale di tagliare il
+    // traguardo invece di ricevere quasi sempre un tempo stimato (vedi
+    // estimateFinishTime in endQualifying) — Rif. design 2026-08-07.
     const connectedHumans = players.filter(p => !p.disconnected && !p.isBot);
     if (isQuali) {
-        if (!game.qualiEnded && connectedHumans.length > 0 && connectedHumans.every(p => p.finished)) {
-            endQualifying(io, lobbyId, game);
-            return;
+        if (!game.qualiEnded) {
+            if (!game.qualiGraceEndTick && connectedHumans.length > 0 && connectedHumans.every(p => p.finished)) {
+                game.qualiGraceEndTick = game.raceTick + QUALI_GRACE_TICKS;
+            }
+            if (game.qualiGraceEndTick) {
+                broadcastQualiWaitingCount(io, lobbyId, game);
+                const allFinished = players.every(p => p.finished);
+                if (allFinished || game.raceTick >= game.qualiGraceEndTick) {
+                    endQualifying(io, lobbyId, game);
+                    return;
+                }
+            }
         }
     } else if (game.phase === 'race') {
         if (!game.raceEnded && connectedHumans.length > 0 && connectedHumans.every(p => p.finished)) {
@@ -1301,6 +1352,54 @@ function circularWithin(idx, target, n, halfWidth) {
     return d <= halfWidth;
 }
 
+// Quanti tick al massimo ci si fida dell'estrapolazione in
+// computeFinishCrossingFraction prima di considerarla inaffidabile (vedi
+// sotto) — 40 tick = 2s, ben oltre il tempo che serve a qualunque velocità
+// di gioco plausibile per coprire i pochi metri di FINISH_WINDOW_M.
+const FINISH_CROSS_EXTRAPOLATION_MAX_TICKS = 40;
+
+// Frazione di tick (può essere >1) in cui il giocatore attraversa DAVVERO la
+// linea del traguardo, per dare al tempo finale precisione reale invece di
+// scattare sempre sul bordo del tick fisico (50ms) — Rif. 2026-08-07,
+// segnalato dall'utente come "scarti di 50/150ms, non tempi reali" nel
+// riepilogo griglia. Puramente geometrico (nessun orologio di sistema): la
+// linea è il piano perpendicolare alla tangente della pista nel punto
+// startFinishIndex.
+//
+// ATTENZIONE (bug reale trovato simulando una sessione vera end-to-end, un
+// unit test con attraversamento e ingresso-finestra coincidenti nello stesso
+// tick non lo copriva): finishWindowFor è larga qualche metro, non un punto
+// — "appena entrato in zona" (l'edge-trigger in checkLap che fissa
+// p.finished/p.time) scatta quasi sempre mentre il giocatore è ancora PRIMA
+// della vera linea, non esattamente su di essa. E siccome un giocatore
+// finished esce dalla simulazione fisica dal tick successivo (vedi filtro
+// `racing` in tickGame), non arriverà MAI a un tick successivo in cui
+// ricalcolare da capo troverebbe il vero attraversamento — va quindi
+// ESTRAPOLATO in avanti da questo stesso tick: dati le due proiezioni
+// s0 (inizio tick) e s1 (fine tick) sulla tangente, la frazione di tick a
+// cui s=0 può cadere oltre 1 (il giocatore raggiungerà la linea vera solo
+// qualche tick dopo quello dell'edge-trigger, alla velocità osservata in
+// questo tick) — è un'estrapolazione a velocità costante, non una misura
+// diretta, ma correttamente più vicina alla realtà del vecchio
+// comportamento (che marcava il tempo ancora prima, all'ingresso finestra).
+// Ricade su 1 (vecchio comportamento esatto, bordo del tick) se manca
+// prevX/prevZ, il movimento lungo la tangente è ~zero (fermo o laterale), o
+// l'estrapolazione supera FINISH_CROSS_EXTRAPOLATION_MAX_TICKS (mai
+// un'invenzione oltre un limite ragionevole).
+function computeFinishCrossingFraction(p, track, startFinishIndex) {
+    if (typeof p.prevX !== 'number' || typeof p.prevZ !== 'number') return 1;
+    const g = track.points[startFinishIndex];
+    if (!g) return 1;
+    const { tx, tz } = TrackGeometry.tangentAt(track.points, startFinishIndex, true);
+    const s0 = (p.prevX - g.x) * tx + (p.prevZ - g.z) * tz;
+    const s1 = (p.x - g.x) * tx + (p.z - g.z) * tz;
+    const denom = s1 - s0;
+    if (Math.abs(denom) < 1e-9) return 1;
+    const t = -s0 / denom;
+    if (!Number.isFinite(t) || t < 0 || t > FINISH_CROSS_EXTRAPOLATION_MAX_TICKS) return 1;
+    return t;
+}
+
 // ====================================================
 // LAP CHECK — basato sull'indice campionato (generico per qualunque pista):
 // la linea di partenza è sempre l'indice 0 dei punti campionati; il
@@ -1327,7 +1426,8 @@ function checkLap(p, totalLaps, io, lobbyId, game) {
 
         if (p.lap >= totalLaps) {
             p.finished = true;
-            p.time = game.raceTick * PHYSICS_TICK_MS;
+            const frac = computeFinishCrossingFraction(p, game.track, startFinishIndex);
+            p.time = Math.round((game.raceTick - 1 + frac) * PHYSICS_TICK_MS);
             // Obbligo di almeno un pit stop in gara (regola vera F1): chi non
             // ha mai cambiato gomme prende una penalità in tempo a fine gara,
             // non viene bloccato né squalificato.
@@ -1419,6 +1519,13 @@ function buildPublicState(players, raceStarted, track, game) {
             steerInput: p.inputs?.steer ?? 0,
             finished: p.finished,
             time: p.time,
+            // Tempo trascorso "vero" (conteggio di tick fisici, la STESSA
+            // fonte usata per calcolare p.time a fine giro — vedi checkLap)
+            // — il client lo usa per il timer HUD live invece di Date.now(),
+            // altrimenti deriva dall'imprecisione di setInterval e non
+            // combacia più col tempo finale mostrato a fine sessione (bug
+            // segnalato dall'utente, Rif. 2026-08-07: due timer discordanti).
+            elapsedMs: game.raceTick * PHYSICS_TICK_MS,
             lap: p.lap,
             position: raceStarted ? ranked.findIndex(r => r.color === color) + 1 : null,
             compound: p.compound,

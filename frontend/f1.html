@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260807b">
 </head>
 
 <body>
@@ -173,6 +173,20 @@
         <span id="pole-text" class="pole-text"></span>
     </div>
 
+    <!-- Overlay "in attesa degli altri piloti" — dopo il proprio traguardo in
+         qualifica, finché non arriva f1QualiEnded. Nessun numero/conteggio
+         mostrato (solo un'animazione di caricamento continua): anche un
+         conteggio anonimo può far intuire il proprio piazzamento prima
+         dell'animazione di rivelazione — vedi f1QualiWaiting in f1.js, che
+         resta usato solo per nascondere l'overlay appena tutti arrivano. -->
+    <div id="quali-waiting-overlay" style="display:none; position:fixed; inset:0; z-index:55;
+         align-items:center; justify-content:center; pointer-events:none;">
+        <div class="f1-panel quali-waiting-box">
+            <span class="eyebrow">In attesa degli altri piloti</span>
+            <div class="quali-waiting-bar"><div class="quali-waiting-bar-fill"></div></div>
+        </div>
+    </div>
+
     <!-- Modale podio -->
     <div id="podium-modal" class="modal" style="display:none;">
         <div class="modal-content menu-panel-neu">
@@ -219,7 +233,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
     <script src="shared/voxelizer.js?v=20260730a"></script>
     <script src="/shared/firebaseConfig.js" defer></script>
-    <script src="f1.js?v=20260803b"></script>
+    <script src="f1.js?v=20260807f"></script>
 </body>
 
 </html>
