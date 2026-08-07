@@ -843,11 +843,26 @@ function updateBotInputs(game, deps) {
         // pilota vero che varia ritmo anche dentro lo stesso giro) — rompe
         // l'ordine altrimenti statico di una griglia già ordinata per ritmo
         // fisso, con più occasioni di distacco reale anche su gare corte.
-        const paceSegmentSamples = Math.ceil(track.points.length / BOT_LAP_PACE_SEGMENTS);
-        const paceSegment = p.lap * BOT_LAP_PACE_SEGMENTS + Math.floor((p.trackIndex || 0) / paceSegmentSamples);
-        if (paceSegment !== p.botLapSeen) {
-            p.botLapSeen = paceSegment;
-            p.botLapPaceMult = 1 + (Math.random() * 2 - 1) * BOT_LAP_PACE_VARIANCE;
+        // SOLO in gara: in qualifica (giro secco) un pilota vero spinge
+        // sempre al massimo, nessun "giorno storto" — il bot corre sempre
+        // al proprio ritmo migliore (botSpeedFactor puro, mai penalizzato
+        // né gonfiato dalla variazione). Senza questo isQuali, il valore
+        // ereditato dalla griglia (già randomizzato in createBots) e le
+        // ri-estrazioni a metà giro rendevano il tempo di qualifica di ogni
+        // bot dipendente anche da QUANDO l'umano tagliava il traguardo
+        // (endQualifying stima il tempo dei bot non ancora arrivati
+        // estrapolando dal progresso in quell'istante) — scoperto indagando
+        // una correlazione segnalata dall'utente tra il proprio tempo e
+        // quello dei bot.
+        if (isQuali) {
+            p.botLapPaceMult = 1;
+        } else {
+            const paceSegmentSamples = Math.ceil(track.points.length / BOT_LAP_PACE_SEGMENTS);
+            const paceSegment = p.lap * BOT_LAP_PACE_SEGMENTS + Math.floor((p.trackIndex || 0) / paceSegmentSamples);
+            if (paceSegment !== p.botLapSeen) {
+                p.botLapSeen = paceSegment;
+                p.botLapPaceMult = 1 + (Math.random() * 2 - 1) * BOT_LAP_PACE_VARIANCE;
+            }
         }
 
         // Fermo ai box o guidato dall'autopilota corsia box: nessun input

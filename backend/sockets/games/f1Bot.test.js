@@ -877,3 +877,61 @@ test('_botDebug: distanceFromRacingLine/headingVsTangentDeg presenti in OGNI sta
     assert.ok(typeof p._botDebug.distanceFromRacingLine === 'number', 'presente anche in WAITING_START, non solo nei rami di guida');
     assert.ok(typeof p._botDebug.headingVsTangentDeg === 'number', 'presente anche in WAITING_START, non solo nei rami di guida');
 });
+
+// ---- botLapPaceMult in qualifica: il giorno buono/storto (BOT_LAP_PACE_VARIANCE,
+// introdotto per abilitare i sorpassi in GARA — vedi commento sopra la
+// costante in f1Bot.js) non ha senso su un giro secco di qualifica, dove un
+// pilota vero spinge sempre al massimo. Deve restare fisso a 1 in quali,
+// sia al primo tick (valore iniziale casuale ereditato dalla griglia) sia
+// attraversando un confine di segmento di ritmo (che in gara lo farebbe
+// ri-estrarre). ----
+function makePaceRolloverGame(phase, trackIndex, initialPaceMult) {
+    const points = buildConstantCurveTrack(120, 30, 1 / 20);
+    const track = {
+        points, lapLength: points.length, roadHalf: 8, totalLaps: 1,
+        pitEntryIndex: 9999, pitPath: [{ x: 0, z: 0 }, { x: 0, z: 0 }]
+    };
+    const p = {
+        x: points[trackIndex].x, z: points[trackIndex].z, angle: 0,
+        speed: 6, vx: 0, vz: 0,
+        inputs: { throttle: 0, brake: 0, steer: 0 },
+        finished: false, lap: 0, botLapSeen: 0,
+        trackIndex, tyreWear: 0, compound: 'medium', damage: 0,
+        pitting: false, pitAutoState: null, pitPhase: null,
+        isBot: true, botSpeedFactor: 1, botLapPaceMult: initialPaceMult, botPrecisionNoise: 0,
+        botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false,
+        botPitThreshold: 100, hasPitted: false
+    };
+    return { game: { phase, track, players: { bot1: p } }, p };
+}
+
+test('updateBotInputs: in qualifica botLapPaceMult resta sempre 1, anche con un valore iniziale diverso', () => {
+    // trackIndex=5 => paceSegment=0, uguale a botLapSeen=0: nessun confine
+    // attraversato, eppure il valore ereditato (1.5, fuori da qualunque
+    // range random ±4%) deve comunque essere azzerato in qualifica.
+    const { game, p } = makePaceRolloverGame('qualifying', 5, 1.5);
+    updateBotInputs(game, makeGripAwarenessDeps());
+    assert.equal(p.botLapPaceMult, 1, 'in qualifica il bot deve sempre correre al proprio ritmo migliore, senza variazione');
+});
+
+test('updateBotInputs: in qualifica botLapPaceMult resta 1 anche attraversando un confine di segmento di ritmo', () => {
+    // trackIndex=31 => paceSegment=1, diverso da botLapSeen=0: in gara
+    // scatterebbe la ri-estrazione random (vedi test successivo).
+    const { game, p } = makePaceRolloverGame('qualifying', 31, 1.5);
+    updateBotInputs(game, makeGripAwarenessDeps());
+    assert.equal(p.botLapPaceMult, 1, 'la ri-estrazione per segmento non deve avvenire in qualifica');
+});
+
+test('updateBotInputs: in gara botLapPaceMult viene ri-estratto attraversando un confine di segmento di ritmo (comportamento invariato)', () => {
+    const { game, p } = makePaceRolloverGame('race', 31, 1.5);
+    updateBotInputs(game, makeGripAwarenessDeps());
+    assert.notEqual(p.botLapPaceMult, 1.5, 'atteso una ri-estrazione, il valore iniziale non deve sopravvivere al confine di segmento');
+    assert.ok(p.botLapPaceMult >= 1 - 0.04 - 1e-9 && p.botLapPaceMult <= 1 + 0.04 + 1e-9,
+        `atteso dentro ±BOT_LAP_PACE_VARIANCE, ottenuto ${p.botLapPaceMult}`);
+});
+
+test('updateBotInputs: in gara botLapPaceMult NON viene ri-estratto entro lo stesso segmento di ritmo (comportamento invariato)', () => {
+    const { game, p } = makePaceRolloverGame('race', 5, 1.5);
+    updateBotInputs(game, makeGripAwarenessDeps());
+    assert.equal(p.botLapPaceMult, 1.5, 'nessuna ri-estrazione attesa entro lo stesso segmento');
+});
