@@ -105,6 +105,47 @@ test('assignGridSpawns: due piloti in griglia ottengono pitBoxAnchor diversi (no
         'i due piloti devono avere pitBoxAnchor in punti diversi');
 });
 
+// ---- Box fisso per tutta la sessione (Rif. richiesta utente 2026-08-07:
+// "la mappa in qualifica e in gara deve essere la stessa" — prima
+// assignGridSpawns ricalcolava SEMPRE l'anchor con l'ordine della griglia
+// di partenza (risultato qualifica), diverso dall'ordine puramente di
+// lista usato in startQualifying: lo stesso pilota finiva su un box
+// diverso tra le due fasi) ----
+test('assignGridSpawns: un pilota con pitBoxAnchor già assegnato (da startQualifying) lo mantiene INVARIATO, anche con un ordine di griglia diverso', () => {
+    const { physics } = f1GameSocket;
+    const fakeTrack = {
+        gridSpawnPoint: (i) => ({ x: i, z: 0, angle: 0 }),
+        pitPath: [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }],
+        pitBoxIndex: 2
+    };
+    function makePlayer(color, existingAnchor) {
+        return {
+            color, damage: 0, collisionPenaltyMs: 0, pendingRepair: false,
+            carContacts: new Set(), wallContact: false, pendingCollisionPenaltyEvents: [],
+            finished: false, time: null, lap: 0, checkpointA: false, inFinishZone: false,
+            trackIndex: 0, tyreWear: 0, pitGoTimer: null, pitting: false, pitPhase: null,
+            pitGoTime: null, pendingCompound: null, hasPitted: false, pitPenalty: false,
+            falseStart: false, falseStartServed: false, gapToLeaderMs: null,
+            pitAutoState: null, pitPathIndex: 0, inputs: { throttle: 0, brake: 0, steer: 0 },
+            pitBoxAnchor: existingAnchor, pitBoxSlot: existingAnchor ? 0 : null
+        };
+    }
+    // "red" ha già un box (come se startQualifying l'avesse assegnato in
+    // ordine giocatori 'red' primo -> slot 0); "blue" non ne ha ancora uno
+    // (simula un giocatore entrato a qualifica già in corso).
+    const preAssignedAnchor = { x: 999, z: 888, tx: 1, tz: 0, fromIdx: 0 };
+    const red = makePlayer('red', preAssignedAnchor), blue = makePlayer('blue', null);
+    // Griglia di partenza con ORDINE INVERTITO rispetto a prima (blue è
+    // arrivato davanti a red in qualifica) — se il bug fosse ancora
+    // presente, l'anchor di red cambierebbe per riflettere il nuovo ordine.
+    const game = { grid: ['blue', 'red'], players: { red, blue }, track: fakeTrack };
+
+    physics.assignGridSpawns(game);
+
+    assert.deepEqual(red.pitBoxAnchor, preAssignedAnchor, 'il box di red non deve cambiare, anche se la sua posizione in griglia è cambiata');
+    assert.ok(blue.pitBoxAnchor, 'blue (senza anchor pregresso) ne riceve comunque uno nuovo come fallback');
+});
+
 test('collisionDamageAmount: proporzionale alla severità, cappato a DAMAGE_CAP_PER_HIT', () => {
     const { physics } = f1GameSocket;
     assert.ok(Math.abs(physics.collisionDamageAmount(1) - 6) < 1e-9, 'atteso 6% a severità=1 (soglia)');
@@ -215,6 +256,38 @@ test('resolveCollisions: contatto leggero sotto soglia non danneggia nessuno', (
     const { physics } = f1GameSocket;
     const a = makeCollisionPlayer(0, 0, 0, 0, 0, 'a');
     const b = makeCollisionPlayer(0, -3.7, 0, 0, 0.05, 'b');   // avvicinamento quasi nullo, stesso asse z del test sopra
+
+    physics.resolveCollisions([a, b]);
+
+    assert.equal(a.damage, 0);
+    assert.equal(b.damage, 0);
+});
+
+// ---- Immunità box (Rif. richiesta utente 2026-08-07: un'auto ferma ai box
+// (pitting) non deve mai essere spinta/danneggiata da un'altra auto — zona
+// protetta, come un box reale) ----
+test('resolveCollisions: un\'auto ferma ai box (pitting) NON viene spinta né danneggiata da un urto violento', () => {
+    const { physics } = f1GameSocket;
+    const a = makeCollisionPlayer(0, 0, 0, 0, 0, 'a');
+    a.pitting = true;
+    const originalX = a.x, originalZ = a.z;
+    const b = makeCollisionPlayer(0, -3.7, 0, 0, 8, 'b');   // urto violento verso a, come il test sopra
+
+    physics.resolveCollisions([a, b]);
+
+    assert.equal(a.x, originalX, 'la posizione dell\'auto ferma ai box non deve mai cambiare');
+    assert.equal(a.z, originalZ, 'la posizione dell\'auto ferma ai box non deve mai cambiare');
+    assert.equal(a.damage, 0, 'nessun danno all\'auto ferma ai box');
+    assert.equal(b.damage, 0, 'nessun danno neanche a chi la urta (coppia saltata del tutto)');
+    assert.equal(a.vx, 0, 'nessun impulso di velocità sull\'auto ferma ai box');
+});
+
+test('resolveCollisions: due auto entrambe pitting non interagiscono tra loro', () => {
+    const { physics } = f1GameSocket;
+    const a = makeCollisionPlayer(0, 0, 0, 0, 0, 'a');
+    a.pitting = true;
+    const b = makeCollisionPlayer(0, -3.7, 0, 0, 0, 'b');
+    b.pitting = true;
 
     physics.resolveCollisions([a, b]);
 
@@ -486,6 +559,96 @@ test('checkLap: senza prevX/prevZ (compatibilità con chiamate esistenti), il te
     assert.equal(p.time, 1000);
 });
 
+// ---- Chiusura sessione rimandata (Rif. richiesta utente 2026-08-07: bug
+// reale trovato con una simulazione dinamica — un bot poteva diventare
+// "finished" mentre era ancora in manovra ai box (entrata/sosta/uscita),
+// facendogli smettere per sempre di ricevere input IA e restare bloccato
+// a metà manovra) ----
+test('checkLap: se l\'ultimo giro si chiude mentre l\'auto è in autopilota (pitAutoState), NON diventa finished subito — rimanda con pendingFinishTime', () => {
+    const { physics } = f1GameSocket;
+    const n = 1000;
+    const points = Array.from({ length: n }, (_, i) => ({ x: i, z: 0 }));
+    const startFinishIndex = 300;
+    const track = { points, lapLength: n, startFinishIndex };
+    const game = { track, raceTick: 20, phase: 'race' };
+    const io = makeMockIo();
+
+    const p = {
+        color: 'red', lap: 9, checkpointA: true, inFinishZone: false, finished: false, time: null,
+        trackIndex: startFinishIndex, pitAutoState: 'entering', pitting: false,
+        hasPitted: false, falseStart: false, falseStartServed: false, collisionPenaltyMs: 0
+    };
+    physics.checkLap(p, 10, io, 'lobby1', game);
+
+    assert.equal(p.finished, false, 'NON deve diventare finished mentre è ancora in autopilota ai box');
+    assert.equal(p.time, null, 'il tempo finale non deve essere impostato finché non è davvero libera');
+    assert.equal(p.pendingFinishTime, 1000, 'il momento del vero attraversamento resta memorizzato per dopo');
+});
+
+test('checkLap: se l\'ultimo giro si chiude mentre l\'auto è ferma ai box (pitting), NON diventa finished subito', () => {
+    const { physics } = f1GameSocket;
+    const n = 1000;
+    const points = Array.from({ length: n }, (_, i) => ({ x: i, z: 0 }));
+    const startFinishIndex = 300;
+    const track = { points, lapLength: n, startFinishIndex };
+    const game = { track, raceTick: 20, phase: 'race' };
+    const io = makeMockIo();
+
+    const p = {
+        color: 'red', lap: 9, checkpointA: true, inFinishZone: false, finished: false, time: null,
+        trackIndex: startFinishIndex, pitAutoState: null, pitting: true,
+        hasPitted: false, falseStart: false, falseStartServed: false, collisionPenaltyMs: 0
+    };
+    physics.checkLap(p, 10, io, 'lobby1', game);
+
+    assert.equal(p.finished, false);
+    assert.equal(p.pendingFinishTime, 1000);
+});
+
+test('resolvePendingFinish: nessun effetto finché l\'auto resta in autopilota o ferma ai box', () => {
+    const { physics } = f1GameSocket;
+    const game = { phase: 'race' };
+    const io = makeMockIo();
+
+    const p1 = { color: 'a', pendingFinishTime: 5000, pitAutoState: 'exiting', pitting: false, finished: false, time: null, hasPitted: true, falseStart: false, falseStartServed: false, collisionPenaltyMs: 0 };
+    physics.resolvePendingFinish(p1, game, io, 'lobby1');
+    assert.equal(p1.finished, false);
+    assert.equal(p1.pendingFinishTime, 5000, 'resta in sospeso, non consumato');
+
+    const p2 = { color: 'b', pendingFinishTime: 5000, pitAutoState: null, pitting: true, finished: false, time: null, hasPitted: true, falseStart: false, falseStartServed: false, collisionPenaltyMs: 0 };
+    physics.resolvePendingFinish(p2, game, io, 'lobby1');
+    assert.equal(p2.finished, false);
+});
+
+test('resolvePendingFinish: chiude la sessione (finished+time) non appena l\'auto è DAVVERO libera (né autopilota né pitting)', () => {
+    const { physics } = f1GameSocket;
+    const game = { phase: 'race' };
+    const io = makeMockIo();
+
+    const p = {
+        color: 'red', pendingFinishTime: 5000, pitAutoState: null, pitting: false,
+        finished: false, time: null, hasPitted: true, falseStart: false, falseStartServed: false, collisionPenaltyMs: 0
+    };
+    physics.resolvePendingFinish(p, game, io, 'lobby1');
+    // finalizeSessionFinish arma un vero setTimeout di sicurezza (60s,
+    // endRace) quando game.phase==='race' — va ripulito subito, stesso
+    // pattern già in uso altrove in questo file per pitGoTimer.
+    if (game.endTimeout) { clearTimeout(game.endTimeout); game.endTimeout = null; }
+
+    assert.equal(p.finished, true);
+    assert.equal(p.time, 5000, 'il tempo finale è quello del VERO attraversamento del traguardo, non di adesso');
+    assert.equal(p.pendingFinishTime, null, 'consumato dopo la risoluzione');
+});
+
+test('resolvePendingFinish: nessun effetto se non c\'è nulla in sospeso (no-op sicuro per il caso normale)', () => {
+    const { physics } = f1GameSocket;
+    const game = { phase: 'race' };
+    const io = makeMockIo();
+    const p = { color: 'red', pendingFinishTime: null, pitAutoState: null, pitting: false, finished: false, time: null };
+    physics.resolvePendingFinish(p, game, io, 'lobby1');
+    assert.equal(p.finished, false);
+});
+
 test('checkLap: caso REALE — finishWindowFor è larga diversi metri, "appena entrato in zona" scatta PRIMA della vera linea, il tempo va estrapolato oltre il bordo del tick (frazione > 1), non prima', () => {
     // Bug trovato simulando una sessione vera end-to-end (non dal test sopra,
     // che aveva l'attraversamento e l'ingresso finestra coincidenti nello
@@ -690,4 +853,88 @@ test('updatePitAutopilot: un pilota col box PRIMA di pitBoxIndex si ferma lì se
     assert.ok(p.pitting, 'atteso che la sosta sia partita');
     assert.equal(maxPitPathIndexSeen, anchor.fromIdx,
         `l'autopilota ha camminato fino al waypoint ${maxPitPathIndexSeen}, oltre il fromIdx del proprio box (${anchor.fromIdx}) — segno che è passato dal vertice condiviso pitBoxIndex (${pitBoxIndex}) invece di fermarsi al proprio box`);
+});
+
+// ---- Stallo laterale + orientamento parallelo (Rif. richiesta utente
+// 2026-08-07, 2° round: "vero stallo", auto ferma parallela al senso di
+// marcia, non più sulla linea centrale della corsia) ----
+test('updatePitAutopilot: con lo stallo disponibile (trackPoints/pitRoadHalf), l\'auto si ferma sullo STALLO (non più sulla linea centrale) e parallela alla corsia', () => {
+    const { physics } = f1GameSocket;
+
+    const pitPath = [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }];
+    const pitBoxIndex = 2;
+    const roadHalfWidth = 5;
+    const trackPoints = [{ x: 100, z: 50 }];   // tracciato principale "in su": lo stallo deve andare verso -z
+
+    const anchor = TrackGeometry.pitBoxAnchors(pitPath, pitBoxIndex, 1, trackPoints, roadHalfWidth)[0];
+    assert.notEqual(anchor.stallX, undefined, 'precondizione: lo stallo deve essere calcolato con trackPoints/pitRoadHalf');
+
+    const fakeTrack = { pitPath, pitBoxIndex, roadHalfWidth };
+    const io = { to: () => ({ emit: () => {} }) };
+    const game = { track: fakeTrack, socketByColor: {} };
+
+    const p = {
+        color: 'red', x: 0, z: 0, angle: 0, speed: 0, vx: 0, vz: 0,
+        pitAutoState: 'entering', pitPathIndex: 1, pitBoxFinalApproach: false,
+        pitBoxAnchor: anchor, pitting: false, pitPhase: null
+    };
+
+    let ticks = 0;
+    while (p.pitAutoState === 'entering' && ticks < 500) {
+        physics.updatePitAutopilot(io, 'testLobby', game, p);
+        ticks++;
+    }
+    if (p.pitGoTimer) { clearTimeout(p.pitGoTimer); p.pitGoTimer = null; }
+
+    assert.ok(p.pitting, 'atteso che la sosta sia partita');
+    assert.ok(Math.abs(p.x - anchor.stallX) < 1e-6 && Math.abs(p.z - anchor.stallZ) < 1e-6,
+        `atteso fermo sullo stallo (${anchor.stallX?.toFixed(2)}, ${anchor.stallZ?.toFixed(2)}), trovato (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`);
+    assert.ok(Math.hypot(p.x - anchor.x, p.z - anchor.z) > 1,
+        'non deve fermarsi più sulla linea centrale della corsia (anchor.x/z), deve essere sullo stallo spostato lateralmente');
+    const expectedAngle = Math.atan2(anchor.tx, anchor.tz);
+    assert.ok(Math.abs(p.angle - expectedAngle) < 1e-6,
+        `atteso angolo parallelo alla corsia (${expectedAngle.toFixed(4)}), trovato ${p.angle.toFixed(4)}`);
+});
+
+// ---- Deadlock tra auto in autopilota (Rif. richiesta utente 2026-08-07:
+// "due macchine nella corsia dei box si sono unite e hanno iniziato a
+// roteare all'infinito") — bug reale trovato SOLO con una simulazione
+// dinamica multi-auto (mai visibile in un test a 2 sole auto isolate):
+// quando più auto entrano insieme e puntano allo stesso waypoint
+// condiviso di pitPath (prima di divergere verso il proprio box), la
+// spinta di separazione di resolveCollisions poteva annullare esattamente
+// il passo fisso di updatePitAutopilot ad ogni tick, creando un equilibrio
+// stabile — le auto restavano bloccate nello stesso punto per sempre ----
+test('resolveCollisions + updatePitAutopilot: 4 auto entrate insieme (posizioni sovrapposte) verso 4 box diversi arrivano TUTTE, nessun deadlock', () => {
+    const { physics } = f1GameSocket;
+    const pitPath = [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }, { x: 200, z: 0 }];
+    const boxIndex = 2;
+    const trackPoints = [{ x: 100, z: 50 }];
+    const pitRoadHalf = 5;
+    const anchors = TrackGeometry.pitBoxAnchors(pitPath, boxIndex, 4, trackPoints, pitRoadHalf);
+
+    const io = { to: () => ({ emit: () => {} }) };
+    const game = { track: { pitPath, pitBoxIndex: boxIndex, pitRoadHalf }, socketByColor: {} };
+
+    function makePlayer(color, anchor) {
+        return {
+            color, x: 5, z: 0, angle: 0, speed: 0, vx: 0, vz: 0,   // TUTTE nella STESSA posizione, come se entrate insieme in gruppo
+            pitAutoState: 'entering', pitPathIndex: 1, pitBoxFinalApproach: false,
+            pitBoxAnchor: anchor, pitting: false, pitPhase: null,
+            damage: 0, collisionPenaltyMs: 0, carContacts: new Set(),
+            pendingCollisionPenaltyEvents: []
+        };
+    }
+    const players = anchors.map((a, i) => makePlayer(String.fromCharCode(97 + i), a));
+
+    let ticks = 0;
+    while (players.some(p => p.pitAutoState === 'entering') && ticks < 500) {
+        for (let s = 0; s < physics.COLLISION_SUBSTEPS; s++) physics.resolveCollisions(players);
+        for (const p of players) if (p.pitAutoState === 'entering') physics.updatePitAutopilot(io, 'lobby1', game, p);
+        ticks++;
+    }
+    for (const p of players) if (p.pitGoTimer) { clearTimeout(p.pitGoTimer); p.pitGoTimer = null; }
+
+    assert.ok(ticks < 500, `autopilota in deadlock: non tutte le auto sono arrivate entro 500 tick (fermo dopo ${ticks})`);
+    for (const p of players) assert.ok(p.pitting, `${p.color} non ha mai raggiunto il proprio box`);
 });

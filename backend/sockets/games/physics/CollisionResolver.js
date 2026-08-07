@@ -190,6 +190,39 @@ function resolveCollisions(players) {
         for (let j = i + 1; j < players.length; j++) {
             const a = players[i], b = players[j];
 
+            // Zona protetta (Rif. richiesta utente 2026-08-07): un'auto
+            // ferma ai box (pitting) non deve mai essere spinta o
+            // danneggiata da un'altra auto, né viceversa danneggiare chi la
+            // sfiora — coppia saltata del tutto, come un box reale. Prima di
+            // questo fix un'auto diretta a un box più lontano poteva
+            // spingere fisicamente un'auto già ferma a un box più vicino
+            // (stesso bug segnalato in playtest — vedi anche lo stallo
+            // laterale in TrackGeometry.pitBoxAnchors, che riduce ma non
+            // elimina del tutto il rischio di sfioramento).
+            if (a.pitting || b.pitting) {
+                a.carContacts.delete(b.color); b.carContacts.delete(a.color);
+                continue;
+            }
+
+            // Due auto ENTRAMBE guidate dall'autopilota pit-lane (Rif.
+            // richiesta utente 2026-08-07: "si sono unite e hanno iniziato a
+            // roteare all'infinito"): quando puntano allo stesso waypoint
+            // condiviso di pitPath (caso comune appena entrate insieme,
+            // prima di divergere verso il proprio box), la spinta
+            // posizionale di separazione qui sotto annulla esattamente il
+            // passo fisso di updatePitAutopilot ad ogni tick — un equilibrio
+            // stabile, le auto restano bloccate nello stesso punto per
+            // sempre (misurato con una simulazione: MAI arrivate dopo 2000
+            // tick). Nessun urto reale qui: entrambe le posizioni sono
+            // server-deterministiche, non input del giocatore — saltare la
+            // coppia elimina il conflitto senza toccare le collisioni vere
+            // (auto in corsa contro un'auto in autopilota, o due auto in
+            // corsa) che restano invariate.
+            if (a.pitAutoState && b.pitAutoState) {
+                a.carContacts.delete(b.color); b.carContacts.delete(a.color);
+                continue;
+            }
+
             const dx = b.x - a.x, dz = b.z - a.z;
             if (dx * dx + dz * dz > CAR_MAX_REACH * CAR_MAX_REACH) {
                 a.carContacts.delete(b.color); b.carContacts.delete(a.color);

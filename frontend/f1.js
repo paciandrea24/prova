@@ -197,7 +197,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ogni pilota ha il proprio box 3D colorato (vedi loadPlayerPitBox,
     // caricato pigramente per gara), che ne prende il posto in gara —
     // resta true di default per l'editor tracciato (track-editor.js).
-    TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex, false);
+    TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex, false, trackPts);
+
+    // Griglia di partenza vera, permanente sulla pista (Rif. richiesta
+    // utente 2026-08-07: "visibile sia in qualifica che in gara") — stessa
+    // tecnica di startFinishIndex già usata server-side
+    // (backend/sockets/games/trackLoader.js): indice campionato più vicino
+    // al traguardo esplicito se la pista ne ha uno, altrimenti 0 (piste
+    // non ancora riaperte nell'editor). MAX_GRID_SIZE=6 non è geometrico
+    // (è una regola di gioco, f1Bot.js::MAX_GRID_SIZE) — tenerlo in sync a
+    // mano se mai cambiasse.
+    const START_FINISH_INDEX = trackData.startFinish
+        ? TrackGeometry.nearestPoint(trackPts, trackData.startFinish.x, trackData.startFinish.z).index
+        : 0;
+    const MAX_GRID_SIZE = 6;
+    TrackMeshBuilder.buildStartingGrid(scene, trackPts, START_FINISH_INDEX, MAX_GRID_SIZE);
 
     // ====================================================
     // AUDIO MOTORE — un solo loop di 4s di un vero motore d'auto,
@@ -528,6 +542,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // del caricamento pagina.
     const pitBoxes = {};
     const pendingPitBoxLoads = new Set();
+    // Guardia SEPARATA da pitBoxes/pendingPitBoxLoads (quelle riguardano
+    // solo il modello 3D del garage, caricato in modo asincrono e con
+    // retry su errore): la segnaletica a terra è sincrona e non fallisce
+    // mai, ma non deve comunque essere aggiunta più volte alla scena ad
+    // ogni f1StateUpdate.
+    const stallMarkersAdded = new Set();
 
     // Il server manda già l'anchor calcolato (assignGridSpawns →
     // TrackGeometry.pitBoxAnchors), il client si limita a posizionare/
@@ -559,6 +579,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         const offset = trackData.pit.roadHalfWidth + PitBoxLoader.PIT_BOX_OFFSET_MARGIN;
         const bx = anchor.x + nx * offset * side, bz = anchor.z + nz * offset * side;
         const rotY = Math.atan2(anchor.x - bx, anchor.z - bz);   // guarda verso la corsia
+
+        // Segnaletica a terra dello stallo (Rif. richiesta utente
+        // 2026-08-07: "stalli veri" come in F1 reale, non solo il modello
+        // del garage) — rettangolo colorato del pilota, piazzato sullo
+        // stesso stallo dove si ferma davvero l'auto (anchor.stallX/stallZ,
+        // già calcolato server-side da TrackGeometry.pitBoxAnchors),
+        // orientato con l'asse lungo parallelo alla corsia (stessa
+        // convenzione rotY di un'auto: atan2(tangente.x, tangente.z)) — la
+        // macchina si ferma parallela al senso di marcia, non più diagonale
+        // verso il garage. Guardia SEPARATA dal modello 3D (sincrona, non
+        // fallisce mai): un retry del modello dopo un errore di rete non
+        // deve ri-aggiungere una segnaletica duplicata.
+        if (!stallMarkersAdded.has(color) && anchor.stallX != null && anchor.stallZ != null) {
+            const marker = new THREE.Mesh(
+                new THREE.BoxGeometry(PitBoxLoader.STALL_WIDTH, 0.03, PitBoxLoader.STALL_LENGTH),
+                new THREE.MeshStandardMaterial({ color: parseInt(color.replace('#', ''), 16), roughness: 0.9, transparent: true, opacity: 0.55 })
+            );
+            marker.position.set(anchor.stallX, 0.04, anchor.stallZ);
+            marker.rotation.y = Math.atan2(anchor.tx, anchor.tz);
+            scene.add(marker);
+            stallMarkersAdded.add(color);
+        }
 
         PitBoxLoader.loadPitBoxModel(color, { x: bx, y: 0, z: bz, rotY }, (model) => {
             scene.add(model);
@@ -983,7 +1025,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     socket.on('f1StateUpdate', (state) => {
+        // Layout box in qualifica (Rif. richiesta utente 2026-08-07):
+        // chiave speciale FUORI dallo stato per-colore isolato — vedi
+        // broadcastState in f1GameSocket.js. Renderizza i box di TUTTI i
+        // piloti anche quando lo stato "vivo" (posizione/tempi) resta
+        // isolato al solo proprio colore.
+        if (state.__boxLayout) {
+            for (const [color, anchor] of Object.entries(state.__boxLayout)) {
+                loadPlayerPitBox(color, anchor);
+            }
+        }
         for (const [color, data] of Object.entries(state)) {
+            if (color === '__boxLayout') continue;
             serverState[color] = data;
             updateMinimapDot(color, data.x, data.z);
             if (data.pitBoxAnchor) loadPlayerPitBox(color, data.pitBoxAnchor);

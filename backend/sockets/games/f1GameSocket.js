@@ -316,6 +316,7 @@ module.exports = function (io, socket) {
                 carContacts: new Set(),   // colori con cui è ATTUALMENTE a contatto (rileva un urto NUOVO)
                 wallContact: false,   // true se attualmente appoggiato a un muro ponte
                 pendingCollisionPenaltyEvents: [],   // ms in attesa di notifica al client, drenata da tickGame
+                pendingFinishTime: null,   // vedi checkLap/finalizeSessionFinish: ultimo giro chiuso mentre ancora in manovra ai box
             };
         }
 
@@ -597,6 +598,24 @@ function startQualifying(io, lobbyId, game) {
     // prescindere da dove fossero prima (già impostato alla creazione, ma qui
     // è garantito anche per chi era entrato con uno stato diverso).
     game.bestSectorTimes = [Infinity, Infinity, Infinity];
+    // Box visibili anche in qualifica, per coerenza visiva (Rif. richiesta
+    // utente 2026-08-07: "i box in qualifica non funzionano" — p.pitBoxAnchor
+    // non veniva mai assegnato prima della fine qualifica/assignGridSpawns,
+    // quindi il client non aveva nulla da renderizzare). Nessun pit stop
+    // reale può avvenire in qualifica (giro secco, inPitEntryZone è già
+    // gated su game.phase==='race' in tickGame) — questo ordine è quindi
+    // puramente estetico, NON la griglia di partenza vera (quella si
+    // calcola solo a fine qualifica, in endQualifying → assignGridSpawns,
+    // che sovrascrive questi anchor con quelli reali all'inizio della gara).
+    const qualiOrder = Object.keys(game.players);
+    const qualiBoxAnchors = TrackGeometry.pitBoxAnchors(
+        game.track.pitPath, game.track.pitBoxIndex, qualiOrder.length,
+        game.track.points, game.track.pitRoadHalf
+    );
+    qualiOrder.forEach((color, i) => {
+        game.players[color].pitBoxAnchor = qualiBoxAnchors[i];
+        game.players[color].pitBoxSlot = i;
+    });
     for (const p of Object.values(game.players)) {
         p.x = game.track.qualiSpawn.x; p.z = game.track.qualiSpawn.z; p.angle = game.track.qualiSpawn.angle;
         p.speed = 0; p.vx = 0; p.vz = 0;
@@ -606,6 +625,7 @@ function startQualifying(io, lobbyId, game) {
         p.curLapSectorTimes = [null, null, null]; p.prevLapSectorTimes = null;
         p.deltaToPreviousLapMs = null; p.lapTrulyStarted = false;
         p.lapRecapSectorTimes = null; p.lapRecapExpiresAtMs = null;
+        p.pendingFinishTime = null;
         p.trackIndex = 0;
     }
     io.to(lobbyId).emit('f1Countdown', { trackName: game.track.name, label: 'QUALIFICA — 1 GIRO', phase: 'qualifying' });
@@ -737,7 +757,10 @@ function assignGridSpawns(game) {
     // una volta per gara, sullo stesso ordine di griglia usato per lo
     // spawn, così due piloti ai box insieme non finiscono più nello stesso
     // punto fisico (prima: tutti su track.pitBoxIndex).
-    const boxAnchors = TrackGeometry.pitBoxAnchors(game.track.pitPath, game.track.pitBoxIndex, order.length);
+    const boxAnchors = TrackGeometry.pitBoxAnchors(
+        game.track.pitPath, game.track.pitBoxIndex, order.length,
+        game.track.points, game.track.pitRoadHalf
+    );
     game.bestSectorTimes = [Infinity, Infinity, Infinity];
     order.forEach((color, i) => {
         const p = game.players[color];
@@ -751,6 +774,7 @@ function assignGridSpawns(game) {
         p.curLapSectorTimes = [null, null, null]; p.prevLapSectorTimes = null;
         p.deltaToPreviousLapMs = null; p.lapTrulyStarted = false;
         p.lapRecapSectorTimes = null; p.lapRecapExpiresAtMs = null;
+        p.pendingFinishTime = null;
         p.trackIndex = 0;
         p.tyreWear = 0;   // gomme fresche per la gara vera (l'usura conta solo in gara, non in qualifica)
         p.damage = 0;   // auto perfetta a inizio gara vera — stesso confine di tyreWear
@@ -766,8 +790,20 @@ function assignGridSpawns(game) {
         p.falseStart = false; p.falseStartServed = false;
         p.gapToLeaderMs = null;
         p.pitAutoState = null; p.pitPathIndex = 0; p.pitBoxFinalApproach = false;
-        p.pitBoxSlot = i;
-        p.pitBoxAnchor = boxAnchors[i];
+        // Box FISSO per tutta la sessione (Rif. richiesta utente
+        // 2026-08-07: "la mappa in qualifica e in gara deve essere la
+        // stessa" — prima il box "saltava" di slot tra qualifica e gara,
+        // perché l'ordine qui è quello della griglia di partenza (risultato
+        // qualifica) mentre in startQualifying è un ordine diverso,
+        // puramente di lista giocatori). Se il pilota ha già un anchor
+        // (assegnato in startQualifying), resta invariato — boxAnchors/i
+        // sotto sono solo un fallback per chi ne fosse sprovvisto (es.
+        // entrato a qualifica già in corso, mai passato da startQualifying
+        // in questa sessione).
+        if (!p.pitBoxAnchor) {
+            p.pitBoxSlot = i;
+            p.pitBoxAnchor = boxAnchors[i];
+        }
         p.inputs = { throttle: 0, brake: 0, steer: 0 };
         // Stato bot transitorio: un bot ancora diretto ai box (non ancora
         // entrato nel trigger) alla fine della gara precedente non deve
@@ -826,14 +862,24 @@ function updatePitAutopilot(io, lobbyId, game, p) {
     const track = game.track;
 
     if (p.pitBoxFinalApproach && p.pitBoxAnchor) {
-        // 'entering': balzo dal waypoint fromIdx verso l'anchor personale.
-        // 'exiting': balzo inverso, dall'anchor verso pitPath[fromIdx+1] —
+        // 'entering': balzo dal waypoint fromIdx verso lo STALLO personale
+        // (spostato lateralmente dalla corsia condivisa — Rif. richiesta
+        // utente 2026-08-07: prima l'anchor era sulla linea centrale della
+        // corsia, quindi un'auto diretta a un box più lontano guidava il
+        // proprio ingombro sopra un'auto già ferma più vicina, spingendola).
+        // Fallback a pitBoxAnchor grezzo se stallX/stallZ non sono
+        // disponibili (retrocompatibilità, es. fixture di test che non
+        // passano trackPoints/pitRoadHalf a pitBoxAnchors).
+        // 'exiting': balzo inverso, dallo stallo verso pitPath[fromIdx+1] —
         // il waypoint SUCCESSIVO al proprio box (non più il vertice
         // condiviso pitBoxIndex: un box con fromIdx < pitBoxIndex deve
         // rientrare in avanti verso il proprio segmento, non verso un
         // vertice che potrebbe trovarsi oltre, dietro di sé).
         const target = (p.pitAutoState === 'entering')
-            ? p.pitBoxAnchor
+            ? {
+                x: p.pitBoxAnchor.stallX != null ? p.pitBoxAnchor.stallX : p.pitBoxAnchor.x,
+                z: p.pitBoxAnchor.stallZ != null ? p.pitBoxAnchor.stallZ : p.pitBoxAnchor.z
+            }
             : track.pitPath[p.pitBoxAnchor.fromIdx + 1];
         const dx = target.x - p.x, dz = target.z - p.z;
         const dist = Math.hypot(dx, dz);
@@ -844,6 +890,13 @@ function updatePitAutopilot(io, lobbyId, game, p) {
             p.pitBoxFinalApproach = false;
 
             if (p.pitAutoState === 'entering') {
+                // Ferma allineata al senso di marcia della corsia (Rif.
+                // richiesta utente 2026-08-07: "la macchina si deve fermare
+                // in maniera parallela"), non più lasciata diagonale verso
+                // lo stallo — stessa convenzione atan2(x,z) usata ovunque
+                // per l'angolo, applicata alla tangente della corsia invece
+                // che alla direzione di avvicinamento.
+                p.angle = Math.atan2(p.pitBoxAnchor.tx, p.pitBoxAnchor.tz);
                 p.pitAutoState = null;   // arrivato alla casella personale: la sosta prende il posto dell'autopilota
                 startPitStop(io, lobbyId, game, p);
             }
@@ -1004,10 +1057,25 @@ function playersVisibleTo(game, viewerColor) {
 // condivisa alla room, come prima.
 function broadcastState(io, lobbyId, game, raceStartedFlag) {
     if (game.phase === 'qualifying') {
+        // Layout box (Rif. richiesta utente 2026-08-07: "la mappa in
+        // qualifica e in gara deve essere la stessa"): playersVisibleTo
+        // isola ogni giocatore alla propria auto per non rivelare tempi/
+        // posizione degli avversari (spoiler), ma la posizione STATICA del
+        // box di ognuno non è un'informazione di gara — nessuno spoiler nel
+        // mostrarla. Trasmessa a parte, fuori dall'isolamento, sotto una
+        // chiave speciale che il client riconosce (vedi frontend/f1.js,
+        // socket.on('f1StateUpdate')) invece che dentro lo stato per-colore
+        // isolato.
+        const boxLayout = {};
+        for (const [color, p] of Object.entries(game.players)) {
+            if (p.pitBoxAnchor) boxLayout[color] = p.pitBoxAnchor;
+        }
         for (const color of Object.keys(game.players)) {
             const sid = game.socketByColor[color];
             if (!sid) continue;
-            io.to(sid).emit('f1StateUpdate', buildPublicState(playersVisibleTo(game, color), raceStartedFlag, game.track, game));
+            const payload = buildPublicState(playersVisibleTo(game, color), raceStartedFlag, game.track, game);
+            payload.__boxLayout = boxLayout;
+            io.to(sid).emit('f1StateUpdate', payload);
         }
         return;
     }
@@ -1147,6 +1215,7 @@ function tickGame(io, lobbyId, game) {
         // box. trackIndex è già aggiornato dalla riga sopra, checkLap lo usa.
         checkLap(p, totalLaps, io, lobbyId, game);
         updateSectorTiming(p, game);
+        resolvePendingFinish(p, game, io, lobbyId);
     }
 
     // Distacco dal leader: stima da distanza/velocità, ricalcolata ogni
@@ -1533,6 +1602,63 @@ function updateSectorTiming(p, game) {
     p.deltaToPreviousLapMs = p.prevLapCurve ? (lapElapsedMs - p.prevLapCurve[relIdx]) : null;
 }
 
+// finalizeSessionFinish: chiude DAVVERO la sessione per un giocatore (tempo
+// finale + penalità + timer di sicurezza di gruppo) — estratta da checkLap
+// per essere richiamabile anche in differita (vedi tickGame, subito dopo
+// updatePitAutopilot nel loop autoPiloted) quando l'ultimo giro si
+// completa mentre l'auto è ancora in manovra ai box (Rif. richiesta utente
+// 2026-08-07 — vedi il commento nel punto di chiamata in checkLap).
+function finalizeSessionFinish(p, crossingElapsedMs, game, io, lobbyId) {
+    p.finished = true;
+    p.time = crossingElapsedMs;
+    // Obbligo di almeno un pit stop in gara (regola vera F1): chi non
+    // ha mai cambiato gomme prende una penalità in tempo a fine gara,
+    // non viene bloccato né squalificato.
+    if (game.phase === 'race' && !p.hasPitted) {
+        p.time += PIT_PENALTY_MS;
+        p.pitPenalty = true;
+    }
+    // Rete di sicurezza: se la falsa partenza non è mai stata scontata
+    // ai box (il giocatore non si è mai fermato), si somma comunque
+    // qui al tempo finale — mai persa in silenzio.
+    if (game.phase === 'race' && p.falseStart && !p.falseStartServed) {
+        p.time += FALSE_START_PENALTY_MS;
+        p.falseStartServed = true;
+    }
+    // Penalità collisioni: accumulo di TUTTI gli incidenti causati in
+    // gara (non un flag singolo), già notificati live uno per uno
+    // (vedi drenaggio in tickGame) — qui solo la somma finale.
+    if (game.phase === 'race' && p.collisionPenaltyMs > 0) {
+        p.time += p.collisionPenaltyMs;
+    }
+    // Timer di sicurezza di gruppo: dà agli altri il tempo di finire la
+    // sessione (giro di qualifica o gara, entrambe corse in parallelo)
+    // anche se qualcuno resta molto indietro senza essersi disconnesso
+    // (la grazia copre solo i disconnessi). Uno per fase.
+    if (game.phase === 'qualifying' && !game.qualiEndTimeout) {
+        game.qualiEndTimeout = setTimeout(() => {
+            if (!game.qualiEnded) endQualifying(io, lobbyId, game);
+        }, 60000);
+    } else if (game.phase === 'race' && !game.endTimeout) {
+        game.endTimeout = setTimeout(() => {
+            if (!game.raceEnded) endRace(io, lobbyId, game);
+        }, 60000);
+    }
+}
+
+// resolvePendingFinish: se checkLap ha rimandato la chiusura sessione
+// (ultimo giro completato mentre l'auto era ancora in manovra ai box),
+// controlla se ORA l'auto è tornata DAVVERO libera (né in autopilota né
+// ferma ai box) e, in tal caso, la chiude per davvero. Va chiamata dopo
+// updatePitAutopilot/checkLap nello stesso tick (vedi tickGame, loop
+// autoPiloted) — un no-op immediato se non c'è nulla in sospeso.
+function resolvePendingFinish(p, game, io, lobbyId) {
+    if (p.pendingFinishTime != null && !p.pitAutoState && !p.pitting) {
+        finalizeSessionFinish(p, p.pendingFinishTime, game, io, lobbyId);
+        p.pendingFinishTime = null;
+    }
+}
+
 // ====================================================
 // LAP CHECK — basato sull'indice campionato (generico per qualunque pista):
 // la linea di partenza è sempre l'indice 0 dei punti campionati; il
@@ -1567,40 +1693,23 @@ function checkLap(p, totalLaps, io, lobbyId, game) {
         const crossingElapsedMs = Math.round((game.raceTick - 1 + frac) * PHYSICS_TICK_MS);
 
         if (p.lap >= totalLaps) {
-            p.finished = true;
-            p.time = crossingElapsedMs;
-            // Obbligo di almeno un pit stop in gara (regola vera F1): chi non
-            // ha mai cambiato gomme prende una penalità in tempo a fine gara,
-            // non viene bloccato né squalificato.
-            if (game.phase === 'race' && !p.hasPitted) {
-                p.time += PIT_PENALTY_MS;
-                p.pitPenalty = true;
-            }
-            // Rete di sicurezza: se la falsa partenza non è mai stata scontata
-            // ai box (il giocatore non si è mai fermato), si somma comunque
-            // qui al tempo finale — mai persa in silenzio.
-            if (game.phase === 'race' && p.falseStart && !p.falseStartServed) {
-                p.time += FALSE_START_PENALTY_MS;
-                p.falseStartServed = true;
-            }
-            // Penalità collisioni: accumulo di TUTTI gli incidenti causati in
-            // gara (non un flag singolo), già notificati live uno per uno
-            // (vedi drenaggio in tickGame) — qui solo la somma finale.
-            if (game.phase === 'race' && p.collisionPenaltyMs > 0) {
-                p.time += p.collisionPenaltyMs;
-            }
-            // Timer di sicurezza di gruppo: dà agli altri il tempo di finire la
-            // sessione (giro di qualifica o gara, entrambe corse in parallelo)
-            // anche se qualcuno resta molto indietro senza essersi disconnesso
-            // (la grazia copre solo i disconnessi). Uno per fase.
-            if (game.phase === 'qualifying' && !game.qualiEndTimeout) {
-                game.qualiEndTimeout = setTimeout(() => {
-                    if (!game.qualiEnded) endQualifying(io, lobbyId, game);
-                }, 60000);
-            } else if (game.phase === 'race' && !game.endTimeout) {
-                game.endTimeout = setTimeout(() => {
-                    if (!game.raceEnded) endRace(io, lobbyId, game);
-                }, 60000);
+            if (p.pitAutoState || p.pitting) {
+                // L'ultimo giro si chiude mentre l'auto è ancora IN MANOVRA
+                // ai box (entrata/sosta/uscita) — rimandiamo la vera
+                // chiusura sessione a quando l'autopilota si libera del
+                // tutto (vedi tickGame, subito dopo updatePitAutopilot nel
+                // loop autoPiloted). Se segnassimo p.finished=true già qui,
+                // updateBotInputs (che salta i bot finished fin dalla prima
+                // riga) smetterebbe per sempre di servire la sosta in
+                // corso — il bot resta bloccato a metà manovra per il
+                // resto della partita. Bug reale, trovato con una
+                // simulazione dinamica multi-tick (Rif. richiesta utente
+                // 2026-08-07). Il tempo finale resta comunque quello del
+                // VERO attraversamento del traguardo (crossingElapsedMs),
+                // non di quando la manovra si libera più tardi.
+                p.pendingFinishTime = crossingElapsedMs;
+            } else {
+                finalizeSessionFinish(p, crossingElapsedMs, game, io, lobbyId);
             }
         }
 
@@ -1802,6 +1911,7 @@ function resetPlayers(game) {
         p.curLapSectorTimes = [null, null, null]; p.prevLapSectorTimes = null;
         p.deltaToPreviousLapMs = null; p.lapTrulyStarted = false;
         p.lapRecapSectorTimes = null; p.lapRecapExpiresAtMs = null;
+        p.pendingFinishTime = null;
         p.trackIndex = 0;
         p.inputs = { throttle: 0, brake: 0, steer: 0 };
         if (p.isBot) { p.botHeadingToPits = false; p.botPitReactionScheduled = false; }
@@ -1829,7 +1939,7 @@ module.exports.physics = {
     applyDamageSteerNoise, DAMAGE_STEER_NOISE_MAX, effectiveGrip,
     createDamageParts, FRONT_WING_STEER_PENALTY_MAX,
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
-    buildPublicState, checkLap, updateSectorTiming,
+    buildPublicState, checkLap, updateSectorTiming, finalizeSessionFinish, resolvePendingFinish,
     computeSlipstreamMult,
     updatePitAutopilot, PIT_AUTO_SPEED, PIT_AUTO_ARRIVE_DIST
 };

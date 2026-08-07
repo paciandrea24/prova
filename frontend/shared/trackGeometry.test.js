@@ -46,6 +46,56 @@ test('sampleLoop approssima un cerchio di raggio noto (12 punti di controllo)', 
     assert.ok(Math.abs(len - expected) < 15, `circonferenza troppo diversa: ${len} vs ${expected}`);
 });
 
+// ---- walkClosedLoop (Rif. richiesta utente 2026-08-07: gridSpawnPoint
+// usava un'estrapolazione lineare da un unico punto+angolo fissi — su un
+// tratto curvo del traguardo le auto più lontane finivano fuori dalla vera
+// linea centrale e con un angolo non allineato alla pista. walkClosedLoop
+// cammina sui punti VERI del tracciato, come già fa walkPitPath per la
+// corsia box) ----
+
+test('walkClosedLoop: distanza 0 resta esattamente sul punto di partenza', () => {
+    const points = [];
+    for (let i = 0; i < 20; i++) points.push({ x: i * 10, z: 0 });
+    const r = TrackGeometry.walkClosedLoop(points, 5, 0);
+    assert.ok(Math.abs(r.x - 50) < 1e-9 && Math.abs(r.z - 0) < 1e-9);
+});
+
+test('walkClosedLoop: su un rettilineo, cammina in avanti/indietro esattamente della distanza richiesta', () => {
+    const points = [];
+    for (let i = 0; i < 20; i++) points.push({ x: i * 10, z: 0 });
+    const fwd = TrackGeometry.walkClosedLoop(points, 5, 25);
+    assert.ok(Math.abs(fwd.x - 75) < 1e-9, `atteso x=75, trovato ${fwd.x}`);
+    const back = TrackGeometry.walkClosedLoop(points, 5, -25);
+    assert.ok(Math.abs(back.x - 25) < 1e-9, `atteso x=25, trovato ${back.x}`);
+});
+
+test('walkClosedLoop: si avvolge circolarmente oltre l\'ultimo punto (nessun clamp, a differenza di walkPitPath)', () => {
+    const points = [];
+    for (let i = 0; i < 10; i++) points.push({ x: i * 10, z: 0 }); // chiude idealmente tornando a x=0 dopo l'ultimo
+    // Dall'indice 8 (x=80), avanti di 30: 8->9 (10 unità, x=90), poi wrap
+    // 9->0 (dist(90,0)-(0,0)... il "segmento di chiusura" tra l'ultimo e il
+    // primo punto): verifichiamo solo che l'indice si avvolga, non un
+    // valore x esatto (dipende dalla geometria di chiusura sintetica qui).
+    const r = TrackGeometry.walkClosedLoop(points, 8, 30);
+    assert.ok(r.fromIdx === 9 || r.toIdx === 0 || r.fromIdx < 8, 'atteso un wraparound oltre l\'ultimo punto, non un clamp');
+});
+
+test('walkClosedLoop: su un cerchio vero, il punto raggiunto resta sulla circonferenza (segue la curva, non taglia dritto)', () => {
+    const ctrl = [];
+    for (let a = 0; a < 360; a += 30) {
+        const r = a * Math.PI / 180;
+        ctrl.push({ x: 100 * Math.cos(r), z: 100 * Math.sin(r) });
+    }
+    const points = TrackGeometry.sampleLoop(ctrl, 360);
+    // Cammina per un quarto di circonferenza (~157) a partire dall'indice 0:
+    // se l'implementazione tagliasse dritto (vecchio bug di gridSpawnPoint),
+    // il punto risultante cadrebbe DENTRO il cerchio (raggio < 100).
+    const quarterCirc = (2 * Math.PI * 100) / 4;
+    const r = TrackGeometry.walkClosedLoop(points, 0, quarterCirc);
+    const radius = Math.hypot(r.x, r.z);
+    assert.ok(Math.abs(radius - 100) < 5, `atteso raggio ~100 (segue la curva), trovato ${radius}`);
+});
+
 test('sampleOpenPath preserva approssimativamente inizio e fine', () => {
     const path = [{ x: 0, z: 0 }, { x: 50, z: 10 }, { x: 100, z: 0 }];
     const pts = TrackGeometry.sampleOpenPath(path, 100);
@@ -194,5 +244,53 @@ test('pitBoxAnchors restituisce la tangente normalizzata della corsia', () => {
         const len = Math.hypot(a.tx, a.tz);
         assert.ok(Math.abs(len - 1) < 1e-6, `tangente non normalizzata: ${len}`);
         assert.ok(Math.abs(a.tx - 1) < 1e-6 && Math.abs(a.tz) < 1e-6, 'tangente attesa lungo +x su corsia dritta');
+    }
+});
+
+// ---- Stallo laterale (Rif. richiesta utente 2026-08-07: un'auto diretta a
+// un box più lontano non deve più spingere un'auto già ferma a un box più
+// vicino, perché oggi tutti i box sono sulla STESSA linea centrale della
+// corsia — vedi progetto pit-lane displacement) ----
+
+test('pitBoxAnchors senza trackPoints/pitRoadHalf: nessun campo stallX/stallZ (retrocompatibile)', () => {
+    const path = [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }];
+    const anchors = TrackGeometry.pitBoxAnchors(path, 2, 3);
+    for (const a of anchors) {
+        assert.equal(a.stallX, undefined);
+        assert.equal(a.stallZ, undefined);
+    }
+});
+
+test('pitBoxAnchors con trackPoints/pitRoadHalf: lo stallo è spostato lateralmente verso il lato OPPOSTO al tracciato principale', () => {
+    const path = [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }];
+    const trackPoints = [{ x: 100, z: 50 }];   // il tracciato principale è "in su" (+z)
+    const pitRoadHalf = 5;
+    const anchors = TrackGeometry.pitBoxAnchors(path, 2, 1, trackPoints, pitRoadHalf);
+    const a = anchors[0];
+    assert.ok(Math.abs(a.x - 100) < 1e-6 && Math.abs(a.z) < 1e-6, 'anchor centrale invariato (box unico su boxIndex)');
+    // Normale alla tangente (1,0) è (0,1): lo stallo deve andare verso -z
+    // (lontano dal tracciato principale, che è in +z), mai verso +z (lo
+    // metterebbe sopra il tracciato principale).
+    assert.ok(Math.abs(a.stallX - 100) < 1e-6, `stallX atteso invariato (~100), trovato ${a.stallX}`);
+    assert.ok(a.stallZ < 0, `stallZ atteso negativo (lontano dal tracciato in +z), trovato ${a.stallZ}`);
+    // Distanza esatta: pitRoadHalf + PIT_STALL_CLEARANCE (stesso margine già
+    // usato per il fronte del garage decorativo, misurato sul modello reale).
+    assert.ok(Math.abs(Math.abs(a.stallZ) - (pitRoadHalf + TrackGeometry.PIT_STALL_CLEARANCE)) < 1e-6,
+        `stallZ atteso a distanza pitRoadHalf+PIT_STALL_CLEARANCE, trovato ${a.stallZ}`);
+});
+
+test('pitBoxAnchors: lo stallo si sposta dal lato opposto se il tracciato principale è dall\'altra parte', () => {
+    const path = [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }];
+    const trackPoints = [{ x: 100, z: -50 }];   // il tracciato principale è "in giù" (-z) stavolta
+    const anchors = TrackGeometry.pitBoxAnchors(path, 2, 1, trackPoints, 5);
+    assert.ok(anchors[0].stallZ > 0, `stallZ atteso positivo (lontano dal tracciato in -z), trovato ${anchors[0].stallZ}`);
+});
+
+test('pitBoxAnchors: box diversi lungo la corsia hanno stalli su rette parallele, mai sulla stessa linea centrale', () => {
+    const path = [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }];
+    const trackPoints = [{ x: 100, z: 50 }];
+    const anchors = TrackGeometry.pitBoxAnchors(path, 2, 3, trackPoints, 5);
+    for (const a of anchors) {
+        assert.notEqual(a.stallZ, a.z, 'lo stallo non deve mai coincidere con la linea centrale della corsia');
     }
 });

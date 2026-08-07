@@ -12,9 +12,10 @@ const RACELINES_DIR = path.join(__dirname, '..', '..', 'tools');
 const TRACK_ID_PATTERN = /^[a-z0-9-]+$/;
 const SAMPLES = 1000;
 const QUALI_LEAD = 8;        // unità avanti alla linea di partenza per lo spawn di qualifica
-const GRID_START = 40;       // unità dietro la linea di partenza per la pole
-const GRID_STAGGER = 5;      // arretramento extra per ogni posizione in griglia
-const GRID_LANE_OFFSET = 4;  // scostamento laterale di ogni corsia dal centro pista
+// GRID_START/GRID_STAGGER/GRID_LANE_OFFSET: vedi TrackGeometry (modulo
+// condiviso) — spostate lì così il disegno permanente della griglia sulla
+// pista (frontend) usa esattamente la stessa formula dello spawn reale,
+// nessun rischio di divergenza.
 // Tolleranza per il warning "startFinish.angle quasi opposto al verso
 // geometrico" (vedi buildTrack sotto) — quanto vicino a 180 gradi di
 // differenza far scattare l'avviso. Abbastanza stretta da non disturbare
@@ -142,7 +143,11 @@ function buildTrack(id, raw) {
     }
 
     // Punto lungo la tangente di partenza, con un offset laterale lungo la
-    // normale — usato sia per lo spawn di qualifica sia per la griglia.
+    // normale — usato SOLO per lo spawn di qualifica (un punto singolo,
+    // vicino a p0: QUALI_LEAD=8 non si allontana abbastanza da un
+    // traguardo su curva perché l'estrapolazione lineare sia un problema
+    // pratico). Rispetta l'eventuale angolo esplicito scelto in editor
+    // (raw.startFinish.angle), comportamento invariato.
     function alongTrack(distForward, lateralOffset) {
         return {
             x: p0.x + tangent.tx * distForward + normal.nx * lateralOffset,
@@ -151,9 +156,20 @@ function buildTrack(id, raw) {
         };
     }
 
+    // Griglia di partenza: TrackGeometry.gridSpawnPoint cammina sui punti
+    // VERI del tracciato (Rif. richiesta utente 2026-08-07 — prima usava
+    // alongTrack, la stessa estrapolazione lineare da un unico
+    // punto+angolo fissi: su un tratto curvo vicino al traguardo, le
+    // posizioni più lontane da p0 finivano fuori dalla vera linea
+    // centrale E con un angolo non allineato alla pista in quel punto —
+    // "auto storte" segnalato in playtest). Funzione condivisa con
+    // frontend/f1.js (disegno permanente della griglia sulla pista) —
+    // nessun rischio di divergenza tra le due. Nota: qui l'eventuale
+    // startFinish.angle esplicito NON viene propagato alle posizioni
+    // lontane da p0 (non avrebbe senso su un tratto curvo), resta
+    // rilevante solo per qualiSpawn/alongTrack sopra.
     function gridSpawnPoint(i) {
-        const laneSign = (i % 2 === 0) ? 1 : -1;
-        return alongTrack(GRID_START - i * GRID_STAGGER, laneSign * GRID_LANE_OFFSET);
+        return TrackGeometry.gridSpawnPoint(points, startFinishIndex, i);
     }
 
     // Indice campionato del punto pista più vicino al VERO trigger d'ingresso

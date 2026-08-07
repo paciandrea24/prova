@@ -20,15 +20,30 @@
     // centro geometrico, apertura/fronte lungo +X locale fino a x=3.2
     // (grezzo) -> 3.2*3.5 = 11.2m dall'origine dopo lo scale 3.5x di
     // loadPitBoxModel. Con l'origine al centro del box, il fronte del
-    // modello sfora di 11.2m rispetto al punto in cui viene piazzato:
-    // riusare TrackScenery.PIT_BUILDING_OFFSET_MARGIN (6, tarato sui
-    // piccoli edifici decorativi Kenney) piazzava il fronte del box dentro
-    // la carreggiata della corsia box — bug segnalato in playtest ("si
-    // passa attraverso i box"). 2m di margine oltre l'ingombro reale del
-    // modello, per un piccolo respiro visivo dal bordo strada.
+    // modello sfora di 11.2m rispetto al punto in cui viene piazzato.
     const PIT_BOX_FRONT_HALF_DEPTH = 11.2;
-    const PIT_BOX_CLEARANCE = 2;
+    // PIT_BOX_CLEARANCE = distanza del FRONTE del garage dal bordo corsia
+    // (pitRoadHalf) — deve restare sempre maggiore di
+    // TrackGeometry.PIT_STALL_CLEARANCE (dove si ferma davvero l'auto), con
+    // un margine di qualche metro, così il garage resta "subito dietro" lo
+    // stallo, mai sovrapposto (Rif. richiesta utente 2026-08-07, 2° round:
+    // "spingere la schiera di box più indietro" — valore precedente (2)
+    // piazzava il garage troppo vicino alla corsia, prima che lo stallo
+    // stesso venisse spostato più indietro).
+    const PIT_BOX_CLEARANCE = 12;
     const PIT_BOX_OFFSET_MARGIN = PIT_BOX_FRONT_HALF_DEPTH + PIT_BOX_CLEARANCE;
+
+    // Dimensioni della segnaletica a terra dello stallo (rettangolo
+    // colorato dove l'auto si ferma davvero — Rif. richiesta utente
+    // 2026-08-07, "gli stalli a terra"): larghezza (asse laterale) e
+    // lunghezza (asse lungo la corsia, l'auto si ferma parallela al senso
+    // di marcia) leggermente più ampie dell'ingombro reale dell'auto
+    // (CAR_HALF_WIDTH*2≈3.48, CAR_HALF_LENGTH*2≈7.16 —
+    // backend/sockets/games/physics/CollisionResolver.js) per un margine
+    // visivo, non misurate su un asset — nessun modello 3D coinvolto, solo
+    // una decalcomania piatta.
+    const STALL_WIDTH = 5;
+    const STALL_LENGTH = 10;
 
     function rgbToHsv(r, g, b) {
         const max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -144,5 +159,5 @@
         });
     }
 
-    return { loadPitBoxModel, recolorPitBoxTexture, isRedTexel, PIT_BOX_OFFSET_MARGIN };
+    return { loadPitBoxModel, recolorPitBoxTexture, isRedTexel, PIT_BOX_OFFSET_MARGIN, STALL_WIDTH, STALL_LENGTH };
 });

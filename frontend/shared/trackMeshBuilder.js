@@ -198,6 +198,133 @@
         container.add(imB, imK);
     }
 
+    // Dimensioni della "staffa" dipinta di ogni casella di griglia (Rif.
+    // richiesta utente 2026-08-07, con foto di riferimento di una vera
+    // griglia F1: NON un rettangolo pieno — una riga trasversale sul lato
+    // ANTERIORE (dove si ferma il muso dell'auto) + due gambe laterali che
+    // si estendono all'INDIETRO, aperta sul retro, nessuna riga di
+    // chiusura). Leggermente più ampie dell'ingombro reale dell'auto
+    // (CAR_HALF_WIDTH*2≈3.48, CAR_HALF_LENGTH*2≈7.16 —
+    // backend/sockets/games/physics/CollisionResolver.js).
+    const STARTING_GRID_BOX_WIDTH = 4;     // larghezza della riga trasversale / distanza tra le due gambe
+    const STARTING_GRID_BOX_LENGTH = 8;    // quanto le gambe si estendono all'indietro dalla riga trasversale
+    const STARTING_GRID_LINE_THICK = 0.35; // spessore delle righe (larghezza reale di una vernice da pista)
+
+    // Disegna le MAX_GRID_SIZE caselle della griglia di partenza vera,
+    // permanenti sulla pista (non legate a un giocatore specifico — a
+    // differenza dei box pit-lane, qui la posizione conta, non chi la
+    // occupa in questa gara). Usa TrackGeometry.gridSpawnPoint, la STESSA
+    // funzione che calcola davvero dove spawna ogni auto (server e client
+    // condividono la formula): nessun rischio che il disegno diverga dalla
+    // posizione reale. maxGridSize deve restare in sync con
+    // f1Bot.js::MAX_GRID_SIZE (valore di gioco, non geometrico — per
+    // questo non è stato spostato nel modulo condiviso).
+    //
+    // Ogni casella è un THREE.Group di 3 listelli sottili in coordinate
+    // LOCALI (rotation.y = spot.angle allinea +Z locale al senso di
+    // marcia, stessa convenzione di rotation.y = p.angle per le auto —
+    // vedi frontend/f1.js): riga trasversale a z=+L/2 (fronte, dove si
+    // ferma il muso), due gambe a x=∓W/2 che vanno da z=+L/2 a z=-L/2
+    // (indietro) — nessun listello a z=-L/2 di chiusura, la staffa resta
+    // aperta sul retro come nella foto di riferimento.
+    function buildStartingGrid(container, points, startFinishIndex, maxGridSize) {
+        const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
+        const halfW = STARTING_GRID_BOX_WIDTH / 2;
+        const L = STARTING_GRID_BOX_LENGTH;
+        const thick = STARTING_GRID_LINE_THICK;
+
+        for (let i = 0; i < maxGridSize; i++) {
+            const spot = TrackGeometry.gridSpawnPoint(points, startFinishIndex, i);
+            const group = new THREE.Group();
+            group.position.set(spot.x, 0.04, spot.z);
+            group.rotation.y = spot.angle;
+
+            const frontLine = new THREE.Mesh(
+                new THREE.BoxGeometry(STARTING_GRID_BOX_WIDTH + thick, 0.03, thick), material
+            );
+            frontLine.position.set(0, 0, L / 2);
+            group.add(frontLine);
+
+            for (const side of [-1, 1]) {
+                const leg = new THREE.Mesh(new THREE.BoxGeometry(thick, 0.03, L), material);
+                leg.position.set(side * halfW, 0, 0);
+                group.add(leg);
+            }
+
+            container.add(group);
+        }
+    }
+
+    // Profondità (dal bordo pitRoadHalf verso l'esterno) dell'asfalto
+    // aggiuntivo per la zona stalli (Rif. richiesta utente 2026-08-07: "ci
+    // deve essere l'asfalto anche negli stalli", segnalato dopo aver visto
+    // erba verde sotto ai box spostati più indietro nel round precedente).
+    // Copre lo stallo per intero (centrato a pitRoadHalf+PIT_STALL_CLEARANCE
+    // =10, largo STALL_WIDTH=5 → arriva fino a 12.5) con un margine di
+    // sicurezza — vedi TrackGeometry.PIT_STALL_CLEARANCE/PitBoxLoader.STALL_WIDTH.
+    const PIT_STALL_APRON_DEPTH = 15;
+
+    // Larghezza della linea bianca continua che segna il bordo tra la
+    // corsia condivisa e la zona stalli (Rif. richiesta utente 2026-08-07:
+    // "linee di demarcazione... in modo da far capire qual è la strada
+    // dritta comune a tutti nei box" — stile vera corsia box F1, dove la
+    // linea bianca separa la "fast lane" dalla zona box).
+    const PIT_LANE_DIVIDER_WIDTH = 0.4;
+
+    // Striscia asimmetrica (a differenza di buildOpenRibbon, che è sempre
+    // centrata sul percorso): da innerOffset a outerOffset dalla linea
+    // centrale, SOLO sul lato dove stanno davvero i box (quello più lontano
+    // dal tracciato principale — stessa tecnica "outward" già usata da
+    // frontend/f1.js::loadPlayerPitBox e da TrackGeometry.pitBoxAnchors per
+    // lo stallo). Determinato punto per punto (non una volta sola per tutta
+    // la corsia box) per restare corretto anche se la corsia box curva
+    // rispetto al tracciato principale. Riusata sia per l'asfalto della
+    // zona stalli (buildPitLane) sia per la linea bianca di demarcazione
+    // (stesso identico calcolo di lato/orientamento, solo offset diversi).
+    function buildPitSideStrip(container, pitPts, innerOffset, outerOffset, trackPts, material, yOffset = 0.03) {
+        const n = pitPts.length;
+        const pos = new Float32Array(n * 2 * 3);
+        const uv = new Float32Array(n * 2 * 2);
+        const idx = [];
+
+        for (let i = 0; i < n; i++) {
+            const { nx, nz } = TrackGeometry.normalAt(pitPts, i, false);
+            const p = pitPts[i];
+            const y = (p.y || 0) + yOffset;
+
+            const distPlus = TrackGeometry.nearestPoint(trackPts, p.x + nx, p.z + nz).dist;
+            const distMinus = TrackGeometry.nearestPoint(trackPts, p.x - nx, p.z - nz).dist;
+            const side = distPlus >= distMinus ? 1 : -1;
+
+            const innerX = p.x + nx * innerOffset * side, innerZ = p.z + nz * innerOffset * side;
+            const outerX = p.x + nx * outerOffset * side, outerZ = p.z + nz * outerOffset * side;
+
+            const b = i * 6;
+            pos[b] = innerX; pos[b + 1] = y; pos[b + 2] = innerZ;
+            pos[b + 3] = outerX; pos[b + 4] = y; pos[b + 5] = outerZ;
+
+            const u = i / (n - 1);
+            const ub = i * 4;
+            uv[ub] = 0; uv[ub + 1] = u; uv[ub + 2] = 1; uv[ub + 3] = u;
+
+            if (i < n - 1) {
+                const base = i * 2, next = (i + 1) * 2;
+                idx.push(base, base + 1, next, next, base + 1, next + 1);
+            }
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        geo.setIndex(idx);
+        geo.computeVertexNormals();
+
+        const mesh = new THREE.Mesh(geo, material);
+        mesh.receiveShadow = true;
+        container.add(mesh);
+        return mesh;
+    }
+
     // pitControlPoints: punti di controllo GREZZI (non campionati) della
     // corsia box, presi da pit.path del JSON.
     // drawBoxMarker (default true): il riquadro giallo semitrasparente su
@@ -209,12 +336,35 @@
     // nell'editor tracciato (track-editor.js), per vedere dove sta
     // pitBoxIndex mentre lo si modifica: da lì la chiamata resta col
     // default true, invariata.
-    function buildPitLane(container, pitControlPoints, pitRoadHalf, pitBoxIndex, drawBoxMarker = true) {
+    // trackPts (opzionale, retrocompatibile): punti campionati del
+    // tracciato principale, servono SOLO per l'asfalto aggiuntivo della
+    // zona stalli (buildPitApron) — senza, il comportamento resta identico
+    // a prima (solo la corsia normale, nessun apron).
+    function buildPitLane(container, pitControlPoints, pitRoadHalf, pitBoxIndex, drawBoxMarker = true, trackPts) {
         const pitPts = TrackGeometry.sampleOpenPath(pitControlPoints, 300);
 
         buildOpenRibbon(container, pitPts, pitRoadHalf, new THREE.MeshStandardMaterial({
             color: 0x3a3a3a, roughness: 0.95, side: THREE.DoubleSide
         }));
+
+        if (trackPts) {
+            buildPitSideStrip(container, pitPts, pitRoadHalf, pitRoadHalf + PIT_STALL_APRON_DEPTH, trackPts, new THREE.MeshStandardMaterial({
+                color: 0x3a3a3a, roughness: 0.95, side: THREE.DoubleSide
+            }));
+            // Linea bianca continua sul bordo esatto tra corsia condivisa e
+            // zona stalli: metà sul lato corsia (dentro l'asfalto della
+            // corridoio, y=0.03) e metà sul lato apron (anch'esso y=0.03) —
+            // yOffset più alto (0.04, stesso livello già usato da addLine/
+            // dal vecchio riquadro box più sotto in questo file) per non
+            // finire in z-fighting con l'asfalto sottostante su cui è
+            // parzialmente sovrapposta.
+            buildPitSideStrip(
+                container, pitPts,
+                pitRoadHalf - PIT_LANE_DIVIDER_WIDTH / 2, pitRoadHalf + PIT_LANE_DIVIDER_WIDTH / 2,
+                trackPts, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: THREE.DoubleSide }),
+                0.04
+            );
+        }
 
         if (drawBoxMarker) {
             const boxPos = pitControlPoints[pitBoxIndex];
@@ -449,5 +599,5 @@
         }
     }
 
-    root.TrackMeshBuilder = { buildRibbon, buildOpenRibbon, buildCurbs, buildBarriers, buildStartLine, buildPitLane, buildEmbankment, buildGround, buildBridgeDecks };
+    root.TrackMeshBuilder = { buildRibbon, buildOpenRibbon, buildCurbs, buildBarriers, buildStartLine, buildStartingGrid, buildPitLane, buildEmbankment, buildGround, buildBridgeDecks };
 })(window);

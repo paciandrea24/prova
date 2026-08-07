@@ -264,6 +264,17 @@
     // sovrapporre i box tra loro — verificato in playtest dall'utente.
     const PIT_BOX_SPACING = 24;
 
+    // Distanza dal bordo della corsia box (pitRoadHalf) alla quale piazzare
+    // lo STALLO di sosta di ogni auto (Rif. richiesta utente 2026-08-07,
+    // due round: 1° round, 2 — appena oltre il bordo — non bastava, l'auto
+    // restava troppo vicina alla corsia di transito condivisa; 2° round,
+    // spinto a 10 su richiesta esplicita di "spingere la schiera di box più
+    // indietro" e creare una vera zona stallo separata dalla corsia). Il
+    // garage decorativo (PitBoxLoader.PIT_BOX_CLEARANCE) è stato spostato
+    // ANCORA più indietro di questo valore, in modo che lo stallo resti
+    // "subito davanti" al proprio garage, mai sovrapposto.
+    const PIT_STALL_CLEARANCE = 10;
+
     // Cammina lungo la spezzata `pitPath` di `distance` metri (con segno) a
     // partire dal punto boxIndex; oltre gli estremi della corsia si ferma
     // (clamp) invece di uscire dall'array.
@@ -304,6 +315,60 @@
         return { x: pitPath[0].x, z: pitPath[0].z, fromIdx: 0, toIdx: Math.min(1, pitPath.length - 1) };
     }
 
+    // Come walkPitPath, ma per un percorso CHIUSO ad anello (i punti
+    // campionati del tracciato principale, non la corsia box): cammina di
+    // `distance` metri (con segno) a partire da `startIndex`, avvolgendosi
+    // circolarmente (mai un clamp agli estremi, non ci sono estremi).
+    // Serve a piazzare griglia di partenza/spawn seguendo la VERA curva
+    // del tracciato — Rif. richiesta utente 2026-08-07: prima
+    // (gridSpawnPoint in trackLoader.js) si usava un'estrapolazione
+    // lineare da un unico punto+angolo fissi (quelli del traguardo), che
+    // su un tratto curvo del traguardo faceva sì che le auto più lontane
+    // dal punto di riferimento finissero fuori dalla vera linea centrale E
+    // con un angolo non allineato alla pista in quel punto (auto "storte"
+    // in griglia, segnalato in playtest).
+    function walkClosedLoop(points, startIndex, distance) {
+        const n = points.length;
+        let idx = startIndex;
+        let remaining = distance;
+        if (remaining >= 0) {
+            for (let steps = 0; steps < n; steps++) {
+                const nextIdx = (idx + 1) % n;
+                const segLen = dist(points[idx], points[nextIdx]);
+                if (segLen === 0 || remaining <= segLen) {
+                    const f = segLen === 0 ? 0 : remaining / segLen;
+                    return {
+                        x: points[idx].x + (points[nextIdx].x - points[idx].x) * f,
+                        z: points[idx].z + (points[nextIdx].z - points[idx].z) * f,
+                        fromIdx: idx, toIdx: nextIdx
+                    };
+                }
+                remaining -= segLen;
+                idx = nextIdx;
+            }
+        } else {
+            remaining = -remaining;
+            for (let steps = 0; steps < n; steps++) {
+                const prevIdx = (idx - 1 + n) % n;
+                const segLen = dist(points[prevIdx], points[idx]);
+                if (segLen === 0 || remaining <= segLen) {
+                    const f = segLen === 0 ? 0 : remaining / segLen;
+                    return {
+                        x: points[idx].x + (points[prevIdx].x - points[idx].x) * f,
+                        z: points[idx].z + (points[prevIdx].z - points[idx].z) * f,
+                        fromIdx: prevIdx, toIdx: idx
+                    };
+                }
+                remaining -= segLen;
+                idx = prevIdx;
+            }
+        }
+        // Rete di sicurezza (mai raggiunta con una distance ragionevole
+        // rispetto alla lunghezza del giro): resta sul punto di partenza
+        // invece di un valore inventato.
+        return { x: points[startIndex].x, z: points[startIndex].z, fromIdx: startIndex, toIdx: (startIndex + 1) % n };
+    }
+
     // count posizioni equispaziate lungo la corsia box, centrate su
     // boxIndex — una per pilota (vedi assignGridSpawns in
     // f1GameSocket.js). Restituisce anche la tangente locale (tx,tz
@@ -317,7 +382,62 @@
     // l'autopilota li farebbe passare oltre il proprio box fino al vertice
     // condiviso per poi tornare indietro (bug osservato in playtest: l'auto
     // va avanti, poi inverte per raggiungere il box).
-    function pitBoxAnchors(pitPath, boxIndex, count) {
+    // Griglia di partenza (Rif. richiesta utente 2026-08-07): distanza
+    // dietro/spaziatura/scarto laterale delle posizioni di partenza in
+    // gara. UNICA fonte di verità per queste costanti — prima erano
+    // duplicate solo in backend/sockets/games/trackLoader.js; spostate qui
+    // (modulo condiviso Node+browser) così sia il calcolo reale dello
+    // spawn (server) sia il disegno permanente della griglia sulla pista
+    // (client, Rif. richiesta "griglia visibile in pista") usano ESATTAMENTE
+    // la stessa formula — nessun rischio che le due cose divergano.
+    // GRID_START=48: con MAX_GRID_SIZE=6 (f1Bot.js) e GRID_STAGGER=8, la
+    // casella più vicina alla linea è i=MAX_GRID_SIZE-1=5, la cui distanza
+    // dalla linea è GRID_START - 5*GRID_STAGGER. Con 40 veniva 0 — la
+    // casella finiva ESATTAMENTE sulla linea del traguardo, sovrapponendosi
+    // alle strisce bianco/nere (bug segnalato in playtest su Monte Rosso e
+    // Prova, presente su ogni pista perché indipendente dalla geometria).
+    // 48 lascia 8 unità di margine anche all'ultima casella.
+    const GRID_START = 48;       // unità dietro la linea di partenza per la pole
+    const GRID_STAGGER = 8;      // arretramento extra per ogni posizione in griglia
+    const GRID_LANE_OFFSET = 6;  // scostamento laterale di ogni corsia dal centro pista
+
+    // Posizione (e angolo, allineato alla tangente LOCALE) della i-esima
+    // casella di griglia, camminando sui punti VERI del tracciato chiuso a
+    // partire da startFinishIndex (mai un'estrapolazione lineare da un
+    // unico punto+angolo fissi — su un tratto curvo vicino al traguardo
+    // faceva finire le posizioni più lontane fuori dalla vera linea
+    // centrale e con un angolo non allineato alla pista in quel punto,
+    // bug reale "auto storte in griglia" segnalato in playtest). i=0 è la
+    // pole, alterna lato (pari=+1, dispari=-1) come una vera griglia
+    // sfalsata.
+    function gridSpawnPoint(points, startFinishIndex, i) {
+        const laneSign = (i % 2 === 0) ? 1 : -1;
+        const distForward = GRID_START - i * GRID_STAGGER;
+        const { x, z, fromIdx, toIdx } = walkClosedLoop(points, startFinishIndex, distForward);
+        const a = points[fromIdx], b = points[toIdx];
+        const tx = b.x - a.x, tz = b.z - a.z;
+        const tlen = Math.hypot(tx, tz) || 1;
+        const ntx = tx / tlen, ntz = tz / tlen;
+        const nx = -ntz, nz = ntx;
+        return {
+            x: x + nx * (laneSign * GRID_LANE_OFFSET),
+            z: z + nz * (laneSign * GRID_LANE_OFFSET),
+            angle: Math.atan2(ntx, ntz)
+        };
+    }
+
+    // trackPoints/pitRoadHalf (opzionali, retrocompatibili — se assenti gli
+    // anchor non hanno stallX/stallZ, comportamento identico a prima):
+    // quando presenti, ogni anchor guadagna uno stallo di sosta
+    // (stallX/stallZ) spostato lateralmente dalla linea centrale della
+    // corsia verso il lato ESTERNO del circuito (stessa tecnica di
+    // frontend/f1.js::loadPlayerPitBox per il modello del garage: tra le due
+    // normali possibili si sceglie quella più lontana dal tracciato
+    // principale), a distanza pitRoadHalf+PIT_STALL_CLEARANCE dalla linea
+    // centrale — coincide con l'imbocco del garage decorativo. La corsia
+    // condivisa (pitPath) resta invariata: solo il punto di ARRIVO/sosta si
+    // sposta, non il percorso di transito.
+    function pitBoxAnchors(pitPath, boxIndex, count, trackPoints, pitRoadHalf) {
         const mid = (count - 1) / 2;
         const anchors = [];
         for (let i = 0; i < count; i++) {
@@ -326,7 +446,20 @@
             const a = pitPath[fromIdx], b = pitPath[toIdx];
             const tx = b.x - a.x, tz = b.z - a.z;
             const tlen = Math.hypot(tx, tz) || 1;
-            anchors.push({ x, z, tx: tx / tlen, tz: tz / tlen, fromIdx });
+            const ntx = tx / tlen, ntz = tz / tlen;
+            const anchor = { x, z, tx: ntx, tz: ntz, fromIdx };
+
+            if (trackPoints && pitRoadHalf != null) {
+                const nx = -ntz, nz = ntx;   // normale, perpendicolare alla tangente
+                const distPlus = nearestPoint(trackPoints, x + nx, z + nz).dist;
+                const distMinus = nearestPoint(trackPoints, x - nx, z - nz).dist;
+                const side = distPlus >= distMinus ? 1 : -1;
+                const stallOffset = pitRoadHalf + PIT_STALL_CLEARANCE;
+                anchor.stallX = x + nx * stallOffset * side;
+                anchor.stallZ = z + nz * stallOffset * side;
+            }
+
+            anchors.push(anchor);
         }
         return anchors;
     }
@@ -342,6 +475,10 @@
         splitByBridge,
         tangentAt,
         normalAt,
-        pitBoxAnchors
+        pitBoxAnchors,
+        walkClosedLoop,
+        gridSpawnPoint,
+        PIT_STALL_CLEARANCE,
+        GRID_START, GRID_STAGGER, GRID_LANE_OFFSET
     };
 });
