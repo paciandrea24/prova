@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260807b">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260807d">
 </head>
 
 <body>
@@ -16,7 +16,7 @@
          (currentPhase !== 'race' nasconde tutto, incluso il chip giri). -->
     <div class="hud f1-panel" id="standings-panel" style="display:none;">
         <div id="lap-chip">
-            <span class="eyebrow">Giro</span>
+            <span class="eyebrow">Lap</span>
             <span id="lap-chip-value">1/3</span>
         </div>
         <div id="standings-rows"></div>
@@ -28,6 +28,12 @@
         <div class="col">
             <span class="eyebrow">Tempo</span>
             <span class="value" id="hud-timer">0:00.000</span>
+            <span class="hud-timer-delta" id="hud-timer-delta" style="display:none;"></span>
+            <div class="sector-bars" id="sector-bars" style="display:none;">
+                <span class="sector-bar" id="sector-bar-1"></span>
+                <span class="sector-bar" id="sector-bar-2"></span>
+                <span class="sector-bar" id="sector-bar-3"></span>
+            </div>
         </div>
         <div class="col">
             <span class="eyebrow">Velocità</span>
@@ -233,7 +239,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
     <script src="shared/voxelizer.js?v=20260730a"></script>
     <script src="/shared/firebaseConfig.js" defer></script>
-    <script src="f1.js?v=20260807f"></script>
+    <script src="f1.js?v=20260807h"></script>
 </body>
 
 </html>

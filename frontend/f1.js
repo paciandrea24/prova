@@ -436,6 +436,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // può quindi derivare come il vecchio Date.now()-localStart.
     let myLiveElapsedMs = null;
     let myLiveElapsedSyncedAt = null;
+    // Delta continuo rispetto al giro precedente (Rif.
+    // docs/superpowers/specs/2026-08-07-f1-sector-timing-design.md): letto
+    // una volta per f1StateUpdate (~50ms), usato solo per colorare
+    // #hud-timer — non serve estrapolazione locale come myLiveElapsedMs.
+    let myDeltaToPreviousLapMs = null;
     // Sessione di qualifica "ancora aperta" agli occhi del client — driven
     // SOLO dagli eventi di ciclo vita (mai da target.finished, vedi sotto),
     // per il pannello "in attesa degli altri piloti". Rif. 2026-08-07,
@@ -1030,6 +1035,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateStandings(state);
     });
 
+    // Colora le 3 barre settore in base ai dati del proprio giocatore
+    // (mai per gli avversari — Rif. design). Priorità: fucsia (record di
+    // sessione) > verde/giallo (confronto col proprio giro precedente) >
+    // neutro (settore non ancora raggiunto in questo giro, o nessun
+    // riferimento — primo giro in gara).
+    function updateSectorBars(sectorTimes, prevSectorTimes, bestSectorTimes) {
+        for (let i = 0; i < 3; i++) {
+            const bar = document.getElementById(`sector-bar-${i + 1}`);
+            if (!bar) continue;
+            bar.classList.remove('yellow', 'green', 'best');
+            const t = sectorTimes ? sectorTimes[i] : null;
+            if (t == null) continue;
+            const best = bestSectorTimes ? bestSectorTimes[i] : null;
+            if (best != null && t <= best) {
+                bar.classList.add('best');
+            } else if (prevSectorTimes && prevSectorTimes[i] != null) {
+                bar.classList.add(t < prevSectorTimes[i] ? 'green' : 'yellow');
+            }
+        }
+    }
+
     // Formatta gapToLeaderMs (ms) in "+S.m" (sotto il minuto) o "+M:SS.m"
     // (oltre) — un solo decimale, dato che il calcolo è già una stima
     // (mostrare 3 cifre sarebbe fuorviante). null/leader => stringa vuota.
@@ -1040,6 +1066,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         const m = Math.floor(totalDeci / 600);
         const secStr = (s10 / 10).toFixed(1);
         return m > 0 ? `+${m}:${secStr.padStart(4, '0')}` : `+${secStr}`;
+    }
+
+    // Formatta il delta continuo (ms, con segno) rispetto al giro
+    // precedente in "±S.mmm" (sotto il minuto) o "±M:SS.mmm" (oltre) — 3
+    // decimali per coerenza col timer principale (che mostra i millisecondi
+    // pieni, non arrotondati a un decimale come formatGap sopra, che è
+    // invece già una stima di distacco). null => stringa vuota.
+    function formatDelta(ms) {
+        if (ms == null) return '';
+        const sign = ms < 0 ? '-' : '+';
+        const abs = Math.round(Math.abs(ms));
+        const m = Math.floor(abs / 60000);
+        const s = Math.floor((abs % 60000) / 1000);
+        const msRem = abs % 1000;
+        const secStr = `${s}.${String(msRem).padStart(3, '0')}`;
+        return m > 0 ? `${sign}${m}:${String(s).padStart(2, '0')}.${String(msRem).padStart(3, '0')}` : `${sign}${secStr}`;
     }
 
     let lastStandingsOrder = [];   // colori nell'ordine dell'ultimo render, per rilevare i sorpassi
@@ -1057,7 +1099,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ${color === myColor ? 'TU' : ''}${d.isBot ? '<span class="bot-badge">CPU</span>' : ''}
             ${compoundLetter ? `<span class="compound-badge" style="color:${compoundColor};">${compoundLetter}</span>` : ''}
             ${(d.falseStart && !d.falseStartServed) ? '<span class="false-start-badge">!</span>' : ''}${d.collisionPenalty ? '<span class="false-start-badge collision-badge">!</span>' : ''}
-            <span class="gap">${formatGap(d.gapToLeaderMs)}</span>
+            <span class="gap">${d.position === 1 ? 'Leader' : formatGap(d.gapToLeaderMs)}</span>
         `;
     }
 
@@ -1194,6 +1236,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         myFinalTime = null;
         myLiveElapsedMs = null;
         myLiveElapsedSyncedAt = null;
+        myDeltaToPreviousLapMs = null;
         if (tyreSelectActive) exitTyrePreview();   // la qualifica sta per partire: fine anteprima tracciato
         tyreSelectActive = false;
         clearTyreNav();
@@ -1262,6 +1305,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         myFinalTime = null;
         myLiveElapsedMs = null;
         myLiveElapsedSyncedAt = null;
+        myDeltaToPreviousLapMs = null;
         if (data?.phase) currentPhase = data.phase;
         const overlay = document.getElementById('countdown-overlay');
         const num = document.getElementById('countdown-number');
@@ -1728,6 +1772,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const timerEl = document.getElementById('hud-timer');
     const speedEl = document.getElementById('speed-value');
+    const timerDeltaEl = document.getElementById('hud-timer-delta');
 
     function animate() {
         requestAnimationFrame(animate);
@@ -1926,6 +1971,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (target.finished && target.time) {
                     myFinalTime = target.time;
                 }
+                myDeltaToPreviousLapMs = (typeof target.deltaToPreviousLapMs === 'number') ? target.deltaToPreviousLapMs : null;
+                const sectorBarsEl = document.getElementById('sector-bars');
+                if (sectorBarsEl) sectorBarsEl.style.display = (currentPhase === 'race') ? 'flex' : 'none';
+                if (currentPhase === 'race') {
+                    updateSectorBars(target.sectorTimes, target.prevSectorTimes, target.bestSectorTimes);
+                }
                 // Overlay "in attesa degli altri piloti": mostrato solo se la
                 // sessione è ancora aperta (qualiSessionOpen, chiuso SOLO da
                 // eventi di ciclo vita — mai da target.finished, vedi
@@ -1956,12 +2007,34 @@ document.addEventListener('DOMContentLoaded', async () => {
             const s = Math.floor((t % 60000) / 1000);
             const ms = t % 1000;
             timerEl.textContent = `${m}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
-            // Colore: verde a tempo fissato, altrimenti nessun override così
-            // resta il colore chiaro di .hud-mono — il vecchio #2C3E50 (blu
-            // navy, pensato per il pannello chiaro pre-redesign) era quasi
-            // invisibile sullo schermo scuro incassato (segnalato dall'utente
-            // come "blu su blu").
-            timerEl.style.color = myFinalTime !== null ? '#2ecc71' : '';
+            // Colore: verde a tempo fissato (comportamento invariato, ha
+            // sempre priorità — mai sovrascritto dal delta sotto), altrimenti
+            // nessun override così resta il colore chiaro di .hud-mono — il
+            // vecchio #2C3E50 (blu navy, pensato per il pannello chiaro
+            // pre-redesign) era quasi invisibile sullo schermo scuro
+            // incassato (segnalato dall'utente come "blu su blu"). Mentre il
+            // giro è in corso, verde/rosso in base al delta continuo rispetto
+            // al giro precedente (Rif.
+            // docs/superpowers/specs/2026-08-07-f1-sector-timing-design.md).
+            if (myFinalTime !== null) {
+                timerEl.style.color = '#2ecc71';
+            } else if (myDeltaToPreviousLapMs == null || myDeltaToPreviousLapMs === 0) {
+                timerEl.style.color = '';
+            } else {
+                timerEl.style.color = myDeltaToPreviousLapMs < 0 ? 'var(--green)' : 'var(--red)';
+            }
+            // Testo del delta ("di quanto"): visibile solo mentre il giro è
+            // in corso e c'è un giro precedente con cui confrontare — sparisce
+            // a giro concluso (myFinalTime) insieme al resto del "live".
+            if (timerDeltaEl) {
+                if (myFinalTime !== null || myDeltaToPreviousLapMs == null) {
+                    timerDeltaEl.style.display = 'none';
+                } else {
+                    timerDeltaEl.style.display = 'block';
+                    timerDeltaEl.textContent = formatDelta(myDeltaToPreviousLapMs);
+                    timerDeltaEl.style.color = myDeltaToPreviousLapMs < 0 ? 'var(--green)' : (myDeltaToPreviousLapMs > 0 ? 'var(--red)' : '');
+                }
+            }
         }
 
         if (tyreSelectActive) updateTyreSelectCamera();

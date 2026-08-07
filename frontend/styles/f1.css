@@ -4,6 +4,7 @@
     --green: #2ecc71;
     --red: #e74c3c;
     --blue: #3498db;
+    --fucsia: #e91e8c;
     --hud-surface:      #1c212a;
     --hud-shadow-dk:    rgba(2, 3, 5, 0.65);
     --hud-shadow-lt:    rgba(255, 255, 255, 0.05);
@@ -193,6 +194,37 @@ canvas.tyre-preview-canvas {
 }
 #timer-speed-panel #speed-value { color: var(--f1-telemetry); }
 #timer-speed-panel .unit { font-size: 10px; color: var(--f1-text-dim); margin-left: 2px; }
+
+/* ---- delta continuo rispetto al giro precedente, sotto il tempo (solo in
+   gara — Rif. docs/superpowers/specs/2026-08-07-f1-sector-timing-design.md) ---- */
+.hud-timer-delta {
+    display: block;
+    margin-top: 2px;
+    text-align: right;
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+/* ---- barre settore, sotto il tempo (solo in gara — Rif.
+   docs/superpowers/specs/2026-08-07-f1-sector-timing-design.md) ---- */
+.sector-bars {
+    display: flex;
+    gap: 3px;
+    margin-top: 5px;
+    justify-content: flex-end;
+}
+.sector-bar {
+    width: 22px;
+    height: 5px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.16);
+    transition: background-color 0.15s ease;
+}
+.sector-bar.yellow { background: var(--yellow); }
+.sector-bar.green  { background: var(--green); }
+.sector-bar.best   { background: var(--fucsia); }
 
 /* ---- overlay "in attesa degli altri piloti" (fine qualifica, prima della griglia) ---- */
 .quali-waiting-box {

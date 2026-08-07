@@ -596,11 +596,16 @@ function startQualifying(io, lobbyId, game) {
     // Tutti allo stesso identico punto (vedi game.track.qualiSpawn), a
     // prescindere da dove fossero prima (già impostato alla creazione, ma qui
     // è garantito anche per chi era entrato con uno stato diverso).
+    game.bestSectorTimes = [Infinity, Infinity, Infinity];
     for (const p of Object.values(game.players)) {
         p.x = game.track.qualiSpawn.x; p.z = game.track.qualiSpawn.z; p.angle = game.track.qualiSpawn.angle;
         p.speed = 0; p.vx = 0; p.vz = 0;
         p.finished = false; p.time = null;
         p.lap = 0; p.checkpointA = false; p.inFinishZone = false;
+        p.curLapCurve = null; p.prevLapCurve = null;
+        p.curLapSectorTimes = [null, null, null]; p.prevLapSectorTimes = null;
+        p.deltaToPreviousLapMs = null; p.lapTrulyStarted = false;
+        p.lapRecapSectorTimes = null; p.lapRecapExpiresAtMs = null;
         p.trackIndex = 0;
     }
     io.to(lobbyId).emit('f1Countdown', { trackName: game.track.name, label: 'QUALIFICA — 1 GIRO', phase: 'qualifying' });
@@ -733,6 +738,7 @@ function assignGridSpawns(game) {
     // spawn, così due piloti ai box insieme non finiscono più nello stesso
     // punto fisico (prima: tutti su track.pitBoxIndex).
     const boxAnchors = TrackGeometry.pitBoxAnchors(game.track.pitPath, game.track.pitBoxIndex, order.length);
+    game.bestSectorTimes = [Infinity, Infinity, Infinity];
     order.forEach((color, i) => {
         const p = game.players[color];
         if (!p) return;
@@ -741,6 +747,10 @@ function assignGridSpawns(game) {
         p.speed = 0; p.vx = 0; p.vz = 0;
         p.finished = false; p.time = null;
         p.lap = 0; p.checkpointA = false; p.inFinishZone = false;
+        p.curLapCurve = null; p.prevLapCurve = null;
+        p.curLapSectorTimes = [null, null, null]; p.prevLapSectorTimes = null;
+        p.deltaToPreviousLapMs = null; p.lapTrulyStarted = false;
+        p.lapRecapSectorTimes = null; p.lapRecapExpiresAtMs = null;
         p.trackIndex = 0;
         p.tyreWear = 0;   // gomme fresche per la gara vera (l'usura conta solo in gara, non in qualifica)
         p.damage = 0;   // auto perfetta a inizio gara vera — stesso confine di tyreWear
@@ -1115,6 +1125,7 @@ function tickGame(io, lobbyId, game) {
         // scelte ma "fresche" fino al via vero (resettate in assignGridSpawns).
         if (game.phase === 'race') applyTyreWear(p, offTrack, game.track);
         checkLap(p, totalLaps, io, lobbyId, game);
+        updateSectorTiming(p, game);
 
         // Ingresso volontario nella corsia box (solo in gara: sterzare lì è
         // una scelta del giocatore). Da qui il server prende il volante — vedi
@@ -1135,6 +1146,7 @@ function tickGame(io, lobbyId, game) {
         // veniva mai rilevato — segnalato dall'utente come "giro perso" ai
         // box. trackIndex è già aggiornato dalla riga sopra, checkLap lo usa.
         checkLap(p, totalLaps, io, lobbyId, game);
+        updateSectorTiming(p, game);
     }
 
     // Distacco dal leader: stima da distanza/velocità, ricalcolata ogni
@@ -1253,6 +1265,22 @@ function tickGame(io, lobbyId, game) {
 // indipendentemente dalla pista: questo indice resta una costante globale.
 const N_SAMPLES = 1000;
 const HALF_LAP_IDX = Math.floor(N_SAMPLES / 2);
+// Confini settore (Rif. docs/superpowers/specs/2026-08-07-f1-sector-timing-design.md):
+// divisione puramente geometrica per indice campionato, identica per ogni
+// pista. A differenza di HALF_LAP_IDX (offset da sommare a startFinishIndex
+// per un indice ASSOLUTO in game.track.points), questi sono già indici
+// RELATIVI all'inizio del giro corrente (0 = startFinishIndex) — vedi
+// updateSectorTiming, che lavora nello spazio "indice-relativo-al-giro".
+const SECTOR1_REL_IDX = Math.round(N_SAMPLES / 3);
+const SECTOR2_REL_IDX = Math.round(2 * N_SAMPLES / 3);
+// Quanto restano visibili le 3 barre settore del giro APPENA chiuso prima
+// di azzerarsi per il nuovo giro (Rif. richiesta utente 2026-08-07 dopo
+// playtest: senza questa finestra il settore 3, conoscibile solo a fine
+// giro, o sparisce subito o resta fisso per l'intero giro successivo —
+// nessuna delle due era quella voluta). Passata questa finestra, le barre
+// tornano grigie e si riempiono di nuovo mano a mano che il nuovo giro
+// attraversa i 3 settori, esattamente come il primo giro in gara.
+const SECTOR_RECAP_DURATION_MS = 3500;
 // Tolleranze del checkpoint anti-taglio e del traguardo espresse in METRI
 // fisici, convertite in campioni in base alla lunghezza REALE della pista
 // caricata (vedi checkpointWindowFor()/finishWindowFor()) — invariata su
@@ -1400,6 +1428,111 @@ function computeFinishCrossingFraction(p, track, startFinishIndex) {
     return t;
 }
 
+// fillGaps: riempie i "buchi" (-1, indice del tracciato mai raggiunto in
+// questo giro — tipico sui rettilinei ad alta velocità, dove si saltano
+// 1-2 campioni tra un tick e l'altro su 1000 campioni/giro) con
+// interpolazione lineare tra i due valori noti più vicini. Un run
+// iniziale (prima del primo valore noto) prende 0 — il giro parte sempre
+// da lì. Un run finale (dopo l'ultimo valore noto) prende il valore noto
+// più vicino, costante — non c'è un valore successivo con cui
+// interpolare prima del wraparound a fine giro. Chiamata una sola volta
+// a fine giro (vedi checkLap), mai per tick.
+function fillGaps(curve) {
+    const n = curve.length;
+    const out = new Float32Array(n);
+    let lastKnownIdx = -1;
+    let lastKnownVal = 0;
+    for (let i = 0; i < n; i++) {
+        if (curve[i] >= 0) {
+            if (lastKnownIdx >= 0 && i - lastKnownIdx > 1) {
+                const span = i - lastKnownIdx;
+                for (let j = lastKnownIdx + 1; j < i; j++) {
+                    const t = (j - lastKnownIdx) / span;
+                    out[j] = lastKnownVal + (curve[i] - lastKnownVal) * t;
+                }
+            } else if (lastKnownIdx < 0 && i > 0) {
+                for (let j = 0; j < i; j++) out[j] = 0;
+            }
+            out[i] = curve[i];
+            lastKnownIdx = i;
+            lastKnownVal = curve[i];
+        }
+    }
+    if (lastKnownIdx >= 0 && lastKnownIdx < n - 1) {
+        for (let j = lastKnownIdx + 1; j < n; j++) out[j] = lastKnownVal;
+    }
+    return out;
+}
+
+// updateSectorTiming: aggiorna la curva posizione→tempo del giro corrente
+// e ne deriva i due confini di settore + il delta continuo rispetto al
+// giro precedente. Chiamata una volta per giocatore per tick, subito
+// DOPO checkLap (Rif. tickGame) — così se checkLap ha appena chiuso un
+// giro, questa funzione registra il primo campione del giro NUOVO nello
+// stesso tick, invece di perderlo. Rif. design completo:
+// docs/superpowers/specs/2026-08-07-f1-sector-timing-design.md.
+function updateSectorTiming(p, game) {
+    if (game.phase !== 'race') return;
+
+    const n = game.track.points.length;
+    const nowMs = game.raceTick * PHYSICS_TICK_MS;
+
+    // Difensivo: giocatore entrato a gara già iniziata (mai passato da
+    // assignGridSpawns/resetPlayers in questa sessione) — invece di un
+    // quarto punto di reset speciale, il primo tick in gara vale come
+    // inizio di un giro "proprio" per lui, da qui in poi identico a tutti.
+    // p.trackIndex qui è già la posizione vera (nessun giro precedente da
+    // cui ereditare ambiguità), quindi nessuna quarantena necessaria.
+    if (!p.curLapCurve) {
+        p.curLapCurve = new Float32Array(n).fill(-1);
+        p.curLapCurve[0] = 0;
+        p.curLapSectorTimes = [null, null, null];
+        p.lapStartMs = nowMs;
+        p.lapTrulyStarted = true;
+    }
+
+    const startFinishIndex = game.track.startFinishIndex || 0;
+    const relIdx = (p.trackIndex - startFinishIndex + n) % n;
+
+    // Quando checkLap chiude un giro, p.trackIndex NON viene toccato — resta
+    // sulla posizione di CODA del giro appena finito (vicino al wrap, es.
+    // ~996-999/1000) finché updateTrackIndex (motore fisico) non lo
+    // ricalcola per la posizione vera del nuovo giro. Quanti tick ci
+    // vogliono NON è fisso (dipende dalla finestra di ricerca locale di
+    // nearestIndexNear e da quanto la finestra del traguardo anticipa la
+    // vera linea) — misurato fino a 2 tick in simulazione, non affidabile
+    // saltarne uno solo a un numero fisso. Restiamo in "quarantena" finché
+    // non osserviamo relIdx davvero basso (sotto il primo confine settore):
+    // solo allora la posizione riflette con certezza il NUOVO giro, non la
+    // coda del vecchio. Bug reale misurato con una simulazione multi-giro:
+    // senza questo, bestSectorTimes[0]/[1] restavano contaminati a un
+    // valore vicino a 0 (relIdx enorme + tempo trascorso ~0), imbattibile
+    // per sempre — sintomo osservato in playtest 2026-08-07 come "settore
+    // sempre fucsia".
+    if (!p.lapTrulyStarted) {
+        if (relIdx < SECTOR1_REL_IDX) {
+            p.lapTrulyStarted = true;
+        } else {
+            return;
+        }
+    }
+
+    const lapElapsedMs = nowMs - p.lapStartMs;
+
+    if (p.curLapCurve[relIdx] < 0) p.curLapCurve[relIdx] = lapElapsedMs;
+
+    if (relIdx >= SECTOR1_REL_IDX && p.curLapSectorTimes[0] == null) {
+        p.curLapSectorTimes[0] = lapElapsedMs;
+        game.bestSectorTimes[0] = Math.min(game.bestSectorTimes[0], lapElapsedMs);
+    }
+    if (relIdx >= SECTOR2_REL_IDX && p.curLapSectorTimes[1] == null) {
+        p.curLapSectorTimes[1] = lapElapsedMs - p.curLapSectorTimes[0];
+        game.bestSectorTimes[1] = Math.min(game.bestSectorTimes[1], p.curLapSectorTimes[1]);
+    }
+
+    p.deltaToPreviousLapMs = p.prevLapCurve ? (lapElapsedMs - p.prevLapCurve[relIdx]) : null;
+}
+
 // ====================================================
 // LAP CHECK — basato sull'indice campionato (generico per qualunque pista):
 // la linea di partenza è sempre l'indice 0 dei punti campionati; il
@@ -1424,10 +1557,18 @@ function checkLap(p, totalLaps, io, lobbyId, game) {
         p.checkpointA = false;
         console.log(`🏁 [F1] ${p.color} giro ${p.lap}/${totalLaps} (lobby ${lobbyId})`);
 
+        // Frazione esatta di attraversamento (vedi computeFinishCrossingFraction):
+        // calcolata una sola volta per giro, riusata sia dal tempo finale
+        // (ultimo giro, sotto) sia dalla chiusura settori (Rif.
+        // docs/superpowers/specs/2026-08-07-f1-sector-timing-design.md, ogni
+        // giro in gara) — prima venivano ricalcolate due formule diverse per
+        // lo stesso istante.
+        const frac = computeFinishCrossingFraction(p, game.track, startFinishIndex);
+        const crossingElapsedMs = Math.round((game.raceTick - 1 + frac) * PHYSICS_TICK_MS);
+
         if (p.lap >= totalLaps) {
             p.finished = true;
-            const frac = computeFinishCrossingFraction(p, game.track, startFinishIndex);
-            p.time = Math.round((game.raceTick - 1 + frac) * PHYSICS_TICK_MS);
+            p.time = crossingElapsedMs;
             // Obbligo di almeno un pit stop in gara (regola vera F1): chi non
             // ha mai cambiato gomme prende una penalità in tempo a fine gara,
             // non viene bloccato né squalificato.
@@ -1461,6 +1602,39 @@ function checkLap(p, totalLaps, io, lobbyId, game) {
                     if (!game.raceEnded) endRace(io, lobbyId, game);
                 }, 60000);
             }
+        }
+
+        // Chiusura settori (solo in gara, mai in qualifica): il settore 3 è
+        // tutto ciò che resta del giro dopo i primi due; la curva
+        // posizione→tempo appena chiusa diventa il riferimento per il
+        // prossimo giro (delta continuo + confronto settore). `p.curLapCurve`
+        // è sempre presente qui se `game.phase === 'race'` (allocata al
+        // primo tick da updateSectorTiming, che gira prima di ogni lap
+        // completo possibile) — il controllo resta comunque per sicurezza.
+        if (game.phase === 'race' && p.curLapCurve) {
+            const s1 = p.curLapSectorTimes[0] || 0;
+            const s2 = p.curLapSectorTimes[1] || 0;
+            const s3 = crossingElapsedMs - p.lapStartMs - s1 - s2;
+            game.bestSectorTimes[2] = Math.min(game.bestSectorTimes[2], s3);
+            p.prevLapSectorTimes = [p.curLapSectorTimes[0], p.curLapSectorTimes[1], s3];
+            // "Recap" del giro appena chiuso: buildPublicState lo trasmette
+            // al posto dei dati (azzerati sotto) del nuovo giro per
+            // SECTOR_RECAP_DURATION_MS — il giocatore vede per qualche
+            // secondo il risultato dell'ultimo giro prima che le barre
+            // tornino grigie e ricomincino a riempirsi col giro nuovo.
+            p.lapRecapSectorTimes = [p.curLapSectorTimes[0], p.curLapSectorTimes[1], s3];
+            p.lapRecapExpiresAtMs = crossingElapsedMs + SECTOR_RECAP_DURATION_MS;
+            p.prevLapCurve = fillGaps(p.curLapCurve);
+            p.curLapCurve = new Float32Array(n).fill(-1);
+            p.curLapCurve[0] = 0;
+            p.curLapSectorTimes = [null, null, null];
+            p.lapStartMs = crossingElapsedMs;
+            // Vedi updateSectorTiming: p.trackIndex non viene toccato qui,
+            // resta sulla coda del giro appena chiuso finché il motore
+            // fisico non lo ricalcola sui prossimi tick (numero variabile,
+            // non un tick fisso) — updateSectorTiming resta in "quarantena"
+            // finché non osserva relIdx davvero basso.
+            p.lapTrulyStarted = false;
         }
 
         io.to(lobbyId).emit('f1LapUpdate', { color: p.color, lap: p.lap, totalLaps, phase: game.phase });
@@ -1512,6 +1686,15 @@ function buildPublicState(players, raceStarted, track, game) {
     }
 
     for (const [color, p] of Object.entries(players)) {
+        // Vedi checkLap: nella finestra SECTOR_RECAP_DURATION_MS dopo un
+        // giro chiuso si trasmette lo "scatto" del giro appena finito
+        // (lapRecapSectorTimes) al posto dei dati — ancora azzerati — del
+        // nuovo giro, così le barre restano visibili per qualche secondo
+        // invece di sparire nello stesso istante in cui vengono calcolate.
+        const sectorTimesDisplay = (game.phase === 'race' && p.lapRecapExpiresAtMs != null
+            && (game.raceTick * PHYSICS_TICK_MS) < p.lapRecapExpiresAtMs)
+            ? p.lapRecapSectorTimes
+            : p.curLapSectorTimes;
         out[color] = {
             x: p.x, z: p.z, angle: p.angle,
             trackIndex: p.trackIndex,
@@ -1559,6 +1742,17 @@ function buildPublicState(players, raceStarted, track, game) {
             falseStart: !!p.falseStart,
             falseStartServed: !!p.falseStartServed,
             gapToLeaderMs: (p.gapToLeaderMs != null) ? p.gapToLeaderMs : null,
+            // Settori/delta (Rif. docs/superpowers/specs/2026-08-07-f1-sector-timing-design.md):
+            // solo in gara, mai in qualifica — vedi updateSectorTiming/checkLap.
+            // Infinity (nessun record ancora) convertito esplicitamente in
+            // null: non è JSON-safe e non deve dipendere da un dettaglio del
+            // serializzatore socket.io per arrivare "pulito" al client.
+            sectorTimes: (game.phase === 'race' && sectorTimesDisplay) ? sectorTimesDisplay : [null, null, null],
+            prevSectorTimes: (game.phase === 'race') ? (p.prevLapSectorTimes || null) : null,
+            bestSectorTimes: (game.phase === 'race' && game.bestSectorTimes)
+                ? game.bestSectorTimes.map(t => (t === Infinity ? null : t))
+                : [null, null, null],
+            deltaToPreviousLapMs: (game.phase === 'race' && p.deltaToPreviousLapMs != null) ? p.deltaToPreviousLapMs : null,
             isBot: !!p.isBot,
             // Indice del box assegnato per questa gara (vedi
             // assignGridSpawns/TrackGeometry.pitBoxAnchors) — il client lo
@@ -1597,12 +1791,17 @@ function buildPublicState(players, raceStarted, track, game) {
 
 function resetPlayers(game) {
     let i = 0;
+    game.bestSectorTimes = [Infinity, Infinity, Infinity];
     for (const p of Object.values(game.players)) {
         const spawn = game.track.gridSpawnPoint(i);
         p.x = spawn.x; p.z = spawn.z; p.angle = spawn.angle;
         p.speed = 0; p.vx = 0; p.vz = 0;
         p.finished = false; p.time = null;
         p.lap = 0; p.checkpointA = false; p.inFinishZone = false;
+        p.curLapCurve = null; p.prevLapCurve = null;
+        p.curLapSectorTimes = [null, null, null]; p.prevLapSectorTimes = null;
+        p.deltaToPreviousLapMs = null; p.lapTrulyStarted = false;
+        p.lapRecapSectorTimes = null; p.lapRecapExpiresAtMs = null;
         p.trackIndex = 0;
         p.inputs = { throttle: 0, brake: 0, steer: 0 };
         if (p.isBot) { p.botHeadingToPits = false; p.botPitReactionScheduled = false; }
@@ -1619,17 +1818,18 @@ function resetPlayers(game) {
 module.exports.physics = {
     PHYSICS_TICK_MS, COLLISION_SUBSTEPS,
     ACCEL, BRAKE_MULT, TURN_SPEED_HIGH, HALF_LAP_IDX,
+    SECTOR1_REL_IDX, SECTOR2_REL_IDX, SECTOR_RECAP_DURATION_MS, fillGaps,
     effectiveMaxSpeed, effectiveAccel, effectiveBrakeMult, corneringCapacity, updateVelocity, integratePosition,
     applyOffTrackDrag, applyBridgeBarrier, updateTrackIndex,
     circularWithin, checkpointWindowFor, finishWindowFor,
-    assignGridSpawns,
+    assignGridSpawns, resetPlayers,
     MIN_COLLISION_SEVERITY, DAMAGE_CAP_PER_HIT, COLLISION_PENALTY_CAP_MS,
     collisionDamageAmount, applyCarCollisionDamage, applyBarrierDamage, applyCollisionPenalty,
     resolveCollisions,
     applyDamageSteerNoise, DAMAGE_STEER_NOISE_MAX, effectiveGrip,
     createDamageParts, FRONT_WING_STEER_PENALTY_MAX,
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
-    buildPublicState, checkLap,
+    buildPublicState, checkLap, updateSectorTiming,
     computeSlipstreamMult,
     updatePitAutopilot, PIT_AUTO_SPEED, PIT_AUTO_ARRIVE_DIST
 };
