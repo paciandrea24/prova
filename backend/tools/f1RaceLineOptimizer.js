@@ -416,18 +416,32 @@ function run(trackId, hops, opts) {
 function parseArgs(argv) {
     const trackIds = [];
     let hops = 30;
-    let seedGeometric = false;
-    // Default true (Fase 1 — Rif. audit shape-prior 2026-07-29, esito
-    // adottato): partire dalla forma fuori-dentro-fuori geometrica ad ogni
-    // risoluzione riduce il rischio di un ottimo locale mediocre rispetto a
-    // partire da zero ovunque. `--seed-multi-resolution=0` per tornare
-    // eccezionalmente al comportamento precedente (solo per confronto).
-    let seedMultiResolution = true;
+    // Default true (Rif. audit 2026-08-07): semina la forma geometrica
+    // fuori-dentro-fuori (apexOffset) UNA SOLA VOLTA, al livello più
+    // grezzo (15 punti) — ai livelli successivi la linea eredita il
+    // risultato del livello precedente (interpolato alla risoluzione
+    // nuova), MAI ricalcolata da zero. `--seed-geometric=0` per tornare a
+    // partire dal centro pista (solo per confronto).
+    let seedGeometric = true;
+    // Default false: ricalcolare la forma geometrica ad ogni livello
+    // (15/35/70/140) butta via tutto il lavoro di coordinate descent fatto
+    // al livello precedente, lasciando solo 8 round di rifinitura locale
+    // per ricostruirlo da un seed grezzo che spesso non vede nemmeno la
+    // curva (apexOffset usa scanSamples tarati sulla velocità, non sempre
+    // sufficienti a quella risoluzione) — misurato su `prova`: risultato
+    // quasi piatto, offset laterale mai oltre ~3m anche su un tornante
+    // vero. Con `seedMultiResolution=false` (eredita, non ricalcola) la
+    // stessa pista, stessa fisica, zero basin-hopping: 49950ms contro
+    // 52800ms (-5.4%), linea che usa davvero tutta la larghezza pista
+    // (fino a 11.02m su un limite di 10.67m). `--seed-multi-resolution`
+    // per tornare al comportamento precedente (solo per confronto).
+    let seedMultiResolution = false;
     let outSuffix = "";
     let resume = null;
     for (const arg of argv) {
         if (arg.startsWith("--hops=")) hops = Number(arg.slice("--hops=".length));
         else if (arg === "--seed-geometric") seedGeometric = true;
+        else if (arg === "--seed-geometric=0") seedGeometric = false;
         else if (arg === "--seed-multi-resolution") seedMultiResolution = true;
         else if (arg === "--seed-multi-resolution=0") seedMultiResolution = false;
         else if (arg.startsWith("--out-suffix=")) outSuffix = arg.slice("--out-suffix=".length);
@@ -440,7 +454,7 @@ function parseArgs(argv) {
 if (require.main === module) {
     const { trackIds, hops, seedGeometric, seedMultiResolution, outSuffix, resume } = parseArgs(process.argv.slice(2));
     if (trackIds.length === 0) {
-        console.error("Uso: node backend/tools/f1RaceLineOptimizer.js <trackId> [<trackId> ...] [--hops=N] [--seed-geometric] [--seed-multi-resolution] [--out-suffix=-seeded] [--resume=<path-checkpoint.json>]");
+        console.error("Uso: node backend/tools/f1RaceLineOptimizer.js <trackId> [<trackId> ...] [--hops=N] [--seed-geometric=0] [--seed-multi-resolution] [--out-suffix=-seeded] [--resume=<path-checkpoint.json>]");
         process.exitCode = 1;
     } else {
         // --resume ha senso solo per UNA pista alla volta (il checkpoint è
