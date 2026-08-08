@@ -27,7 +27,7 @@ function buildNoRacelineTrackData() {
         pit: {
             roadHalfWidth: 5,
             boxIndex: 1,
-            entryTrigger: { xMin: 90, xMax: 110, zMin: -10, zMax: 10 },
+            entryTrigger: { x: 100, z: 0, halfWidth: 10, halfLength: 10, angle: 0 },
             path: [
                 { x: 100, z: 0 },
                 { x: 105, z: 5 },
