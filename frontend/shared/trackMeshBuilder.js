@@ -76,7 +76,17 @@
         return mesh;
     }
 
-    function buildCurbs(container, pts, roadHalf, curbW) {
+    // Stessa soglia/idea di BARRIER_PIT_GAP_THRESHOLD più sotto: sotto
+    // questa distanza dai campioni vicino ai due estremi della corsia box,
+    // niente cordolo — al suo posto c'è già l'asfalto della corsia box
+    // (Rif. richiesta utente 2026-08-08: "togliere il cordolo... tanto c'è
+    // la corsia box"). Il cordolo sta più vicino al centro pista della
+    // barriera, quindi la stessa soglia della barriera qui apre un varco
+    // leggermente più corto (corretto: il cordolo deve sparire solo dove
+    // l'asfalto della corsia box lo ricopre davvero, non oltre).
+    const CURB_PIT_GAP_THRESHOLD = 8;
+
+    function buildCurbs(container, pts, roadHalf, curbW, mergePoints) {
         const n = pts.length;
         const stepLen = TrackGeometry.lapLength(pts) / n;
         const STRIPE = 10;
@@ -86,12 +96,18 @@
             const col = new Float32Array(n * 2 * 3);
             const idx = [];
             let dist = 0, flip = false;
+            const gapped = new Array(n).fill(false);
 
             for (let i = 0; i < n; i++) {
                 const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
                 const p = pts[i];
                 const y = (p.y || 0) + 0.04;
                 const inner = roadHalf * side, outer = (roadHalf + curbW) * side;
+
+                if (mergePoints) {
+                    const mx = p.x + nx * outer, mz = p.z + nz * outer;
+                    gapped[i] = TrackGeometry.nearestPoint(mergePoints, mx, mz).dist < CURB_PIT_GAP_THRESHOLD;
+                }
 
                 const b = i * 6;
                 pos[b]     = p.x + nx * inner; pos[b + 1] = y; pos[b + 2] = p.z + nz * inner;
@@ -102,9 +118,13 @@
                 const cb = i * 6;
                 col[cb] = r; col[cb + 1] = g; col[cb + 2] = bv;
                 col[cb + 3] = r; col[cb + 4] = g; col[cb + 5] = bv;
+            }
 
-                const base = i * 2, nxt = ((i + 1) % n) * 2;
-                idx.push(base, base + 1, nxt, nxt, base + 1, nxt + 1);
+            for (let i = 0; i < n; i++) {
+                const nxt = (i + 1) % n;
+                if (gapped[i] || gapped[nxt]) continue;
+                const base = i * 2, nxtBase = nxt * 2;
+                idx.push(base, base + 1, nxtBase, nxtBase, base + 1, nxtBase + 1);
             }
 
             const geo = new THREE.BufferGeometry();
@@ -433,27 +453,33 @@
     // più lontano dalla pista" come buildPitSideStrip: qui serve tracciare
     // letteralmente i due bordi geometrici della corsia box, indipendenti
     // da dove sta la pista vera). Due chiamate (offset positivo/negativo)
-    // disegnano le due linee laterali continue.
-    function buildPitEdgeLine(container, pts, offset, halfLineWidth, material) {
+    // disegnano le due linee laterali continue. skipTest(x,z) (opzionale):
+    // se true per un campione, la linea si interrompe lì — usato per non
+    // disegnare sopra il cordolo rosso/bianco (Rif. richiesta utente
+    // 2026-08-08).
+    function buildPitEdgeLine(container, pts, offset, halfLineWidth, material, skipTest) {
         const n = pts.length;
         const pos = new Float32Array(n * 2 * 3);
         const uv = new Float32Array(n * 2 * 2);
         const idx = [];
+        const skipped = new Array(n).fill(false);
         for (let i = 0; i < n; i++) {
             const { nx, nz } = TrackGeometry.normalAt(pts, i, false);
             const p = pts[i];
             const y = (p.y || 0) + 0.04;
             const innerOff = offset - halfLineWidth, outerOff = offset + halfLineWidth;
+            if (skipTest) skipped[i] = skipTest(p.x + nx * offset, p.z + nz * offset);
             const b = i * 6;
             pos[b] = p.x + nx * innerOff; pos[b + 1] = y; pos[b + 2] = p.z + nz * innerOff;
             pos[b + 3] = p.x + nx * outerOff; pos[b + 4] = y; pos[b + 5] = p.z + nz * outerOff;
             const u = i / (n - 1);
             const ub = i * 4;
             uv[ub] = 0; uv[ub + 1] = u; uv[ub + 2] = 1; uv[ub + 3] = u;
-            if (i < n - 1) {
-                const base = i * 2, next = (i + 1) * 2;
-                idx.push(base, base + 1, next, next, base + 1, next + 1);
-            }
+        }
+        for (let i = 0; i < n - 1; i++) {
+            if (skipped[i] || skipped[i + 1]) continue;
+            const base = i * 2, next = (i + 1) * 2;
+            idx.push(base, base + 1, next, next, base + 1, next + 1);
         }
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -471,11 +497,25 @@
     // pista vera (buildPitRibbon sopra): restano visibili esattamente dove
     // servono di più, per riconoscere la corsia box anche lì (Rif.
     // richiesta utente 2026-08-08).
+    // curbBand (opzionale, {roadHalf, curbW, trackPts}): se presente,
+    // qualunque campione delle due linee che cade nella fascia del
+    // cordolo (tra roadHalf e roadHalf+curbW dal centro pista) viene
+    // saltato — evita che la striscia bianca "allungata"
+    // (TrackGeometry.pitLeadInPoints) si sovrapponga al cordolo
+    // rosso/bianco nella zona di preavviso (Rif. richiesta utente
+    // 2026-08-08: "rimuoverla dal lato della sovrapposizione").
     const PIT_EDGE_LINE_WIDTH = 0.35;
-    function buildPitEdgeLines(container, pitPts, pitRoadHalf) {
+    function buildPitEdgeLines(container, pitPts, pitRoadHalf, curbBand) {
         const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: THREE.DoubleSide });
-        buildPitEdgeLine(container, pitPts, pitRoadHalf, PIT_EDGE_LINE_WIDTH / 2, material);
-        buildPitEdgeLine(container, pitPts, -pitRoadHalf, PIT_EDGE_LINE_WIDTH / 2, material);
+        let skipTest = null;
+        if (curbBand) {
+            skipTest = (x, z) => {
+                const d = TrackGeometry.nearestPoint(curbBand.trackPts, x, z).dist;
+                return d > curbBand.roadHalf && d < curbBand.roadHalf + curbBand.curbW;
+            };
+        }
+        buildPitEdgeLine(container, pitPts, pitRoadHalf, PIT_EDGE_LINE_WIDTH / 2, material, skipTest);
+        buildPitEdgeLine(container, pitPts, -pitRoadHalf, PIT_EDGE_LINE_WIDTH / 2, material, skipTest);
     }
 
     // pitControlPoints: punti di controllo GREZZI (non campionati) della
@@ -510,9 +550,14 @@
     // di dover davvero sterzare (Rif. richiesta utente 2026-08-08: "capire
     // subito che devono spostarsi verso quella corsia").
     const PIT_EDGE_LEAD_LENGTH = 60;
-    function buildPitLane(container, pitControlPoints, pitRoadHalf, pitBoxIndex, drawBoxMarker = true, trackPts, trackColorHex = 0x1e1e1e) {
+    // roadHalf/curbWidth (opzionali, solo se trackPts è presente): servono
+    // SOLO a non disegnare la striscia laterale "allungata" sopra il
+    // cordolo rosso/bianco (curbBand in buildPitEdgeLines) — senza,
+    // comportamento identico a prima (nessun taglio).
+    function buildPitLane(container, pitControlPoints, pitRoadHalf, pitBoxIndex, drawBoxMarker = true, trackPts, trackColorHex = 0x1e1e1e, roadHalf, curbWidth = 2.8) {
         const pitPtsRaw = TrackGeometry.sampleOpenPath(pitControlPoints, 300);
         const pitPts = trackPts ? TrackGeometry.tuckPitEndsToTrack(pitPtsRaw, trackPts) : pitPtsRaw;
+        const curbBand = (trackPts && roadHalf != null) ? { trackPts, roadHalf, curbW: curbWidth } : null;
 
         buildPitRibbon(container, pitPts, pitRoadHalf, trackColorHex);
         if (trackPts) {
@@ -522,7 +567,7 @@
             // di fine corsia (addLine più sotto) restano su pitPts, invariati.
             const entryLead = TrackGeometry.pitLeadInPoints(pitPts, trackPts, 0, 1, PIT_EDGE_LEAD_LENGTH).reverse();
             const exitLead = TrackGeometry.pitLeadInPoints(pitPts, trackPts, pitPts.length - 1, -1, PIT_EDGE_LEAD_LENGTH);
-            buildPitEdgeLines(container, [...entryLead, ...pitPts, ...exitLead], pitRoadHalf);
+            buildPitEdgeLines(container, [...entryLead, ...pitPts, ...exitLead], pitRoadHalf, curbBand);
         } else {
             buildPitEdgeLines(container, pitPts, pitRoadHalf);
         }

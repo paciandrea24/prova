@@ -215,17 +215,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         return -Math.atan2(dy, horiz);
     }
 
+    // Calcolato una volta sola: sia il cordolo sia la barriera devono
+    // aprire il varco esattamente nello stesso punto/forma (Rif. richiesta
+    // utente 2026-08-08: "togliere il cordolo... tanto c'è la corsia box").
+    const PIT_MERGE_SAMPLES = pitMergeSamples(PIT_PTS);
+
     // DoubleSide evita artefatti di culling nelle zone ad alta curvatura
     TrackMeshBuilder.buildRibbon(scene, trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: 0x1e1e1e, roughness: 0.95, side: THREE.DoubleSide }));
-    TrackMeshBuilder.buildCurbs(scene, trackPts, ROAD_HALF, CURB_W);
-    TrackMeshBuilder.buildBarriers(scene, trackPts, BARRIER_D, pitMergeSamples(PIT_PTS));
+    TrackMeshBuilder.buildCurbs(scene, trackPts, ROAD_HALF, CURB_W, PIT_MERGE_SAMPLES);
+    TrackMeshBuilder.buildBarriers(scene, trackPts, BARRIER_D, PIT_MERGE_SAMPLES);
     TrackMeshBuilder.buildStartLine(scene, trackPts, ROAD_HALF);
     // drawBoxMarker=false: il riquadro giallo unico su boxIndex era il solo
     // indicatore visivo quando il box era un punto condiviso da tutti; ora
     // ogni pilota ha il proprio box 3D colorato (vedi loadPlayerPitBox,
     // caricato pigramente per gara), che ne prende il posto in gara —
     // resta true di default per l'editor tracciato (track-editor.js).
-    TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex, false, trackPts, 0x1e1e1e);
+    // roadHalf/CURB_W in coda: solo per non disegnare la striscia laterale
+    // "allungata" sopra il cordolo nella zona di preavviso (curbBand in
+    // buildPitEdgeLines).
+    TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex, false, trackPts, 0x1e1e1e, ROAD_HALF, CURB_W);
 
     // Griglia di partenza vera, permanente sulla pista (Rif. richiesta
     // utente 2026-08-07: "visibile sia in qualifica che in gara") — stessa
