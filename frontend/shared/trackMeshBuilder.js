@@ -325,8 +325,128 @@
         return mesh;
     }
 
+    // Lunghezza (unità d'arco) su cui il colore della corsia box sfuma
+    // verso il colore della pista vera, ai due estremi: i punti 0/ultimo
+    // sono ora agganciati esattamente al bordo pista
+    // (TrackGeometry.snapPitPathEnds, applicata dal chiamante), quindi qui
+    // è dove il nastro si confonde fisiologicamente con l'asfalto
+    // principale — la sfumatura rende quella sovrapposizione invisibile
+    // invece che un cambio di colore netto (Rif. richiesta utente
+    // 2026-08-08).
+    const PIT_MERGE_BLEND_LENGTH = 15;
+    const PIT_COLOR = 0x3a3a3a;
+
+    // Come buildOpenRibbon, ma con vertex color che sfuma da PIT_COLOR al
+    // colore pista (trackColorHex) negli ultimi/primi PIT_MERGE_BLEND_LENGTH
+    // unità d'arco. cumDist calcolato per SOMMA DIRETTA dei segmenti (non
+    // TrackGeometry.lapLength, che è per anelli CHIUSI: su un percorso
+    // aperto come pitPts aggiungerebbe anche il segmento fittizio di
+    // chiusura tra ultimo e primo punto, enorme qui, sballando la stima).
+    function buildPitRibbon(container, pts, halfW, trackColorHex) {
+        const n = pts.length;
+        const cumDist = [0];
+        for (let i = 1; i < n; i++) {
+            cumDist.push(cumDist[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
+        }
+        const totalLen = cumDist[n - 1];
+        const pitColor = new THREE.Color(PIT_COLOR);
+        const trackColor = new THREE.Color(trackColorHex);
+
+        const pos = new Float32Array(n * 2 * 3);
+        const col = new Float32Array(n * 2 * 3);
+        const uv = new Float32Array(n * 2 * 2);
+        const idx = [];
+
+        for (let i = 0; i < n; i++) {
+            const { nx, nz } = TrackGeometry.normalAt(pts, i, false);
+            const p = pts[i];
+            const b = i * 6;
+            pos[b] = p.x + nx * halfW; pos[b + 1] = (p.y || 0) + 0.03; pos[b + 2] = p.z + nz * halfW;
+            pos[b + 3] = p.x - nx * halfW; pos[b + 4] = (p.y || 0) + 0.03; pos[b + 5] = p.z - nz * halfW;
+
+            const distFromStart = cumDist[i];
+            const distFromEnd = totalLen - cumDist[i];
+            const blendT = 1 - Math.min(1, Math.min(distFromStart, distFromEnd) / PIT_MERGE_BLEND_LENGTH);
+            const c = pitColor.clone().lerp(trackColor, blendT);
+            const cb = i * 6;
+            col[cb] = c.r; col[cb + 1] = c.g; col[cb + 2] = c.b;
+            col[cb + 3] = c.r; col[cb + 4] = c.g; col[cb + 5] = c.b;
+
+            const u = i / (n - 1);
+            const ub = i * 4;
+            uv[ub] = 0; uv[ub + 1] = u; uv[ub + 2] = 1; uv[ub + 3] = u;
+
+            if (i < n - 1) {
+                const base = i * 2, next = (i + 1) * 2;
+                idx.push(base, base + 1, next, next, base + 1, next + 1);
+            }
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        geo.setIndex(idx);
+        geo.computeVertexNormals();
+
+        const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }));
+        mesh.receiveShadow = true;
+        container.add(mesh);
+        return mesh;
+    }
+
+    // Nastro sottile a offset FISSO dalla linea centrale (non "verso il lato
+    // più lontano dalla pista" come buildPitSideStrip: qui serve tracciare
+    // letteralmente i due bordi geometrici della corsia box, indipendenti
+    // da dove sta la pista vera). Due chiamate (offset positivo/negativo)
+    // disegnano le due linee laterali continue.
+    function buildPitEdgeLine(container, pts, offset, halfLineWidth, material) {
+        const n = pts.length;
+        const pos = new Float32Array(n * 2 * 3);
+        const uv = new Float32Array(n * 2 * 2);
+        const idx = [];
+        for (let i = 0; i < n; i++) {
+            const { nx, nz } = TrackGeometry.normalAt(pts, i, false);
+            const p = pts[i];
+            const y = (p.y || 0) + 0.04;
+            const innerOff = offset - halfLineWidth, outerOff = offset + halfLineWidth;
+            const b = i * 6;
+            pos[b] = p.x + nx * innerOff; pos[b + 1] = y; pos[b + 2] = p.z + nz * innerOff;
+            pos[b + 3] = p.x + nx * outerOff; pos[b + 4] = y; pos[b + 5] = p.z + nz * outerOff;
+            const u = i / (n - 1);
+            const ub = i * 4;
+            uv[ub] = 0; uv[ub + 1] = u; uv[ub + 2] = 1; uv[ub + 3] = u;
+            if (i < n - 1) {
+                const base = i * 2, next = (i + 1) * 2;
+                idx.push(base, base + 1, next, next, base + 1, next + 1);
+            }
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        geo.setIndex(idx);
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, material);
+        mesh.receiveShadow = true;
+        container.add(mesh);
+    }
+
+    // Due linee bianche continue lungo TUTTI e due i bordi della corsia box
+    // (a ±pitRoadHalf dalla linea centrale), per l'intera lunghezza —
+    // comprese le zone di raccordo dove il colore sfuma verso quello della
+    // pista vera (buildPitRibbon sopra): restano visibili esattamente dove
+    // servono di più, per riconoscere la corsia box anche lì (Rif.
+    // richiesta utente 2026-08-08).
+    const PIT_EDGE_LINE_WIDTH = 0.35;
+    function buildPitEdgeLines(container, pitPts, pitRoadHalf) {
+        const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: THREE.DoubleSide });
+        buildPitEdgeLine(container, pitPts, pitRoadHalf, PIT_EDGE_LINE_WIDTH / 2, material);
+        buildPitEdgeLine(container, pitPts, -pitRoadHalf, PIT_EDGE_LINE_WIDTH / 2, material);
+    }
+
     // pitControlPoints: punti di controllo GREZZI (non campionati) della
-    // corsia box, presi da pit.path del JSON.
+    // corsia box, presi da pit.path del JSON — attesi GIÀ agganciati al
+    // bordo pista (TrackGeometry.snapPitPathEnds, a cura del chiamante).
     // drawBoxMarker (default true): il riquadro giallo semitrasparente su
     // pitBoxIndex era il SOLO indicatore visivo del box quando era un
     // punto unico condiviso da tutti i piloti. Ora ogni pilota ha il
@@ -340,12 +460,14 @@
     // tracciato principale, servono SOLO per l'asfalto aggiuntivo della
     // zona stalli (buildPitApron) — senza, il comportamento resta identico
     // a prima (solo la corsia normale, nessun apron).
-    function buildPitLane(container, pitControlPoints, pitRoadHalf, pitBoxIndex, drawBoxMarker = true, trackPts) {
+    // trackColorHex (default 0x1e1e1e, lo stesso colore hardcoded usato da
+    // f1.js/track-editor.js per buildRibbon): colore verso cui sfuma il
+    // raccordo (buildPitRibbon sopra).
+    function buildPitLane(container, pitControlPoints, pitRoadHalf, pitBoxIndex, drawBoxMarker = true, trackPts, trackColorHex = 0x1e1e1e) {
         const pitPts = TrackGeometry.sampleOpenPath(pitControlPoints, 300);
 
-        buildOpenRibbon(container, pitPts, pitRoadHalf, new THREE.MeshStandardMaterial({
-            color: 0x3a3a3a, roughness: 0.95, side: THREE.DoubleSide
-        }));
+        buildPitRibbon(container, pitPts, pitRoadHalf, trackColorHex);
+        buildPitEdgeLines(container, pitPts, pitRoadHalf);
 
         if (trackPts) {
             buildPitSideStrip(container, pitPts, pitRoadHalf, pitRoadHalf + PIT_STALL_APRON_DEPTH, trackPts, new THREE.MeshStandardMaterial({
@@ -383,13 +505,13 @@
             line.rotation.y = Math.atan2(dirPt.x - pt.x, dirPt.z - pt.z);
             container.add(line);
         }
-        // Linee vicino a distacco/rientro: al 5% e al 95% del percorso
-        // campionato, orientate verso il campione successivo/precedente —
-        // generico per qualunque forma di corsia box, non solo Monte Rosso.
-        const nearStart = Math.max(1, Math.round(pitPts.length * 0.05));
-        const nearEnd   = Math.min(pitPts.length - 2, Math.round(pitPts.length * 0.95));
-        addLine(pitPts[nearStart], pitPts[nearStart + 1]);
-        addLine(pitPts[nearEnd], pitPts[nearEnd - 1]);
+        // Linee esattamente al vero punto di raccordo (campione 0 e
+        // campione finale di pitPts): con pitControlPoints già agganciato
+        // da TrackGeometry.snapPitPathEnds (a cura del chiamante), questi
+        // DUE campioni coincidono col bordo pista — non più un 5%/95%
+        // arbitrario (Rif. richiesta utente 2026-08-08).
+        addLine(pitPts[0], pitPts[1]);
+        addLine(pitPts[pitPts.length - 1], pitPts[pitPts.length - 2]);
     }
 
     // Terrapieno: alcuni anelli concentrici tra embankStart ed embankOuter,
