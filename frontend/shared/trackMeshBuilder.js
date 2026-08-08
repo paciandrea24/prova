@@ -105,15 +105,22 @@
         return mesh;
     }
 
-    // Stessa soglia/idea di BARRIER_PIT_GAP_THRESHOLD più sotto: sotto
-    // questa distanza dai campioni vicino ai due estremi della corsia box,
-    // niente cordolo — al suo posto c'è già l'asfalto della corsia box
-    // (Rif. richiesta utente 2026-08-08: "togliere il cordolo... tanto c'è
-    // la corsia box"). Il cordolo sta più vicino al centro pista della
-    // barriera, quindi la stessa soglia della barriera qui apre un varco
-    // leggermente più corto (corretto: il cordolo deve sparire solo dove
-    // l'asfalto della corsia box lo ricopre davvero, non oltre).
+    // Sotto questa distanza dai campioni vicino ai due estremi della corsia
+    // box, il cordolo NON viene rimosso (a differenza della barriera: il
+    // cordolo è piatto, non blocca nulla) ma RICOLORATO in grigio neutro
+    // invece del solito rosso/bianco (Rif. richiesta utente 2026-08-08:
+    // "togliere il cordolo... tanto c'è la corsia box"). Rimuovere la
+    // GEOMETRIA (come per la barriera) lasciava un vero buco fino al
+    // terrapieno più esterno (embankStart parte da roadHalf+curbW,
+    // indipendente dalla corsia box): senza nulla a coprire lo spazio
+    // lasciato dal cordolo, si vedeva il verde del terrapieno sfondare
+    // nella pista — segnalato dall'utente con screenshot ("un pezzetto di
+    // prato verde" a forma di cuneo). Ricolorare mantiene la stessa
+    // copertura di sempre, senza bisogno di far combaciare esattamente
+    // dove arriva davvero l'asfalto della corsia box (che curva ben più
+    // stretta del cordolo vicino al punto di aggancio).
     const CURB_PIT_GAP_THRESHOLD = 8;
+    const CURB_NEUTRAL_COLOR = [0.35, 0.35, 0.37];
 
     function buildCurbs(container, pts, roadHalf, curbW, mergePoints) {
         const n = pts.length;
@@ -126,6 +133,7 @@
             const idx = [];
             let dist = 0, flip = false;
             const gapped = new Array(n).fill(false);
+            const flipAt = new Array(n).fill(false);
 
             for (let i = 0; i < n; i++) {
                 const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
@@ -143,18 +151,24 @@
                 pos[b + 3] = p.x + nx * outer; pos[b + 4] = y; pos[b + 5] = p.z + nz * outer;
 
                 if (i > 0) { dist += stepLen; if (dist >= STRIPE) { dist = 0; flip = !flip; } }
-                const r = 1, g = flip ? 0 : 1, bv = flip ? 0 : 1;
-                const cb = i * 6;
-                col[cb] = r; col[cb + 1] = g; col[cb + 2] = bv;
-                col[cb + 3] = r; col[cb + 4] = g; col[cb + 5] = bv;
+                flipAt[i] = flip;
+
+                const base = i * 2, nxt = ((i + 1) % n) * 2;
+                idx.push(base, base + 1, nxt, nxt, base + 1, nxt + 1);
             }
 
             const gappedClean = mergePoints ? suppressShortRuns(gapped, CURB_MIN_GAP_RUN) : gapped;
             for (let i = 0; i < n; i++) {
-                const nxt = (i + 1) % n;
-                if (gappedClean[i] || gappedClean[nxt]) continue;
-                const base = i * 2, nxtBase = nxt * 2;
-                idx.push(base, base + 1, nxtBase, nxtBase, base + 1, nxtBase + 1);
+                const cb = i * 6;
+                if (gappedClean[i]) {
+                    const [r, g, bv] = CURB_NEUTRAL_COLOR;
+                    col[cb] = r; col[cb + 1] = g; col[cb + 2] = bv;
+                    col[cb + 3] = r; col[cb + 4] = g; col[cb + 5] = bv;
+                } else {
+                    const r = 1, g = flipAt[i] ? 0 : 1, bv = flipAt[i] ? 0 : 1;
+                    col[cb] = r; col[cb + 1] = g; col[cb + 2] = bv;
+                    col[cb + 3] = r; col[cb + 4] = g; col[cb + 5] = bv;
+                }
             }
 
             const geo = new THREE.BufferGeometry();
