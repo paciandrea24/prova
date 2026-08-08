@@ -3,6 +3,11 @@
     "name": "prova",
     "targetKm": 24,
     "roadHalfWidth": 11,
+    "startFinish": {
+        "x": -424.95,
+        "z": -138.77,
+        "angle": 2.1218167779067856
+    },
     "controlPoints": [
         {
             "x": -424.95,
@@ -157,11 +162,11 @@
         "roadHalfWidth": 5,
         "boxIndex": 2,
         "entryTrigger": {
-            "x": -611.79,
-            "z": -93.81,
-            "halfWidth": 5.5,
+            "x": -589.14,
+            "z": -106.46,
+            "halfWidth": 22,
             "halfLength": 5.5,
-            "angle": 0
+            "angle": 1.117010721276371
         },
         "path": [
             {
