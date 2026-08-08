@@ -502,12 +502,30 @@
     // suo default di taperLength — stessa unica fonte di verità riusata
     // anche da f1.js per il varco barriera, Rif. richiesta utente
     // 2026-08-08 con riferimento visivo disegnato a mano).
+    // Quanto (unità d'arco) le due linee laterali bianche si estendono SULLA
+    // PISTA VERA oltre il vero punto di aggancio — solo le linee, non
+    // l'asfalto della corsia box né la linea di fine corsia (quella resta
+    // al vero punto, invariata): un preavviso visivo, per far vedere al
+    // giocatore la "corsia" mentre sta ancora correndo normalmente, prima
+    // di dover davvero sterzare (Rif. richiesta utente 2026-08-08: "capire
+    // subito che devono spostarsi verso quella corsia").
+    const PIT_EDGE_LEAD_LENGTH = 60;
     function buildPitLane(container, pitControlPoints, pitRoadHalf, pitBoxIndex, drawBoxMarker = true, trackPts, trackColorHex = 0x1e1e1e) {
         const pitPtsRaw = TrackGeometry.sampleOpenPath(pitControlPoints, 300);
         const pitPts = trackPts ? TrackGeometry.tuckPitEndsToTrack(pitPtsRaw, trackPts) : pitPtsRaw;
 
         buildPitRibbon(container, pitPts, pitRoadHalf, trackColorHex);
-        buildPitEdgeLines(container, pitPts, pitRoadHalf);
+        if (trackPts) {
+            // Le linee laterali usano un array PIÙ LUNGO di pitPts (punti
+            // aggiuntivi sulla pista vera prima dell'ingresso/dopo
+            // l'uscita) — solo per queste due linee, l'asfalto e la linea
+            // di fine corsia (addLine più sotto) restano su pitPts, invariati.
+            const entryLead = TrackGeometry.pitLeadInPoints(pitPts, trackPts, 0, 1, PIT_EDGE_LEAD_LENGTH).reverse();
+            const exitLead = TrackGeometry.pitLeadInPoints(pitPts, trackPts, pitPts.length - 1, -1, PIT_EDGE_LEAD_LENGTH);
+            buildPitEdgeLines(container, [...entryLead, ...pitPts, ...exitLead], pitRoadHalf);
+        } else {
+            buildPitEdgeLines(container, pitPts, pitRoadHalf);
+        }
 
         if (trackPts) {
             buildPitSideStrip(container, pitPts, pitRoadHalf, pitRoadHalf + PIT_STALL_APRON_DEPTH, trackPts, new THREE.MeshStandardMaterial({

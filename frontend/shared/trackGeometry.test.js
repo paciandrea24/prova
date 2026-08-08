@@ -397,5 +397,28 @@ test('tuckPitEndsToTrack: un campione a metà del raccordo si sposta apprezzabil
         if (diff < bestDiff) { bestDiff = diff; idx = i; }
     }
     const moved = Math.hypot(tucked[idx].x - pitPts[idx].x, tucked[idx].z - pitPts[idx].z);
-    assert.ok(moved > 0.5, `il campione a metà raccordo dovrebbe spostarsi apprezzabilmente, spostamento misurato: ${moved.toFixed(3)}`);
+    assert.ok(moved > 0.5, `il campione a metà raccordo dovrebbe spostarsi apprezzabilmente, spostamento invisibile: ${moved.toFixed(3)}`);
+});
+
+test('pitLeadInPoints: resta sulla pista vera (stessa distanza dal centro del punto di aggancio), allontanandosi da esso', () => {
+    const square = [{ x: 0, z: 0 }, { x: 100, z: 0 }, { x: 100, z: 100 }, { x: 0, z: 100 }];
+    const trackPts = TrackGeometry.sampleLoop(square, 400);
+    const roadHalf = 11;
+    const pitPath = [{ x: 50, z: -40 }, { x: 70, z: -25 }, { x: 90, z: -20 }, { x: 90, z: 20 }];
+    const snapped = TrackGeometry.snapPitPathEnds(pitPath, trackPts, roadHalf, 3);
+    const pitPts = TrackGeometry.sampleOpenPath(snapped, 300);
+
+    const lead = TrackGeometry.pitLeadInPoints(pitPts, trackPts, 0, 1, 40, 8);
+    assert.equal(lead.length, 8);
+
+    const mergeDist = TrackGeometry.nearestPoint(trackPts, pitPts[0].x, pitPts[0].z).dist;
+    for (const p of lead) {
+        const d = TrackGeometry.nearestPoint(trackPts, p.x, p.z).dist;
+        assert.ok(Math.abs(d - mergeDist) < 0.5, `punto di preavviso troppo lontano dalla distanza del punto di aggancio: ${d.toFixed(2)} vs ${mergeDist.toFixed(2)}`);
+    }
+    // Il primo punto (s=1, il più vicino al merge) deve essere più vicino
+    // al punto di aggancio dell'ultimo (s=samples, il più lontano).
+    const distFirst = Math.hypot(lead[0].x - pitPts[0].x, lead[0].z - pitPts[0].z);
+    const distLast = Math.hypot(lead[lead.length - 1].x - pitPts[0].x, lead[lead.length - 1].z - pitPts[0].z);
+    assert.ok(distLast > distFirst, 'i punti di preavviso devono allontanarsi progressivamente dal punto di aggancio');
 });

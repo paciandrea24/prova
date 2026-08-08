@@ -580,6 +580,50 @@
         return out;
     }
 
+    // Genera punti AGGIUNTIVI (non fanno parte della corsia box vera) che
+    // proseguono lungo la pista principale, allontanandosi dal punto di
+    // aggancio (mergeSampleIdx di pitPts) verso il lato OPPOSTO a dove
+    // prosegue la corsia box — stesso offset laterale del punto di
+    // aggancio, quindi ancora "in corsia" sulla pista vera. Servono a far
+    // vedere le linee laterali bianche della corsia box già un po' prima
+    // del vero distacco (in entrata) o ancora un po' dopo il vero rientro
+    // (in uscita), mentre il giocatore sta ancora correndo normalmente —
+    // Rif. richiesta utente 2026-08-08: "creare una corsia immediatamente
+    // visibile... capiscano subito che devono spostarsi verso quella
+    // corsia". Restituisce i punti in ordine dal più VICINO al punto di
+    // aggancio al più LONTANO (il chiamante inverte l'ordine se deve
+    // anteporli invece che accodarli). pathSign: +1 se mergeSampleIdx=0
+    // (entrata, la corsia box prosegue in avanti), -1 se
+    // mergeSampleIdx=ultimo indice (uscita, la corsia box prosegue
+    // all'indietro) — stessa convenzione di tuckEnd sopra.
+    function pitLeadInPoints(pitPts, trackPts, mergeSampleIdx, pathSign, leadLength, samples = 20) {
+        const mergePt = pitPts[mergeSampleIdx];
+        const { index: mergeMainIdx } = nearestPoint(trackPts, mergePt.x, mergePt.z);
+        const mergeMain = trackPts[mergeMainIdx];
+        const mergeNormal = normalAt(trackPts, mergeMainIdx, true);
+        const mergeOffset = (mergePt.x - mergeMain.x) * mergeNormal.nx + (mergePt.z - mergeMain.z) * mergeNormal.nz;
+
+        // Stesso confronto già usato in tuckEnd per scegliere il verso di
+        // cammino lungo la pista che corrisponde alla prosecuzione della
+        // corsia box: qui però ci si allontana nel verso OPPOSTO.
+        const refIdx = Math.max(0, Math.min(pitPts.length - 1, mergeSampleIdx + pathSign * 10));
+        const refPt = pitPts[refIdx];
+        const plus = walkClosedLoop(trackPts, mergeMainIdx, 10);
+        const minus = walkClosedLoop(trackPts, mergeMainIdx, -10);
+        const pitWalkSign = dist(plus, refPt) <= dist(minus, refPt) ? 1 : -1;
+        const leadSign = -pitWalkSign;
+
+        const out = [];
+        for (let s = 1; s <= samples; s++) {
+            const d = (leadLength * s) / samples;
+            const walked = walkClosedLoop(trackPts, mergeMainIdx, leadSign * d);
+            const walkedIdx = leadSign >= 0 ? walked.fromIdx : walked.toIdx;
+            const { nx, nz } = normalAt(trackPts, walkedIdx, true);
+            out.push({ x: walked.x + nx * mergeOffset, z: walked.z + nz * mergeOffset });
+        }
+        return out;
+    }
+
     return {
         sampleLoop,
         sampleOpenPath,
@@ -597,6 +641,7 @@
         pointInOrientedBox,
         snapPitPathEnds,
         tuckPitEndsToTrack,
+        pitLeadInPoints,
         PIT_STALL_CLEARANCE,
         GRID_START, GRID_STAGGER, GRID_LANE_OFFSET
     };
