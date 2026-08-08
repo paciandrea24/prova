@@ -464,6 +464,52 @@
         return anchors;
     }
 
+    // Test "punto dentro un rettangolo orientato" — generalizza il vecchio
+    // confronto xMin/xMax/zMin/zMax assi-allineato (usato dal trigger
+    // d'ingresso ai box): ruota il punto nel sistema di riferimento locale
+    // del rettangolo (stessa convenzione atan2(x,z) usata ovunque nel
+    // modulo, es. gridSpawnPoint/tangentAt) e confronta contro le due
+    // semi-estensioni. Ad angle=0 si riduce esattamente al vecchio
+    // confronto assi-allineato — nessuna differenza di comportamento per
+    // un trigger non ruotato (Rif. richiesta utente 2026-08-08).
+    function pointInOrientedBox(px, pz, box) {
+        const angle = box.angle || 0;
+        const dx = px - box.x, dz = pz - box.z;
+        const sin = Math.sin(angle), cos = Math.cos(angle);
+        const localZ = dx * sin + dz * cos;   // avanti/indietro nel verso del rettangolo
+        const localX = dx * cos - dz * sin;   // laterale
+        return Math.abs(localX) <= box.halfWidth && Math.abs(localZ) <= box.halfLength;
+    }
+
+    // Aggancia il primo e l'ultimo punto della corsia box esattamente al
+    // bordo della pista vera (roadHalf - insetMargin dal centro pista,
+    // sullo stesso lato del punto grezzo originale), lasciando invariati i
+    // punti intermedi. Elimina la sovrapposizione/il vuoto che oggi
+    // dipendono da quanto precisamente è stato piazzato il punto a mano
+    // nell'editor (Rif. richiesta utente 2026-08-08 raccordo pulito
+    // pista/corsia box — verificato: sulle piste esistenti il punto finale
+    // era 4-10 unità oltre il bordo pista). insetMargin tiene il punto un
+    // po' DENTRO il bordo pista, non esattamente sopra: un valore troppo
+    // piccolo rischierebbe di restare comunque "fuori" per via
+    // dell'arrotondamento della curva campionata.
+    function snapPitEndpoint(rawPt, trackPoints, roadHalf, insetMargin) {
+        const { index } = nearestPoint(trackPoints, rawPt.x, rawPt.z);
+        const m = trackPoints[index];
+        const { nx, nz } = normalAt(trackPoints, index, true);
+        const signedDist = (rawPt.x - m.x) * nx + (rawPt.z - m.z) * nz;
+        const side = signedDist >= 0 ? 1 : -1;
+        const snapDist = roadHalf - insetMargin;
+        return { x: m.x + nx * side * snapDist, z: m.z + nz * side * snapDist };
+    }
+
+    function snapPitPathEnds(pitControlPoints, trackPoints, roadHalf, insetMargin = 3) {
+        const pts = pitControlPoints.map(p => ({ ...p }));
+        const n = pts.length;
+        Object.assign(pts[0], snapPitEndpoint(pts[0], trackPoints, roadHalf, insetMargin));
+        Object.assign(pts[n - 1], snapPitEndpoint(pts[n - 1], trackPoints, roadHalf, insetMargin));
+        return pts;
+    }
+
     return {
         sampleLoop,
         sampleOpenPath,
@@ -478,6 +524,8 @@
         pitBoxAnchors,
         walkClosedLoop,
         gridSpawnPoint,
+        pointInOrientedBox,
+        snapPitPathEnds,
         PIT_STALL_CLEARANCE,
         GRID_START, GRID_STAGGER, GRID_LANE_OFFSET
     };

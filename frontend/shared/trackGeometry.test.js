@@ -294,3 +294,55 @@ test('pitBoxAnchors: box diversi lungo la corsia hanno stalli su rette parallele
         assert.notEqual(a.stallZ, a.z, 'lo stallo non deve mai coincidere con la linea centrale della corsia');
     }
 });
+
+test('pointInOrientedBox: angle=0 si comporta come un riquadro assi-allineato', () => {
+    const box = { x: 0, z: 0, halfWidth: 5, halfLength: 10, angle: 0 };
+    assert.equal(TrackGeometry.pointInOrientedBox(0, 0, box), true);
+    assert.equal(TrackGeometry.pointInOrientedBox(4.9, 9.9, box), true);
+    assert.equal(TrackGeometry.pointInOrientedBox(5.1, 0, box), false);
+    assert.equal(TrackGeometry.pointInOrientedBox(0, 10.1, box), false);
+});
+
+test('pointInOrientedBox: ruotato di 90 gradi scambia gli assi locali', () => {
+    const box = { x: 0, z: 0, halfWidth: 5, halfLength: 10, angle: Math.PI / 2 };
+    assert.equal(TrackGeometry.pointInOrientedBox(9, 4, box), true);
+    assert.equal(TrackGeometry.pointInOrientedBox(4, 9, box), false);
+});
+
+test('pointInOrientedBox: centro spostato dall\'origine', () => {
+    const box = { x: 100, z: -50, halfWidth: 3, halfLength: 3, angle: 0 };
+    assert.equal(TrackGeometry.pointInOrientedBox(100, -50, box), true);
+    assert.equal(TrackGeometry.pointInOrientedBox(0, 0, box), false);
+});
+
+test('snapPitPathEnds: aggancia solo il primo e l\'ultimo punto, a roadHalf-insetMargin dal centro pista', () => {
+    const square = [{ x: 0, z: 0 }, { x: 100, z: 0 }, { x: 100, z: 100 }, { x: 0, z: 100 }];
+    const trackPts = TrackGeometry.sampleLoop(square, 400);
+    const roadHalf = 11;
+    const pitPath = [
+        { x: 50, z: -40 },
+        { x: 60, z: -20 },
+        { x: 60, z: 20 }
+    ];
+    const snapped = TrackGeometry.snapPitPathEnds(pitPath, trackPts, roadHalf, 3);
+    assert.equal(snapped.length, 3);
+    // Punto intermedio invariato
+    assert.equal(snapped[1].x, 60);
+    assert.equal(snapped[1].z, -20);
+    // Primo punto agganciato: distanza dal centro pista più vicino = roadHalf-insetMargin = 8
+    const d0 = TrackGeometry.nearestPoint(trackPts, snapped[0].x, snapped[0].z).dist;
+    assert.ok(Math.abs(d0 - 8) < 0.5, `distanza inattesa: ${d0}`);
+    // L'array originale non deve essere mutato
+    assert.equal(pitPath[0].x, 50);
+    assert.equal(pitPath[0].z, -40);
+});
+
+test('snapPitPathEnds: con un estremo già dentro roadHalf, lo riporta comunque esattamente al bersaglio (nessuna soglia "già a posto, non toccare")', () => {
+    const square = [{ x: 0, z: 0 }, { x: 100, z: 0 }, { x: 100, z: 100 }, { x: 0, z: 100 }];
+    const trackPts = TrackGeometry.sampleLoop(square, 400);
+    const roadHalf = 11;
+    const pitPath = [{ x: 50, z: -1 }, { x: 60, z: -20 }, { x: 60, z: 20 }];
+    const snapped = TrackGeometry.snapPitPathEnds(pitPath, trackPts, roadHalf, 3);
+    const d0 = TrackGeometry.nearestPoint(trackPts, snapped[0].x, snapped[0].z).dist;
+    assert.ok(Math.abs(d0 - 8) < 0.5, `distanza inattesa: ${d0}`);
+});
