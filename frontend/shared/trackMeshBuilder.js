@@ -118,7 +118,17 @@
         }
     }
 
-    function buildBarriers(container, pts, distFromCenter) {
+    // Sotto questa distanza dalla corsia box (già agganciata alla pista,
+    // vedi TrackGeometry.snapPitPathEnds), niente barriera: varco
+    // automatico in entrata E in uscita, senza bisogno di dati aggiuntivi
+    // in editor (Rif. richiesta utente 2026-08-08). Verificato sulle 4
+    // piste esistenti: nel tratto centrale la corsia box resta sempre a
+    // 19+ unità dalla pista, ben oltre questa soglia — nessun rischio di
+    // varchi indesiderati a metà corsia box su un tratto che corre
+    // parallelo al rettilineo principale.
+    const BARRIER_PIT_GAP_THRESHOLD = 12;
+
+    function buildBarriers(container, pts, distFromCenter, pitPts) {
         const n = pts.length;
         const HEIGHT = 1.1;
         const stepLen = TrackGeometry.lapLength(pts) / n;
@@ -129,6 +139,7 @@
             const col = new Float32Array(n * 2 * 3);
             const idx = [];
             let stripeAcc = 0, isRed = false;
+            const gapped = new Array(n).fill(false);
 
             for (let i = 0; i < n; i++) {
                 const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
@@ -136,6 +147,8 @@
                 const baseY = p.y || 0;
                 const bx = p.x + nx * distFromCenter * side;
                 const bz = p.z + nz * distFromCenter * side;
+
+                if (pitPts) gapped[i] = TrackGeometry.nearestPoint(pitPts, bx, bz).dist < BARRIER_PIT_GAP_THRESHOLD;
 
                 pos[i * 6]     = bx; pos[i * 6 + 1] = baseY + 0.05;   pos[i * 6 + 2] = bz;
                 pos[i * 6 + 3] = bx; pos[i * 6 + 4] = baseY + HEIGHT; pos[i * 6 + 5] = bz;
@@ -150,8 +163,12 @@
                 else          { r = isRed ? 0.85 : 0.93; g = isRed ? 0.10 : 0.93; bv = isRed ? 0.10 : 0.96; }
                 col[i * 6] = r; col[i * 6 + 1] = g; col[i * 6 + 2] = bv;
                 col[i * 6 + 3] = r; col[i * 6 + 4] = g; col[i * 6 + 5] = bv;
+            }
 
-                const base = i * 2, next = ((i + 1) % n) * 2;
+            for (let i = 0; i < n; i++) {
+                const nextI = (i + 1) % n;
+                if (gapped[i] || gapped[nextI]) continue;   // varco: nessuna faccia vicino alla corsia box
+                const base = i * 2, next = nextI * 2;
                 if (side < 0) idx.push(base, base + 1, next, next, base + 1, next + 1);
                 else          idx.push(base, next, base + 1, next, next + 1, base + 1);
             }
