@@ -320,19 +320,42 @@ document.addEventListener('DOMContentLoaded', () => {
         const roadHalf    = parseFloat(document.getElementById('roadHalfWidth').value) || 11;
         const pitRoadHalf = parseFloat(document.getElementById('pitRoadHalfWidth').value) || 5;
         const pitBoxIndex = parseInt(document.getElementById('pitBoxIndex').value, 10) || 0;
+        const CURB_W = 2.8;
+        const TRACK_COLOR = 0x1e1e1e;
 
+        let pts = null;
+        // Campioni della corsia box agganciata (snap+abbraccio alla curva)
+        // vicino ai due estremi, entro la stessa finestra usata da
+        // frontend/f1.js::pitMergeSamples — SOLO per far vedere in anteprima
+        // dove il cordolo verrà ricolorato (buildCurbs), coerente col gioco
+        // reale.
+        let pitMergeSamples = null;
         if (mainPoints.length >= 3) {
-            const pts = TrackGeometry.sampleLoop(mainPoints, 500);
-            TrackMeshBuilder.buildRibbon(trackMeshGroup, pts, roadHalf, new THREE.MeshStandardMaterial({ color: 0x1e1e1e, roughness: 0.95, side: THREE.DoubleSide }));
-            TrackMeshBuilder.buildCurbs(trackMeshGroup, pts, roadHalf, 2.8);
+            pts = TrackGeometry.sampleLoop(mainPoints, 500);
+            TrackMeshBuilder.buildRibbon(trackMeshGroup, pts, roadHalf, new THREE.MeshStandardMaterial({ color: TRACK_COLOR, roughness: 0.95, side: THREE.DoubleSide }));
             const startIdx = startFinish
                 ? TrackGeometry.nearestPoint(pts, startFinish.x, startFinish.z).index
                 : 0;
             TrackMeshBuilder.buildStartLine(trackMeshGroup, pts, roadHalf, startIdx);
         }
-        if (pitPoints.length >= 3 && pitBoxIndex < pitPoints.length) {
-            TrackMeshBuilder.buildPitLane(trackMeshGroup, pitPoints, pitRoadHalf, pitBoxIndex);
+        // Anteprima fedele: la corsia box disegnata è quella AGGANCIATA e
+        // "abbracciata" alla curva vera (stesse funzioni usate dal gioco
+        // reale) — i marker trascinabili (pitPoints) restano quelli grezzi,
+        // così l'autore continua a piazzarli "circa lì" e il sistema
+        // perfeziona da solo il punto di contatto.
+        if (pts && pitPoints.length >= 3 && pitBoxIndex < pitPoints.length) {
+            const snappedPitPoints = TrackGeometry.snapPitPathEnds(pitPoints, pts, roadHalf);
+            TrackMeshBuilder.buildPitLane(trackMeshGroup, snappedPitPoints, pitRoadHalf, pitBoxIndex, true, pts, TRACK_COLOR, roadHalf, CURB_W);
+
+            const pitPtsSampled = TrackGeometry.tuckPitEndsToTrack(TrackGeometry.sampleOpenPath(snappedPitPoints, 300), pts);
+            const n = pitPtsSampled.length;
+            const cum = [0];
+            for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(pitPtsSampled[i].x - pitPtsSampled[i - 1].x, pitPtsSampled[i].z - pitPtsSampled[i - 1].z));
+            const total = cum[n - 1];
+            const WINDOW = 75;
+            pitMergeSamples = pitPtsSampled.filter((_, i) => cum[i] < WINDOW || total - cum[i] < WINDOW);
         }
+        if (pts) TrackMeshBuilder.buildCurbs(trackMeshGroup, pts, roadHalf, CURB_W, pitMergeSamples);
 
         markerGroup.clear();
         const pitMat = new THREE.MeshBasicMaterial({ color: 0x3498db });
@@ -386,47 +409,56 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const p of pitPoints)  maxAbs = Math.max(maxAbs, Math.abs(p.x), Math.abs(p.z));
         return maxAbs + VISUAL_CLAMP_MARGIN;
     }
+    // Legge i 5 campi e restituisce il rettangolo nel formato usato da
+    // TrackGeometry.pointInOrientedBox (angolo in RADIANTI — il campo HTML
+    // è in gradi solo per comodità di battitura, converte qui in un unico
+    // punto).
+    function readEntryTriggerFields() {
+        const x = parseFloat(document.getElementById('entryX').value);
+        const z = parseFloat(document.getElementById('entryZ').value);
+        const halfWidth = parseFloat(document.getElementById('entryHalfWidth').value);
+        const halfLength = parseFloat(document.getElementById('entryHalfLength').value);
+        const angleDeg = parseFloat(document.getElementById('entryAngleDeg').value);
+        return { x, z, halfWidth, halfLength, angle: angleDeg * Math.PI / 180 };
+    }
+
     function updateEntryTriggerVisual() {
         if (entryTriggerFrame) { scene.remove(entryTriggerFrame); entryTriggerFrame = null; }
-        const xMin = parseFloat(document.getElementById('entryXMin').value);
-        const xMax = parseFloat(document.getElementById('entryXMax').value);
-        const zMin = parseFloat(document.getElementById('entryZMin').value);
-        const zMax = parseFloat(document.getElementById('entryZMax').value);
-        if (![xMin, xMax, zMin, zMax].every(Number.isFinite) || xMin >= xMax || zMin >= zMax) return;
+        const box = readEntryTriggerFields();
+        if (![box.x, box.z, box.halfWidth, box.halfLength, box.angle].every(Number.isFinite)) return;
+        if (!(box.halfWidth > 0) || !(box.halfLength > 0)) return;
 
         const clamp = visualClampExtent();
-        const cx0 = Math.max(xMin, -clamp), cx1 = Math.min(xMax, clamp);
-        const cz0 = Math.max(zMin, -clamp), cz1 = Math.min(zMax, clamp);
-        if (cx0 >= cx1 || cz0 >= cz1) return;
+        if (Math.abs(box.x) > clamp || Math.abs(box.z) > clamp) return;
 
-        // Cornice = 4 barre piatte (non un box pieno): l'interno resta senza
-        // mesh, così un click al centro del riquadro continua ad aggiungere
-        // punti pista/box come oggi. Solo le barre sono il bersaglio del drag
-        // (vedi pickEntryTriggerFrame).
-        const w = cx1 - cx0, d = cz1 - cz0, t = ENTRY_TRIGGER_FRAME_THICKNESS;
+        // Cornice = 4 barre piatte in coordinate LOCALI del rettangolo,
+        // ruotate come UN SOLO gruppo di box.angle: stessa idea della
+        // cornice assi-allineata di prima, ma ora l'intero gruppo ruota
+        // invece delle singole barre calcolate in coordinate mondo.
+        const t = ENTRY_TRIGGER_FRAME_THICKNESS;
+        const w = box.halfWidth * 2, d = box.halfLength * 2;
         const mat = new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
         entryTriggerFrame = new THREE.Group();
+        entryTriggerFrame.position.set(box.x, 1.5, box.z);
+        entryTriggerFrame.rotation.y = box.angle;
 
-        const barTB = new THREE.PlaneGeometry(w, t);
-        const top = new THREE.Mesh(barTB, mat);
-        top.rotation.x = -Math.PI / 2;
-        top.position.set((cx0 + cx1) / 2, 1.5, cz0 + t / 2);
-        const bottom = new THREE.Mesh(barTB, mat);
-        bottom.rotation.x = -Math.PI / 2;
-        bottom.position.set((cx0 + cx1) / 2, 1.5, cz1 - t / 2);
+        const barFrontBack = new THREE.PlaneGeometry(w, t);
+        const front = new THREE.Mesh(barFrontBack, mat);
+        front.rotation.x = -Math.PI / 2;
+        front.position.set(0, 0, box.halfLength - t / 2);
+        const back = new THREE.Mesh(barFrontBack, mat);
+        back.rotation.x = -Math.PI / 2;
+        back.position.set(0, 0, -box.halfLength + t / 2);
 
-        // Barre verticali accorciate di 2*t: gli angoli sono già coperti da
-        // top/bottom, evita di sovrapporre due mesh trasparenti nello stesso
-        // punto (si vedrebbe più scuro/opaco agli angoli).
-        const barLR = new THREE.PlaneGeometry(t, Math.max(0.01, d - 2 * t));
-        const left = new THREE.Mesh(barLR, mat);
+        const barSide = new THREE.PlaneGeometry(t, Math.max(0.01, d - 2 * t));
+        const left = new THREE.Mesh(barSide, mat);
         left.rotation.x = -Math.PI / 2;
-        left.position.set(cx0 + t / 2, 1.5, (cz0 + cz1) / 2);
-        const right = new THREE.Mesh(barLR, mat);
+        left.position.set(-box.halfWidth + t / 2, 0, 0);
+        const right = new THREE.Mesh(barSide, mat);
         right.rotation.x = -Math.PI / 2;
-        right.position.set(cx1 - t / 2, 1.5, (cz0 + cz1) / 2);
+        right.position.set(box.halfWidth - t / 2, 0, 0);
 
-        entryTriggerFrame.add(top, bottom, left, right);
+        entryTriggerFrame.add(front, back, left, right);
         scene.add(entryTriggerFrame);
     }
 
@@ -465,7 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let dragging = null;
     let panning = false;
     let panLast = { x: 0, y: 0 };
-    let triggerDrag = null; // { startHitX, startHitZ, startXMin, startXMax, startZMin, startZMax }
+    let triggerDrag = null; // { startHitX, startHitZ, startX, startZ }
     let startFinishDrag = null;
 
     // Tenuta aggiornata per poter "riusare" pickMarker anche da un evento
@@ -509,10 +541,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const hit = worldFromEvent(ev);
             triggerDrag = {
                 startHitX: hit.x, startHitZ: hit.z,
-                startXMin: parseFloat(document.getElementById('entryXMin').value),
-                startXMax: parseFloat(document.getElementById('entryXMax').value),
-                startZMin: parseFloat(document.getElementById('entryZMin').value),
-                startZMax: parseFloat(document.getElementById('entryZMax').value),
+                startX: parseFloat(document.getElementById('entryX').value),
+                startZ: parseFloat(document.getElementById('entryZ').value),
             };
             return;
         }
@@ -557,10 +587,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const hit = worldFromEvent(ev);
             const dx = hit.x - triggerDrag.startHitX;
             const dz = hit.z - triggerDrag.startHitZ;
-            document.getElementById('entryXMin').value = (triggerDrag.startXMin + dx).toFixed(2);
-            document.getElementById('entryXMax').value = (triggerDrag.startXMax + dx).toFixed(2);
-            document.getElementById('entryZMin').value = (triggerDrag.startZMin + dz).toFixed(2);
-            document.getElementById('entryZMax').value = (triggerDrag.startZMax + dz).toFixed(2);
+            document.getElementById('entryX').value = (triggerDrag.startX + dx).toFixed(2);
+            document.getElementById('entryZ').value = (triggerDrag.startZ + dz).toFixed(2);
             updateEntryTriggerVisual();
             return;
         }
@@ -642,7 +670,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     // 'input' (non 'change'): il riquadro si aggiorna mentre si digita, non
     // solo al blur — serve a vedere subito se copre la corsia box giusta.
-    ['entryXMin', 'entryXMax', 'entryZMin', 'entryZMax'].forEach(id => {
+    ['entryX', 'entryZ', 'entryHalfWidth', 'entryHalfLength', 'entryAngleDeg'].forEach(id => {
         document.getElementById(id).addEventListener('input', updateEntryTriggerVisual);
     });
     document.addEventListener('keydown', (ev) => {
@@ -693,10 +721,11 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('pitRoadHalfWidth').value = pit.roadHalfWidth ?? 5;
         document.getElementById('pitBoxIndex').value = pit.boxIndex ?? 0;
         const et = pit.entryTrigger || {};
-        document.getElementById('entryXMin').value = et.xMin ?? -999;
-        document.getElementById('entryXMax').value = et.xMax ?? -36;
-        document.getElementById('entryZMin').value = et.zMin ?? -3;
-        document.getElementById('entryZMax').value = et.zMax ?? 15;
+        document.getElementById('entryX').value = et.x ?? 0;
+        document.getElementById('entryZ').value = et.z ?? 0;
+        document.getElementById('entryHalfWidth').value = et.halfWidth ?? 5.5;
+        document.getElementById('entryHalfLength').value = et.halfLength ?? 5.5;
+        document.getElementById('entryAngleDeg').value = ((et.angle ?? 0) * 180 / Math.PI).toFixed(1);
 
         mainPoints = data.controlPoints.map(p => {
             const point = typeof p.y === 'number' ? { x: p.x, z: p.z, y: p.y } : { x: p.x, z: p.z };
@@ -798,16 +827,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const pitBoxIndex = parseInt(document.getElementById('pitBoxIndex').value, 10) || 0;
         if (pitBoxIndex < 0 || pitBoxIndex >= pitPoints.length) { alert('pitBoxIndex non valido: deve essere un indice valido della corsia box'); return false; }
 
-        const xMin = parseFloat(document.getElementById('entryXMin').value);
-        const xMax = parseFloat(document.getElementById('entryXMax').value);
-        const zMin = parseFloat(document.getElementById('entryZMin').value);
-        const zMax = parseFloat(document.getElementById('entryZMax').value);
-        if (!(xMin < xMax) || !(zMin < zMax)) { alert('Riquadro trigger ingresso pit non valido: min deve essere minore di max su entrambi gli assi'); return false; }
+        const box = readEntryTriggerFields();
+        if (!(box.halfWidth > 0) || !(box.halfLength > 0)) { alert('Riquadro trigger ingresso pit non valido: mezza larghezza/lunghezza devono essere positive'); return false; }
         // Stesso controllo del server (vedi trackLoader.validateTrackData):
         // il riquadro deve intercettare la corsia box vera, non un tratto
         // qualunque del tracciato principale (bug reale: valori di default
         // lasciati da un'altra pista).
-        const hitsPath = pitPoints.some(p => p.x >= xMin && p.x <= xMax && p.z >= zMin && p.z <= zMax);
+        const hitsPath = pitPoints.some(p => TrackGeometry.pointInOrientedBox(p.x, p.z, box));
         if (!hitsPath) { alert('Il riquadro trigger (viola) non tocca nessun punto della corsia box: spostalo o allargalo prima di salvare'); return false; }
         return true;
     }
@@ -823,12 +849,7 @@ document.addEventListener('DOMContentLoaded', () => {
             pit: {
                 roadHalfWidth: parseFloat(document.getElementById('pitRoadHalfWidth').value) || 5,
                 boxIndex: parseInt(document.getElementById('pitBoxIndex').value, 10) || 0,
-                entryTrigger: {
-                    xMin: parseFloat(document.getElementById('entryXMin').value),
-                    xMax: parseFloat(document.getElementById('entryXMax').value),
-                    zMin: parseFloat(document.getElementById('entryZMin').value),
-                    zMax: parseFloat(document.getElementById('entryZMax').value)
-                },
+                entryTrigger: readEntryTriggerFields(),
                 path: pitPoints
             }
         };

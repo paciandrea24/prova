@@ -41,14 +41,17 @@
         <label>Larghezza corsia box<input id="pitRoadHalfWidth" type="number" step="0.5" value="5"></label>
         <label>Indice casella box (pit)<input id="pitBoxIndex" type="number" step="1" value="4"></label>
         <label><input type="checkbox" id="pitMode" style="width:auto;"> Modalità corsia box</label>
-        <label>Riquadro trigger ingresso pit (viola nella scena)</label>
+        <label>Riquadro trigger ingresso pit (viola nella scena, trascinabile)</label>
         <div class="row">
-            <div><label>x min<input id="entryXMin" type="number" value="-999"></label></div>
-            <div><label>x max<input id="entryXMax" type="number" value="-36"></label></div>
+            <div><label>Centro X<input id="entryX" type="number" value="-611.79"></label></div>
+            <div><label>Centro Z<input id="entryZ" type="number" value="-93.81"></label></div>
         </div>
         <div class="row">
-            <div><label>z min<input id="entryZMin" type="number" value="-3"></label></div>
-            <div><label>z max<input id="entryZMax" type="number" value="15"></label></div>
+            <div><label>Mezza larghezza<input id="entryHalfWidth" type="number" step="0.5" value="5.5"></label></div>
+            <div><label>Mezza lunghezza<input id="entryHalfLength" type="number" step="0.5" value="5.5"></label></div>
+        </div>
+        <div class="row">
+            <div><label>Angolo (gradi)<input id="entryAngleDeg" type="number" step="1" value="0"></label></div>
         </div>
         <button id="undoBtn">Annulla ultimo punto (U)</button>
         <button id="clearBtn">Svuota lista attiva</button>
