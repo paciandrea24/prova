@@ -187,6 +187,16 @@ function buildTrack(id, raw) {
     // al secondo punto della corsia).
     const pitEntryIndex = TrackGeometry.nearestPoint(points, raw.pit.entryTrigger.x, raw.pit.entryTrigger.z).index;
 
+    // Aggancia il primo e l'ultimo punto della corsia box esattamente al
+    // bordo della pista vera (Rif. richiesta utente 2026-08-08): elimina la
+    // dipendenza dalla precisione manuale con cui l'autore ha piazzato gli
+    // estremi in editor. Risolve anche un bug collaterale mai segnalato
+    // esplicitamente — verificato sulle piste esistenti: il punto finale
+    // era 4-10 unità oltre roadHalf, abbastanza per far scattare
+    // applyOffTrackDrag nell'istante stesso in cui il giocatore riprende i
+    // comandi in uscita dai box (VehicleMotionModel.js).
+    const pitPath = TrackGeometry.snapPitPathEnds(raw.pit.path, points, raw.roadHalfWidth);
+
     return {
         id,
         name: raw.name,
@@ -194,7 +204,7 @@ function buildTrack(id, raw) {
         roadHalf: raw.roadHalfWidth,
         lapLength,
         totalLaps,
-        pitPath: raw.pit.path,
+        pitPath,
         pitEntryIndex,
         startFinishIndex,
         pitBoxIndex: raw.pit.boxIndex,
