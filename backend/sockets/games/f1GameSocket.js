@@ -135,14 +135,12 @@ const RESTART_GRACE_MS = 1500;
 const PIT_AUTO_SPEED = 1.55;   // unità/tick dell'autopilota lungo il percorso box (25% di MAX_SPEED)
 const PIT_AUTO_ARRIVE_DIST = 1.0;   // sotto questa distanza dal waypoint, "arrivato"
 
-// Riquadro pieno allineato agli assi (xMin/xMax/zMin/zMax): a differenza
-// della vecchia versione (solo "x <= xMax", pensata per un rettilineo box
-// orientato lungo Z come in Monte Rosso), funziona per un rettilineo con
-// qualunque orientamento — es. Monza, dove la corsia box si stacca da un
-// rettilineo orientato lungo X.
+// Rettangolo orientabile (x,z,halfWidth,halfLength,angle) invece del
+// vecchio riquadro assi-allineato: funziona per un rettilineo box con
+// qualunque orientamento nel mondo, non solo quelli allineati a X o Z
+// (Rif. richiesta utente 2026-08-08, editor trigger orientabile).
 function inPitEntryZone(p, track) {
-    const t = track.pitEntryTrigger;
-    return p.x >= t.xMin && p.x <= t.xMax && p.z >= t.zMin && p.z <= t.zMax;
+    return TrackGeometry.pointInOrientedBox(p.x, p.z, track.pitEntryTrigger);
 }
 
 const TYRE_SELECT_MS = 20000;   // tempo per scegliere prima che scatti la mescola di default
@@ -930,6 +928,18 @@ function updatePitAutopilot(io, lobbyId, game, p) {
         p.pitPathIndex++;
         if (p.pitPathIndex >= track.pitPath.length) {
             p.pitAutoState = null;   // fine autopilota: comandi restituiti al giocatore
+            // Il controllo torna al giocatore con la velocità EFFETTIVA
+            // dell'autopilota (PIT_AUTO_SPEED, ~85 km/h) invece che da fermo
+            // (Rif. richiesta utente 2026-08-08): la riga sopra azzera
+            // speed/vx/vz per ogni arrivo a waypoint, ma qui è l'ultimo —
+            // senza questo la fisica normale del tick successivo ripartiva
+            // da p.speed=0 nonostante l'auto stesse viaggiando un istante
+            // prima. p.angle punta già nel verso di marcia (impostato
+            // all'ultimo passo di avvicinamento, riga sotto), stessa
+            // convenzione sin/cos usata da AerodynamicsModel.applyGripBlend.
+            p.speed = PIT_AUTO_SPEED;
+            p.vx = Math.sin(p.angle) * PIT_AUTO_SPEED;
+            p.vz = Math.cos(p.angle) * PIT_AUTO_SPEED;
             const sid = game.socketByColor[p.color];
             if (sid) io.to(sid).emit('f1PitLaneExited');
         }
