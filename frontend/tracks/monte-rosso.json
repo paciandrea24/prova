@@ -37,10 +37,11 @@
         "roadHalfWidth": 5,
         "boxIndex": 2,
         "entryTrigger": {
-            "xMin": -67.67,
-            "xMax": -49.58,
-            "zMin": 66.5,
-            "zMax": 81.5
+            "x": -58.63,
+            "z": 74,
+            "halfWidth": 9.05,
+            "halfLength": 7.5,
+            "angle": 0
         },
         "path": [
             {

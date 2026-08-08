@@ -185,9 +185,7 @@ function buildTrack(id, raw) {
     // proprio all'ultimo, tornando di scatto alla guida normale (bug reale,
     // riprodotto in simulazione su New Monza dopo aver spostato il trigger
     // al secondo punto della corsia).
-    const triggerCenterX = (raw.pit.entryTrigger.xMin + raw.pit.entryTrigger.xMax) / 2;
-    const triggerCenterZ = (raw.pit.entryTrigger.zMin + raw.pit.entryTrigger.zMax) / 2;
-    const pitEntryIndex = TrackGeometry.nearestPoint(points, triggerCenterX, triggerCenterZ).index;
+    const pitEntryIndex = TrackGeometry.nearestPoint(points, raw.pit.entryTrigger.x, raw.pit.entryTrigger.z).index;
 
     return {
         id,
@@ -258,10 +256,10 @@ function validateTrackData(data) {
     if (typeof data.pit.roadHalfWidth !== 'number' || !(data.pit.roadHalfWidth > 0)) return 'pit.roadHalfWidth non valido';
     if (!Number.isInteger(data.pit.boxIndex) || data.pit.boxIndex < 0 || data.pit.boxIndex >= data.pit.path.length) return 'pit.boxIndex non valido';
     const et = data.pit.entryTrigger;
-    if (!et || typeof et.xMin !== 'number' || typeof et.xMax !== 'number' || typeof et.zMin !== 'number' || typeof et.zMax !== 'number') {
-        return 'pit.entryTrigger non valido (servono xMin, xMax, zMin, zMax)';
+    if (!et || typeof et.x !== 'number' || typeof et.z !== 'number' || typeof et.halfWidth !== 'number' || typeof et.halfLength !== 'number' || typeof et.angle !== 'number') {
+        return 'pit.entryTrigger non valido (servono x, z, halfWidth, halfLength, angle)';
     }
-    if (!(et.xMin < et.xMax) || !(et.zMin < et.zMax)) return 'pit.entryTrigger non valido: xMin/zMin devono essere minori di xMax/zMax';
+    if (!(et.halfWidth > 0) || !(et.halfLength > 0)) return 'pit.entryTrigger non valido: halfWidth/halfLength devono essere positivi';
     // Il riquadro non deve necessariamente contenere il primo punto della
     // corsia box (che spesso coincide col distacco dalla linea principale,
     // ancora "in pista"): basta che intercetti ALMENO un punto della corsia,
@@ -269,8 +267,7 @@ function validateTrackData(data) {
     // questa pista (bug reale riscontrato: un riquadro lasciato ai valori di
     // default di un'altra pista, che finiva per intercettare un tratto
     // qualunque del tracciato principale invece della corsia box).
-    const triggerHitsPath = data.pit.path.some(pt =>
-        pt.x >= et.xMin && pt.x <= et.xMax && pt.z >= et.zMin && pt.z <= et.zMax);
+    const triggerHitsPath = data.pit.path.some(pt => TrackGeometry.pointInOrientedBox(pt.x, pt.z, et));
     if (!triggerHitsPath) return 'pit.entryTrigger non intercetta nessun punto della corsia box: il riquadro non corrisponde al vero punto d\'ingresso';
     // startFinish è opzionale (compatibilità con piste esistenti senza
     // questo campo), ma se presente deve avere almeno x/z numerici — un

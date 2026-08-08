@@ -96,13 +96,13 @@ function minimalValidTrackData(overrides) {
         pit: {
             roadHalfWidth: 5,
             boxIndex: 0,
-            entryTrigger: { xMin: -1, xMax: 3, zMin: -1, zMax: 3 },
+            entryTrigger: { x: 1, z: 1, halfWidth: 2, halfLength: 2, angle: 0 },
             path: [{ x: 0, z: 0 }, { x: 1, z: 1 }, { x: 2, z: 2 }]
         }
     }, overrides);
 }
 
-test('saveTrack accetta un entryTrigger a 4 campi che intercetta la corsia box', () => {
+test('saveTrack accetta un entryTrigger orientabile che intercetta la corsia box', () => {
     saveTrack(minimalValidTrackData());
     try {
         assert.ok(listTracks().some(t => t.id === 'test-scratch-track'));
@@ -111,13 +111,13 @@ test('saveTrack accetta un entryTrigger a 4 campi che intercetta la corsia box',
     }
 });
 
-test('saveTrack rifiuta il vecchio schema entryTrigger a 3 campi (senza xMin)', () => {
+test('saveTrack rifiuta il vecchio schema entryTrigger a 4 campi assi-allineato (senza halfWidth/halfLength/angle)', () => {
     const data = minimalValidTrackData({
         pit: Object.assign({}, minimalValidTrackData().pit, {
-            entryTrigger: { xMax: 3, zMin: -1, zMax: 3 }
+            entryTrigger: { xMin: -1, xMax: 3, zMin: -1, zMax: 3 }
         })
     });
-    assert.throws(() => saveTrack(data), /entryTrigger non valido \(servono xMin, xMax, zMin, zMax\)/);
+    assert.throws(() => saveTrack(data), /entryTrigger non valido \(servono x, z, halfWidth, halfLength, angle\)/);
 });
 
 test('saveTrack rifiuta un entryTrigger che non intercetta nessun punto della corsia box', () => {
@@ -125,7 +125,7 @@ test('saveTrack rifiuta un entryTrigger che non intercetta nessun punto della co
         pit: Object.assign({}, minimalValidTrackData().pit, {
             // riquadro lontanissimo dalla corsia box (path attorno a x/z 0-2):
             // stesso tipo di errore del bug reale (default di un'altra pista).
-            entryTrigger: { xMin: 500, xMax: 600, zMin: 500, zMax: 600 }
+            entryTrigger: { x: 550, z: 550, halfWidth: 50, halfLength: 50, angle: 0 }
         })
     });
     assert.throws(() => saveTrack(data), /entryTrigger non intercetta nessun punto della corsia box/);
