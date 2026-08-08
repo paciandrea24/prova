@@ -346,3 +346,56 @@ test('snapPitPathEnds: con un estremo già dentro roadHalf, lo riporta comunque 
     const d0 = TrackGeometry.nearestPoint(trackPts, snapped[0].x, snapped[0].z).dist;
     assert.ok(Math.abs(d0 - 8) < 0.5, `distanza inattesa: ${d0}`);
 });
+
+test('tuckPitEndsToTrack: il campione di aggancio (idx 0 e ultimo) resta fermo, invariato dal raccordo', () => {
+    const square = [{ x: 0, z: 0 }, { x: 100, z: 0 }, { x: 100, z: 100 }, { x: 0, z: 100 }];
+    const trackPts = TrackGeometry.sampleLoop(square, 400);
+    const roadHalf = 11;
+    const pitPath = [{ x: 50, z: -40 }, { x: 70, z: -25 }, { x: 90, z: -20 }, { x: 90, z: 20 }];
+    const snapped = TrackGeometry.snapPitPathEnds(pitPath, trackPts, roadHalf, 3);
+    const pitPts = TrackGeometry.sampleOpenPath(snapped, 300);
+    const tucked = TrackGeometry.tuckPitEndsToTrack(pitPts, trackPts, 25);
+    assert.equal(tucked.length, pitPts.length);
+    assert.ok(Math.abs(tucked[0].x - pitPts[0].x) < 1e-6, 'il campione di aggancio iniziale non deve spostarsi');
+    assert.ok(Math.abs(tucked[0].z - pitPts[0].z) < 1e-6, 'il campione di aggancio iniziale non deve spostarsi');
+    const last = pitPts.length - 1;
+    assert.ok(Math.abs(tucked[last].x - pitPts[last].x) < 1e-6, 'il campione di aggancio finale non deve spostarsi');
+    assert.ok(Math.abs(tucked[last].z - pitPts[last].z) < 1e-6, 'il campione di aggancio finale non deve spostarsi');
+});
+
+test('tuckPitEndsToTrack: oltre la lunghezza del raccordo, i campioni restano identici all\'originale', () => {
+    const square = [{ x: 0, z: 0 }, { x: 100, z: 0 }, { x: 100, z: 100 }, { x: 0, z: 100 }];
+    const trackPts = TrackGeometry.sampleLoop(square, 400);
+    const roadHalf = 11;
+    const pitPath = [{ x: 50, z: -40 }, { x: 70, z: -25 }, { x: 90, z: -20 }, { x: 90, z: 20 }];
+    const snapped = TrackGeometry.snapPitPathEnds(pitPath, trackPts, roadHalf, 3);
+    const pitPts = TrackGeometry.sampleOpenPath(snapped, 300);
+    const tucked = TrackGeometry.tuckPitEndsToTrack(pitPts, trackPts, 25);
+    // Punto centrale del percorso (lontano da entrambi gli estremi): invariato.
+    const mid = Math.round(pitPts.length / 2);
+    assert.ok(Math.abs(tucked[mid].x - pitPts[mid].x) < 1e-6);
+    assert.ok(Math.abs(tucked[mid].z - pitPts[mid].z) < 1e-6);
+});
+
+test('tuckPitEndsToTrack: un campione a metà del raccordo si sposta apprezzabilmente rispetto all\'originale (l\'abbraccio alla curva ha effetto)', () => {
+    const square = [{ x: 0, z: 0 }, { x: 100, z: 0 }, { x: 100, z: 100 }, { x: 0, z: 100 }];
+    const trackPts = TrackGeometry.sampleLoop(square, 400);
+    const roadHalf = 11;
+    // Percorso che si stacca con un angolo deciso rispetto alla pista (non
+    // parallelo), così l'effetto di raccordo è misurabile e non trascurabile.
+    const pitPath = [{ x: 50, z: -40 }, { x: 80, z: -30 }, { x: 90, z: -20 }, { x: 90, z: 20 }];
+    const snapped = TrackGeometry.snapPitPathEnds(pitPath, trackPts, roadHalf, 3);
+    const pitPts = TrackGeometry.sampleOpenPath(snapped, 300);
+    const tucked = TrackGeometry.tuckPitEndsToTrack(pitPts, trackPts, 25);
+    // Campione a ~12 unità dall'inizio (dentro il raccordo di 25): trova
+    // l'indice più vicino a quella distanza d'arco.
+    let idx = 0, bestDiff = Infinity;
+    let cum = 0;
+    for (let i = 1; i < pitPts.length; i++) {
+        cum += Math.hypot(pitPts[i].x - pitPts[i - 1].x, pitPts[i].z - pitPts[i - 1].z);
+        const diff = Math.abs(cum - 12);
+        if (diff < bestDiff) { bestDiff = diff; idx = i; }
+    }
+    const moved = Math.hypot(tucked[idx].x - pitPts[idx].x, tucked[idx].z - pitPts[idx].z);
+    assert.ok(moved > 0.5, `il campione a metà raccordo dovrebbe spostarsi apprezzabilmente, spostamento misurato: ${moved.toFixed(3)}`);
+});

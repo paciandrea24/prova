@@ -510,6 +510,76 @@
         return pts;
     }
 
+    // Rif. richiesta utente 2026-08-08 (screenshot con riferimento disegnato
+    // a mano): il raccordo deve "seguire l'andamento e la curvatura della
+    // pista reale" vicino al punto di aggancio, non tagliare a un angolo
+    // qualunque quello che capita di avere il percorso grezzo autorato in
+    // editor. Entro taperLength unità d'arco da ciascun estremo (i due
+    // campioni già agganciati da snapPitPathEnds), ogni campione viene
+    // spostato dalla sua posizione originale verso un punto che cammina
+    // lungo la VERA curva della pista principale, allo STESSO offset
+    // laterale del punto di aggancio (quindi "parallelo" alla pista lì) —
+    // sfumando con uno smoothstep verso la forma originale del percorso man
+    // mano che ci si allontana dall'estremo (0 = esattamente il punto di
+    // aggancio, 1 = forma originale invariata al confine del raccordo).
+    // Puramente estetico/di rendering: opera sui campioni GIA' campionati
+    // (sampleOpenPath), non su pitControlPoints/pitPath — non tocca nulla
+    // di ciò che la fisica di gioco usa (il server continua a camminare sui
+    // waypoint grezzi come oggi), sicuro applicarlo liberamente al solo
+    // array usato per disegnare corsia box/varco barriera.
+    function tuckPitEndsToTrack(pitPts, trackPts, taperLength = 25) {
+        const n = pitPts.length;
+        const cumDist = [0];
+        for (let i = 1; i < n; i++) cumDist.push(cumDist[i - 1] + dist(pitPts[i - 1], pitPts[i]));
+        const avgStep = cumDist[n - 1] / (n - 1 || 1);
+        const out = pitPts.map(p => ({ ...p }));
+
+        function tuckEnd(mergeSampleIdx, sign) {
+            const mergePt = pitPts[mergeSampleIdx];
+            const { index: mergeMainIdx } = nearestPoint(trackPts, mergePt.x, mergePt.z);
+            const mergeMain = trackPts[mergeMainIdx];
+            const mergeNormal = normalAt(trackPts, mergeMainIdx, true);
+            const mergeOffset = (mergePt.x - mergeMain.x) * mergeNormal.nx + (mergePt.z - mergeMain.z) * mergeNormal.nz;
+
+            // Determina il verso di cammino lungo la pista (+arco/-arco a
+            // partire da mergeMainIdx) confrontando, a metà del raccordo,
+            // quale dei due versi si avvicina di più al percorso originale
+            // — l'unico modo di sapere "da che parte" la corsia box si
+            // stacca senza assumere nulla sull'orientamento della pista.
+            const refDist = taperLength * 0.5;
+            const refIdx = Math.max(0, Math.min(n - 1, mergeSampleIdx + sign * Math.round(refDist / avgStep)));
+            const refPt = pitPts[refIdx];
+            const plus = walkClosedLoop(trackPts, mergeMainIdx, refDist);
+            const minus = walkClosedLoop(trackPts, mergeMainIdx, -refDist);
+            const walkSign = dist(plus, refPt) <= dist(minus, refPt) ? 1 : -1;
+
+            for (let i = mergeSampleIdx; i >= 0 && i < n; i += sign) {
+                const distFromEnd = Math.abs(cumDist[i] - cumDist[mergeSampleIdx]);
+                if (distFromEnd > taperLength) break;
+                // Il campione di aggancio stesso (distFromEnd=0) resta
+                // ESATTAMENTE quello originale (out è già una copia): senza
+                // questo caso a parte, a distanza zero fromIdx/toIdx del
+                // walk possono differire di un campione dall'indice usato
+                // per calcolare mergeOffset, introducendo uno scarto
+                // sub-unità puramente numerico sul punto che invece deve
+                // restare fermo per definizione.
+                if (distFromEnd === 0) continue;
+                const walked = walkClosedLoop(trackPts, mergeMainIdx, walkSign * distFromEnd);
+                const walkedIdx = walkSign >= 0 ? walked.fromIdx : walked.toIdx;
+                const { nx, nz } = normalAt(trackPts, walkedIdx, true);
+                const t = distFromEnd / taperLength;
+                const te = t * t * (3 - 2 * t); // smoothstep: 0 al punto di aggancio, 1 al confine del raccordo
+                const huggedX = walked.x + nx * mergeOffset, huggedZ = walked.z + nz * mergeOffset;
+                out[i].x = huggedX + (pitPts[i].x - huggedX) * te;
+                out[i].z = huggedZ + (pitPts[i].z - huggedZ) * te;
+            }
+        }
+
+        tuckEnd(0, 1);
+        tuckEnd(n - 1, -1);
+        return out;
+    }
+
     return {
         sampleLoop,
         sampleOpenPath,
@@ -526,6 +596,7 @@
         gridSpawnPoint,
         pointInOrientedBox,
         snapPitPathEnds,
+        tuckPitEndsToTrack,
         PIT_STALL_CLEARANCE,
         GRID_START, GRID_STAGGER, GRID_LANE_OFFSET
     };

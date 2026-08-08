@@ -118,19 +118,32 @@
         }
     }
 
-    // Sotto questa distanza dai due punti di AGGANCIO della corsia box
-    // (mergePoints — il primo e l'ultimo campione di pitPts, già portati
-    // sul bordo pista da TrackGeometry.snapPitPathEnds), niente barriera:
-    // varco automatico in entrata E in uscita, senza bisogno di dati
-    // aggiuntivi in editor (Rif. richiesta utente 2026-08-08). Deve
-    // confrontare SOLO questi due punti, non l'intero pitPts campionato:
-    // un confronto contro tutta la corsia box (versione precedente di
-    // questa funzione) apriva un varco spurio ovunque il tracciato passi
-    // vicino a un punto QUALUNQUE della corsia — anche a centinaia di
-    // metri dall'ingresso/uscita vero, es. dove la pista corre vicino alla
-    // zona box/stalli — misurato: 139m di varco indesiderato su "prova",
-    // segnalato dall'utente in playtest come "varco troppo esteso".
-    const BARRIER_PIT_GAP_THRESHOLD = 12;
+    // Sotto questa distanza dai campioni vicino ai due estremi della
+    // corsia box (mergePoints — SOLO la finestra vicino a inizio/fine di
+    // pitPts, non l'intero percorso, a cura del chiamante: vedi
+    // frontend/f1.js::pitMergeSamples), niente barriera: varco automatico
+    // in entrata E in uscita, senza bisogno di dati aggiuntivi in editor
+    // (Rif. richiesta utente 2026-08-08). Un confronto contro tutta la
+    // corsia box (versione precedente di questa funzione) apriva un varco
+    // spurio ovunque il tracciato passi vicino a un punto QUALUNQUE della
+    // corsia — anche a centinaia di metri dall'ingresso/uscita vero, es.
+    // dove la pista corre vicino alla zona box/stalli — misurato: 139m di
+    // varco indesiderato su "prova", segnalato dall'utente in playtest
+    // come "varco troppo esteso". Soglia più bassa di un primo tentativo
+    // (12): con la corsia box che ora "abbraccia" la curva vera vicino
+    // agli estremi (TrackGeometry.tuckPitEndsToTrack) resta vicina alla
+    // pista più a lungo, quindi una soglia uguale a prima avrebbe riaperto
+    // un varco più esteso del necessario. DEVE però restare sopra la
+    // distanza minima ESATTA barriera-corsia proprio nel punto vero di
+    // aggancio — verificata analiticamente e su tutte le piste esistenti:
+    // (CURB_W + 1.2 dalla barriera) + insetMargin (3, il margine di
+    // TrackGeometry.snapPitPathEnds) = 2.8+1.2+3 = 7.0 costante, a
+    // prescindere da roadHalfWidth. Una soglia di 6 (troppo bassa)
+    // lasciava il varco chiuso ESATTAMENTE nel punto che più conta,
+    // riaprendo la barriera proprio dove passa la corsia box (bug
+    // riscontrato misurando la distanza reale prima di scegliere questo
+    // valore, non a occhio).
+    const BARRIER_PIT_GAP_THRESHOLD = 8;
 
     function buildBarriers(container, pts, distFromCenter, mergePoints) {
         const n = pts.length;
@@ -483,9 +496,15 @@
     // a prima (solo la corsia normale, nessun apron).
     // trackColorHex (default 0x1e1e1e, lo stesso colore hardcoded usato da
     // f1.js/track-editor.js per buildRibbon): colore verso cui sfuma il
-    // raccordo (buildPitRibbon sopra).
+    // raccordo (buildPitRibbon sopra). Il raccordo "abbraccia" la
+    // curvatura vera della pista vicino agli estremi invece di tagliare a
+    // un angolo indipendente da essa (TrackGeometry.tuckPitEndsToTrack, sul
+    // suo default di taperLength — stessa unica fonte di verità riusata
+    // anche da f1.js per il varco barriera, Rif. richiesta utente
+    // 2026-08-08 con riferimento visivo disegnato a mano).
     function buildPitLane(container, pitControlPoints, pitRoadHalf, pitBoxIndex, drawBoxMarker = true, trackPts, trackColorHex = 0x1e1e1e) {
-        const pitPts = TrackGeometry.sampleOpenPath(pitControlPoints, 300);
+        const pitPtsRaw = TrackGeometry.sampleOpenPath(pitControlPoints, 300);
+        const pitPts = trackPts ? TrackGeometry.tuckPitEndsToTrack(pitPtsRaw, trackPts) : pitPtsRaw;
 
         buildPitRibbon(container, pitPts, pitRoadHalf, trackColorHex);
         buildPitEdgeLines(container, pitPts, pitRoadHalf);

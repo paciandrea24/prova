@@ -172,11 +172,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     const groundPts = trackPts.filter(p => !p.bridge);
     TrackMeshBuilder.buildBridgeDecks(scene, trackPts, groundPts, ROAD_HALF + CURB_W, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH);
 
-    // Stessi punti campionati usati internamente da TrackMeshBuilder.buildPitLane
-    // (che li ricalcola per conto suo): un secondo ricalcolo qui è economico
-    // (300 campioni, una tantum al caricamento) e serve per generare la
-    // scenografia senza toccare la firma di buildPitLane.
-    const PIT_PTS = TrackGeometry.sampleOpenPath(PIT_PATH, 300);
+    // Stessi punti campionati (e "abbracciati" alla curva pista vicino agli
+    // estremi, TrackGeometry.tuckPitEndsToTrack) usati internamente da
+    // TrackMeshBuilder.buildPitLane (che li ricalcola per conto suo): un
+    // secondo ricalcolo qui è economico (300 campioni, una tantum al
+    // caricamento) e serve per generare la scenografia/il varco barriera
+    // senza toccare la firma di buildPitLane. Stessa funzione pura con gli
+    // stessi input di buildPitLane → stesso risultato, nessun rischio di
+    // divergenza tra corsia box disegnata e varco/scenografia.
+    const PIT_PTS = TrackGeometry.tuckPitEndsToTrack(TrackGeometry.sampleOpenPath(PIT_PATH, 300), trackPts);
+
+    // Solo i campioni vicino ai due estremi (entro PIT_MERGE_WINDOW unità
+    // d'arco da ciascuno, un margine oltre i 25 di
+    // TrackGeometry.tuckPitEndsToTrack di default) — non l'intero PIT_PTS:
+    // il varco barriera deve aprirsi SOLO al vero ingresso/uscita, non
+    // ovunque il tracciato passi vicino a un punto qualunque della corsia
+    // box (bug reale misurato in playtest: 139m di varco spurio su "prova"
+    // dove la pista passava vicino alla zona box/stalli, con l'intero
+    // PIT_PTS). Usare i campioni "abbracciati" alla curva (non solo i due
+    // punti estremi) fa sì che anche la FORMA del varco segua la vera
+    // curvatura della pista, non un semplice cerchio attorno a un punto.
+    const PIT_MERGE_WINDOW = 30;
+    function pitMergeSamples(pts) {
+        const n = pts.length;
+        const cum = [0];
+        for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
+        const total = cum[n - 1];
+        return pts.filter((_, i) => cum[i] < PIT_MERGE_WINDOW || total - cum[i] < PIT_MERGE_WINDOW);
+    }
 
     // Beccheggio (pitch) visivo dell'auto sui dislivelli: pendenza locale tra
     // il campione precedente e successivo lungo il giro, applicata come
@@ -195,12 +218,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // DoubleSide evita artefatti di culling nelle zone ad alta curvatura
     TrackMeshBuilder.buildRibbon(scene, trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: 0x1e1e1e, roughness: 0.95, side: THREE.DoubleSide }));
     TrackMeshBuilder.buildCurbs(scene, trackPts, ROAD_HALF, CURB_W);
-    // Solo i due punti di aggancio (non l'intera corsia box campionata,
-    // PIT_PTS): il varco deve aprirsi SOLO al vero ingresso/uscita, non
-    // ovunque il tracciato passi vicino a un punto qualunque della corsia
-    // box — bug reale misurato in playtest (139m di varco spurio su
-    // "prova" dove la pista passava vicino alla zona box/stalli).
-    TrackMeshBuilder.buildBarriers(scene, trackPts, BARRIER_D, [PIT_PATH[0], PIT_PATH[PIT_PATH.length - 1]]);
+    TrackMeshBuilder.buildBarriers(scene, trackPts, BARRIER_D, pitMergeSamples(PIT_PTS));
     TrackMeshBuilder.buildStartLine(scene, trackPts, ROAD_HALF);
     // drawBoxMarker=false: il riquadro giallo unico su boxIndex era il solo
     // indicatore visivo quando il box era un punto condiviso da tutti; ora
