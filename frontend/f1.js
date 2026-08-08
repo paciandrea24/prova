@@ -119,10 +119,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // partenza, da tarare a vista (pendenza troppo ripida/dolce si aggiusta
     // solo qui, non in TrackGeometry.terrainHeightAt/TrackMeshBuilder).
     const EMBANKMENT_WIDTH = 45;
-    const PIT_PATH = trackData.pit.path;
 
     const N_SAMPLES = 1000;
     const trackPts = TrackGeometry.sampleLoop(trackData.controlPoints, N_SAMPLES);
+    // Aggancia il primo/ultimo punto della corsia box al bordo pista vero
+    // (Rif. richiesta utente 2026-08-08) — stessa funzione usata dal
+    // server (trackLoader.js::buildTrack) sugli stessi punti di controllo
+    // grezzi, quindi il disegno qui corrisponde ESATTAMENTE alla posizione
+    // fisica reale dell'auto in uscita dai box.
+    const PIT_PATH = TrackGeometry.snapPitPathEnds(trackData.pit.path, trackPts, ROAD_HALF);
 
     // ====================================================
     // MINIMAPPA — contorno pista + corsia box in SVG, generati una tantum
@@ -171,7 +176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // (che li ricalcola per conto suo): un secondo ricalcolo qui è economico
     // (300 campioni, una tantum al caricamento) e serve per generare la
     // scenografia senza toccare la firma di buildPitLane.
-    const PIT_PTS = TrackGeometry.sampleOpenPath(trackData.pit.path, 300);
+    const PIT_PTS = TrackGeometry.sampleOpenPath(PIT_PATH, 300);
 
     // Beccheggio (pitch) visivo dell'auto sui dislivelli: pendenza locale tra
     // il campione precedente e successivo lungo il giro, applicata come
@@ -190,14 +195,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // DoubleSide evita artefatti di culling nelle zone ad alta curvatura
     TrackMeshBuilder.buildRibbon(scene, trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: 0x1e1e1e, roughness: 0.95, side: THREE.DoubleSide }));
     TrackMeshBuilder.buildCurbs(scene, trackPts, ROAD_HALF, CURB_W);
-    TrackMeshBuilder.buildBarriers(scene, trackPts, BARRIER_D);
+    TrackMeshBuilder.buildBarriers(scene, trackPts, BARRIER_D, PIT_PTS);
     TrackMeshBuilder.buildStartLine(scene, trackPts, ROAD_HALF);
     // drawBoxMarker=false: il riquadro giallo unico su boxIndex era il solo
     // indicatore visivo quando il box era un punto condiviso da tutti; ora
     // ogni pilota ha il proprio box 3D colorato (vedi loadPlayerPitBox,
     // caricato pigramente per gara), che ne prende il posto in gara —
     // resta true di default per l'editor tracciato (track-editor.js).
-    TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex, false, trackPts);
+    TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex, false, trackPts, 0x1e1e1e);
 
     // Griglia di partenza vera, permanente sulla pista (Rif. richiesta
     // utente 2026-08-07: "visibile sia in qualifica che in gara") — stessa
