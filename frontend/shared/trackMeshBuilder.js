@@ -7,6 +7,35 @@
     // di colore tra i due.
     const GRASS_COLOR = 0x3d8b3d;
 
+    // Un singolo campione (o pochissimi di fila) "dentro" una fascia da
+    // saltare (cordolo/varco) non basta per interrompere una linea o una
+    // superficie: la curva del raccordo pista/corsia box
+    // (TrackGeometry.tuckPitEndsToTrack) può attraversare per un attimo
+    // una fascia durante la transizione senza restarci — un salto così
+    // breve si vede come una rottura innaturale, non come una vera
+    // sovrapposizione prolungata (Rif. richiesta utente 2026-08-08,
+    // "discontinuità nella striscia" — misurato: 4-7 campioni isolati su
+    // "prova", contro le decine di campioni di un varco vero). Riusata da
+    // buildBarriers/buildCurbs/buildPitEdgeLine: un tratto "saltato" conta
+    // solo se dura almeno minRun campioni consecutivi, altrimenti viene
+    // ripristinato (non saltato).
+    function suppressShortRuns(flags, minRun) {
+        const n = flags.length;
+        const out = flags.slice();
+        let i = 0;
+        while (i < n) {
+            if (out[i]) {
+                let j = i;
+                while (j < n && out[j]) j++;
+                if (j - i < minRun) for (let k = i; k < j; k++) out[k] = false;
+                i = j;
+            } else {
+                i++;
+            }
+        }
+        return out;
+    }
+
     function buildRibbon(container, pts, halfW, material) {
         const n = pts.length;
         const pos = new Float32Array(n * 2 * 3);
@@ -120,9 +149,10 @@
                 col[cb + 3] = r; col[cb + 4] = g; col[cb + 5] = bv;
             }
 
+            const gappedClean = mergePoints ? suppressShortRuns(gapped, CURB_MIN_GAP_RUN) : gapped;
             for (let i = 0; i < n; i++) {
                 const nxt = (i + 1) % n;
-                if (gapped[i] || gapped[nxt]) continue;
+                if (gappedClean[i] || gappedClean[nxt]) continue;
                 const base = i * 2, nxtBase = nxt * 2;
                 idx.push(base, base + 1, nxtBase, nxtBase, base + 1, nxtBase + 1);
             }
@@ -137,6 +167,15 @@
             container.add(mesh);
         }
     }
+
+    // Un varco "vero" (in prossimità di ingresso/uscita) dura tipicamente
+    // decine di campioni; un contatto isolato di pochi campioni è quasi
+    // sempre una coincidenza geometrica (la pista che torna vicina a un
+    // punto qualunque della corsia box per un attimo, es. sull'altra corsia
+    // di ingresso/uscita vicina — misurato su "prova", dove entrata e
+    // uscita sono a soli ~99 campioni l'una dall'altra) — vedi
+    // suppressShortRuns.
+    const CURB_MIN_GAP_RUN = 6;
 
     // Sotto questa distanza dai campioni vicino ai due estremi della
     // corsia box (mergePoints — SOLO la finestra vicino a inizio/fine di
@@ -164,6 +203,9 @@
     // riscontrato misurando la distanza reale prima di scegliere questo
     // valore, non a occhio).
     const BARRIER_PIT_GAP_THRESHOLD = 8;
+    // Stessa idea di CURB_MIN_GAP_RUN: un contatto isolato di pochi
+    // campioni non è un varco vero, vedi suppressShortRuns.
+    const BARRIER_MIN_GAP_RUN = 6;
 
     function buildBarriers(container, pts, distFromCenter, mergePoints) {
         const n = pts.length;
@@ -202,9 +244,10 @@
                 col[i * 6 + 3] = r; col[i * 6 + 4] = g; col[i * 6 + 5] = bv;
             }
 
+            const gappedClean = mergePoints ? suppressShortRuns(gapped, BARRIER_MIN_GAP_RUN) : gapped;
             for (let i = 0; i < n; i++) {
                 const nextI = (i + 1) % n;
-                if (gapped[i] || gapped[nextI]) continue;   // varco: nessuna faccia vicino alla corsia box
+                if (gappedClean[i] || gappedClean[nextI]) continue;   // varco: nessuna faccia vicino alla corsia box
                 const base = i * 2, next = nextI * 2;
                 if (side < 0) idx.push(base, base + 1, next, next, base + 1, next + 1);
                 else          idx.push(base, next, base + 1, next, next + 1, base + 1);
@@ -476,8 +519,9 @@
             const ub = i * 4;
             uv[ub] = 0; uv[ub + 1] = u; uv[ub + 2] = 1; uv[ub + 3] = u;
         }
+        const skippedClean = skipTest ? suppressShortRuns(skipped, PIT_EDGE_MIN_SKIP_RUN) : skipped;
         for (let i = 0; i < n - 1; i++) {
-            if (skipped[i] || skipped[i + 1]) continue;
+            if (skippedClean[i] || skippedClean[i + 1]) continue;
             const base = i * 2, next = (i + 1) * 2;
             idx.push(base, base + 1, next, next, base + 1, next + 1);
         }
@@ -490,6 +534,15 @@
         mesh.receiveShadow = true;
         container.add(mesh);
     }
+
+    // Stessa idea di CURB_MIN_GAP_RUN/BARRIER_MIN_GAP_RUN: durante la
+    // transizione del raccordo la linea può attraversare la fascia del
+    // cordolo per pochissimi campioni e uscirne subito (misurato: 4
+    // campioni su "prova") — troppo breve per essere una vera
+    // sovrapposizione, si vedrebbe solo come una rottura innaturale della
+    // riga (Rif. richiesta utente 2026-08-08, "discontinuità nella
+    // striscia"). Vedi suppressShortRuns.
+    const PIT_EDGE_MIN_SKIP_RUN = 6;
 
     // Due linee bianche continue lungo TUTTI e due i bordi della corsia box
     // (a ±pitRoadHalf dalla linea centrale), per l'intera lunghezza —
