@@ -183,7 +183,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const PIT_PTS = TrackGeometry.tuckPitEndsToTrack(TrackGeometry.sampleOpenPath(PIT_PATH, 300), trackPts);
 
     // Solo i campioni vicino ai due estremi (entro PIT_MERGE_WINDOW unità
-    // d'arco da ciascuno, un margine oltre i 25 di
+    // d'arco da ciascuno, un margine oltre i 35 di
     // TrackGeometry.tuckPitEndsToTrack di default) — non l'intero PIT_PTS:
     // il varco barriera deve aprirsi SOLO al vero ingresso/uscita, non
     // ovunque il tracciato passi vicino a un punto qualunque della corsia
@@ -192,7 +192,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // PIT_PTS). Usare i campioni "abbracciati" alla curva (non solo i due
     // punti estremi) fa sì che anche la FORMA del varco segua la vera
     // curvatura della pista, non un semplice cerchio attorno a un punto.
-    const PIT_MERGE_WINDOW = 30;
+    const PIT_MERGE_WINDOW = 45;
     function pitMergeSamples(pts) {
         const n = pts.length;
         const cum = [0];
