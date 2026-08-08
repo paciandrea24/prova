@@ -195,7 +195,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // DoubleSide evita artefatti di culling nelle zone ad alta curvatura
     TrackMeshBuilder.buildRibbon(scene, trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: 0x1e1e1e, roughness: 0.95, side: THREE.DoubleSide }));
     TrackMeshBuilder.buildCurbs(scene, trackPts, ROAD_HALF, CURB_W);
-    TrackMeshBuilder.buildBarriers(scene, trackPts, BARRIER_D, PIT_PTS);
+    // Solo i due punti di aggancio (non l'intera corsia box campionata,
+    // PIT_PTS): il varco deve aprirsi SOLO al vero ingresso/uscita, non
+    // ovunque il tracciato passi vicino a un punto qualunque della corsia
+    // box — bug reale misurato in playtest (139m di varco spurio su
+    // "prova" dove la pista passava vicino alla zona box/stalli).
+    TrackMeshBuilder.buildBarriers(scene, trackPts, BARRIER_D, [PIT_PATH[0], PIT_PATH[PIT_PATH.length - 1]]);
     TrackMeshBuilder.buildStartLine(scene, trackPts, ROAD_HALF);
     // drawBoxMarker=false: il riquadro giallo unico su boxIndex era il solo
     // indicatore visivo quando il box era un punto condiviso da tutti; ora

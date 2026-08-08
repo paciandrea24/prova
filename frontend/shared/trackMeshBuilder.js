@@ -118,17 +118,21 @@
         }
     }
 
-    // Sotto questa distanza dalla corsia box (già agganciata alla pista,
-    // vedi TrackGeometry.snapPitPathEnds), niente barriera: varco
-    // automatico in entrata E in uscita, senza bisogno di dati aggiuntivi
-    // in editor (Rif. richiesta utente 2026-08-08). Verificato sulle 4
-    // piste esistenti: nel tratto centrale la corsia box resta sempre a
-    // 19+ unità dalla pista, ben oltre questa soglia — nessun rischio di
-    // varchi indesiderati a metà corsia box su un tratto che corre
-    // parallelo al rettilineo principale.
+    // Sotto questa distanza dai due punti di AGGANCIO della corsia box
+    // (mergePoints — il primo e l'ultimo campione di pitPts, già portati
+    // sul bordo pista da TrackGeometry.snapPitPathEnds), niente barriera:
+    // varco automatico in entrata E in uscita, senza bisogno di dati
+    // aggiuntivi in editor (Rif. richiesta utente 2026-08-08). Deve
+    // confrontare SOLO questi due punti, non l'intero pitPts campionato:
+    // un confronto contro tutta la corsia box (versione precedente di
+    // questa funzione) apriva un varco spurio ovunque il tracciato passi
+    // vicino a un punto QUALUNQUE della corsia — anche a centinaia di
+    // metri dall'ingresso/uscita vero, es. dove la pista corre vicino alla
+    // zona box/stalli — misurato: 139m di varco indesiderato su "prova",
+    // segnalato dall'utente in playtest come "varco troppo esteso".
     const BARRIER_PIT_GAP_THRESHOLD = 12;
 
-    function buildBarriers(container, pts, distFromCenter, pitPts) {
+    function buildBarriers(container, pts, distFromCenter, mergePoints) {
         const n = pts.length;
         const HEIGHT = 1.1;
         const stepLen = TrackGeometry.lapLength(pts) / n;
@@ -148,7 +152,7 @@
                 const bx = p.x + nx * distFromCenter * side;
                 const bz = p.z + nz * distFromCenter * side;
 
-                if (pitPts) gapped[i] = TrackGeometry.nearestPoint(pitPts, bx, bz).dist < BARRIER_PIT_GAP_THRESHOLD;
+                if (mergePoints) gapped[i] = TrackGeometry.nearestPoint(mergePoints, bx, bz).dist < BARRIER_PIT_GAP_THRESHOLD;
 
                 pos[i * 6]     = bx; pos[i * 6 + 1] = baseY + 0.05;   pos[i * 6 + 2] = bz;
                 pos[i * 6 + 3] = bx; pos[i * 6 + 4] = baseY + HEIGHT; pos[i * 6 + 5] = bz;
