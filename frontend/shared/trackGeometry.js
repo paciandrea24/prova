@@ -527,7 +527,7 @@
     // di ciò che la fisica di gioco usa (il server continua a camminare sui
     // waypoint grezzi come oggi), sicuro applicarlo liberamente al solo
     // array usato per disegnare corsia box/varco barriera.
-    function tuckPitEndsToTrack(pitPts, trackPts, taperLength = 35) {
+    function tuckPitEndsToTrack(pitPts, trackPts, taperLength = 60) {
         const n = pitPts.length;
         const cumDist = [0];
         for (let i = 1; i < n; i++) cumDist.push(cumDist[i - 1] + dist(pitPts[i - 1], pitPts[i]));

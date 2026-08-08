@@ -192,7 +192,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // PIT_PTS). Usare i campioni "abbracciati" alla curva (non solo i due
     // punti estremi) fa sì che anche la FORMA del varco segua la vera
     // curvatura della pista, non un semplice cerchio attorno a un punto.
-    const PIT_MERGE_WINDOW = 45;
+    const PIT_MERGE_WINDOW = 75;
     function pitMergeSamples(pts) {
         const n = pts.length;
         const cum = [0];
