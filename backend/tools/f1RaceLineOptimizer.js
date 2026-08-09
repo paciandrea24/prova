@@ -136,6 +136,7 @@ function buildOptimizer(track) {
         const finishWindow = physics.finishWindowFor(track);
         const maxTicks = Math.round((safetyCapS || 90) * 1000 / physics.PHYSICS_TICK_MS);
         let checkpointA = false, inFinishZone = false;
+        let offTrackTicks = 0;
 
         for (let tick = 0; tick < maxTicks; tick++) {
             const maxSpeed = physics.effectiveMaxSpeed(p, true);
@@ -153,24 +154,40 @@ function buildOptimizer(track) {
                 physics.integratePosition(p, 1 / physics.COLLISION_SUBSTEPS);
                 physics.applyBridgeBarrier(p, track);
             }
-            physics.applyOffTrackDrag(p, track);
+            // Vero criterio "fuori pista" del gioco (VehicleMotionModel.
+            // applyOffTrackDrag): distanza dal CENTRO pista oltre roadHalf+2 —
+            // quei 2m extra sono il cordolo, già "dentro" per il gioco reale
+            // (richiesta esplicita: i bot possono usare il cordolo, non
+            // devono finire fuori asfalto). Contato qui, non solo applicato,
+            // per poterlo usare come vincolo in fitness sotto.
+            if (physics.applyOffTrackDrag(p, track)) offTrackTicks++;
             physics.updateTrackIndex(p, track);
 
             const idx = p.trackIndex || 0;
             if (!checkpointA && physics.circularWithin(idx, physics.HALF_LAP_IDX, n, checkpointWindow)) checkpointA = true;
             const nowFinish = physics.circularWithin(idx, 0, n, finishWindow);
-            if (checkpointA && nowFinish && !inFinishZone) return (tick + 1) * physics.PHYSICS_TICK_MS;
+            if (checkpointA && nowFinish && !inFinishZone) return { timeMs: (tick + 1) * physics.PHYSICS_TICK_MS, offTrackTicks };
             inFinishZone = nowFinish;
         }
-        return null;
+        return { timeMs: null, offTrackTicks };
     }
 
     let evalCount = 0;
     function fitness(state) {
         evalCount++;
         const line = buildRacingLine(state.line);
-        const t = simulateWithRacingLine(state, line, 90);
-        return t == null ? 1e9 : t;
+        const { timeMs, offTrackTicks } = simulateWithRacingLine(state, line, 90);
+        // Rigetto duro (stesso valore sentinella del DNF) se la linea/i
+        // parametri candidati portano il bot fuori asfalto anche solo per un
+        // tick: allargare steerGain/adaptiveLookaheadK sotto (Rif. audit
+        // pace-gap, misurato che entrambi erano al/vicino al tetto di
+        // ricerca su tutte e 4 le piste) apre all'ottimizzatore la
+        // possibilità di "comprare" tempo tagliando nella ghiaia — la
+        // fitness era prima solo il tempo sul giro, cieca al fuori-pista.
+        // Non un compromesso "quanto è grave": zero tolleranza, come
+        // richiesto esplicitamente.
+        if (timeMs == null || offTrackTicks > 0) return 1e9;
+        return timeMs;
     }
 
     function paramList(state) {
@@ -179,8 +196,21 @@ function buildOptimizer(track) {
             list.push({ get: () => state.line[i], set: v => { state.line[i] = v; }, min: -MAX_OFFSET, max: MAX_OFFSET, isLine: true });
         }
         list.push({ get: () => state.lookaheadTimeS, set: v => { state.lookaheadTimeS = v; }, min: 0.25, max: 1.3, isLine: false });
-        list.push({ get: () => state.steerGain, set: v => { state.steerGain = v; }, min: 1.0, max: 7.0, isLine: false });
-        list.push({ get: () => state.adaptiveLookaheadK, set: v => { state.adaptiveLookaheadK = v; }, min: 0.02, max: 0.4, isLine: false });
+        // Tetti ampliati (Rif. audit pace-gap 2026-08-08): il tuning
+        // calibrato precedente aveva steerGain al/vicino al vecchio tetto
+        // 7.0 su TUTTE e 4 le piste (5.03/7.00/6.38/6.92) e
+        // adaptiveLookaheadK vicino al vecchio tetto 0.4 su new-monza
+        // (0.396) — non un optimum, il muro della gabbia di ricerca.
+        // Verificato con uno sweep manuale (steerGain fino a x3,
+        // adaptiveLookaheadK fino a x4 rispetto al calibrato) che oltre quei
+        // tetti esistono guadagni di tempo reali (-350/-1850ms a seconda
+        // della pista) SENZA aumentare i tick fuori-asfalto veri
+        // (VehicleMotionModel.applyOffTrackDrag) rispetto al tuning attuale.
+        // Il tetto qui è solo headroom per la ricerca: il vincolo vero che
+        // impedisce di "comprare" tempo fuori pista è il rigetto in fitness()
+        // sopra (offTrackTicks>0 → 1e9), non questo limite.
+        list.push({ get: () => state.steerGain, set: v => { state.steerGain = v; }, min: 1.0, max: 15.0, isLine: false });
+        list.push({ get: () => state.adaptiveLookaheadK, set: v => { state.adaptiveLookaheadK = v; }, min: 0.02, max: 0.8, isLine: false });
         // Limiti ampliati (Task 11, chiusura gap dall'umano): margine=1.0 era
         // il limite geometrico ESATTO, ma la velocità reale insegue l'angolo
         // con un filtro (GRIP<1 in updateVelocity — vedi commento su
@@ -297,6 +327,26 @@ function buildOptimizer(track) {
         }
         if (opts.onImprovement) opts.onImprovement(state, best);
 
+        // Simulated annealing (Rif. richiesta utente, audit pace-gap
+        // 2026-08-08) — opt-in via opts.annealing, comportamento di default
+        // invariato. Il basin-hopping esistente sotto è già una ricerca
+        // globale (perturbazione + raffinamento locale), ma accetta un nuovo
+        // bacino SOLO se batte il record assoluto (`best`): non può mai
+        // attraversare temporaneamente un bacino peggiore per raggiungerne
+        // uno migliore due salti dopo — hill-climbing con riavvii casuali,
+        // non un vero Metropolis. Qui si separa lo stato ESPLORATO
+        // (`current`, può peggiorare) dal record tenuto a parte (`best`/
+        // `bestState`, mai perso): un salto peggiorativo viene accettato
+        // come nuovo `current` con probabilità exp(-Δ/T), T che scende
+        // linearmente da T0 a ~0 lungo gli hop. T0=800ms non è indovinato a
+        // caso: è l'ordine di grandezza degli scarti di fitness fra varianti
+        // "buone" e "così così" misurati oggi in questo stesso audit
+        // (350-1850ms fra configurazioni vicine, su piste diverse).
+        const annealing = !!opts.annealing;
+        const T0 = 800;
+        let current = best;
+        let bestState = cloneState(state);
+
         for (let hop = 0; hop < hops; hop++) {
             const snapshot = cloneState(state);
             const m = state.line.length;
@@ -307,23 +357,56 @@ function buildOptimizer(track) {
                 const idx = (spanStart + k) % m;
                 state.line[idx] = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, state.line[idx] + jump));
             }
+            // Stessi limiti di paramList() sopra (steerGain 15.0,
+            // adaptiveLookaheadK 0.8) — prima di questa correzione erano
+            // rimasti ai vecchi tetti (7.0/0.4) qui, disallineati dal
+            // raffinamento locale che invece già usava quelli nuovi (bug
+            // trovato in questo stesso audit: il salto casuale poteva
+            // ririportare indietro un valore che coordinateDescent aveva
+            // già spinto oltre il vecchio tetto).
             if (Math.random() < 0.3) state.lookaheadTimeS = Math.max(0.25, Math.min(1.3, state.lookaheadTimeS + rand(-0.2, 0.2)));
-            if (Math.random() < 0.3) state.steerGain = Math.max(1.0, Math.min(7.0, state.steerGain + rand(-1.2, 1.2)));
-            if (Math.random() < 0.3) state.adaptiveLookaheadK = Math.max(0.02, Math.min(0.4, state.adaptiveLookaheadK + rand(-0.05, 0.05)));
+            if (Math.random() < 0.3) state.steerGain = Math.max(1.0, Math.min(15.0, state.steerGain + rand(-1.2, 1.2)));
+            if (Math.random() < 0.3) state.adaptiveLookaheadK = Math.max(0.02, Math.min(0.8, state.adaptiveLookaheadK + rand(-0.05, 0.05)));
             if (Math.random() < 0.3) state.cornerSpeedMargin = Math.max(0.80, Math.min(1.15, state.cornerSpeedMargin + rand(-0.08, 0.08)));
             if (Math.random() < 0.3) state.brakingDistanceMargin = Math.max(0.75, Math.min(1.4, state.brakingDistanceMargin + rand(-0.15, 0.15)));
 
             let f = fitness(state);
             f = coordinateDescent(state, f, 4, 0.15, 0.2);
-            if (f < best) {
+            const improved = f < best;
+            if (improved) {
                 best = f;
+                bestState = cloneState(state);
                 log(`Basin-hop ${hop + 1}/${hops}: MIGLIORATO a ${best}ms`);
                 if (opts.onImprovement) opts.onImprovement(state, best);
-            } else {
-                state = snapshot;
             }
+
+            if (!annealing) {
+                // Comportamento originale, invariato: accetta solo se batte
+                // il record assoluto, altrimenti torna indietro.
+                if (!improved) state = snapshot;
+                continue;
+            }
+
+            // Ramo annealing: `snapshot` a inizio hop è sempre l'ultimo
+            // stato ACCETTATO (per costruzione: se accettato `state` resta
+            // così com'è, se rifiutato torna a `snapshot`) — accetta sempre
+            // un miglioramento rispetto a `current` (mai solo rispetto al
+            // record assoluto `best`, che resta comunque protetto a parte
+            // in bestState/best sopra); accetta un peggioramento con
+            // probabilità Metropolis, temperatura che scende linearmente a
+            // 0 sull'ultimo hop (ricerca via via più conservativa, come nel
+            // basin-hopping classico).
+            const T = T0 * Math.max(0, 1 - hop / hops);
+            const accept = f <= current || (T > 0 && Math.random() < Math.exp(-(f - current) / T));
+            if (accept) current = f;
+            else state = snapshot;
         }
 
+        // Ritorna sempre il record assoluto, non il punto dove la
+        // passeggiata annealing è terminata (che può essere peggiore per
+        // via degli ultimi salti peggiorativi accettati) — `best` è già
+        // corretto in entrambi i rami, nessun ricalcolo/fitness aggiuntiva.
+        if (annealing) state = bestState;
         return { state, best, evalCount: () => evalCount };
     }
 
@@ -438,6 +521,11 @@ function parseArgs(argv) {
     let seedMultiResolution = false;
     let outSuffix = "";
     let resume = null;
+    // Default false: comportamento del basin-hopping invariato a meno di
+    // richiesta esplicita — vedi commento sopra optimize() per cosa cambia
+    // (accettazione Metropolis di bacini temporaneamente peggiori, invece
+    // di accettare solo un nuovo record assoluto).
+    let annealing = false;
     for (const arg of argv) {
         if (arg.startsWith("--hops=")) hops = Number(arg.slice("--hops=".length));
         else if (arg === "--seed-geometric") seedGeometric = true;
@@ -446,15 +534,16 @@ function parseArgs(argv) {
         else if (arg === "--seed-multi-resolution=0") seedMultiResolution = false;
         else if (arg.startsWith("--out-suffix=")) outSuffix = arg.slice("--out-suffix=".length);
         else if (arg.startsWith("--resume=")) resume = arg.slice("--resume=".length);
+        else if (arg === "--annealing") annealing = true;
         else trackIds.push(arg);
     }
-    return { trackIds, hops, seedGeometric, seedMultiResolution, outSuffix, resume };
+    return { trackIds, hops, seedGeometric, seedMultiResolution, outSuffix, resume, annealing };
 }
 
 if (require.main === module) {
-    const { trackIds, hops, seedGeometric, seedMultiResolution, outSuffix, resume } = parseArgs(process.argv.slice(2));
+    const { trackIds, hops, seedGeometric, seedMultiResolution, outSuffix, resume, annealing } = parseArgs(process.argv.slice(2));
     if (trackIds.length === 0) {
-        console.error("Uso: node backend/tools/f1RaceLineOptimizer.js <trackId> [<trackId> ...] [--hops=N] [--seed-geometric=0] [--seed-multi-resolution] [--out-suffix=-seeded] [--resume=<path-checkpoint.json>]");
+        console.error("Uso: node backend/tools/f1RaceLineOptimizer.js <trackId> [<trackId> ...] [--hops=N] [--seed-geometric=0] [--seed-multi-resolution] [--out-suffix=-seeded] [--resume=<path-checkpoint.json>] [--annealing]");
         process.exitCode = 1;
     } else {
         // --resume ha senso solo per UNA pista alla volta (il checkpoint è
@@ -462,7 +551,7 @@ if (require.main === module) {
         // verrebbe applicato (erroneamente) a ognuno: non un caso d'uso
         // previsto, ma non vale la pena bloccarlo esplicitamente per un
         // tool interno a un solo utente.
-        for (const id of trackIds) run(id, hops, { seedGeometric, seedMultiResolution, outSuffix, resume });
+        for (const id of trackIds) run(id, hops, { seedGeometric, seedMultiResolution, outSuffix, resume, annealing });
     }
 }
 
