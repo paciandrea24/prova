@@ -775,8 +775,12 @@ test('updatePitAutopilot: con una piega di 90° esattamente su pitBoxIndex, l\'i
     // script di verifica in docs/superpowers/sdd/.../final-review-fix-report.md.
     const anchor = TrackGeometry.pitBoxAnchors(pitPath, pitBoxIndex, 3)[2];
     const sampledPitPts = TrackGeometry.sampleOpenPath(pitPath, 300);   // per misurare la distanza dalla vera sede stradale
+    // L'autopilota cammina sulla corsia CAMPIONATA (track.pitLanePts, vedi
+    // trackLoader.buildTrack) e localizza il box con anchor.laneIdx, indice
+    // su quella stessa numerazione: qui la fixture riproduce entrambi.
+    anchor.laneIdx = TrackGeometry.nearestPoint(sampledPitPts, anchor.x, anchor.z).index;
 
-    const fakeTrack = { pitPath, pitBoxIndex, roadHalfWidth };
+    const fakeTrack = { pitPath, pitLanePts: sampledPitPts, pitBoxIndex, roadHalfWidth };
     const io = { to: () => ({ emit: () => {} }) };
     const game = { track: fakeTrack, socketByColor: {} };
 
@@ -830,7 +834,12 @@ test('updatePitAutopilot: un pilota col box PRIMA di pitBoxIndex si ferma lì se
     const anchor = TrackGeometry.pitBoxAnchors(pitPath, pitBoxIndex, 3)[0];
     assert.ok(anchor.fromIdx < pitBoxIndex, 'precondizione del test: il box deve trovarsi prima del vertice');
 
-    const fakeTrack = { pitPath, pitBoxIndex, roadHalfWidth };
+    // Corsia campionata + laneIdx: è su quella numerazione che l'autopilota
+    // cammina e riconosce il proprio box (vedi trackLoader.buildTrack).
+    const pitLanePts = TrackGeometry.sampleOpenPath(pitPath, 300);
+    anchor.laneIdx = TrackGeometry.nearestPoint(pitLanePts, anchor.x, anchor.z).index;
+
+    const fakeTrack = { pitPath, pitLanePts, pitBoxIndex, roadHalfWidth };
     const io = { to: () => ({ emit: () => {} }) };
     const game = { track: fakeTrack, socketByColor: {} };
 
@@ -851,8 +860,18 @@ test('updatePitAutopilot: un pilota col box PRIMA di pitBoxIndex si ferma lì se
 
     assert.ok(ticks < 500, 'autopilota non ha mai raggiunto la casella (loop infinito?)');
     assert.ok(p.pitting, 'atteso che la sosta sia partita');
-    assert.equal(maxPitPathIndexSeen, anchor.fromIdx,
-        `l'autopilota ha camminato fino al waypoint ${maxPitPathIndexSeen}, oltre il fromIdx del proprio box (${anchor.fromIdx}) — segno che è passato dal vertice condiviso pitBoxIndex (${pitBoxIndex}) invece di fermarsi al proprio box`);
+    // Il confronto è sulla numerazione della corsia CAMPIONATA (dove
+    // l'autopilota cammina davvero), non più sui punti di controllo:
+    // anchor.laneIdx e anchor.fromIdx indicizzano due sequenze diverse — 300
+    // campioni contro 11 vertici — e confonderle qui darebbe un falso
+    // fallimento. Il senso del test non cambia: l'auto si ferma al PROPRIO
+    // box e non tira dritto fino al vertice condiviso pitBoxIndex.
+    const vertexLaneIdx = TrackGeometry.nearestPoint(
+        pitLanePts, pitPath[pitBoxIndex].x, pitPath[pitBoxIndex].z).index;
+    assert.equal(maxPitPathIndexSeen, anchor.laneIdx,
+        `l'autopilota ha camminato fino al campione ${maxPitPathIndexSeen} invece che al proprio box (${anchor.laneIdx})`);
+    assert.ok(maxPitPathIndexSeen < vertexLaneIdx,
+        `l'autopilota è arrivato al vertice condiviso pitBoxIndex (campione ${vertexLaneIdx}) invece di fermarsi prima, al proprio box`);
 });
 
 // ---- Stallo laterale + orientamento parallelo (Rif. richiesta utente
@@ -869,7 +888,12 @@ test('updatePitAutopilot: con lo stallo disponibile (trackPoints/pitRoadHalf), l
     const anchor = TrackGeometry.pitBoxAnchors(pitPath, pitBoxIndex, 1, trackPoints, roadHalfWidth)[0];
     assert.notEqual(anchor.stallX, undefined, 'precondizione: lo stallo deve essere calcolato con trackPoints/pitRoadHalf');
 
-    const fakeTrack = { pitPath, pitBoxIndex, roadHalfWidth };
+    // Corsia campionata + laneIdx: è su quella numerazione che l'autopilota
+    // cammina e riconosce il proprio box (vedi trackLoader.buildTrack).
+    const pitLanePts = TrackGeometry.sampleOpenPath(pitPath, 300);
+    anchor.laneIdx = TrackGeometry.nearestPoint(pitLanePts, anchor.x, anchor.z).index;
+
+    const fakeTrack = { pitPath, pitLanePts, pitBoxIndex, roadHalfWidth };
     const io = { to: () => ({ emit: () => {} }) };
     const game = { track: fakeTrack, socketByColor: {} };
 
@@ -912,9 +936,15 @@ test('resolveCollisions + updatePitAutopilot: 4 auto entrate insieme (posizioni 
     const trackPoints = [{ x: 100, z: 50 }];
     const pitRoadHalf = 5;
     const anchors = TrackGeometry.pitBoxAnchors(pitPath, boxIndex, 4, trackPoints, pitRoadHalf);
+    // Corsia campionata + laneIdx: è su quella numerazione che l'autopilota
+    // cammina e riconosce il proprio box (vedi trackLoader.buildTrack).
+    const pitLanePts = TrackGeometry.sampleOpenPath(pitPath, 300);
+    for (const a of anchors) {
+        a.laneIdx = TrackGeometry.nearestPoint(pitLanePts, a.x, a.z).index;
+    }
 
     const io = { to: () => ({ emit: () => {} }) };
-    const game = { track: { pitPath, pitBoxIndex: boxIndex, pitRoadHalf }, socketByColor: {} };
+    const game = { track: { pitPath, pitLanePts, pitBoxIndex: boxIndex, pitRoadHalf }, socketByColor: {} };
 
     function makePlayer(color, anchor) {
         return {
@@ -937,4 +967,47 @@ test('resolveCollisions + updatePitAutopilot: 4 auto entrate insieme (posizioni 
 
     assert.ok(ticks < 500, `autopilota in deadlock: non tutte le auto sono arrivate entro 500 tick (fermo dopo ${ticks})`);
     for (const p of players) assert.ok(p.pitting, `${p.color} non ha mai raggiunto il proprio box`);
+});
+
+// L'autopilota camminava sui punti di CONTROLLO grezzi (7 su "prova"), mentre
+// la corsia disegnata è la spline campionata: muovendosi in retta fra un
+// controllo e l'altro tagliava le curve. Scarto misurato prima del fix: 3.35
+// unità su una semilarghezza di corsia di 5, cioè l'auto passava a 1.65 dal
+// bordo ("il pilota automatico non segue esattamente la corsia", utente
+// 2026-08-09).
+test('l\'autopilota d\'ingresso resta dentro la corsia box su tutte le piste', () => {
+    const { physics } = f1GameSocket;
+    const trackLoader = require('./trackLoader.js');
+
+    for (const id of ['prova', 'monte-rosso', 'new-monza']) {
+        const track = trackLoader.loadTrack(id);
+        const anchors = TrackGeometry.pitBoxAnchors(
+            track.pitPath, track.pitBoxIndex, 3, track.points, track.pitRoadHalf);
+        for (const a of anchors) {
+            a.laneIdx = TrackGeometry.nearestPoint(track.pitLanePts, a.x, a.z).index;
+        }
+
+        const io = { to: () => ({ emit: () => {} }) };
+        const game = { track, socketByColor: {} };
+        const p = {
+            color: 'red', x: track.pitLanePts[0].x, z: track.pitLanePts[0].z,
+            angle: 0, speed: 0, vx: 0, vz: 0,
+            pitBoxAnchor: anchors[2], pitting: false, pitPhase: null,
+            pitAutoState: 'entering', pitPathIndex: 1, pitBoxFinalApproach: false,
+        };
+
+        let worst = 0;
+        let ticks = 0;
+        while (p.pitAutoState === 'entering' && !p.pitBoxFinalApproach && ticks < 4000) {
+            physics.updatePitAutopilot(io, 'testLobby', game, p);
+            // Il balzo finale verso lo stallo esce di proposito dalla corsia
+            // (lo stallo è spostato di lato): si misura solo il tragitto.
+            if (p.pitBoxFinalApproach) break;
+            worst = Math.max(worst, TrackGeometry.nearestPoint(track.pitLanePts, p.x, p.z).dist);
+            ticks++;
+        }
+        assert.ok(ticks > 5, `${id}: l'autopilota si è fermato subito (${ticks} tick)`);
+        assert.ok(worst < track.pitRoadHalf,
+            `${id}: l'auto si è allontanata di ${worst.toFixed(2)} dalla linea della corsia (semilarghezza ${track.pitRoadHalf})`);
+    }
 });

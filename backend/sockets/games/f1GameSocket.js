@@ -134,6 +134,11 @@ const RESTART_GRACE_MS = 1500;
 
 const PIT_AUTO_SPEED = 1.55;   // unità/tick dell'autopilota lungo il percorso box (25% di MAX_SPEED)
 const PIT_AUTO_ARRIVE_DIST = 1.0;   // sotto questa distanza dal waypoint, "arrivato"
+// Quanti campioni della corsia avanti al proprio box far rientrare l'auto in
+// uscita dallo stallo (~10 unità con 300 campioni sulle corsie esistenti).
+// Rientrare sul campione del box stesso la rimetterebbe in corsia di traverso,
+// ferma davanti al proprio garage.
+const PIT_REJOIN_LEAD_SAMPLES = 10;
 
 // Rettangolo orientabile (x,z,halfWidth,halfLength,angle) invece del
 // vecchio riquadro assi-allineato: funziona per un rettilineo box con
@@ -610,6 +615,7 @@ function startQualifying(io, lobbyId, game) {
         game.track.pitPath, game.track.pitBoxIndex, qualiOrder.length,
         game.track.points, game.track.pitRoadHalf
     );
+    addLaneIndices(game.track, qualiBoxAnchors);
     qualiOrder.forEach((color, i) => {
         game.players[color].pitBoxAnchor = qualiBoxAnchors[i];
         game.players[color].pitBoxSlot = i;
@@ -759,6 +765,7 @@ function assignGridSpawns(game) {
         game.track.pitPath, game.track.pitBoxIndex, order.length,
         game.track.points, game.track.pitRoadHalf
     );
+    addLaneIndices(game.track, boxAnchors);
     game.bestSectorTimes = [Infinity, Infinity, Infinity];
     order.forEach((color, i) => {
         const p = game.players[color];
@@ -823,6 +830,18 @@ function assignGridSpawns(game) {
 // il filtro "racing" in tickGame) finché l'intera visita ai box non finisce.
 // Riparte dal waypoint 1 (il waypoint 0 è il punto di distacco, dove più o
 // meno già si trova).
+// Indice di ciascun box sulla corsia CAMPIONATA (track.pitLanePts), dove
+// cammina l'autopilota. anchor.fromIdx è un indice sui punti di CONTROLLO e
+// resta valido solo per chi ragiona su quelli: le due numerazioni non sono
+// intercambiabili. La posizione fisica degli anchor non cambia — è già stata
+// verificata e approvata, qui si aggiunge solo il modo di raggiungerla.
+function addLaneIndices(track, anchors) {
+    if (!track.pitLanePts) return;   // fixture di test senza corsia campionata
+    for (const a of anchors) {
+        a.laneIdx = TrackGeometry.nearestPoint(track.pitLanePts, a.x, a.z).index;
+    }
+}
+
 function startPitLaneEntry(io, lobbyId, game, p) {
     p.pitAutoState = 'entering';
     p.pitPathIndex = 1;
@@ -873,12 +892,19 @@ function updatePitAutopilot(io, lobbyId, game, p) {
         // condiviso pitBoxIndex: un box con fromIdx < pitBoxIndex deve
         // rientrare in avanti verso il proprio segmento, non verso un
         // vertice che potrebbe trovarsi oltre, dietro di sé).
+        // In uscita si rientra su un punto della corsia CAMPIONATA poco più
+        // avanti del proprio box (non più il punto di controllo successivo:
+        // sulla lane campionata quello non ha più significato). Un box con
+        // laneIdx prima del vertice condiviso deve comunque rientrare in
+        // avanti, mai indietro.
+        const rejoinIdx = Math.min(track.pitLanePts.length - 1,
+                                   p.pitBoxAnchor.laneIdx + PIT_REJOIN_LEAD_SAMPLES);
         const target = (p.pitAutoState === 'entering')
             ? {
                 x: p.pitBoxAnchor.stallX != null ? p.pitBoxAnchor.stallX : p.pitBoxAnchor.x,
                 z: p.pitBoxAnchor.stallZ != null ? p.pitBoxAnchor.stallZ : p.pitBoxAnchor.z
             }
-            : track.pitPath[p.pitBoxAnchor.fromIdx + 1];
+            : track.pitLanePts[rejoinIdx];
         const dx = target.x - p.x, dz = target.z - p.z;
         const dist = Math.hypot(dx, dz);
 
@@ -912,45 +938,63 @@ function updatePitAutopilot(io, lobbyId, game, p) {
         return;
     }
 
-    const target = track.pitPath[p.pitPathIndex];
-    const dx = target.x - p.x, dz = target.z - p.z;
-    const dist = Math.hypot(dx, dz);
+    // Avanzamento lungo la POLILINEA CAMPIONATA della corsia (track.pitLanePts,
+    // gli stessi punti che il frontend usa per disegnarla): si consuma
+    // PIT_AUTO_SPEED unità per tick attraversando quanti waypoint servono.
+    //
+    // Non si "punta al waypoint e ci si ferma" come si faceva sui punti di
+    // CONTROLLO: quelli erano 7 su "prova" e andarci in retta tagliava le
+    // curve della corsia (scarto misurato 3.35 su una semilarghezza di 5).
+    // Con 300 campioni a ~1 unità l'uno dall'altro, invece, l'auto
+    // raggiungerebbe più waypoint per tick e il vecchio azzeramento di
+    // speed/vx/vz ad ogni arrivo la farebbe procedere a scatti.
+    const lane = track.pitLanePts;
+    let budget = PIT_AUTO_SPEED;
+    while (budget > 0 && p.pitPathIndex < lane.length) {
+        const wp = lane[p.pitPathIndex];
+        const dx = wp.x - p.x, dz = wp.z - p.z;
+        const dist = Math.hypot(dx, dz);
 
-    if (dist < PIT_AUTO_ARRIVE_DIST) {
-        p.x = target.x; p.z = target.z;
-        p.speed = 0; p.vx = 0; p.vz = 0;
+        if (dist > budget) {
+            p.angle = Math.atan2(dx, dz);   // stessa convenzione della fisica normale (sin=x, cos=z)
+            p.x += (dx / dist) * budget;
+            p.z += (dz / dist) * budget;
+            budget = 0;
+            break;
+        }
 
-        if (p.pitAutoState === 'entering' && p.pitBoxAnchor && p.pitPathIndex === p.pitBoxAnchor.fromIdx) {
-            p.pitBoxFinalApproach = true;   // prossimo tick: hop verso l'anchor personale
+        p.x = wp.x; p.z = wp.z;
+        budget -= dist;
+        if (dist > 1e-6) p.angle = Math.atan2(dx, dz);
+
+        // Arrivato all'altezza del proprio box: il prossimo tick fa il balzo
+        // verso lo stallo personale, spostato di lato rispetto alla corsia.
+        if (p.pitAutoState === 'entering' && p.pitBoxAnchor
+            && p.pitBoxAnchor.laneIdx != null && p.pitPathIndex >= p.pitBoxAnchor.laneIdx) {
+            p.speed = PIT_AUTO_SPEED; p.vx = 0; p.vz = 0;
+            p.pitBoxFinalApproach = true;
             return;
         }
 
         p.pitPathIndex++;
-        if (p.pitPathIndex >= track.pitPath.length) {
-            p.pitAutoState = null;   // fine autopilota: comandi restituiti al giocatore
-            // Il controllo torna al giocatore con la velocità EFFETTIVA
-            // dell'autopilota (PIT_AUTO_SPEED, ~85 km/h) invece che da fermo
-            // (Rif. richiesta utente 2026-08-08): la riga sopra azzera
-            // speed/vx/vz per ogni arrivo a waypoint, ma qui è l'ultimo —
-            // senza questo la fisica normale del tick successivo ripartiva
-            // da p.speed=0 nonostante l'auto stesse viaggiando un istante
-            // prima. p.angle punta già nel verso di marcia (impostato
-            // all'ultimo passo di avvicinamento, riga sotto), stessa
-            // convenzione sin/cos usata da AerodynamicsModel.applyGripBlend.
-            p.speed = PIT_AUTO_SPEED;
-            p.vx = Math.sin(p.angle) * PIT_AUTO_SPEED;
-            p.vz = Math.cos(p.angle) * PIT_AUTO_SPEED;
-            const sid = game.socketByColor[p.color];
-            if (sid) io.to(sid).emit('f1PitLaneExited');
-        }
-        return;
     }
 
-    p.angle = Math.atan2(dx, dz);   // stessa convenzione usata dalla fisica normale (sin=x, cos=z)
-    p.x += (dx / dist) * PIT_AUTO_SPEED;
-    p.z += (dz / dist) * PIT_AUTO_SPEED;
     p.speed = PIT_AUTO_SPEED;   // solo per HUD velocità/rotazione ruote lato client
     p.vx = 0; p.vz = 0;
+
+    if (p.pitPathIndex >= lane.length) {
+        p.pitAutoState = null;   // fine autopilota: comandi restituiti al giocatore
+        // Il controllo torna al giocatore con la velocità EFFETTIVA
+        // dell'autopilota (PIT_AUTO_SPEED, ~85 km/h) invece che da fermo
+        // (Rif. richiesta utente 2026-08-08): senza questo la fisica normale
+        // del tick successivo ripartiva da p.speed=0 nonostante l'auto stesse
+        // viaggiando un istante prima. p.angle punta già nel verso di marcia,
+        // stessa convenzione sin/cos usata da AerodynamicsModel.applyGripBlend.
+        p.vx = Math.sin(p.angle) * PIT_AUTO_SPEED;
+        p.vz = Math.cos(p.angle) * PIT_AUTO_SPEED;
+        const sid = game.socketByColor[p.color];
+        if (sid) io.to(sid).emit('f1PitLaneExited');
+    }
 }
 
 // Il giocatore è arrivato alla casella (via autopilota): attesa casuale, poi
@@ -1035,7 +1079,10 @@ function completePitStop(io, lobbyId, game, p) {
     // un box con fromIdx < pitBoxIndex deve rientrare in avanti sul proprio
     // segmento, non su un vertice che potrebbe stargli dietro.
     p.pitBoxFinalApproach = true;
-    p.pitPathIndex = p.pitBoxAnchor.fromIdx + 1;   // waypoint da cui riprende il walk normale dopo il rientro
+    // Campione della corsia da cui riprende il walk normale dopo il rientro
+    // dallo stallo (vedi PIT_REJOIN_LEAD_SAMPLES in updatePitAutopilot).
+    p.pitPathIndex = Math.min(game.track.pitLanePts.length - 1,
+                              p.pitBoxAnchor.laneIdx + PIT_REJOIN_LEAD_SAMPLES);
 }
 
 // Stato visibile ad UN determinato giocatore (viewerColor):

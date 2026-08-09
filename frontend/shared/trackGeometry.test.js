@@ -422,3 +422,122 @@ test('pitLeadInPoints: resta sulla pista vera (stessa distanza dal centro del pu
     const distLast = Math.hypot(lead[lead.length - 1].x - pitPts[0].x, lead[lead.length - 1].z - pitPts[0].z);
     assert.ok(distLast > distFirst, 'i punti di preavviso devono allontanarsi progressivamente dal punto di aggancio');
 });
+
+// --- curvatureAt (2026-08-09) ----------------------------------------------
+// Serve alla scenografia per sapere dove sono le curve: barriere di gomme,
+// cartelli di frenata e commissari hanno senso solo lì.
+test('curvatureAt su un cerchio di raggio 100 misura raggio ≈ 100', () => {
+    const pts = [];
+    const R = 100;
+    for (let i = 0; i < 400; i++) {
+        const a = (i / 400) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * R, z: Math.sin(a) * R, y: 0 });
+    }
+    const { radius } = TrackGeometry.curvatureAt(pts, 0);
+    assert.ok(Math.abs(radius - R) < R * 0.1, `raggio ${radius}, atteso ~${R}`);
+});
+
+test('curvatureAt su una retta ritorna raggio Infinity', () => {
+    const pts = [];
+    for (let i = 0; i < 200; i++) pts.push({ x: i * 2, z: 0, y: 0 });
+    const { radius } = TrackGeometry.curvatureAt(pts, 100);
+    assert.equal(radius, Infinity);
+});
+
+test('curvatureAt distingue il verso della curva col segno di turnSigned', () => {
+    const R = 80;
+    const cw = [], ccw = [];
+    for (let i = 0; i < 400; i++) {
+        const a = (i / 400) * Math.PI * 2;
+        ccw.push({ x: Math.cos(a) * R, z: Math.sin(a) * R, y: 0 });
+        cw.push({ x: Math.cos(-a) * R, z: Math.sin(-a) * R, y: 0 });
+    }
+    const s1 = TrackGeometry.curvatureAt(ccw, 10).turnSigned;
+    const s2 = TrackGeometry.curvatureAt(cw, 10).turnSigned;
+    assert.ok(s1 * s2 < 0, `segni non opposti: ${s1} e ${s2}`);
+});
+
+test('curvatureAt riconosce le curve di un tracciato reale senza segnare tutto', () => {
+    const monteRosso = require('../tracks/monte-rosso.json');
+    const pts = TrackGeometry.sampleLoop(monteRosso.controlPoints, 1000);
+    const radii = pts.map((_, i) => TrackGeometry.curvatureAt(pts, i).radius);
+    const curve = radii.filter(r => r < 120).length;
+    assert.ok(curve > 50, `solo ${curve} punti in curva su ${pts.length}`);
+    assert.ok(curve < pts.length * 0.9, `${curve} punti su ${pts.length} in curva: soglia inutile`);
+});
+
+// --- advanceToDistance -----------------------------------------------------
+// Compone file di oggetti contigui (tribuna principale, edifici della corsia
+// box) misurando la distanza REALE fra i punti già offsettati di lato, invece
+// di convertire la spaziatura in un numero di campioni.
+
+test('advanceToDistance trova il punto alla distanza richiesta su un cerchio', () => {
+    const R = 100, N = 400;
+    const pts = [];
+    for (let i = 0; i < N; i++) {
+        const a = (i / N) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * R, z: Math.sin(a) * R, y: 0 });
+    }
+    const project = (i) => pts[i];
+    const idx = TrackGeometry.advanceToDistance(pts, 0, 1, true, pts[0], 20, project);
+    const d = Math.hypot(pts[idx].x - pts[0].x, pts[idx].z - pts[0].z);
+    // La tolleranza è un passo di campionamento: si cerca il PRIMO campione
+    // oltre la soglia, non un punto interpolato.
+    const step = (2 * Math.PI * R) / N;
+    assert.ok(d >= 20 && d < 20 + step * 1.5, `distanza ${d.toFixed(2)}, attesa ~20`);
+});
+
+test('advanceToDistance rispetta il verso di marcia', () => {
+    const pts = [];
+    for (let i = 0; i < 200; i++) pts.push({ x: i * 2, z: 0, y: 0 });
+    const project = (i) => pts[i];
+    const fwd = TrackGeometry.advanceToDistance(pts, 100, 1, false, pts[100], 20, project);
+    const back = TrackGeometry.advanceToDistance(pts, 100, -1, false, pts[100], 20, project);
+    assert.ok(fwd > 100, `avanti dovrebbe crescere, ha dato ${fwd}`);
+    assert.ok(back < 100, `indietro dovrebbe calare, ha dato ${back}`);
+});
+
+test('advanceToDistance ritorna -1 se il percorso aperto finisce prima', () => {
+    const pts = [];
+    for (let i = 0; i < 20; i++) pts.push({ x: i * 2, z: 0, y: 0 });   // lungo 38 in tutto
+    const project = (i) => pts[i];
+    assert.equal(TrackGeometry.advanceToDistance(pts, 0, 1, false, pts[0], 500, project), -1);
+});
+
+// Il motivo per cui `project` esiste: sulla scenografia la spaziatura va
+// misurata fra i punti OFFSETTATI di lato, non sulla linea centrale. Su una
+// curva i due valori differiscono in proporzione al raggio.
+test('advanceToDistance misura sui punti proiettati, non sui campioni grezzi', () => {
+    const R = 100, N = 400;
+    const pts = [];
+    for (let i = 0; i < N; i++) {
+        const a = (i / N) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * R, z: Math.sin(a) * R, y: 0 });
+    }
+    // Proiezione su un cerchio di raggio doppio: stessa distanza angolare,
+    // distanza lineare doppia -> serve la metà dei campioni.
+    const outer = (i) => ({ x: pts[i].x * 2, z: pts[i].z * 2 });
+    const iCenter = TrackGeometry.advanceToDistance(pts, 0, 1, true, pts[0], 20, (i) => pts[i]);
+    const iOuter = TrackGeometry.advanceToDistance(pts, 0, 1, true, outer(0), 20, outer);
+    assert.ok(iOuter < iCenter, `proiettato ${iOuter} dovrebbe precedere il grezzo ${iCenter}`);
+});
+
+test('advanceToDistancePoint centra la distanza esatta, non il primo campione', () => {
+    // Campionamento volutamente rado (passo 10) contro una spaziatura di 25:
+    // il primo campione oltre la soglia starebbe a 30, l'interpolato a 25.
+    const pts = [];
+    for (let i = 0; i < 50; i++) pts.push({ x: i * 10, z: 0, y: 0 });
+    const project = (i) => pts[i];
+    const r = TrackGeometry.advanceToDistancePoint(pts, 0, 1, false, pts[0], 25, project);
+    assert.ok(r, 'nessun punto trovato');
+    const a = pts[r.prevIdx], b = pts[r.idx];
+    const x = a.x + (b.x - a.x) * r.t, z = a.z + (b.z - a.z) * r.t;
+    const d = Math.hypot(x - pts[0].x, z - pts[0].z);
+    assert.ok(Math.abs(d - 25) < 0.01, `distanza ${d.toFixed(3)}, attesa 25`);
+});
+
+test('advanceToDistancePoint ritorna null se il percorso aperto finisce prima', () => {
+    const pts = [];
+    for (let i = 0; i < 20; i++) pts.push({ x: i * 2, z: 0, y: 0 });
+    assert.equal(TrackGeometry.advanceToDistancePoint(pts, 0, 1, false, pts[0], 500, (i) => pts[i]), null);
+});

@@ -1,6 +1,10 @@
 // frontend/shared/trackMeshBuilder.js
 (function (root) {
     const TrackGeometry = root.TrackGeometry;
+    // Quota del terreno collinare: stessa funzione usata da trackScenery per
+    // piantarci sopra gli alberi dei boschi. Se le due divergessero, gli
+    // alberi finirebbero sepolti o sospesi in aria.
+    const SceneryHills = root.SceneryHills;
 
     // Stesso verde del prato esistente (f1.js): usato sia dal terrapieno sia
     // dal prato con foro (buildGround), per continuità visiva senza cuciture
@@ -760,6 +764,14 @@
     // da seguire bene il contorno del terrapieno, abbastanza grande da
     // restare economica su un tracciato grande.
     const GROUND_GRID_CELL = 20;
+    // Griglia delle colline dell'orizzonte: maglia grossa (stanno a centinaia
+    // di unità dalla camera, il dettaglio non si legge) ed estesa ben oltre il
+    // prato, che si ferma a ~80 unità dal circuito — troppo presto perché i
+    // rilievi, che iniziano a 180, cadessero dentro la griglia.
+    // HILL_REACH copre il raggio in cui SceneryHills sale al massimo
+    // (120 di attesa + 300 di rampa) più un margine di pianoro in cima.
+    const HILL_GRID_CELL = 80;
+    const HILL_REACH = 700;
 
     // Prato "vicino": una griglia di quad, tenuti solo se il centro è oltre
     // embankOuter dal punto a terra (non-ponte) più vicino. A differenza del
@@ -792,6 +804,37 @@
         const pos = [];
         const idx = [];
 
+        // Emette una cella: piano superiore + i fianchi verso le vicine più
+        // basse. I fianchi non sono decorativi — senza, due celle a quote
+        // diverse lasciano una fessura verticale da cui si vede attraverso il
+        // terreno.
+        function emitCell(x0, z0, size, y, neighbourY) {
+            const x1 = x0 + size, z1 = z0 + size;
+            let base = pos.length / 3;
+            pos.push(x0, y, z0,  x1, y, z0,  x1, y, z1,  x0, y, z1);
+            idx.push(base, base + 1, base + 2,  base, base + 2, base + 3);
+            if (y <= 0) return;
+
+            const sides = [
+                { d: 0, ax: x0, az: z0, bx: x1, bz: z0 },
+                { d: 1, ax: x1, az: z0, bx: x1, bz: z1 },
+                { d: 2, ax: x1, az: z1, bx: x0, bz: z1 },
+                { d: 3, ax: x0, az: z1, bx: x0, bz: z0 },
+            ];
+            for (const s of sides) {
+                const ny = neighbourY(s.d);
+                if (ny >= y - 0.01) continue;   // vicina più alta o pari: nessuna fessura
+                base = pos.length / 3;
+                pos.push(s.ax, y, s.az,  s.bx, y, s.bz,  s.bx, ny, s.bz,  s.ax, ny, s.az);
+                idx.push(base, base + 1, base + 2,  base, base + 2, base + 3);
+            }
+        }
+
+        // Prima passata: quota di ogni cella tenuta. Serve completa PRIMA di
+        // emettere la geometria, perché le pareti verticali di una cella si
+        // dimensionano sulla quota delle vicine.
+        const cellY = new Map();
+        const key = (cx, cz) => cx + ',' + cz;
         for (let cx = 0; cx < cols; cx++) {
             for (let cz = 0; cz < rows; cz++) {
                 const x0 = minX + cx * GROUND_GRID_CELL, x1 = x0 + GROUND_GRID_CELL;
@@ -803,10 +846,72 @@
                 // colpa della risoluzione della griglia.
                 const d = TrackGeometry.nearestPoint(groundPts, cxCenter, czCenter).dist;
                 if (d < embankOuter - GROUND_GRID_CELL / 2) continue;
+                cellY.set(key(cx, cz),
+                          SceneryHills ? SceneryHills.hillHeightAt(cxCenter, czCenter, d, embankOuter) : 0);
+            }
+        }
 
-                const base = pos.length / 3;
-                pos.push(x0, 0, z0,  x1, 0, z0,  x1, 0, z1,  x0, 0, z1);
-                idx.push(base, base + 1, base + 2,  base, base + 2, base + 3);
+        // Seconda passata: piano superiore della cella + pareti verticali
+        // verso le vicine più basse. Il risultato è un rilievo a gradoni —
+        // coerente con l'estetica voxel del progetto — e resta UNA sola mesh
+        // come il prato piatto di prima: nessuna draw call in più.
+        //
+        // Le pareti non sono un dettaglio: due celle a quote diverse senza il
+        // fianco che le raccorda lasciano una fessura verticale da cui si vede
+        // attraverso il terreno.
+        const NB = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+        for (const entry of cellY) {
+            const parts = entry[0].split(',');
+            const cx = Number(parts[0]), cz = Number(parts[1]);
+            emitCell(minX + cx * GROUND_GRID_CELL, minZ + cz * GROUND_GRID_CELL,
+                     GROUND_GRID_CELL, entry[1], (d) => {
+                         const nk = key(cx + NB[d][0], cz + NB[d][1]);
+                         return cellY.has(nk) ? cellY.get(nk) : 0;
+                     });
+        }
+
+        // --- Colline dell'orizzonte ---------------------------------------
+        // Seconda griglia, a maglia GROSSA, oltre il rettangolo del prato.
+        //
+        // Serve perché il prato qui sopra si estende solo `pad` unità oltre il
+        // circuito (embankOuter + 20 = 80 su tutti i tracciati esistenti),
+        // mentre i rilievi di SceneryHills iniziano a embankOuter + 120 = 180:
+        // le colline cadevano tutte FUORI dalla griglia e non venivano
+        // disegnate affatto — l'orizzonte restava la distesa piatta segnalata
+        // dall'utente, e il rilievo non è mai comparso in gioco. Misurato: 69
+        // celle in quota su 1710, tutte nell'infield.
+        //
+        // Maglia di 80 e non 20 perché queste celle stanno a centinaia di
+        // unità dalla camera: a quella distanza il dettaglio fine non si legge
+        // e costerebbe 12 volte i vertici (10506 celle contro 841). Restano
+        // nella STESSA BufferGeometry del prato, quindi nessuna draw call in
+        // più.
+        if (SceneryHills) {
+            const hillCellY = new Map();
+            const hCols = Math.ceil((maxX - minX + 2 * HILL_REACH) / HILL_GRID_CELL);
+            const hRows = Math.ceil((maxZ - minZ + 2 * HILL_REACH) / HILL_GRID_CELL);
+            const hMinX = minX - HILL_REACH, hMinZ = minZ - HILL_REACH;
+
+            for (let cx = 0; cx < hCols; cx++) {
+                for (let cz = 0; cz < hRows; cz++) {
+                    const x0 = hMinX + cx * HILL_GRID_CELL, z0 = hMinZ + cz * HILL_GRID_CELL;
+                    const xc = x0 + HILL_GRID_CELL / 2, zc = z0 + HILL_GRID_CELL / 2;
+                    // Salta ciò che il prato fine copre già: due superfici
+                    // complanari nello stesso punto darebbero z-fighting.
+                    if (xc > minX && xc < maxX && zc > minZ && zc < maxZ) continue;
+                    const d = TrackGeometry.nearestPoint(groundPts, xc, zc).dist;
+                    hillCellY.set(key(cx, cz), SceneryHills.hillHeightAt(xc, zc, d, embankOuter));
+                }
+            }
+
+            for (const entry of hillCellY) {
+                const parts = entry[0].split(',');
+                const cx = Number(parts[0]), cz = Number(parts[1]);
+                emitCell(hMinX + cx * HILL_GRID_CELL, hMinZ + cz * HILL_GRID_CELL,
+                         HILL_GRID_CELL, entry[1], (dir) => {
+                             const nk = key(cx + NB[dir][0], cz + NB[dir][1]);
+                             return hillCellY.has(nk) ? hillCellY.get(nk) : 0;
+                         });
             }
         }
 

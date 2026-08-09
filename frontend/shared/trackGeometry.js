@@ -248,6 +248,63 @@
         return { nx: -tz, nz: tx };
     }
 
+    // Quota della pista SOPRAELEVATA che passa sopra il punto (x, z), o
+    // Infinity se lì sopra non passa nulla entro `radius`.
+    //
+    // Serve alla scenografia: terrainHeightAt lavora sui soli punti a terra
+    // (i tratti `bridge` vengono filtrati via a monte), quindi un oggetto
+    // piazzato sotto un cavalcavia riceve la quota del terreno e, se è più
+    // alto della luce del ponte, ci passa attraverso — succedeva a reti,
+    // tribune e torre sul tracciato "prova", che ha 198 punti di ponte fino
+    // a 11.5 unità sopra il terreno.
+    function bridgeHeightAt(bridgePts, x, z, radius) {
+        if (!bridgePts || !bridgePts.length) return Infinity;
+        let best = Infinity;
+        const r2 = radius * radius;
+        for (let i = 0; i < bridgePts.length; i++) {
+            const p = bridgePts[i];
+            const dd = (x - p.x) ** 2 + (z - p.z) ** 2;
+            if (dd <= r2 && p.y < best) best = p.y;
+        }
+        return best;
+    }
+
+    // Raggio di curvatura del tracciato al punto i, in unità, e verso della
+    // curva. Si confrontano le direzioni a `sampleSpan` campioni prima e
+    // dopo: l'angolo fra le due, diviso per la lunghezza d'arco percorsa, è
+    // la curvatura, il cui reciproco è il raggio. Su un rettilineo l'angolo
+    // è nullo e il raggio Infinity.
+    //
+    // Un campione singolo sarebbe dominato dal rumore del campionamento
+    // Catmull-Rom, per questo si guarda una finestra: 12 campioni su 1000
+    // per giro sono ~1% del tracciato, abbastanza da mediare il rumore senza
+    // spalmare una curva stretta su tutto il suo intorno.
+    //
+    // Il bot server-side (backend/sockets/games/f1Bot.js) calcola la stessa
+    // grandezza per decidere la velocità in curva, ma vive in un altro
+    // processo e non è importabile da qui: questa è la versione condivisa,
+    // usata dalla scenografia per sapere dove sono le curve.
+    function curvatureAt(points, i, sampleSpan = 12) {
+        const n = points.length;
+        const a = points[(((i - sampleSpan) % n) + n) % n];
+        const b = points[i];
+        const c = points[(i + sampleSpan) % n];
+
+        const h1 = Math.atan2(b.z - a.z, b.x - a.x);
+        const h2 = Math.atan2(c.z - b.z, c.x - b.x);
+        let turnSigned = h2 - h1;
+        while (turnSigned > Math.PI) turnSigned -= Math.PI * 2;
+        while (turnSigned < -Math.PI) turnSigned += Math.PI * 2;
+
+        // Diviso 2: l'angolo fra le direzioni dei due segmenti corrisponde
+        // all'arco fra i loro PUNTI MEDI, cioè metà della somma delle corde.
+        // Senza il fattore 2 il raggio risulta doppio di quello vero
+        // (misurato su un cerchio di raggio noto: 199.7 invece di 100).
+        const arc = Math.hypot(b.x - a.x, b.z - a.z) + Math.hypot(c.x - b.x, c.z - b.z);
+        if (Math.abs(turnSigned) < 1e-6 || arc === 0) return { radius: Infinity, turnSigned: 0 };
+        return { radius: arc / (2 * Math.abs(turnSigned)), turnSigned };
+    }
+
     // Spaziatura reale (metri) tra un box giocatore e il successivo lungo la
     // corsia box — vedi frontend/shared/pitBoxLoader.js e
     // docs/superpowers/specs/2026-08-03-f1-pit-boxes-design.md. Si cammina
@@ -256,12 +313,16 @@
     // Catmull-Rom campionata usata per il rendering): backend e frontend
     // richiamano questa stessa funzione con gli stessi input, garantendo che
     // l'auto si fermi esattamente davanti al proprio box.
-    // Valore misurato sul modello REALE renderizzato in gioco (non sul file
-    // .glb grezzo): f1PitBox.glb ha ingombro grezzo ~6.2×6m in pianta, ma
-    // pitBoxLoader.js applica un fattore 3.5x (stesso della macchina, vedi
-    // loadCarModel) → ingombro reale in gioco ~21.7×21m. 8m (basato sul solo
-    // file grezzo, prima di scoprire che serviva il fattore 3.5x) faceva
-    // sovrapporre i box tra loro — verificato in playtest dall'utente.
+    // Valore misurato sull'ingombro REALE del box in gioco (~21.7m in pianta
+    // col vecchio f1PitBox.glb, che era grezzo ~6.2×6m moltiplicato 3.5x da
+    // pitBoxLoader.js). 8m — basato sul solo file grezzo, prima di scoprire
+    // che serviva il fattore di scala — faceva sovrapporre i box tra loro,
+    // verificato in playtest dall'utente.
+    // Dal 2026-08-09 il modello è circuit/pitBox.glb, in scala 1:1 e senza
+    // moltiplicatore: è stato dimensionato apposta a 21.8m di larghezza per
+    // NON cambiare questa costante, che è condivisa con l'autopilota
+    // server-side (backend/sockets/games/f1GameSocket.js) e determina dove
+    // le auto si fermano davvero.
     const PIT_BOX_SPACING = 24;
 
     // Distanza dal bordo della corsia box (pitRoadHalf) alla quale piazzare
@@ -367,6 +428,71 @@
         // rispetto alla lunghezza del giro): resta sul punto di partenza
         // invece di un valore inventato.
         return { x: points[startIndex].x, z: points[startIndex].z, fromIdx: startIndex, toIdx: (startIndex + 1) % n };
+    }
+
+    // Primo campione, camminando da startIndex nel verso dir (+1/-1), il cui
+    // punto PROIETTATO dista almeno `spacing` da `from`. -1 se non esiste.
+    //
+    // Serve a comporre file di oggetti contigui (tribune, edifici box). Il
+    // modo ovvio — convertire la spaziatura in un numero di campioni,
+    // `Math.round(spacing / stepLen)` — sbaglia due volte: l'arrotondamento
+    // introduce da solo un errore (18.4/5.17 -> 4 campioni = 20.7, +12%), e
+    // soprattutto ignora che gli oggetti stanno SPOSTATI DI LATO rispetto
+    // alla linea centrale: su una curva di raggio 158 con offset 29, l'arco
+    // percorso dagli oggetti non è quello dei campioni. Misurando la distanza
+    // reale fra i punti proiettati, entrambi gli errori spariscono e la fila
+    // resta continua su qualunque geometria (Rif. "buco al traguardo"
+    // segnalato dall'utente il 2026-08-09: distanze reali di 14.3 e 17.2 fra
+    // moduli che dovevano stare a 18.4).
+    //
+    // `project(idx) -> {x, z}` mappa un indice nel punto da misurare: per la
+    // scenografia è il punto già offsettato di lato, non il campione grezzo.
+    function advanceToDistance(points, startIndex, dir, closed, from, spacing, project) {
+        const n = points.length;
+        const step = dir >= 0 ? 1 : -1;
+        let idx = startIndex;
+        for (let k = 0; k < n; k++) {
+            idx += step;
+            if (closed) {
+                idx = ((idx % n) + n) % n;
+            } else if (idx < 0 || idx >= n) {
+                return -1;
+            }
+            const q = project(idx);
+            if (Math.hypot(q.x - from.x, q.z - from.z) >= spacing) return idx;
+        }
+        return -1;
+    }
+
+    // Come advanceToDistance, ma con la posizione ESATTA invece del primo
+    // campione utile: ritorna { idx, prevIdx, t }, dove t è il fattore di
+    // interpolazione fra prevIdx e idx al quale la distanza da `from` vale
+    // esattamente `spacing`. null se il percorso finisce prima.
+    //
+    // Serve perché i campioni sono radi rispetto agli oggetti da affiancare:
+    // sul tracciato "prova" un campione vale 5.17 unità, quindi accontentarsi
+    // del primo oltre la soglia sfora di quasi due unità e riapre il varco
+    // che si voleva chiudere (misurato: moduli a 20.1 invece di 19.2). La
+    // bisezione costa una manciata di iterazioni ed è codice di caricamento,
+    // eseguito una volta per tracciato.
+    function advanceToDistancePoint(points, startIndex, dir, closed, from, spacing, project) {
+        const idx = advanceToDistance(points, startIndex, dir, closed, from, spacing, project);
+        if (idx < 0) return null;
+        const n = points.length;
+        const prevIdx = closed ? (((idx - (dir >= 0 ? 1 : -1)) % n) + n) % n : idx - (dir >= 0 ? 1 : -1);
+        const a = project(prevIdx), b = project(idx);
+        const distOf = (t) => {
+            const x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t;
+            return Math.hypot(x - from.x, z - from.z);
+        };
+        // a sta sotto la soglia e b sopra (per costruzione di
+        // advanceToDistance), quindi la soluzione è nell'intervallo.
+        let lo = 0, hi = 1;
+        for (let k = 0; k < 24; k++) {
+            const mid = (lo + hi) / 2;
+            if (distOf(mid) < spacing) lo = mid; else hi = mid;
+        }
+        return { idx, prevIdx, t: (lo + hi) / 2 };
     }
 
     // count posizioni equispaziate lungo la corsia box, centrate su
@@ -635,8 +761,12 @@
         splitByBridge,
         tangentAt,
         normalAt,
+        curvatureAt,
+        bridgeHeightAt,
         pitBoxAnchors,
         walkClosedLoop,
+        advanceToDistance,
+        advanceToDistancePoint,
         gridSpawnPoint,
         pointInOrientedBox,
         snapPitPathEnds,

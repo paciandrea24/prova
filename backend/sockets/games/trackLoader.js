@@ -11,6 +11,9 @@ const TRACKS_DIR = path.join(__dirname, '..', '..', '..', 'frontend', 'tracks');
 const RACELINES_DIR = path.join(__dirname, '..', '..', 'tools');
 const TRACK_ID_PATTERN = /^[a-z0-9-]+$/;
 const SAMPLES = 1000;
+// Stesso valore usato da frontend/f1.js per campionare la corsia box: la
+// corsia disegnata e quella percorsa dall'autopilota devono coincidere.
+const PIT_LANE_SAMPLES = 300;
 const QUALI_LEAD = 8;        // unità avanti alla linea di partenza per lo spawn di qualifica
 // GRID_START/GRID_STAGGER/GRID_LANE_OFFSET: vedi TrackGeometry (modulo
 // condiviso) — spostate lì così il disegno permanente della griglia sulla
@@ -66,8 +69,20 @@ function interpolateLineControls(controls, targetLen) {
     return out;
 }
 
+// F1_RACELINE_SUFFIX (spento di default, stesso schema di F1_TYRE_SLIP_MODEL
+// e affini in f1GameSocket.js/physics/*: si imposta PRIMA di avviare il
+// server, mai a runtime — trackLoader cachea il risultato di buildTrack per
+// id al primo loadTrack, vedi `cache` sopra) — permette di far caricare al
+// gioco vero un file *-raceline.json ALTERNATIVO (es. "-sa" per
+// "prova-sa-raceline.json") senza mai toccare/sovrascrivere quello di
+// produzione, per playtestare un candidato dell'ottimizzatore in localhost
+// prima di promuoverlo.
+function racelineSuffix() {
+    return process.env.F1_RACELINE_SUFFIX || '';
+}
+
 function loadRacelineData(id) {
-    const file = path.join(RACELINES_DIR, `${id}-raceline.json`);
+    const file = path.join(RACELINES_DIR, `${id}${racelineSuffix()}-raceline.json`);
     if (!fs.existsSync(file)) return null;
     try {
         const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -197,6 +212,17 @@ function buildTrack(id, raw) {
     // comandi in uscita dai box (VehicleMotionModel.js).
     const pitPath = TrackGeometry.snapPitPathEnds(raw.pit.path, points, raw.roadHalfWidth);
 
+    // Punti CAMPIONATI della corsia box: la stessa espressione usata da
+    // frontend/f1.js per disegnarla (sampleOpenPath + tuckPitEndsToTrack), così
+    // la linea che l'autopilota percorre e quella che il giocatore vede non
+    // possono divergere. L'autopilota camminava sui punti di CONTROLLO grezzi
+    // (7 su "prova"): muovendosi in retta fra un controllo e l'altro tagliava
+    // le curve, allontanandosi fino a 3.35 unità dalla linea della corsia su
+    // una semilarghezza di 5 (misurato) — "il pilota automatico non segue
+    // esattamente la corsia", segnalato dall'utente il 2026-08-09.
+    const pitLanePts = TrackGeometry.tuckPitEndsToTrack(
+        TrackGeometry.sampleOpenPath(pitPath, PIT_LANE_SAMPLES), points);
+
     return {
         id,
         name: raw.name,
@@ -205,6 +231,7 @@ function buildTrack(id, raw) {
         lapLength,
         totalLaps,
         pitPath,
+        pitLanePts,
         pitEntryIndex,
         startFinishIndex,
         pitBoxIndex: raw.pit.boxIndex,

@@ -1,0 +1,34 @@
+"""Registry degli asset del circuito: assetId -> build(kit) -> (span, height).
+Ogni build() scolpisce i pezzi con il kit e ritorna l'ingombro orizzontale e
+l'altezza, usati solo per inquadrare il render."""
+from . import (grandstands, billboards, pitBuildings, raceStructures, safety,
+               decor, people, trackside, pitBox)
+
+ASSET_BUILDERS = {
+    'grandStand':        grandstands.build_grand_stand,
+    'grandStandAwning':  grandstands.build_grand_stand_awning,
+    'grandStandCovered': grandstands.build_grand_stand_covered,
+    'billboard':         billboards.build_billboard,
+    'billboardLow':      billboards.build_billboard_low,
+    'pitsGarageClosed':  pitBuildings.build_pits_garage_closed,
+    'pitsOffice':        pitBuildings.build_pits_office,
+    'raceControlTower':  raceStructures.build_race_control_tower,
+    'startGantry':       raceStructures.build_start_gantry,
+    'podium':            raceStructures.build_podium,
+    'tyreStack':         safety.build_tyre_stack,
+    'catchFence':        safety.build_catch_fence,
+    'marshalPost':       safety.build_marshal_post,
+    'pylon':             decor.build_pylon,
+    'flagPole':          decor.build_flag_pole,
+    'paddockTent':       decor.build_paddock_tent,
+    'spectatorA':        people.make_spectator('spectatorA'),
+    'spectatorB':        people.make_spectator('spectatorB'),
+    'spectatorC':        people.make_spectator('spectatorC'),
+    'pitCrew':           people.build_pit_crew,
+    'pitCrewKneel':      people.build_pit_crew_kneel,
+    'brakingBoard':      trackside.build_braking_board,
+    'concreteBarrier':   trackside.build_concrete_barrier,
+    'footbridge':        trackside.build_footbridge,
+    # Non scenografia: è il box del giocatore, ricolorato a runtime.
+    'pitBox':            pitBox.build_pit_box,
+}

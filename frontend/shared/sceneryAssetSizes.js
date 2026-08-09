@@ -1,0 +1,148 @@
+// frontend/shared/sceneryAssetSizes.js
+//
+// Ingombro reale di ogni asset scenico, in unità di gioco, misurato sui .glb
+// esportati (vedi la tabella in docs/f1-notes.md). Fonte unica: i moduli di
+// scenografia devono sapere quanto è grande un oggetto per non piazzarne due
+// sovrapposti e per non infilarne uno alto sotto un tratto di pista
+// sopraelevata.
+//
+// w = larghezza (X locale), h = altezza, d = profondità (Z locale, il fronte).
+// Se si rigenerano gli asset con dimensioni diverse, aggiornare qui: un
+// valore sbagliato non rompe nulla in modo evidente, produce solo
+// compenetrazioni che si notano soltanto guardando il circuito.
+(function (root, factory) {
+    if (typeof module === 'object' && module.exports) module.exports = factory();
+    else root.SceneryAssetSizes = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+
+    const SIZES = {
+        grandStand:        { w: 19.2, h: 12.3, d: 12.8 },
+        grandStandAwning:  { w: 19.2, h: 16.0, d: 13.3 },
+        grandStandCovered: { w: 19.2, h: 14.7, d: 13.2 },
+        billboard:         { w: 16.4, h: 12.9, d: 1.6 },
+        billboardLow:      { w: 16.4, h: 4.5,  d: 1.4 },
+        pitsGarageClosed:  { w: 20.6, h: 8.3,  d: 14.7 },
+        pitsOffice:        { w: 20.7, h: 13.1, d: 14.9 },
+        raceControlTower:  { w: 14.6, h: 33.7, d: 12.6 },
+        startGantry:       { w: 34.5, h: 16.0, d: 2.4 },
+        podium:            { w: 12.0, h: 9.0,  d: 7.1 },
+        tyreStack:         { w: 7.0,  h: 1.9,  d: 2.4 },
+        catchFence:        { w: 12.0, h: 9.0,  d: 0.5 },
+        marshalPost:       { w: 5.5,  h: 8.9,  d: 4.5 },
+        pylon:             { w: 6.4,  h: 26.2, d: 3.0 },
+        flagPole:          { w: 5.4,  h: 15.0, d: 1.6 },
+        paddockTent:       { w: 16.8, h: 7.2,  d: 13.0 },
+        brakingBoard:      { w: 2.2,  h: 3.1,  d: 0.7 },
+        concreteBarrier:   { w: 6.0,  h: 1.4,  d: 1.4 },
+        footbridge:        { w: 36.5, h: 13.3, d: 4.5 },
+        spectatorA:        { w: 0.6,  h: 1.4,  d: 0.7 },
+        spectatorB:        { w: 0.6,  h: 1.4,  d: 0.7 },
+        spectatorC:        { w: 0.6,  h: 1.4,  d: 0.7 },
+        // Alberi Kenney, unici asset non custom rimasti: dimensioni già
+        // moltiplicate per KENNEY_MODEL_SCALE = 6.
+        treeLarge:         { w: 2.1,  h: 9.0,  d: 2.5 },
+        treeSmall:         { w: 1.4,  h: 5.4,  d: 1.5 },
+    };
+
+    const FALLBACK = { w: 6, h: 6, d: 6 };
+
+    function sizeOf(asset) {
+        return SIZES[asset] || FALLBACK;
+    }
+
+    function heightOf(asset) {
+        return sizeOf(asset).h;
+    }
+
+    // Raggio del cerchio che contiene il footprint: serve per i test di
+    // distanza minima fra due oggetti, che non conoscono l'orientamento
+    // reciproco.
+    function footprintRadius(asset) {
+        const s = sizeOf(asset);
+        return Math.hypot(s.w, s.d) / 2;
+    }
+
+    // Angoli del footprint in coordinate mondo, con la stessa convenzione di
+    // rotazione che loadScenery applica all'istanza (THREE.Object3D.rotation.y).
+    function footprintCorners(item) {
+        const s = sizeOf(item.asset);
+        const sc = item.scale > 1 ? item.scale : 1;
+        const hw = (s.w * sc) / 2, hd = (s.d * sc) / 2;
+        const c = Math.cos(item.rotY || 0), sn = Math.sin(item.rotY || 0);
+        return [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(function (p) {
+            return { x: item.x + p[0] * c + p[1] * sn, z: item.z - p[0] * sn + p[1] * c };
+        });
+    }
+
+    function topOf(item) {
+        const sc = item.scale > 1 ? item.scale : 1;
+        return (item.y || 0) + heightOf(item.asset) * sc;
+    }
+
+    // Test SAT fra due rettangoli orientati. Serve un test vero e non un
+    // confronto fra raggi: con oggetti lunghi e sottili (reti, cartelloni) il
+    // raggio circolare dà falsi positivi a raffica e finisce per nascondere
+    // le collisioni reali.
+    function polysOverlap(a, b) {
+        const polys = [a, b];
+        for (let k = 0; k < 2; k++) {
+            const poly = polys[k];
+            for (let i = 0; i < poly.length; i++) {
+                const j = (i + 1) % poly.length;
+                const nx = -(poly[j].z - poly[i].z), nz = poly[j].x - poly[i].x;
+                let minA = Infinity, maxA = -Infinity, minB = Infinity, maxB = -Infinity;
+                for (const p of a) { const d = p.x * nx + p.z * nz; if (d < minA) minA = d; if (d > maxA) maxA = d; }
+                for (const p of b) { const d = p.x * nx + p.z * nz; if (d < minB) minB = d; if (d > maxB) maxB = d; }
+                if (maxA < minB || maxB < minA) return false;   // asse separatore
+            }
+        }
+        return true;
+    }
+
+    // Due oggetti si compenetrano se i footprint si sovrappongono E i loro
+    // intervalli di quota si intersecano: un cartellone sospeso sopra una
+    // barriera bassa non è una collisione.
+    function itemsOverlap(a, b) {
+        if ((a.y || 0) >= topOf(b) || (b.y || 0) >= topOf(a)) return false;
+        return polysOverlap(footprintCorners(a), footprintCorners(b));
+    }
+
+    // Registro spaziale degli oggetti già piazzati. Senza griglia il
+    // controllo sarebbe quadratico sulle ~800 voci solide di un layout.
+    function createCollisionIndex(cellSize) {
+        const cell = cellSize || 40;
+        const grid = new Map();
+        const keysOf = (item) => {
+            const r = footprintRadius(item.asset) * (item.scale > 1 ? item.scale : 1);
+            const keys = [];
+            for (let gx = Math.floor((item.x - r) / cell); gx <= Math.floor((item.x + r) / cell); gx++) {
+                for (let gz = Math.floor((item.z - r) / cell); gz <= Math.floor((item.z + r) / cell); gz++) {
+                    keys.push(gx + ':' + gz);
+                }
+            }
+            return keys;
+        };
+        return {
+            fits(item) {
+                for (const k of keysOf(item)) {
+                    const bucket = grid.get(k);
+                    if (!bucket) continue;
+                    for (const other of bucket) if (itemsOverlap(item, other)) return false;
+                }
+                return true;
+            },
+            add(item) {
+                for (const k of keysOf(item)) {
+                    if (!grid.has(k)) grid.set(k, []);
+                    grid.get(k).push(item);
+                }
+                return item;
+            },
+        };
+    }
+
+    return {
+        SIZES, sizeOf, heightOf, footprintRadius,
+        footprintCorners, itemsOverlap, polysOverlap, createCollisionIndex,
+    };
+});

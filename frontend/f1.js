@@ -63,8 +63,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // THREE.JS SETUP
     // ====================================================
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87CEEB);
-    scene.fog = new THREE.FogExp2(0xadd8e6, 0.0022);
+    // Il colore della nebbia DEVE essere quello del cielo: con due tinte
+    // diverse (nebbia 0xadd8e6 contro cielo 0x87CEEB) la linea di stacco fra
+    // prato e cielo resta leggibile e la mappa sembra infinita — segnalato
+    // dall'utente il 2026-08-09. Densità abbassata da 0.0022 a 0.0016: a
+    // 0.0022 la nebbia era già al 99% a 1000 unità, cioè le colline
+    // dell'orizzonte (SceneryHills) sarebbero sparite prima di vedersi
+    // (camera.far è 1200).
+    const SKY_COLOR = 0x87CEEB;
+    scene.background = new THREE.Color(SKY_COLOR);
+    scene.fog = new THREE.FogExp2(SKY_COLOR, 0.0016);
 
     const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1200);
 
@@ -312,16 +320,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     // stesso approccio già usato per il prato di sfondo qui sopra.
     // ====================================================
     const SCENERY_ASSET_PATHS = {
+        // Alberi: unici Kenney rimasti, per scelta esplicita dell'utente, e
+        // unici a essere istanziati con un moltiplicatore di scala.
         treeLarge: '/assets/kenney/treeLarge.glb',
         treeSmall: '/assets/kenney/treeSmall.glb',
-        grandStand: '/assets/kenney/grandStand.glb',
-        grandStandAwning: '/assets/kenney/grandStandAwning.glb',
-        grandStandCovered: '/assets/kenney/grandStandCovered.glb',
-        billboard: '/assets/kenney/billboard.glb',
-        billboardLow: '/assets/kenney/billboardLow.glb',
-        pitsGarageClosed: '/assets/kenney/pitsGarageClosed.glb',
-        pitsOffice: '/assets/kenney/pitsOffice.glb',
+        // Catalogo voxel custom (vedi docs/f1-notes.md): modellati 1:1 in
+        // unità di gioco, quindi istanziati con scale 1.
+        grandStand: '/assets/custom/circuit/grandStand.glb',
+        grandStandAwning: '/assets/custom/circuit/grandStandAwning.glb',
+        grandStandCovered: '/assets/custom/circuit/grandStandCovered.glb',
+        billboard: '/assets/custom/circuit/billboard.glb',
+        billboardLow: '/assets/custom/circuit/billboardLow.glb',
+        pitsGarageClosed: '/assets/custom/circuit/pitsGarageClosed.glb',
+        pitsOffice: '/assets/custom/circuit/pitsOffice.glb',
+        // Landmark unici (SceneryLandmarks): gantry e passerella vengono
+        // scalati per scavalcare le barriere, gli altri restano a 1.
+        raceControlTower: '/assets/custom/circuit/raceControlTower.glb',
+        startGantry: '/assets/custom/circuit/startGantry.glb',
+        podium: '/assets/custom/circuit/podium.glb',
+        footbridge: '/assets/custom/circuit/footbridge.glb',
+        // Elementi distribuiti lungo il giro (SceneryTrackside).
+        tyreStack: '/assets/custom/circuit/tyreStack.glb',
+        catchFence: '/assets/custom/circuit/catchFence.glb',
+        marshalPost: '/assets/custom/circuit/marshalPost.glb',
+        brakingBoard: '/assets/custom/circuit/brakingBoard.glb',
+        concreteBarrier: '/assets/custom/circuit/concreteBarrier.glb',
+        pylon: '/assets/custom/circuit/pylon.glb',
+        flagPole: '/assets/custom/circuit/flagPole.glb',
+        paddockTent: '/assets/custom/circuit/paddockTent.glb',
+        // Spettatori (SceneryCrowd): tre varianti alternate per dare
+        // varietà alla folla. Restano 12 InstancedMesh anche con centinaia
+        // di figure.
+        spectatorA: '/assets/custom/circuit/spectatorA.glb',
+        spectatorB: '/assets/custom/circuit/spectatorB.glb',
+        spectatorC: '/assets/custom/circuit/spectatorC.glb',
     };
+
+    // Asset che NON proiettano ombra. Il costo di un InstancedMesh in ombra
+    // non si paga in draw call ma nella shadow map, che deve ridisegnare ogni
+    // istanza a ogni frame: con ~1250 alberi e ~1400 spettatori il gioco
+    // iniziava a scattare anche in localhost. Sono anche i casi in cui
+    // l'ombra si nota meno — figure piccole e vegetazione lontana — mentre
+    // tribune, edifici e strutture continuano a proiettarla.
+    const NO_SHADOW_ASSETS = new Set([
+        'treeLarge', 'treeSmall', 'spectatorA', 'spectatorB', 'spectatorC',
+    ]);
 
     function loadScenery(container, layout) {
         const sceneryLoader = new THREE.GLTFLoader();
@@ -343,7 +386,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 for (const mesh of meshes) {
                     const im = new THREE.InstancedMesh(mesh.geometry, mesh.material.clone(), items.length);
                     im.frustumCulled = false;
-                    im.castShadow = true;
+                    im.castShadow = !NO_SHADOW_ASSETS.has(asset);
                     im.receiveShadow = true;
                     const localMatrix = mesh.matrixWorld;
 
@@ -380,7 +423,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     // quindi resta nella temporal dead zone finché l'esecuzione non arriva
     // alla sua riga — chiamare loadScenery prima, pur essendo la funzione
     // stessa hoistata, faceva scattare un ReferenceError a runtime.
-    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH);
+    // I posti a sedere delle tribune stanno in un JSON generato dal builder
+    // degli asset (backend/tools/f1CircuitAssetsBuilder.py): TrackScenery è
+    // un modulo puro e non può fare fetch, quindi glieli passiamo noi. Se il
+    // file manca la scenografia viene comunque generata, solo senza
+    // spettatori, invece di far fallire il caricamento della pista.
+    let seatAnchors = null;
+    try {
+        const seatsRes = await fetch('/assets/custom/circuit/grandStandSeats.json');
+        if (seatsRes.ok) seatAnchors = (await seatsRes.json()).seats;
+    } catch (err) {
+        console.warn('[F1] posti tribuna non caricati, tribune vuote:', err);
+    }
+    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors);
     loadScenery(scene, sceneryLayout);
 
     // ====================================================
@@ -636,6 +691,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             marker.rotation.y = Math.atan2(anchor.tx, anchor.tz);
             scene.add(marker);
             stallMarkersAdded.add(color);
+
+            // Meccanici davanti al box (Rif. richiesta utente 2026-08-09: gli
+            // asset erano modellati ma non li usava nessuno). Modelli
+            // indipendenti e non InstancedMesh: sono cinque per box, pochi, e
+            // seguono lo stesso ciclo di vita della segnaletica. Stanno dentro
+            // la guardia stallMarkersAdded proprio per questo: senza, ogni
+            // f1StateUpdate ne aggiungerebbe altri cinque sopra i precedenti.
+            for (const crew of PitBoxLoader.crewPlacements({ x: bx, y: 0, z: bz, rotY })) {
+                new THREE.GLTFLoader().load(`/assets/custom/circuit/${crew.asset}.glb`, (gltf) => {
+                    gltf.scene.position.set(crew.x, crew.y, crew.z);
+                    gltf.scene.rotation.y = crew.rotY;
+                    gltf.scene.scale.setScalar(crew.scale || 1);
+                    gltf.scene.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+                    scene.add(gltf.scene);
+                }, undefined, (err) => console.error(`[F1] Errore caricando ${crew.asset}.glb:`, err));
+            }
         }
 
         PitBoxLoader.loadPitBoxModel(color, { x: bx, y: 0, z: bz, rotY }, (model) => {

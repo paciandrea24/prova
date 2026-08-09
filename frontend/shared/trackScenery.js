@@ -6,9 +6,18 @@
 // nessuna dipendenza da Three.js o il browser — chi lo consuma (frontend/f1.js)
 // decide come renderizzare ogni voce del layout.
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory(require('./trackGeometry.js'));
-    else root.TrackScenery = factory(root.TrackGeometry);
-})(typeof self !== 'undefined' ? self : this, function (TrackGeometry) {
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory(require('./trackGeometry.js'), require('./sceneryLandmarks.js'),
+                                 require('./sceneryTrackside.js'), require('./sceneryCrowd.js'),
+                                 require('./sceneryAssetSizes.js'), require('./sceneryHills.js'));
+    } else {
+        root.TrackScenery = factory(root.TrackGeometry, root.SceneryLandmarks,
+                                    root.SceneryTrackside, root.SceneryCrowd,
+                                    root.SceneryAssetSizes, root.SceneryHills);
+    }
+})(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryLandmarks,
+                                                        SceneryTrackside, SceneryCrowd,
+                                                        SceneryAssetSizes, SceneryHills) {
 
     // Hash FNV-1a 32 bit di una stringa: seed deterministico dall'id del
     // tracciato, così lo stesso tracciato genera sempre lo stesso layout
@@ -44,34 +53,66 @@
         return weighted[weighted.length - 1].asset;
     }
 
-    // Scala unica per tutti gli asset Kenney di questo file (natura, tribune,
-    // paddock, folla). Verificata a runtime (bounding box mondo delle
-    // istanze, 2026-07-22): a 3.5× — lo stesso fattore usato per
-    // raceCarWhite in loadCarModel — le dimensioni sono realistiche (albero
-    // grande ≈5.3m, personaggio ≈2.3m, tribuna ≈4.2m) ma percepite come
-    // poco "presenti" in terza persona su un tracciato largo 22 unità: su
-    // richiesta esplicita, scala aumentata a 6× per un effetto più
-    // vistoso/"epico", sacrificando l'accuratezza proporzionale rispetto
-    // all'auto (che resta a 3.5×, non toccata). Nessuna scala differenziata
-    // per pack: il fattore funziona uniformemente su Racing Kit/Nature
-    // Kit/Mini Characters, quindi si tiene una sola costante.
+    // Scala degli asset Kenney ANCORA in uso in questo file: dal 2026-08-09
+    // solo gli alberi (treeLarge/treeSmall), che l'utente ha scelto di
+    // tenere. Tutto il resto è passato ai modelli voxel custom di
+    // frontend/assets/custom/circuit/ (vedi docs/f1-notes.md), modellati 1:1
+    // in unità di gioco e quindi istanziati con scale 1.
+    //
+    // Storico del valore: a 3.5× — lo stesso fattore usato per l'auto — le
+    // dimensioni erano realistiche ma percepite come poco "presenti" in
+    // terza persona su un tracciato largo 22 unità, quindi su richiesta
+    // esplicita si è passati a 6× per un effetto più vistoso.
     const KENNEY_MODEL_SCALE = 6;
 
+    // Scala degli asset voxel custom: nessun moltiplicatore, sono già
+    // modellati in unità di gioco.
+    const CUSTOM_MODEL_SCALE = 1;
+
+    // Gli alberi sono gli UNICI Kenney rimasti e restano alla loro scala:
+    // non sono stati rimodellati in voxel custom per scelta dell'utente.
     const NATURE_ASSETS = [
         { asset: 'treeLarge', weight: 1, scale: KENNEY_MODEL_SCALE },
         { asset: 'treeSmall', weight: 1, scale: KENNEY_MODEL_SCALE },
     ];
     const NATURE_SCALE = Object.fromEntries(NATURE_ASSETS.map(a => [a.asset, a.scale]));
 
+    // Scatter natura, valori originali. Un tentativo di allargare la fascia
+    // a 200 unità per riempire l'orizzonte è stato annullato: portava gli
+    // alberi da ~230 a oltre 700 e faceva scattare il gioco anche in
+    // localhost, senza peraltro togliere la sensazione di prato infinito
+    // (quella dipende dal terreno piatto, non dal numero di alberi).
     const NATURE_ATTEMPTS     = 500;  // candidati casuali provati per lo scatter natura
     const NATURE_MIN_MARGIN   = 4;    // oltre barrierDist: distanza minima dalla pista
     const NATURE_MAX_MARGIN   = 70;   // oltre barrierDist: distanza massima dalla pista
     const NATURE_MIN_SPACING  = 7;    // tra due oggetti natura
-    const STRUCTURE_CLEARANCE = 18;   // natura vs tribune/paddock
+    const STRUCTURE_CLEARANCE = 22;   // natura vs tribune/paddock (era 18: strutture più grandi)
     const PIT_NATURE_MARGIN   = 5;    // oltre pitRoadHalf
 
-    const GRANDSTAND_OFFSET_MARGIN = 6;  // oltre barrierDist
-    const GRANDSTAND_PIT_MARGIN    = 20; // oltre pitRoadHalf: evita di piazzare tribune sopra la corsia box
+    // Boschi che chiudono la vista oltre il terrapieno (Rif. richiesta utente
+    // 2026-08-09: "colline, boschi folti e cose del genere per chiudere un po'
+    // la vista intorno al circuito"). Distinti dallo scatter di NATURE_*, che
+    // riempie la fascia vicino alla pista: qui gli alberi stanno in MACCHIE
+    // (un centro, alberi fitti attorno), perché uno scatter uniforme su
+    // un'area così grande dà un prato spennacchiato, non un bosco — ed è
+    // esattamente il tentativo già bocciato in passato.
+    const WOOD_CLUSTERS       = 26;   // macchie tentate per tracciato
+    const WOOD_PER_CLUSTER    = 14;   // alberi tentati per macchia
+    const WOOD_CLUSTER_RADIUS = 34;
+    const WOOD_MIN_SPACING    = 6;
+    // Tetto complessivo, sopra i ~240 alberi di NATURE_*: a 700 totali il
+    // gioco scattava anche in localhost (vedi il commento di NATURE_ATTEMPTS).
+    // Da allora gli alberi sono esclusi dalle ombre, che di quel calo erano la
+    // causa vera, ma il tetto resta esplicito e ritarabile.
+    const WOOD_MAX_TREES      = 300;
+    // Margine oltre il bordo del terrapieno entro cui NON si pianta: è la
+    // fascia dove si finisce uscendo di pista, deve restare sgombra.
+    const WOOD_MIN_MARGIN     = 20;
+
+    // Ritarati il 2026-08-09 sui modelli voxel custom, ~3 volte più grandi
+    // dei Kenney che sostituiscono (tribuna: da 6.0×5.38 a 19.2×12.3).
+    const GRANDSTAND_OFFSET_MARGIN = 10; // era 6: la tribuna è profonda 12.8, mezza profondità 6.4
+    const GRANDSTAND_PIT_MARGIN    = 24; // era 20: mezza diagonale della tribuna nuova
     // Le 3 varianti a 1 piano: grandStandCoveredRound/grandStandRound sono
     // escluse a priori (footprint circolare 1.64x1.64 contro 1.00x1.00 delle
     // altre — non affiancabili a un bordo dritto, verificato con un render di
@@ -86,29 +127,80 @@
     // (tetto piatto o assente) si impilano senza artefatti — qui si usa la
     // variante senza tetto per restare leggera.
     const MAIN_STAND_ASSET         = 'grandStand';
-    const MAIN_STAND_COLS          = 6;
-    const MAIN_STAND_TIERS         = 2;
-    // Dimensioni reali del modulo a KENNEY_MODEL_SCALE, misurate dal
-    // bounding box del file .glb (il modulo trackScenery non ha accesso alla
-    // mesh, solo f1.js la carica): raw x=1.00 y=0.90 z=1.00 → a scala 6,
-    // 6 unità di passo tra moduli affiancati, 5.4 unità per livello.
-    const MAIN_STAND_COL_SPACING   = 6.0;
-    const MAIN_STAND_TIER_HEIGHT   = 5.4;
-    // 10, non 6 come la tribuna normale: deve superare il raggio esterno dei
-    // cartelloni sponsor del paddock (centrati a barrierDist+PADDOCK_MARGIN=5,
-    // mezza profondita' billboard 1.44 a scala 6 -> bordo esterno a
-    // barrierDist+6.44) altrimenti un cartellone finisce dentro la tribuna
-    // principale (profondita' grandStand 6 unita' a scala 6, mezza profondita'
-    // 3 -> serve MAIN_STAND_OFFSET_MARGIN >= 9.44; 10 per un margine di sicurezza).
-    const MAIN_STAND_OFFSET_MARGIN = 10;
+    // 7 e non 3: l'utente vuole una tribuna unica e lunga, che segua la pista
+    // senza interruzioni (playtest 2026-08-09 — "non voglio un buco, voglio
+    // grandstand continui che seguono l'andamento della pista"). A 18.4 di
+    // passo la fila è lunga ~129 unità.
+    const MAIN_STAND_COLS          = 7;
+    // Distanza minima di una tribuna SPARSA dalla fila principale. Con la sola
+    // STRUCTURE_CLEARANCE (22) una tribuna finiva a 32.4 dal modulo esterno:
+    // troppo lontana per leggersi come continuazione della fila, troppo vicina
+    // per leggersi come struttura a sé — cioè esattamente il "buco"
+    // fotografato dall'utente. Meglio nessuna tribuna lì che una a metà strada.
+    const MAIN_STAND_ISOLATION     = 60;
+    // Le tribune secondarie sono SCHIERE, non moduli isolati: si allungano
+    // finché lo slot resta valido, quindi si dimensionano da sé (lunghe sui
+    // rettilinei, corte dove la corsia box o un cavalcavia le interrompono).
+    // Sotto ROW_MIN_COLS la schiera viene scartata del tutto: una tribuna
+    // isolata in mezzo al nulla è proprio ciò che l'utente ha segnalato come
+    // "un buco" accanto alla fila lunga.
+    const ROW_MAX_COLS = 6;
+    const ROW_MIN_COLS = 2;
+    // 1 livello e non 2: impilare due moduli era un'idea nata coi Kenney,
+    // alti 5.38, dove serviva a dare volume. Col modulo custom alto 12.3 il
+    // secondo livello si legge come due tribune sovrapposte — bocciato
+    // dall'utente al playtest del 2026-08-09.
+    const MAIN_STAND_TIERS         = 1;
+    // Dimensioni reali del modulo custom, misurate sul .glb (il modulo
+    // trackScenery non ha accesso alla mesh, solo f1.js la carica):
+    // 19.2 largo × 12.3 alto × 12.8 profondo, a scala 1.
+    // Esattamente la larghezza reale del modulo: i moduli si toccano senza
+    // compenetrarsi. Prima era 18.4 — una compenetrazione voluta di 0.8 per
+    // mascherare i varchi che il passo in campioni apriva qua e là; ora che
+    // la fila si costruisce per distanza reale interpolata
+    // (TrackGeometry.advanceToDistancePoint) il contatto è esatto e il
+    // trucco non serve più.
+    const MAIN_STAND_COL_SPACING   = 19.2;
+    const MAIN_STAND_TIER_HEIGHT   = 12.3;  // era 5.4: altezza reale del modulo
+    // Deve superare il raggio esterno dei cartelloni sponsor del paddock
+    // (centrati a barrierDist+PADDOCK_MARGIN=5, mezza profondità billboard
+    // 0.8 -> bordo esterno a barrierDist+5.8) sommato alla mezza profondità
+    // della tribuna (6.4): serve >= 12.2, si tiene 14 per margine.
+    const MAIN_STAND_OFFSET_MARGIN = 14;    // era 10 con i modelli Kenney
 
     const START_WINDOW_LEN           = 60;  // lunghezza d'arco totale intorno alla partenza
-    const START_SPACING              = 12;
+    const START_SPACING              = 20;  // era 12: i cartelloni custom sono larghi 16.4
     const PADDOCK_MARGIN             = 5;   // oltre barrierDist, per i cartelloni sponsor partenza
-    const PIT_BUILDING_OFFSET_MARGIN = 6;   // oltre pitRoadHalf
-    const PIT_BUILDING_STEP_SAMPLES  = 25;
-    // Meta' larghezza tangenziale della tribuna principale (6 moduli x 6
-    // unita' di passo = 36, meta' 18): i cartelloni sponsor non vengono
+    // Gli edifici decorativi si allineano ai BOX GIOCATORE, non alla corsia.
+    //
+    // Era 10, cioè li metteva a 15 unità dall'asse corsia mentre i box veri
+    // stanno a 28: finivano DAVANTI alla fila dei box, in mezzo allo spazio
+    // dove l'auto si ferma e sterza per uscire — uno faceva da muro davanti
+    // all'ultimo box (segnalato dall'utente 2026-08-10).
+    // 19.4 allinea il FRONTE dell'edificio (profondo 14.7, quindi mezza
+    // profondità 7.35) a quello del garage giocatore (che sta a
+    // PLAYER_BOX_OFFSET_MARGIN - 11 = 12 oltre pitRoadHalf): 12 + 7.35 ≈ 19.4.
+    // Così edifici decorativi e box compongono un'unica fila continua, che è
+    // poi l'aspetto di una vera corsia box.
+    const PIT_BUILDING_OFFSET_MARGIN = 19.4;
+    // Gap fra il fianco di un edificio box e quello del successivo. Il passo
+    // non è più una costante di distanza (era PIT_BUILDING_STEP_LEN = 24, che
+    // contro edifici larghi 20.6 lasciava 3.4 unità di stacco e, quando un
+    // candidato veniva scartato dai filtri, apriva un vuoto di 27): la
+    // distanza fra due centri consecutivi si calcola dalle larghezze REALI dei
+    // due modelli, così garage (20.6) e uffici (20.7) alternati formano un
+    // fronte regolare invece di comparire "come messi a caso" (utente,
+    // playtest 2026-08-09).
+    const PIT_BUILDING_GAP           = 2;
+    // Distanza minima degli edifici box dal corridoio pista: mezza profondità
+    // dell'edificio (7.4) più margine, così l'imbocco della corsia resta
+    // libero e leggibile.
+    const PIT_BUILDING_TRACK_CLEARANCE = 10;
+    // Tratto iniziale della corsia box lasciato libero da edifici, in unità:
+    // è la zona d'imbocco, dove serve vedere dove si sta entrando.
+    const PIT_BUILDING_ENTRY_CLEARANCE = 70;
+    // Meta' larghezza tangenziale della tribuna principale (3 moduli x 19.4
+    // di passo = 58.2, meta' 29.1): i cartelloni sponsor non vengono
     // piazzati sul suo stesso lato entro questa distanza dal centro,
     // altrimenti finiscono visivamente davanti alla tribuna (segnalato
     // dall'utente durante il playtest, non solo un rischio teorico).
@@ -117,9 +209,9 @@
     // GRANDSTAND_PIT_MARGIN), i cartelloni del rettilineo di partenza non
     // controllavano affatto la corsia box: su tutti e 3 i tracciati esistenti
     // almeno un cartellone finiva dentro la corsia (verificato per misura
-    // diretta, non solo in teoria). 4 e' sufficiente a coprire la meta'
-    // profondita' billboard (~1.44 a scala 6) con margine.
-    const PADDOCK_PIT_CLEARANCE = 4;
+    // diretta, non solo in teoria). 5 copre la mezza profondità del
+    // cartellone custom (0.8) con ampio margine.
+    const PADDOCK_PIT_CLEARANCE = 5;
 
     // Zona box giocatore (vedi TrackGeometry.pitBoxAnchors,
     // frontend/shared/pitBoxLoader.js): i box colorati reali di ogni
@@ -134,16 +226,22 @@
     // insidePlayerBoxFootprint sotto): preciso indipendentemente dalla
     // posizione del box lungo la fila, niente più raggio da ritarare.
     //
-    // Ingombro reale (world-space, bbox locale PRE-rotazione, già scalata
-    // 3.5x) e margine di offset dalla corsia — STESSI valori di
-    // frontend/shared/pitBoxLoader.js (PIT_BOX_OFFSET_MARGIN) per lo
-    // stesso modello f1PitBox.glb, misurati con un'ispezione Blender
-    // headless del .glb reale (origine al centro geometrico, non
-    // simmetrica: fronte/apertura lungo +X locale a x=3.2 grezzo -> 11.2
-    // scalato, retro a x=-3.0 -> -10.5, lati a z=±3.0 -> ±10.5). Se il
-    // modello o lo scale cambiano, aggiornare ANCHE pitBoxLoader.js.
-    const PLAYER_BOX_LOCAL_BOUNDS = { xMin: -10.5, xMax: 11.2, zMin: -10.5, zMax: 10.5 };
-    const PLAYER_BOX_OFFSET_MARGIN = 13.2;
+    // Ingombro reale (world-space, bbox locale PRE-rotazione) e margine di
+    // offset dalla corsia — STESSI valori di frontend/shared/pitBoxLoader.js
+    // (PIT_BOX_OFFSET_MARGIN) per lo stesso modello, misurati sul .glb reale.
+    // Dal 2026-08-09 il modello è il voxel custom
+    // frontend/assets/custom/circuit/pitBox.glb: 21.8 x 22 unità, scala 1:1
+    // (non più 3.5x) e origine al centro, quindi bounds simmetrici — il
+    // vecchio f1PitBox.glb aveva il fronte lungo +X e bounds asimmetrici.
+    // Se il modello cambia, aggiornare ANCHE pitBoxLoader.js.
+    const PLAYER_BOX_LOCAL_BOUNDS = { xMin: -10.9, xMax: 10.9, zMin: -11, zMax: 11 };
+    // DEVE restare uguale a PitBoxLoader.PIT_BOX_OFFSET_MARGIN, altrimenti la
+    // scenografia esclude una zona diversa da quella dove i box vengono
+    // davvero piazzati. Era già successo: quando PIT_BOX_CLEARANCE passò da 2
+    // a 12 questo valore restò a 13.2 contro i 23.2 del loader, cioè la zona
+    // protetta era 10 unità fuori posto. Ora un test in trackScenery.test.js
+    // confronta le due costanti e fallisce se divergono.
+    const PLAYER_BOX_OFFSET_MARGIN = 23;
     // Un po' di respiro visivo oltre il vero muro del box, per non far
     // spuntare un albero/cartellone letteralmente a contatto.
     const PLAYER_BOX_CLEARANCE = 3;
@@ -174,8 +272,51 @@
             .map(([lx, lz]) => ({ x: bx + lx * cos + lz * sin, z: bz - lx * sin + lz * cos }));
     }
 
+    // Grembiule davanti al box: la fascia fra il bordo della corsia e il
+    // fronte del garage. È dove l'auto si FERMA (lo stallo sta a
+    // pitRoadHalf + PIT_STALL_CLEARANCE) e dove sterza per rientrare in
+    // corsia — quindi va tenuta sgombra tanto quanto il box stesso.
+    //
+    // Senza questa zona era protetto solo il garage (da 17 a 39 unità
+    // dall'asse corsia su una pista con pitRoadHalf 5), mentre gli edifici del
+    // paddock stanno a pitRoadHalf + PIT_BUILDING_OFFSET_MARGIN = 15, cioè
+    // ESATTAMENTE alla distanza dello stallo: uno di essi finiva davanti
+    // all'ultimo box come un muro, togliendo lo spazio per uscire (segnalato
+    // dall'utente 2026-08-10).
+    function playerBoxApronCorners(anchor, trackPts, pitRoadHalf) {
+        const nx = -anchor.tz, nz = anchor.tx;
+        const distPlus  = TrackGeometry.nearestPoint(trackPts, anchor.x + nx, anchor.z + nz).dist;
+        const distMinus = TrackGeometry.nearestPoint(trackPts, anchor.x - nx, anchor.z - nz).dist;
+        const side = distPlus >= distMinus ? 1 : -1;
+
+        // Dal bordo della corsia fino al fronte del garage.
+        const dNear = pitRoadHalf;
+        const dFar  = pitRoadHalf + PLAYER_BOX_OFFSET_MARGIN - PLAYER_BOX_LOCAL_BOUNDS.zMax;
+        // Largo quanto il box, così l'auto ha spazio anche per uscire di
+        // traverso invece che solo dritta.
+        const halfW = PLAYER_BOX_LOCAL_BOUNDS.xMax + PLAYER_BOX_CLEARANCE;
+
+        return [[dNear, -halfW], [dFar, -halfW], [dFar, halfW], [dNear, halfW]].map(([d, t]) => ({
+            x: anchor.x + nx * d * side + anchor.tx * t,
+            z: anchor.z + nz * d * side + anchor.tz * t,
+        }));
+    }
+
     // Test punto-in-poligono (ray casting): true se (x,z) cade dentro
     // l'ingombro reale di ALMENO uno dei box giocatore.
+    // Come insidePlayerBoxFootprint ma per un OGGETTO con un ingombro, non per
+    // un punto: un edificio profondo 14.7 può avere il centro fuori dalla zona
+    // protetta e sporgerci dentro con mezzo fianco — ed è esattamente così che
+    // un garage è finito a fare da muro davanti all'ultimo box, togliendo lo
+    // spazio per uscire (segnalato dall'utente 2026-08-10).
+    function itemHitsPlayerBoxZone(item, footprints) {
+        const corners = SceneryAssetSizes.footprintCorners(item);
+        for (const poly of footprints) {
+            if (SceneryAssetSizes.polysOverlap(corners, poly)) return true;
+        }
+        return false;
+    }
+
     function insidePlayerBoxFootprint(x, z, footprints) {
         for (const poly of footprints) {
             let inside = false;
@@ -193,9 +334,39 @@
     const POND_ATTEMPTS  = 60;
     const POND_CLEARANCE = 16;
 
+    // Margine di sicurezza fra la cima di un oggetto e l'intradosso della
+    // pista sopraelevata che ci passa sopra.
+    const BRIDGE_HEADROOM = 1.0;
+
+    // Costruisce il test "questo oggetto ci sta, sotto il ponte?".
+    //
+    // Serve perché terrainHeightAt lavora sui soli punti a terra: un oggetto
+    // piazzato sotto un cavalcavia riceve la quota del terreno e, se è più
+    // alto della luce del ponte, lo attraversa. Sul tracciato "prova" è
+    // esattamente quello che succedeva a reti, tribune e torre (198 punti di
+    // ponte fino a 11.5 unità di quota) — segnalato dall'utente con uno
+    // screenshot, non un rischio teorico.
+    function makeBridgeFilter(trackPts, barrierDist) {
+        const bridgePts = trackPts.filter(p => p.bridge);
+        // `heightOverride` serve per gli oggetti impilati (la tribuna
+        // principale su 2 livelli è alta il doppio del singolo modulo).
+        return function fitsUnderBridge(asset, x, z, groundY, heightOverride) {
+            if (!bridgePts.length) return true;
+            const bridgeY = TrackGeometry.bridgeHeightAt(bridgePts, x, z, barrierDist);
+            if (bridgeY === Infinity) return true;
+            const h = heightOverride || SceneryAssetSizes.heightOf(asset);
+            return h <= (bridgeY - groundY) - BRIDGE_HEADROOM;
+        };
+    }
+
     function isTooCloseToAny(accepted, x, z, ownSpacing) {
         for (const p of accepted) {
-            const spacing = p.category === 'nature' ? Math.max(ownSpacing, NATURE_MIN_SPACING) : STRUCTURE_CLEARANCE;
+            // 'woods' conta come vegetazione quanto 'nature': sono gli stessi
+            // alberi, solo piantati sulle colline. Trattarli come strutture
+            // imporrebbe loro STRUCTURE_CLEARANCE (22) e dei "boschi folti"
+            // resterebbe un frutteto rado.
+            const isVegetation = p.category === 'nature' || p.category === 'woods';
+            const spacing = isVegetation ? Math.max(ownSpacing, NATURE_MIN_SPACING) : STRUCTURE_CLEARANCE;
             const dx = x - p.x, dz = z - p.z;
             if (dx * dx + dz * dz < spacing * spacing) return true;
         }
@@ -208,7 +379,7 @@
     // + edifici box (pitsGarageClosed/pitsOffice alternati) lungo la corsia
     // box. Nessun PRNG: posizioni deterministiche a intervalli fissi, area
     // "propria" non condivisa con lo scatter natura.
-    function buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, mainSide, embankOuter, playerBoxFootprints) {
+    function buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, mainSide, embankOuter, playerBoxFootprints, fitsUnderBridge) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const n = trackPts.length;
@@ -242,14 +413,28 @@
 
                 const rotY = Math.atan2(p.x - x, p.z - z);
                 const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
-                layout.push({ asset, category: 'paddock', x, y, z, rotY, scale: KENNEY_MODEL_SCALE });
+                if (!fitsUnderBridge(asset, x, z, y)) continue;
+                layout.push({ asset, category: 'paddock', x, y, z, rotY, scale: CUSTOM_MODEL_SCALE });
             }
         }
 
         // Edifici box: quota invariata (p.y || 0, dalla corsia box stessa) —
         // il terrapieno non copre la corsia box, fuori scope (vedi design).
-        let altBuilding = 0;
-        for (let idx = 10; idx < pitPts.length - 10; idx += PIT_BUILDING_STEP_SAMPLES) {
+        // Passo in unità convertito in campioni sulla base della spaziatura
+        // reale dei punti di QUESTA corsia box.
+        const pitStepLen = TrackGeometry.lapLength(pitPts) / pitPts.length;
+        // Primo edificio ben oltre l'IMBOCCO della corsia: partendo
+        // dall'indice 10 il primo cadeva a ~16 unità dall'ingresso e, essendo
+        // largo 20.6, lo occupava di fatto rendendolo illeggibile. Il solo
+        // controllo di distanza dalla pista non bastava, perché la corsia si
+        // allontana subito ma l'edificio resta comunque addosso all'imbocco.
+        const firstIdx = Math.max(10, Math.round(PIT_BUILDING_ENTRY_CLEARANCE / pitStepLen));
+        const lastIdx = pitPts.length - 10;
+
+        // Punto dove sorgerebbe un edificio al campione idx, già spostato sul
+        // lato esterno della corsia: è fra i centri offsettati che deve valere
+        // la spaziatura, non sull'asse della corsia.
+        function buildingAt(idx) {
             const p = pitPts[idx];
             const { nx, nz } = TrackGeometry.normalAt(pitPts, idx, false);
             // Lato "verso l'esterno" del tracciato principale: tra le due
@@ -260,11 +445,43 @@
             const side = distPlus >= distMinus ? 1 : -1;
             const offset = pitRoadHalf + PIT_BUILDING_OFFSET_MARGIN;
             const x = p.x + nx * offset * side, z = p.z + nz * offset * side;
-            if (insidePlayerBoxFootprint(x, z, playerBoxFootprints)) continue;
-            const rotY = Math.atan2(p.x - x, p.z - z);
+            return { x, z, idx, y: p.y || 0, rotY: Math.atan2(p.x - x, p.z - z) };
+        }
+
+        // Catena: ogni edificio si affianca al precedente alla distanza
+        // dettata dalle LARGHEZZE REALI dei due modelli. Un candidato scartato
+        // da un filtro fa avanzare di UN campione, non di un intero passo:
+        // così il fronte si richiude subito dopo l'ostacolo invece di lasciare
+        // un vuoto doppio (col passo fisso, su monte-rosso sopravviveva un
+        // solo edificio in tutta la corsia).
+        let altBuilding = 0;
+        let idx = firstIdx;
+        while (idx < lastIdx) {
             const asset = (altBuilding % 2 === 0) ? 'pitsGarageClosed' : 'pitsOffice';
+            const b = buildingAt(idx);
+
+            const blocked = itemHitsPlayerBoxZone(
+                    { asset, x: b.x, z: b.z, rotY: b.rotY, scale: CUSTOM_MODEL_SCALE },
+                    playerBoxFootprints)
+                // Niente edifici all'IMBOCCO della corsia box, dove corsia e
+                // pista corrono ancora affiancate: lì un edificio profondo
+                // 14.7 si sovrappone all'ingresso e lo rende illeggibile
+                // (segnalato dall'utente).
+                || TrackGeometry.nearestPoint(trackPts, b.x, b.z).dist < barrierDist + PIT_BUILDING_TRACK_CLEARANCE
+                || !fitsUnderBridge(asset, b.x, b.z, b.y);
+
+            if (blocked) { idx++; continue; }
+
+            layout.push({ asset, category: 'paddock', x: b.x, y: b.y, z: b.z,
+                          rotY: b.rotY, scale: CUSTOM_MODEL_SCALE });
             altBuilding++;
-            layout.push({ asset, category: 'paddock', x, y: p.y || 0, z, rotY, scale: KENNEY_MODEL_SCALE });
+            const nextAsset = (altBuilding % 2 === 0) ? 'pitsGarageClosed' : 'pitsOffice';
+            const need = (SceneryAssetSizes.sizeOf(asset).w
+                        + SceneryAssetSizes.sizeOf(nextAsset).w) / 2 + PIT_BUILDING_GAP;
+            const hit = TrackGeometry.advanceToDistancePoint(
+                pitPts, idx, 1, false, b, need, (i) => buildingAt(i));
+            if (!hit) break;   // corsia finita
+            idx = hit.idx;
         }
 
         return layout;
@@ -277,7 +494,7 @@
     // scartare subito la tribuna — un circuito con una corsia box lunga
     // (es. Monte Rosso) altrimenti perderebbe troppe tribune invece di
     // limitarsi a spostarle di qualche metro.
-    function buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankOuter) {
+    function buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankOuter, fitsUnderBridge, mainStand) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const lapLen = TrackGeometry.lapLength(trackPts);
@@ -294,9 +511,19 @@
         }
 
         function slotValid(idx, side) {
+            // Mai di fianco a un tratto sopraelevato: la tribuna prenderebbe
+            // la quota del terreno sottostante e finirebbe a intersecare il
+            // viadotto (copertura "corrotta" segnalata dall'utente).
+            if (trackPts[idx].bridge) return false;
             const { x, z } = slotXZ(idx, side);
             if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + GRANDSTAND_PIT_MARGIN) return false;
             if (isTooCloseToAny(accepted, x, z, STRUCTURE_CLEARANCE)) return false;
+            // Mai a ridosso della fila principale: o la tribuna continua la
+            // fila (e allora la genera buildMainGrandstandLayout), o sta
+            // altrove. La via di mezzo è il varco segnalato dall'utente.
+            for (const m of (mainStand || [])) {
+                if (Math.hypot(x - m.x, z - m.z) < MAIN_STAND_ISOLATION) return false;
+            }
             return true;
         }
 
@@ -311,13 +538,44 @@
             }
             if (idx < 0) continue;
 
-            const { x, z, p } = slotXZ(idx, side);
-            const rotY = Math.atan2(p.x - x, p.z - z);
+            // Una SCHIERA, non una tribuna sola (Rif. richiesta utente
+            // 2026-08-10: "mi piacerebbe distribuissi queste lunghe schiere un
+            // po' dove possibile lungo i rettilinei o curve principali").
+            // La schiera si allunga finché lo slot resta valido, quindi si
+            // dimensiona da sé: lunga sui rettilinei, corta dove la corsia box
+            // o un cavalcavia la interrompono.
             const asset = STAND_VARIANTS[Math.floor(rng() * STAND_VARIANTS.length)];
-            const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
-            const stand = { asset, category: 'grandstand', x, y, z, rotY, scale: KENNEY_MODEL_SCALE };
-            layout.push(stand);
-            accepted.push(stand);
+            const modules = buildStandRow(
+                trackPts, idx, side, barrierDist + GRANDSTAND_OFFSET_MARGIN, ROW_MAX_COLS,
+                (m) => {
+                    if (trackPts[m.idx].bridge) return false;
+                    if (TrackGeometry.nearestPoint(pitPts, m.x, m.z).dist < pitRoadHalf + GRANDSTAND_PIT_MARGIN) return false;
+                    for (const s of (mainStand || [])) {
+                        if (Math.hypot(m.x - s.x, m.z - s.z) < MAIN_STAND_ISOLATION) return false;
+                    }
+                    // Contro le strutture già accettate si guarda l'ingombro
+                    // reale, non un raggio: una schiera lunga sfiorerebbe
+                    // sempre qualcosa con un raggio unico e resterebbe corta.
+                    const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, barrierDist, embankOuter);
+                    const cand = { asset, x: m.x, y, z: m.z, rotY: m.rotY, scale: CUSTOM_MODEL_SCALE };
+                    for (const p of accepted) {
+                        if (SceneryAssetSizes.itemsOverlap(cand, p)) return false;
+                    }
+                    return fitsUnderBridge(asset, m.x, m.z, y);
+                });
+
+            // Mai una tribuna isolata: o è una schiera leggibile, o niente.
+            // Una singola in mezzo al nulla, o peggio a mezza distanza da una
+            // schiera lunga, si legge come un buco (segnalato dall'utente).
+            if (modules.length < ROW_MIN_COLS) continue;
+
+            for (const m of modules) {
+                const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, barrierDist, embankOuter);
+                const stand = { asset, category: 'grandstand', x: m.x, y, z: m.z,
+                                rotY: m.rotY, scale: CUSTOM_MODEL_SCALE };
+                layout.push(stand);
+                accepted.push(stand);
+            }
         }
         return layout;
     }
@@ -337,33 +595,99 @@
         return distPlus >= distMinus ? 1 : -1;
     }
 
-    // Tribuna principale: 6 moduli affiancati x 2 livelli impilati, una
-    // sola volta vicino a trackPts[0] (stesso punto di riferimento di
-    // buildStartLine/buildPaddockLayout). `side` (1 o -1) viene passato da
-    // generateLayout via mainStandSide(), condiviso con buildPaddockLayout.
-    function buildMainGrandstandLayout(trackPts, barrierDist, side, embankOuter) {
+    // Tribuna principale: una fila unica di MAIN_STAND_COLS moduli contigui
+    // centrata su trackPts[0] (stesso riferimento di buildStartLine/
+    // buildPaddockLayout), che segue la curvatura della pista. `side` (1 o -1)
+    // arriva da generateLayout via mainStandSide(), condiviso con
+    // buildPaddockLayout.
+    //
+    // I moduli si incatenano per DISTANZA REALE fra i centri offsettati
+    // (TrackGeometry.advanceToDistance), non per passo in campioni: il
+    // traguardo di "prova" è in curva (raggio 158) e i moduli stanno 29 unità
+    // di lato, quindi un passo misurato sulla linea centrale dava distanze
+    // reali di 14.3 e 17.2 invece dei 18.4 nominali — un modulo compenetrato
+    // e un varco visibile, cioè il "buco al traguardo" segnalato dall'utente.
+    // Catena di moduli contigui lungo la pista, a partire da startIdx e in
+    // entrambe le direzioni. Il cuore della composizione delle tribune: usata
+    // sia dalla fila principale sia dalle schiere secondarie, così hanno lo
+    // stesso identico comportamento e un solo posto da correggere.
+    //
+    // La spaziatura si misura fra i CENTRI GIÀ OFFSETTATI DI LATO e con la
+    // posizione interpolata fra due campioni: un passo espresso in campioni
+    // sbaglia del 12% per il solo arrotondamento e ignora che su una curva gli
+    // oggetti spostati di lato percorrono un arco diverso da quello dei
+    // campioni — sono le due cause del "buco al traguardo".
+    //
+    // `accept(module)` decide se un modulo può stare lì: la catena si ferma al
+    // primo rifiuto in quella direzione, così una schiera non salta un
+    // ostacolo lasciando un vuoto in mezzo.
+    function buildStandRow(trackPts, startIdx, side, offset, maxCols, accept) {
+        function moduleAt(idx) {
+            const p = trackPts[idx];
+            const { nx, nz } = TrackGeometry.normalAt(trackPts, idx, true);
+            const x = p.x + nx * offset * side;
+            const z = p.z + nz * offset * side;
+            return { x, z, idx, rotY: Math.atan2(p.x - x, p.z - z) };
+        }
+
+        // rotY si interpola come i due punti: fra campioni adiacenti la
+        // differenza è di frazioni di grado, ma va normalizzata per non
+        // attraversare il salto a ±π.
+        function moduleBetween(prevIdx, idx, t) {
+            const a = moduleAt(prevIdx), b = moduleAt(idx);
+            let dRot = b.rotY - a.rotY;
+            while (dRot > Math.PI) dRot -= Math.PI * 2;
+            while (dRot < -Math.PI) dRot += Math.PI * 2;
+            return {
+                x: a.x + (b.x - a.x) * t,
+                z: a.z + (b.z - a.z) * t,
+                rotY: a.rotY + dRot * t,
+                idx,
+            };
+        }
+
+        const center = moduleAt(startIdx);
+        if (!accept(center)) return [];
+        const modules = [center];
+        const back = Math.floor((maxCols - 1) / 2);
+        const forward = maxCols - 1 - back;
+        for (const dirWanted of [[1, forward], [-1, back]]) {
+            const dir = dirWanted[0];
+            let prev = center;
+            for (let k = 0; k < dirWanted[1]; k++) {
+                const hit = TrackGeometry.advanceToDistancePoint(
+                    trackPts, prev.idx, dir, true, prev, MAIN_STAND_COL_SPACING,
+                    (i) => moduleAt(i));
+                if (!hit) break;
+                const next = moduleBetween(hit.prevIdx, hit.idx, hit.t);
+                if (!accept(next)) break;   // la schiera si ferma qui, non salta l'ostacolo
+                prev = next;
+                modules.push(prev);
+            }
+        }
+        return modules;
+    }
+
+    function buildMainGrandstandLayout(trackPts, barrierDist, side, embankOuter, fitsUnderBridge) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
-        const n = trackPts.length;
-        const stepLen = TrackGeometry.lapLength(trackPts) / n;
-        const colSpacingSamples = Math.max(1, Math.round(MAIN_STAND_COL_SPACING / stepLen));
+        const stackHeight = MAIN_STAND_TIER_HEIGHT * MAIN_STAND_TIERS;
 
-        const offset = barrierDist + MAIN_STAND_OFFSET_MARGIN;
+        const modules = buildStandRow(
+            trackPts, 0, side, barrierDist + MAIN_STAND_OFFSET_MARGIN, MAIN_STAND_COLS,
+            (m) => {
+                // Se lì sopra passa un cavalcavia, la tribuna lo attraversa.
+                const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, barrierDist, embankOuter);
+                return fitsUnderBridge('__stack__', m.x, m.z, y, stackHeight);
+            });
 
-        for (let tier = 0; tier < MAIN_STAND_TIERS; tier++) {
-            for (let col = 0; col < MAIN_STAND_COLS; col++) {
-                const d = Math.round((col - (MAIN_STAND_COLS - 1) / 2) * colSpacingSamples);
-                const idx = ((d % n) + n) % n;
-                const p = trackPts[idx];
-                const { nx, nz } = TrackGeometry.normalAt(trackPts, idx, true);
-                const x = p.x + nx * offset * side;
-                const z = p.z + nz * offset * side;
-                const rotY = Math.atan2(p.x - x, p.z - z);
-                const baseY = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
+        for (const m of modules) {
+            const baseY = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, barrierDist, embankOuter);
+            for (let tier = 0; tier < MAIN_STAND_TIERS; tier++) {
                 layout.push({
                     asset: MAIN_STAND_ASSET, category: 'grandstand-main',
-                    x, y: baseY + tier * MAIN_STAND_TIER_HEIGHT,
-                    z, rotY, scale: KENNEY_MODEL_SCALE
+                    x: m.x, y: baseY + tier * MAIN_STAND_TIER_HEIGHT,
+                    z: m.z, rotY: m.rotY, scale: CUSTOM_MODEL_SCALE
                 });
             }
         }
@@ -385,7 +709,7 @@
     // uniformi nel riquadro attorno al tracciato, filtrati per restare in
     // una fascia libera fuori dal corridoio pista/box e a distanza minima
     // dagli altri oggetti già accettati (di qualunque categoria).
-    function buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints) {
+    function buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints, fitsUnderBridge) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist);
@@ -403,9 +727,52 @@
 
             const asset = weightedPick(rng, NATURE_ASSETS);
             const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
+            if (!fitsUnderBridge(asset, x, z, y)) continue;
             const point = { asset, category: 'nature', x, y, z, rotY: rng() * Math.PI * 2, scale: NATURE_SCALE[asset] };
             layout.push(point);
             accepted.push(point);
+        }
+        return layout;
+    }
+
+    // Alberi fitti sulle colline e sulla fascia che le precede: è ciò che
+    // chiude l'orizzonte, insieme al rilievo del terreno. La quota viene da
+    // SceneryHills, LO STESSO modulo che genera la mesh del terreno in
+    // trackMeshBuilder: se le due quote divergessero, gli alberi
+    // risulterebbero sepolti o sospesi in aria.
+    function buildWoodsLayout(rng, trackPts, barrierDist, embankOuter, accepted) {
+        const layout = [];
+        const groundPts = trackPts.filter(p => !p.bridge);
+        const outer = embankOuter + SceneryHills.HILL_START_MARGIN + SceneryHills.HILL_RAMP;
+        const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, outer);
+
+        for (let c = 0; c < WOOD_CLUSTERS && layout.length < WOOD_MAX_TREES; c++) {
+            const cxp = xMin + rng() * (xMax - xMin);
+            const czp = zMin + rng() * (zMax - zMin);
+            // Il centro della macchia deve cadere fuori dalla fascia di uscita
+            // di pista: le macchie estratte troppo vicine si scartano invece
+            // di spostarle, così la distribuzione resta uniforme.
+            if (TrackGeometry.nearestPoint(groundPts, cxp, czp).dist < embankOuter + WOOD_MIN_MARGIN) continue;
+
+            for (let k = 0; k < WOOD_PER_CLUSTER && layout.length < WOOD_MAX_TREES; k++) {
+                const a = rng() * Math.PI * 2;
+                const r = Math.sqrt(rng()) * WOOD_CLUSTER_RADIUS;   // sqrt: distribuzione uniforme sul disco
+                const x = cxp + Math.cos(a) * r, z = czp + Math.sin(a) * r;
+                const d = TrackGeometry.nearestPoint(groundPts, x, z).dist;
+                if (d < embankOuter + WOOD_MIN_MARGIN) continue;
+                if (isTooCloseToAny(accepted, x, z, WOOD_MIN_SPACING)) continue;
+
+                const asset = weightedPick(rng, NATURE_ASSETS);
+                const y = SceneryHills.hillHeightAt(x, z, d, embankOuter);
+                // Categoria propria e non 'nature': gli alberi dei boschi
+                // prendono la quota dalle COLLINE, non dal terrapieno, e i
+                // controlli sulla natura (quota entro il terrapieno, distanza
+                // dalla corsia box) non li descrivono.
+                const tree = { asset, category: 'woods', x, y, z,
+                               rotY: rng() * Math.PI * 2, scale: NATURE_SCALE[asset] };
+                layout.push(tree);
+                accepted.push(tree);
+            }
         }
         return layout;
     }
@@ -444,7 +811,12 @@
     // stesso valore usato in frontend/f1.js per la mesh del terrapieno
     // stesso: se in futuro si tara diversamente in f1.js, va passato qui
     // esplicitamente per restare coerenti.
-    function generateLayout(trackData, trackPts, pitPts, barrierDist, embankmentWidth = 45) {
+    // seatAnchors (opzionale): posti a sedere delle tribune, letti da f1.js
+    // da frontend/assets/custom/circuit/grandStandSeats.json. Omesso, il
+    // layout viene generato senza spettatori — così i test e gli altri
+    // chiamanti che non ne hanno bisogno continuano a funzionare con 4-5
+    // argomenti.
+    function generateLayout(trackData, trackPts, pitPts, barrierDist, embankmentWidth = 45, seatAnchors = null) {
         const rng = mulberry32(hashString(trackData.id));
         const pitRoadHalf = trackData.pit.roadHalfWidth;
         const side = mainStandSide(trackPts, pitPts);
@@ -454,23 +826,65 @@
         // una volta qui, riusato per escludere paddock/natura/laghetto da
         // tutta la fila reale, non solo dal punto centrale pitBoxIndex.
         const boxAnchors = TrackGeometry.pitBoxAnchors(trackData.pit.path, trackData.pit.boxIndex, PLAYER_BOX_MAX_COUNT);
-        const playerBoxFootprints = boxAnchors.map(a => playerBoxFootprintCorners(a, trackPts, pitRoadHalf));
+        // Due poligoni per box: il garage e il grembiule di manovra davanti.
+        // insidePlayerBoxFootprint li tratta indifferentemente, è già una
+        // lista di poligoni.
+        const playerBoxFootprints = [];
+        for (const a of boxAnchors) {
+            playerBoxFootprints.push(playerBoxFootprintCorners(a, trackPts, pitRoadHalf));
+            playerBoxFootprints.push(playerBoxApronCorners(a, trackPts, pitRoadHalf));
+        }
 
-        const paddock   = buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankOuter, playerBoxFootprints);
-        const mainStand = buildMainGrandstandLayout(trackPts, barrierDist, side, embankOuter);
+        // Filtro anti-cavalcavia: scarta gli oggetti troppo alti per stare
+        // sotto un tratto di pista sopraelevata che passa lì sopra.
+        const fitsUnderBridge = makeBridgeFilter(trackPts, barrierDist);
+
+
+        const paddock   = buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankOuter, playerBoxFootprints, fitsUnderBridge);
+        const mainStand = buildMainGrandstandLayout(trackPts, barrierDist, side, embankOuter, fitsUnderBridge);
         const accepted  = [...paddock, ...mainStand];
-        const grandstand = buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankOuter);
+        const grandstand = buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankOuter, fitsUnderBridge, mainStand);
 
-        const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints);
+        // Landmark (torre, ponte semafori, podio, passerella): calcolati
+        // prima della natura, così lo scatter degli alberi li vede fra gli
+        // oggetti già accettati e non ci finisce sopra.
+        const landmarks = SceneryLandmarks.buildLandmarks(
+            trackPts, pitPts, barrierDist, side, embankOuter,
+            playerBoxFootprints, insidePlayerBoxFootprint, fitsUnderBridge, pitRoadHalf,
+            accepted);
+        accepted.push(...landmarks);
+
+        // Elementi distribuiti in base alla curvatura (gomme, cartelli di
+        // frenata, commissari, reti, barriere di cemento, decoro paddock).
+        const trackside = SceneryTrackside.buildTrackside({
+            trackPts, pitPts, barrierDist, pitRoadHalf, embankOuter, mainSide: side, rng,
+            playerBoxFootprints, insidePlayerBoxFootprint, fitsUnderBridge,
+            grandstands: [...mainStand, ...grandstand],
+        });
+
+        // Spettatori sulle tribune già piazzate. seatAnchors arriva da
+        // f1.js (fetch di grandStandSeats.json): questo modulo è puro e non
+        // accede alla rete. Se manca, si generano tribune vuote invece di
+        // far fallire il caricamento della pista.
+        const crowd = SceneryCrowd.buildCrowd([...mainStand, ...grandstand], seatAnchors, rng);
+
+        const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints, fitsUnderBridge);
+        // Boschi DOPO la natura: le macchie vedono fra gli oggetti già
+        // accettati anche gli alberi vicini alla pista, e non ci finiscono
+        // sopra.
+        const woods  = buildWoodsLayout(rng, trackPts, barrierDist, embankOuter, accepted);
         const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints);
 
-        const layout = [...paddock, ...mainStand, ...grandstand, ...nature];
+        const layout = [...paddock, ...mainStand, ...grandstand, ...landmarks,
+                        ...trackside, ...crowd, ...nature, ...woods];
         if (pond) layout.push(pond);
         return layout;
     }
 
     return {
         generateLayout, hashString, mulberry32, PIT_BUILDING_OFFSET_MARGIN,
-        playerBoxFootprintCorners, insidePlayerBoxFootprint, PLAYER_BOX_MAX_COUNT
+        playerBoxFootprintCorners, playerBoxApronCorners,
+        insidePlayerBoxFootprint, PLAYER_BOX_MAX_COUNT,
+        PLAYER_BOX_OFFSET_MARGIN, PLAYER_BOX_LOCAL_BOUNDS
     };
 });

@@ -22,3 +22,7 @@ backend/tools/*-telemetry.json
 # docs/superpowers/plans/2026-07-24-f1-auto-custom-cockpit.md)
 backend/tools/f1CarVoxelData.json
 backend/tools/renders/
+
+# Bytecode Python (generato importando backend/tools/circuitAssets)
+__pycache__/
+*.pyc
