@@ -39,6 +39,7 @@
         grassLight: 0x55be7c,   // chiazza chiara
         asphalt: 0x5e6b75,      // era 0x1e1e1e
         pitLane: 0x6a7681,      // era 0x3a3a3a
+        gravel: 0xC9B896,       // beige sabbia delle vie di fuga
         bridge: 0x8b93a0,       // era 0x4a4a4a
         pond: 0x1e63c8,         // era 0x2f6fa8
         curbNeutral: [0.55, 0.57, 0.60],  // era [0.35, 0.35, 0.37] (vertex color)

@@ -191,6 +191,66 @@
         }
     }
 
+    const GRAVEL_COLOR = Palette.SURFACES.gravel;
+
+    // Banda di ghiaia fra il bordo esterno del cordolo e la barriera, presente
+    // solo dove il profilo è > 0 (all'esterno delle curve). Stessa tecnica di
+    // buildCurbs — una striscia di triangoli lungo il giro — ma con il bordo
+    // esterno che segue il profilo invece di stare a distanza fissa, e i
+    // triangoli emessi solo dove c'è ghiaia davvero.
+    //
+    // Quota +0.03: sopra l'asfalto e sotto il cordolo (+0.04), così nessuna
+    // delle tre superfici compenetra le altre. La ghiaia esiste solo dove il
+    // terreno è in piano (vedi trackGravel.js), quindi non c'è dislivello da
+    // raccordare col terrapieno.
+    function buildGravel(container, pts, roadHalf, curbW, profile) {
+        const n = pts.length;
+        const pos = [];
+        const idx = [];
+        let emesso = false;
+
+        for (const side of [-1, 1]) {
+            const banda = side > 0 ? profile.right : profile.left;
+            // Indice del primo vertice di questo lato dentro `pos`.
+            const primoVertice = pos.length / 3;
+
+            for (let i = 0; i < n; i++) {
+                const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
+                const p = pts[i];
+                const y = (p.y || 0) + 0.03;
+                const inner = (roadHalf + curbW) * side;
+                const outer = (roadHalf + curbW + banda[i]) * side;
+
+                pos.push(p.x + nx * inner, y, p.z + nz * inner);
+                pos.push(p.x + nx * outer, y, p.z + nz * outer);
+            }
+
+            for (let i = 0; i < n; i++) {
+                const j = (i + 1) % n;
+                // Niente triangoli dove la banda ha larghezza nulla su
+                // entrambi i campioni: sarebbero degeneri (area zero) e
+                // creerebbero z-fighting col cordolo.
+                if (banda[i] <= 0 && banda[j] <= 0) continue;
+                emesso = true;
+                const a = primoVertice + i * 2, b = primoVertice + j * 2;
+                if (side < 0) idx.push(a, a + 1, b, b, a + 1, b + 1);
+                else          idx.push(a, b, a + 1, b, b + 1, a + 1);
+            }
+        }
+
+        if (!emesso) return;   // pista senza ghiaia (es. baku): nessuna mesh
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(pos), 3));
+        geo.setIndex(idx);
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+            color: GRAVEL_COLOR, roughness: 1, side: THREE.DoubleSide
+        }));
+        mesh.receiveShadow = true;
+        container.add(mesh);
+    }
+
     // Un varco "vero" (in prossimità di ingresso/uscita) dura tipicamente
     // decine di campioni; un contatto isolato di pochi campioni è quasi
     // sempre una coincidenza geometrica (la pista che torna vicina a un
@@ -230,7 +290,14 @@
     // campioni non è un varco vero, vedi suppressShortRuns.
     const BARRIER_MIN_GAP_RUN = 6;
 
+    // distFromCenter: numero (distanza fissa, comportamento storico — è ciò
+    // che passa l'editor tracciato) oppure funzione (i, side) => distanza, con
+    // cui la barriera segue il profilo di ghiaia allargandosi solo all'esterno
+    // delle curve. Rif. trackGravel.js.
     function buildBarriers(container, pts, distFromCenter, mergePoints) {
+        const distAt = typeof distFromCenter === 'function'
+            ? distFromCenter
+            : () => distFromCenter;
         const n = pts.length;
         const HEIGHT = 1.1;
         const stepLen = TrackGeometry.lapLength(pts) / n;
@@ -247,8 +314,9 @@
                 const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
                 const p = pts[i];
                 const baseY = p.y || 0;
-                const bx = p.x + nx * distFromCenter * side;
-                const bz = p.z + nz * distFromCenter * side;
+                const dist = distAt(i, side);
+                const bx = p.x + nx * dist * side;
+                const bz = p.z + nz * dist * side;
 
                 if (mergePoints) gapped[i] = TrackGeometry.nearestPoint(mergePoints, bx, bz).dist < BARRIER_PIT_GAP_THRESHOLD;
 
@@ -1014,5 +1082,5 @@
         }
     }
 
-    root.TrackMeshBuilder = { buildRibbon, buildOpenRibbon, buildCurbs, buildBarriers, buildStartLine, buildStartingGrid, buildPitLane, buildEmbankment, buildGround, buildBridgeDecks };
+    root.TrackMeshBuilder = { buildRibbon, buildOpenRibbon, buildCurbs, buildGravel, buildBarriers, buildStartLine, buildStartingGrid, buildPitLane, buildEmbankment, buildGround, buildBridgeDecks };
 })(window);
