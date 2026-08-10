@@ -138,55 +138,6 @@
                 });
         }
 
-        // ── Ricolorazione degli asset del circuito ───────────────────
-        // Un selettore per ciascuna delle tinte neutre del builder: sono
-        // quelle che la correzione di saturazione non può toccare (un grigio
-        // resta grigio per quanto lo si saturi). I valori scelti qui vanno poi
-        // scritti in backend/tools/voxelKit.py — il pulsante in fondo li
-        // stampa già nel formato giusto.
-        const sepCol = document.createElement('div');
-        sepCol.textContent = 'COLORI DEGLI ASSET';
-        sepCol.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #3a4048;font-weight:bold;';
-        box.appendChild(sepCol);
-
-        const scelti = {};
-        for (const [chiave, voce] of Object.entries(ToonPalette.ASSET_REMAP)) {
-            scelti[chiave] = voce.dst;
-            const wrap = document.createElement('label');
-            wrap.style.cssText = 'display:flex;align-items:center;gap:8px;margin:3px 0;font:11px monospace;color:#dfe3e6;';
-            const nome = document.createElement('span');
-            nome.textContent = chiave;
-            nome.style.cssText = 'flex:0 0 118px;';
-            const picker = document.createElement('input');
-            picker.type = 'color';
-            picker.value = '#' + voce.dst.toString(16).padStart(6, '0');
-            picker.style.cssText = 'flex:0 0 44px;height:20px;padding:0;border:none;background:none;cursor:pointer;';
-            const eco = document.createElement('span');
-            eco.textContent = picker.value.toUpperCase();
-            eco.style.cssText = 'flex:1;';
-            const partenza = document.createElement('span');
-            partenza.textContent = 'era ' + voce.src.toString(16).padStart(6, '0').toUpperCase();
-            partenza.style.cssText = 'flex:0 0 96px;text-align:right;color:#8a9098;';
-            picker.addEventListener('input', () => {
-                const hex = parseInt(picker.value.slice(1), 16);
-                scelti[chiave] = hex;
-                eco.textContent = picker.value.toUpperCase();
-                style.setRemap(chiave, hex);
-            });
-            wrap.append(nome, picker, eco, partenza);
-            box.appendChild(wrap);
-        }
-
-        const stampa = document.createElement('button');
-        stampa.textContent = 'stampa i colori per voxelKit.py';
-        stampa.style.cssText = 'margin-top:6px;width:100%;font:11px monospace;padding:4px;cursor:pointer;';
-        stampa.addEventListener('click', () => {
-            const righe = Object.entries(scelti).map(([k, v]) =>
-                `    '${k}':`.padEnd(22) + `'${v.toString(16).padStart(6, '0').toUpperCase()}',`);
-            console.log('# da incollare in backend/tools/voxelKit.py, dentro _HEX\n' + righe.join('\n'));
-        });
-        box.appendChild(stampa);
-
         // ── Diagnostica del carico di scena ──────────────────────────
         // Interruttori per capire DA DOVE viene il costo, spegnendo una
         // categoria alla volta senza ricaricare. Non fanno parte del look:

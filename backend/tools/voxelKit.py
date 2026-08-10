@@ -43,18 +43,30 @@ CAR_SCALE = 3.5  # stesso fattore di carLoader.js: porta l'auto a 7.17 unità
 # non spostare visibilmente nulla a questa scala.
 EPS = 0.04
 
+# Le tinte NEUTRE sono state ricolorate il 2026-08-10 per il look cel-shaded
+# (spec 2026-08-10-f1-art-direction-cel-shading-design.md). Motivo: sono il
+# 71% delle superfici degli asset, e la correzione di saturazione che il gioco
+# applica a runtime su di esse non può fare nulla — allontanare dal proprio
+# luma un colore che ha già i tre canali uguali lo lascia identico (misurato:
+# il cemento passava da 7,0% a 8,4% di saturazione). O si cambia il colore
+# qui, o resta grigio.
+# I nuovi valori conservano l'ordine di chiarezza dei vecchi: cambia la tinta,
+# non il disegno degli oggetti. `tarmac` è ora identico all'asfalto della
+# pista (ToonPalette.SURFACES.asphalt), che gli sta adiacente nei box.
+# I colori già saturi (rosso, blu, giallo, vetro, incarnati) non sono stati
+# toccati: su quelli la correzione a runtime funziona.
 _HEX = {
-    'concrete':     'C9C5BB',
-    'concreteDark': '8D8980',
-    'steel':        '6E7378',
-    'steelDark':    '3A4045',
-    'white':        'F2F2EE',
+    'concrete':     'D8D0C0',   # era C9C5BB
+    'concreteDark': '9C9082',   # era 8D8980
+    'steel':        '7D8FA3',   # era 6E7378
+    'steelDark':    '3D4756',   # era 3A4045
+    'white':        'F7F3E8',   # era F2F2EE
     'red':          'D6392F',
     'blue':         '2F6FB5',
     'yellow':       'F2C233',
-    'green':        '4C8C3F',
-    'black':        '1E2124',
-    'tarmac':       '4A4E52',
+    'green':        '4C8C3F',   # non usato da alcun asset
+    'black':        '20242E',   # era 1E2124
+    'tarmac':       '5E6B75',   # era 4A4E52 — ora uguale all'asfalto della pista
     'glass':        '7FB6D9',
     # Incarnati per le figure umane (spettatori, meccanici): due tonalità
     # per dare varietà alla folla senza sforare il limite di 6 materiali
