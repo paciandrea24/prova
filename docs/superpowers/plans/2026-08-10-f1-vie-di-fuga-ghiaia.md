@@ -7,10 +7,16 @@
 ## STATO AL 2026-08-11 — sospeso su richiesta dell'utente
 
 **Fatti e committati: Task 1-5.** La ghiaia si vede in gioco, le barriere la
-seguono, la larghezza è **approvata dall'utente al playtest** ("in curva 1 a
-Monza è perfetta"; in qualche curva la trova appena larga, ma ha scelto di
-tenerla così e semmai ritoccarla in futuro — non ritoccare `GRAVEL_WIDTH` senza
-che lo chieda).
+seguono, la larghezza è **approvata dall'utente al playtest** ("in curva 1 di
+prova è perfetta"; in qualche altra curva la trova appena larga, ma ha scelto di
+tenerla così — non ritoccare `GRAVEL_WIDTH` senza che lo chieda).
+
+**Lavoro futuro già deciso dall'utente (2026-08-11):** legare la larghezza della
+ghiaia alla **velocità di percorrenza della curva** invece di tenerla costante —
+è il motivo per cui una larghezza fissa convince in curva 1 e sembra eccessiva
+nei tornanti lenti. Da fare **dopo** i Task 6-7-8. `findCorners` restituisce già
+`radius` per ogni curva, quindi il punto da toccare è solo `GRAVEL_WIDTH` dentro
+`gravelProfile`, che da costante diventa funzione del raggio.
 
 **Da fare: Task 6, 7, 8.** Al momento la scenografia è ancora dov'era, quindi
 tribune e cartelloni si sovrappongono alla ghiaia: è atteso, lo risolve il
