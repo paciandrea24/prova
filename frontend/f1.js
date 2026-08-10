@@ -237,6 +237,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     // divergenza tra corsia box disegnata e varco/scenografia.
     const PIT_PTS = TrackGeometry.tuckPitEndsToTrack(TrackGeometry.sampleOpenPath(PIT_PATH, 300), trackPts);
 
+    // Profilo delle vie di fuga in ghiaia: calcolato UNA volta qui e riusato
+    // per la banda disegnata, per la posizione delle barriere e per traslare
+    // la scenografia. Il server ne calcola uno identico con la stessa
+    // funzione (trackLoader.js) per il muro fisico — stessi input, stesso
+    // risultato, nessun rischio di divergenza.
+    const GRAVEL_PROFILE = TrackGravel.gravelProfile(trackPts, {
+        roadHalf: ROAD_HALF,
+        curbW: CURB_W,
+        pitLanePts: PIT_PTS,
+        pitRoadHalf: trackData.pit.roadHalfWidth,
+    });
+
     // Beccheggio (pitch) visivo dell'auto sui dislivelli: pendenza locale tra
     // il campione precedente e successivo lungo il giro, applicata come
     // rotazione attorno all'asse locale dell'auto DOPO l'imbardata (vedi
@@ -269,7 +281,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // DoubleSide evita artefatti di culling nelle zone ad alta curvatura
     TrackMeshBuilder.buildRibbon(scene, trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: ToonPalette.SURFACES.asphalt, roughness: 0.95, side: THREE.DoubleSide }));
     TrackMeshBuilder.buildCurbs(scene, trackPts, ROAD_HALF, CURB_W, PIT_MERGE_SAMPLES);
-    TrackMeshBuilder.buildBarriers(scene, trackPts, BARRIER_D, PIT_MERGE_SAMPLES);
+    // Vie di fuga in ghiaia, dopo il cordolo e prima della barriera: l'ordine
+    // delle chiamate riflette la sezione reale della pista. La banda parte dal
+    // bordo esterno del cordolo, quindi non si sovrappone a nessuno dei due.
+    TrackMeshBuilder.buildGravel(scene, trackPts, ROAD_HALF, CURB_W, GRAVEL_PROFILE);
+    // La barriera segue il profilo: dove non c'è ghiaia resta a BARRIER_D
+    // esatto, cioè dov'era prima di questa feature.
+    TrackMeshBuilder.buildBarriers(scene, trackPts,
+        (i, side) => TrackGravel.barrierDistAt(GRAVEL_PROFILE, i, side, BARRIER_D),
+        PIT_MERGE_SAMPLES);
     TrackMeshBuilder.buildStartLine(scene, trackPts, ROAD_HALF);
     // drawBoxMarker=false: il riquadro giallo unico su boxIndex era il solo
     // indicatore visivo quando il box era un punto condiviso da tutti; ora
