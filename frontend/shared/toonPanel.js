@@ -57,7 +57,7 @@
         ].join('');
 
         const titolo = document.createElement('div');
-        titolo.textContent = 'STILE — F9 chiude, F8 contorni';
+        titolo.textContent = `STILE  build ${style.BUILD || '?'}  — F9 chiude, F8 contorni`;
         titolo.style.cssText = 'font-weight:bold;margin-bottom:6px;letter-spacing:0.5px;';
         box.appendChild(titolo);
 

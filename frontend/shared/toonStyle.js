@@ -40,6 +40,15 @@
     //    effetti, che ombra non ne fanno: non usarlo su oggetti solidi.
     const OUTLINE_EXCLUDE_LAYER = 2;
 
+    // Marcatore di versione, mostrato nel titolo del pannello (F9). Serve a
+    // rispondere senza dubbi alla domanda "il browser sta eseguendo il codice
+    // nuovo o quello in cache?": bumpare i ?v= degli script non basta se è
+    // f1.html stesso a essere servito dalla cache, e in quel caso una
+    // modifica sembra non aver avuto alcun effetto.
+    // Va aggiornato quando si cambia qualcosa che l'utente deve poter
+    // verificare in un playtest.
+    const BUILD = '20260810-f';
+
     // ── uniform CONDIVISE ────────────────────────────────────────────
     // Un solo oggetto per uniform, copiato per riferimento in ogni materiale:
     // muovere .value qui (dal pannello o dalla console) aggiorna tutta la
@@ -301,7 +310,7 @@
     return {
         buildPatch, convert, setEnabled, audit, excludeFromOutline,
         copyMaterialState, MATERIAL_STATE,
-        OUTLINE_EXCLUDE_LAYER,
+        OUTLINE_EXCLUDE_LAYER, BUILD,
         get uniforms() { return sharedUniforms(); },
     };
 });
