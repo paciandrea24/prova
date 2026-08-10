@@ -26,6 +26,13 @@ ASSET_BUILDERS = {
     'spectatorC':        people.make_spectator('spectatorC'),
     'pitCrew':           people.build_pit_crew,
     'pitCrewKneel':      people.build_pit_crew_kneel,
+    'treeBroad':         vegetation.build_broad,
+    'treeYoung':         vegetation.build_young,
+    'treePine':          vegetation.build_pine,
+    'treeRound':         vegetation.build_round,
+    'bushLow':           vegetation.build_bush_low,
+    'bushTall':          vegetation.build_bush_tall,
+    # Non in uso nel gioco: vedi la nota in vegetation.py
     'woodMass':          vegetation.build_wood_mass,
     'brakingBoard':      trackside.build_braking_board,
     'concreteBarrier':   trackside.build_concrete_barrier,
