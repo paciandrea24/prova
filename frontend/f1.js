@@ -397,6 +397,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     const SCENERY_ASSET_PATHS = {
         // Alberi: unici Kenney rimasti, per scelta esplicita dell'utente, e
         // unici a essere istanziati con un moltiplicatore di scala.
+        treeBroad: '/assets/custom/circuit/treeBroad.glb',
+        treeYoung: '/assets/custom/circuit/treeYoung.glb',
+        treePine: '/assets/custom/circuit/treePine.glb',
+        treeRound: '/assets/custom/circuit/treeRound.glb',
+        bushLow: '/assets/custom/circuit/bushLow.glb',
+        bushTall: '/assets/custom/circuit/bushTall.glb',
+        motorhome: '/assets/custom/circuit/motorhome.glb',
+        truck: '/assets/custom/circuit/truck.glb',
+        containerStack: '/assets/custom/circuit/containerStack.glb',
+        parkedCarRed: '/assets/custom/circuit/parkedCarRed.glb',
+        parkedCarBlue: '/assets/custom/circuit/parkedCarBlue.glb',
+        parkedCarWhite: '/assets/custom/circuit/parkedCarWhite.glb',
+        banner: '/assets/custom/circuit/banner.glb',
+        spectatorStandA: '/assets/custom/circuit/spectatorStandA.glb',
+        spectatorStandB: '/assets/custom/circuit/spectatorStandB.glb',
+        rockSingle: '/assets/custom/circuit/rockSingle.glb',
+        rockCluster: '/assets/custom/circuit/rockCluster.glb',
         treeLarge: '/assets/kenney/treeLarge.glb',
         treeSmall: '/assets/kenney/treeSmall.glb',
         // Catalogo voxel custom (vedi docs/f1-notes.md): modellati 1:1 in
@@ -438,14 +455,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     // l'ombra si nota meno — figure piccole e vegetazione lontana — mentre
     // tribune, edifici e strutture continuano a proiettarla.
     const NO_SHADOW_ASSETS = new Set([
-        'treeLarge', 'treeSmall', 'spectatorA', 'spectatorB', 'spectatorC',
+        'treeLarge', 'treeSmall', 'treeBroad', 'treeYoung', 'treePine', 'treeRound',
+        'bushLow', 'bushTall', 'rockSingle', 'rockCluster',
+        'spectatorA', 'spectatorB', 'spectatorC',
     ]);
 
     // Asset esclusi dai CONTORNI (Rif. playtest 2026-08-10): figure minute e
     // ripetute in gran numero, sulle quali il tratto nero si legge come
     // sporco invece che come disegno, e che nel passaggio delle normali
     // costerebbero una draw call ciascuna.
-    const NO_OUTLINE_ASSETS = new Set(['spectatorA', 'spectatorB', 'spectatorC']);
+    const NO_OUTLINE_ASSETS = new Set(['spectatorA', 'spectatorB', 'spectatorC',
+        'spectatorStandA', 'spectatorStandB', 'bushLow', 'bushTall']);
 
     function loadScenery(container, layout) {
         const sceneryLoader = new THREE.GLTFLoader();

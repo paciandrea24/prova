@@ -97,13 +97,35 @@ test('le tribune secondarie sono 6-10 SCHIERE, senza folla, con asset tra le 3 v
     }
 });
 
-test('la natura usa solo alberi, mai rocce o cespugli', () => {
+test('la natura usa alberi e cespugli, mai rocce', () => {
+    // Fino al 2026-08-10 la vegetazione erano due soli alberi Kenney e il test
+    // vietava tutto il resto. Ora i cespugli ci sono per scelta — servono a
+    // riempire il prato dove un albero sarebbe troppo — mentre le rocce hanno
+    // categoria propria, perché stanno molto più lontano dalla pista: quella
+    // fascia diventerà via di fuga in ghiaia.
     const { trackPts, pitPts } = buildReal();
     const layout = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D);
     const nature = layout.filter(i => i.category === 'nature');
-    const validAssets = new Set(['treeLarge', 'treeSmall']);
+    const validAssets = new Set(['treeLarge', 'treeSmall', 'treeBroad', 'treeYoung',
+                                 'treeRound', 'bushLow', 'bushTall']);
     for (const n of nature) {
-        assert.ok(validAssets.has(n.asset), `asset natura non valido (dovrebbe essere solo albero): ${n.asset}`);
+        assert.ok(validAssets.has(n.asset), `asset natura non valido: ${n.asset}`);
+        assert.ok(!n.asset.startsWith('rock'), `roccia fra gli oggetti natura: ${n.asset}`);
+    }
+});
+
+test('le rocce stanno lontane dalla pista', () => {
+    // Vincolo esplicito dell'utente: niente rocce a bordo pista, perché quella
+    // fascia diventerà via di fuga in ghiaia. Il margine è più largo di quello
+    // della vegetazione anche per un secondo motivo: un masso a ridosso della
+    // carreggiata si legge come un ostacolo pericoloso anche quando non lo è.
+    const { trackPts, pitPts } = buildReal();
+    const layout = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D);
+    const rocce = layout.filter(i => i.category === 'rock');
+    assert.ok(rocce.length > 0, 'nessuna roccia nel layout');
+    for (const r of rocce) {
+        const d = TrackGeometry.nearestPoint(trackPts, r.x, r.z).dist;
+        assert.ok(d >= BARRIER_D + 60 - 1e-6, `roccia a ${d.toFixed(1)} dall'asse pista`);
     }
 });
 
@@ -263,9 +285,10 @@ test('gli oggetti scenici non ereditano mai la quota del ponte (solo il terreno 
         // (SceneryHills), non dal terreno del tracciato, e supera di proposito
         // qualunque quota di pista. Hanno un test dedicato più sotto, che
         // verifica che poggino esattamente sul rilievo.
-        // Stessa ragione per le macchie di bosco del fondale, che stanno a
-        // 300+ unità dalla pista e poggiano sui rilievi più alti.
-        if (item.category === 'woods' || item.category === 'woodmass') continue;
+        // Stessa ragione per le macchie di bosco del fondale e per le rocce,
+        // che arrivano fin sui primi pendii collinari.
+        if (item.category === 'woods' || item.category === 'woodmass'
+            || item.category === 'rock') continue;
         assert.ok(item.y <= groundMaxY + 0.01, `oggetto con quota superiore al terreno vero (${groundMaxY}): trovato y=${item.y} (categoria ${item.category})`);
     }
 });

@@ -9,15 +9,18 @@
     if (typeof module === 'object' && module.exports) {
         module.exports = factory(require('./trackGeometry.js'), require('./sceneryLandmarks.js'),
                                  require('./sceneryTrackside.js'), require('./sceneryCrowd.js'),
-                                 require('./sceneryAssetSizes.js'), require('./sceneryHills.js'));
+                                 require('./sceneryAssetSizes.js'), require('./sceneryHills.js'),
+                                 require('./sceneryPaddock.js'));
     } else {
         root.TrackScenery = factory(root.TrackGeometry, root.SceneryLandmarks,
                                     root.SceneryTrackside, root.SceneryCrowd,
-                                    root.SceneryAssetSizes, root.SceneryHills);
+                                    root.SceneryAssetSizes, root.SceneryHills,
+                                    root.SceneryPaddock);
     }
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryLandmarks,
                                                         SceneryTrackside, SceneryCrowd,
-                                                        SceneryAssetSizes, SceneryHills) {
+                                                        SceneryAssetSizes, SceneryHills,
+                                                        SceneryPaddock) {
 
     // Hash FNV-1a 32 bit di una stringa: seed deterministico dall'id del
     // tracciato, così lo stesso tracciato genera sempre lo stesso layout
@@ -69,13 +72,46 @@
     // modellati in unità di gioco.
     const CUSTOM_MODEL_SCALE = 1;
 
-    // Gli alberi sono gli UNICI Kenney rimasti e restano alla loro scala:
-    // non sono stati rimodellati in voxel custom per scelta dell'utente.
+    // Vegetazione della fascia vicina. I due Kenney restano accanto ai voxel
+    // nuovi con peso basso: la decisione se tenerli si prende guardando, non a
+    // priori (scelta dell'utente 2026-08-10), ma nel frattempo devono essere
+    // minoranza — sono di un'altra mano e alti la metà.
     const NATURE_ASSETS = [
-        { asset: 'treeLarge', weight: 1, scale: KENNEY_MODEL_SCALE },
-        { asset: 'treeSmall', weight: 1, scale: KENNEY_MODEL_SCALE },
+        { asset: 'treeLarge', weight: 0.5, scale: KENNEY_MODEL_SCALE },
+        { asset: 'treeSmall', weight: 0.5, scale: KENNEY_MODEL_SCALE },
+        { asset: 'treeBroad', weight: 2.0, scale: CUSTOM_MODEL_SCALE },
+        { asset: 'treeYoung', weight: 2.0, scale: CUSTOM_MODEL_SCALE },
+        { asset: 'treeRound', weight: 1.5, scale: CUSTOM_MODEL_SCALE },
+        { asset: 'bushLow',   weight: 3.0, scale: CUSTOM_MODEL_SCALE },
+        { asset: 'bushTall',  weight: 2.0, scale: CUSTOM_MODEL_SCALE },
     ];
-    const NATURE_SCALE = Object.fromEntries(NATURE_ASSETS.map(a => [a.asset, a.scale]));
+
+    // I boschi vogliono ALTEZZA, non varietà: il pino (16.6, quasi il doppio
+    // del Kenney più grande) domina, gli altri due rompono la regolarità. I
+    // cespugli non ci vanno: a quella distanza non si vedrebbero comunque e
+    // costerebbero istanze.
+    const WOOD_ASSETS = [
+        { asset: 'treePine',  weight: 4.0, scale: CUSTOM_MODEL_SCALE },
+        { asset: 'treeBroad', weight: 2.0, scale: CUSTOM_MODEL_SCALE },
+        { asset: 'treeYoung', weight: 1.0, scale: CUSTOM_MODEL_SCALE },
+    ];
+
+    // Rocce: variano il materiale, non solo la sagoma. Stanno lontane dalla
+    // pista per scelta esplicita dell'utente — quella fascia diventerà via di
+    // fuga in ghiaia, e un masso a bordo pista si legge come un ostacolo
+    // pericoloso anche se non lo è.
+    const ROCK_ASSETS = [
+        { asset: 'rockSingle',  weight: 3, scale: CUSTOM_MODEL_SCALE },
+        { asset: 'rockCluster', weight: 1, scale: CUSTOM_MODEL_SCALE },
+    ];
+    const ROCK_ATTEMPTS    = 220;
+    const ROCK_MIN_MARGIN  = 60;   // oltre barrierDist: fuori dalla fascia della ghiaia
+    const ROCK_MAX_MARGIN  = 330;  // arriva sui primi pendii collinari
+    const ROCK_MIN_SPACING = 26;   // sparse, non a tappeto
+
+    const NATURE_SCALE = Object.fromEntries(
+        [...NATURE_ASSETS, ...WOOD_ASSETS, ...ROCK_ASSETS].map(a => [a.asset, a.scale])
+    );
 
     // Scatter natura, valori originali. Un tentativo di allargare la fascia
     // a 200 unità per riempire l'orizzonte è stato annullato: portava gli
@@ -771,6 +807,42 @@
         return layout;
     }
 
+    // Massi e affioramenti. Stessa struttura dello scatter della natura, con
+    // due differenze che contano: partono molto più lontano dalla pista —
+    // quella fascia diventerà via di fuga in ghiaia — e arrivano fin sui primi
+    // pendii collinari, dove un albero starebbe scomodo e una roccia no.
+    function buildRockLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted,
+                             embankOuter, playerBoxFootprints, fitsUnderBridge) {
+        const layout = [];
+        const groundPts = trackPts.filter(p => !p.bridge);
+        const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist + ROCK_MAX_MARGIN);
+
+        for (let i = 0; i < ROCK_ATTEMPTS; i++) {
+            const x = xMin + rng() * (xMax - xMin);
+            const z = zMin + rng() * (zMax - zMin);
+
+            const dTrack = TrackGeometry.nearestPoint(trackPts, x, z);
+            if (dTrack.dist < barrierDist + ROCK_MIN_MARGIN) continue;
+            if (dTrack.dist > barrierDist + ROCK_MAX_MARGIN) continue;
+            if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + ROCK_MIN_MARGIN) continue;
+            if (insidePlayerBoxFootprint(x, z, playerBoxFootprints)) continue;
+            if (isTooCloseToAny(accepted, x, z, ROCK_MIN_SPACING)) continue;
+
+            const asset = weightedPick(rng, ROCK_ASSETS);
+            const dGround = TrackGeometry.nearestPoint(groundPts, x, z).dist;
+            const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter)
+                    + SceneryHills.hillHeightAt(x, z, dGround, embankOuter,
+                                               TrackGeometry.isInsideLoop(groundPts, x, z));
+            if (!fitsUnderBridge(asset, x, z, y)) continue;
+
+            const point = { asset, category: 'rock', x, y, z,
+                            rotY: rng() * Math.PI * 2, scale: NATURE_SCALE[asset] };
+            layout.push(point);
+            accepted.push(point);
+        }
+        return layout;
+    }
+
     // Alberi fitti sulle colline e sulla fascia che le precede: è ciò che
     // chiude l'orizzonte, insieme al rilievo del terreno. La quota viene da
     // SceneryHills, LO STESSO modulo che genera la mesh del terreno in
@@ -799,7 +871,9 @@
                 if (d < embankOuter + WOOD_MIN_MARGIN) continue;
                 if (isTooCloseToAny(accepted, x, z, WOOD_MIN_SPACING)) continue;
 
-                const asset = weightedPick(rng, NATURE_ASSETS);
+                // Tabella dedicata: nei boschi conta l'altezza, quindi domina
+                // il pino e i cespugli non compaiono affatto.
+                const asset = weightedPick(rng, WOOD_ASSETS);
                 const y = SceneryHills.hillHeightAt(x, z, d, embankOuter,
                                                    TrackGeometry.isInsideLoop(groundPts, x, z));
                 // I ponti valgono anche qui. Il controllo mancava perché i
@@ -913,14 +987,20 @@
         const crowd = SceneryCrowd.buildCrowd([...mainStand, ...grandstand], seatAnchors, rng);
 
         const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints, fitsUnderBridge);
+        const paddockLife = SceneryPaddock.buildLayout(rng, trackPts, pitPts, barrierDist, accepted);
+
         // Boschi DOPO la natura: le macchie vedono fra gli oggetti già
         // accettati anche gli alberi vicini alla pista, e non ci finiscono
         // sopra.
         const woods  = buildWoodsLayout(rng, trackPts, barrierDist, embankOuter, accepted, fitsUnderBridge);
+        // Le rocce dopo gli alberi: si scansano da loro e non viceversa,
+        // perché sono molte meno e possono permettersi di cercare posto.
+        const rocce  = buildRockLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf,
+                                       accepted, embankOuter, playerBoxFootprints, fitsUnderBridge);
         const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints);
 
         const layout = [...paddock, ...mainStand, ...grandstand, ...landmarks,
-                        ...trackside, ...crowd, ...nature, ...woods];
+                        ...trackside, ...crowd, ...nature, ...woods, ...rocce, ...paddockLife];
         if (pond) layout.push(pond);
         return layout;
     }
