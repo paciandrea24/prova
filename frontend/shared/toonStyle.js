@@ -154,7 +154,17 @@
             '    float luma = dot( diffuseColor.rgb, vec3( 0.299, 0.587, 0.114 ) );',
             '    vec3 sat = luma + ( diffuseColor.rgb - luma ) * ( 1.0 + uSat );',
             '    diffuseColor.rgb = mix( diffuseColor.rgb, clamp( sat, 0.0, 1.0 ), uOn );',
-            '    if ( uIsGround > 0.5 && uOn > 0.5 ) {',
+            // La condizione include i due PESI, non solo "sono terreno": il
+            // rumore qui sotto costa 12 sin() per pixel e il terreno riempie
+            // metà schermo, quindi con chiazze e ciuffi a zero si pagavano
+            // oltre dieci milioni di funzioni trascendenti per frame per un
+            // risultato moltiplicato per zero. Sono uniform, quindi il ramo è
+            // uguale per tutti i pixel e la GPU lo salta davvero.
+            // ⚠ Quando al Task 7 si accenderanno chiazze e ciuffi il costo
+            // tornerà: lì il rumore va sostituito da una TEXTURE tileable
+            // precalcolata (2 letture invece di 12 sin), come il blotch di
+            // fps.js.
+            '    if ( uIsGround > 0.5 && uOn > 0.5 && ( uPatchAmount > 0.001 || uTuftAmount > 0.001 ) ) {',
             // chiazze: due frequenze in coordinate mondo XZ (il terreno non
             // ha UV, è generato senza coordinate di texture)
             '        float n = toonNoise( vToonPos.xz * uPatchScale ) * 0.65',
