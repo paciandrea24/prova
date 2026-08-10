@@ -165,15 +165,38 @@ I chiamanti da aggiornare sono `VehiclePhysics`/`VehicleDynamics`,
 Il nome vecchio non resta come alias: meglio un rename esplicito che due nomi
 per la stessa cosa.
 
-**Scenografia** (`trackScenery.js`, `sceneryLandmarks.js`,
-`sceneryTrackside.js`, `sceneryPaddock.js`) — `generateLayout` riceve il profilo
-al posto dello scalare `barrierDist`, e ogni `barrierDist + margine` diventa
-`barriera locale + margine`. Le funzioni che piazzano lungo la pista hanno già
-indice e lato sotto mano (`place(trackPts, groundPts, idx, offset, side, ...)`),
-quindi la sostituzione è meccanica; quelle che lavorano su punti sparsi usano
-`barrierDistAtPoint`. Per compatibilità, se al posto del profilo arriva un
-numero il comportamento è quello di oggi — i test esistenti e l'editor
-continuano a passare uno scalare.
+**Scenografia** — **nessuna modifica alla logica di piazzamento.** I sei moduli
+(`trackScenery.js`, `sceneryLandmarks.js`, `sceneryTrackside.js`,
+`sceneryPaddock.js`, `sceneryCrowd.js`, `sceneryHills.js`) continuano a
+calcolare il layout con lo scalare `barrierDist` di oggi; alla fine di
+`generateLayout` un **unico passaggio di traslazione** sposta ogni voce verso
+l'esterno della quantità di ghiaia presente nel suo punto:
+
+```
+per ogni voce del layout:
+    trova il campione pista più vicino e da che lato sta
+    spostala lungo la normale di ghiaia(campione, lato)
+```
+
+Questo è letteralmente il requisito dell'utente — "tutto esattamente come è ora,
+semplicemente traslato dopo la ghiaia" — ed è preferibile a riscrivere le ~50
+occorrenze di `barrierDist` sparse nei sei moduli:
+
+- dove non c'è ghiaia la traslazione è 0, quindi i rettilinei restano identici
+  **per costruzione**, non per una regola scritta a parte;
+- i test di scenografia esistenti continuano a valere senza modifiche;
+- le distanze reciproche fra oggetti si conservano: gli oggetti nella stessa
+  zona traslano insieme, e traslare verso l'esterno di una curva li allontana
+  fra loro (raggio maggiore), non li avvicina — nessun rischio di
+  compenetrazioni nuove.
+
+La quota `y` va ricalcolata dopo la traslazione con `terrainHeightAt`. Nelle
+zone con ghiaia il terreno è in piano per costruzione (la ghiaia si azzera dove
+la pista è in quota), quindi in pratica non cambia; il ricalcolo è una garanzia,
+non un'ipotesi.
+
+Unica eccezione: le **colline** (`sceneryHills.js`) e il prato non si traslano —
+sono terreno, non oggetti, e stanno centinaia di unità più in là.
 
 ## Cosa NON cambia
 
@@ -220,9 +243,13 @@ scenografia:
    baku nessuna, e nessuna zona cade su un tratto a ponte o in quota.
 3. `CollisionResolver` — il muro trattiene l'auto alla distanza del profilo, non
    c'è muro nel varco della corsia box, sui ponti il limite resta quello attuale.
-4. Retrocompatibilità: `generateLayout` e `buildBarriers` con uno scalare
-   producono esattamente il layout di prima (i test di scenografia esistenti
-   devono passare senza modifiche).
+4. Retrocompatibilità: `generateLayout` senza profilo e `buildBarriers` con uno
+   scalare producono esattamente il layout di prima (i test di scenografia
+   esistenti devono passare senza modifiche).
+5. Traslazione: su un tracciato reale, ogni voce di scenografia in un tratto
+   senza ghiaia resta alla posizione identica a prima (confronto voce per voce
+   con il layout generato senza profilo); nei tratti con ghiaia si sposta di
+   esattamente la larghezza locale, lungo la normale, verso l'esterno.
 
 Verifica finale in localhost da parte dell'utente: aspetto della ghiaia, larghezza
 percepita, ingresso/uscita box, e che si finisca davvero in ghiaia — non oltre —
