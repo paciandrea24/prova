@@ -471,7 +471,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const sceneryLoader = new THREE.GLTFLoader();
         const byAsset = new Map();
         for (const item of layout) {
-            if (item.category === 'pond') continue;
+            // Le voci senza modello — laghetto e asfalto del parcheggio — non
+            // passano dal caricatore GLB: sono superfici piane costruite qui
+            // sotto, e cercarne il file darebbe un 404 per ciascuna.
+            if (item.category === 'pond' || item.category === 'parkingLot') continue;
             if (!byAsset.has(item.asset)) byAsset.set(item.asset, []);
             byAsset.get(item.asset).push(item);
         }
@@ -558,6 +561,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 }
             }, undefined, (err) => console.error(`[F1] Errore caricando asset scenografia "${asset}":`, err));
+        }
+
+        // Asfalto del parcheggio: un rettangolo piano, come il laghetto ma
+        // squadrato e orientato con la corsia box. Senza, le auto poggiano
+        // sull'erba e si leggono come abbandonate invece che parcheggiate.
+        for (const item of layout) {
+            if (item.category !== 'parkingLot') continue;
+            const asfalto = new THREE.Mesh(
+                new THREE.PlaneGeometry(item.larghezza, item.profondita),
+                new THREE.MeshStandardMaterial({ color: ToonPalette.SURFACES.pitLane, roughness: 0.95 })
+            );
+            asfalto.rotation.x = -Math.PI / 2;
+            asfalto.rotation.z = item.rotY;
+            asfalto.position.set(item.x, (item.y || 0) + 0.04, item.z);
+            asfalto.receiveShadow = true;
+            applicaStile(asfalto, { saturation: ToonPalette.SATURATION.world });
+            container.add(asfalto);
         }
 
         for (const item of layout) {

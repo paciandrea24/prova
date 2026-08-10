@@ -203,6 +203,22 @@
             if (TrackGeometry.nearestPoint(pitPts, cand.x, cand.z).dist < pitHalf + PODIUM_PIT_CLEARANCE) continue;
             if (!fits('podium', cand.x, cand.z, cand.y)) continue;
             if (!freeOf('podium', cand)) continue;
+            // Niente cartelloni DAVANTI, fra il podio e la pista: non si
+            // sovrappongono — quindi freeOf li lascia passare — ma lo
+            // nascondono a chi guarda dalla pista, ed è l'unico punto da cui
+            // lo si guarda. Segnalato dall'utente su "prova": due cartelloni
+            // proprio davanti.
+            let oscurato = false;
+            for (const p of placed) {
+                if (p.category !== 'paddock') continue;
+                // Sta fra il podio e l'asfalto? Vicino al podio e più vicino
+                // di lui alla pista.
+                if (Math.hypot(p.x - cand.x, p.z - cand.z) > 26) continue;
+                const dPod = TrackGeometry.nearestPoint(trackPts, cand.x, cand.z).dist;
+                const dCart = TrackGeometry.nearestPoint(trackPts, p.x, p.z).dist;
+                if (dCart < dPod) { oscurato = true; break; }
+            }
+            if (oscurato) continue;
             layout.push({ asset: 'podium', category: 'landmark', ...cand, scale: 1 });
                 passo = raggio + 1;   // trovato: esce da entrambi i cicli
                 break;

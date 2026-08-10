@@ -32,6 +32,7 @@
     const ROW_MAX = 9;
     // Seconda fila, più arretrata: container e parcheggi.
     const BACK_OFFSET = 86;
+    const MEZZI_COUNT = 7;
     const PARK_OFFSET = 210;   // lontano: il parcheggio fa orizzonte, non ingombro
     const PARK_ROWS = 4;
     const PARK_COLS = 9;
@@ -90,23 +91,6 @@
             return voce;
         }
 
-        // --- Fila principale: motorhome e camion alternati ----------------
-        let messi = 0;
-        for (let k = -Math.floor(ROW_MAX / 2); k <= Math.floor(ROW_MAX / 2); k++) {
-            const idx = mid + k * passo;
-            if (idx < 2 || idx >= pitPts.length - 2) continue;
-            const p = pitPts[idx];
-            const { nx, nz } = TrackGeometry.normalAt(pitPts, idx, false);
-            const tang = Math.atan2(pitPts[idx + 1].x - pitPts[idx - 1].x,
-                                    pitPts[idx + 1].z - pitPts[idx - 1].z);
-            const asset = (messi % 3 === 2) ? 'truck' : 'motorhome';
-            // I mezzi sono allineati con la corsia, non ruotati a caso: un
-            // paddock è fatto di file ordinate.
-            if (piazza(asset, p.x + nx * side * ROW_OFFSET, p.z + nz * side * ROW_OFFSET,
-                       tang, 'paddock-life')) messi++;
-
-        }
-
         // --- Parcheggio lontano -------------------------------------------
         // Le auto sparse vicino ai box si leggevano come relitti abbandonati:
         // un parcheggio e' fatto di file ordinate e sta LONTANO, dove diventa
@@ -139,6 +123,38 @@
                    tangPark, 'paddock-life');
         }
 
+        // Asfalto sotto il parcheggio: senza, le auto poggiano sull erba e
+        // si leggono come abbandonate invece che parcheggiate. E una voce di
+        // layout con le sue dimensioni, disegnata da f1.js come superficie
+        // piana — la stessa strada del laghetto.
+        layout.push({
+            asset: null, category: 'parkingLot',
+            x: pPark.x + nPark.nx * side * (PARK_OFFSET + (PARK_ROWS - 1) * PARK_STEP_Z / 2),
+            y: 0,
+            z: pPark.z + nPark.nz * side * (PARK_OFFSET + (PARK_ROWS - 1) * PARK_STEP_Z / 2),
+            rotY: tangPark,
+            larghezza: PARK_COLS * PARK_STEP_X + 8,
+            profondita: PARK_ROWS * PARK_STEP_Z + 8,
+            scale: 1,
+        });
+
+        // Motorhome e camion accanto al parcheggio, non dietro i garage.
+        //
+        // Stavano nella fascia fra la corsia box e il prato: lì un mezzo
+        // lungo 15 unità è schiacciato fra edifici alti 13 e non si vede
+        // (segnalato dall'utente: "sono piccolissimi rispetto ai box e dietro
+        // di essi non si vedono"). Qui formano invece un'area logistica
+        // coerente insieme al parcheggio e ai container — e a 210 unità
+        // stanno in una fascia libera, dove hanno spazio per leggersi.
+        for (let m = 0; m < MEZZI_COUNT; m++) {
+            const off = PARK_OFFSET - 34;
+            const lungo = (m - (MEZZI_COUNT - 1) / 2) * 26;
+            piazza(m % 3 === 2 ? 'truck' : 'motorhome',
+                   pPark.x + nPark.nx * side * off + lx * lungo,
+                   pPark.z + nPark.nz * side * off + lz * lungo,
+                   tangPark + Math.PI / 2, 'paddock-life');
+        }
+
         // --- Striscioni lungo la pista ------------------------------------
         // Stesso criterio dei cartelloni sponsor che gia' funzionano: a
         // barrierDist + BANNER_OFFSET dall'asse, cioe' OLTRE la barriera, e
@@ -164,9 +180,12 @@
             // normale punta verso l'infield, dove il cartello darebbe le
             // spalle a tutti.
             if (TrackGeometry.isInsideLoop(trackPts, x, z)) continue;
-            const tang = Math.atan2(trackPts[(i + 1) % n].x - trackPts[(i - 1 + n) % n].x,
-                                    trackPts[(i + 1) % n].z - trackPts[(i - 1 + n) % n].z);
-            piazza('banner', x, z, tang, 'paddock-life');
+            // Fronte verso la PISTA, come i cartelloni sponsor: la stessa
+            // formula di sceneryLandmarks.placeBeside. Con la tangente il
+            // banner restava ortogonale all'asfalto, cioè di taglio, e la
+            // faccia colorata guardava lungo il rettilineo invece che verso
+            // chi corre.
+            piazza('banner', x, z, Math.atan2(p.x - x, p.z - z), 'paddock-life');
         }
 
         return layout;
