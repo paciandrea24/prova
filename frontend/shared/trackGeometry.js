@@ -750,7 +750,31 @@
         return out;
     }
 
+    // Il punto sta DENTRO l'anello del tracciato? Ray casting: si conta
+    // quante volte una semiretta orizzontale uscente dal punto attraversa il
+    // bordo; dispari = dentro.
+    //
+    // Serve perché la distanza dalla pista, da sola, non distingue l'infield
+    // dalla campagna: su un tracciato tortuoso il centro di un'ansa può
+    // trovarsi a 170 unità dall'asfalto esattamente come un prato esterno, e
+    // ogni effetto legato alla distanza — le colline, per esempio — vi si
+    // applicherebbe allo stesso modo, sollevando terreno in mezzo al
+    // circuito (difetto reale osservato il 2026-08-10: una lastra verde che
+    // attraversava la pista).
+    function isInsideLoop(pts, x, z) {
+        let dentro = false;
+        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+            const a = pts[i], b = pts[j];
+            if (((a.z > z) !== (b.z > z)) &&
+                (x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x)) {
+                dentro = !dentro;
+            }
+        }
+        return dentro;
+    }
+
     return {
+        isInsideLoop,
         sampleLoop,
         sampleOpenPath,
         lapLength,

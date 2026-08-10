@@ -774,8 +774,19 @@
     // prato, che si ferma a ~80 unità dal circuito — troppo presto perché i
     // rilievi, che iniziano a 180, cadessero dentro la griglia.
     // HILL_REACH copre il raggio in cui SceneryHills sale al massimo
-    // (120 di attesa + 300 di rampa) più un margine di pianoro in cima.
-    const HILL_GRID_CELL = 80;
+    // (75 di attesa + 230 di rampa) più un margine di pianoro in cima.
+    //
+    // Maglia scesa da 80 a 50 il 2026-08-10, insieme all'innalzamento delle
+    // colline. Le celle sono piatte con pareti verticali fra l'una e l'altra —
+    // servono, senza si vede attraverso il terreno — quindi il dislivello fra
+    // celle vicine È il gradino che si vede. A quota 55 era discreto; a quota
+    // 120-190 diventava un terrazzamento, ed è così che l'utente l'ha
+    // descritto: "un cerchio di mura verdi a scaloni". Misurato: il gradino
+    // medio passa da 3.3 a 2.2 unità e il peggiore da 13.5 a 8.6.
+    // Il costo è ~2.5 volte le celle (da ~840 a ~2150, sotto i 20k triangoli):
+    // scendere a 40 avrebbe guadagnato altre 0.4 unità di gradino per il 60%
+    // di celle in più, che non vale.
+    const HILL_GRID_CELL = 50;
     const HILL_REACH = 700;
 
     // Prato "vicino": una griglia di quad, tenuti solo se il centro è oltre
@@ -852,7 +863,8 @@
                 const d = TrackGeometry.nearestPoint(groundPts, cxCenter, czCenter).dist;
                 if (d < embankOuter - GROUND_GRID_CELL / 2) continue;
                 cellY.set(key(cx, cz),
-                          SceneryHills ? SceneryHills.hillHeightAt(cxCenter, czCenter, d, embankOuter) : 0);
+                          SceneryHills ? SceneryHills.hillHeightAt(cxCenter, czCenter, d, embankOuter,
+                              TrackGeometry.isInsideLoop(groundPts, cxCenter, czCenter)) : 0);
             }
         }
 
@@ -905,7 +917,8 @@
                     // complanari nello stesso punto darebbero z-fighting.
                     if (xc > minX && xc < maxX && zc > minZ && zc < maxZ) continue;
                     const d = TrackGeometry.nearestPoint(groundPts, xc, zc).dist;
-                    hillCellY.set(key(cx, cz), SceneryHills.hillHeightAt(xc, zc, d, embankOuter));
+                    hillCellY.set(key(cx, cz), SceneryHills.hillHeightAt(xc, zc, d, embankOuter,
+                        TrackGeometry.isInsideLoop(groundPts, xc, zc)));
                 }
             }
 

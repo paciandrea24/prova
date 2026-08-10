@@ -22,7 +22,7 @@ test('la quota cresce allontanandosi dal tracciato', () => {
 test('la quota non supera mai il massimo dichiarato', () => {
     for (let i = 0; i < 500; i++) {
         const h = SceneryHills.hillHeightAt(i * 37, i * -53, EMBANK_OUTER + 400, EMBANK_OUTER);
-        assert.ok(h <= SceneryHills.HILL_MAX_HEIGHT, `quota ${h} oltre il massimo`);
+        assert.ok(h <= SceneryHills.HILL_PEAK_HEIGHT, `quota ${h} oltre il massimo`);
         assert.ok(h >= 0, `quota negativa ${h}`);
     }
 });
@@ -54,7 +54,7 @@ test('la quota è continua fra punti vicini', () => {
         const x = i * 13.7, z = i * -9.1;
         const a = SceneryHills.hillHeightAt(x, z, d, EMBANK_OUTER);
         const b = SceneryHills.hillHeightAt(x + 20, z, d, EMBANK_OUTER);
-        assert.ok(Math.abs(a - b) < SceneryHills.HILL_MAX_HEIGHT * 0.5,
+        assert.ok(Math.abs(a - b) < SceneryHills.HILL_PEAK_HEIGHT * 0.5,
             `salto di ${Math.abs(a - b).toFixed(1)} unità in 20 di distanza`);
     }
 });

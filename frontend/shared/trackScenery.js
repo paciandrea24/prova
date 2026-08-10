@@ -743,7 +743,8 @@
             // colline il 2026-08-10.
             const dGround = TrackGeometry.nearestPoint(groundPts, x, z).dist;
             const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter)
-                    + SceneryHills.hillHeightAt(x, z, dGround, embankOuter);
+                    + SceneryHills.hillHeightAt(x, z, dGround, embankOuter,
+                                               TrackGeometry.isInsideLoop(groundPts, x, z));
             if (!fitsUnderBridge(asset, x, z, y)) continue;
             const point = { asset, category: 'nature', x, y, z, rotY: rng() * Math.PI * 2, scale: NATURE_SCALE[asset] };
             layout.push(point);
@@ -780,7 +781,8 @@
                 if (isTooCloseToAny(accepted, x, z, WOOD_MIN_SPACING)) continue;
 
                 const asset = weightedPick(rng, NATURE_ASSETS);
-                const y = SceneryHills.hillHeightAt(x, z, d, embankOuter);
+                const y = SceneryHills.hillHeightAt(x, z, d, embankOuter,
+                                                   TrackGeometry.isInsideLoop(groundPts, x, z));
                 // Categoria propria e non 'nature': gli alberi dei boschi
                 // prendono la quota dalle COLLINE, non dal terrapieno, e i
                 // controlli sulla natura (quota entro il terrapieno, distanza

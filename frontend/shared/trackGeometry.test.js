@@ -541,3 +541,33 @@ test('advanceToDistancePoint ritorna null se il percorso aperto finisce prima', 
     for (let i = 0; i < 20; i++) pts.push({ x: i * 2, z: 0, y: 0 });
     assert.equal(TrackGeometry.advanceToDistancePoint(pts, 0, 1, false, pts[0], 500, (i) => pts[i]), null);
 });
+
+test('isInsideLoop distingue l infield dalla campagna', () => {
+    // Quadrato di lato 100 centrato nell'origine, percorso in senso orario.
+    const quadrato = [];
+    for (let i = 0; i < 40; i++) quadrato.push({ x: -50 + i * 2.5, z: -50 });
+    for (let i = 0; i < 40; i++) quadrato.push({ x: 50, z: -50 + i * 2.5 });
+    for (let i = 0; i < 40; i++) quadrato.push({ x: 50 - i * 2.5, z: 50 });
+    for (let i = 0; i < 40; i++) quadrato.push({ x: -50, z: 50 - i * 2.5 });
+
+    assert.equal(TrackGeometry.isInsideLoop(quadrato, 0, 0), true, 'il centro deve essere dentro');
+    assert.equal(TrackGeometry.isInsideLoop(quadrato, 49, 49), true, 'appena dentro l angolo');
+    assert.equal(TrackGeometry.isInsideLoop(quadrato, 80, 0), false, 'fuori a destra');
+    assert.equal(TrackGeometry.isInsideLoop(quadrato, 0, -200), false, 'fuori in basso');
+    assert.equal(TrackGeometry.isInsideLoop(quadrato, -300, -300), false, 'lontano in diagonale');
+});
+
+test('isInsideLoop funziona su un tracciato reale a ferro di cavallo', () => {
+    // Una U: il punto dentro la concavità NON è nell'anello, anche se è
+    // circondato su tre lati e vicino all'asfalto. È il caso che distingue un
+    // vero test di appartenenza da un test sulla distanza.
+    const u = [];
+    for (let i = 0; i < 30; i++) u.push({ x: -40, z: -60 + i * 4 });       // montante sinistro
+    for (let i = 0; i < 20; i++) u.push({ x: -40 + i * 4, z: 60 });        // fondo
+    for (let i = 0; i < 30; i++) u.push({ x: 40, z: 60 - i * 4 });         // montante destro
+    for (let i = 0; i < 20; i++) u.push({ x: 40 - i * 4, z: -60 });        // chiusura
+
+    assert.equal(TrackGeometry.isInsideLoop(u, 0, 0), true, 'dentro la U');
+    assert.equal(TrackGeometry.isInsideLoop(u, 0, 120), false, 'oltre il fondo della U');
+    assert.equal(TrackGeometry.isInsideLoop(u, -100, 0), false, 'fuori dal montante');
+});
