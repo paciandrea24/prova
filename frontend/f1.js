@@ -465,35 +465,77 @@ document.addEventListener('DOMContentLoaded', async () => {
                 gltf.scene.traverse((child) => { if (child.isMesh) meshes.push(child); });
 
                 for (const mesh of meshes) {
-                    const im = new THREE.InstancedMesh(mesh.geometry, mesh.material.clone(), items.length);
-                    im.frustumCulled = false;
-                    // Etichetta per la diagnostica del pannello (F9): permette
-                    // di spegnere per categoria e capire da dove viene il
-                    // costo, senza ricaricare la pagina.
-                    im.userData.sceneryAsset = asset;
-                    // Gli spettatori NON prendono il contorno: sono centinaia
-                    // di figure alte poco più di un pixel sullo schermo, il
-                    // tratto le trasforma in sporco nero sulle tribune e ogni
-                    // istanza va comunque ridisegnata nel passaggio delle
-                    // normali. Escluderli toglie insieme rumore e lavoro.
-                    // Restano visibili (la camera abilita quel layer) e ombra
-                    // non ne proiettavano già prima (NO_SHADOW_ASSETS).
-                    if (NO_OUTLINE_ASSETS.has(asset)) ToonStyle.excludeFromOutline(im);
-                    im.castShadow = !NO_SHADOW_ASSETS.has(asset);
-                    im.receiveShadow = true;
                     const localMatrix = mesh.matrixWorld;
+                    // Raggio e centro del singolo oggetto, per dimensionare
+                    // l'ingombro dei gruppi qui sotto. Il centro non è per
+                    // forza l'origine della geometria (il tetto di una tribuna
+                    // sta tutto in alto), quindi va trasformato con la matrice
+                    // dell'istanza e non semplicemente sommato.
+                    if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+                    const sferaBase = mesh.geometry.boundingSphere;
 
-                    items.forEach((it, i) => {
-                        dummy.position.set(it.x, it.y || 0, it.z);
-                        dummy.rotation.set(0, it.rotY || 0, 0);
-                        dummy.scale.setScalar(it.scale || 1);
-                        dummy.updateMatrix();
-                        const finalMatrix = new THREE.Matrix4().multiplyMatrices(dummy.matrix, localMatrix);
-                        im.setMatrixAt(i, finalMatrix);
-                    });
-                    im.instanceMatrix.needsUpdate = true;
-                    applicaStile(im);
-                    container.add(im);
+                    // Un InstancedMesh per CELLA invece di uno per asset: solo
+                    // così il frustum culling può funzionare (vedi il commento
+                    // in testa a sceneryChunks.js). Sotto la soglia resta un
+                    // gruppo unico, che comunque riceve un ingombro corretto.
+                    const gruppi = items.length >= SceneryChunks.MIN_FOR_SPLIT
+                        ? SceneryChunks.groupByCell(items, SceneryChunks.CELL)
+                        : new Map([['unico', items]]);
+
+                    for (const sub of gruppi.values()) {
+                        // Geometria "sottile": stessi attributi per riferimento
+                        // (nessuna copia in memoria) ma volume di ingombro
+                        // proprio. Scriverlo su mesh.geometry lo condividerebbe
+                        // fra tutte le celle, che è esattamente il problema da
+                        // risolvere.
+                        const geo = new THREE.BufferGeometry();
+                        for (const nome of Object.keys(mesh.geometry.attributes)) {
+                            geo.setAttribute(nome, mesh.geometry.attributes[nome]);
+                        }
+                        if (mesh.geometry.index) geo.setIndex(mesh.geometry.index);
+
+                        const im = new THREE.InstancedMesh(geo, mesh.material.clone(), sub.length);
+                        // Etichetta per la diagnostica del pannello (F9):
+                        // permette di spegnere per categoria e capire da dove
+                        // viene il costo, senza ricaricare la pagina.
+                        im.userData.sceneryAsset = asset;
+                        // Gli spettatori NON prendono il contorno: sono
+                        // centinaia di figure alte poco più di un pixel sullo
+                        // schermo, il tratto le trasforma in sporco nero sulle
+                        // tribune e ogni istanza andrebbe ridisegnata nel
+                        // passaggio delle normali. Restano visibili (la camera
+                        // abilita quel layer) e ombra non ne proiettavano già
+                        // prima (NO_SHADOW_ASSETS).
+                        if (NO_OUTLINE_ASSETS.has(asset)) ToonStyle.excludeFromOutline(im);
+                        im.castShadow = !NO_SHADOW_ASSETS.has(asset);
+                        im.receiveShadow = true;
+
+                        const centri = [];
+                        let raggioMax = 0;
+                        sub.forEach((it, i) => {
+                            dummy.position.set(it.x, it.y || 0, it.z);
+                            dummy.rotation.set(0, it.rotY || 0, 0);
+                            dummy.scale.setScalar(it.scale || 1);
+                            dummy.updateMatrix();
+                            const finalMatrix = new THREE.Matrix4().multiplyMatrices(dummy.matrix, localMatrix);
+                            im.setMatrixAt(i, finalMatrix);
+                            const c = sferaBase.center.clone().applyMatrix4(finalMatrix);
+                            centri.push({ x: c.x, y: c.y, z: c.z });
+                            const s = it.scale || 1;
+                            if (sferaBase.radius * s > raggioMax) raggioMax = sferaBase.radius * s;
+                        });
+                        im.instanceMatrix.needsUpdate = true;
+
+                        const b = SceneryChunks.boundsOf(centri, raggioMax);
+                        geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(b.x, b.y, b.z), b.radius);
+                        // Il culling vale sia per la camera sia per la mappa
+                        // delle ombre, che ha un frustum suo: il risparmio si
+                        // prende due volte.
+                        im.frustumCulled = true;
+
+                        applicaStile(im);
+                        container.add(im);
+                    }
                 }
             }, undefined, (err) => console.error(`[F1] Errore caricando asset scenografia "${asset}":`, err));
         }

@@ -52,10 +52,14 @@
     // pallido virato al lilla. Da lì vengono le colline lontane color lilla
     // del riferimento. Mettendo il crema-pesca proprio sull'orizzonte le
     // colline virerebbero al beige.
+    // La banda calda è stata resa più arancione e più alta su richiesta
+    // dell'utente (2026-08-10: "renderlo un po' più visibile"). Le altre due
+    // tappe NON si toccano: l'orizzonte è anche il colore della nebbia, e lo
+    // zenit dà il carattere azzurro alla volta.
     const SKY_STOPS = [
         { t: 0.00, color: 0xc9d6ea },
-        { t: 0.12, color: 0xf7e3c8 },
-        { t: 0.45, color: 0x8fd3f0 },
+        { t: 0.16, color: 0xffd49a },
+        { t: 0.50, color: 0x8fd3f0 },
         { t: 1.00, color: 0x3fa9e8 },
     ];
 
