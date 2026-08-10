@@ -571,3 +571,36 @@ test('isInsideLoop funziona su un tracciato reale a ferro di cavallo', () => {
     assert.equal(TrackGeometry.isInsideLoop(u, 0, 120), false, 'oltre il fondo della U');
     assert.equal(TrackGeometry.isInsideLoop(u, -100, 0), false, 'fuori dal montante');
 });
+
+test('findCorners: un cerchio è tutto curva, un rettilineo non ha curve', () => {
+    // Cerchio di raggio 60: sotto CORNER_RADIUS_MAX, quindi tutto in curva.
+    // findCorners richiede almeno un punto NON in curva per partire (evita
+    // run spezzati a cavallo dell'indice 0), quindi su un cerchio perfetto
+    // ritorna vuoto: è il comportamento documentato, non un difetto.
+    const cerchio = [];
+    for (let i = 0; i < 200; i++) {
+        const a = i / 200 * Math.PI * 2;
+        cerchio.push({ x: Math.cos(a) * 60, z: Math.sin(a) * 60 });
+    }
+    assert.equal(TrackGeometry.findCorners(cerchio).length, 0);
+
+    // Ovale: due semicerchi di raggio 60 uniti da due rettilinei da 400.
+    // Deve trovare due curve.
+    const ovale = [];
+    for (let i = 0; i < 100; i++) ovale.push({ x: -200 + i * 4, z: -60 });
+    for (let i = 0; i < 60; i++) {
+        const a = -Math.PI / 2 + (i / 60) * Math.PI;
+        ovale.push({ x: 200 + Math.cos(a) * 60, z: Math.sin(a) * 60 });
+    }
+    for (let i = 0; i < 100; i++) ovale.push({ x: 200 - i * 4, z: 60 });
+    for (let i = 0; i < 60; i++) {
+        const a = Math.PI / 2 + (i / 60) * Math.PI;
+        ovale.push({ x: -200 + Math.cos(a) * 60, z: Math.sin(a) * 60 });
+    }
+    const curve = TrackGeometry.findCorners(ovale);
+    assert.equal(curve.length, 2, 'un ovale ha due curve');
+    for (const c of curve) {
+        assert.ok(c.side === 1 || c.side === -1, 'side deve essere ±1');
+        assert.ok(c.radius < TrackGeometry.CORNER_RADIUS_MAX);
+    }
+});

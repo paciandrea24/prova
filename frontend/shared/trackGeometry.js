@@ -773,8 +773,96 @@
         return dentro;
     }
 
+    // ────────────────────────────────────────────────────────────────────
+    // CURVE DEL TRACCIATO
+    //
+    // Era in sceneryTrackside.js, dove serviva solo a distribuire gomme e
+    // cartelli di frenata. Spostata qui perché ora la usano DUE sistemi
+    // indipendenti — la scenografia e il profilo delle vie di fuga in ghiaia
+    // (trackGravel.js) — e devono vedere le stesse curve: se divergessero, la
+    // ghiaia finirebbe dove le gomme non sono e viceversa.
+    // ────────────────────────────────────────────────────────────────────
+
+    // Soglia sotto la quale un punto è considerato "in curva". 120 unità
+    // (~94 m) su una pista larga 22: misurato sui tracciati esistenti,
+    // seleziona il 18-23% dei punti, cioè i tornanti e le curve medie senza
+    // marcare i raccordi quasi dritti.
+    const CORNER_RADIUS_MAX = 120;
+    // Due curve separate da meno di questo si fondono: senza, una parabolica
+    // leggermente irregolare si spezza in più curve e riceve più volte gli
+    // stessi oggetti sovrapposti.
+    const CORNER_MERGE_GAP = 40;
+    // Sotto questa lunghezza d'arco è un'increspatura del campionamento, non
+    // una curva.
+    const CORNER_MIN_LEN = 25;
+
+    function findCorners(trackPts) {
+        const n = trackPts.length;
+        const stepLen = lapLength(trackPts) / n;
+        const inCorner = [];
+        const turns = [];
+        for (let i = 0; i < n; i++) {
+            const { radius, turnSigned } = curvatureAt(trackPts, i);
+            inCorner.push(radius < CORNER_RADIUS_MAX);
+            turns.push(turnSigned);
+        }
+
+        // Si parte da un punto NON in curva, così il primo run non risulta
+        // spezzato a cavallo dell'indice 0 del giro chiuso.
+        let start = -1;
+        for (let i = 0; i < n; i++) {
+            if (!inCorner[i] && inCorner[(i + 1) % n]) { start = (i + 1) % n; break; }
+        }
+        if (start < 0) return [];   // tracciato interamente curvo o interamente dritto
+
+        const runs = [];
+        let cur = null;
+        for (let s = 0; s < n; s++) {
+            const i = (start + s) % n;
+            if (inCorner[i]) {
+                if (!cur) cur = { startIdx: i, endIdx: i, turnSum: 0 };
+                cur.endIdx = i;
+                cur.turnSum += turns[i];
+            } else if (cur) {
+                runs.push(cur);
+                cur = null;
+            }
+        }
+        if (cur) runs.push(cur);
+
+        const gapSamples = Math.max(1, Math.round(CORNER_MERGE_GAP / stepLen));
+        const merged = [];
+        for (const r of runs) {
+            const last = merged[merged.length - 1];
+            if (last && ((r.startIdx - last.endIdx + n) % n) <= gapSamples) {
+                last.endIdx = r.endIdx;
+                last.turnSum += r.turnSum;
+            } else {
+                merged.push(Object.assign({}, r));
+            }
+        }
+
+        const minSamples = Math.max(1, Math.round(CORNER_MIN_LEN / stepLen));
+        return merged
+            .filter(r => ((r.endIdx - r.startIdx + n) % n) >= minSamples)
+            .map(r => {
+                const len = (r.endIdx - r.startIdx + n) % n;
+                const midIdx = (r.startIdx + Math.floor(len / 2)) % n;
+                const { radius } = curvatureAt(trackPts, midIdx);
+                // Il lato ESTERNO della curva è opposto al verso di sterzata:
+                // normalAt ritorna (-tz, tx) e con turnSum positivo la pista
+                // gira verso quella normale, quindi l'esterno sta dall'altra parte.
+                return {
+                    startIdx: r.startIdx, endIdx: r.endIdx, midIdx, radius,
+                    side: r.turnSum > 0 ? -1 : 1,
+                };
+            });
+    }
+
     return {
         isInsideLoop,
+        findCorners,
+        CORNER_RADIUS_MAX,
         sampleLoop,
         sampleOpenPath,
         lapLength,
