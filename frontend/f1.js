@@ -457,6 +457,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 for (const mesh of meshes) {
                     const im = new THREE.InstancedMesh(mesh.geometry, mesh.material.clone(), items.length);
                     im.frustumCulled = false;
+                    // Etichetta per la diagnostica del pannello (F9): permette
+                    // di spegnere per categoria e capire da dove viene il
+                    // costo, senza ricaricare la pagina.
+                    im.userData.sceneryAsset = asset;
                     im.castShadow = !NO_SHADOW_ASSETS.has(asset);
                     im.receiveShadow = true;
                     const localMatrix = mesh.matrixWorld;

@@ -121,6 +121,38 @@
                 });
         }
 
+        // ── Diagnostica del carico di scena ──────────────────────────
+        // Interruttori per capire DA DOVE viene il costo, spegnendo una
+        // categoria alla volta senza ricaricare. Non fanno parte del look:
+        // servono a rispondere a "chi sta consumando il frame?".
+        const sep = document.createElement('div');
+        sep.textContent = 'CARICO DI SCENA (diagnostica)';
+        sep.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #3a4048;font-weight:bold;';
+        box.appendChild(sep);
+
+        function mostraSe(filtro, visibile) {
+            let toccati = 0;
+            scene.traverse((c) => {
+                if (c.isInstancedMesh && c.userData.sceneryAsset && filtro(c.userData.sceneryAsset)) {
+                    c.visible = visibile;
+                    toccati++;
+                }
+            });
+            console.log(`[ToonPanel] ${toccati} gruppi ${visibile ? 'riaccesi' : 'spenti'}`);
+        }
+
+        interruttore(box, 'spettatori', true, (on) => mostraSe((a) => a.indexOf('spectator') === 0, on));
+        interruttore(box, 'alberi e boschi', true, (on) => mostraSe((a) => a.indexOf('tree') === 0, on));
+        interruttore(box, 'tutta la scenografia', true, (on) => mostraSe(() => true, on));
+        // Congela la shadow map invece di disattivarla: spegnere
+        // shadowMap.enabled cambierebbe i define dei materiali e ne
+        // forzerebbe la ricompilazione, falsando la misura. Così si smette
+        // solo di RIGENERARLA a ogni frame, che è la parte cara quando in
+        // scena ci sono migliaia di istanze.
+        interruttore(box, 'ombre ricalcolate ogni frame', true, (on) => {
+            if (renderer) renderer.shadowMap.autoUpdate = on;
+        });
+
         const audit = document.createElement('button');
         audit.textContent = 'elenca materiali non convertiti';
         audit.style.cssText = 'margin-top:8px;width:100%;font:11px monospace;padding:4px;cursor:pointer;';
