@@ -127,3 +127,29 @@ def build_pit_crew_kneel(kit):
     kit.box('red', (0.34, 0.34, 0.30), (0, -0.38, 1.32))            # casco
     kit.box('steelDark', (0.26, 0.09, 0.12), (0, -0.55, 1.29))      # visiera
     return 0.86, 1.47
+
+
+def make_spectator_standing(shirt):
+    """Spettatore in piedi a bordo recinzione.
+
+    Riusa `_standing_legs` dei meccanici: la posa è la stessa e non ha senso
+    riscriverla. Cambiano la maglia e l'assenza di casco — a distanza è tutto
+    quello che distingue un tifoso da un membro della squadra.
+
+    Come per gli spettatori seduti, una funzione per colore: una recinzione di
+    figure tutte identiche si riconosce a colpo d'occhio.
+    """
+    def build(kit):
+        _standing_legs(kit)
+        kit.box(shirt, (0.62, 0.34, 0.85), (0, 0, 1.42))             # busto
+        for side in (-1, 1):
+            # Braccia un filo più strette del busto: a parità di larghezza le
+            # facce laterali sarebbero complanari (vedi il guanto del
+            # meccanico).
+            kit.box(shirt, (0.15, 0.28, 0.66), (side * 0.38, 0.01, 1.40))
+            kit.box('skin', (0.16, 0.18, 0.15), (side * 0.38, -0.02, 1.02))
+        kit.box('skin', (0.26, 0.24, 0.14), (0, 0, 1.91))            # collo
+        kit.box('skin', (0.34, 0.32, 0.30), (0, 0.01, 2.12))         # testa
+        return 0.70, 2.30
+
+    return build

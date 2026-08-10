@@ -2,7 +2,8 @@
 Ogni build() scolpisce i pezzi con il kit e ritorna l'ingombro orizzontale e
 l'altezza, usati solo per inquadrare il render."""
 from . import (grandstands, billboards, pitBuildings, raceStructures, safety,
-               decor, people, trackside, pitBox, vegetation)
+               decor, people, trackside, pitBox, vegetation, rocks,
+               paddock, life)
 
 ASSET_BUILDERS = {
     'grandStand':        grandstands.build_grand_stand,
@@ -32,6 +33,17 @@ ASSET_BUILDERS = {
     'treeRound':         vegetation.build_round,
     'bushLow':           vegetation.build_bush_low,
     'bushTall':          vegetation.build_bush_tall,
+    'rockSingle':        rocks.build_rock_single,
+    'rockCluster':       rocks.build_rock_cluster,
+    'motorhome':         paddock.build_motorhome,
+    'truck':             paddock.build_truck,
+    'containerStack':    paddock.build_container_stack,
+    'parkedCarRed':      life.make_parked_car('red'),
+    'parkedCarBlue':     life.make_parked_car('blue'),
+    'parkedCarWhite':    life.make_parked_car('white'),
+    'banner':            life.build_banner,
+    'spectatorStandA':   people.make_spectator_standing('red'),
+    'spectatorStandB':   people.make_spectator_standing('blue'),
     # Non in uso nel gioco: vedi la nota in vegetation.py
     'woodMass':          vegetation.build_wood_mass,
     'brakingBoard':      trackside.build_braking_board,
