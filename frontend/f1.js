@@ -104,6 +104,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderer.toneMapping = THREE.NoToneMapping;
     document.body.appendChild(renderer.domElement);
 
+    // Contorni neri: aggiungono un passaggio di rendering, quindi restano
+    // fuori quando il look è disattivato con ?toon=off.
+    if (urlParams.get('toon') !== 'off') ToonOutline.init(renderer, camera);
+
     // ====================================================
     // LUCI
     // ====================================================
@@ -324,7 +328,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Pannello di taratura: F9 lo apre, F8 accende e spegne i contorni.
     // `outline` resta null finché ToonOutline non entra in gioco.
     ToonPanel.install({
-        style: ToonStyle, sky: toonSky, outline: null, scene,
+        style: ToonStyle, sky: toonSky, outline: TOON_ON ? ToonOutline : null, scene,
         lights: { sun, hemi }, renderer, attivo: TOON_ON,
     });
 
@@ -578,6 +582,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const state = { x: [], y: [], z: [], age: [], baseScale: [] };
         for (let i = 0; i < SLIPSTREAM_VOXEL_COUNT; i++) spawnSlipstreamVoxel(state, i);
         mesh.userData.slipstreamState = state;
+        // Effetto, non oggetto solido: con il contorno i cubetti della scia
+        // diventerebbero coriandoli neri. Perde anche la proiezione d'ombra,
+        // che comunque non aveva (MeshBasicMaterial, castShadow mai attivato).
+        ToonStyle.excludeFromOutline(mesh);
         return mesh;
     }
 
@@ -2290,7 +2298,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (tyreSelectActive) updateTyreSelectCamera();
         else updateCamera();
         toonSky.update(camera);
-        renderer.render(scene, camera);
+        ToonOutline.render(renderer, scene, camera);
     }
 
     animate();
@@ -2306,5 +2314,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
+        // Fuori dall'if: il buffer dei contorni va ridimensionato in entrambi
+        // i rami, altrimenti resta della misura precedente e il tratto si
+        // sposta rispetto all'immagine.
+        ToonOutline.setSize(renderer);
     });
 });

@@ -47,7 +47,7 @@
     // modifica sembra non aver avuto alcun effetto.
     // Va aggiornato quando si cambia qualcosa che l'utente deve poter
     // verificare in un playtest.
-    const BUILD = '20260810-g';
+    const BUILD = '20260810-h';
 
     // ── uniform CONDIVISE ────────────────────────────────────────────
     // Un solo oggetto per uniform, copiato per riferimento in ogni materiale:
