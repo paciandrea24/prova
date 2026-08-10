@@ -96,15 +96,18 @@
     // (un centro, alberi fitti attorno), perché uno scatter uniforme su
     // un'area così grande dà un prato spennacchiato, non un bosco — ed è
     // esattamente il tentativo già bocciato in passato.
-    const WOOD_CLUSTERS       = 26;   // macchie tentate per tracciato
-    const WOOD_PER_CLUSTER    = 14;   // alberi tentati per macchia
-    const WOOD_CLUSTER_RADIUS = 34;
-    const WOOD_MIN_SPACING    = 6;
+    const WOOD_CLUSTERS       = 46;   // macchie tentate per tracciato
+    const WOOD_PER_CLUSTER    = 22;   // alberi tentati per macchia
+    // Raggio STRETTO di proposito: allargarlo dirada la macchia invece di
+    // ingrandirla, e un bosco rado non ferma lo sguardo. La massa visiva viene
+    // dalla densità interna, non dall area coperta.
+    const WOOD_CLUSTER_RADIUS = 26;
+    const WOOD_MIN_SPACING    = 5;
     // Tetto complessivo, sopra i ~240 alberi di NATURE_*: a 700 totali il
     // gioco scattava anche in localhost (vedi il commento di NATURE_ATTEMPTS).
     // Da allora gli alberi sono esclusi dalle ombre, che di quel calo erano la
     // causa vera, ma il tetto resta esplicito e ritarabile.
-    const WOOD_MAX_TREES      = 300;
+    const WOOD_MAX_TREES      = 600;
     // Margine oltre il bordo del terrapieno entro cui NON si pianta: è la
     // fascia dove si finisce uscendo di pista, deve restare sgombra.
     const WOOD_MIN_MARGIN     = 20;

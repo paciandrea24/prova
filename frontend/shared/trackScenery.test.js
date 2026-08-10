@@ -603,7 +603,13 @@ test('i boschi restano sotto il tetto di istanze, lontani dalla pista e sul rili
     const woods = layout.filter(i => i.category === 'woods');
     const trees = layout.filter(i => i.category === 'nature' || i.category === 'woods');
     assert.ok(woods.length > 100, `solo ${woods.length} alberi di bosco: l'orizzonte resta aperto`);
-    assert.ok(trees.length <= 560, `${trees.length} alberi in tutto: oltre il tetto, rischio frame rate`);
+    // Tetto alzato da 560 a 800 il 2026-08-10. Il vecchio valore nasceva da un
+    // periodo in cui ogni albero proiettava ombra e la scenografia veniva
+    // disegnata per intero a ogni frame: entrambe le cause sono cadute
+    // (NO_SHADOW_ASSETS e il frustum culling per celle di sceneryChunks), e la
+    // misura del pannello va rifatta a ogni ritaratura invece di fidarsi del
+    // numero. Se un playtest mostra cali, la leva è WOOD_MAX_TREES.
+    assert.ok(trees.length <= 800, `${trees.length} alberi in tutto: oltre il tetto, rischio frame rate`);
 
     const embankOuter = barrierD + 45;
     const groundPts = trackPts.filter(p => !p.bridge);
@@ -664,3 +670,24 @@ for (const track of [prova, monteRosso, newMonza]) {
         }
     });
 }
+
+test('i boschi formano macchie fitte, non un prato spennacchiato', () => {
+    // La massa visiva viene dalla densità DENTRO la macchia: un bosco rado lo
+    // sguardo lo attraversa, e allargare le macchie invece di infittirle le
+    // dirada soltanto. Si misura contando quanti alberi ha in media un albero
+    // entro 20 unità: sotto 3 è vegetazione sparsa, non bosco.
+    const { layout } = layoutFor(prova);
+    const woods = layout.filter(v => v.category === 'woods');
+    assert.ok(woods.length >= 400, `solo ${woods.length} alberi di bosco`);
+    let vicini = 0;
+    for (const a of woods) {
+        let n = 0;
+        for (const b of woods) {
+            if (a === b) continue;
+            if (Math.hypot(a.x - b.x, a.z - b.z) < 20) n++;
+        }
+        vicini += n;
+    }
+    const media = vicini / woods.length;
+    assert.ok(media >= 3, `densità media ${media.toFixed(1)} vicini: bosco troppo rado`);
+});
