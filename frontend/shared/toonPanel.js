@@ -107,6 +107,16 @@
         riga(box, 'nebbia', 0, 0.005, scene.fog ? scene.fog.density : 0.0016, 0.0001, (v) => {
             if (scene.fog) scene.fog.density = v;
         });
+        // Cielo: le tre manopole che decidono come la banda calda incontra
+        // l'orizzonte. "calore orizzonte" muove ANCHE la nebbia, perché sono
+        // per costruzione lo stesso colore.
+        if (sky && sky.setWarmPos) {
+            riga(box, 'quota banda calda', 0.02, 0.40, sky.uniforms.uStops.value[1], 0.005,
+                (v) => sky.setWarmPos(v));
+            riga(box, 'inizio azzurro', 0.15, 0.90, sky.uniforms.uStops.value[2], 0.01,
+                (v) => sky.setBlueStart(v));
+            riga(box, 'calore orizzonte', 0, 1, 0, 0.01, (v) => sky.setHorizonWarmth(v));
+        }
         if (outline) {
             riga(box, 'spessore contorno', 0.5, 3, outline.uniforms.uThickness.value, 0.1,
                 (v) => { outline.uniforms.uThickness.value = v; });
@@ -179,16 +189,19 @@
         // contatori di scena — un salto nel numero di programmi mentre giochi
         // significa che la GPU sta compilando shader a caldo, ed è una causa
         // classica di micro-blocchi.
-        let frame = 0, t0 = performance.now(), tPrec = t0, peggiore = 0;
+        let frame = 0, t0 = performance.now(), tPrec = t0, peggiore = 0, disegnoMax = 0;
         function tick() {
             const ora = performance.now();
             const dt = ora - tPrec;
             tPrec = ora;
             frame++;
             if (dt > peggiore) peggiore = dt;
+            if (outline && outline.stats && outline.stats.ms > disegnoMax) disegnoMax = outline.stats.ms;
             if (ora - t0 >= 500) {
                 const medio = Math.round(frame * 1000 / (ora - t0));
-                let testo = `fps ${medio}   frame peggiore ${peggiore.toFixed(1)} ms`;
+                // "disegno" è il tempo speso a renderizzare; se resta basso
+                // mentre "frame peggiore" schizza, il ritardo non è grafico.
+                let testo = `fps ${medio}   frame peggiore ${peggiore.toFixed(1)} ms   di cui disegno ${disegnoMax.toFixed(1)} ms`;
                 if (renderer && renderer.info) {
                     // Con i contorni attivi i contatori di renderer.info a fine
                     // frame descrivono il solo rettangolo dell'overlay: i numeri
@@ -199,7 +212,7 @@
                     testo += `\ndraw ${s.calls}   triangoli ${(s.triangles / 1000).toFixed(0)}k   programmi ${renderer.info.programs ? renderer.info.programs.length : '—'}`;
                 }
                 fps.textContent = testo;
-                frame = 0; t0 = ora; peggiore = 0;
+                frame = 0; t0 = ora; peggiore = 0; disegnoMax = 0;
             }
             requestAnimationFrame(tick);
         }

@@ -29,7 +29,11 @@
     // Draw call e triangoli della SCENA (non del rettangolo dei contorni),
     // catturati dentro render(). Vedi il commento nel punto in cui si
     // riempiono.
-    const stats = { calls: 0, triangles: 0 };
+    // `ms` è il tempo speso a DISEGNARE, separato dal tempo del frame: se il
+    // frame dura 46 ms ma il disegno ne prende 8, il ritardo viene da
+    // altrove — elaborazione dei pacchetti dal server, aggiornamenti del DOM,
+    // raccolta della memoria — e non serve a nulla alleggerire la grafica.
+    const stats = { calls: 0, triangles: 0, ms: 0 };
 
     const uniforms = {
         uNormal: { value: null },
@@ -183,8 +187,12 @@
     }
 
     function render(renderer, scene, camera) {
+        const t0 = performance.now();
         if (!ready || !enabled) {
             renderer.render(scene, camera);
+            stats.calls = renderer.info.render.calls;
+            stats.triangles = renderer.info.render.triangles;
+            stats.ms = performance.now() - t0;
             return;
         }
 
@@ -223,6 +231,8 @@
         renderer.autoClear = false;
         renderer.render(quadScene, quadCam);
         renderer.autoClear = autoClear;
+
+        stats.ms = performance.now() - t0;
     }
 
     return {

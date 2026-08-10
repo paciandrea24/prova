@@ -58,8 +58,8 @@
     // zenit dà il carattere azzurro alla volta.
     const SKY_STOPS = [
         { t: 0.00, color: 0xc9d6ea },
-        { t: 0.16, color: 0xffd49a },
-        { t: 0.50, color: 0x8fd3f0 },
+        { t: 0.11, color: 0xffd49a },
+        { t: 0.38, color: 0x8fd3f0 },
         { t: 1.00, color: 0x3fa9e8 },
     ];
 

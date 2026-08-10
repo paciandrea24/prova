@@ -71,6 +71,11 @@
         scene.background = new THREE.Color(FLAT_SKY);
         scene.fog = new THREE.FogExp2(ToonPalette.fogColor(), ToonPalette.FOG_DENSITY);
 
+        // Colore d'origine dell'orizzonte e della banda calda: servono per
+        // rimescolarli con setHorizonWarmth senza perdere il riferimento.
+        const orizzonteFreddo = new THREE.Color(stops[0].color);
+        const caldo = new THREE.Color(stops[1].color);
+
         return {
             dome,
             uniforms,
@@ -81,6 +86,20 @@
                 uniforms.uOn.value = on ? 1 : 0;
                 dome.visible = true;   // resta visibile: da spenta disegna il colore piatto
                 scene.fog.color.set(on ? ToonPalette.fogColor() : FLAT_SKY);
+            },
+            // Quota della banda calda: più bassa = fascia sottile schiacciata
+            // sull'orizzonte, più alta = fascia che invade il cielo.
+            setWarmPos(t) { uniforms.uStops.value[1] = t; },
+            // Da dove comincia l'azzurro: avvicinandolo alla banda calda si
+            // stringe la transizione, allontanandolo la si allarga.
+            setBlueStart(t) { uniforms.uStops.value[2] = t; },
+            // Quanto l'orizzonte stesso è caldo, da 0 (azzurro-lilla) a 1
+            // (caldo come la banda). LA NEBBIA SEGUE: è la stessa tinta, per
+            // costruzione, quindi il terreno lontano continua a sfumare
+            // esattamente nel cielo che ha sopra, senza linea di stacco.
+            setHorizonWarmth(k) {
+                uniforms.uColors.value[0].copy(orizzonteFreddo).lerp(caldo, k);
+                scene.fog.color.copy(uniforms.uColors.value[0]);
             },
         };
     }
