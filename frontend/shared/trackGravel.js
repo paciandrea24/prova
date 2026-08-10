@@ -125,6 +125,25 @@
         return out;
     }
 
+    // Finestra (in unità, non in campioni) attorno ai due estremi della corsia
+    // box entro cui barriera e cordolo si aprono. Il varco esisteva già, ma
+    // solo nel DISEGNO (era in f1.js): da quando la barriera è anche un muro
+    // fisico lato server, la stessa regola deve valere per entrambi — se
+    // divergessero, all'ingresso dei box si sbatterebbe contro un muro
+    // invisibile dove il disegno mostra un varco.
+    //
+    // 75 e non l'intera corsia: con l'intera corsia si apriva un varco spurio
+    // di 139 unità su "prova", dove la pista passa vicino alla zona box.
+    const PIT_MERGE_WINDOW = 75;
+
+    function pitGapSamples(pts) {
+        const n = pts.length;
+        const cum = [0];
+        for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
+        const total = cum[n - 1];
+        return pts.filter((_, i) => cum[i] < PIT_MERGE_WINDOW || total - cum[i] < PIT_MERGE_WINDOW);
+    }
+
     function gravelAt(profile, i, side) {
         const banda = side > 0 ? profile.right : profile.left;
         return banda[((i % banda.length) + banda.length) % banda.length];
@@ -136,6 +155,7 @@
 
     return {
         gravelProfile, gravelAt, barrierDistAt,
+        pitGapSamples, PIT_MERGE_WINDOW,
         GRAVEL_WIDTH, CURB_W, BARRIER_GAP,
         CORNER_LEAD, RAMP, PIT_CLEARANCE, MIN_USEFUL_WIDTH, FLAT_Y_TOLERANCE,
         MAX_STEP_PER_SAMPLE,

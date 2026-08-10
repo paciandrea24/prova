@@ -237,25 +237,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // divergenza tra corsia box disegnata e varco/scenografia.
     const PIT_PTS = TrackGeometry.tuckPitEndsToTrack(TrackGeometry.sampleOpenPath(PIT_PATH, 300), trackPts);
 
-    // Solo i campioni vicino ai due estremi (entro PIT_MERGE_WINDOW unità
-    // d'arco da ciascuno, un margine oltre i 35 di
-    // TrackGeometry.tuckPitEndsToTrack di default) — non l'intero PIT_PTS:
-    // il varco barriera deve aprirsi SOLO al vero ingresso/uscita, non
-    // ovunque il tracciato passi vicino a un punto qualunque della corsia
-    // box (bug reale misurato in playtest: 139m di varco spurio su "prova"
-    // dove la pista passava vicino alla zona box/stalli, con l'intero
-    // PIT_PTS). Usare i campioni "abbracciati" alla curva (non solo i due
-    // punti estremi) fa sì che anche la FORMA del varco segua la vera
-    // curvatura della pista, non un semplice cerchio attorno a un punto.
-    const PIT_MERGE_WINDOW = 75;
-    function pitMergeSamples(pts) {
-        const n = pts.length;
-        const cum = [0];
-        for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
-        const total = cum[n - 1];
-        return pts.filter((_, i) => cum[i] < PIT_MERGE_WINDOW || total - cum[i] < PIT_MERGE_WINDOW);
-    }
-
     // Beccheggio (pitch) visivo dell'auto sui dislivelli: pendenza locale tra
     // il campione precedente e successivo lungo il giro, applicata come
     // rotazione attorno all'asse locale dell'auto DOPO l'imbardata (vedi
@@ -270,10 +251,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         return -Math.atan2(dy, horiz);
     }
 
-    // Calcolato una volta sola: sia il cordolo sia la barriera devono
-    // aprire il varco esattamente nello stesso punto/forma (Rif. richiesta
-    // utente 2026-08-08: "togliere il cordolo... tanto c'è la corsia box").
-    const PIT_MERGE_SAMPLES = pitMergeSamples(PIT_PTS);
+    // Calcolato una volta sola: cordolo, barriera disegnata e MURO FISICO
+    // lato server devono aprire il varco esattamente nello stesso punto e
+    // nella stessa forma (Rif. richiesta utente 2026-08-08: "togliere il
+    // cordolo... tanto c'è la corsia box"). La regola sta in TrackGravel, non
+    // più qui: il server la richiama sugli stessi punti, così il varco
+    // disegnato e quello fisico non possono divergere.
+    //
+    // Solo i campioni vicino ai due estremi (entro PIT_MERGE_WINDOW unità
+    // d'arco da ciascuno) e non l'intero PIT_PTS: il varco deve aprirsi SOLO
+    // al vero ingresso/uscita, non ovunque il tracciato passi vicino a un
+    // punto qualunque della corsia box (bug reale misurato in playtest: 139m
+    // di varco spurio su "prova"). Usare i campioni "abbracciati" alla curva
+    // fa sì che anche la FORMA del varco segua la vera curvatura della pista.
+    const PIT_MERGE_SAMPLES = TrackGravel.pitGapSamples(PIT_PTS);
 
     // DoubleSide evita artefatti di culling nelle zone ad alta curvatura
     TrackMeshBuilder.buildRibbon(scene, trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: ToonPalette.SURFACES.asphalt, roughness: 0.95, side: THREE.DoubleSide }));

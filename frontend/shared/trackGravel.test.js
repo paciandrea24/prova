@@ -82,6 +82,25 @@ test('la corsia box vicina toglie la ghiaia', () => {
         'la corsia box vicina riduce o azzera la ghiaia');
 });
 
+test('pitGapSamples tiene solo i punti vicini ai due estremi della corsia', () => {
+    // Corsia rettilinea lunga 400 unità, un punto ogni 2 unità.
+    const pit = [];
+    for (let i = 0; i <= 200; i++) pit.push({ x: i * 2, z: 0 });
+
+    const gap = TrackGravel.pitGapSamples(pit);
+    assert.ok(gap.length > 0 && gap.length < pit.length, 'né vuoto né tutto');
+
+    // Il primo e l'ultimo punto ci sono sempre; quello di mezzo mai.
+    const ha = (x) => gap.some(p => p.x === x);
+    assert.ok(ha(0), 'il primo punto è nel varco');
+    assert.ok(ha(400), 'l\'ultimo punto è nel varco');
+    assert.ok(!ha(200), 'il punto centrale non è nel varco');
+
+    // Il confine è PIT_MERGE_WINDOW = 75 unità dagli estremi.
+    assert.ok(ha(74), 'a 74 unità dall\'inizio è ancora varco');
+    assert.ok(!ha(76), 'a 76 unità dall\'inizio non lo è più');
+});
+
 test('barrierDistAt somma la ghiaia alla distanza base', () => {
     const pts = ovale();
     const prof = TrackGravel.gravelProfile(pts, { roadHalf: 11 });
