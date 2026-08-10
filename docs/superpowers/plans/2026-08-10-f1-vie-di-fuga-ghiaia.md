@@ -4,6 +4,27 @@
 
 **Goal:** aggiungere le vie di fuga in ghiaia all'esterno delle curve, con barriere e scenografia traslate solo dove c'è la ghiaia, e barriere che diventano un muro solido su tutto il giro.
 
+## STATO AL 2026-08-11 — sospeso su richiesta dell'utente
+
+**Fatti e committati: Task 1-5.** La ghiaia si vede in gioco, le barriere la
+seguono, la larghezza è **approvata dall'utente al playtest** ("in curva 1 a
+Monza è perfetta"; in qualche curva la trova appena larga, ma ha scelto di
+tenerla così e semmai ritoccarla in futuro — non ritoccare `GRAVEL_WIDTH` senza
+che lo chieda).
+
+**Da fare: Task 6, 7, 8.** Al momento la scenografia è ancora dov'era, quindi
+tribune e cartelloni si sovrappongono alla ghiaia: è atteso, lo risolve il
+Task 6.
+
+Due cose imparate al playtest, valide per il seguito:
+- **Serve un hard refresh (Ctrl+Shift+R)**, non un refresh normale: il primo
+  playtest è sembrato "nessuna differenza" solo per la cache del browser. Se
+  ricapita, il modo più veloce per distinguere "codice vecchio" da "difetto
+  vero" è un `console.log` temporaneo nel punto in questione.
+- **Le soglie geometriche vanno espresse per unità di pista, mai per campione**:
+  i campioni sono lunghi 1.18 unità su monte-rosso e 5.17 su prova. È il difetto
+  che teneva la ghiaia a 14 unità invece di 32 su prova.
+
 **Architecture:** un modulo condiviso nuovo (`frontend/shared/trackGravel.js`) calcola il **profilo di ghiaia** — quante unità di ghiaia ci sono in ogni campione della pista, per lato — e da quel singolo numero derivano il disegno della banda, la posizione delle barriere, il muro fisico lato server e la traslazione della scenografia. Dove il profilo vale 0 tutto resta identico a oggi, per costruzione.
 
 **Tech Stack:** JavaScript vanilla, moduli UMD condivisi client/server (stesso schema di `trackGeometry.js`), Three.js r128 per il rendering, `node --test` per i test.
