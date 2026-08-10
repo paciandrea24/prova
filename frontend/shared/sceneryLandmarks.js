@@ -38,7 +38,10 @@
     // La torre è larga 14.6: deve stare ben oltre il bordo della corsia box,
     // altrimenti ci finisce sopra a cavallo.
     const TOWER_PIT_CLEARANCE = 16;
-    const PODIUM_OFFSET_MARGIN = 30;  // oltre barrierDist, dietro la fila dei box
+    // 14 e non 30: a 30 il podio finiva DIETRO la fila dei box, dove non lo
+    // vede nessuno. A 14 sta nella fascia fra la barriera e la corsia box,
+    // che e dove passano le auto a fine gara.
+    const PODIUM_OFFSET_MARGIN = 14;  // oltre barrierDist, fra pista e corsia box
     const PODIUM_PIT_CLEARANCE = 12;  // dal bordo corsia box
 
     function spanScale(barrierDist, nativeHalfSpan) {
@@ -98,6 +101,14 @@
             const item = { asset, x: cand.x, z: cand.z, rotY: cand.rotY,
                            y: cand.y, scale: scale || 1 };
             for (const p of placed) {
+                if (SceneryAssetSizes.itemsOverlap(item, p)) return false;
+            }
+            // Anche i landmark piazzati in QUESTA chiamata: `placed` contiene
+            // ciò che esisteva prima, non la torre appena messa qui sopra.
+            // Finché il podio stava arretrato di 30 unità non se ne accorgeva
+            // nessuno; avvicinandolo al traguardo il 2026-08-10 è finito
+            // addosso alla torre su monte-rosso.
+            for (const p of layout) {
                 if (SceneryAssetSizes.itemsOverlap(item, p)) return false;
             }
             return true;
@@ -160,10 +171,32 @@
             }
         }
 
-        // Podio: nel paddock, lato corsia box, arretrato oltre la fila dei
-        // box giocatore. Si scorre il giro finché non si trova un punto che
-        // non cada dentro un box né dentro la corsia.
-        for (let d = 0; d < n; d += 5) {
+        // Podio: FRA I BOX E LA PISTA, vicino al traguardo.
+        //
+        // Prima si scorreva tutto il giro finché non si trovava posto, e il
+        // risultato è che finiva dove capitava — l'utente l'ha trovato dietro
+        // la torre di direzione, dove non lo vede nessuno. Un podio ha senso
+        // solo dove passano le auto a fine gara.
+        //
+        // La ricerca è quindi limitata a una finestra stretta attorno a
+        // trackPts[0], che è il riferimento del traguardo per tutti i
+        // landmark, e alterna avanti e indietro partendo dal centro. Se in
+        // quella fascia non c'è posto NON si ripiega altrove: meglio nessun
+        // podio che un podio invisibile.
+        // Due passate: prima la fascia stretta attorno al traguardo, che è
+        // dove il podio DEVE stare; se lì non c'è posto — succede su
+        // monte-rosso, dove fra barriera e corsia box lo spazio è occupato —
+        // si allarga al giro intero, perché un podio mancante romperebbe la
+        // cerimonia più di uno piazzato lontano.
+        const finestra = Math.round(n * 0.06);   // ~6% del giro per lato
+        const raggio = layout.some(l => l.asset === 'podium') ? 0 : n / 2;
+        for (let passo = 0; passo <= raggio; passo += 4) {
+            for (const verso of (passo === 0 ? [1] : [1, -1])) {
+                const d = ((passo * verso) % n + n) % n;
+                // Oltre la fascia stretta ci si allontana anche dalla pista:
+                // là dietro c'è più spazio e non si ruba scena al traguardo.
+                const offset = barrierDist + (passo <= finestra
+                    ? PODIUM_OFFSET_MARGIN : PODIUM_OFFSET_MARGIN + 16);
             const cand = placeBeside(trackPts, d % n, barrierDist + PODIUM_OFFSET_MARGIN,
                                      -mainSide, groundPts, barrierDist, embankOuter);
             if (insidePlayerBoxFootprint(cand.x, cand.z, playerBoxFootprints)) continue;
@@ -171,7 +204,9 @@
             if (!fits('podium', cand.x, cand.z, cand.y)) continue;
             if (!freeOf('podium', cand)) continue;
             layout.push({ asset: 'podium', category: 'landmark', ...cand, scale: 1 });
-            break;
+                passo = raggio + 1;   // trovato: esce da entrambi i cicli
+                break;
+            }
         }
 
         return layout;

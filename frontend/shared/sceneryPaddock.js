@@ -26,14 +26,15 @@
     // dall'asse della corsia è più lontano di una tribuna e si perde nel
     // prato. A 40 sta appena dietro i garage, che è dove sta in un paddock
     // vero e dove il giocatore lo vede a ogni pit stop.
-    const ROW_OFFSET = 40;
+    const ROW_OFFSET = 58;
     // Passo fra i mezzi: l'ingombro maggiore è il camion (19.1) più respiro.
     const ROW_STEP = 23;
     const ROW_MAX = 9;
     // Seconda fila, più arretrata: container e parcheggi.
-    const BACK_OFFSET = 62;
-    const PARK_ROWS = 3;
-    const PARK_COLS = 7;
+    const BACK_OFFSET = 86;
+    const PARK_OFFSET = 210;   // lontano: il parcheggio fa orizzonte, non ingombro
+    const PARK_ROWS = 4;
+    const PARK_COLS = 9;
     const PARK_STEP_X = 3.2;    // auto affiancate, larghe 2.2
     const PARK_STEP_Z = 7.0;    // corsia di manovra fra due file
     // Striscioni: solo DIETRO LE TRIBUNE, non sparsi lungo il giro.
@@ -43,7 +44,8 @@
     // piantati a caso, uno perfino dentro la corsia box. Uno striscione ha
     // senso dove c'è pubblico che lo guarda — cioè davanti alle tribune — e
     // in nessun altro posto.
-    const BANNER_STAND_OFFSET = 26;   // davanti alla tribuna, verso la pista
+    const BANNER_OFFSET = 6;    // oltre barrierDist, come i cartelloni sponsor
+    const BANNER_STEP = 170;    // unita di percorso fra uno e il successivo
     // Distanza minima dalla corsia box: un cartello in mezzo alla pit lane non
     // è un difetto estetico, è un oggetto dentro un'area di gara.
     const PIT_CLEARANCE = 30;
@@ -103,55 +105,68 @@
             if (piazza(asset, p.x + nx * side * ROW_OFFSET, p.z + nz * side * ROW_OFFSET,
                        tang, 'paddock-life')) messi++;
 
-            // Container dietro, sfalsati rispetto ai mezzi.
-            if (k % 2 === 0) {
-                piazza('containerStack',
-                       p.x + nx * side * BACK_OFFSET, p.z + nz * side * BACK_OFFSET,
-                       tang, 'paddock-life');
-            }
         }
 
-        // --- Parcheggio: griglia ordinata, tutte le auto nello stesso verso -
-        const idxPark = Math.max(2, mid - Math.floor(ROW_MAX / 2) * passo - passo);
-        if (idxPark > 1 && idxPark < pitPts.length - 1) {
-            const p = pitPts[idxPark];
-            const { nx, nz } = TrackGeometry.normalAt(pitPts, idxPark, false);
-            const tang = Math.atan2(pitPts[idxPark + 1].x - pitPts[idxPark - 1].x,
+        // --- Parcheggio lontano -------------------------------------------
+        // Le auto sparse vicino ai box si leggevano come relitti abbandonati:
+        // un parcheggio e' fatto di file ordinate e sta LONTANO, dove diventa
+        // parte dell'orizzonte invece di intralciare. I container gli fanno da
+        // fondale sul lato esterno.
+        const idxPark = mid;
+        const pPark = pitPts[idxPark];
+        const nPark = TrackGeometry.normalAt(pitPts, idxPark, false);
+        const tangPark = Math.atan2(pitPts[idxPark + 1].x - pitPts[idxPark - 1].x,
                                     pitPts[idxPark + 1].z - pitPts[idxPark - 1].z);
-            // Direzione lungo la corsia, per disporre le colonne.
-            const lx = Math.sin(tang), lz = Math.cos(tang);
-            for (let r = 0; r < PARK_ROWS; r++) {
-                for (let c = 0; c < PARK_COLS; c++) {
-                    const off = ROW_OFFSET + 16 + r * PARK_STEP_Z;
-                    const lungo = (c - (PARK_COLS - 1) / 2) * PARK_STEP_X;
-                    piazza(CAR_COLORS[(r * PARK_COLS + c) % CAR_COLORS.length],
-                           p.x + nx * side * off + lx * lungo,
-                           p.z + nz * side * off + lz * lungo,
-                           tang + Math.PI / 2, 'paddock-life');
-                }
+        const lx = Math.sin(tangPark), lz = Math.cos(tangPark);
+        for (let r = 0; r < PARK_ROWS; r++) {
+            for (let c = 0; c < PARK_COLS; c++) {
+                const off = PARK_OFFSET + r * PARK_STEP_Z;
+                const lungo = (c - (PARK_COLS - 1) / 2) * PARK_STEP_X;
+                piazza(CAR_COLORS[(r * PARK_COLS + c) % CAR_COLORS.length],
+                       pPark.x + nPark.nx * side * off + lx * lungo,
+                       pPark.z + nPark.nz * side * off + lz * lungo,
+                       tangPark + Math.PI / 2, 'paddock-life');
             }
         }
+        // Container in fondo al parcheggio, allineati: chiudono la vista
+        // dietro le auto invece di stare sparsi dietro i garage.
+        for (let c = 0; c < 5; c++) {
+            const off = PARK_OFFSET + PARK_ROWS * PARK_STEP_Z + 14;
+            const lungo = (c - 2) * 12;
+            piazza('containerStack',
+                   pPark.x + nPark.nx * side * off + lx * lungo,
+                   pPark.z + nPark.nz * side * off + lz * lungo,
+                   tangPark, 'paddock-life');
+        }
 
-        // --- Striscioni davanti alle tribune ------------------------------
-        // Le tribune sono già nel layout accettato: si prende la loro
-        // posizione e si mette lo striscione fra loro e la pista, rivolto al
-        // pubblico. Niente cartelli dove non c'è nessuno a guardarli.
-        const tribune = accepted.filter(v => v.category === 'grandstand'
-                                          || v.category === 'grandstand-main');
-        for (let k = 0; k < tribune.length; k += 3) {
-            const g = tribune[k];
-            const vicino = TrackGeometry.nearestPoint(trackPts, g.x, g.z);
-            if (vicino.dist > barrierDist + 90) continue;
-            // Mai vicino alla corsia box: un cartello dentro la pit lane non è
-            // un difetto estetico, è un oggetto in un'area di gara.
-            if (TrackGeometry.nearestPoint(pitPts, g.x, g.z).dist < PIT_CLEARANCE) continue;
-            // Verso la pista, lungo la direzione che unisce tribuna e asfalto.
-            const dx = vicino.x - g.x, dz = vicino.z - g.z;
-            const len = Math.hypot(dx, dz) || 1;
-            piazza('banner',
-                   g.x + (dx / len) * BANNER_STAND_OFFSET,
-                   g.z + (dz / len) * BANNER_STAND_OFFSET,
-                   Math.atan2(dx, dz) + Math.PI / 2, 'paddock-life');
+        // --- Striscioni lungo la pista ------------------------------------
+        // Stesso criterio dei cartelloni sponsor che gia' funzionano: a
+        // barrierDist + BANNER_OFFSET dall'asse, cioe' OLTRE la barriera, e
+        // orientati come la pista.
+        //
+        // Le due versioni precedenti sbagliavano in modi opposti: la prima li
+        // metteva a passo fisso ovunque (cartelli piantati a caso, uno dentro
+        // la corsia box), la seconda partiva dalla tribuna e li spostava VERSO
+        // la pista, finendoci dentro. Qui la distanza si misura sempre
+        // dall'asse del tracciato e va verso l'esterno.
+        const n = trackPts.length;
+        const lapLen = TrackGeometry.lapLength(trackPts);
+        const passoBanner = Math.max(1, Math.round((BANNER_STEP / lapLen) * n));
+        for (let i = 0; i < n; i += passoBanner) {
+            const p = trackPts[i];
+            if (p.bridge) continue;
+            if (TrackGeometry.nearestPoint(pitPts, p.x, p.z).dist < PIT_CLEARANCE) continue;
+            const { nx, nz } = TrackGeometry.normalAt(trackPts, i, true);
+            const lato = (Math.floor(i / passoBanner) % 2 === 0) ? 1 : -1;
+            const off = barrierDist + BANNER_OFFSET;
+            const x = p.x + nx * lato * off, z = p.z + nz * lato * off;
+            // Mai dentro l'anello: sul lato interno di una curva stretta la
+            // normale punta verso l'infield, dove il cartello darebbe le
+            // spalle a tutti.
+            if (TrackGeometry.isInsideLoop(trackPts, x, z)) continue;
+            const tang = Math.atan2(trackPts[(i + 1) % n].x - trackPts[(i - 1 + n) % n].x,
+                                    trackPts[(i + 1) % n].z - trackPts[(i - 1 + n) % n].z);
+            piazza('banner', x, z, tang, 'paddock-life');
         }
 
         return layout;
