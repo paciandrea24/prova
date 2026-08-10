@@ -213,8 +213,11 @@ scenografia:
    esterno delle curve, sempre 0 su ponti e tratti in quota; le rampe non hanno
    salti maggiori di 1 unità fra campioni contigui; una corsia box ravvicinata
    (caso sintetico) azzera la ghiaia.
-2. Un test sui **tracciati reali** che verifica le coperture attese della
-   tabella sopra e che la barriera non finisca mai dentro la corsia box.
+2. Un test sui **tracciati reali** che verifica gli invarianti, non i numeri
+   esatti della tabella sopra (che cambierebbero al primo ritocco di un
+   tracciato in editor): su ogni pista la barriera non finisce mai dentro la
+   corsia box, prova/new-monza/monte-rosso hanno almeno una zona di ghiaia,
+   baku nessuna, e nessuna zona cade su un tratto a ponte o in quota.
 3. `CollisionResolver` — il muro trattiene l'auto alla distanza del profilo, non
    c'è muro nel varco della corsia box, sui ponti il limite resta quello attuale.
 4. Retrocompatibilità: `generateLayout` e `buildBarriers` con uno scalare
