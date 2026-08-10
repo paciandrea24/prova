@@ -751,7 +751,15 @@ test('nessuna direzione verso la campagna resta senza vegetazione', () => {
             if (n === 0) vuoti++;
         }
     }
+    // Soglia alzata da 0.08 a 0.20 il 2026-08-10, per una scelta esplicita e
+    // non per far passare il test: gli alberi voxel nuovi costano 20-30
+    // blocchi l'uno contro gli 8 dei Kenney che sostituiscono, e a 950 istanze
+    // il tempo di disegno era salito a 22 ms con picchi di 50, contro un tetto
+    // di 8. Ridotti a 430, i vuoti sull'orizzonte passano dal 4% al 16%.
+    // È il compromesso deciso col playtest: meglio qualche direzione spoglia
+    // che un gioco che scatta. Se un domani gli asset diventassero più
+    // leggeri, questa soglia va riabbassata.
     const quota = vuoti / totali;
-    assert.ok(quota <= 0.08,
+    assert.ok(quota <= 0.20,
         `il ${(quota * 100).toFixed(0)}% delle direzioni verso la campagna è senza un solo albero`);
 });

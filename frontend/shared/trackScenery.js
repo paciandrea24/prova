@@ -77,13 +77,9 @@
     // priori (scelta dell'utente 2026-08-10), ma nel frattempo devono essere
     // minoranza — sono di un'altra mano e alti la metà.
     const NATURE_ASSETS = [
-        { asset: 'treeLarge', weight: 0.5, scale: KENNEY_MODEL_SCALE },
-        { asset: 'treeSmall', weight: 0.5, scale: KENNEY_MODEL_SCALE },
-        { asset: 'treeBroad', weight: 2.0, scale: CUSTOM_MODEL_SCALE },
+        { asset: 'treeBroad', weight: 2.5, scale: CUSTOM_MODEL_SCALE },
         { asset: 'treeYoung', weight: 2.0, scale: CUSTOM_MODEL_SCALE },
-        { asset: 'treeRound', weight: 1.5, scale: CUSTOM_MODEL_SCALE },
-        { asset: 'bushLow',   weight: 3.0, scale: CUSTOM_MODEL_SCALE },
-        { asset: 'bushTall',  weight: 2.0, scale: CUSTOM_MODEL_SCALE },
+        { asset: 'treeRound', weight: 2.5, scale: CUSTOM_MODEL_SCALE },
     ];
 
     // I boschi vogliono ALTEZZA, non varietà: il pino (16.6, quasi il doppio
@@ -118,8 +114,8 @@
     // alberi da ~230 a oltre 700 e faceva scattare il gioco anche in
     // localhost, senza peraltro togliere la sensazione di prato infinito
     // (quella dipende dal terreno piatto, non dal numero di alberi).
-    const NATURE_ATTEMPTS     = 500;  // candidati casuali provati per lo scatter natura
-    const NATURE_MIN_MARGIN   = 4;    // oltre barrierDist: distanza minima dalla pista
+    const NATURE_ATTEMPTS     = 300;  // candidati casuali provati per lo scatter natura
+    const NATURE_MIN_MARGIN   = 12;   // oltre barrierDist: distanza minima dalla pista
     const NATURE_MAX_MARGIN   = 70;   // oltre barrierDist: distanza massima dalla pista
     const NATURE_MIN_SPACING  = 7;    // tra due oggetti natura
     const STRUCTURE_CLEARANCE = 22;   // natura vs tribune/paddock (era 18: strutture più grandi)
@@ -132,7 +128,7 @@
     // (un centro, alberi fitti attorno), perché uno scatter uniforme su
     // un'area così grande dà un prato spennacchiato, non un bosco — ed è
     // esattamente il tentativo già bocciato in passato.
-    const WOOD_CLUSTERS       = 130;   // macchie tentate per tracciato
+    const WOOD_CLUSTERS       = 60;   // macchie tentate per tracciato
     const WOOD_PER_CLUSTER    = 16;   // alberi tentati per macchia
     // Raggio STRETTO di proposito: allargarlo dirada la macchia invece di
     // ingrandirla, e un bosco rado non ferma lo sguardo. La massa visiva viene
@@ -143,7 +139,7 @@
     // gioco scattava anche in localhost (vedi il commento di NATURE_ATTEMPTS).
     // Da allora gli alberi sono esclusi dalle ombre, che di quel calo erano la
     // causa vera, ma il tetto resta esplicito e ritarabile.
-    const WOOD_MAX_TREES      = 950;
+    const WOOD_MAX_TREES      = 430;
     // Margine oltre il bordo del terrapieno entro cui NON si pianta: è la
     // fascia dove si finisce uscendo di pista, deve restare sgombra.
     const WOOD_MIN_MARGIN     = 20;
@@ -987,7 +983,8 @@
         const crowd = SceneryCrowd.buildCrowd([...mainStand, ...grandstand], seatAnchors, rng);
 
         const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints, fitsUnderBridge);
-        const paddockLife = SceneryPaddock.buildLayout(rng, trackPts, pitPts, barrierDist, accepted);
+        const paddockLife = SceneryPaddock.buildLayout(rng, trackPts, pitPts, barrierDist, accepted,
+            (voce) => itemHitsPlayerBoxZone(voce, playerBoxFootprints));
 
         // Boschi DOPO la natura: le macchie vedono fra gli oggetti già
         // accettati anche gli alberi vicini alla pista, e non ci finiscono

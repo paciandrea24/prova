@@ -115,11 +115,11 @@ def build_broad(kit):
     # vedono solo di sagoma contro il cielo.
     kit.box('bark', (2.6, 0.5, 0.5), (tx + 1.1, ty, tz - 0.7), rot=(0, math.radians(-22), 0))
     kit.box('bark', (0.5, 2.4, 0.5), (tx, ty - 1.0, tz - 1.4), rot=(math.radians(20), 0, 0))
-    _canopy(kit, 4211, (tx, ty, tz + 2.6), (4.1, 3.9, 2.9), 46, (1.5, 2.5),
+    _canopy(kit, 4211, (tx, ty, tz + 2.6), (4.1, 3.9, 2.9), 18, (2.4, 3.6),
             ('leafMid', 'leafDark', 'leafMid'))
     # Un ciuffo più basso e più scuro sotto la massa principale: dà spessore
     # alla chioma vista da terra, che è come la si vede quasi sempre.
-    _canopy(kit, 903, (tx - 0.6, ty + 0.5, tz + 0.9), (2.9, 2.7, 1.5), 16, (1.3, 2.0),
+    _canopy(kit, 903, (tx - 0.6, ty + 0.5, tz + 0.9), (2.9, 2.7, 1.5), 5, (2.0, 2.8),
             ('leafDark',))
     return 9.0, 11.0
 
@@ -129,7 +129,7 @@ def build_broad(kit):
 
 def build_young(kit):
     tx, ty, tz = _trunk(kit, 3.0, 0.75, seed=577)
-    _canopy(kit, 6301, (tx, ty, tz + 1.7), (2.4, 2.3, 2.0), 26, (1.1, 1.8),
+    _canopy(kit, 6301, (tx, ty, tz + 1.7), (2.4, 2.3, 2.0), 11, (1.8, 2.6),
             ('leafDark', 'leafMid'))
     return 5.0, 7.0
 
@@ -137,7 +137,7 @@ def build_young(kit):
 # --- Conifera -------------------------------------------------------------
 # Alta e stretta: la sagoma che occupa l'orizzonte sui rilievi, dove serve
 # altezza più che volume. Alta 16 contro i 9 del Kenney più grande.
-PINE_TIERS = 7
+PINE_TIERS = 5
 PINE_BASE_R = 2.6
 
 
@@ -149,11 +149,11 @@ def build_pine(kit):
     for i in range(PINE_TIERS):
         t = i / (PINE_TIERS - 1)
         r = PINE_BASE_R * (1 - 0.78 * t)
-        z = 3.2 + i * 1.95
-        _canopy(kit, 8100 + i * 37, (0, 0, z), (r, r, 1.05), 12 - i, (1.0, 1.7),
+        z = 3.2 + i * 2.75
+        _canopy(kit, 8100 + i * 37, (0, 0, z), (r, r, 1.15), 5 - (i // 2), (1.7, 2.6),
                 ('leafDark', 'leafMid'))
     # Punta: un solo cubetto in cima chiude la silhouette.
-    kit.box('leafDark', (0.9, 0.9, 1.3), (0, 0, 3.2 + PINE_TIERS * 1.95 - 0.3))
+    kit.box('leafDark', (1.1, 1.1, 1.6), (0, 0, 3.2 + PINE_TIERS * 2.75 - 1.0))
     return 5.2, 16.5
 
 
@@ -163,7 +163,7 @@ def build_pine(kit):
 
 def build_round(kit):
     tx, ty, tz = _trunk(kit, 3.4, 1.0, seed=2903)
-    _canopy(kit, 5507, (tx, ty, tz + 2.4), (3.5, 3.4, 3.0), 52, (1.4, 2.2),
+    _canopy(kit, 5507, (tx, ty, tz + 2.4), (3.5, 3.4, 3.0), 20, (2.3, 3.3),
             ('leafMid', 'leafMid', 'leafDark'))
     return 7.0, 9.0
 

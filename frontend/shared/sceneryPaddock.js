@@ -1,7 +1,7 @@
 // frontend/shared/sceneryPaddock.js
 //
-// Piazzamento del paddock: motorhome, camion, container, parcheggi, striscioni
-// e spettatori in piedi lungo la recinzione.
+// Piazzamento del paddock: motorhome, camion, container, parcheggi e
+// striscioni davanti alle tribune.
 //
 // Vive in un modulo suo perché ha un CRITERIO proprio, diverso dallo scatter
 // casuale della natura: qui gli oggetti stanno in file allineate lungo la
@@ -20,27 +20,35 @@
 
     // Distanza della fila principale dall'asse della corsia box, dalla parte
     // OPPOSTA alla pista: il paddock sta dietro i garage, non davanti.
-    const ROW_OFFSET = 74;
+    //
+    // 40 e non 74: a quella distanza motorhome e camion erano invisibili
+    // (segnalato dall'utente al playtest) — un mezzo lungo 15 unità a 74
+    // dall'asse della corsia è più lontano di una tribuna e si perde nel
+    // prato. A 40 sta appena dietro i garage, che è dove sta in un paddock
+    // vero e dove il giocatore lo vede a ogni pit stop.
+    const ROW_OFFSET = 40;
     // Passo fra i mezzi: l'ingombro maggiore è il camion (19.1) più respiro.
     const ROW_STEP = 23;
     const ROW_MAX = 9;
     // Seconda fila, più arretrata: container e parcheggi.
-    const BACK_OFFSET = 100;
+    const BACK_OFFSET = 62;
     const PARK_ROWS = 3;
     const PARK_COLS = 7;
     const PARK_STEP_X = 3.2;    // auto affiancate, larghe 2.2
     const PARK_STEP_Z = 7.0;    // corsia di manovra fra due file
-    // Recinzione: striscioni e pubblico stanno appena oltre la barriera. È
-    // dentro la fascia riservata alla futura ghiaia, e va bene: sono appesi
-    // alla recinzione, quindi si sposteranno insieme a lei. La regola della
-    // ghiaia riguarda ciò che sta A TERRA nella via di fuga.
-    const FENCE_OFFSET = 8;
-    const BANNER_STEP = 120;
-    const CROWD_GROUPS = 14;
-    const CROWD_PER_GROUP = 5;
+    // Striscioni: solo DIETRO LE TRIBUNE, non sparsi lungo il giro.
+    //
+    // La prima versione li metteva a passo fisso lungo tutto il tracciato, e
+    // il risultato era esattamente quello che l'utente ha visto: cartelli
+    // piantati a caso, uno perfino dentro la corsia box. Uno striscione ha
+    // senso dove c'è pubblico che lo guarda — cioè davanti alle tribune — e
+    // in nessun altro posto.
+    const BANNER_STAND_OFFSET = 26;   // davanti alla tribuna, verso la pista
+    // Distanza minima dalla corsia box: un cartello in mezzo alla pit lane non
+    // è un difetto estetico, è un oggetto dentro un'area di gara.
+    const PIT_CLEARANCE = 30;
 
     const CAR_COLORS = ['parkedCarRed', 'parkedCarBlue', 'parkedCarWhite'];
-    const STAND_VARIANTS = ['spectatorStandA', 'spectatorStandB'];
 
     // Da che parte sta la pista rispetto alla corsia box: il paddock va
     // dall'altra. Si guarda il punto medio della corsia e si confronta la
@@ -53,7 +61,7 @@
         return a > b ? 1 : -1;
     }
 
-    function buildLayout(rng, trackPts, pitPts, barrierDist, accepted) {
+    function buildLayout(rng, trackPts, pitPts, barrierDist, accepted, vietato) {
         const layout = [];
         if (!pitPts || pitPts.length < 8) return layout;
 
@@ -65,6 +73,10 @@
 
         function piazza(asset, x, z, rotY, category) {
             const voce = { asset, category, x, y: 0, z, rotY, scale: 1 };
+            // La zona dei box del giocatore è off limits: ci si ferma per il
+            // pit stop e ci si manovra. Avvicinando la fila del paddock da 74 a
+            // 40 un motorhome ci è finito dentro — il controllo mancava.
+            if (vietato && vietato(voce)) return null;
             for (const altro of accepted) {
                 if (SceneryAssetSizes.itemsOverlap(voce, altro)) return null;
             }
@@ -120,49 +132,30 @@
             }
         }
 
-        // --- Recinzione: striscioni e pubblico in piedi -------------------
-        const n = trackPts.length;
-        const lapLen = TrackGeometry.lapLength(trackPts);
-        const passoBanner = Math.max(1, Math.round((BANNER_STEP / lapLen) * n));
-        for (let i = 0; i < n; i += passoBanner) {
-            const p = trackPts[i];
-            if (p.bridge) continue;
-            const { nx, nz } = TrackGeometry.normalAt(trackPts, i, true);
-            const lato = (i / passoBanner) % 2 === 0 ? 1 : -1;
-            const off = barrierDist + FENCE_OFFSET;
-            const tang = Math.atan2(trackPts[(i + 1) % n].x - trackPts[(i - 1 + n) % n].x,
-                                    trackPts[(i + 1) % n].z - trackPts[(i - 1 + n) % n].z);
-            piazza('banner', p.x + nx * lato * off, p.z + nz * lato * off,
-                   tang, 'paddock-life');
-        }
-
-        for (let g = 0; g < CROWD_GROUPS; g++) {
-            const i = Math.floor(rng() * n);
-            const p = trackPts[i];
-            if (p.bridge) continue;
-            const { nx, nz } = TrackGeometry.normalAt(trackPts, i, true);
-            const lato = rng() < 0.5 ? 1 : -1;
-            for (let k = 0; k < CROWD_PER_GROUP; k++) {
-                const off = barrierDist + FENCE_OFFSET + 1.5 + rng() * 3;
-                const lungo = (k - CROWD_PER_GROUP / 2) * 1.3;
-                const tang = Math.atan2(trackPts[(i + 1) % n].x - trackPts[(i - 1 + n) % n].x,
-                                        trackPts[(i + 1) % n].z - trackPts[(i - 1 + n) % n].z);
-                layout.push({
-                    asset: STAND_VARIANTS[k % STAND_VARIANTS.length],
-                    category: 'paddock-life',
-                    x: p.x + nx * lato * off + Math.sin(tang) * lungo,
-                    y: 0,
-                    z: p.z + nz * lato * off + Math.cos(tang) * lungo,
-                    // Guardano la pista: la normale punta verso l'esterno,
-                    // quindi l'orientamento è quello opposto.
-                    rotY: Math.atan2(-nx * lato, -nz * lato),
-                    scale: 1,
-                });
-            }
+        // --- Striscioni davanti alle tribune ------------------------------
+        // Le tribune sono già nel layout accettato: si prende la loro
+        // posizione e si mette lo striscione fra loro e la pista, rivolto al
+        // pubblico. Niente cartelli dove non c'è nessuno a guardarli.
+        const tribune = accepted.filter(v => v.category === 'grandstand'
+                                          || v.category === 'grandstand-main');
+        for (let k = 0; k < tribune.length; k += 3) {
+            const g = tribune[k];
+            const vicino = TrackGeometry.nearestPoint(trackPts, g.x, g.z);
+            if (vicino.dist > barrierDist + 90) continue;
+            // Mai vicino alla corsia box: un cartello dentro la pit lane non è
+            // un difetto estetico, è un oggetto in un'area di gara.
+            if (TrackGeometry.nearestPoint(pitPts, g.x, g.z).dist < PIT_CLEARANCE) continue;
+            // Verso la pista, lungo la direzione che unisce tribuna e asfalto.
+            const dx = vicino.x - g.x, dz = vicino.z - g.z;
+            const len = Math.hypot(dx, dz) || 1;
+            piazza('banner',
+                   g.x + (dx / len) * BANNER_STAND_OFFSET,
+                   g.z + (dz / len) * BANNER_STAND_OFFSET,
+                   Math.atan2(dx, dz) + Math.PI / 2, 'paddock-life');
         }
 
         return layout;
     }
 
-    return { buildLayout, ROW_OFFSET, FENCE_OFFSET };
+    return { buildLayout, ROW_OFFSET };
 });
