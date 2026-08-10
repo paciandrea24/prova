@@ -63,16 +63,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     // THREE.JS SETUP
     // ====================================================
     const scene = new THREE.Scene();
-    // Il colore della nebbia DEVE essere quello del cielo: con due tinte
-    // diverse (nebbia 0xadd8e6 contro cielo 0x87CEEB) la linea di stacco fra
-    // prato e cielo resta leggibile e la mappa sembra infinita — segnalato
-    // dall'utente il 2026-08-09. Densità abbassata da 0.0022 a 0.0016: a
-    // 0.0022 la nebbia era già al 99% a 1000 unità, cioè le colline
-    // dell'orizzonte (SceneryHills) sarebbero sparite prima di vedersi
-    // (camera.far è 1200).
-    const SKY_COLOR = 0x87CEEB;
-    scene.background = new THREE.Color(SKY_COLOR);
-    scene.fog = new THREE.FogExp2(SKY_COLOR, 0.0016);
+    // Cielo a gradiente e nebbia (Rif. spec 2026-08-10-f1-art-direction-cel-shading).
+    // Il colore della nebbia non è più scelto a mano ma DERIVATO dal gradiente
+    // del cielo alla quota dell'orizzonte (ToonPalette.fogColor): con due
+    // tinte indipendenti la linea di stacco fra prato e cielo resta leggibile
+    // e la mappa sembra finita — segnalato dall'utente il 2026-08-09.
+    // Densità 0.0016 e non 0.0022: a 0.0022 la nebbia era già al 99% a 1000
+    // unità, cioè le colline dell'orizzonte (SceneryHills) sarebbero sparite
+    // prima di vedersi (camera.far è 1200).
+    //
+    // `?toon=off` nell'indirizzo riporta il gioco ESATTAMENTE a com'era prima
+    // del cel shading — cielo piatto, materiali standard, ombre morbide, luci
+    // vecchie — tenendo però il pannello e il suo contatore. Serve per il
+    // confronto A/B: senza, "questo problema c'era anche prima?" resta una
+    // domanda senza risposta.
+    const TOON_ON = urlParams.get('toon') !== 'off';
+    const toonSky = TOON_ON ? ToonSky.install(scene) : ToonSky.installFlat(scene);
+
+    // Unico punto da cui passa la conversione dei materiali: con il look
+    // spento non tocca nulla.
+    function applicaStile(oggetto, opts) {
+        if (TOON_ON) ToonStyle.convert(oggetto, opts);
+        return oggetto;
+    }
 
     const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1200);
 
@@ -80,7 +93,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Ombra NETTA ma non scalettata: PCF semplice con raggio 1 dà un bordo
+    // stretto. PCFSoftShadowMap lo sfuma troppo per un look cel-shaded,
+    // BasicShadowMap lo rende netto ma a scaletta (si vedrebbe la griglia dei
+    // texel della mappa). Con `?toon=off` torna quella di prima.
+    renderer.shadowMap.type = (urlParams.get('toon') !== 'off')
+        ? THREE.PCFShadowMap
+        : THREE.PCFSoftShadowMap;
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.NoToneMapping;
     document.body.appendChild(renderer.domElement);
@@ -88,13 +107,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ====================================================
     // LUCI
     // ====================================================
-    scene.add(new THREE.HemisphereLight(0xb0d8f5, 0x2d7a2d, 0.7));
+    // Luci tarate per il cel shading (Rif. spec 2026-08-10-f1-art-direction-cel-shading).
+    //
+    // LA SOMMA DELLE DUE INTENSITÀ DEVE RESTARE INTORNO A 1: solo l'apporto
+    // del sole passa per la quantizzazione a fasce, quello dell'emisferica è
+    // costante. Se la somma supera 1, le fasce finiscono tutte oltre il tetto
+    // della scala e si schiacciano l'una sull'altra — misurato al playtest del
+    // 2026-08-10 con 0.95+1.15: su un colore chiaro le tre fasce davano
+    // 0.972/0.979/0.982 a schermo, cioè un punto percentuale di stacco, e la
+    // livrea appariva piatta. Con 0.30+0.72 lo stacco sale a 18 punti.
+    //
+    // È anche il rapporto fra le due a decidere il contrasto: più sole e meno
+    // ambiente = fasce marcate; il contrario = look slavato.
+    const hemi = TOON_ON
+        ? new THREE.HemisphereLight(0x9ec8f0, 0x3f7a52, 0.30)
+        : new THREE.HemisphereLight(0xb0d8f5, 0x2d7a2d, 0.7);   // com'era prima del cel shading
+    scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xfff4e0, 1.3);
+    const sun = new THREE.DirectionalLight(TOON_ON ? 0xfff6e2 : 0xfff4e0, TOON_ON ? 0.72 : 1.3);
     sun.position.set(150, 200, 50);
     sun.target.position.set(50, 0, 100);  // punta al centro del circuito
     scene.add(sun.target);
     sun.castShadow = true;
+    sun.shadow.radius = 1;                // bordo stretto, vedi shadowMap.type sopra
     sun.shadow.mapSize.set(4096, 4096);
     sun.shadow.camera.near = 1;
     sun.shadow.camera.far = 600;
@@ -172,7 +207,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // fisso che potesse tagliare la pista nelle discese sotto quota 0 (vedi
     // design 2026-07-22-f1-terrapieno-e-ponti).
     // ====================================================
+    // Le mesh del prato (e delle colline, che condividono la stessa griglia)
+    // servono più sotto per marcarle come terreno nel motore di stile:
+    // buildGround non le restituisce, quindi si prendono per differenza.
+    // Identificarle dal colore sarebbe fragile — il colore del prato cambia
+    // con la palette e il confronto smetterebbe di trovarle senza che nulla
+    // lo segnali.
+    const primaDelPrato = scene.children.length;
     TrackMeshBuilder.buildGround(scene, trackPts, BARRIER_D + EMBANKMENT_WIDTH, 3000);
+    const mesheTerreno = scene.children.slice(primaDelPrato);
     TrackMeshBuilder.buildEmbankment(scene, trackPts, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH);
     // Punti "a terra" (non-ponte): usati sia per i piloni (quota reale sotto
     // un ponte) sia per la quota visiva dell'auto fuori pista più sotto —
@@ -256,6 +299,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         : 0;
     const MAX_GRID_SIZE = 6;
     TrackMeshBuilder.buildStartingGrid(scene, trackPts, START_FINISH_INDEX, MAX_GRID_SIZE);
+
+    // ====================================================
+    // STILE CEL-SHADED — conversione dei materiali generati qui
+    // (Rif. spec 2026-08-10-f1-art-direction-cel-shading-design.md)
+    // ====================================================
+    // ORDINE OBBLIGATORIO: il terreno si converte PRIMA della conversione
+    // generale qui sotto. Facendolo dopo, i suoi materiali non sarebbero più
+    // MeshStandardMaterial, la marcatura non avrebbe effetto, le chiazze del
+    // prato dipinto non comparirebbero e non ci sarebbe alcun errore a dirlo.
+    // Solo buildGround, non il terrapieno: quello sfuma dal colore della
+    // pista al verde con i vertex color, e le chiazze verdi gli
+    // ricoprirebbero il bordo asfaltato.
+    for (const mesh of mesheTerreno) {
+        applicaStile(mesh, { saturation: ToonPalette.SATURATION.world, isGround: true });
+    }
+    // Le mesh di TrackMeshBuilder sono aggiunte alla scena in modo sincrono:
+    // una sola conversione qui le copre tutte. A questo punto dell'esecuzione
+    // la scena contiene SOLO mesh sincrone — scenografia, auto e box arrivano
+    // da callback asincrone, che non possono essersi inserite prima —, quindi
+    // nessun oggetto rischia di prendere la saturazione sbagliata.
+    applicaStile(scene, { saturation: ToonPalette.SATURATION.world });
+
+    // Pannello di taratura: F9 lo apre, F8 accende e spegne i contorni.
+    // `outline` resta null finché ToonOutline non entra in gioco.
+    ToonPanel.install({
+        style: ToonStyle, sky: toonSky, outline: null, scene,
+        lights: { sun, hemi }, renderer, attivo: TOON_ON,
+    });
 
     // ====================================================
     // AUDIO MOTORE — un solo loop di 4s di un vero motore d'auto,
@@ -399,6 +470,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         im.setMatrixAt(i, finalMatrix);
                     });
                     im.instanceMatrix.needsUpdate = true;
+                    applicaStile(im);
                     container.add(im);
                 }
             }, undefined, (err) => console.error(`[F1] Errore caricando asset scenografia "${asset}":`, err));
@@ -413,6 +485,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             pond.rotation.x = -Math.PI / 2;
             pond.position.set(item.x, (item.y || 0) + 0.03, item.z);
             pond.receiveShadow = true;
+            applicaStile(pond, { saturation: ToonPalette.SATURATION.world });
             container.add(pond);
         }
     }
@@ -445,7 +518,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // (condiviso col banco prova bot in frontend/f1-testbench.js) — questo è
     // solo un thin wrapper che passa le dipendenze locali.
     function loadCarModel(playerColor, onReady, liveryColors) {
-        CarLoader.loadCarModel(playerColor, onReady, { scene, listener, engineBuffer }, liveryColors);
+        CarLoader.loadCarModel(playerColor, (car) => {
+            // Saturazione quasi nulla sull'auto: il colore identifica il
+            // pilota ed è lo stesso pallino della classifica. A
+            // caratterizzarla ci pensano le fasce di luce, non lo
+            // spostamento di colore.
+            applicaStile(car, { saturation: ToonPalette.SATURATION.car });
+            onReady(car);
+        }, { scene, listener, engineBuffer }, liveryColors);
     }
 
     // ====================================================
@@ -689,6 +769,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             );
             marker.position.set(anchor.stallX, 0.04, anchor.stallZ);
             marker.rotation.y = Math.atan2(anchor.tx, anchor.tz);
+            // Segnaletica col colore del pilota: stessa saturazione dell'auto,
+            // così resta riconoscibile. Senza conversione sarebbe l'unico
+            // oggetto della scena ancora illuminato in modo realistico.
+            applicaStile(marker, { saturation: ToonPalette.SATURATION.car });
             scene.add(marker);
             stallMarkersAdded.add(color);
 
@@ -704,12 +788,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     gltf.scene.rotation.y = crew.rotY;
                     gltf.scene.scale.setScalar(crew.scale || 1);
                     gltf.scene.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+                    applicaStile(gltf.scene);
                     scene.add(gltf.scene);
                 }, undefined, (err) => console.error(`[F1] Errore caricando ${crew.asset}.glb:`, err));
             }
         }
 
         PitBoxLoader.loadPitBoxModel(color, { x: bx, y: 0, z: bz, rotY }, (model) => {
+            applicaStile(model);
             scene.add(model);
             pitBoxes[color] = model;
             pendingPitBoxLoads.delete(color);
@@ -2199,6 +2285,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (tyreSelectActive) updateTyreSelectCamera();
         else updateCamera();
+        toonSky.update(camera);
         renderer.render(scene, camera);
     }
 

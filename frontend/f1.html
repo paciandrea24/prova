@@ -230,6 +230,14 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js"></script>
     <script src="shared/trackGeometry.js?v=20260810a"></script>
+    <!-- Motore di stile cel-shaded (Rif. spec 2026-08-10-f1-art-direction-cel-shading).
+         toonPalette PRIMA di tutti gli altri toon*: gli altri leggono i suoi
+         colori al caricamento. trackMeshBuilder lo usa a sua volta per i
+         colori delle superfici. -->
+    <script src="shared/toonPalette.js?v=20260810a"></script>
+    <script src="shared/toonSky.js?v=20260810b"></script>
+    <script src="shared/toonStyle.js?v=20260810e"></script>
+    <script src="shared/toonPanel.js?v=20260810e"></script>
     <!-- sceneryHills PRIMA di trackMeshBuilder e trackScenery: entrambi ne
          leggono la quota del terreno collinare (root.SceneryHills). -->
     <script src="shared/sceneryHills.js?v=20260810a"></script>
@@ -246,7 +254,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
     <script src="shared/voxelizer.js?v=20260730a"></script>
     <script src="/shared/firebaseConfig.js" defer></script>
-    <script src="f1.js?v=20260810b"></script>
+    <script src="f1.js?v=20260810d"></script>
 </body>
 
 </html>

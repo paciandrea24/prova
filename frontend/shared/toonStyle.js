@@ -1,0 +1,297 @@
+// frontend/shared/toonStyle.js
+//
+// Motore di stile cel-shaded del gioco F1: converte i materiali della scena
+// in MeshToonMaterial e inietta in tutti lo stesso patch shader — luce a
+// fasce, fascia d'ombra colorata, correzione di saturazione, terreno dipinto.
+// Rif. spec 2026-08-10-f1-art-direction-cel-shading-design.md.
+//
+// PERCHÉ NELLO SHADER: nel gioco il colore arriva da tre meccanismi diversi
+// (colore per materiale negli asset del circuito, texture-palette + vertex
+// color nell'auto, soli vertex color in pista e prato). Correggerlo dopo che
+// texture e vertex color hanno detto la loro è l'unico punto in cui la regola
+// vale per tutti e tre.
+//
+// Nessun riferimento a THREE fuori dalle funzioni: così `node --test` può
+// caricare questo file per verificare buildPatch senza Three.
+(function (root, factory) {
+    if (typeof module === 'object' && module.exports) module.exports = factory();
+    else root.ToonStyle = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+
+    const Palette = (typeof module === 'object' && module.exports)
+        ? require('./toonPalette.js')
+        : null;   // nel browser è il globale ToonPalette
+
+    function palette() {
+        return Palette || ToonPalette;
+    }
+
+    // Layer riservato agli oggetti che non devono avere il contorno (effetti,
+    // segnalatori): il passaggio delle normali di toonOutline lo salta.
+    //
+    // ATTENZIONE, due conseguenze non ovvie:
+    //  - `layers.set` SPOSTA l'oggetto su questo layer togliendolo dal layer 0,
+    //    quindi la camera deve abilitare anche il layer 2 per continuare a
+    //    vederlo (lo fa ToonOutline.init). Con `layers.enable` l'oggetto
+    //    resterebbe anche sul layer 0 e continuerebbe a comparire nel
+    //    passaggio delle normali: l'esclusione non avrebbe alcun effetto.
+    //  - un oggetto fuori dal layer 0 non proietta più ombra (la shadow map
+    //    confronta i layer dell'oggetto con quelli della luce). Va bene per gli
+    //    effetti, che ombra non ne fanno: non usarlo su oggetti solidi.
+    const OUTLINE_EXCLUDE_LAYER = 2;
+
+    // ── uniform CONDIVISE ────────────────────────────────────────────
+    // Un solo oggetto per uniform, copiato per riferimento in ogni materiale:
+    // muovere .value qui (dal pannello o dalla console) aggiorna tutta la
+    // scena senza ricompilare nulla.
+    let shared = null;
+
+    function sharedUniforms() {
+        if (!shared) {
+            const P = palette();
+            // In Node (test) THREE non esiste: le uniform di colore usano un
+            // sostituto che espone solo ciò che il patch tocca.
+            const colore = (hex) => (typeof THREE === 'undefined')
+                ? { r: 0, g: 0, b: 0, set() {}, setRGB() {} }
+                : new THREE.Color(hex);
+            shared = {
+                uOn: { value: 1 },
+                uShadowTint: { value: colore(P.SHADOW_TINT) },
+                uGrassDark: { value: colore(P.SURFACES.grassDark) },
+                uGrassLight: { value: colore(P.SURFACES.grassLight) },
+                uPatchScale: { value: 0.012 },   // 1/unità: una chiazza ogni ~80 unità
+                // Chiazze e ciuffi partono SPENTI: il terreno dipinto si tara
+                // dopo la palette delle superfici (fase 3), altrimenti si
+                // giudicherebbero chiazze smeraldo mescolate al vecchio verde
+                // erba. Il pannello li accende in tempo reale.
+                uPatchAmount: { value: 0.0 },
+                uTuftAmount: { value: 0.0 },
+                uTuftScale: { value: 0.35 },
+            };
+        }
+        return shared;
+    }
+
+    // Sostituzione che NON fallisce in silenzio. String.replace su una
+    // stringa assente restituisce l'originale senza sollevare nulla: il
+    // materiale resterebbe senza patch e nessuno se ne accorgerebbe.
+    function replaceOrThrow(source, needle, replacement) {
+        if (source.indexOf(needle) === -1) {
+            throw new Error(`[ToonStyle] chunk non trovato nello shader: ${needle} — ` +
+                'la versione di Three è cambiata? Il patch va aggiornato.');
+        }
+        return source.replace(needle, replacement);
+    }
+
+    function buildPatch(shader, opts) {
+        const o = opts || {};
+        Object.assign(shader.uniforms, sharedUniforms());
+        // Uniform PRIVATE del materiale: la saturazione è diversa fra
+        // scenografia e auto, il flag terreno vale per le sole mesh del prato.
+        shader.uniforms.uSat = { value: o.saturation || 0 };
+        shader.uniforms.uIsGround = { value: o.isGround ? 1 : 0 };
+
+        // ── vertex: posizione e normale in coordinate MONDO ───────────
+        // Serve l'instanceMatrix: la scenografia è tutta InstancedMesh e
+        // senza di essa ogni istanza userebbe la posizione dell'origine del
+        // modello (chiazze identiche su tutti gli oggetti, e sul terreno
+        // niente affatto).
+        shader.vertexShader = 'varying vec3 vToonPos;\nvarying vec3 vToonNorm;\n' +
+            replaceOrThrow(shader.vertexShader, '#include <begin_vertex>', [
+                '#include <begin_vertex>',
+                '#ifdef USE_INSTANCING',
+                '    vToonPos = ( modelMatrix * instanceMatrix * vec4( transformed, 1.0 ) ).xyz;',
+                '    vToonNorm = normalize( mat3( modelMatrix ) * mat3( instanceMatrix ) * objectNormal );',
+                '#else',
+                '    vToonPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;',
+                '    vToonNorm = normalize( mat3( modelMatrix ) * objectNormal );',
+                '#endif',
+            ].join('\n'));
+
+        // ── fragment ──────────────────────────────────────────────────
+        let f = 'uniform float uOn;\nuniform vec3 uShadowTint;\nuniform float uSat;\n' +
+            'uniform float uIsGround;\nuniform vec3 uGrassDark;\nuniform vec3 uGrassLight;\n' +
+            'uniform float uPatchScale;\nuniform float uPatchAmount;\n' +
+            'uniform float uTuftAmount;\nuniform float uTuftScale;\n' +
+            'varying vec3 vToonPos;\nvarying vec3 vToonNorm;\n' +
+            // rumore a valore, due frequenze: chiazze larghe + irregolarità
+            'float toonHash( vec2 p ) {\n' +
+            '    return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 );\n' +
+            '}\n' +
+            'float toonNoise( vec2 p ) {\n' +
+            '    vec2 i = floor( p ), f = fract( p );\n' +
+            '    f = f * f * ( 3.0 - 2.0 * f );\n' +
+            '    float a = toonHash( i ), b = toonHash( i + vec2( 1.0, 0.0 ) );\n' +
+            '    float c = toonHash( i + vec2( 0.0, 1.0 ) ), d = toonHash( i + vec2( 1.0, 1.0 ) );\n' +
+            '    return mix( mix( a, b, f.x ), mix( c, d, f.x ), f.y );\n' +
+            '}\n' + shader.fragmentShader;
+
+        // Fascia in ombra COLORATA: la funzione che mappa l'angolo di luce
+        // sulla fascia viene ridefinita per lerpare verso la tinta invece di
+        // restare grigia.
+        f = replaceOrThrow(f, '#include <gradientmap_pars_fragment>', [
+            '#ifdef USE_GRADIENTMAP',
+            '    uniform sampler2D gradientMap;',
+            '#endif',
+            'vec3 getGradientIrradiance( vec3 normal, vec3 lightDirection ) {',
+            '    float dotNL = dot( normal, lightDirection );',
+            '    vec2 coord = vec2( dotNL * 0.5 + 0.5, 0.0 );',
+            '    #ifdef USE_GRADIENTMAP',
+            '        float band = texture2D( gradientMap, coord ).r;',
+            '    #else',
+            '        float band = ( coord.x < 0.7 ) ? 0.7 : 1.0;',
+            '    #endif',
+            '    vec3 tinted = mix( uShadowTint, vec3( 1.0 ), band );',
+            '    return mix( vec3( band ), tinted, uOn );',
+            '}',
+        ].join('\n'));
+
+        // Correzione del colore BASE (dopo map e vertex color, prima
+        // dell'illuminazione) + terreno dipinto.
+        f = replaceOrThrow(f, '#include <color_fragment>', [
+            '#include <color_fragment>',
+            '{',
+            '    float luma = dot( diffuseColor.rgb, vec3( 0.299, 0.587, 0.114 ) );',
+            '    vec3 sat = luma + ( diffuseColor.rgb - luma ) * ( 1.0 + uSat );',
+            '    diffuseColor.rgb = mix( diffuseColor.rgb, clamp( sat, 0.0, 1.0 ), uOn );',
+            '    if ( uIsGround > 0.5 && uOn > 0.5 ) {',
+            // chiazze: due frequenze in coordinate mondo XZ (il terreno non
+            // ha UV, è generato senza coordinate di texture)
+            '        float n = toonNoise( vToonPos.xz * uPatchScale ) * 0.65',
+            '                + toonNoise( vToonPos.xz * uPatchScale * 3.1 ) * 0.35;',
+            '        vec3 chiazza = mix( uGrassDark, uGrassLight, smoothstep( 0.35, 0.65, n ) );',
+            '        diffuseColor.rgb = mix( diffuseColor.rgb, chiazza, uPatchAmount );',
+            // ciuffi: tratti scuri minuti, spenti finché uTuftAmount è 0
+            '        float tuft = toonNoise( vToonPos.xz * uTuftScale );',
+            '        float tratto = smoothstep( 0.86, 0.94, tuft ) * uTuftAmount;',
+            '        diffuseColor.rgb *= 1.0 - tratto * 0.45;',
+            '    }',
+            '}',
+        ].join('\n'));
+
+        // NOTA STORICA (2026-08-10). Qui c'era una compressione delle alte
+        // luci agganciata a `outgoingLight` (knee/shoulder, come
+        // _worldFxPatch in fps.js). È stata RIMOSSA: al playtest ha coinciso
+        // con la comparsa di scatti, e soprattutto non serviva — i colori
+        // chiari sfondavano perché la somma delle intensità delle luci
+        // valeva ~1.9, non perché mancasse un tetto. Il contrasto delle fasce
+        // si governa dalle INTENSITÀ in f1.js, che non costano nulla per
+        // pixel. Se un giorno servisse davvero un tetto, rimetterlo solo con
+        // una misura del frame peggiore prima e dopo.
+
+        shader.fragmentShader = f;
+        return shader;
+    }
+
+    // ── conversione dei materiali ────────────────────────────────────
+    let gradientMap = null;
+
+    function bandGradientMap() {
+        if (!gradientMap) {
+            const P = palette();
+            const data = new Uint8Array(P.BANDS.map((v) => Math.round(v * 255)));
+            gradientMap = new THREE.DataTexture(data, data.length, 1, THREE.LuminanceFormat);
+            gradientMap.minFilter = THREE.NearestFilter;
+            gradientMap.magFilter = THREE.NearestFilter;
+            gradientMap.generateMipmaps = false;
+            gradientMap.needsUpdate = true;
+        }
+        return gradientMap;
+    }
+
+    // Stato di render comune a tutti i Material che il materiale nuovo deve
+    // EREDITARE: senza, il toon riparte dai valori di fabbrica e cambia il
+    // comportamento a schermo anche a parità di colore.
+    //
+    // `visible` è la più insidiosa e ha già causato un bug reale (2026-08-10):
+    // carLoader.js nasconde la carrozzeria originale sotto il vestito voxel
+    // spegnendo il MATERIALE e non la mesh — la mesh deve restare in scena per
+    // la fisica. Un materiale nuovo con visible=true faceva riemergere la
+    // carrozzeria, che ha ancora la texture sorgente rossa, e le due superfici
+    // compenetrate si contendevano ogni pixel: puntini rossi che cambiavano
+    // durante la marcia.
+    const MATERIAL_STATE = [
+        'visible', 'side', 'transparent', 'opacity', 'alphaTest', 'depthTest',
+        'depthWrite', 'colorWrite', 'blending', 'premultipliedAlpha', 'dithering',
+        'toneMapped', 'fog', 'flatShading', 'wireframe', 'shadowSide',
+        'polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits',
+    ];
+
+    function copyMaterialState(src, dst) {
+        for (const chiave of MATERIAL_STATE) {
+            // Una proprietà assente nel sorgente non deve sovrascrivere il
+            // default del materiale nuovo con undefined.
+            if (src[chiave] !== undefined) dst[chiave] = src[chiave];
+        }
+        return dst;
+    }
+
+    function toonFrom(std, opts) {
+        const m = new THREE.MeshToonMaterial({
+            color: std.color ? std.color.clone() : undefined,
+            map: std.map || null,
+            gradientMap: bandGradientMap(),
+            vertexColors: std.vertexColors === true,
+        });
+        copyMaterialState(std, m);
+        m.name = std.name;
+        m.userData = Object.assign({}, std.userData);
+        // Tutti i materiali ricevono una closure con lo STESSO corpo: Three
+        // include `onBeforeCompile.toString()` nella chiave di cache del
+        // programma, quindi il testo identico fa condividere a tutti un unico
+        // programma GL compilato. Ciò che varia fra un materiale e l'altro
+        // (saturazione, flag terreno) sta nelle uniform private, non nel
+        // codice — se finisse nel codice, ogni materiale otterrebbe un
+        // programma diverso e la compilazione si moltiplicherebbe.
+        m.onBeforeCompile = (shader) => buildPatch(shader, opts);
+        m.userData.toonified = true;
+        return m;
+    }
+
+    function convert(root, opts) {
+        const o = Object.assign(
+            { saturation: palette().SATURATION.scenery, isGround: false },
+            opts || {}
+        );
+        root.traverse((child) => {
+            if (!child.isMesh || !child.material) return;
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            const out = mats.map((m) => (m && m.isMeshStandardMaterial ? toonFrom(m, o) : m));
+            child.material = Array.isArray(child.material) ? out : out[0];
+        });
+        return root;
+    }
+
+    function setEnabled(on) {
+        sharedUniforms().uOn.value = on ? 1 : 0;
+    }
+
+    // Rete di sicurezza contro l'errore più probabile: un punto di
+    // caricamento dimenticato lascia un oggetto col materiale vecchio, che
+    // stona senza motivo apparente.
+    function audit(scene) {
+        const rimasti = [];
+        scene.traverse((child) => {
+            if (!child.isMesh || !child.material) return;
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            for (const m of mats) {
+                if (m && m.isMeshStandardMaterial) {
+                    rimasti.push(child.name || m.name || '(senza nome)');
+                    break;
+                }
+            }
+        });
+        return rimasti;
+    }
+
+    function excludeFromOutline(object) {
+        object.traverse((c) => c.layers.set(OUTLINE_EXCLUDE_LAYER));
+    }
+
+    return {
+        buildPatch, convert, setEnabled, audit, excludeFromOutline,
+        copyMaterialState, MATERIAL_STATE,
+        OUTLINE_EXCLUDE_LAYER,
+        get uniforms() { return sharedUniforms(); },
+    };
+});
