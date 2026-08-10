@@ -263,7 +263,9 @@ test('gli oggetti scenici non ereditano mai la quota del ponte (solo il terreno 
         // (SceneryHills), non dal terreno del tracciato, e supera di proposito
         // qualunque quota di pista. Hanno un test dedicato più sotto, che
         // verifica che poggino esattamente sul rilievo.
-        if (item.category === 'woods') continue;
+        // Stessa ragione per le macchie di bosco del fondale, che stanno a
+        // 300+ unità dalla pista e poggiano sui rilievi più alti.
+        if (item.category === 'woods' || item.category === 'woodmass') continue;
         assert.ok(item.y <= groundMaxY + 0.01, `oggetto con quota superiore al terreno vero (${groundMaxY}): trovato y=${item.y} (categoria ${item.category})`);
     }
 });

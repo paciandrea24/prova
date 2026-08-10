@@ -397,6 +397,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const SCENERY_ASSET_PATHS = {
         // Alberi: unici Kenney rimasti, per scelta esplicita dell'utente, e
         // unici a essere istanziati con un moltiplicatore di scala.
+        woodMass: '/assets/custom/circuit/woodMass.glb',
         treeLarge: '/assets/kenney/treeLarge.glb',
         treeSmall: '/assets/kenney/treeSmall.glb',
         // Catalogo voxel custom (vedi docs/f1-notes.md): modellati 1:1 in
@@ -438,7 +439,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // l'ombra si nota meno — figure piccole e vegetazione lontana — mentre
     // tribune, edifici e strutture continuano a proiettarla.
     const NO_SHADOW_ASSETS = new Set([
-        'treeLarge', 'treeSmall', 'spectatorA', 'spectatorB', 'spectatorC',
+        'treeLarge', 'treeSmall', 'woodMass', 'spectatorA', 'spectatorB', 'spectatorC',
     ]);
 
     // Asset esclusi dai CONTORNI (Rif. playtest 2026-08-10): figure minute e

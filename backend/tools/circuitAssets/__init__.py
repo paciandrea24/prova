@@ -2,7 +2,7 @@
 Ogni build() scolpisce i pezzi con il kit e ritorna l'ingombro orizzontale e
 l'altezza, usati solo per inquadrare il render."""
 from . import (grandstands, billboards, pitBuildings, raceStructures, safety,
-               decor, people, trackside, pitBox)
+               decor, people, trackside, pitBox, vegetation)
 
 ASSET_BUILDERS = {
     'grandStand':        grandstands.build_grand_stand,
@@ -26,6 +26,7 @@ ASSET_BUILDERS = {
     'spectatorC':        people.make_spectator('spectatorC'),
     'pitCrew':           people.build_pit_crew,
     'pitCrewKneel':      people.build_pit_crew_kneel,
+    'woodMass':          vegetation.build_wood_mass,
     'brakingBoard':      trackside.build_braking_board,
     'concreteBarrier':   trackside.build_concrete_barrier,
     'footbridge':        trackside.build_footbridge,

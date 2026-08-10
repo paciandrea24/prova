@@ -68,6 +68,13 @@ _HEX = {
     'black':        '20242E',   # era 1E2124
     'tarmac':       '5E6B75',   # era 4A4E52 — ora uguale all'asfalto della pista
     'glass':        '7FB6D9',
+    # Vegetazione. `leafMid` è volutamente identico al verde del prato
+    # (ToonPalette.SURFACES.grass): alberi e terreno appartengono alla stessa
+    # famiglia di verde, e a separarli pensano `leafDark` e la luce a fasce.
+    # Un bosco di un solo verde si legge come una macchia piatta.
+    'leafDark':     '2E7D4F',
+    'leafMid':      '3FA86B',
+    'bark':         '6B4A32',
     # Incarnati per le figure umane (spettatori, meccanici): due tonalità
     # per dare varietà alla folla senza sforare il limite di 6 materiali
     # per asset.
