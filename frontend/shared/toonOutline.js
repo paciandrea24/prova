@@ -35,9 +35,11 @@
         uNormal: { value: null },
         uDepth: { value: null },
         uResolution: { value: null },      // THREE.Vector2, creato in init
-        uThickness: { value: 1.3 },        // in pixel
-        uNormalBias: { value: 0.35 },      // quanto deve girare la normale per fare bordo
-        uDepthBias: { value: 0.02 },       // salto di profondità relativo
+        // Valori tarati dall'utente al playtest del 2026-08-10 con gli slider
+        // del pannello, non scelti a tavolino.
+        uThickness: { value: 0.5 },        // in pixel
+        uNormalBias: { value: 0.34 },      // quanto deve girare la normale per fare bordo
+        uDepthBias: { value: 0.071 },      // salto di profondità relativo
         // DUE dissolvenze separate, non una. I bordi di SILHOUETTE (salto di
         // profondità) restano leggibili anche da lontano e vanno tenuti; i
         // bordi fra facce dello stesso oggetto (salto di normale) a distanza
@@ -45,10 +47,10 @@
         // reti — scendono sotto la dimensione del pixel e ogni pixel diventa
         // un bordo. Con una dissolvenza sola, l'orizzonte si impasta di nero
         // (segnalato con screenshot al playtest del 2026-08-10).
-        uFadeNormStart: { value: 70 },     // i bordi interni spariscono presto
-        uFadeNormEnd: { value: 190 },
-        uFadeStart: { value: 200 },        // le silhouette resistono più a lungo
-        uFadeEnd: { value: 520 },
+        uFadeNormStart: { value: 45 },     // i bordi interni spariscono presto
+        uFadeNormEnd: { value: 122 },
+        uFadeStart: { value: 280 },        // le silhouette resistono più a lungo
+        uFadeEnd: { value: 728 },
         uNear: { value: 0.1 },
         uFar: { value: 1200 },
     };
@@ -83,7 +85,17 @@
             stencilBuffer: false,
         });
 
-        normalMat = new THREE.MeshNormalMaterial();
+        // DoubleSide OBBLIGATORIO. Pista, ponti, cordoli e terreno sono
+        // costruiti con side: DoubleSide perché il loro winding è specchiato
+        // (vedi le note sul winding invertito da (x,−z) in docs/f1-notes).
+        // Con il FrontSide di fabbrica quelle superfici verrebbero scartate
+        // nel passaggio delle normali: non scrivendo profondità, ciò che sta
+        // SOTTO resta scoperto e i suoi bordi finiscono disegnati sopra un
+        // asfalto che nell'immagine finale li copre — è così che comparivano
+        // i contorni dei piloni attraverso l'impalcato dei ponti.
+        // Three inverte da sé le normali delle facce posteriori, quindi i
+        // bordi restano corretti.
+        normalMat = new THREE.MeshNormalMaterial({ side: THREE.DoubleSide });
         uniforms.uNormal.value = target.texture;
         uniforms.uDepth.value = depth;
         uniforms.uResolution.value = new THREE.Vector2(w, h);

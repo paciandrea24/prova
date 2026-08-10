@@ -276,7 +276,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const PIT_MERGE_SAMPLES = pitMergeSamples(PIT_PTS);
 
     // DoubleSide evita artefatti di culling nelle zone ad alta curvatura
-    TrackMeshBuilder.buildRibbon(scene, trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: 0x1e1e1e, roughness: 0.95, side: THREE.DoubleSide }));
+    TrackMeshBuilder.buildRibbon(scene, trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: ToonPalette.SURFACES.asphalt, roughness: 0.95, side: THREE.DoubleSide }));
     TrackMeshBuilder.buildCurbs(scene, trackPts, ROAD_HALF, CURB_W, PIT_MERGE_SAMPLES);
     TrackMeshBuilder.buildBarriers(scene, trackPts, BARRIER_D, PIT_MERGE_SAMPLES);
     TrackMeshBuilder.buildStartLine(scene, trackPts, ROAD_HALF);
@@ -288,7 +288,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // roadHalf/CURB_W in coda: solo per non disegnare la striscia laterale
     // "allungata" sopra il cordolo nella zona di preavviso (curbBand in
     // buildPitEdgeLines).
-    TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex, false, trackPts, 0x1e1e1e, ROAD_HALF, CURB_W);
+    TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex, false, trackPts, ToonPalette.SURFACES.asphalt, ROAD_HALF, CURB_W);
 
     // Griglia di partenza vera, permanente sulla pista (Rif. richiesta
     // utente 2026-08-07: "visibile sia in qualifica che in gara") — stessa
@@ -502,7 +502,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (item.category !== 'pond') continue;
             const pond = new THREE.Mesh(
                 new THREE.CircleGeometry(item.radius, 24),
-                new THREE.MeshStandardMaterial({ color: 0x2f6fa8, roughness: 0.35, metalness: 0.05 })
+                new THREE.MeshStandardMaterial({ color: ToonPalette.SURFACES.pond, roughness: 0.35, metalness: 0.05 })
             );
             pond.rotation.x = -Math.PI / 2;
             pond.position.set(item.x, (item.y || 0) + 0.03, item.z);

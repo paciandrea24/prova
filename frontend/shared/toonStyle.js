@@ -47,7 +47,7 @@
     // modifica sembra non aver avuto alcun effetto.
     // Va aggiornato quando si cambia qualcosa che l'utente deve poter
     // verificare in un playtest.
-    const BUILD = '20260810-i';
+    const BUILD = '20260810-j';
 
     // ── uniform CONDIVISE ────────────────────────────────────────────
     // Un solo oggetto per uniform, copiato per riferimento in ogni materiale:
@@ -55,9 +55,74 @@
     // scena senza ricompilare nulla.
     let shared = null;
 
+    // ── texture del terreno dipinto ──────────────────────────────────
+    // Rumore e ciuffi arrivano da texture PRECALCOLATE, non da funzioni
+    // procedurali: la versione con value-noise in GLSL costava 12 sin() per
+    // pixel su una superficie che riempie mezzo schermo. Qui sono 3 letture.
+    // Entrambe tileable e campionate in coordinate mondo XZ, perché le mesh
+    // del terreno non hanno UV.
+
+    // Macchie morbide: una griglia grossolana di valori casuali, lasciata
+    // interpolare dal filtro lineare della GPU. Il wrap fa combaciare i bordi
+    // da solo, quindi il tile non si vede.
+    function noiseTexture(celle) {
+        const c = document.createElement('canvas');
+        c.width = c.height = celle;
+        const ctx = c.getContext('2d');
+        const img = ctx.createImageData(celle, celle);
+        for (let i = 0; i < celle * celle; i++) {
+            const v = Math.floor(Math.random() * 256);
+            img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v;
+            img.data[i * 4 + 3] = 255;
+        }
+        ctx.putImageData(img, 0, 0);
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.minFilter = tex.magFilter = THREE.LinearFilter;
+        tex.generateMipmaps = false;
+        return tex;
+    }
+
+    // Ciuffi d'erba: trattini scuri sparsi, come quelli disegnati sul prato
+    // del riferimento. Ogni tratto viene disegnato anche sulle otto copie
+    // attorno al riquadro, così quelli a cavallo del bordo non risultano
+    // tagliati quando la texture si ripete.
+    function tuftTexture(lato) {
+        const c = document.createElement('canvas');
+        c.width = c.height = lato;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#ffffff';        // bianco = nessun ciuffo
+        ctx.fillRect(0, 0, lato, lato);
+        ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+        ctx.lineWidth = Math.max(1, lato / 170);
+        ctx.lineCap = 'round';
+        for (let i = 0; i < 70; i++) {
+            const x = Math.random() * lato, y = Math.random() * lato;
+            const lung = lato * (0.020 + Math.random() * 0.022);
+            const inclina = (Math.random() - 0.5) * 0.9;
+            for (let ox = -lato; ox <= lato; ox += lato) {
+                for (let oy = -lato; oy <= lato; oy += lato) {
+                    ctx.beginPath();
+                    ctx.moveTo(x + ox, y + oy);
+                    ctx.quadraticCurveTo(
+                        x + ox + inclina * lung * 0.5, y + oy - lung * 0.6,
+                        x + ox + inclina * lung, y + oy - lung
+                    );
+                    ctx.stroke();
+                }
+            }
+        }
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.minFilter = tex.magFilter = THREE.LinearFilter;
+        tex.generateMipmaps = false;
+        return tex;
+    }
+
     function sharedUniforms() {
         if (!shared) {
             const P = palette();
+            const nelBrowser = (typeof document !== 'undefined' && typeof THREE !== 'undefined');
             // In Node (test) THREE non esiste: le uniform di colore usano un
             // sostituto che espone solo ciò che il patch tocca.
             const colore = (hex) => (typeof THREE === 'undefined')
@@ -69,13 +134,11 @@
                 uGrassDark: { value: colore(P.SURFACES.grassDark) },
                 uGrassLight: { value: colore(P.SURFACES.grassLight) },
                 uPatchScale: { value: 0.012 },   // 1/unità: una chiazza ogni ~80 unità
-                // Chiazze e ciuffi partono SPENTI: il terreno dipinto si tara
-                // dopo la palette delle superfici (fase 3), altrimenti si
-                // giudicherebbero chiazze smeraldo mescolate al vecchio verde
-                // erba. Il pannello li accende in tempo reale.
-                uPatchAmount: { value: 0.0 },
-                uTuftAmount: { value: 0.0 },
-                uTuftScale: { value: 0.35 },
+                uPatchAmount: { value: 0.55 },   // quanto le chiazze si discostano dal verde base
+                uTuftAmount: { value: 0.6 },     // forza dei trattini d'erba
+                uTuftScale: { value: 0.125 },    // il riquadro dei ciuffi copre ~8 unità
+                uNoiseTex: { value: nelBrowser ? noiseTexture(16) : null },
+                uTuftTex: { value: nelBrowser ? tuftTexture(256) : null },
             };
         }
         return shared;
@@ -122,18 +185,8 @@
             'uniform float uIsGround;\nuniform vec3 uGrassDark;\nuniform vec3 uGrassLight;\n' +
             'uniform float uPatchScale;\nuniform float uPatchAmount;\n' +
             'uniform float uTuftAmount;\nuniform float uTuftScale;\n' +
-            'varying vec3 vToonPos;\nvarying vec3 vToonNorm;\n' +
-            // rumore a valore, due frequenze: chiazze larghe + irregolarità
-            'float toonHash( vec2 p ) {\n' +
-            '    return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 );\n' +
-            '}\n' +
-            'float toonNoise( vec2 p ) {\n' +
-            '    vec2 i = floor( p ), f = fract( p );\n' +
-            '    f = f * f * ( 3.0 - 2.0 * f );\n' +
-            '    float a = toonHash( i ), b = toonHash( i + vec2( 1.0, 0.0 ) );\n' +
-            '    float c = toonHash( i + vec2( 0.0, 1.0 ) ), d = toonHash( i + vec2( 1.0, 1.0 ) );\n' +
-            '    return mix( mix( a, b, f.x ), mix( c, d, f.x ), f.y );\n' +
-            '}\n' + shader.fragmentShader;
+            'uniform sampler2D uNoiseTex;\nuniform sampler2D uTuftTex;\n' +
+            'varying vec3 vToonPos;\nvarying vec3 vToonNorm;\n' + shader.fragmentShader;
 
         // Fascia in ombra COLORATA: la funzione che mappa l'angolo di luce
         // sulla fascia viene ridefinita per lerpare verso la tinta invece di
@@ -174,15 +227,15 @@
             // precalcolata (2 letture invece di 12 sin), come il blotch di
             // fps.js.
             '    if ( uIsGround > 0.5 && uOn > 0.5 && ( uPatchAmount > 0.001 || uTuftAmount > 0.001 ) ) {',
-            // chiazze: due frequenze in coordinate mondo XZ (il terreno non
-            // ha UV, è generato senza coordinate di texture)
-            '        float n = toonNoise( vToonPos.xz * uPatchScale ) * 0.65',
-            '                + toonNoise( vToonPos.xz * uPatchScale * 3.1 ) * 0.35;',
+            // chiazze: due letture della stessa texture a scale diverse, in
+            // coordinate mondo XZ (il terreno non ha UV, è generato senza
+            // coordinate di texture)
+            '        float n = texture2D( uNoiseTex, vToonPos.xz * uPatchScale ).r * 0.65',
+            '                + texture2D( uNoiseTex, vToonPos.xz * uPatchScale * 3.1 ).r * 0.35;',
             '        vec3 chiazza = mix( uGrassDark, uGrassLight, smoothstep( 0.35, 0.65, n ) );',
             '        diffuseColor.rgb = mix( diffuseColor.rgb, chiazza, uPatchAmount );',
-            // ciuffi: tratti scuri minuti, spenti finché uTuftAmount è 0
-            '        float tuft = toonNoise( vToonPos.xz * uTuftScale );',
-            '        float tratto = smoothstep( 0.86, 0.94, tuft ) * uTuftAmount;',
+            // ciuffi: trattini disegnati sulla texture (nero = tratto)
+            '        float tratto = ( 1.0 - texture2D( uTuftTex, vToonPos.xz * uTuftScale ).r ) * uTuftAmount;',
             '        diffuseColor.rgb *= 1.0 - tratto * 0.45;',
             '    }',
             '}',

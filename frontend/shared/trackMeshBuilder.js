@@ -6,10 +6,15 @@
     // alberi finirebbero sepolti o sospesi in aria.
     const SceneryHills = root.SceneryHills;
 
-    // Stesso verde del prato esistente (f1.js): usato sia dal terrapieno sia
-    // dal prato con foro (buildGround), per continuità visiva senza cuciture
-    // di colore tra i due.
-    const GRASS_COLOR = 0x3d8b3d;
+    // Colori delle superfici: fonte unica in toonPalette.js, così pista,
+    // editor e banco prova non possono divergere (Rif. spec
+    // 2026-08-10-f1-art-direction-cel-shading-design.md). Va caricato prima di
+    // questo file in ogni pagina che lo usa.
+    const Palette = root.ToonPalette;
+
+    // Verde del prato: usato sia dal terrapieno sia dal prato con foro
+    // (buildGround), per continuità visiva senza cuciture di colore tra i due.
+    const GRASS_COLOR = Palette.SURFACES.grass;
 
     // Un singolo campione (o pochissimi di fila) "dentro" una fascia da
     // saltare (cordolo/varco) non basta per interrompere una linea o una
@@ -124,7 +129,7 @@
     // dove arriva davvero l'asfalto della corsia box (che curva ben più
     // stretta del cordolo vicino al punto di aggancio).
     const CURB_PIT_GAP_THRESHOLD = 8;
-    const CURB_NEUTRAL_COLOR = [0.35, 0.35, 0.37];
+    const CURB_NEUTRAL_COLOR = Palette.SURFACES.curbNeutral;
 
     function buildCurbs(container, pts, roadHalf, curbW, mergePoints) {
         const n = pts.length;
@@ -449,7 +454,7 @@
     // invece che un cambio di colore netto (Rif. richiesta utente
     // 2026-08-08).
     const PIT_MERGE_BLEND_LENGTH = 15;
-    const PIT_COLOR = 0x3a3a3a;
+    const PIT_COLOR = Palette.SURFACES.pitLane;
 
     // Come buildOpenRibbon, ma con vertex color che sfuma da PIT_COLOR al
     // colore pista (trackColorHex) negli ultimi/primi PIT_MERGE_BLEND_LENGTH
@@ -605,7 +610,7 @@
     // tracciato principale, servono SOLO per l'asfalto aggiuntivo della
     // zona stalli (buildPitApron) — senza, il comportamento resta identico
     // a prima (solo la corsia normale, nessun apron).
-    // trackColorHex (default 0x1e1e1e, lo stesso colore hardcoded usato da
+    // trackColorHex (default: l asfalto della palette, lo stesso colore usato da
     // f1.js/track-editor.js per buildRibbon): colore verso cui sfuma il
     // raccordo (buildPitRibbon sopra). Il raccordo "abbraccia" la
     // curvatura vera della pista vicino agli estremi invece di tagliare a
@@ -625,7 +630,7 @@
     // SOLO a non disegnare la striscia laterale "allungata" sopra il
     // cordolo rosso/bianco (curbBand in buildPitEdgeLines) — senza,
     // comportamento identico a prima (nessun taglio).
-    function buildPitLane(container, pitControlPoints, pitRoadHalf, pitBoxIndex, drawBoxMarker = true, trackPts, trackColorHex = 0x1e1e1e, roadHalf, curbWidth = 2.8) {
+    function buildPitLane(container, pitControlPoints, pitRoadHalf, pitBoxIndex, drawBoxMarker = true, trackPts, trackColorHex = Palette.SURFACES.asphalt, roadHalf, curbWidth = 2.8) {
         const pitPtsRaw = TrackGeometry.sampleOpenPath(pitControlPoints, 300);
         const pitPts = trackPts ? TrackGeometry.tuckPitEndsToTrack(pitPtsRaw, trackPts) : pitPtsRaw;
         const curbBand = (trackPts && roadHalf != null) ? { trackPts, roadHalf, curbW: curbWidth } : null;
@@ -933,7 +938,7 @@
         container.add(far);
     }
 
-    const BRIDGE_COLOR = 0x4a4a4a;
+    const BRIDGE_COLOR = Palette.SURFACES.bridge;
     const BRIDGE_DECK_DROP      = 1.5;  // unità sotto la quota pista: dà l'idea di uno spessore strutturale
     const BRIDGE_DECK_THICK     = 1.0;  // spessore dell'impalcato: solo per calcolare da dove partono i piloni
     const BRIDGE_PILLAR_SPACING = 18;   // unità d'arco tra un pilone e il successivo

@@ -82,6 +82,29 @@ test('la fascia in ombra vira di tinta', () => {
     assert.ok(s.fragmentShader.includes('uShadowTint'), 'la tinta d ombra non è usata');
 });
 
+test('il terreno dipinto usa texture, non funzioni trigonometriche', () => {
+    // La prima versione calcolava il rumore in GLSL: 12 sin() per pixel su una
+    // superficie che riempie mezzo schermo. Sostituito da texture
+    // precalcolate (3 letture). Questo test impedisce che il rumore
+    // procedurale rientri senza che nessuno se ne accorga.
+    const s = fakeShader();
+    ToonStyle.buildPatch(s, { saturation: 0.1, isGround: true });
+    assert.ok(!s.fragmentShader.includes('toonNoise'), 'il rumore procedurale è rientrato');
+    assert.ok(!s.fragmentShader.includes('toonHash'), 'l hash con sin() è rientrato');
+    assert.ok(s.uniforms.uNoiseTex, 'manca la texture delle chiazze');
+    assert.ok(s.uniforms.uTuftTex, 'manca la texture dei ciuffi');
+});
+
+test('il rumore del terreno non viene calcolato quando i pesi sono a zero', () => {
+    // Il ramo guarda i PESI e non solo "sono terreno": con chiazze e ciuffi a
+    // zero il lavoro sarebbe moltiplicato per zero, ma verrebbe fatto lo
+    // stesso su ogni pixel di prato.
+    const s = fakeShader();
+    ToonStyle.buildPatch(s, { saturation: 0.1, isGround: true });
+    assert.ok(s.fragmentShader.includes('uPatchAmount > 0.001'),
+        'il ramo del terreno non controlla i pesi');
+});
+
 test('il patch non tocca la luce uscente', () => {
     // Una compressione delle alte luci agganciata a `outgoingLight` è stata
     // provata e RIMOSSA il 2026-08-10: ha coinciso con la comparsa di scatti
