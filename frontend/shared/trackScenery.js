@@ -96,18 +96,18 @@
     // (un centro, alberi fitti attorno), perché uno scatter uniforme su
     // un'area così grande dà un prato spennacchiato, non un bosco — ed è
     // esattamente il tentativo già bocciato in passato.
-    const WOOD_CLUSTERS       = 46;   // macchie tentate per tracciato
-    const WOOD_PER_CLUSTER    = 22;   // alberi tentati per macchia
+    const WOOD_CLUSTERS       = 130;   // macchie tentate per tracciato
+    const WOOD_PER_CLUSTER    = 16;   // alberi tentati per macchia
     // Raggio STRETTO di proposito: allargarlo dirada la macchia invece di
     // ingrandirla, e un bosco rado non ferma lo sguardo. La massa visiva viene
     // dalla densità interna, non dall area coperta.
-    const WOOD_CLUSTER_RADIUS = 26;
+    const WOOD_CLUSTER_RADIUS = 30;
     const WOOD_MIN_SPACING    = 5;
     // Tetto complessivo, sopra i ~240 alberi di NATURE_*: a 700 totali il
     // gioco scattava anche in localhost (vedi il commento di NATURE_ATTEMPTS).
     // Da allora gli alberi sono esclusi dalle ombre, che di quel calo erano la
     // causa vera, ma il tetto resta esplicito e ritarabile.
-    const WOOD_MAX_TREES      = 600;
+    const WOOD_MAX_TREES      = 950;
     // Margine oltre il bordo del terrapieno entro cui NON si pianta: è la
     // fascia dove si finisce uscendo di pista, deve restare sgombra.
     const WOOD_MIN_MARGIN     = 20;
@@ -758,7 +758,7 @@
     // SceneryHills, LO STESSO modulo che genera la mesh del terreno in
     // trackMeshBuilder: se le due quote divergessero, gli alberi
     // risulterebbero sepolti o sospesi in aria.
-    function buildWoodsLayout(rng, trackPts, barrierDist, embankOuter, accepted) {
+    function buildWoodsLayout(rng, trackPts, barrierDist, embankOuter, accepted, fitsUnderBridge) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const outer = embankOuter + SceneryHills.HILL_START_MARGIN + SceneryHills.HILL_RAMP;
@@ -783,6 +783,12 @@
                 const asset = weightedPick(rng, NATURE_ASSETS);
                 const y = SceneryHills.hillHeightAt(x, z, d, embankOuter,
                                                    TrackGeometry.isInsideLoop(groundPts, x, z));
+                // I ponti valgono anche qui. Il controllo mancava perché i
+                // boschi nascevano lontani dal tracciato, dove ponti non ce ne
+                // sono: avvicinando le colline il 2026-08-10 un albero di
+                // bosco in quota ha cominciato ad attraversare un impalcato
+                // (misurato: chioma a 32.4 contro un ponte a 2.3).
+                if (!fitsUnderBridge(asset, x, z, y)) continue;
                 // Categoria propria e non 'nature': gli alberi dei boschi
                 // prendono la quota dalle COLLINE, non dal terrapieno, e i
                 // controlli sulla natura (quota entro il terrapieno, distanza
@@ -891,7 +897,7 @@
         // Boschi DOPO la natura: le macchie vedono fra gli oggetti già
         // accettati anche gli alberi vicini alla pista, e non ci finiscono
         // sopra.
-        const woods  = buildWoodsLayout(rng, trackPts, barrierDist, embankOuter, accepted);
+        const woods  = buildWoodsLayout(rng, trackPts, barrierDist, embankOuter, accepted, fitsUnderBridge);
         const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints);
 
         const layout = [...paddock, ...mainStand, ...grandstand, ...landmarks,

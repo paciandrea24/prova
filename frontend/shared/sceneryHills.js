@@ -27,15 +27,20 @@
     // direzione 33.7: le colline devono superarle per chiudere l'orizzonte
     // anche dietro di esse.
     //
-    // Alzata da 55 a 130 il 2026-08-10, con inizio anticipato da 120 a 75 e
-    // rampa da 300 a 230. Il motivo è misurato, non estetico: alla quota
-    // vecchia le colline coprivano 2° scarsi sopra l'orizzonte contro i 30° e
-    // passa inquadrati dalla camera, quindi si vedeva il cielo posarsi sul
-    // prato. È questa, e non il numero di alberi, la causa della "sensazione
-    // di prato infinito": la strada "più alberi ovunque" era già stata
-    // provata e annullata (vedi il commento su NATURE_ATTEMPTS in
-    // trackScenery.js). Ora sono ~15° nel tipico e 11.6° nel punto peggiore.
-    const HILL_BASE_HEIGHT = 120;
+    // LE COLLINE NON SONO UN MURO, SONO UN PIEDISTALLO PER IL BOSCO.
+    //
+    // Il 2026-08-10 erano state portate a 130 per chiudere l'orizzonte da
+    // sole. L'utente le ha viste e le ha descritte come un cerchio di mura
+    // verdi a scaloni, tipo la barriera di Game of Thrones. L'obiettivo non è
+    // nascondere l'orizzonte ma OCCUPARLO: dare l'impressione che la mappa sia
+    // chiusa, senza murarla.
+    //
+    // A quel lavoro pensa la vegetazione, e le colline la sollevano: gli
+    // alberi in gioco sono alti 9 e 6.4 unità (i Kenney a scala 6), quindi da
+    // soli, su terreno piatto, spariscono in lontananza. In cima a un rilievo
+    // di 45 occupano l'orizzonte come se fossero alti 54, e il terreno resta
+    // un'ondulazione invece di una parete.
+    const HILL_BASE_HEIGHT = 45;
     // Quanto le zone alte svettano SOPRA la base: il rilievo a grande scala
     // moltiplica per un fattore fra 1 e 1.62, mai sotto. La variazione va
     // verso l'alto e non verso il basso perché la base è già il minimo che

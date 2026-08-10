@@ -79,27 +79,27 @@ function orizzonteCoperto(percentile) {
     return angoloMax;
 }
 
-test('guardando in una direzione qualsiasi, l orizzonte è chiuso', () => {
-    // La camera inquadra oltre 30° sopra l'orizzonte: finché le colline ne
-    // coprono una frazione trascurabile, si vede il cielo posarsi sul prato —
-    // ed è questa, non la scarsità di alberi, la causa della "sensazione di
-    // prato infinito" segnalata dall'utente (la strada "più alberi ovunque"
-    // era già stata provata e annullata, vedi NATURE_ATTEMPTS in
-    // trackScenery.js).
+test('le colline restano ondulazioni e non diventano un muro', () => {
+    // Il tetto è tanto importante quanto il pavimento, e per una volta il
+    // limite è verso l'ALTO. Portate a 130 unità per chiudere l'orizzonte da
+    // sole, le colline sono state descritte dall'utente come "un cerchio di
+    // mura verdi a scaloni, tipo la barriera di Game of Thrones": coprivano
+    // 15° e la mappa sembrava murata invece che aperta.
     //
-    // Si misura sul QUARTO di direzioni più sfavorevole, non sul minimo
-    // assoluto: quello è il singolo avvallamento più profondo di tutto il
-    // circuito, un caso isolato che non descrive cosa si vede guidando.
-    // Prima di questa taratura: 2° scarsi.
-    const ang = orizzonteCoperto(0.25);
-    assert.ok(ang >= 12, `le colline coprono solo ${ang.toFixed(1)}°, l'orizzonte resta aperto`);
+    // L'orizzonte lo deve occupare la VEGETAZIONE, che le colline si limitano
+    // a sollevare (un albero di 9 unità su un rilievo di 45 pesa come uno di
+    // 54). Il criterio sulla copertura vive quindi in trackScenery.test.js,
+    // dove si conoscono gli alberi; qui si controlla solo che il terreno non
+    // torni a fare la parete.
+    const ang = orizzonteCoperto(0.5);
+    assert.ok(ang <= 8, `le colline coprono ${ang.toFixed(1)}°: è un muro, non un rilievo`);
 });
 
-test('nemmeno l avvallamento peggiore lascia passare lo sguardo', () => {
-    // Il caso isolato non deve comunque diventare una finestra sul vuoto.
-    // Prima di questa taratura: 1.4°.
-    const ang = orizzonteCoperto(0);
-    assert.ok(ang >= 9, `il punto peggiore copre solo ${ang.toFixed(1)}°`);
+test('le colline sollevano comunque il terreno in modo percepibile', () => {
+    // L'altro lato: appiattirle del tutto riporterebbe la distesa di verde
+    // piatta da cui è partito tutto.
+    const ang = orizzonteCoperto(0.5);
+    assert.ok(ang >= 3, `le colline coprono solo ${ang.toFixed(1)}°: terreno troppo piatto`);
 });
 
 test('la salita resta graduale e non fa un muro', () => {

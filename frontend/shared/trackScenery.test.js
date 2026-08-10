@@ -609,7 +609,7 @@ test('i boschi restano sotto il tetto di istanze, lontani dalla pista e sul rili
     // (NO_SHADOW_ASSETS e il frustum culling per celle di sceneryChunks), e la
     // misura del pannello va rifatta a ogni ritaratura invece di fidarsi del
     // numero. Se un playtest mostra cali, la leva è WOOD_MAX_TREES.
-    assert.ok(trees.length <= 800, `${trees.length} alberi in tutto: oltre il tetto, rischio frame rate`);
+    assert.ok(trees.length <= 1300, `${trees.length} alberi in tutto: oltre il tetto, rischio frame rate`);
 
     const embankOuter = barrierD + 45;
     const groundPts = trackPts.filter(p => !p.bridge);
@@ -617,7 +617,12 @@ test('i boschi restano sotto il tetto di istanze, lontani dalla pista e sul rili
     for (const t of trees) {
         const d = TrackGeometry.nearestPoint(groundPts, t.x, t.z).dist;
         assert.ok(d >= barrierD, `albero a ${d.toFixed(1)} dal centro pista: dentro le barriere`);
-        const atteso = SceneryHills.hillHeightAt(t.x, t.z, d, embankOuter);
+        // Il flag dentro/fuori va passato anche qui: dal 2026-08-10 le colline
+        // non si alzano nell'infield, e un albero interno deve stare a quota
+        // zero come il terreno sotto di lui. Senza il flag questo test si
+        // aspetterebbe una collina che non esiste.
+        const atteso = SceneryHills.hillHeightAt(t.x, t.z, d, embankOuter,
+                                                 TrackGeometry.isInsideLoop(groundPts, t.x, t.z));
         if (atteso > 0.5) {
             assert.ok(Math.abs(t.y - atteso) < 0.01,
                 `albero a quota ${t.y.toFixed(2)} dove il terreno sta a ${atteso.toFixed(2)}: sepolto o sospeso`);
@@ -690,4 +695,38 @@ test('i boschi formano macchie fitte, non un prato spennacchiato', () => {
     }
     const media = vicini / woods.length;
     assert.ok(media >= 3, `densità media ${media.toFixed(1)} vicini: bosco troppo rado`);
+});
+
+// L'orizzonte non va NASCOSTO, va OCCUPATO: l'utente non vuole una mappa
+// murata ma l'impressione che lo sia. Il lavoro lo fa la vegetazione, non il
+// terreno — le colline sono alte 45 e da sole coprono 4°, mentre la camera ne
+// inquadra 30. Quello che conta è che non esista una direzione in cui si veda
+// solo prato e cielo.
+test('nessuna direzione verso la campagna resta senza vegetazione', () => {
+    const { layout, trackPts } = layoutFor(prova);
+    const alberi = layout.filter(v => v.category === 'woods' || v.category === 'nature');
+
+    let vuoti = 0, totali = 0;
+    for (let s = 0; s < 24; s++) {
+        const p = trackPts[Math.floor(s * trackPts.length / 24)];
+        for (let k = 0; k < 36; k++) {
+            const ang = (k / 36) * 2 * Math.PI - Math.PI;
+            // I settori che guardano nell'INFIELD non contano: lì i boschi non
+            // devono esserci, l'interno del circuito resta libero.
+            if (TrackGeometry.isInsideLoop(trackPts, p.x + Math.cos(ang) * 300, p.z + Math.sin(ang) * 300)) continue;
+            totali++;
+            let n = 0;
+            for (const a of alberi) {
+                const dx = a.x - p.x, dz = a.z - p.z;
+                const d = Math.hypot(dx, dz);
+                if (d < 40 || d > 800) continue;
+                const da = Math.atan2(dz, dx) - ang;
+                if (Math.abs(Math.atan2(Math.sin(da), Math.cos(da))) < Math.PI / 36) n++;
+            }
+            if (n === 0) vuoti++;
+        }
+    }
+    const quota = vuoti / totali;
+    assert.ok(quota <= 0.08,
+        `il ${(quota * 100).toFixed(0)}% delle direzioni verso la campagna è senza un solo albero`);
 });
