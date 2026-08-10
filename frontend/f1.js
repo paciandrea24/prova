@@ -249,6 +249,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         pitRoadHalf: trackData.pit.roadHalfWidth,
     });
 
+    // DIAGNOSTICA TEMPORANEA (da rimuovere a feature approvata): dice a colpo
+    // d'occhio se il codice della ghiaia sta girando davvero in questa pagina
+    // e quanta ne ha trovata. L'assenza di questa riga in console significa
+    // che il browser sta eseguendo un f1.js vecchio.
+    {
+        let n = 0, max = 0;
+        for (let i = 0; i < trackPts.length; i++) {
+            const g = Math.max(GRAVEL_PROFILE.left[i], GRAVEL_PROFILE.right[i]);
+            if (g > 0) n++;
+            if (g > max) max = g;
+        }
+        console.log(`[GHIAIA] pista ${trackId}: ${n}/${trackPts.length} campioni con ghiaia, larghezza max ${max.toFixed(1)}`);
+    }
+
     // Beccheggio (pitch) visivo dell'auto sui dislivelli: pendenza locale tra
     // il campione precedente e successivo lungo il giro, applicata come
     // rotazione attorno all'asse locale dell'auto DOPO l'imbardata (vedi

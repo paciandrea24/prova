@@ -42,13 +42,20 @@ test('la ghiaia esiste solo in curva e solo sul lato esterno', () => {
     assert.equal(TrackGravel.gravelAt(prof, 50, -1), 0);
 });
 
-test('il profilo non ha gradini: fra campioni contigui cambia al massimo di 1', () => {
-    const prof = TrackGravel.gravelProfile(ovale(), { roadHalf: 11 });
+test('il profilo non ha gradini: la pendenza resta entro MAX_SLOPE', () => {
+    const pts = ovale();
+    const prof = TrackGravel.gravelProfile(pts, { roadHalf: 11 });
     const n = prof.left.length;
+    // La soglia è una PENDENZA (larghezza per unità di pista), non un salto
+    // per campione: campioni lunghi tollerano salti proporzionalmente più
+    // grandi, ed è ciò che rende il criterio uguale su piste diverse.
+    const stepLen = TrackGeometry.lapLength(pts) / n;
+    const saltoMax = TrackGravel.MAX_SLOPE * stepLen;
     for (const lato of ['left', 'right']) {
         for (let i = 0; i < n; i++) {
             const d = Math.abs(prof[lato][(i + 1) % n] - prof[lato][i]);
-            assert.ok(d <= 1.0, `gradino di ${d.toFixed(2)} su ${lato} al campione ${i}`);
+            assert.ok(d <= saltoMax + 1e-9,
+                `salto di ${d.toFixed(2)} su ${lato} al campione ${i}, massimo ${saltoMax.toFixed(2)}`);
         }
     }
 });
