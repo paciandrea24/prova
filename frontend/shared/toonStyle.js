@@ -47,7 +47,7 @@
     // modifica sembra non aver avuto alcun effetto.
     // Va aggiornato quando si cambia qualcosa che l'utente deve poter
     // verificare in un playtest.
-    const BUILD = '20260810-m';
+    const BUILD = '20260810-n';
 
     // ── uniform CONDIVISE ────────────────────────────────────────────
     // Un solo oggetto per uniform, copiato per riferimento in ogni materiale:
@@ -255,6 +255,50 @@
         return shader;
     }
 
+    // ── ricolorazione degli asset del circuito ───────────────────────
+    // I materiali dei GLB portano il colore in spazio LINEARE (è come il
+    // formato glTF li memorizza e come il GLTFLoader li carica), mentre la
+    // tabella è scritta in esadecimale sRGB, come nel builder Python: il
+    // confronto va quindi fatto convertendo, non sui numeri esadecimali.
+    // La tolleranza copre la perdita di precisione del float nel file.
+    const TOLLERANZA = 0.004;
+    let mappaColori = null;          // [{ chiave, src: Color lineare, dst: Color lineare }]
+    const materialiPerChiave = new Map();   // chiave → [materiali], per i ritocchi dal pannello
+
+    function tabellaColori() {
+        if (!mappaColori) {
+            mappaColori = Object.entries(palette().ASSET_REMAP).map(([chiave, v]) => ({
+                chiave,
+                src: new THREE.Color(v.src).convertSRGBToLinear(),
+                dst: new THREE.Color(v.dst).convertSRGBToLinear(),
+            }));
+        }
+        return mappaColori;
+    }
+
+    function ricolora(materiale) {
+        if (!materiale.color) return;
+        for (const voce of tabellaColori()) {
+            if (Math.abs(materiale.color.r - voce.src.r) < TOLLERANZA &&
+                Math.abs(materiale.color.g - voce.src.g) < TOLLERANZA &&
+                Math.abs(materiale.color.b - voce.src.b) < TOLLERANZA) {
+                materiale.color.copy(voce.dst);
+                materiale.userData.remapKey = voce.chiave;
+                if (!materialiPerChiave.has(voce.chiave)) materialiPerChiave.set(voce.chiave, []);
+                materialiPerChiave.get(voce.chiave).push(materiale);
+                return;
+            }
+        }
+    }
+
+    // Ritocco dal pannello: aggiorna tutti i materiali già in scena che
+    // portano quella voce, senza ricaricare nulla.
+    function setRemap(chiave, hexSRGB) {
+        const nuovo = new THREE.Color(hexSRGB).convertSRGBToLinear();
+        for (const voce of tabellaColori()) if (voce.chiave === chiave) voce.dst.copy(nuovo);
+        for (const m of (materialiPerChiave.get(chiave) || [])) m.color.copy(nuovo);
+    }
+
     // ── conversione dei materiali ────────────────────────────────────
     let gradientMap = null;
 
@@ -308,6 +352,10 @@
         copyMaterialState(std, m);
         m.name = std.name;
         m.userData = Object.assign({}, std.userData);
+        // Ricolorazione degli asset del circuito: agisce sul colore del
+        // materiale nuovo, quindi non tocca l'originale e sparisce insieme al
+        // look quando si usa ?toon=off.
+        if (!opts || opts.remap !== false) ricolora(m);
         // Tutti i materiali ricevono una closure con lo STESSO corpo: Three
         // include `onBeforeCompile.toString()` nella chiave di cache del
         // programma, quindi il testo identico fa condividere a tutti un unico
@@ -362,7 +410,7 @@
 
     return {
         buildPatch, convert, setEnabled, audit, excludeFromOutline,
-        copyMaterialState, MATERIAL_STATE,
+        copyMaterialState, MATERIAL_STATE, setRemap,
         OUTLINE_EXCLUDE_LAYER, BUILD,
         get uniforms() { return sharedUniforms(); },
     };

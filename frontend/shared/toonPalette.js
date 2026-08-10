@@ -99,6 +99,30 @@
         return skyColorAt(0);
     }
 
+    // Ricolorazione degli asset del circuito: colore SORGENTE (quello scritto
+    // in backend/tools/voxelKit.py, tabella _HEX) → colore desiderato.
+    //
+    // Perché serve: il 71% delle superfici degli asset usa tinte neutre, e la
+    // correzione di saturazione a runtime su di esse non può fare nulla —
+    // allontanare dal proprio luma un colore che ha già i tre canali uguali
+    // lo lascia identico (misurato: il cemento passa da 7,0% a 8,4% di
+    // saturazione). O si cambia il colore, o resta grigio.
+    //
+    // Questa tabella è uno strumento di TARATURA: una volta scelti i valori
+    // vanno scritti in voxelKit.py e gli asset rigenerati, poi la
+    // rimappatura va rimossa per non avere due fonti dello stesso colore.
+    // I valori proposti conservano l'ordine di chiarezza dell'originale, così
+    // cambia la tinta ma non il disegno degli oggetti.
+    const ASSET_REMAP = {
+        white:        { src: 0xF2F2EE, dst: 0xF7F3E8 },   // bianco crema
+        concrete:     { src: 0xC9C5BB, dst: 0xD8D0C0 },   // cemento caldo
+        concreteDark: { src: 0x8D8980, dst: 0x9C9082 },   // cemento scuro, vira alla terra
+        steel:        { src: 0x6E7378, dst: 0x7D8FA3 },   // acciaio azzurro
+        tarmac:       { src: 0x4A4E52, dst: 0x5E6B75 },   // uguale all'asfalto della pista
+        steelDark:    { src: 0x3A4045, dst: 0x3D4756 },   // blu scuro
+        black:        { src: 0x1E2124, dst: 0x20242E },   // blu-nero, mai grigio neutro
+    };
+
     // Tinta verso cui vira la fascia in ombra, invece di scurire in grigio:
     // nel riferimento l'ombra sul muro rosso è rosso scuro, non grigia.
     const SHADOW_TINT = 0x8aa0c8;
@@ -128,6 +152,7 @@
 
     return {
         SURFACES, SKY_STOPS, FOG_DENSITY, SHADOW_TINT, BANDS, SATURATION,
+        ASSET_REMAP,
         skyColorAt, fogColor, saturate, hexToRgb, rgbToHex,
     };
 });
