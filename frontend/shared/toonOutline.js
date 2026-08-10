@@ -26,6 +26,11 @@
     let target = null, normalMat = null, quadScene = null, quadCam = null;
     let enabled = true, ready = false;
 
+    // Draw call e triangoli della SCENA (non del rettangolo dei contorni),
+    // catturati dentro render(). Vedi il commento nel punto in cui si
+    // riempiono.
+    const stats = { calls: 0, triangles: 0 };
+
     const uniforms = {
         uNormal: { value: null },
         uDepth: { value: null },
@@ -33,8 +38,17 @@
         uThickness: { value: 1.3 },        // in pixel
         uNormalBias: { value: 0.35 },      // quanto deve girare la normale per fare bordo
         uDepthBias: { value: 0.02 },       // salto di profondità relativo
-        uFadeStart: { value: 260 },        // unità: da qui il contorno inizia a sparire
-        uFadeEnd: { value: 620 },          // ... e qui è sparito del tutto
+        // DUE dissolvenze separate, non una. I bordi di SILHOUETTE (salto di
+        // profondità) restano leggibili anche da lontano e vanno tenuti; i
+        // bordi fra facce dello stesso oggetto (salto di normale) a distanza
+        // diventano rumore, perché i dettagli delle tribune — gradini, sbarre,
+        // reti — scendono sotto la dimensione del pixel e ogni pixel diventa
+        // un bordo. Con una dissolvenza sola, l'orizzonte si impasta di nero
+        // (segnalato con screenshot al playtest del 2026-08-10).
+        uFadeNormStart: { value: 70 },     // i bordi interni spariscono presto
+        uFadeNormEnd: { value: 190 },
+        uFadeStart: { value: 200 },        // le silhouette resistono più a lungo
+        uFadeEnd: { value: 520 },
         uNear: { value: 0.1 },
         uFar: { value: 1200 },
     };
@@ -93,6 +107,8 @@
                 'uniform float uThickness;',
                 'uniform float uNormalBias;',
                 'uniform float uDepthBias;',
+                'uniform float uFadeNormStart;',
+                'uniform float uFadeNormEnd;',
                 'uniform float uFadeStart;',
                 'uniform float uFadeEnd;',
                 'uniform float uNear;',
@@ -125,13 +141,14 @@
                 // mezza unità non è un bordo, a 3 unità lo è
                 '        bordoD = max( bordoD, abs( d - dC ) / max( dC, 1.0 ) );',
                 '    }',
-                '    float e = max( smoothstep( uNormalBias, uNormalBias * 1.6, bordoN ),',
-                '                   smoothstep( uDepthBias, uDepthBias * 1.8, bordoD ) );',
-                // attenuazione con la distanza: da vicino tratto pieno, sul
-                // fondo niente, altrimenti le tribune lontane diventano una
-                // macchia nera
-                '    float fade = 1.0 - smoothstep( uFadeStart, uFadeEnd, dC );',
-                '    gl_FragColor = vec4( 0.0, 0.0, 0.0, e * fade );',
+                // Ogni tipo di bordo con la propria dissolvenza: gli interni
+                // (normali) svaniscono presto, le silhouette (profondità)
+                // resistono.
+                '    float eN = smoothstep( uNormalBias, uNormalBias * 1.6, bordoN )',
+                '             * ( 1.0 - smoothstep( uFadeNormStart, uFadeNormEnd, dC ) );',
+                '    float eD = smoothstep( uDepthBias, uDepthBias * 1.8, bordoD )',
+                '             * ( 1.0 - smoothstep( uFadeStart, uFadeEnd, dC ) );',
+                '    gl_FragColor = vec4( 0.0, 0.0, 0.0, max( eN, eD ) );',
                 '}',
             ].join('\n'),
         });
@@ -182,6 +199,13 @@
         // 2. scena a colori, direttamente sul canvas (con antialias)
         renderer.render(scene, camera);
 
+        // Contatori catturati QUI, non dopo: Three azzera renderer.info a ogni
+        // render(), quindi chi legge a fine frame vedrebbe solo il rettangolo
+        // dei contorni — una draw call e due triangoli, numeri inutili. Il
+        // pannello legge questi.
+        stats.calls = renderer.info.render.calls;
+        stats.triangles = renderer.info.render.triangles;
+
         // 3. contorni sopra, senza cancellare quello che c'è
         const autoClear = renderer.autoClear;
         renderer.autoClear = false;
@@ -190,7 +214,7 @@
     }
 
     return {
-        init, render, setSize, uniforms,
+        init, render, setSize, uniforms, stats,
         get enabled() { return enabled; },
         setEnabled(on) { enabled = !!on; },
     };

@@ -114,10 +114,17 @@
                 (v) => { outline.uniforms.uNormalBias.value = v; });
             riga(box, 'sensib. profondità', 0.001, 0.2, outline.uniforms.uDepthBias.value, 0.001,
                 (v) => { outline.uniforms.uDepthBias.value = v; });
-            riga(box, 'distanza sfumatura', 60, 900, outline.uniforms.uFadeStart.value, 10,
+            // Due dissolvenze separate: quella dei bordi INTERNI è la manopola
+            // che toglie il nero impastato all'orizzonte.
+            riga(box, 'sfuma bordi interni', 20, 400, outline.uniforms.uFadeNormStart.value, 5,
+                (v) => {
+                    outline.uniforms.uFadeNormStart.value = v;
+                    outline.uniforms.uFadeNormEnd.value = v * 2.7;
+                });
+            riga(box, 'sfuma silhouette', 60, 900, outline.uniforms.uFadeStart.value, 10,
                 (v) => {
                     outline.uniforms.uFadeStart.value = v;
-                    outline.uniforms.uFadeEnd.value = v * 2.4;
+                    outline.uniforms.uFadeEnd.value = v * 2.6;
                 });
         }
 
@@ -183,8 +190,13 @@
                 const medio = Math.round(frame * 1000 / (ora - t0));
                 let testo = `fps ${medio}   frame peggiore ${peggiore.toFixed(1)} ms`;
                 if (renderer && renderer.info) {
-                    const i = renderer.info;
-                    testo += `\ndraw ${i.render.calls}   triangoli ${(i.render.triangles / 1000).toFixed(0)}k   programmi ${i.programs ? i.programs.length : '—'}`;
+                    // Con i contorni attivi i contatori di renderer.info a fine
+                    // frame descrivono il solo rettangolo dell'overlay: i numeri
+                    // veri della scena li cattura ToonOutline durante il frame.
+                    const s = (outline && outline.stats && outline.stats.calls)
+                        ? outline.stats
+                        : { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles };
+                    testo += `\ndraw ${s.calls}   triangoli ${(s.triangles / 1000).toFixed(0)}k   programmi ${renderer.info.programs ? renderer.info.programs.length : '—'}`;
                 }
                 fps.textContent = testo;
                 frame = 0; t0 = ora; peggiore = 0;

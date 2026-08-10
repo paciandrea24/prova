@@ -441,6 +441,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         'treeLarge', 'treeSmall', 'spectatorA', 'spectatorB', 'spectatorC',
     ]);
 
+    // Asset esclusi dai CONTORNI (Rif. playtest 2026-08-10): figure minute e
+    // ripetute in gran numero, sulle quali il tratto nero si legge come
+    // sporco invece che come disegno, e che nel passaggio delle normali
+    // costerebbero una draw call ciascuna.
+    const NO_OUTLINE_ASSETS = new Set(['spectatorA', 'spectatorB', 'spectatorC']);
+
     function loadScenery(container, layout) {
         const sceneryLoader = new THREE.GLTFLoader();
         const byAsset = new Map();
@@ -465,6 +471,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // di spegnere per categoria e capire da dove viene il
                     // costo, senza ricaricare la pagina.
                     im.userData.sceneryAsset = asset;
+                    // Gli spettatori NON prendono il contorno: sono centinaia
+                    // di figure alte poco più di un pixel sullo schermo, il
+                    // tratto le trasforma in sporco nero sulle tribune e ogni
+                    // istanza va comunque ridisegnata nel passaggio delle
+                    // normali. Escluderli toglie insieme rumore e lavoro.
+                    // Restano visibili (la camera abilita quel layer) e ombra
+                    // non ne proiettavano già prima (NO_SHADOW_ASSETS).
+                    if (NO_OUTLINE_ASSETS.has(asset)) ToonStyle.excludeFromOutline(im);
                     im.castShadow = !NO_SHADOW_ASSETS.has(asset);
                     im.receiveShadow = true;
                     const localMatrix = mesh.matrixWorld;
