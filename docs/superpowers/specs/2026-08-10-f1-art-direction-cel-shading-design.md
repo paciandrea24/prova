@@ -22,7 +22,7 @@ contorni, palette, cielo.
 
 | Domanda | Decisione |
 |---|---|
-| Atmosfera | **Giorno con orizzonte pastello**: azzurro saturo allo zenit, banda calda crema-pesca in basso, azzurro-lilla pallido sulla linea dell'orizzonte; sole medio-alto, ombre corte e nette. Non il tramonto lilla delle prime immagini: sull'asfalto il contrasto calerebbe e la pista si leggerebbe peggio. |
+| Atmosfera | **Giorno con orizzonte pastello**: azzurro saturo allo zenit, banda calda arancio-oro bassa sull'orizzonte (tarata al playtest, vedi la nota nella sezione palette); sole medio-alto, ombre corte e nette. Non il tramonto lilla delle prime immagini: sull'asfalto il contrasto calerebbe e la pista si leggerebbe peggio. |
 | Contorni | **Su tutto, spigoli interni inclusi**, con un tasto per accenderli e spegnerli durante i test. |
 | Prestazioni | C'è margine: il gioco gira fluido. Si punta alla resa migliore, tenendo il costo sotto osservazione con un contatore. |
 | Ambito | **Gara F1** (`f1.html`) come necessità primaria. Il **Voxel Livery Studio** (`livery.html`) segue dopo, a gara stabilizzata, per coerenza fra la livrea che si disegna e quella che si vede in pista. Banco prova bot ed editor pista restano fuori. |
@@ -179,19 +179,28 @@ immagini "mappa dall'alto" e "fabbrica" (giorno pieno).
 | ponte | `0x4a4a4a` | `0x8b93a0` |
 | cordolo neutro | `[0.35,0.35,0.37]` | `[0.55,0.57,0.60]` |
 | laghetto | `0x2f6fa8` | `0x1e63c8` cobalto |
-| cielo (zenit → orizzonte) | `0x87ceeb` piatto | `0x3fa9e8` → `0x8fd3f0` → `0xf7e3c8` → `0xc9d6ea` |
+| cielo (zenit → orizzonte) | `0x87ceeb` piatto | `0x3fa9e8` → `0x8fd3f0` → `0xffd49a` → `0xeed5b3` |
 
 L'asfalto è il cambiamento più forte: da quasi nero a grigio medio. È
 necessario — su un asfalto nero le fasce di luce non si vedono e l'ombra
 colorata non ha nulla su cui virare.
 
-Il gradiente del cielo ha **quattro tappe**, non tre: la banda calda
-crema-pesca sta *appena sopra* l'orizzonte, mentre la tappa più bassa — quella
-che tocca la linea del terreno — è un azzurro pallido virato al lilla. Da qui
-vengono le colline lontane color lilla del riferimento: sfumano nella nebbia,
-e sopra di esse il cielo si scalda. Mettendo il crema-pesca proprio
-sull'orizzonte, le colline virerebbero al beige e la punta pastello si
-perderebbe. La posizione della banda calda è tarabile dal pannello.
+Il gradiente del cielo ha **quattro tappe**, non tre: una banda calda vicino
+all'orizzonte, poi l'azzurro che sale fino allo zenit.
+
+> **Aggiornato dopo la taratura al playtest (2026-08-10).** Il disegno
+> iniziale teneva l'orizzonte azzurro-lilla, con la banda calda *appena sopra*,
+> per avere le colline lontane color lilla come nel riferimento. Provato in
+> gioco non ha convinto: fra la foschia fredda e l'arancione subito sopra
+> restava un salto visibile. Con gli slider del pannello l'utente ha scelto un
+> **orizzonte caldo** (`0xeed5b3`, cioè la tappa fredda mescolata al 69% con
+> la banda calda) e una banda **bassa e stretta** — picco a 0.05, azzurro già
+> da 0.26. Così il terreno lontano sfuma *dentro* la banda invece di
+> scontrarcisi; le colline virano al beige caldo e non più al lilla, ed è una
+> conseguenza accettata. Nebbia scesa a 0.001.
+
+La regola strutturale resta: **la nebbia è il colore del cielo all'orizzonte**,
+qualunque sia la taratura, e il pannello la muove insieme.
 
 **La nebbia non è un colore separato**: è il valore del gradiente del cielo
 alla quota dell'orizzonte, calcolato dalla stessa funzione. Per costruzione

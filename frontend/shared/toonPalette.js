@@ -52,18 +52,24 @@
     // pallido virato al lilla. Da lì vengono le colline lontane color lilla
     // del riferimento. Mettendo il crema-pesca proprio sull'orizzonte le
     // colline virerebbero al beige.
-    // La banda calda è stata resa più arancione e più alta su richiesta
-    // dell'utente (2026-08-10: "renderlo un po' più visibile"). Le altre due
-    // tappe NON si toccano: l'orizzonte è anche il colore della nebbia, e lo
-    // zenit dà il carattere azzurro alla volta.
+    // Valori scelti dall'utente con gli slider del pannello (2026-08-10).
+    //
+    // L'orizzonte è CALDO (0xeed5b3), non più azzurro-lilla: era la scelta di
+    // partenza, ma il salto fra la foschia fredda e la banda arancione subito
+    // sopra si vedeva e non convinceva. Scaldando l'orizzonte, il terreno
+    // lontano sfuma DENTRO la banda calda invece di scontrarcisi. Conseguenza
+    // voluta: le colline all'orizzonte virano al beige caldo e non al lilla.
+    //
+    // La banda calda è ora bassa e stretta (0.05, azzurro già da 0.26): sale
+    // poco e lascia il cielo all'azzurro.
     const SKY_STOPS = [
-        { t: 0.00, color: 0xc9d6ea },
-        { t: 0.11, color: 0xffd49a },
-        { t: 0.38, color: 0x8fd3f0 },
+        { t: 0.00, color: 0xeed5b3 },
+        { t: 0.05, color: 0xffd49a },
+        { t: 0.26, color: 0x8fd3f0 },
         { t: 1.00, color: 0x3fa9e8 },
     ];
 
-    const FOG_DENSITY = 0.0016;
+    const FOG_DENSITY = 0.001;
 
     function skyColorAt(t) {
         const x = Math.max(0, Math.min(1, t));
