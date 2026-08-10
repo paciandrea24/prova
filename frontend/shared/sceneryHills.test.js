@@ -58,3 +58,57 @@ test('la quota è continua fra punti vicini', () => {
             `salto di ${Math.abs(a - b).toFixed(1)} unità in 20 di distanza`);
     }
 });
+
+// Quanto orizzonte chiudono le colline, viste dall'occhio del pilota (~8
+// unità da terra). Restituisce l'angolo massimo al variare della distanza,
+// per un dato percentile del profilo: 0 = l'avvallamento peggiore del
+// circuito, 0.25 = il quarto di direzioni più sfavorevole, 0.5 = il tipico.
+function orizzonteCoperto(percentile) {
+    const OCCHIO = 8;
+    let angoloMax = 0;
+    for (let d = 200; d <= 900; d += 25) {
+        const quote = [];
+        for (let i = 0; i < 200; i++) {
+            quote.push(SceneryHills.hillHeightAt(i * 137, i * -211, d, EMBANK_OUTER));
+        }
+        quote.sort((a, b) => a - b);
+        const q = quote[Math.floor(quote.length * percentile)];
+        const ang = Math.atan2(q - OCCHIO, d) * 180 / Math.PI;
+        if (ang > angoloMax) angoloMax = ang;
+    }
+    return angoloMax;
+}
+
+test('guardando in una direzione qualsiasi, l orizzonte è chiuso', () => {
+    // La camera inquadra oltre 30° sopra l'orizzonte: finché le colline ne
+    // coprono una frazione trascurabile, si vede il cielo posarsi sul prato —
+    // ed è questa, non la scarsità di alberi, la causa della "sensazione di
+    // prato infinito" segnalata dall'utente (la strada "più alberi ovunque"
+    // era già stata provata e annullata, vedi NATURE_ATTEMPTS in
+    // trackScenery.js).
+    //
+    // Si misura sul QUARTO di direzioni più sfavorevole, non sul minimo
+    // assoluto: quello è il singolo avvallamento più profondo di tutto il
+    // circuito, un caso isolato che non descrive cosa si vede guidando.
+    // Prima di questa taratura: 2° scarsi.
+    const ang = orizzonteCoperto(0.25);
+    assert.ok(ang >= 12, `le colline coprono solo ${ang.toFixed(1)}°, l'orizzonte resta aperto`);
+});
+
+test('nemmeno l avvallamento peggiore lascia passare lo sguardo', () => {
+    // Il caso isolato non deve comunque diventare una finestra sul vuoto.
+    // Prima di questa taratura: 1.4°.
+    const ang = orizzonteCoperto(0);
+    assert.ok(ang >= 9, `il punto peggiore copre solo ${ang.toFixed(1)}°`);
+});
+
+test('la salita resta graduale e non fa un muro', () => {
+    // Un salto brusco lungo la distanza si legge come una parete, non come
+    // una collina: il rilievo deve crescere, non comparire.
+    let precedente = 0;
+    for (let d = 0; d <= 900; d += 10) {
+        const h = SceneryHills.hillHeightAt(500, 500, d, EMBANK_OUTER);
+        assert.ok(h - precedente < 12, `salto di ${(h - precedente).toFixed(1)} a ${d} unità`);
+        precedente = h;
+    }
+});

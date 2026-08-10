@@ -16,17 +16,26 @@
     else root.SceneryHills = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
 
-    // Le colline iniziano BEN oltre il bordo del terrapieno: la fascia in
-    // mezzo è quella dove si finisce davvero uscendo di pista, e deve restare
-    // piana e leggibile.
-    const HILL_START_MARGIN = 120;
+    // Le colline iniziano oltre il bordo del terrapieno: la fascia in mezzo è
+    // quella dove si finisce davvero uscendo di pista, e deve restare piana e
+    // leggibile.
+    const HILL_START_MARGIN = 75;
     // Distanza su cui la quota sale dal piano al massimo. Ripida abbastanza da
     // chiudere la vista, non tanto da sembrare un muro.
-    const HILL_RAMP = 300;
+    const HILL_RAMP = 230;
     // Altezza massima. La tribuna principale è alta 12.3 e la torre di
     // direzione 33.7: le colline devono superarle per chiudere l'orizzonte
     // anche dietro di esse.
-    const HILL_MAX_HEIGHT = 55;
+    //
+    // Alzata da 55 a 130 il 2026-08-10, con inizio anticipato da 120 a 75 e
+    // rampa da 300 a 230. Il motivo è misurato, non estetico: alla quota
+    // vecchia le colline coprivano 2° scarsi sopra l'orizzonte contro i 30° e
+    // passa inquadrati dalla camera, quindi si vedeva il cielo posarsi sul
+    // prato. È questa, e non il numero di alberi, la causa della "sensazione
+    // di prato infinito": la strada "più alberi ovunque" era già stata
+    // provata e annullata (vedi il commento su NATURE_ATTEMPTS in
+    // trackScenery.js). Ora sono ~15° nel tipico e 11.6° nel punto peggiore.
+    const HILL_MAX_HEIGHT = 130;
 
     // Rumore deterministico da coordinate: hash intero delle celle +
     // interpolazione bilineare fra i quattro angoli. Non serve un Perlin vero
@@ -60,7 +69,13 @@
         const ramp = t * t * (3 - 2 * t);   // parte dolce dal piano, non a scalino
         // Due frequenze: crinali larghi + irregolarità minute.
         const n = valueNoise(x, z, 260) * 0.7 + valueNoise(x, z, 90) * 0.3;
-        return ramp * HILL_MAX_HEIGHT * (0.35 + 0.65 * n);
+        // Il PAVIMENTO del rilievo conta più della sua cima: con il vecchio
+        // 0.35 gli avvallamenti scendevano al 35% dell'altezza e lo sguardo ci
+        // passava attraverso, tanto che il punto peggiore del profilo copriva
+        // 1.4° di orizzonte mentre la media stava sopra i 4. Alzarlo a 0.62
+        // rende il crinale continuo: resta irregolare, ma non ha più buchi da
+        // cui si vede il mondo finire.
+        return ramp * HILL_MAX_HEIGHT * (0.62 + 0.38 * n);
     }
 
     return { hillHeightAt, HILL_START_MARGIN, HILL_RAMP, HILL_MAX_HEIGHT };

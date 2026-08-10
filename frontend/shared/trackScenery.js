@@ -726,7 +726,21 @@
             if (isTooCloseToAny(accepted, x, z, NATURE_MIN_SPACING)) continue;
 
             const asset = weightedPick(rng, NATURE_ASSETS);
-            const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
+            // La quota è la somma di DUE rilievi disgiunti, esattamente come la
+            // calcola trackMeshBuilder.buildGround, che è il terreno vero:
+            // il terrapieno vale entro embankOuter, le colline solo oltre
+            // embankOuter + HILL_START_MARGIN.
+            //
+            // La distanza per le colline si misura sui punti A TERRA, non su
+            // tutti: vicino a un ponte un albero può essere a 85 unità dal
+            // tracciato sopraelevato e a 145 dal tracciato a terra, e il
+            // terreno sotto di lui segue la seconda. Con il solo terrapieno
+            // quell'albero restava a quota zero mentre il suolo gli saliva
+            // sotto, cioè sepolto — difetto latente emerso avvicinando le
+            // colline il 2026-08-10.
+            const dGround = TrackGeometry.nearestPoint(groundPts, x, z).dist;
+            const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter)
+                    + SceneryHills.hillHeightAt(x, z, dGround, embankOuter);
             if (!fitsUnderBridge(asset, x, z, y)) continue;
             const point = { asset, category: 'nature', x, y, z, rotY: rng() * Math.PI * 2, scale: NATURE_SCALE[asset] };
             layout.push(point);
