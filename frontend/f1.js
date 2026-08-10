@@ -716,6 +716,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     let slipstreamGroup = null;
     let slipstreamActive = false;
     let cameraMode = 'third';
+    // "Guarda dietro": attivo solo finché il tasto resta premuto (B / freccia
+    // giù, Cerchio sul controller). Non è una terza modalità camera — si
+    // sovrappone a quella corrente, che resta invariata al rilascio.
+    // Tastiera e controller hanno stati SEPARATI perché convivono nella
+    // stessa partita: con un'unica variabile, il gamepad (ripollato ad ogni
+    // frame) spegnerebbe subito la vista attivata da tastiera.
+    let lookBackKey = false;
+    let lookBackPad = false;
+    function isLookingBack() { return lookBackKey || lookBackPad; }
     let isRacing = false;
     let myFinalTime = null;
     // Tempo trascorso "vero" per il timer HUD live (Rif. 2026-08-07):
@@ -1906,6 +1915,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         inputs.steer = (keys.a ? 1 : 0) + (keys.d ? -1 : 0);
     }
 
+    // Il campo nome del record (3 lettere) è l'unico input di testo della
+    // pagina: mentre ci si scrive dentro, la freccia giù non deve essere
+    // intercettata come "guarda dietro".
+    function isTypingInField(e) {
+        const t = e.target;
+        return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+    }
+
+    function isLookBackKey(k) { return k === 'b' || k === 'arrowdown'; }
+
     document.addEventListener('keydown', (e) => {
         const k = e.key.toLowerCase();
         if (k === 'w') keys.w = true;
@@ -1913,6 +1932,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (k === 's') keys.s = true;
         if (k === 'd') keys.d = true;
         if (k === 'c') cameraMode = cameraMode === 'third' ? 'first' : 'third';
+        if (isLookBackKey(k) && !isTypingInField(e)) {
+            lookBackKey = true;
+            if (k === 'arrowdown') e.preventDefault();   // niente scroll della pagina
+        }
         if (k === 'h') {   // DEBUG: mostra/nascondi le hitbox di collisione
             showHitboxes = !showHitboxes;
             for (const mesh of Object.values(hitboxMeshes)) mesh.visible = showHitboxes;
@@ -1926,11 +1949,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (k === 'a') keys.a = false;
         if (k === 's') keys.s = false;
         if (k === 'd') keys.d = false;
+        // Rilascio incondizionato (nessun controllo sul campo di testo): se il
+        // focus finisse in un input MENTRE il tasto è premuto, la camera
+        // resterebbe girata per sempre.
+        if (isLookBackKey(k)) lookBackKey = false;
         applyKeys();
     });
 
     window.addEventListener('blur', () => {
         keys.w = keys.a = keys.s = keys.d = false;
+        // Il keyup non arriva se la finestra perde il fuoco a tasto premuto:
+        // senza questo la camera resterebbe girata al ritorno sulla pagina.
+        lookBackKey = false;
         applyKeys();
     });
 
@@ -2036,9 +2066,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!myCarGroup) return;
         const pos = myCarGroup.position;
         const q = myCarGroup.quaternion;
+        const back = isLookingBack();
 
         if (cameraMode === 'third') {
-            _camOff.set(0, 5.5, -13);
+            // "Guarda dietro" = specchio esatto della camera normale: stessa
+            // altezza e stessa distanza, ma davanti al musetto e con lo
+            // sguardo all'indietro (il punto mirato resta l'auto, quindi la
+            // rotazione di 180° viene da sé). Si vede il frontale della
+            // propria vettura in primo piano, come guardando avanti se ne
+            // vede il retro; con la camera a 5.5 che mira a 1.2 l'auto (alta
+            // 1.79) resta nella fascia bassa dell'inquadratura e chi insegue
+            // rimane visibile sopra di essa.
+            _camOff.set(0, 5.5, back ? 13 : -13);
             _camOff.applyQuaternion(q);
             camera.position.copy(pos).add(_camOff);
             _lookTgt.copy(pos).add(new THREE.Vector3(0, 1.2, 0));
@@ -2063,8 +2102,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             camera.position.copy(pos).add(_camOff);
 
             const pitchRad = COCKPIT_PITCH_DEG * Math.PI / 180;
-            const lookDropY = Math.tan(pitchRad) * (COCKPIT_LOOK_DIST - COCKPIT_Z);
-            _lookTgt.set(0, COCKPIT_HEIGHT - lookDropY, COCKPIT_LOOK_DIST);
+            // "Guarda dietro" dall'halo-cam = il pilota gira la testa: la
+            // camera resta dov'è e il punto mirato passa dietro l'auto, con
+            // la stessa inclinazione verso il basso. La distanza orizzontale
+            // fra i due va presa in valore assoluto: guardando indietro il
+            // bersaglio sta dalla parte opposta della camera, e la differenza
+            // con segno ribalterebbe l'inclinazione facendo puntare in alto.
+            const lookDist = back ? -COCKPIT_LOOK_DIST : COCKPIT_LOOK_DIST;
+            const lookDropY = Math.tan(pitchRad) * Math.abs(lookDist - COCKPIT_Z);
+            _lookTgt.set(0, COCKPIT_HEIGHT - lookDropY, lookDist);
             _lookTgt.applyQuaternion(q);
             _lookTgt.add(pos);
             camera.lookAt(_lookTgt);
@@ -2133,6 +2179,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (typeof F1GamepadInput !== 'undefined') {
             const gp = F1GamepadInput.poll();
+            // Fuori dal ramo "connected": a controller staccato poll()
+            // restituisce lookBack false, che è esattamente ciò che serve.
+            lookBackPad = !!(gp && gp.lookBack);
             if (gp && gp.connected) {
                 inputs.throttle = gp.throttle;
                 inputs.brake = gp.brake;

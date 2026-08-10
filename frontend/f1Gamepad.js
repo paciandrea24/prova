@@ -2,9 +2,10 @@
 // frontend/f1Gamepad.js — Supporto controller per F1 (Gamepad API)
 // Espone F1GamepadInput (globale); caricato prima di f1.js.
 // Mappatura fissa in stile PlayStation (stick sx = sterzo, R2/L2 = gas/freno,
-// X = conferma/reazione pit, Triangolo = cambio camera, D-pad sx/dx =
-// navigazione schede mescola, L1 = pannello gomme, R1 = riparazione danni ai
-// box). Nessun pannello di rimappatura: se servirà si aggiunge in seguito.
+// X = conferma/reazione pit, Triangolo = cambio camera, Cerchio = guarda
+// dietro, D-pad sx/dx = navigazione schede mescola, L1 = pannello gomme,
+// R1 = riparazione danni ai box). Nessun pannello di rimappatura: se servirà
+// si aggiunge in seguito.
 
 const F1GamepadInput = (() => {
 
@@ -13,6 +14,12 @@ const F1GamepadInput = (() => {
     const BTN_BRAKE     = 6;   // L2 (grilletto sinistro)
     const BTN_CONFIRM   = 0;   // X / Cross — reazione pit O conferma mescola (dipende dalla fase)
     const BTN_CAMERA    = 3;   // Triangolo / Y
+    // Cerchio / B: "guarda dietro". Unico tasto letto a stato CONTINUO e non
+    // a scatto (vale finché resta premuto), quindi non ha un callback ma
+    // viaggia nel valore di ritorno di poll(). Il pollice destro è libero
+    // durante la guida: lo sterzo sta sullo stick sinistro, gas e freno sui
+    // grilletti.
+    const BTN_LOOK_BACK = 1;
     const BTN_TYRE_TOGGLE = 4;   // L1 — apri/chiudi il pannello gomme (mappatura standard Gamepad API: index 4 = LB/L1)
     const BTN_REPAIR_TOGGLE = 5;   // R1 — spunta/togli la riparazione danni ai box (simmetrico a L1), index 5 = RB/R1
     const BTN_DPAD_LEFT  = 14;
@@ -54,11 +61,11 @@ const F1GamepadInput = (() => {
     function setCallbacks(cb) { cbs = cb; }
 
     function poll() {
-        if (!connected) return { connected: false, throttle: 0, brake: 0, steer: 0 };
+        if (!connected) return { connected: false, throttle: 0, brake: 0, steer: 0, lookBack: false };
 
         const gps = navigator.getGamepads ? navigator.getGamepads() : [];
         const gp  = gps[gpIdx];
-        if (!gp) return { connected: false, throttle: 0, brake: 0, steer: 0 };
+        if (!gp) return { connected: false, throttle: 0, brake: 0, steer: 0, lookBack: false };
 
         // Asse positivo = stick spinto a destra; il segno va invertito
         // perché nella convenzione server "steer" positivo equivale al
@@ -71,6 +78,8 @@ const F1GamepadInput = (() => {
         const confirmNow = (gp.buttons[BTN_CONFIRM] || { pressed: false }).pressed;
         if (confirmNow && !prevConfirm && cbs.onConfirm) cbs.onConfirm();
         prevConfirm = confirmNow;
+
+        const lookBack = (gp.buttons[BTN_LOOK_BACK] || { pressed: false }).pressed;
 
         const cameraNow = (gp.buttons[BTN_CAMERA] || { pressed: false }).pressed;
         if (cameraNow && !prevCamera && cbs.onCameraToggle) cbs.onCameraToggle();
@@ -92,7 +101,7 @@ const F1GamepadInput = (() => {
         if (dpadRNow && !prevDpadR && cbs.onNavRight) cbs.onNavRight();
         prevDpadR = dpadRNow;
 
-        return { connected: true, throttle, brake, steer };
+        return { connected: true, throttle, brake, steer, lookBack };
     }
 
     function isConnected() { return connected; }
