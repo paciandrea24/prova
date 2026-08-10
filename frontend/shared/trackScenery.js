@@ -112,21 +112,23 @@
     // fascia dove si finisce uscendo di pista, deve restare sgombra.
     const WOOD_MIN_MARGIN     = 20;
 
-    // MACCHIE DI BOSCO: il fondale lontano.
+    // TENTATIVO ARCHIVIATO (2026-08-10): macchie di bosco come fondale.
     //
-    // Un albero è largo 2-8 unità e a 500 di distanza occupa una frazione di
-    // grado: per un fondale continuo ne servirebbero ~4500, che il gioco non
-    // regge. Una macchia larga 75 ne sostituisce una trentina e a quella
-    // distanza si legge allo stesso modo, perché i tronchi non si distinguono
-    // comunque — misurato: 8.6 gradi di larghezza contro 0.24.
+    // L'idea: un blocco largo 75 al posto di trenta alberi, per riempire
+    // l'orizzonte con 170 istanze invece delle ~4500 che servirebbero con
+    // alberi larghi 2.1 (a 500 unità un albero copre 0.24 gradi, una macchia
+    // 8.6). Il conto era giusto e le prestazioni ottime.
     //
-    // Vanno SOLO in lontananza: da vicino si riconoscerebbe il blocco. Davanti
-    // restano gli alberi veri, che fanno da transizione.
-    const MASS_MIN_MARGIN  = 300;  // oltre barrierDist: prima ci sono alberi veri
-    const MASS_MAX_MARGIN  = 900;  // oltre, la nebbia ha già mangiato tutto
-    const MASS_MIN_SPACING = 62;   // meno della larghezza (75): le macchie si toccano
-    const MASS_ATTEMPTS    = 900;
-    const MASS_MAX_COUNT   = 170;
+    // Il risultato no: un blocco squadrato a quella distanza si legge come una
+    // scatola verde, e appoggiato ai gradoni delle colline peggiorava le cose
+    // invece di migliorarle. L'utente l'ha visto e ha chiesto di toglierlo.
+    //
+    // L'asset resta in `frontend/assets/custom/circuit/woodMass.glb` col suo
+    // builder in `circuitAssets/vegetation.py`. Se si riprende, il lavoro da
+    // fare è sulla FORMA — silhouette irregolare, chiome tondeggianti, bordi
+    // frastagliati, mai un parallelepipedo — non sul piazzamento, che
+    // funzionava: stava oltre 300 unità dalla pista, mai nell'infield, con le
+    // macchie che si toccavano fra loro.
 
     // Ritarati il 2026-08-09 sui modelli voxel custom, ~3 volte più grandi
     // dei Kenney che sostituiscono (tribuna: da 6.0×5.38 a 19.2×12.3).
@@ -774,47 +776,6 @@
     // SceneryHills, LO STESSO modulo che genera la mesh del terreno in
     // trackMeshBuilder: se le due quote divergessero, gli alberi
     // risulterebbero sepolti o sospesi in aria.
-    // Fondale lontano: blocchi di foresta al posto di migliaia di alberi
-    // singoli. Vedi il commento su MASS_MIN_MARGIN per il perché.
-    //
-    // Non passano da `accepted`: sono a 300+ unità dalla pista, dove non c'è
-    // nient'altro con cui possano scontrarsi, e confrontarle con ~1500 voci
-    // costerebbe più di quanto valga. Si controllano solo fra loro.
-    function buildWoodMassLayout(rng, trackPts, barrierDist, embankOuter) {
-        const layout = [];
-        const groundPts = trackPts.filter(p => !p.bridge);
-        const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist + MASS_MAX_MARGIN);
-
-        for (let i = 0; i < MASS_ATTEMPTS && layout.length < MASS_MAX_COUNT; i++) {
-            const x = xMin + rng() * (xMax - xMin);
-            const z = zMin + rng() * (zMax - zMin);
-            const d = TrackGeometry.nearestPoint(groundPts, x, z).dist;
-            if (d < barrierDist + MASS_MIN_MARGIN) continue;
-            if (d > barrierDist + MASS_MAX_MARGIN) continue;
-            // Mai dentro l'anello: l'infield resta libero, e una macchia larga
-            // 75 in mezzo al circuito si vedrebbe da ogni punto della pista.
-            if (TrackGeometry.isInsideLoop(groundPts, x, z)) continue;
-
-            let tropoVicina = false;
-            for (const m of layout) {
-                if (Math.hypot(m.x - x, m.z - z) < MASS_MIN_SPACING) { tropoVicina = true; break; }
-            }
-            if (tropoVicina) continue;
-
-            layout.push({
-                asset: 'woodMass', category: 'woodmass', x,
-                y: SceneryHills.hillHeightAt(x, z, d, embankOuter, false),
-                z,
-                // Solo quattro orientamenti: la macchia è quasi quadrata in
-                // pianta e ruotarla di angoli qualsiasi non aggiunge varietà
-                // visibile, mentre allineare i blocchi a 90° li fa combaciare
-                // meglio quando due macchie si toccano.
-                rotY: Math.floor(rng() * 4) * (Math.PI / 2),
-                scale: CUSTOM_MODEL_SCALE,
-            });
-        }
-        return layout;
-    }
 
     function buildWoodsLayout(rng, trackPts, barrierDist, embankOuter, accepted, fitsUnderBridge) {
         const layout = [];
@@ -956,11 +917,10 @@
         // accettati anche gli alberi vicini alla pista, e non ci finiscono
         // sopra.
         const woods  = buildWoodsLayout(rng, trackPts, barrierDist, embankOuter, accepted, fitsUnderBridge);
-        const masse  = buildWoodMassLayout(rng, trackPts, barrierDist, embankOuter);
         const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints);
 
         const layout = [...paddock, ...mainStand, ...grandstand, ...landmarks,
-                        ...trackside, ...crowd, ...nature, ...woods, ...masse];
+                        ...trackside, ...crowd, ...nature, ...woods];
         if (pond) layout.push(pond);
         return layout;
     }
