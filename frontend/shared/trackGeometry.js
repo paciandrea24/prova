@@ -801,10 +801,12 @@
         const stepLen = lapLength(trackPts) / n;
         const inCorner = [];
         const turns = [];
+        const radii = [];
         for (let i = 0; i < n; i++) {
             const { radius, turnSigned } = curvatureAt(trackPts, i);
             inCorner.push(radius < CORNER_RADIUS_MAX);
             turns.push(turnSigned);
+            radii.push(radius);
         }
 
         // Si parte da un punto NON in curva, così il primo run non risulta
@@ -849,11 +851,26 @@
                 const len = (r.endIdx - r.startIdx + n) % n;
                 const midIdx = (r.startIdx + Math.floor(len / 2)) % n;
                 const { radius } = curvatureAt(trackPts, midIdx);
+                // Raggio più stretto di tutto l'arco. È una misura DIVERSA da
+                // `radius`, non una sua rifinitura: `radius` descrive la forma
+                // a metà curva, `minRadius` dice quanto si dovrà rallentare —
+                // è il punto più vincolante che detta la velocità di
+                // percorrenza (stesso criterio di f1Bot::cornerTargetSpeed).
+                // Su una curva FUSA da CORNER_MERGE_GAP il punto medio può
+                // cadere sul tratto quasi dritto che unisce i due archi:
+                // misurato, `radius` vale 8588 sulla curva 1 di new-monza e
+                // 463 sulla 9 di baku, che sono tornanti. `minRadius` dà 48 su
+                // entrambe.
+                let minRadius = Infinity;
+                for (let k = 0; k <= len; k++) {
+                    const rad = radii[(r.startIdx + k) % n];
+                    if (rad < minRadius) minRadius = rad;
+                }
                 // Il lato ESTERNO della curva è opposto al verso di sterzata:
                 // normalAt ritorna (-tz, tx) e con turnSum positivo la pista
                 // gira verso quella normale, quindi l'esterno sta dall'altra parte.
                 return {
-                    startIdx: r.startIdx, endIdx: r.endIdx, midIdx, radius,
+                    startIdx: r.startIdx, endIdx: r.endIdx, midIdx, radius, minRadius,
                     side: r.turnSum > 0 ? -1 : 1,
                 };
             });

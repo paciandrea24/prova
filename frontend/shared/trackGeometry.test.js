@@ -604,3 +604,42 @@ test('findCorners: un cerchio è tutto curva, un rettilineo non ha curve', () =>
         assert.ok(c.radius < TrackGeometry.CORNER_RADIUS_MAX);
     }
 });
+
+test('findCorners: minRadius è il raggio più stretto dell\'arco, non quello di metà curva', () => {
+    // Caso che distingue le due misure: una curva che si CHIUDE, cioè un
+    // arco largo (raggio 110) seguito senza soluzione di continuità da uno
+    // stretto (raggio 30). Sono un'unica curva — entrambi sotto
+    // CORNER_RADIUS_MAX — e il punto medio cade nell'arco largo, dove il
+    // raggio non dice niente di quanto si dovrà rallentare.
+    //
+    // Il tracciato si costruisce integrando la DIREZIONE, non accostando
+    // archi già pronti: due archi accostati per coordinate non sono tangenti
+    // fra loro, e il gomito falsa la curvatura misurata proprio nel punto che
+    // interessa. Un mezzo giro (arco largo, arco stretto, rettilineo) ripetuto
+    // due volte gira di 360° in tutto e si richiude per simmetria.
+    const PASSO = 2;
+    const pts = [];
+    let x = 0, z = 0, dir = 0;
+    const avanza = (lunghezza, raggio) => {
+        for (let d = 0; d < lunghezza; d += PASSO) {
+            pts.push({ x, z, y: 0 });
+            x += Math.cos(dir) * PASSO;
+            z += Math.sin(dir) * PASSO;
+            if (raggio) dir += PASSO / raggio;
+        }
+    };
+    for (let meta = 0; meta < 2; meta++) {
+        avanza(110 * Math.PI / 2, 110);   // arco largo, 90°
+        avanza(30 * Math.PI / 2, 30);     // arco stretto, 90°
+        avanza(200, 0);                   // rettilineo
+    }
+
+    const curve = TrackGeometry.findCorners(pts);
+    assert.equal(curve.length, 2, 'due mezzi giri, due curve');
+    for (const c of curve) {
+        assert.ok(c.radius > 80,
+            `a metà curva si è ancora nell'arco largo: atteso raggio > 80, ottenuto ${c.radius.toFixed(0)}`);
+        assert.ok(c.minRadius < 45,
+            `minRadius deve trovare l'arco stretto (~30), ottenuto ${c.minRadius.toFixed(1)}`);
+    }
+});
