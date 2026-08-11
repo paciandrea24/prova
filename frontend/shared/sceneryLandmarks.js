@@ -50,7 +50,7 @@
 
     // Punto a distanza `offset` dal centro pista sul lato `side`, con la
     // rotazione che fa guardare l'oggetto verso la pista.
-    function placeBeside(trackPts, idx, offset, side, groundPts, barrierDist, embankOuter) {
+    function placeBeside(trackPts, idx, offset, side, groundPts, barrierDist, embankStart, embankOuter) {
         const p = trackPts[idx];
         const { nx, nz } = TrackGeometry.normalAt(trackPts, idx, true);
         const x = p.x + nx * offset * side;
@@ -58,19 +58,19 @@
         return {
             x, z,
             rotY: Math.atan2(p.x - x, p.z - z),
-            y: TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter),
+            y: TrackGeometry.terrainHeightAt(groundPts, x, z, embankStart, embankOuter),
         };
     }
 
     // Asset che attraversa la pista: centrato sull'asse, allineato alla
     // tangente (la campata è modellata lungo X locale) e scalato per
     // scavalcare le barriere.
-    function placeAcross(trackPts, idx, groundPts, barrierDist, embankOuter, nativeHalfSpan) {
+    function placeAcross(trackPts, idx, groundPts, barrierDist, embankStart, embankOuter, nativeHalfSpan) {
         const p = trackPts[idx];
         const t = TrackGeometry.tangentAt(trackPts, idx, true);
         return {
             x: p.x, z: p.z,
-            y: TrackGeometry.terrainHeightAt(groundPts, p.x, p.z, barrierDist, embankOuter),
+            y: TrackGeometry.terrainHeightAt(groundPts, p.x, p.z, embankStart, embankOuter),
             // +π: il fronte dell'asset (+Z locale) allineato alla tangente
             // guarderebbe nella direzione di MARCIA, cioè darebbe le spalle
             // alle auto in arrivo — alla partenza si vedeva il retro del
@@ -80,7 +80,7 @@
         };
     }
 
-    function buildLandmarks(trackPts, pitPts, barrierDist, mainSide, embankOuter,
+    function buildLandmarks(trackPts, pitPts, barrierDist, mainSide, embankStart, embankOuter,
                             playerBoxFootprints, insidePlayerBoxFootprint,
                             fitsUnderBridge, pitRoadHalf, accepted) {
         const layout = [];
@@ -121,7 +121,7 @@
         // della corsia (segnalato dall'utente sul tracciato "prova").
         for (let d = 0; d < n; d += 5) {
             const cand = placeBeside(trackPts, d % n, barrierDist + TOWER_OFFSET_MARGIN,
-                                     -mainSide, groundPts, barrierDist, embankOuter);
+                                     -mainSide, groundPts, barrierDist, embankStart, embankOuter);
             if (TrackGeometry.nearestPoint(pitPts, cand.x, cand.z).dist < pitHalf + TOWER_PIT_CLEARANCE) continue;
             if (insidePlayerBoxFootprint(cand.x, cand.z, playerBoxFootprints)) continue;
             if (!fits('raceControlTower', cand.x, cand.z, cand.y)) continue;
@@ -144,7 +144,7 @@
         for (let d = 0; d < 200; d += 4) {
             const idx = (gantryWalk.fromIdx + d) % n;
             const cand = placeAcross(trackPts, idx, groundPts, barrierDist,
-                                     embankOuter, GANTRY_NATIVE_HALF_SPAN);
+                                     embankStart, embankOuter, GANTRY_NATIVE_HALF_SPAN);
             if (!freeOf('startGantry', cand, cand.scale)) continue;
             layout.push({ asset: 'startGantry', category: 'landmark', ...cand });
             break;
@@ -160,7 +160,7 @@
         for (let d = 0; d < Math.floor(n / 4); d += 4) {
             for (const idx of [(half + d) % n, ((half - d) % n + n) % n]) {
                 if (trackPts[idx].bridge) continue;
-                const cand = placeAcross(trackPts, idx, groundPts, barrierDist, embankOuter,
+                const cand = placeAcross(trackPts, idx, groundPts, barrierDist, embankStart, embankOuter,
                                          FOOTBRIDGE_NATIVE_HALF_SPAN);
                 const topH = SPANNING_HEIGHTS.footbridge * cand.scale;
                 if (!fits('footbridge', cand.x, cand.z, cand.y, topH)) continue;
@@ -198,7 +198,7 @@
                 const offset = barrierDist + (passo <= finestra
                     ? PODIUM_OFFSET_MARGIN : PODIUM_OFFSET_MARGIN + 16);
             const cand = placeBeside(trackPts, d % n, barrierDist + PODIUM_OFFSET_MARGIN,
-                                     -mainSide, groundPts, barrierDist, embankOuter);
+                                     -mainSide, groundPts, barrierDist, embankStart, embankOuter);
             if (insidePlayerBoxFootprint(cand.x, cand.z, playerBoxFootprints)) continue;
             if (TrackGeometry.nearestPoint(pitPts, cand.x, cand.z).dist < pitHalf + PODIUM_PIT_CLEARANCE) continue;
             if (!fits('podium', cand.x, cand.z, cand.y)) continue;

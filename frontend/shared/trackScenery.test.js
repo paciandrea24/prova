@@ -1,4 +1,4 @@
-// frontend/shared/trackScenery.test.js
+﻿// frontend/shared/trackScenery.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const TrackGeometry = require('./trackGeometry.js');
@@ -764,74 +764,51 @@ test('nessuna direzione verso la campagna resta senza vegetazione', () => {
         `il ${(quota * 100).toFixed(0)}% delle direzioni verso la campagna è senza un solo albero`);
 });
 
-test('la scenografia segue la barriera, di quanto la barriera si è spostata', () => {
+// ---- vie di fuga: la scenografia sta fuori dal muro ----
+//
+// ⚠️ NON si confronta più voce per voce col layout senza profilo. Con le vie
+// di fuga il pianoro del terrapieno si allarga fino alla barriera, e la quota
+// del terreno entra nelle decisioni di piazzamento (alberi, rocce, laghetto):
+// i due layout differiscono per QUALI oggetti vengono accettati, non solo per
+// dove finiscono. Una corrispondenza uno-a-uno sarebbe un invariante falso.
+
+test('con le vie di fuga nessun oggetto resta dentro il muro', () => {
     const TrackGravel = require('./trackGravel.js');
     const { trackPts, pitPts } = buildReal();
-
-    const senza = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D);
     const bar = TrackGravel.barrierProfile(trackPts, { roadHalf: ROAD_HALF });
     const con = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D, 45, null, bar);
 
-    assert.equal(con.length, senza.length, 'stesso numero di voci: nulla si perde');
-
-    let spostate = 0, scavalcanti = 0;
-    for (let i = 0; i < senza.length; i++) {
-        const a = senza[i], b = con[i];
-        assert.equal(a.asset, b.asset, 'stesso asset nella stessa posizione di lista');
-        const near = TrackGeometry.nearestPoint(trackPts, a.x, a.z);
-        // Ponte semafori e passerella hanno il pivot sull'asse pista: stanno
-        // dentro la linea della barriera per costruzione e non si spostano.
-        if (near.dist < BARRIER_D) {
-            assert.ok(Math.hypot(b.x - a.x, b.z - a.z) < 1e-6,
-                `voce ${i} (${a.asset}) scavalca la pista e non deve muoversi`);
-            scavalcanti++;
-            continue;
-        }
+    let controllate = 0;
+    for (const v of con) {
+        // Boschi e colline stanno centinaia di unità più in là e seguono la
+        // quota collinare, non il terrapieno.
+        if (v.category === 'woods') continue;
+        const near = TrackGeometry.nearestPoint(trackPts, v.x, v.z);
+        // Ponte semafori e passerella scavalcano la pista: pivot sull'asse.
+        if (near.dist < BARRIER_D) continue;
+        const p = trackPts[near.index];
         const { nx, nz } = TrackGeometry.normalAt(trackPts, near.index, true);
-        const lato = Math.sign((a.x - trackPts[near.index].x) * nx + (a.z - trackPts[near.index].z) * nz) || 1;
-        const atteso = TrackGravel.sceneryShiftAt(bar, near.index, lato, BARRIER_D);
-        const spostamento = Math.hypot(b.x - a.x, b.z - a.z);
-
-        if (atteso === 0) {
-            assert.ok(spostamento < 1e-6,
-                `voce ${i} (${a.asset}) spostata di ${spostamento.toFixed(2)} dove la barriera non si è mossa`);
-        } else {
-            // `>= atteso` e non `== atteso`: alle transizioni della zona
-            // protetta la passata correttiva aggiunge il residuo, quindi lo
-            // spostamento può superare quello nominale. Non può mai essere
-            // minore, ed è quello che conta.
-            assert.ok(spostamento >= atteso - 0.5,
-                `voce ${i} (${a.asset}) spostata di ${spostamento.toFixed(2)}, attese almeno ${atteso.toFixed(2)}`);
-            spostate++;
-        }
+        const lato = Math.sign((v.x - p.x) * nx + (v.z - p.z) * nz) || 1;
+        const muro = TrackGravel.barrierAt(bar, near.index, lato);
+        controllate++;
+        assert.ok(near.dist >= muro - 0.5,
+            `${v.asset} (${v.category}) è dentro la via di fuga: a ${near.dist.toFixed(1)} con il muro a ${muro.toFixed(1)}`);
     }
-    assert.ok(spostate > 0, 'su monte-rosso qualcosa deve essersi spostato');
-    assert.ok(scavalcanti > 0, 'monte-rosso ha ponte semafori e passerella: il caso va esercitato davvero');
+    assert.ok(controllate > 100, `attese molte voci da controllare, ne ho trovate ${controllate}`);
 });
 
-test('la scenografia non finisce mai dentro la via di fuga', () => {
-    // Il senso della traslazione: dopo lo spostamento nessun oggetto deve
-    // restare fra la pista e la barriera, altrimenti ci si sbatte contro
-    // qualcosa che sta dentro l'area di sicurezza.
+test('con le vie di fuga il layout resta deterministico', () => {
+    // Nessun PRNG non seminato: due chiamate identiche danno lo stesso
+    // risultato. È ciò che rende riproducibile un difetto visto in playtest.
     const TrackGravel = require('./trackGravel.js');
     const { trackPts, pitPts } = buildReal();
     const bar = TrackGravel.barrierProfile(trackPts, { roadHalf: ROAD_HALF });
-    const senza = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D);
-    const con = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D, 45, null, bar);
-
-    for (let i = 0; i < senza.length; i++) {
-        const primaD = TrackGeometry.nearestPoint(trackPts, senza[i].x, senza[i].z).dist;
-        const dopo = TrackGeometry.nearestPoint(trackPts, con[i].x, con[i].z);
-        assert.ok(dopo.dist >= primaD - 0.5,
-            `voce ${i} (${senza[i].asset}) si è AVVICINATA alla pista: da ${primaD.toFixed(1)} a ${dopo.dist.toFixed(1)}`);
-        // Le voci che stavano già fuori dalla barriera storica devono restare
-        // fuori anche da quella nuova. Ponte semafori e passerella scavalcano
-        // la pista per costruzione e non c'entrano con questo controllo.
-        if (primaD < BARRIER_D - 0.5) continue;
-        const p = trackPts[dopo.index];
-        const { nx, nz } = TrackGeometry.normalAt(trackPts, dopo.index, true);
-        const lato = Math.sign((con[i].x - p.x) * nx + (con[i].z - p.z) * nz) || 1;
-        assert.ok(dopo.dist >= TrackGravel.barrierAt(bar, dopo.index, lato) - 0.5,
-            `voce ${i} (${senza[i].asset}) è dentro la via di fuga: a ${dopo.dist.toFixed(1)} con la barriera a ${TrackGravel.barrierAt(bar, dopo.index, lato).toFixed(1)}`);
+    const a = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D, 45, null, bar);
+    const b = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D, 45, null, bar);
+    assert.equal(a.length, b.length);
+    for (let i = 0; i < a.length; i++) {
+        assert.equal(a[i].asset, b[i].asset);
+        assert.ok(Math.abs(a[i].x - b[i].x) < 1e-9 && Math.abs(a[i].z - b[i].z) < 1e-9);
     }
 });
+
