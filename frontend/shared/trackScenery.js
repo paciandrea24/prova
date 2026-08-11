@@ -931,9 +931,14 @@
     // chiamanti che non ne hanno bisogno continuano a funzionare con 4-5
     // argomenti.
     // La scenografia viene calcolata con la barriera "di base" (quella di
-    // sempre) e poi spostata in blocco verso l'esterno di quanta ghiaia c'è
-    // in quel punto: è il requisito dell'utente — tutto esattamente come ora,
-    // semplicemente traslato dopo la ghiaia.
+    // sempre) e poi spostata in blocco verso l'esterno di quanto la barriera
+    // si è davvero allontanata in quel punto: è il requisito dell'utente —
+    // tutto esattamente come ora, semplicemente traslato dopo la barriera.
+    //
+    // Segue la BARRIERA e non la ghiaia: dal momento in cui il muro arretra
+    // anche dove ghiaia non ce n'è (via di fuga in erba, Task 7a), traslare
+    // sulla ghiaia lascerebbe tribune e cartelloni dentro la via di fuga sui
+    // rettilinei, o murati.
     //
     // Perché a valle e non riscrivendo le ~50 occorrenze di barrierDist nei
     // sei moduli di scenografia: dove la ghiaia è 0 lo spostamento è 0, quindi
@@ -945,21 +950,48 @@
     //
     // Le colline e il prato NON passano di qui: sono terreno, non oggetti, e
     // stanno centinaia di unità più in là.
-    function traslaOltreLaGhiaia(layout, trackPts, gravelProfile, groundPts, barrierDist, embankOuter) {
-        if (!gravelProfile) return layout;
+    function traslaOltreLaGhiaia(layout, trackPts, barrierProfile, groundPts, barrierDist, embankOuter) {
+        if (!barrierProfile) return layout;
 
         for (const voce of layout) {
             const near = TrackGeometry.nearestPoint(trackPts, voce.x, voce.z);
             const p = trackPts[near.index];
             const { nx, nz } = TrackGeometry.normalAt(trackPts, near.index, true);
+            // Le strutture che SCAVALCANO la pista — ponte semafori e
+            // passerella — hanno il pivot sull'asse, quindi stanno dentro la
+            // linea della barriera per costruzione. Vanno lasciate stare: la
+            // passata correttiva più sotto, presa alla lettera, le
+            // scaraventerebbe a bordo circuito.
+            if (near.dist < barrierDist) continue;
             // Da che lato della pista sta la voce: segno della componente
             // normale del vettore centro-pista -> oggetto.
             const lato = Math.sign((voce.x - p.x) * nx + (voce.z - p.z) * nz) || 1;
-            const ghiaia = TrackGravel.gravelAt(gravelProfile, near.index, lato);
-            if (ghiaia <= 0) continue;
+            const spostamento = TrackGravel.sceneryShiftAt(barrierProfile, near.index, lato, barrierDist);
+            if (spostamento <= 0) continue;
 
-            voce.x += nx * ghiaia * lato;
-            voce.z += nz * ghiaia * lato;
+            voce.x += nx * spostamento * lato;
+            voce.z += nz * spostamento * lato;
+
+            // Correzione: lo spostamento è calcolato sul campione più vicino
+            // PRIMA di muoversi, ma muovendosi l'oggetto può ritrovarsi più
+            // vicino a un altro campione, dove il muro è più in là — succede
+            // ai bordi della zona protetta del traguardo, dove la barriera
+            // sale da 15 a 33 nel giro di poche unità. Misurato: senza questa
+            // passata un cartellone su prova restava dentro la via di fuga di
+            // 10 unità (1 voce su 668, ma proprio davanti alle tribune).
+            //
+            // Poche iterazioni bastano: ogni passo allontana, e il profilo del
+            // muro ha pendenza limitata, quindi il residuo si esaurisce.
+            for (let giro = 0; giro < 3; giro++) {
+                const ora = TrackGeometry.nearestPoint(trackPts, voce.x, voce.z);
+                const q = trackPts[ora.index];
+                const n2 = TrackGeometry.normalAt(trackPts, ora.index, true);
+                const lato2 = Math.sign((voce.x - q.x) * n2.nx + (voce.z - q.z) * n2.nz) || 1;
+                const residuo = TrackGravel.barrierAt(barrierProfile, ora.index, lato2) - ora.dist;
+                if (residuo <= 0) break;
+                voce.x += n2.nx * residuo * lato2;
+                voce.z += n2.nz * residuo * lato2;
+            }
             // Quota ricalcolata alla posizione nuova. In pratica non cambia
             // (la ghiaia esiste solo dove il terreno è in piano), ma è una
             // garanzia, non un'ipotesi.
@@ -970,9 +1002,10 @@
         return layout;
     }
 
-    // gravelProfile (opzionale): profilo delle vie di fuga, da TrackGravel.
-    // Omesso, il layout è identico a quello di prima che la ghiaia esistesse.
-    function generateLayout(trackData, trackPts, pitPts, barrierDist, embankmentWidth = 45, seatAnchors = null, gravelProfile = null) {
+    // barrierProfile (opzionale): profilo della barriera, da
+    // TrackGravel.barrierProfile. Omesso, il layout è identico a quello di
+    // prima che le vie di fuga esistessero.
+    function generateLayout(trackData, trackPts, pitPts, barrierDist, embankmentWidth = 45, seatAnchors = null, barrierProfile = null) {
         const rng = mulberry32(hashString(trackData.id));
         const pitRoadHalf = trackData.pit.roadHalfWidth;
         const side = mainStandSide(trackPts, pitPts);
@@ -1041,7 +1074,7 @@
         const layout = [...paddock, ...mainStand, ...grandstand, ...landmarks,
                         ...trackside, ...crowd, ...nature, ...woods, ...rocce, ...paddockLife];
         if (pond) layout.push(pond);
-        return traslaOltreLaGhiaia(layout, trackPts, gravelProfile,
+        return traslaOltreLaGhiaia(layout, trackPts, barrierProfile,
             trackPts.filter(p => !p.bridge), barrierDist, embankOuter);
     }
 

@@ -237,12 +237,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // divergenza tra corsia box disegnata e varco/scenografia.
     const PIT_PTS = TrackGeometry.tuckPitEndsToTrack(TrackGeometry.sampleOpenPath(PIT_PATH, 300), trackPts);
 
-    // Profilo delle vie di fuga in ghiaia: calcolato UNA volta qui e riusato
-    // per la banda disegnata, per la posizione delle barriere e per traslare
-    // la scenografia. Il server ne calcola uno identico con la stessa
-    // funzione (trackLoader.js) per il muro fisico — stessi input, stesso
-    // risultato, nessun rischio di divergenza.
-    const GRAVEL_PROFILE = TrackGravel.gravelProfile(trackPts, {
+    // Dove sta il bordo del circuito: barriera e vie di fuga, calcolate UNA
+    // volta qui e riusate per la banda di ghiaia disegnata, per la posizione
+    // delle barriere e per traslare la scenografia. Il server ne calcola uno
+    // identico con la stessa funzione (trackLoader.js) per il muro fisico —
+    // stessi input, stesso risultato, nessun rischio di divergenza.
+    //
+    // `BARRIER_PROFILE.gravel` è la ghiaia GIÀ RIFILATA sul muro: è quella da
+    // disegnare, non il risultato grezzo di gravelProfile, altrimenti dove il
+    // muro si abbassa (imbocchi dei ponti) la banda gli sbucherebbe da sotto.
+    const BARRIER_PROFILE = TrackGravel.barrierProfile(trackPts, {
         roadHalf: ROAD_HALF,
         curbW: CURB_W,
         pitLanePts: PIT_PTS,
@@ -284,11 +288,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Vie di fuga in ghiaia, dopo il cordolo e prima della barriera: l'ordine
     // delle chiamate riflette la sezione reale della pista. La banda parte dal
     // bordo esterno del cordolo, quindi non si sovrappone a nessuno dei due.
-    TrackMeshBuilder.buildGravel(scene, trackPts, ROAD_HALF, CURB_W, GRAVEL_PROFILE);
-    // La barriera segue il profilo: dove non c'è ghiaia resta a BARRIER_D
-    // esatto, cioè dov'era prima di questa feature.
+    TrackMeshBuilder.buildGravel(scene, trackPts, ROAD_HALF, CURB_W, BARRIER_PROFILE.gravel);
+    // La barriera sta dove dice il profilo: arretrata della via di fuga
+    // minima quasi ovunque, di più dove c'è la ghiaia, ferma dov'era nel
+    // tratto del traguardo e dei box, a bordo strada sui ponti.
     TrackMeshBuilder.buildBarriers(scene, trackPts,
-        (i, side) => TrackGravel.barrierDistAt(GRAVEL_PROFILE, i, side, BARRIER_D),
+        (i, side) => TrackGravel.barrierAt(BARRIER_PROFILE, i, side),
         PIT_MERGE_SAMPLES);
     TrackMeshBuilder.buildStartLine(scene, trackPts, ROAD_HALF);
     // drawBoxMarker=false: il riquadro giallo unico su boxIndex era il solo
@@ -623,10 +628,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
         console.warn('[F1] posti tribuna non caricati, tribune vuote:', err);
     }
-    // GRAVEL_PROFILE come ultimo argomento: la scenografia si calcola con la
-    // barriera di base e poi trasla oltre la ghiaia, dove c'è. Senza questo,
-    // tribune e cartelloni resterebbero sopra la banda di ghiaia.
-    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, GRAVEL_PROFILE);
+    // BARRIER_PROFILE come ultimo argomento: la scenografia si calcola con la
+    // barriera storica e poi segue il muro dove si è spostato. Senza questo,
+    // tribune e cartelloni resterebbero dentro la via di fuga o murati.
+    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, BARRIER_PROFILE);
     loadScenery(scene, sceneryLayout);
 
     // ====================================================
