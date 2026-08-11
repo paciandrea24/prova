@@ -170,6 +170,117 @@ test('pitGapSamples tiene solo i punti vicini ai due estremi della corsia', () =
     assert.ok(!ha(76), 'a 76 unità dall\'inizio non lo è più');
 });
 
+// ---- barrierProfile: la pista chiusa ----
+
+const ROAD_HALF = 11;
+const BORDO_CORDOLO = ROAD_HALF + TrackGravel.CURB_W;
+const STORICA = BORDO_CORDOLO + TrackGravel.BARRIER_GAP;   // dov'era la barriera prima
+
+test('barrierProfile: sui rettilinei la barriera arretra della via di fuga minima', () => {
+    const pts = ovale();
+    const bar = TrackGravel.barrierProfile(pts, { roadHalf: ROAD_HALF });
+    // Indice 50: centro del primo rettilineo, lontano da curve e ponti.
+    for (const side of [-1, 1]) {
+        assert.equal(TrackGravel.barrierAt(bar, 50, side),
+            BORDO_CORDOLO + TrackGravel.RUNOFF_MIN,
+            'in rettilineo la barriera sta a cordolo + via di fuga minima');
+    }
+});
+
+test('barrierProfile: la barriera non si avvicina MAI rispetto a dov\'era', () => {
+    // È la garanzia che rende la modifica sicura: chiudere la pista può solo
+    // allontanare il muro, mai stringerlo addosso a chi guida.
+    const pts = ovale();
+    const bar = TrackGravel.barrierProfile(pts, { roadHalf: ROAD_HALF });
+    for (let i = 0; i < pts.length; i++) {
+        for (const side of [-1, 1]) {
+            const d = TrackGravel.barrierAt(bar, i, side);
+            assert.ok(d >= STORICA - 1e-9,
+                `campione ${i} lato ${side}: barriera a ${d.toFixed(1)}, più vicina della storica ${STORICA}`);
+        }
+    }
+});
+
+test('barrierProfile: la banda di ghiaia non esce mai da sotto il muro', () => {
+    // `bar.gravel` è la ghiaia RIFILATA sul muro, ed è quella da disegnare:
+    // dove il livellamento ha dovuto abbassare la barriera, la banda si
+    // accorcia con lei invece di sbucarne fuori.
+    const pts = ovale({ bridge: false });
+    const bar = TrackGravel.barrierProfile(pts, { roadHalf: ROAD_HALF });
+    for (let i = 0; i < pts.length; i++) {
+        for (const side of [-1, 1]) {
+            const ghiaia = TrackGravel.gravelAt(bar.gravel, i, side);
+            assert.ok(ghiaia >= 0, 'la ghiaia rifilata non può essere negativa');
+            assert.ok(TrackGravel.barrierAt(bar, i, side) >= BORDO_CORDOLO + ghiaia - 1e-9,
+                `campione ${i}: la barriera taglierebbe la banda di ghiaia`);
+        }
+    }
+    // E su un ovale senza ponti né corsia box la ghiaia non viene rifilata
+    // affatto: niente si perde per strada quando non serve.
+    const piena = TrackGravel.gravelProfile(pts, { roadHalf: ROAD_HALF });
+    for (let i = 0; i < pts.length; i++) {
+        assert.ok(Math.abs(bar.gravel.left[i] - piena.left[i]) < 1e-9
+               && Math.abs(bar.gravel.right[i] - piena.right[i]) < 1e-9,
+            `campione ${i}: ghiaia rifilata senza motivo`);
+    }
+});
+
+test('barrierProfile: sui ponti il muro resta stretto come oggi', () => {
+    const suPonte = TrackGravel.barrierProfile(ovale({ bridge: true }), { roadHalf: ROAD_HALF });
+    for (let i = 0; i < suPonte.left.length; i++) {
+        for (const side of [-1, 1]) {
+            assert.equal(TrackGravel.barrierAt(suPonte, i, side),
+                ROAD_HALF + TrackGravel.BRIDGE_MARGIN,
+                'su un viadotto non c\'è terreno attorno: il muro resta a bordo strada');
+        }
+    }
+});
+
+test('barrierProfile: dove corre la corsia box la barriera non si sposta', () => {
+    // È la zona del traguardo e dei box, che l'utente vuole invariata.
+    const pts = ovale();
+    const c = TrackGeometry.findCorners(pts)[0];
+    // Corsia box parallela al primo rettilineo, dal lato +1.
+    const pit = [];
+    for (let k = 0; k <= 60; k++) {
+        const p = pts[20 + k];
+        const { nx, nz } = TrackGeometry.normalAt(pts, 20 + k, true);
+        pit.push({ x: p.x + nx * 40, z: p.z + nz * 40 });
+    }
+    const bar = TrackGravel.barrierProfile(pts, { roadHalf: ROAD_HALF, pitLanePts: pit, pitRoadHalf: 5 });
+    assert.equal(TrackGravel.barrierAt(bar, 50, 1), STORICA,
+        'accanto alla corsia box la barriera resta dov\'era');
+    assert.equal(TrackGravel.barrierAt(bar, 50, -1), STORICA,
+        'la zona protegge entrambi i lati, non solo quello dei box');
+    // Lontano dalla corsia (dall\'altra parte del giro) la via di fuga c\'è.
+    assert.ok(TrackGravel.barrierAt(bar, 250, 1) > STORICA,
+        'fuori dalla zona box la barriera arretra');
+    assert.ok(c, 'il caso di prova deve avere curve');
+});
+
+test('barrierProfile: nessun gradino nel muro, la pendenza resta entro MAX_SLOPE', () => {
+    const pts = ovale();
+    const n = pts.length;
+    const stepLen = TrackGeometry.lapLength(pts) / n;
+    const saltoMax = TrackGravel.MAX_SLOPE * stepLen;
+    // Caso peggiore: corsia box che crea una zona protetta in mezzo al giro,
+    // quindi due transizioni da 1.2 a 20 unità di via di fuga.
+    const pit = [];
+    for (let k = 0; k <= 60; k++) {
+        const p = pts[20 + k];
+        const { nx, nz } = TrackGeometry.normalAt(pts, 20 + k, true);
+        pit.push({ x: p.x + nx * 40, z: p.z + nz * 40 });
+    }
+    const bar = TrackGravel.barrierProfile(pts, { roadHalf: ROAD_HALF, pitLanePts: pit, pitRoadHalf: 5 });
+    for (const lato of ['left', 'right']) {
+        for (let i = 0; i < n; i++) {
+            const d = Math.abs(bar[lato][(i + 1) % n] - bar[lato][i]);
+            assert.ok(d <= saltoMax + 1e-9,
+                `gradino di ${d.toFixed(2)} su ${lato} al campione ${i}, massimo ${saltoMax.toFixed(2)}`);
+        }
+    }
+});
+
 test('barrierDistAt somma la ghiaia alla distanza base', () => {
     const pts = ovale();
     const prof = TrackGravel.gravelProfile(pts, { roadHalf: 11 });

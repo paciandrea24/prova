@@ -248,6 +248,161 @@
         return pts.filter((_, i) => cum[i] < PIT_MERGE_WINDOW || total - cum[i] < PIT_MERGE_WINDOW);
     }
 
+    // ────────────────────────────────────────────────────────────────────
+    // Dove sta la barriera: il profilo che CHIUDE la pista
+    //
+    // Obiettivo dell'utente: rendere fisicamente impossibile uscire dal
+    // circuito, senza però che ogni tracciato diventi Monte Carlo. Il
+    // problema non era decidere dove il muro è solido, ma dove SI TROVA: la
+    // barriera è sempre stata disegnata a BARRIER_GAP dal bordo del cordolo,
+    // cioè mezza lunghezza d'auto, e renderla solida lì darebbe un circuito
+    // cittadino ovunque. Quindi la si allontana.
+    //
+    // Misurato sui tracciati reali prima di scegliere: portare la barriera da
+    // 4 a 40 unità oltre il cordolo fa passare i punti in cui non ci starebbe
+    // dall'1.7% al 5.0% su prova, e su new-monza non li cambia affatto
+    // (4.3% in entrambi i casi). Lo spazio non è il vincolo: lo è solo la
+    // corsia box, in una manciata di punti che questo profilo restringe da sé.
+    // ────────────────────────────────────────────────────────────────────
+
+    // Via di fuga minima oltre il cordolo dove non c'è ghiaia (erba). ~3
+    // lunghezze d'auto: sta fra la ghiaia più stretta (GRAVEL_WIDTH_MIN) e la
+    // più larga, così il giro risulta omogeneo invece che a fisarmonica.
+    const RUNOFF_MIN = 20;
+    // Sui tratti a ponte non c'è terreno attorno: il muro resta a bordo
+    // strada, dov'è sempre stato. Stesso valore di
+    // CollisionResolver.BRIDGE_BARRIER_MARGIN — è la distanza che il muro
+    // fisico dei ponti usa già oggi, non una nuova.
+    const BRIDGE_MARGIN = 2;
+    // Entro questa distanza dalla pista, la corsia box "corre accanto": è il
+    // tratto del traguardo e dei box, che l'utente vuole invariato ("non
+    // modificherei troppo nel tratto dei pressi del traguardo e anche dei
+    // box, mi piace al momento"). Misurato: la zona così definita va da -284
+    // a +377 unità dal traguardo su prova e da -215 a +183 su new-monza, e
+    // comprende in entrambi i casi ponte semafori, podio e garage.
+    //
+    // Una regola sola, che si adatta da sé a un tracciato nuovo disegnato in
+    // editor: nessuna finestra in unità attorno all'indice 0 da ritarare.
+    const PIT_STRAIGHT_REACH = 80;
+
+    // Distanza della barriera dall'ASSE pista, campione per campione e lato
+    // per lato. Valore assoluto e non un incremento, perché lo consumano tre
+    // sistemi diversi (disegno, muro fisico, traslazione della scenografia) e
+    // un solo numero non lascia spazio a interpretazioni.
+    function barrierProfile(trackPts, opts) {
+        const n = trackPts.length;
+        const { roadHalf, curbW = CURB_W, pitLanePts = null, pitRoadHalf = 0 } = opts;
+        const out = { left: new Float64Array(n), right: new Float64Array(n) };
+        if (!n) return out;
+
+        const gravel = gravelProfile(trackPts, opts);
+        const bordoCordolo = roadHalf + curbW;
+        const storica = bordoCordolo + BARRIER_GAP;   // dov'era prima di tutto questo
+        const stepLen = TrackGeometry.lapLength(trackPts) / n;
+
+        // Prima passata: la via di fuga di BASE, cioè quella che spetta al
+        // punto a prescindere dalla ghiaia.
+        const base = { left: new Float64Array(n), right: new Float64Array(n) };
+        for (let i = 0; i < n; i++) {
+            const p = trackPts[i];
+            let d;
+            if (p.bridge) {
+                d = roadHalf + BRIDGE_MARGIN;
+            } else if (pitLanePts && pitLanePts.length
+                       && TrackGeometry.nearestPoint(pitLanePts, p.x, p.z).dist < PIT_STRAIGHT_REACH) {
+                d = storica;
+            } else {
+                d = bordoCordolo + RUNOFF_MIN;
+            }
+            base.left[i] = d;
+            base.right[i] = d;
+        }
+
+        // Seconda passata: la corsia box non va inglobata. Si cammina in
+        // fuori dal bordo del cordolo finché non si entra nella sua fascia di
+        // rispetto — stessa regola che già limita la ghiaia, così barriera e
+        // ghiaia non possono contraddirsi.
+        if (pitLanePts && pitLanePts.length) {
+            for (let i = 0; i < n; i++) {
+                const p = trackPts[i];
+                if (p.bridge) continue;
+                const { nx, nz } = TrackGeometry.normalAt(trackPts, i, true);
+                for (const side of [-1, 1]) {
+                    const banda = side > 0 ? base.right : base.left;
+                    for (let d = 0; d <= banda[i] - bordoCordolo; d += 1) {
+                        const x = p.x + nx * (bordoCordolo + d) * side;
+                        const z = p.z + nz * (bordoCordolo + d) * side;
+                        if (TrackGeometry.nearestPoint(pitLanePts, x, z).dist < pitRoadHalf + PIT_CLEARANCE) {
+                            banda[i] = Math.max(storica, bordoCordolo + d);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Terza passata: la ghiaia entra PRIMA del livellamento, non dopo.
+        //
+        // Il livellamento abbassa soltanto, quindi metterlo per primo
+        // sembrerebbe sicuro — non lo è: prendere il massimo con la ghiaia
+        // DOPO aver livellato ricrea i gradini appena tolti. Misurato su
+        // prova, all'imbocco di un ponte: il muro scendeva a 13 (valore del
+        // ponte) mentre la ghiaia in esaurimento lo teneva ancora a 19, per
+        // una pendenza di 1.155 contro un limite di 1.0.
+        //
+        // ⚠️ Sui ponti la ghiaia non partecipa affatto: `bordoCordolo + 0`
+        // non è "nessun vincolo", è il bordo del cordolo, e prenderlo come
+        // minimo spingerebbe fuori anche il muro dei ponti — che sta più
+        // dentro, a roadHalf + BRIDGE_MARGIN.
+        for (let i = 0; i < n; i++) {
+            if (trackPts[i].bridge) continue;
+            if (gravel.left[i] > 0) base.left[i] = Math.max(base.left[i], bordoCordolo + gravel.left[i]);
+            if (gravel.right[i] > 0) base.right[i] = Math.max(base.right[i], bordoCordolo + gravel.right[i]);
+        }
+
+        // Quarta passata: livellamento anti-gradino. Il giro è chiuso, quindi
+        // due giri per verso servono a propagare il vincolo anche oltre il
+        // punto di raccordo dell'indice 0.
+        const passoMax = MAX_SLOPE * stepLen;
+        for (const lato of ['left', 'right']) {
+            const b = base[lato];
+            for (let giro = 0; giro < 2; giro++) {
+                for (let i = 0; i < n; i++) b[i] = Math.min(b[i], b[(i - 1 + n) % n] + passoMax);
+                for (let i = n - 1; i >= 0; i--) b[i] = Math.min(b[i], b[(i + 1) % n] + passoMax);
+            }
+            out[lato].set(b);
+        }
+
+        // Quinta passata: la ghiaia si rifila sul muro. Il livellamento può
+        // aver abbassato la barriera sotto la banda disegnata — è quello che
+        // succede avvicinandosi a un ponte — e una banda che esce da sotto il
+        // muro si vede. Il minimo fra due profili a pendenza limitata resta a
+        // pendenza limitata, quindi rifilare non reintroduce gradini.
+        //
+        // È il motivo per cui la ghiaia rifilata esce da QUI e non da
+        // gravelProfile: le due grandezze devono essere decise insieme,
+        // altrimenti disegno e muro possono contraddirsi.
+        out.gravel = { left: new Float64Array(n), right: new Float64Array(n) };
+        for (let i = 0; i < n; i++) {
+            out.gravel.left[i] = Math.max(0, Math.min(gravel.left[i], out.left[i] - bordoCordolo));
+            out.gravel.right[i] = Math.max(0, Math.min(gravel.right[i], out.right[i] - bordoCordolo));
+        }
+        return out;
+    }
+
+    function barrierAt(profile, i, side) {
+        const banda = side > 0 ? profile.right : profile.left;
+        return banda[((i % banda.length) + banda.length) % banda.length];
+    }
+
+    // Di quanto va spostata verso l'esterno una voce di scenografia calcolata
+    // con la barriera storica. La scenografia si dispone a partire dalla
+    // barriera, quindi segue il muro: se restasse ferma finirebbe dentro la
+    // via di fuga, o murata.
+    function sceneryShiftAt(profile, i, side, baseDist) {
+        return Math.max(0, barrierAt(profile, i, side) - baseDist);
+    }
+
     function gravelAt(profile, i, side) {
         const banda = side > 0 ? profile.right : profile.left;
         return banda[((i % banda.length) + banda.length) % banda.length];
@@ -259,6 +414,8 @@
 
     return {
         gravelProfile, gravelAt, barrierDistAt,
+        barrierProfile, barrierAt, sceneryShiftAt,
+        RUNOFF_MIN, BRIDGE_MARGIN, PIT_STRAIGHT_REACH,
         pitGapSamples, PIT_MERGE_WINDOW,
         cornerSpeed, cornerGravelWidth,
         MAX_SPEED, TURN_SPEED_LOW, TURN_SPEED_HIGH,
