@@ -18,11 +18,88 @@
     else root.TrackGravel = factory(root.TrackGeometry);
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry) {
 
-    // Larghezza della via di fuga: 32 unità ≈ 25 m, quattro lunghezze d'auto
-    // (l'auto è 7.17 unità). Partita da 25 e alzata dopo il primo playtest
-    // ("metterei leggermente più ghiaia"). Dove non ci sta — corsia box
-    // vicina — il profilo la riduce da sé, non serve tararla per pista.
-    const GRAVEL_WIDTH = 32;
+    // ────────────────────────────────────────────────────────────────────
+    // Quanto si va forte in una curva
+    //
+    // Le tre costanti qui sotto sono una COPIA di quelle della fisica
+    // (backend/sockets/games/physics/): questo modulo è condiviso e il
+    // browser lo carica senza il backend, quindi non può richiederle da lì.
+    // A tenerle allineate ci pensa un test di guardia,
+    // backend/sockets/games/trackGravelPhysics.test.js, che importa entrambe
+    // le sorgenti e le confronta: se un giorno la fisica cambia, quel test
+    // diventa rosso invece di lasciare la ghiaia tarata su un'auto che non
+    // esiste più.
+    // ────────────────────────────────────────────────────────────────────
+    const MAX_SPEED = 6.2;          // PowertrainModel.MAX_SPEED
+    const TURN_SPEED_LOW = 0.075;   // SteeringModel.TURN_SPEED_LOW
+    const TURN_SPEED_HIGH = 0.052;  // SteeringModel.TURN_SPEED_HIGH
+
+    // Velocità con cui si percorre una curva di raggio `radius`, in unità per
+    // tick. Lo sterzo ha un tasso di rotazione massimo, quindi il raggio
+    // percorribile a velocità v è v / tasso: invertendo si ottiene la
+    // velocità massima possibile per un raggio dato. È la stessa relazione
+    // che usa f1Bot::cornerTargetSpeed per decidere quanto frenare — se le
+    // due divergessero, la ghiaia sarebbe dimensionata su una velocità che
+    // nessuno tiene davvero.
+    //
+    // Il tasso dipende a sua volta dalla velocità (interpolato fra LOW e
+    // HIGH su v/MAX_SPEED), quindi l'equazione è implicita; qui è risolta in
+    // forma chiusa invece che per iterazioni.
+    function cornerSpeed(radius) {
+        const v = (radius * TURN_SPEED_LOW)
+            / (1 - (radius * (TURN_SPEED_HIGH - TURN_SPEED_LOW)) / MAX_SPEED);
+        return Math.min(MAX_SPEED, Math.max(0, v));
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // Da quanto si va forte a quanta ghiaia serve
+    // ────────────────────────────────────────────────────────────────────
+
+    // Larghezza per una curva percorsa alla velocità massima. Nessuna curva
+    // reale ci arriva (a quella velocità non è più una curva), quindi è un
+    // fattore di scala e non una larghezza che si vedrà: sui tracciati veri
+    // produce 12-32 unità. Il valore è stato validato confrontando le mappe
+    // dall'alto di prova e new-monza prima e dopo.
+    const GRAVEL_WIDTH_AT_TOP_SPEED = 47;
+    // Quanto marcata è la differenza fra curve veloci e lente. 1.5 sta fra il
+    // proporzionale alla velocità (1) e il proporzionale all'energia
+    // cinetica da dissipare (2, la regola dei circuiti veri): con 2 le curve
+    // lente si appiattivano quasi tutte sul minimo, con 1 la differenza non
+    // si leggeva.
+    const GRAVEL_WIDTH_EXPONENT = 1.5;
+    // Sotto questa larghezza la via di fuga non si legge più come tale. In
+    // pratica morde solo sui tornanti più lenti (la curva 9 di prova, 136
+    // km/h, uscirebbe a 11.8): è una rete di sicurezza, non una manopola di
+    // taratura.
+    const GRAVEL_WIDTH_MIN = 12;
+    // Quota della zona che deve restare a larghezza COSTANTE. Una fascia di
+    // ghiaia sale, resta piana, riscende: con metà zona piana le due rampe
+    // occupano un quarto ciascuna, cioè il pianoro è lungo quanto le rampe
+    // messe insieme.
+    //
+    // Senza questo vincolo una curva veloce ma corta chiede più larghezza di
+    // quanta ne possa aprire e richiudere, e diventa una goccia a punta
+    // invece di una via di fuga — difetto segnalato dall'utente sulla curva
+    // più veloce di prova, e già presente sulla curva corta di monte-rosso
+    // con la larghezza costante di prima. Sui tracciati reali interviene solo
+    // sulle tre curve corte e veloci di prova; new-monza non lo attiva mai.
+    const MIN_FLAT_FRACTION = 0.5;
+
+    // Larghezza definitiva della via di fuga di una curva: quella che le
+    // spetterebbe per la velocità, ridotta se la zona non è lunga abbastanza
+    // da contenerla con un pianoro decente. `zoneLength` è la lunghezza in
+    // unità di pista dell'intera zona di ghiaia (arco della curva più i due
+    // CORNER_LEAD), non del solo arco.
+    function cornerGravelWidth(minRadius, zoneLength) {
+        const frazione = cornerSpeed(minRadius) / MAX_SPEED;
+        const voluta = GRAVEL_WIDTH_AT_TOP_SPEED * Math.pow(frazione, GRAVEL_WIDTH_EXPONENT);
+        // Le rampe sono lunghe quanto la larghezza (vedi sotto), quindi
+        // pianoro = zona - 2W; imporre pianoro >= zona * MIN_FLAT_FRACTION
+        // dà W <= zona * (1 - MIN_FLAT_FRACTION) / 2.
+        const consentita = zoneLength * (1 - MIN_FLAT_FRACTION) / 2;
+        return Math.max(GRAVEL_WIDTH_MIN, Math.min(voluta, consentita));
+    }
+
     // Larghezza del cordolo e distacco della barriera dal suo bordo esterno:
     // ricopiati da f1.js (CURB_W / BARRIER_D), qui perché il profilo deve
     // sapere da dove parte la ghiaia.
@@ -33,17 +110,6 @@
     // la frenata in ingresso e l'allargata in uscita: è lì che si esce, non a
     // metà curva.
     const CORNER_LEAD = 15;
-    // Lunghezza su cui la larghezza sale da 0 al massimo. Serve a non lasciare
-    // gradini nel muro: un'auto che struscia la barriera in uscita di curva
-    // ci sbatterebbe contro di spigolo.
-    //
-    // 32 = GRAVEL_WIDTH, cioè una rampa a 45°. Tarato misurando l'angolo del
-    // muro rispetto alla direzione di marcia sui tre tracciati con ghiaia:
-    // una rampa da 12 lo portava a 68° (praticamente un muro frontale per chi
-    // striscia) guadagnando solo 4-6 unità di larghezza media; scendere a 64
-    // addolciva a 27° ma dimezzava la larghezza utile e su monte-rosso la
-    // ghiaia non raggiungeva più il massimo in nessuna curva.
-    const RAMP = 32;
     // Margine fra il bordo esterno della ghiaia e il bordo della corsia box.
     const PIT_CLEARANCE = 4;
     // Sotto questa larghezza la zona viene scartata del tutto: una linguetta
@@ -64,10 +130,17 @@
     // larghezza (misurato in playtest): cresceva di 1 unità ogni 5.17 di
     // pista e una zona di 24 campioni finiva prima di raggiungere il massimo.
     //
-    // 1.0 = 45°, la stessa pendenza della rampa nominale (GRAVEL_WIDTH/RAMP):
-    // il livellamento interviene solo sui tagli secchi (ponte, quota, corsia
-    // box) senza mai strozzare la rampa voluta. Le due costanti vanno tenute
-    // coerenti — se cambia una, ricontrollare l'altra.
+    // 1.0 = 45°, esattamente la pendenza della rampa nominale: le rampe sono
+    // lunghe quanto la larghezza della curva, quindi salgono di 1 unità di
+    // larghezza per 1 di pista qualunque sia la larghezza. Il livellamento
+    // interviene così solo sui tagli secchi (ponte, quota, corsia box) senza
+    // mai strozzare la rampa voluta — se un giorno le rampe si accorciassero
+    // rispetto alla larghezza, questo valore andrebbe rialzato di conseguenza.
+    //
+    // 45° è anche il limite di quanto il muro può stringersi in faccia a chi
+    // striscia la barriera: misurato sui tracciati con ghiaia, una rampa da
+    // 12 unità portava l'angolo del muro rispetto alla direzione di marcia a
+    // 68°, praticamente frontale.
     const MAX_SLOPE = 1.0;
 
     function gravelProfile(trackPts, opts) {
@@ -78,7 +151,6 @@
 
         const stepLen = TrackGeometry.lapLength(trackPts) / n;
         const leadSamples = Math.max(1, Math.round(CORNER_LEAD / stepLen));
-        const rampSamples = Math.max(1, Math.round(RAMP / stepLen));
         const base = roadHalf + curbW + BARRIER_GAP;
 
         for (const corner of TrackGeometry.findCorners(trackPts)) {
@@ -87,11 +159,18 @@
             const totale = arco + 2 * leadSamples;
             const indiceDi = (s) => (((corner.startIdx - leadSamples + s) % n) + n) % n;
 
+            // Ogni curva ha la SUA larghezza, dalla velocità con cui la si
+            // percorre. Le rampe sono lunghe quanto la larghezza (45°): è
+            // ciò che rende il pianoro pari a zona - 2W, il conto su cui si
+            // regge cornerGravelWidth.
+            const larghezza = cornerGravelWidth(corner.minRadius, totale * stepLen);
+            const rampSamples = Math.max(1, Math.round(larghezza / stepLen));
+
             // Prima passata: larghezza nominale con le rampe agli estremi.
             const larghezze = new Array(totale + 1);
             for (let s = 0; s <= totale; s++) {
                 const t = Math.min(1, Math.min(s, totale - s) / rampSamples);
-                larghezze[s] = GRAVEL_WIDTH * t;
+                larghezze[s] = larghezza * t;
             }
 
             // Seconda passata: tagli locali (ponte, quota, corsia box).
@@ -181,8 +260,12 @@
     return {
         gravelProfile, gravelAt, barrierDistAt,
         pitGapSamples, PIT_MERGE_WINDOW,
-        GRAVEL_WIDTH, CURB_W, BARRIER_GAP,
-        CORNER_LEAD, RAMP, PIT_CLEARANCE, MIN_USEFUL_WIDTH, FLAT_Y_TOLERANCE,
+        cornerSpeed, cornerGravelWidth,
+        MAX_SPEED, TURN_SPEED_LOW, TURN_SPEED_HIGH,
+        GRAVEL_WIDTH_AT_TOP_SPEED, GRAVEL_WIDTH_EXPONENT, GRAVEL_WIDTH_MIN,
+        MIN_FLAT_FRACTION,
+        CURB_W, BARRIER_GAP,
+        CORNER_LEAD, PIT_CLEARANCE, MIN_USEFUL_WIDTH, FLAT_Y_TOLERANCE,
         MAX_SLOPE,
     };
 });

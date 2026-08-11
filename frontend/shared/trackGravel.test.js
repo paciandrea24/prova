@@ -23,6 +23,16 @@ function ovale({ y = 0, bridge = false } = {}) {
     return pts;
 }
 
+// Larghezza attesa al centro di una curva dell'ovale: la stessa che il
+// modulo dichiara, non un numero ricopiato a mano — così il test regge se la
+// taratura cambia, e fallisce solo se cambia il COMPORTAMENTO.
+function larghezzaAttesa(pts, c) {
+    const n = pts.length;
+    const stepLen = TrackGeometry.lapLength(pts) / n;
+    const lunghezzaZona = ((c.endIdx - c.startIdx + n) % n) * stepLen + 2 * TrackGravel.CORNER_LEAD;
+    return TrackGravel.cornerGravelWidth(c.minRadius, lunghezzaZona);
+}
+
 test('la ghiaia esiste solo in curva e solo sul lato esterno', () => {
     const pts = ovale();
     const prof = TrackGravel.gravelProfile(pts, { roadHalf: 11 });
@@ -32,7 +42,7 @@ test('la ghiaia esiste solo in curva e solo sul lato esterno', () => {
     // Al centro di ogni curva: ghiaia piena sull'esterno, zero sull'interno.
     for (const c of curve) {
         assert.equal(TrackGravel.gravelAt(prof, c.midIdx, c.side),
-            TrackGravel.GRAVEL_WIDTH, 'ghiaia piena sul lato esterno');
+            larghezzaAttesa(pts, c), 'ghiaia piena sul lato esterno');
         assert.equal(TrackGravel.gravelAt(prof, c.midIdx, -c.side), 0,
             'niente ghiaia sul lato interno');
     }
@@ -40,6 +50,58 @@ test('la ghiaia esiste solo in curva e solo sul lato esterno', () => {
     // Al centro del primo rettilineo (indice 50): niente ghiaia da nessun lato.
     assert.equal(TrackGravel.gravelAt(prof, 50, 1), 0);
     assert.equal(TrackGravel.gravelAt(prof, 50, -1), 0);
+});
+
+test('una curva veloce ha piu\' ghiaia di una lenta, a parita\' di spazio', () => {
+    // Stessa lunghezza di zona per entrambe, così l'unica variabile è il
+    // raggio: 100 unità si percorrono quasi a tavoletta, 25 sono un tornante.
+    const zona = 600;   // abbondante: la regola del pianoro non interviene
+    const veloce = TrackGravel.cornerGravelWidth(100, zona);
+    const media  = TrackGravel.cornerGravelWidth(55, zona);
+    const lenta  = TrackGravel.cornerGravelWidth(25, zona);
+
+    assert.ok(veloce > media && media > lenta,
+        `attesa ghiaia decrescente col raggio, ottenute ${veloce.toFixed(1)} / ${media.toFixed(1)} / ${lenta.toFixed(1)}`);
+    assert.ok(lenta >= TrackGravel.GRAVEL_WIDTH_MIN,
+        'nemmeno il tornante più lento scende sotto il minimo');
+});
+
+test('la velocita\' di percorrenza sale col raggio e non supera il massimo', () => {
+    assert.ok(TrackGravel.cornerSpeed(30) < TrackGravel.cornerSpeed(60),
+        'una curva più larga si percorre più forte');
+    assert.equal(TrackGravel.cornerSpeed(100000), TrackGravel.MAX_SPEED,
+        'un rettilineo si percorre alla velocità massima, non oltre');
+    // Relazione esatta: a regime la velocità è raggio x tasso di sterzata, e
+    // il tasso a quella velocità è interpolato fra LOW e HIGH. Verificarla
+    // qui evita che la formula si scolli dalla fisica che imita.
+    const r = 70, v = TrackGravel.cornerSpeed(r);
+    const tasso = TrackGravel.TURN_SPEED_LOW
+        + (TrackGravel.TURN_SPEED_HIGH - TrackGravel.TURN_SPEED_LOW) * (v / TrackGravel.MAX_SPEED);
+    assert.ok(Math.abs(v - r * tasso) < 1e-9,
+        `velocità ${v} incoerente con raggio x tasso di sterzata ${r * tasso}`);
+});
+
+test('una curva troppo corta riduce la ghiaia invece di farla a punta', () => {
+    // Stessa curva veloce, due spazi diversi. Con zona abbondante prende la
+    // larghezza che le spetta; con zona corta la larghezza scende quanto
+    // basta perché metà fascia resti piana — è la regola contro la "ghiaia a
+    // goccia", il difetto che si vedeva sulla curva più veloce di prova.
+    const larga = TrackGravel.cornerGravelWidth(100, 600);
+    const stretta = TrackGravel.cornerGravelWidth(100, 90);
+    assert.ok(stretta < larga, 'la curva corta riceve meno ghiaia');
+    assert.ok(Math.abs(stretta - 90 / 4) < 1e-9,
+        `attesa lunghezzaZona/4 = 22.5, ottenuta ${stretta.toFixed(2)}`);
+
+    // Il pianoro (zona meno le due rampe, lunghe quanto la larghezza) non
+    // scende mai sotto la metà della zona, su nessuna combinazione.
+    for (const raggio of [20, 35, 50, 70, 90, 115]) {
+        for (const zona of [60, 90, 140, 250, 600]) {
+            const w = TrackGravel.cornerGravelWidth(raggio, zona);
+            const pianoro = zona - 2 * w;
+            assert.ok(pianoro >= zona / 2 - 1e-9 || w === TrackGravel.GRAVEL_WIDTH_MIN,
+                `raggio ${raggio}, zona ${zona}: pianoro ${pianoro.toFixed(1)} su ${zona}, larghezza ${w.toFixed(1)}`);
+        }
+    }
 });
 
 test('il profilo non ha gradini: la pendenza resta entro MAX_SLOPE', () => {
@@ -116,5 +178,5 @@ test('barrierDistAt somma la ghiaia alla distanza base', () => {
     assert.equal(TrackGravel.barrierDistAt(prof, 50, 1, base), base,
         'sul rettilineo la barriera resta dov\'è oggi');
     assert.equal(TrackGravel.barrierDistAt(prof, c.midIdx, c.side, base),
-        base + TrackGravel.GRAVEL_WIDTH);
+        base + larghezzaAttesa(pts, c));
 });
