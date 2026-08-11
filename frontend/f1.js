@@ -217,6 +217,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Identificarle dal colore sarebbe fragile — il colore del prato cambia
     // con la palette e il confronto smetterebbe di trovarle senza che nulla
     // lo segnali.
+    const primaDelPrato = scene.children.length;
+    TrackMeshBuilder.buildGround(scene, trackPts, BARRIER_D + EMBANKMENT_WIDTH, 3000);
+    const mesheTerreno = scene.children.slice(primaDelPrato);
+    TrackMeshBuilder.buildEmbankment(scene, trackPts, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH);
+    // Punti "a terra" (non-ponte): usati sia per i piloni (quota reale sotto
+    // un ponte) sia per la quota visiva dell'auto fuori pista più sotto —
+    // calcolato una sola volta qui, non ad ogni frame.
+    const groundPts = trackPts.filter(p => !p.bridge);
+    TrackMeshBuilder.buildBridgeDecks(scene, trackPts, groundPts, ROAD_HALF + CURB_W, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH);
+
     // Stessi punti campionati (e "abbracciati" alla curva pista vicino agli
     // estremi, TrackGeometry.tuckPitEndsToTrack) usati internamente da
     // TrackMeshBuilder.buildPitLane (che li ricalcola per conto suo): un
@@ -233,9 +243,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // identico con la stessa funzione (trackLoader.js) per il muro fisico —
     // stessi input, stesso risultato, nessun rischio di divergenza.
     //
-    // ⚠️ Va calcolato PRIMA di costruire il terreno: il pianoro del terrapieno
-    // deve arrivare fino alla barriera, e la barriera la decide questo profilo.
-    //
     // `BARRIER_PROFILE.gravel` è la ghiaia GIÀ RIFILATA sul muro: è quella da
     // disegnare, non il risultato grezzo di gravelProfile, altrimenti dove il
     // muro si abbassa (imbocchi dei ponti) la banda gli sbucherebbe da sotto.
@@ -245,26 +252,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         pitLanePts: PIT_PTS,
         pitRoadHalf: trackData.pit.roadHalfWidth,
     });
-
-    // Fin dove il terreno resta alla quota della pista, e dove ha finito di
-    // degradare al prato in piano. Il pianoro arriva alla barriera più lontana
-    // del giro: con la via di fuga la barriera sta ben oltre il vecchio
-    // EMBANKMENT_START, e lasciandolo com'era nelle zone sopraelevate il muro
-    // restava sospeso sul pendio e le tribune si piantavano più in basso della
-    // pista. La stessa distanza la ricava da sé TrackScenery.generateLayout
-    // dal profilo, quindi terreno disegnato e oggetti piazzati concordano.
-    const EMBANK_START = TrackScenery.embankmentStart(BARRIER_PROFILE, EMBANKMENT_START);
-    const EMBANK_OUTER = EMBANK_START + EMBANKMENT_WIDTH;
-
-    const primaDelPrato = scene.children.length;
-    TrackMeshBuilder.buildGround(scene, trackPts, EMBANK_OUTER, 3000);
-    const mesheTerreno = scene.children.slice(primaDelPrato);
-    TrackMeshBuilder.buildEmbankment(scene, trackPts, EMBANK_START, EMBANK_OUTER);
-    // Punti "a terra" (non-ponte): usati sia per i piloni (quota reale sotto
-    // un ponte) sia per la quota visiva dell'auto fuori pista più sotto —
-    // calcolato una sola volta qui, non ad ogni frame.
-    const groundPts = trackPts.filter(p => !p.bridge);
-    TrackMeshBuilder.buildBridgeDecks(scene, trackPts, groundPts, ROAD_HALF + CURB_W, EMBANK_START, EMBANK_OUTER);
 
     // Beccheggio (pitch) visivo dell'auto sui dislivelli: pendenza locale tra
     // il campione precedente e successivo lungo il giro, applicata come
@@ -2275,7 +2262,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     : distFromCenter > (ROAD_HALF + 2 + OFF_BRIDGE_EDGE_HYSTERESIS);
                 _offBridgeEdgeState[color] = offBridgeEdge;
                 const targetY = offBridgeEdge
-                    ? TrackGeometry.terrainHeightAt(groundPts, target.x, target.z, EMBANK_START, EMBANK_OUTER)
+                    ? TrackGeometry.terrainHeightAt(groundPts, target.x, target.z, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH)
                     : (trackPts[idx].y || 0);
 
                 v.y = (v.y || 0) + (targetY - (v.y || 0)) * LERP;

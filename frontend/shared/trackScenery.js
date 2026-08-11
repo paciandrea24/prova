@@ -432,7 +432,7 @@
     // + edifici box (pitsGarageClosed/pitsOffice alternati) lungo la corsia
     // box. Nessun PRNG: posizioni deterministiche a intervalli fissi, area
     // "propria" non condivisa con lo scatter natura.
-    function buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, mainSide, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge) {
+    function buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, mainSide, embankOuter, playerBoxFootprints, fitsUnderBridge) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const n = trackPts.length;
@@ -465,7 +465,7 @@
                 if (insidePlayerBoxFootprint(x, z, playerBoxFootprints)) continue;
 
                 const rotY = Math.atan2(p.x - x, p.z - z);
-                const y = TrackGeometry.terrainHeightAt(groundPts, x, z, embankStart, embankOuter);
+                const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
                 if (!fitsUnderBridge(asset, x, z, y)) continue;
                 layout.push({ asset, category: 'paddock', x, y, z, rotY, scale: CUSTOM_MODEL_SCALE });
             }
@@ -547,7 +547,7 @@
     // scartare subito la tribuna — un circuito con una corsia box lunga
     // (es. Monte Rosso) altrimenti perderebbe troppe tribune invece di
     // limitarsi a spostarle di qualche metro.
-    function buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankStart, embankOuter, fitsUnderBridge, mainStand) {
+    function buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankOuter, fitsUnderBridge, mainStand) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const lapLen = TrackGeometry.lapLength(trackPts);
@@ -609,7 +609,7 @@
                     // Contro le strutture già accettate si guarda l'ingombro
                     // reale, non un raggio: una schiera lunga sfiorerebbe
                     // sempre qualcosa con un raggio unico e resterebbe corta.
-                    const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);
+                    const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, barrierDist, embankOuter);
                     const cand = { asset, x: m.x, y, z: m.z, rotY: m.rotY, scale: CUSTOM_MODEL_SCALE };
                     for (const p of accepted) {
                         if (SceneryAssetSizes.itemsOverlap(cand, p)) return false;
@@ -623,7 +623,7 @@
             if (modules.length < ROW_MIN_COLS) continue;
 
             for (const m of modules) {
-                const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);
+                const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, barrierDist, embankOuter);
                 const stand = { asset, category: 'grandstand', x: m.x, y, z: m.z,
                                 rotY: m.rotY, scale: CUSTOM_MODEL_SCALE };
                 layout.push(stand);
@@ -721,7 +721,7 @@
         return modules;
     }
 
-    function buildMainGrandstandLayout(trackPts, barrierDist, side, embankStart, embankOuter, fitsUnderBridge) {
+    function buildMainGrandstandLayout(trackPts, barrierDist, side, embankOuter, fitsUnderBridge) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const stackHeight = MAIN_STAND_TIER_HEIGHT * MAIN_STAND_TIERS;
@@ -730,12 +730,12 @@
             trackPts, 0, side, barrierDist + MAIN_STAND_OFFSET_MARGIN, MAIN_STAND_COLS,
             (m) => {
                 // Se lì sopra passa un cavalcavia, la tribuna lo attraversa.
-                const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);
+                const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, barrierDist, embankOuter);
                 return fitsUnderBridge('__stack__', m.x, m.z, y, stackHeight);
             });
 
         for (const m of modules) {
-            const baseY = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);
+            const baseY = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, barrierDist, embankOuter);
             for (let tier = 0; tier < MAIN_STAND_TIERS; tier++) {
                 layout.push({
                     asset: MAIN_STAND_ASSET, category: 'grandstand-main',
@@ -762,7 +762,7 @@
     // uniformi nel riquadro attorno al tracciato, filtrati per restare in
     // una fascia libera fuori dal corridoio pista/box e a distanza minima
     // dagli altri oggetti già accettati (di qualunque categoria).
-    function buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge) {
+    function buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints, fitsUnderBridge) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist);
@@ -792,7 +792,7 @@
             // sotto, cioè sepolto — difetto latente emerso avvicinando le
             // colline il 2026-08-10.
             const dGround = TrackGeometry.nearestPoint(groundPts, x, z).dist;
-            const y = TrackGeometry.terrainHeightAt(groundPts, x, z, embankStart, embankOuter)
+            const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter)
                     + SceneryHills.hillHeightAt(x, z, dGround, embankOuter,
                                                TrackGeometry.isInsideLoop(groundPts, x, z));
             if (!fitsUnderBridge(asset, x, z, y)) continue;
@@ -808,7 +808,7 @@
     // quella fascia diventerà via di fuga in ghiaia — e arrivano fin sui primi
     // pendii collinari, dove un albero starebbe scomodo e una roccia no.
     function buildRockLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted,
-                             embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge) {
+                             embankOuter, playerBoxFootprints, fitsUnderBridge) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist + ROCK_MAX_MARGIN);
@@ -826,7 +826,7 @@
 
             const asset = weightedPick(rng, ROCK_ASSETS);
             const dGround = TrackGeometry.nearestPoint(groundPts, x, z).dist;
-            const y = TrackGeometry.terrainHeightAt(groundPts, x, z, embankStart, embankOuter)
+            const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter)
                     + SceneryHills.hillHeightAt(x, z, dGround, embankOuter,
                                                TrackGeometry.isInsideLoop(groundPts, x, z));
             if (!fitsUnderBridge(asset, x, z, y)) continue;
@@ -894,7 +894,7 @@
     // Tentativo singolo (non garantito) di piazzare un laghetto: cerca un
     // punto con un raggio libero sufficiente attorno; se non lo trova entro
     // il budget di tentativi, nessun laghetto su questo tracciato.
-    function findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints) {
+    function findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints) {
         const groundPts = trackPts.filter(p => !p.bridge);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist);
 
@@ -909,7 +909,7 @@
             if (insidePlayerBoxFootprint(x, z, playerBoxFootprints)) continue;
             if (isTooCloseToAny(accepted, x, z, POND_CLEARANCE)) continue;
 
-            const y = TrackGeometry.terrainHeightAt(groundPts, x, z, embankStart, embankOuter);
+            const y = TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter);
             return { category: 'pond', x, y, z, radius: POND_RADIUS };
         }
         return null;
@@ -950,7 +950,7 @@
     //
     // Le colline e il prato NON passano di qui: sono terreno, non oggetti, e
     // stanno centinaia di unità più in là.
-    function traslaOltreLaGhiaia(layout, trackPts, barrierProfile, groundPts, barrierDist, embankStart, embankOuter) {
+    function traslaOltreLaGhiaia(layout, trackPts, barrierProfile, groundPts, barrierDist, embankOuter) {
         if (!barrierProfile) return layout;
 
         for (const voce of layout) {
@@ -996,24 +996,10 @@
             // (la ghiaia esiste solo dove il terreno è in piano), ma è una
             // garanzia, non un'ipotesi.
             if (typeof voce.y === 'number') {
-                voce.y = TrackGeometry.terrainHeightAt(groundPts, voce.x, voce.z, embankStart, embankOuter);
+                voce.y = TrackGeometry.terrainHeightAt(groundPts, voce.x, voce.z, barrierDist, embankOuter);
             }
         }
         return layout;
-    }
-
-    // Distanza massima raggiunta dalla barriera sul giro, con un margine per
-    // il suo stesso spessore. Senza profilo (chiamanti storici, editor,
-    // test) resta la barriera fissa di sempre: comportamento invariato.
-    const BARRIER_THICKNESS_MARGIN = 3;
-    function embankmentStart(barrierProfile, barrierDist) {
-        if (!barrierProfile) return barrierDist;
-        let max = barrierDist;
-        for (const lato of ['left', 'right']) {
-            const b = barrierProfile[lato];
-            for (let i = 0; i < b.length; i++) if (b[i] > max) max = b[i];
-        }
-        return max + BARRIER_THICKNESS_MARGIN;
     }
 
     // barrierProfile (opzionale): profilo della barriera, da
@@ -1023,23 +1009,7 @@
         const rng = mulberry32(hashString(trackData.id));
         const pitRoadHalf = trackData.pit.roadHalfWidth;
         const side = mainStandSide(trackPts, pitPts);
-        // Fin dove il terreno resta alla QUOTA DELLA PISTA prima di degradare
-        // al prato in piano. Non è più `barrierDist`: da quando la barriera
-        // arretra per la via di fuga, il pianoro deve arrivare almeno fino a
-        // lei, altrimenti nelle zone sopraelevate il muro resta sospeso sul
-        // pendio e tribune e alberi si piantano più in basso della pista —
-        // difetto visto in playtest il 2026-08-11.
-        //
-        // Si prende la distanza MASSIMA raggiunta dalla barriera sul giro, non
-        // quella locale: la quota del terreno è consultata da punti qualunque
-        // del mondo (mesh del prato, oggetti sparsi, quota visiva dell'auto
-        // fuoripista) e un pianoro che cambia larghezza punto per punto
-        // richiederebbe a tutti di sapere a quale campione appartengono. Il
-        // costo è un ripiano un po' più largo del necessario dove la barriera
-        // è vicina, che non si vede: dove la pista è in piano (y=0) il
-        // terrapieno non esiste comunque.
-        const embankStart = embankmentStart(barrierProfile, barrierDist);
-        const embankOuter = embankStart + embankmentWidth;
+        const embankOuter = barrierDist + embankmentWidth;
         // Ingombro reale di ciascun box giocatore (caso peggiore,
         // PLAYER_BOX_MAX_COUNT box pieni — vedi commento sopra): calcolato
         // una volta qui, riusato per escludere paddock/natura/laghetto da
@@ -1059,16 +1029,16 @@
         const fitsUnderBridge = makeBridgeFilter(trackPts, barrierDist);
 
 
-        const paddock   = buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
-        const mainStand = buildMainGrandstandLayout(trackPts, barrierDist, side, embankStart, embankOuter, fitsUnderBridge);
+        const paddock   = buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankOuter, playerBoxFootprints, fitsUnderBridge);
+        const mainStand = buildMainGrandstandLayout(trackPts, barrierDist, side, embankOuter, fitsUnderBridge);
         const accepted  = [...paddock, ...mainStand];
-        const grandstand = buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankStart, embankOuter, fitsUnderBridge, mainStand);
+        const grandstand = buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankOuter, fitsUnderBridge, mainStand);
 
         // Landmark (torre, ponte semafori, podio, passerella): calcolati
         // prima della natura, così lo scatter degli alberi li vede fra gli
         // oggetti già accettati e non ci finisce sopra.
         const landmarks = SceneryLandmarks.buildLandmarks(
-            trackPts, pitPts, barrierDist, side, embankStart, embankOuter,
+            trackPts, pitPts, barrierDist, side, embankOuter,
             playerBoxFootprints, insidePlayerBoxFootprint, fitsUnderBridge, pitRoadHalf,
             accepted);
         accepted.push(...landmarks);
@@ -1076,7 +1046,7 @@
         // Elementi distribuiti in base alla curvatura (gomme, cartelli di
         // frenata, commissari, reti, barriere di cemento, decoro paddock).
         const trackside = SceneryTrackside.buildTrackside({
-            trackPts, pitPts, barrierDist, pitRoadHalf, embankStart, embankOuter, mainSide: side, rng,
+            trackPts, pitPts, barrierDist, pitRoadHalf, embankOuter, mainSide: side, rng,
             playerBoxFootprints, insidePlayerBoxFootprint, fitsUnderBridge,
             grandstands: [...mainStand, ...grandstand],
         });
@@ -1087,7 +1057,7 @@
         // far fallire il caricamento della pista.
         const crowd = SceneryCrowd.buildCrowd([...mainStand, ...grandstand], seatAnchors, rng);
 
-        const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
+        const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints, fitsUnderBridge);
         const paddockLife = SceneryPaddock.buildLayout(rng, trackPts, pitPts, barrierDist, accepted,
             (voce) => itemHitsPlayerBoxZone(voce, playerBoxFootprints));
 
@@ -1098,18 +1068,18 @@
         // Le rocce dopo gli alberi: si scansano da loro e non viceversa,
         // perché sono molte meno e possono permettersi di cercare posto.
         const rocce  = buildRockLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf,
-                                       accepted, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
-        const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints);
+                                       accepted, embankOuter, playerBoxFootprints, fitsUnderBridge);
+        const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankOuter, playerBoxFootprints);
 
         const layout = [...paddock, ...mainStand, ...grandstand, ...landmarks,
                         ...trackside, ...crowd, ...nature, ...woods, ...rocce, ...paddockLife];
         if (pond) layout.push(pond);
         return traslaOltreLaGhiaia(layout, trackPts, barrierProfile,
-            trackPts.filter(p => !p.bridge), barrierDist, embankStart, embankOuter);
+            trackPts.filter(p => !p.bridge), barrierDist, embankOuter);
     }
 
     return {
-        generateLayout, embankmentStart, hashString, mulberry32, PIT_BUILDING_OFFSET_MARGIN,
+        generateLayout, hashString, mulberry32, PIT_BUILDING_OFFSET_MARGIN,
         playerBoxFootprintCorners, playerBoxApronCorners,
         insidePlayerBoxFootprint, PLAYER_BOX_MAX_COUNT,
         PLAYER_BOX_OFFSET_MARGIN, PLAYER_BOX_LOCAL_BOUNDS

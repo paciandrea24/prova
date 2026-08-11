@@ -56,7 +56,7 @@
     const PIT_BARRIER_TRACK_CLEARANCE = 5;
 
 
-    function place(trackPts, groundPts, idx, offset, side, barrierDist, embankStart, embankOuter) {
+    function place(trackPts, groundPts, idx, offset, side, barrierDist, embankOuter) {
         const p = trackPts[idx];
         const { nx, nz } = TrackGeometry.normalAt(trackPts, idx, true);
         const x = p.x + nx * offset * side;
@@ -64,15 +64,12 @@
         return {
             x, z,
             rotY: Math.atan2(p.x - x, p.z - z),
-            y: TrackGeometry.terrainHeightAt(groundPts, x, z, embankStart, embankOuter),
+            y: TrackGeometry.terrainHeightAt(groundPts, x, z, barrierDist, embankOuter),
         };
     }
 
     function buildTrackside(ctx) {
-        // embankStart assente = la barriera fissa di sempre: chi non conosce
-        // il terrapieno allargato (test, chiamanti storici) continua a
-        // funzionare invece di produrre coordinate NaN.
-        const { trackPts, pitPts, barrierDist, pitRoadHalf, embankStart = barrierDist, embankOuter, mainSide,
+        const { trackPts, pitPts, barrierDist, pitRoadHalf, embankOuter, mainSide,
                 playerBoxFootprints, insidePlayerBoxFootprint, grandstands } = ctx;
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
@@ -110,7 +107,7 @@
                 const idx = (corner.startIdx + s) % n;
                 if (onBridge(idx)) continue;
                 const pos = place(trackPts, groundPts, idx, barrierDist + TYRE_MARGIN,
-                                  corner.side, barrierDist, embankStart, embankOuter);
+                                  corner.side, barrierDist, embankOuter);
                 if (!usable('tyreStack', pos.x, pos.z, pos.y, pitRoadHalf + 6)) continue;
                 layout.push(Object.assign({ asset: 'tyreStack', category: 'safety', scale: 1 }, pos));
             }
@@ -118,7 +115,7 @@
             // Commissario all'ingresso curva.
             const marshalOk = !onBridge(corner.startIdx);
             const marshal = place(trackPts, groundPts, corner.startIdx,
-                                  barrierDist + MARSHAL_MARGIN, corner.side, barrierDist, embankStart, embankOuter);
+                                  barrierDist + MARSHAL_MARGIN, corner.side, barrierDist, embankOuter);
             if (marshalOk && usable('marshalPost', marshal.x, marshal.z, marshal.y, pitRoadHalf + 8)) {
                 layout.push(Object.assign({ asset: 'marshalPost', category: 'safety', scale: 1 }, marshal));
             }
@@ -129,7 +126,7 @@
                 const w = TrackGeometry.walkClosedLoop(trackPts, corner.startIdx, -dist);
                 if (onBridge(w.fromIdx)) continue;
                 const pos = place(trackPts, groundPts, w.fromIdx, barrierDist + BOARD_MARGIN,
-                                  corner.side, barrierDist, embankStart, embankOuter);
+                                  corner.side, barrierDist, embankOuter);
                 if (!usable('brakingBoard', pos.x, pos.z, pos.y, pitRoadHalf + 5)) continue;
                 layout.push(Object.assign({ asset: 'brakingBoard', category: 'safety', scale: 1 }, pos));
             }
@@ -153,7 +150,7 @@
                 const idx = ((near.index + s) % n + n) % n;
                 if (onBridge(idx)) continue;
                 const pos = place(trackPts, groundPts, idx, barrierDist + FENCE_MARGIN,
-                                  side, barrierDist, embankStart, embankOuter);
+                                  side, barrierDist, embankOuter);
                 if (!usable('catchFence', pos.x, pos.z, pos.y, pitRoadHalf + 5)) continue;
                 layout.push(Object.assign({ asset: 'catchFence', category: 'safety', scale: 1 }, pos));
             }
@@ -188,7 +185,7 @@
                 for (const off of decorOffsets) {
                     const pos = place(trackPts, groundPts, w.fromIdx,
                                       barrierDist + off, -mainSide,
-                                      barrierDist, embankStart, embankOuter);
+                                      barrierDist, embankOuter);
                     if (!usable(d.asset, pos.x, pos.z, pos.y, pitRoadHalf + 8)) continue;
                     // Non ammucchiare il decoro nel primo punto libero: i tre
                     // pennoni devono restare un gruppo ordinato, non una pila.

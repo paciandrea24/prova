@@ -11,10 +11,8 @@ const BARRIER_D = ROAD_HALF + 2.8 + 1.2; // stessa formula di frontend/f1.js (CU
 function build() {
     const trackPts = TrackGeometry.sampleLoop(monteRosso.controlPoints, 1000);
     const pitPts = TrackGeometry.sampleOpenPath(monteRosso.pit.path, 300);
-    // embankStart e embankOuter sono due parametri distinti: il pianoro del
-    // terrapieno non finisce più alla barriera fissa (vedi generateLayout).
     return SceneryLandmarks.buildLandmarks(trackPts, pitPts, BARRIER_D, 1,
-        BARRIER_D, BARRIER_D + 45, [], () => false);
+        BARRIER_D + 45, [], () => false);
 }
 
 // Il vincolo vero non è "scavalcare la pista" ma "scavalcare la BARRIERA":
