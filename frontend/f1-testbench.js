@@ -165,10 +165,13 @@
         // TERRENO ERBOSO — copiato verbatim da frontend/f1.js:123-129
         // ====================================================
         TrackMeshBuilder.buildGround(scene, trackPts, BARRIER_D + EMBANKMENT_WIDTH, 3000);
-        TrackMeshBuilder.buildEmbankment(scene, trackPts, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH);
+        // Pianoro di larghezza zero (secondo e terzo argomento uguali all'attacco):
+    // il banco prova non disegna le vie di fuga, quindi il terrapieno resta
+    // quello storico che comincia a scendere subito dopo il cordolo.
+    TrackMeshBuilder.buildEmbankment(scene, trackPts, EMBANKMENT_START, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH);
         // Punti "a terra" (non-ponte): usati per la quota reale sotto un ponte.
         const groundPts = trackPts.filter(p => !p.bridge);
-        TrackMeshBuilder.buildBridgeDecks(scene, trackPts, groundPts, ROAD_HALF + CURB_W, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH);
+        TrackMeshBuilder.buildBridgeDecks(scene, trackPts, groundPts, ROAD_HALF + CURB_W, EMBANKMENT_START, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH);
 
         // ====================================================
         // PISTA / CORDOLI / BARRIERE — copiato verbatim da frontend/f1.js:152-154

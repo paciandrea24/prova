@@ -777,8 +777,31 @@
     // splitByBridge restituisce un solo spezzone chiuso con tutti gli
     // indici in ordine: il risultato è identico, byte per byte, alla
     // versione precedente (nessuna regressione sulle piste esistenti).
-    function buildEmbankment(container, trackPts, embankStart, embankOuter) {
-        const ringCount = EMBANKMENT_RING_COUNT;
+    // `innerEdge`: dove il terrapieno si attacca alla pista (bordo esterno del
+    // cordolo). `plateauEnd`: fin dove resta alla QUOTA DELLA PISTA prima di
+    // cominciare a scendere — deve arrivare almeno alla barriera, altrimenti
+    // il muro resta sospeso sul pendio. `embankOuter`: dove ha finito di
+    // scendere a zero.
+    //
+    // ⚠️ Prima erano due sole distanze, e `embankStart` faceva entrambi i
+    // lavori: era insieme l'attacco alla pista E l'inizio della discesa,
+    // possibile solo finché il pianoro era largo zero. Alzare quel valore da
+    // solo — tentato il 2026-08-11 — sposta in fuori TUTTA la rampa e lascia
+    // scoperta la fascia fra il cordolo e il nuovo valore: `buildGround`
+    // salta le celle entro `embankOuter` perché quella zona la copre questa
+    // funzione, quindi lì non disegna più nessuno e si vede il vuoto.
+    // Le tre distanze devono incastrarsi: innerEdge <= plateauEnd <= embankOuter.
+    function buildEmbankment(container, trackPts, innerEdge, plateauEnd, embankOuter) {
+        // Un anello all'attacco, uno a fine pianoro (saltato se il pianoro è
+        // largo zero, così senza vie di fuga la mesh resta identica a prima),
+        // poi la rampa. `te` è la quota interpolata: 0 = quota pista, 1 = zero.
+        const anelli = [{ r: innerEdge, te: 0 }];
+        if (plateauEnd > innerEdge + 1e-6) anelli.push({ r: plateauEnd, te: 0 });
+        for (let j = 1; j < EMBANKMENT_RING_COUNT; j++) {
+            const t = j / (EMBANKMENT_RING_COUNT - 1);
+            anelli.push({ r: plateauEnd + (embankOuter - plateauEnd) * t, te: t * t * (3 - 2 * t) });
+        }
+        const ringCount = anelli.length;
         const material = new THREE.MeshStandardMaterial({ color: GRASS_COLOR, roughness: 1, metalness: 0, side: THREE.DoubleSide });
         const { groundRuns } = TrackGeometry.splitByBridge(trackPts);
 
@@ -797,9 +820,7 @@
                     const baseY = p.y || 0;
 
                     for (let j = 0; j < ringCount; j++) {
-                        const t = j / (ringCount - 1);
-                        const te = t * t * (3 - 2 * t);
-                        const r = embankStart + (embankOuter - embankStart) * t;
+                        const { r, te } = anelli[j];
                         const y = baseY + (0 - baseY) * te;
                         const vb = (k * ringCount + j) * 3;
                         pos[vb]     = p.x + nx * r * side;
@@ -1040,7 +1061,13 @@
     // embankOuter: per calcolare la quota del terreno vero sotto ogni pilone
     // (TrackGeometry.terrainHeightAt) — groundPts esclude i punti-ponte, quindi
     // il pilone raggiunge sempre il livello reale, non quello del ponte stesso.
-    function buildBridgeDecks(container, trackPts, groundPts, deckHalfWidth, embankStart, embankOuter) {
+    // `innerEdge` serve solo alla distanza di rispetto dei piloni (non devono
+    // spuntare sopra cordolo/barriera di un tratto a terra vicino), mentre
+    // `plateauEnd`/`embankOuter` servono a sapere a che quota è il terreno
+    // vero sotto il pilone. Sono scopi diversi e vanno tenuti separati: usare
+    // il pianoro allargato anche per la distanza di rispetto farebbe sparire
+    // piloni legittimi.
+    function buildBridgeDecks(container, trackPts, groundPts, deckHalfWidth, innerEdge, plateauEnd, embankOuter) {
         const { bridgeRuns } = TrackGeometry.splitByBridge(trackPts);
         if (!bridgeRuns.length) return;
 
@@ -1067,8 +1094,8 @@
                 // salta questo pilone (segnalato dall'utente su un vero
                 // sovrappasso).
                 const nearestGround = TrackGeometry.nearestPoint(groundPts, p.x, p.z);
-                if (nearestGround.dist < embankStart + BRIDGE_PILLAR_CLEARANCE) continue;
-                const groundY = TrackGeometry.terrainHeightAt(groundPts, p.x, p.z, embankStart, embankOuter);
+                if (nearestGround.dist < innerEdge + BRIDGE_PILLAR_CLEARANCE) continue;
+                const groundY = TrackGeometry.terrainHeightAt(groundPts, p.x, p.z, plateauEnd, embankOuter);
                 const bottomY = (p.y || 0) - BRIDGE_DECK_DROP - BRIDGE_DECK_THICK;
                 const height = bottomY - groundY;
                 if (height < BRIDGE_PILLAR_MIN_HEIGHT) continue;
