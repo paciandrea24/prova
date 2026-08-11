@@ -4,23 +4,39 @@
 
 **Goal:** aggiungere le vie di fuga in ghiaia all'esterno delle curve, con barriere e scenografia traslate solo dove c'è la ghiaia, e barriere che diventano un muro solido su tutto il giro.
 
-## STATO AL 2026-08-11 — sospeso su richiesta dell'utente
+## STATO AL 2026-08-11 (secondo aggiornamento)
 
-**Fatti e committati: Task 1-5.** La ghiaia si vede in gioco, le barriere la
-seguono, la larghezza è **approvata dall'utente al playtest** ("in curva 1 di
-prova è perfetta"; in qualche altra curva la trova appena larga, ma ha scelto di
-tenerla così — non ritoccare `GRAVEL_WIDTH` senza che lo chieda).
+**Fatti e committati: Task 1-5, più il Task 5b qui sotto.**
 
-**Lavoro futuro già deciso dall'utente (2026-08-11):** legare la larghezza della
-ghiaia alla **velocità di percorrenza della curva** invece di tenerla costante —
-è il motivo per cui una larghezza fissa convince in curva 1 e sembra eccessiva
-nei tornanti lenti. Da fare **dopo** i Task 6-7-8. `findCorners` restituisce già
-`radius` per ogni curva, quindi il punto da toccare è solo `GRAVEL_WIDTH` dentro
-`gravelProfile`, che da costante diventa funzione del raggio.
+**Task 5b — larghezza legata alla velocità di curva: CHIUSO ✅** (3 commit:
+`f8e08e5`, `c011617`, `4c3366d`). L'utente lo ha voluto **prima** dei Task 6-7-8,
+non dopo come previsto. La larghezza costante non esiste più: si ricava dalla
+velocità di percorrenza, e una regola sul pianoro impedisce alle curve corte di
+diventare punte. Progettato sulle mappe dall'alto dei tracciati veri, approvate
+dall'utente prima di scrivere il codice. Dettagli completi nella sezione
+"Larghezza legata alla velocità di curva" della spec.
 
-**Da fare: Task 6, 7, 8.** Al momento la scenografia è ancora dov'era, quindi
-tribune e cartelloni si sovrappongono alla ghiaia: è atteso, lo risolve il
-Task 6.
+Due cose decise in quel giro che valgono per il seguito:
+- **Curva 1 di prova non è più un riferimento privilegiato.** Per due iterazioni
+  è stata trattata come ancora da non toccare; l'utente ha poi rilasciato il
+  vincolo. La larghezza che le tocca (31.9) è l'output della regola, non
+  un'eccezione: non reintrodurre casi speciali su quella curva.
+- **Monte-rosso è un tracciato di prova che l'utente eliminerà.** Non usarlo più
+  come metro di giudizio per scelte estetiche; per i test automatici va ancora
+  bene (è il fixture di `trackScenery.test.js`).
+
+**Da fare: Task 6, 7, 8**, così come sono scritti — leggono tutti il profilo, e
+il profilo non ha cambiato forma. Al momento la scenografia è ancora dov'era,
+quindi tribune e cartelloni si sovrappongono alla ghiaia: è atteso, lo risolve
+il Task 6.
+
+⚠️ **Test rossi preesistenti: sono 4, non 2** (il numero scritto più sotto nei
+vincoli globali era incompleto). Su `main`, con `node --test backend/`: il
+"Simcade: isolamento dei componenti", i due `loadTrack("monte-rosso")` e
+`simulateLap: rispetta un preset di tuning` (che fallisce per un
+`frontend/tracks/monza.json` mancante). In più `simulateLap: test-scratch-track`
+è **intermittente**: due esecuzioni identiche danno 4 e 5 rossi. Prima di
+attribuirsi una regressione su questi, rieseguire.
 
 Due cose imparate al playtest, valide per il seguito:
 - **Serve un hard refresh (Ctrl+Shift+R)**, non un refresh normale: il primo

@@ -17,10 +17,15 @@ recinto chiuso.
 
 ## Decisioni prese (brainstorming 2026-08-10)
 
+> ⚠️ **La larghezza non è più costante.** La riga "25 unità" qui sotto è
+> superata: dal 2026-08-11 la larghezza si ricava dalla velocità di percorrenza
+> della curva. Vedi la sezione "Larghezza legata alla velocità di curva" in
+> fondo, che è la fonte aggiornata.
+
 | Domanda | Decisione |
 |---|---|
 | Distribuzione | Ghiaia **solo all'esterno delle curve**; barriere spostate solo lì |
-| Larghezza | **25 unità** (≈20 m, poco più di tre lunghezze d'auto) |
+| Larghezza | ~~**25 unità**~~ → 32 dopo il primo playtest → **variabile con la velocità** (2026-08-11) |
 | Attrito della ghiaia | **Identico all'erba di oggi**: nessuna modifica alla fisica del fuoripista |
 | Barriere | **Muro solido su tutto il tracciato** (oggi lo sono solo sui ponti) |
 | Curve su terreno sopraelevato | **Niente ghiaia**: come su un viadotto vero |
@@ -254,3 +259,107 @@ scenografia:
 Verifica finale in localhost da parte dell'utente: aspetto della ghiaia, larghezza
 percepita, ingresso/uscita box, e che si finisca davvero in ghiaia — non oltre —
 uscendo in curva a velocità piena.
+
+---
+
+## Larghezza legata alla velocità di curva (2026-08-11)
+
+Aggiunta dopo il playtest dei Task 1-5, su richiesta dell'utente. **Supera la
+larghezza costante** definita sopra. Implementata prima dei Task 6-7-8, che non
+ne sono toccati: leggono tutti il profilo, e il profilo non cambia forma.
+
+### Il problema
+
+Una fascia uguale in ogni curva rende tutti i circuiti uguali a se stessi: un
+curvone da 306 km/h e un tornante da 136 hanno la stessa via di fuga. Nei
+circuiti veri la via di fuga è dimensionata sull'energia da dissipare, quindi è
+larga dove si arriva forte e stretta nei tornanti.
+
+### La velocità viene dalla fisica, non da una stima
+
+Lo sterzo ha un tasso di rotazione massimo, quindi il raggio percorribile a
+velocità `v` è `v / tasso`. Invertendo, con il tasso interpolato fra
+`TURN_SPEED_LOW` e `TURN_SPEED_HIGH` su `v/MAX_SPEED`, si ottiene in forma
+chiusa la velocità massima di una curva di raggio noto — la stessa relazione che
+`f1Bot::cornerTargetSpeed` usa per decidere quanto frenare. Se le due
+divergessero, la ghiaia sarebbe dimensionata su una velocità che nessuno tiene.
+
+**Il raggio è il minimo lungo l'arco, non quello a metà curva.**
+`findCorners` restituisce ora `minRadius` accanto a `radius`. Il punto medio di
+una curva fusa da `CORNER_MERGE_GAP` può cadere sul tratto quasi dritto che
+unisce due archi: misurato, `radius` vale **8588** sulla curva 1 di new-monza e
+**463** sulla 9 di baku, che sono tornanti; `minRadius` dà 48 su entrambe. Con
+`radius` quelle curve avrebbero preso la ghiaia più larga del tracciato.
+
+`radius` resta invariato: `sceneryTrackside.js`, l'altro consumatore, non lo
+legge nemmeno.
+
+### La mappatura
+
+```
+larghezza = max(MIN, GRAVEL_WIDTH_AT_TOP_SPEED · (v/MAX_SPEED)^1.5)
+```
+
+| costante | valore | perché |
+|---|---|---|
+| `GRAVEL_WIDTH_AT_TOP_SPEED` | 47 | fattore di scala, non una larghezza che si vedrà: nessuna curva raggiunge la velocità massima (a quella velocità non è più una curva). Sui tracciati veri produce 12-32 |
+| `GRAVEL_WIDTH_EXPONENT` | 1.5 | fra il proporzionale alla velocità (1) e il proporzionale all'energia cinetica (2, la regola dei circuiti veri). Con 2 le curve lente si appiattivano quasi tutte sul minimo, con 1 la differenza non si leggeva |
+| `GRAVEL_WIDTH_MIN` | 12 | sotto questa larghezza la via di fuga non si legge come tale. Rete di sicurezza, non manopola: morde solo sul tornante più lento di prova (136 km/h, uscirebbe a 11.8) |
+
+### La regola contro la ghiaia "a goccia"
+
+Una fascia sale, resta piana, riscende. Le rampe sono lunghe **quanto la
+larghezza** (45°, che è anche `MAX_SLOPE`), quindi il pianoro vale
+`zona − 2·larghezza`. Imporre che il pianoro sia almeno metà della zona
+(`MIN_FLAT_FRACTION = 0.5`) dà `larghezza ≤ zona/4`.
+
+Senza questo vincolo una curva veloce ma **corta** chiede più larghezza di
+quanta ne possa aprire e richiudere, e diventa una punta invece di una via di
+fuga. È il difetto che l'utente ha bocciato sulla curva più veloce di prova
+(chiedeva 40 unità su una zona di 82: pianoro 2) — ed era **già presente** sulla
+curva corta di monte-rosso con la larghezza costante di prima, senza che nessuno
+lo avesse notato.
+
+`zona` è l'intera zona di ghiaia (arco più i due `CORNER_LEAD`), non il solo
+arco.
+
+### Le costanti di fisica sono duplicate, e c'è una guardia
+
+`trackGravel.js` sta in `frontend/shared/` ed è caricato dal browser con un tag
+`<script>`: non può richiedere `PowertrainModel`/`SteeringModel`, che sono
+moduli CommonJS del server. `MAX_SPEED`, `TURN_SPEED_LOW` e `TURN_SPEED_HIGH`
+sono quindi ricopiati (stesso precedente di `ENGINE_REF_MAX_SPEED` in `f1.js`).
+
+La copia non è innocua: se la fisica cambia e la copia resta indietro **non si
+rompe niente di visibile**, le vie di fuga restano tarate su un'auto che non
+esiste più. `backend/sockets/games/trackGravelPhysics.test.js` confronta le due
+sorgenti e, soprattutto, verifica la formula contro la sterzata vera — fa girare
+l'auto con `SteeringModel` alla velocità che `cornerSpeed` prevede e controlla
+che il raggio che ne esce sia quello di partenza.
+
+### Risultato misurato con la funzione di produzione
+
+| pista | larghezze | note |
+|---|---|---|
+| prova | 12.0 – 31.9 | curva 1 resta a 31.9; la più veloce scende da 40 richieste a 20.7 |
+| new-monza | 13.8 – 18.1 | tutte curve lente: nessuna attiva la regola del pianoro |
+| baku | — | nessuna ghiaia, invariato |
+
+Pendenza massima del profilo: **1.000 su tutti i tracciati**, mai oltre
+`MAX_SLOPE` — nessun gradino nel muro.
+
+Tre curve di prova hanno il pianoro corto (11-38%) perché sono **tagliate a metà
+da un ponte**, dove la ghiaia si azzera per scelta: è il comportamento di
+sempre, non un effetto di questa regola.
+
+### Cosa non è stato fatto, e perché
+
+**La ghiaia non è dimensionata sulla velocità di ARRIVO** (energia da dissipare
+in frenata), che sarebbe la regola FIA letterale. Un tornante in fondo a un
+lungo rettilineo avrebbe una via di fuga enorme — l'opposto di quello che
+l'utente ha chiesto guardando le mappe. La velocità di percorrenza è la scelta
+esplicita, non una semplificazione.
+
+**`CORNER_LEAD` resta fisso a 15** e non cresce con la velocità. Allungare la
+zona prima delle curve veloci darebbe loro più spazio per aprire la ghiaia senza
+ridurla, ma sposterebbe ghiaia sui rettilinei — proprietà che si vuole tenere.
