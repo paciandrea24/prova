@@ -10,17 +10,17 @@
         module.exports = factory(require('./trackGeometry.js'), require('./sceneryLandmarks.js'),
                                  require('./sceneryTrackside.js'), require('./sceneryCrowd.js'),
                                  require('./sceneryAssetSizes.js'), require('./sceneryHills.js'),
-                                 require('./sceneryPaddock.js'));
+                                 require('./sceneryPaddock.js'), require('./trackGravel.js'));
     } else {
         root.TrackScenery = factory(root.TrackGeometry, root.SceneryLandmarks,
                                     root.SceneryTrackside, root.SceneryCrowd,
                                     root.SceneryAssetSizes, root.SceneryHills,
-                                    root.SceneryPaddock);
+                                    root.SceneryPaddock, root.TrackGravel);
     }
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryLandmarks,
                                                         SceneryTrackside, SceneryCrowd,
                                                         SceneryAssetSizes, SceneryHills,
-                                                        SceneryPaddock) {
+                                                        SceneryPaddock, TrackGravel) {
 
     // Hash FNV-1a 32 bit di una stringa: seed deterministico dall'id del
     // tracciato, così lo stesso tracciato genera sempre lo stesso layout
@@ -930,7 +930,49 @@
     // layout viene generato senza spettatori — così i test e gli altri
     // chiamanti che non ne hanno bisogno continuano a funzionare con 4-5
     // argomenti.
-    function generateLayout(trackData, trackPts, pitPts, barrierDist, embankmentWidth = 45, seatAnchors = null) {
+    // La scenografia viene calcolata con la barriera "di base" (quella di
+    // sempre) e poi spostata in blocco verso l'esterno di quanta ghiaia c'è
+    // in quel punto: è il requisito dell'utente — tutto esattamente come ora,
+    // semplicemente traslato dopo la ghiaia.
+    //
+    // Perché a valle e non riscrivendo le ~50 occorrenze di barrierDist nei
+    // sei moduli di scenografia: dove la ghiaia è 0 lo spostamento è 0, quindi
+    // i rettilinei restano identici PER COSTRUZIONE e i test esistenti
+    // continuano a valere. Le distanze reciproche si conservano — gli oggetti
+    // della stessa zona traslano insieme, e spostarsi verso l'esterno di una
+    // curva li allontana fra loro (raggio maggiore), mai li avvicina: nessuna
+    // compenetrazione nuova possibile.
+    //
+    // Le colline e il prato NON passano di qui: sono terreno, non oggetti, e
+    // stanno centinaia di unità più in là.
+    function traslaOltreLaGhiaia(layout, trackPts, gravelProfile, groundPts, barrierDist, embankOuter) {
+        if (!gravelProfile) return layout;
+
+        for (const voce of layout) {
+            const near = TrackGeometry.nearestPoint(trackPts, voce.x, voce.z);
+            const p = trackPts[near.index];
+            const { nx, nz } = TrackGeometry.normalAt(trackPts, near.index, true);
+            // Da che lato della pista sta la voce: segno della componente
+            // normale del vettore centro-pista -> oggetto.
+            const lato = Math.sign((voce.x - p.x) * nx + (voce.z - p.z) * nz) || 1;
+            const ghiaia = TrackGravel.gravelAt(gravelProfile, near.index, lato);
+            if (ghiaia <= 0) continue;
+
+            voce.x += nx * ghiaia * lato;
+            voce.z += nz * ghiaia * lato;
+            // Quota ricalcolata alla posizione nuova. In pratica non cambia
+            // (la ghiaia esiste solo dove il terreno è in piano), ma è una
+            // garanzia, non un'ipotesi.
+            if (typeof voce.y === 'number') {
+                voce.y = TrackGeometry.terrainHeightAt(groundPts, voce.x, voce.z, barrierDist, embankOuter);
+            }
+        }
+        return layout;
+    }
+
+    // gravelProfile (opzionale): profilo delle vie di fuga, da TrackGravel.
+    // Omesso, il layout è identico a quello di prima che la ghiaia esistesse.
+    function generateLayout(trackData, trackPts, pitPts, barrierDist, embankmentWidth = 45, seatAnchors = null, gravelProfile = null) {
         const rng = mulberry32(hashString(trackData.id));
         const pitRoadHalf = trackData.pit.roadHalfWidth;
         const side = mainStandSide(trackPts, pitPts);
@@ -999,7 +1041,8 @@
         const layout = [...paddock, ...mainStand, ...grandstand, ...landmarks,
                         ...trackside, ...crowd, ...nature, ...woods, ...rocce, ...paddockLife];
         if (pond) layout.push(pond);
-        return layout;
+        return traslaOltreLaGhiaia(layout, trackPts, gravelProfile,
+            trackPts.filter(p => !p.bridge), barrierDist, embankOuter);
     }
 
     return {

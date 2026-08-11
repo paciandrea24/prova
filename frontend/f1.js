@@ -623,7 +623,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
         console.warn('[F1] posti tribuna non caricati, tribune vuote:', err);
     }
-    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors);
+    // GRAVEL_PROFILE come ultimo argomento: la scenografia si calcola con la
+    // barriera di base e poi trasla oltre la ghiaia, dove c'è. Senza questo,
+    // tribune e cartelloni resterebbero sopra la banda di ghiaia.
+    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, GRAVEL_PROFILE);
     loadScenery(scene, sceneryLayout);
 
     // ====================================================

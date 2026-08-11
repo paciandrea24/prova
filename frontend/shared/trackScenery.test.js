@@ -763,3 +763,53 @@ test('nessuna direzione verso la campagna resta senza vegetazione', () => {
     assert.ok(quota <= 0.20,
         `il ${(quota * 100).toFixed(0)}% delle direzioni verso la campagna è senza un solo albero`);
 });
+
+test('con un profilo di ghiaia la scenografia si sposta solo dove c\'è ghiaia', () => {
+    const TrackGravel = require('./trackGravel.js');
+    const { trackPts, pitPts } = buildReal();
+
+    const senza = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D);
+    const prof = TrackGravel.gravelProfile(trackPts, { roadHalf: ROAD_HALF });
+    const con = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D, 45, null, prof);
+
+    assert.equal(con.length, senza.length, 'stesso numero di voci: nulla si perde');
+
+    let spostate = 0;
+    for (let i = 0; i < senza.length; i++) {
+        const a = senza[i], b = con[i];
+        assert.equal(a.asset, b.asset, 'stesso asset nella stessa posizione di lista');
+        const near = TrackGeometry.nearestPoint(trackPts, a.x, a.z);
+        const { nx, nz } = TrackGeometry.normalAt(trackPts, near.index, true);
+        const lato = Math.sign((a.x - trackPts[near.index].x) * nx + (a.z - trackPts[near.index].z) * nz) || 1;
+        const ghiaia = TrackGravel.gravelAt(prof, near.index, lato);
+        const spostamento = Math.hypot(b.x - a.x, b.z - a.z);
+
+        if (ghiaia === 0) {
+            assert.ok(spostamento < 1e-6,
+                `voce ${i} (${a.asset}) spostata di ${spostamento.toFixed(2)} dove non c'è ghiaia`);
+        } else {
+            assert.ok(Math.abs(spostamento - ghiaia) < 0.5,
+                `voce ${i} (${a.asset}) spostata di ${spostamento.toFixed(2)}, attese ${ghiaia.toFixed(2)}`);
+            spostate++;
+        }
+    }
+    assert.ok(spostate > 0, 'su monte-rosso qualcosa deve essersi spostato');
+});
+
+test('la traslazione allontana dalla pista, non la attraversa', () => {
+    // Lo spostamento deve andare verso l'ESTERNO. Una voce che finisse dal
+    // lato opposto avrebbe attraversato la carreggiata, e un cartellone in
+    // mezzo alla pista non si vede finché non ci si sbatte contro.
+    const TrackGravel = require('./trackGravel.js');
+    const { trackPts, pitPts } = buildReal();
+    const prof = TrackGravel.gravelProfile(trackPts, { roadHalf: ROAD_HALF });
+    const senza = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D);
+    const con = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D, 45, null, prof);
+
+    for (let i = 0; i < senza.length; i++) {
+        const primaD = TrackGeometry.nearestPoint(trackPts, senza[i].x, senza[i].z).dist;
+        const dopoD = TrackGeometry.nearestPoint(trackPts, con[i].x, con[i].z).dist;
+        assert.ok(dopoD >= primaD - 0.5,
+            `voce ${i} (${senza[i].asset}) si è AVVICINATA alla pista: da ${primaD.toFixed(1)} a ${dopoD.toFixed(1)}`);
+    }
+});

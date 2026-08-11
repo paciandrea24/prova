@@ -171,6 +171,12 @@
     <!-- toonPalette PRIMA di trackMeshBuilder: gli fornisce i colori delle superfici -->
     <script src="shared/toonPalette.js?v=20260810a"></script>
     <script src="shared/trackMeshBuilder.js?v=20260810c"></script>
+    <!-- trackGravel PRIMA di trackScenery: gliela chiede per traslare la
+         scenografia oltre le vie di fuga. Qui il banco prova non passa il
+         profilo, quindi la traslazione non scatta, ma la dipendenza va
+         soddisfatta lo stesso: senza, chi domani passasse un profilo da qui
+         otterrebbe un errore su TrackGravel non definito. -->
+    <script src="shared/trackGravel.js"></script>
     <script src="shared/trackScenery.js"></script>
     <script src="shared/carLoader.js"></script>
     <script src="f1tb-botinspector.js"></script>
