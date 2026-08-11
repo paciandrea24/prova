@@ -4,6 +4,50 @@
 
 **Goal:** aggiungere le vie di fuga in ghiaia all'esterno delle curve, con barriere e scenografia traslate solo dove c'è la ghiaia, e barriere che diventano un muro solido su tutto il giro.
 
+## STATO AL 2026-08-11 (sera) — LEGGERE QUESTO, il resto è storia
+
+L'obiettivo si è **allargato** rispetto al titolo del piano: non più solo vie
+di fuga in ghiaia, ma **rendere il circuito fisicamente chiuso** senza che ogni
+tracciato diventi Monte Carlo (richiesta esplicita dell'utente).
+
+**Fatto e verificato in gioco dall'utente:** larghezza della ghiaia dalla
+velocità di percorrenza, regola contro la ghiaia "a goccia", scenografia
+traslata, barriere arretrate di 20 unità (ferme nella zona traguardo/box, a
+bordo strada sui ponti), terrapieno col pianoro fino alla barriera, wheelspin e
+bloccaggio accesi di default.
+
+**Da fare, in ordine di quanto si vede:**
+
+1. **Il terrapieno sborda sui tratti affiancati.** `buildEmbankment` estrude
+   gli anelli lateralmente da ogni campione alla quota di *quel* campione, senza
+   sapere che esistono altri tratti di pista: dove il tracciato si ripiega entro
+   la portata degli anelli (93.7 unità) il terrapieno di un tratto copre cordolo
+   e barriere dell'altro. Preesistente, più visibile da quando la portata è
+   passata da 60 a 93.7. Correzione **nella mesh**: tagliare gli anelli dove un
+   altro tratto è più vicino di quello che li genera.
+   ⚠️ Non si misura con `terrainHeightAt`: quella fonde le quote sul punto più
+   vicino e dà zero sbordi. Va guardata la geometria emessa.
+2. **Barriera a fisarmonica.** Misurato sul lato destro di prova vicino al
+   traguardo: 45.7 (ghiaia) → 15 (zona box) → 33.8 (erba). Serve una chiusura
+   morfologica sul profilo — un restringimento corto va riempito. Può solo
+   allontanare il muro, mai avvicinarlo. Escludere i ponti.
+3. **Tribuna storta e spettatori fuori posto.** PREESISTENTE, due difetti:
+   la rotazione di una tribuna, e `sceneryCrowd.buildCrowd` che applica lo
+   stesso `grandStandSeats.json` a tutte e tre le varianti — ma le due coperte
+   sono alte 14.7 e 16.0 contro 12.3, e i posti sono generati sulla semplice.
+4. **Task 7c, il muro solido lato server** (sotto nel piano): non iniziato, le
+   barriere si attraversano ancora.
+5. **Erba e ghiaia con dettaglio** invece di due colori piatti. Richiede una
+   decisione estetica dell'utente: mostrargli delle varianti, non descriverle.
+
+**Tentativo revertito da non ripetere:** alzare `embankStart` da solo. Quel
+parametro è insieme l'attacco al cordolo E l'inizio della discesa; alzandolo si
+sposta in fuori tutta la rampa e resta scoperta la fascia intermedia, perché
+`buildGround` salta apposta le celle entro `embankOuter`. Ora le distanze sono
+tre e devono restare tre.
+
+---
+
 ## STATO AL 2026-08-11 (secondo aggiornamento)
 
 **Fatti e committati: Task 1-5, più il Task 5b qui sotto.**
