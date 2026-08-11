@@ -1,6 +1,13 @@
 // backend/sockets/games/physics/VehicleDynamics.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
+
+// Ancorata al percorso senza wheelspin/bloccaggio per lo stesso motivo di
+// VehiclePhysics.test.js: il caso di fumo confronta valori esatti, e qui si
+// verifica che la facade inoltri alle stesse funzioni — non la taratura del
+// modello di slittamento.
+process.env.F1_TYRE_SLIP_MODEL = '0';
+
 const VehicleDynamics = require('./VehicleDynamics');
 const TyreModel = require('./TyreModel');
 const VehiclePhysics = require('./VehiclePhysics');

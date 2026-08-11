@@ -53,8 +53,15 @@ const WEAR_CLIFF_GENTLE_FRACTION = 0.25; // quota del fattore massimo (1.0) ragg
 // lati della soglia), non nella derivata: il cambio di pendenza è voluto,
 // è il "cliff" — una perdita di prestazione percepibile, non
 // un'estrapolazione morbida del tratto precedente.
+// `tyreWear || 0`: stesso invariante "niente NaN senza il campo" già in uso
+// in PowertrainModel.effectiveMaxSpeed per damageParts. Senza, un player
+// costruito senza tyreWear produce NaN qui, e da TyreSlipModel il NaN arriva
+// fino a p.angle in SteeringModel: l'auto sparirebbe dal tracciato. Il
+// percorso è diventato vivo con la promozione di F1_TYRE_SLIP_MODEL a
+// default ON (2026-08-11). Gomma assente = gomma nuova, l'unica lettura
+// sensata.
 function getWearPenaltyFactor(tyreWear) {
-    const w = Math.max(0, Math.min(100, tyreWear)) / 100;
+    const w = Math.max(0, Math.min(100, tyreWear || 0)) / 100;
     if (w <= WEAR_CLIFF_THRESHOLD) {
         return (w / WEAR_CLIFF_THRESHOLD) * WEAR_CLIFF_GENTLE_FRACTION;
     }

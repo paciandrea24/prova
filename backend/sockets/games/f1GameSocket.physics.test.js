@@ -32,11 +32,19 @@ test('effectiveMaxSpeed: in qualifica usa sempre la Soft (speedMult 1.05), a pre
     assert.ok(Math.abs(max - 6.2 * 1.05) < 1e-9, `atteso ${6.2 * 1.05}, ottenuto ${max}`);
 });
 
-test('updateVelocity: da fermo con throttle=1 accelera esattamente di ACCEL in un tick', () => {
-    const { physics } = f1GameSocket;
-    const p = { inputs: { throttle: 1, brake: 0, steer: 0 }, speed: 0, vx: 0, vz: 0, angle: 0, tyreWear: 0, compound: 'medium' };
-    physics.updateVelocity(p, true, 1);
-    assert.ok(Math.abs(p.speed - physics.ACCEL) < 1e-9, `atteso ${physics.ACCEL}, ottenuto ${p.speed}`);
+test('updateVelocity: da fermo con throttle=1, senza wheelspin, accelera esattamente di ACCEL in un tick', () => {
+    // Ancorato a modello spento: da fermo a pieno gas è la condizione in cui
+    // il wheelspin (ON di default dal 2026-08-11) morde di più, e qui si
+    // verifica la catena di updateVelocity, non la sua taratura.
+    process.env.F1_TYRE_SLIP_MODEL = '0';
+    try {
+        const { physics } = f1GameSocket;
+        const p = { inputs: { throttle: 1, brake: 0, steer: 0 }, speed: 0, vx: 0, vz: 0, angle: 0, tyreWear: 0, compound: 'medium' };
+        physics.updateVelocity(p, true, 1);
+        assert.ok(Math.abs(p.speed - physics.ACCEL) < 1e-9, `atteso ${physics.ACCEL}, ottenuto ${p.speed}`);
+    } finally {
+        delete process.env.F1_TYRE_SLIP_MODEL;
+    }
 });
 
 test('integratePosition: sposta x/z in base a vx/vz e dt', () => {

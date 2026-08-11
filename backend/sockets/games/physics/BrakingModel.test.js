@@ -30,12 +30,21 @@ test('effectiveBrakeMult: Fase 2B, il fattore usura proviene sempre da TyreForce
     assert.ok(Math.abs(effectiveBrakeMult(p, false) - expected) < 1e-9);
 });
 
-test('applyBrake: frenata piena da velocità 4, gomma fresca -> decelerazione + smorzamento laterale', () => {
-    const p = { speed: 4, vx: 1, vz: 1, inputs: { brake: 1 }, compound: 'medium', tyreWear: 0 };
-    applyBrake(p, false, 6.2, 0.186);
-    assert.ok(Math.abs(p.speed - 3.59638) < 1e-9);
-    assert.ok(Math.abs(p.vx - 0.94) < 1e-12);
-    assert.ok(Math.abs(p.vz - 0.94) < 1e-12);
+test('applyBrake: frenata piena da velocità 4, gomma fresca, senza bloccaggio -> decelerazione + smorzamento laterale', () => {
+    // Ancorato a modello spento: misura la formula del freno in isolamento.
+    // Velocità 4 su 6.2 è speedFrac 0.645, sopra BRAKING_ZONE_THRESHOLD, quindi
+    // col bloccaggio (ON di default dal 2026-08-11) la decelerazione sarebbe
+    // minore. Il caso acceso ha i suoi test più sotto.
+    process.env.F1_TYRE_SLIP_MODEL = '0';
+    try {
+        const p = { speed: 4, vx: 1, vz: 1, inputs: { brake: 1 }, compound: 'medium', tyreWear: 0 };
+        applyBrake(p, false, 6.2, 0.186);
+        assert.ok(Math.abs(p.speed - 3.59638) < 1e-9);
+        assert.ok(Math.abs(p.vx - 0.94) < 1e-12);
+        assert.ok(Math.abs(p.vz - 0.94) < 1e-12);
+    } finally {
+        delete process.env.F1_TYRE_SLIP_MODEL;
+    }
 });
 
 test('applyBrake: non scende mai sotto -maxSpeed/2 (tetto retromarcia)', () => {
@@ -44,11 +53,17 @@ test('applyBrake: non scende mai sotto -maxSpeed/2 (tetto retromarcia)', () => {
     assert.equal(p.speed, -3.1);
 });
 
-test('applyBrake: Fase 3.0/3A, F1_TYRE_SLIP_MODEL non impostata -> comportamento identico a prima anche a frenata piena da velocità quasi massima su gomma nuova (baseline invariata)', () => {
-    assert.equal(process.env.F1_TYRE_SLIP_MODEL, undefined);
-    const p = { speed: 6.0, vx: 0, vz: 0, inputs: { brake: 1 }, compound: 'medium', tyreWear: 0 };
-    applyBrake(p, false, 6.2, 0.186);
-    assert.ok(Math.abs(p.speed - 5.59638) < 1e-9);
+test("applyBrake: Fase 3.0/3A, F1_TYRE_SLIP_MODEL='0' -> comportamento identico a prima anche a frenata piena da velocità quasi massima su gomma nuova (baseline invariata)", () => {
+    // Vedi la nota gemella in PowertrainModel.test.js: dal 2026-08-11 il
+    // modello è ON di default, quindi lo spegnimento va dichiarato.
+    process.env.F1_TYRE_SLIP_MODEL = '0';
+    try {
+        const p = { speed: 6.0, vx: 0, vz: 0, inputs: { brake: 1 }, compound: 'medium', tyreWear: 0 };
+        applyBrake(p, false, 6.2, 0.186);
+        assert.ok(Math.abs(p.speed - 5.59638) < 1e-9);
+    } finally {
+        delete process.env.F1_TYRE_SLIP_MODEL;
+    }
 });
 
 test("applyBrake: Fase 3.0/3A, F1_TYRE_SLIP_MODEL='1' -> frenata piena da velocità quasi massima anche su gomma NUOVA frena meno del baseline (bloccaggio, non più un no-op come il vecchio TyreForceModel-only)", () => {

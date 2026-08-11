@@ -7,6 +7,21 @@
 // di sicurezza primaria per questo refactor.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+
+// Questa suite caratterizza la COMPOSIZIONE delle formule, non il modello di
+// slittamento: va quindi ancorata al percorso senza wheelspin/bloccaggio,
+// diventato non-default il 2026-08-11. Senza l'ancoraggio i valori attesi
+// andrebbero ricalcolati ad ogni taratura di TyreSlipModel, e questi test
+// smetterebbero di essere la rete di sicurezza del refactor per diventare
+// rilevatori di modifiche altrui. Il percorso ACCESO ha i suoi test dedicati
+// in TyreSlipModel/PowertrainModel/BrakingModel/SteeringModel, che derivano
+// l'attesa dalle costanti del modello invece che da un numero catturato.
+//
+// Sicuro a livello di file: `node --test` esegue ogni file in un processo a
+// sé, e qui dentro nessun caso tocca la variabile (che altrimenti, con un
+// `delete` in un finally, tornerebbe al default ACCESO).
+process.env.F1_TYRE_SLIP_MODEL = '0';
+
 const { updateVelocity } = require('./VehiclePhysics');
 
 function run(p, isQuali, slip) {

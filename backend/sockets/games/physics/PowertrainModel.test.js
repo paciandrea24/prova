@@ -28,10 +28,19 @@ test('effectiveMaxSpeed/effectiveAccel: gomma usurata 80% + motore danneggiato 4
     assert.ok(Math.abs(effectiveAccel(p, false) - 0.15183860928841653) < 1e-9);
 });
 
-test('applyThrottle: da fermo, gomma fresca -> speed = ACCEL esatto', () => {
-    const p = { speed: 0, inputs: { throttle: 1 }, compound: 'medium', tyreWear: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
-    applyThrottle(p, false, 6.2);
-    assert.equal(p.speed, 0.186);
+test("applyThrottle: da fermo, gomma fresca, senza slittamento -> speed = ACCEL esatto", () => {
+    // Ancorato a modello spento: da fermo a pieno gas è esattamente la
+    // condizione in cui il wheelspin (ON di default dal 2026-08-11) morde di
+    // più, e qui si vuole misurare la formula del motore in isolamento. Il
+    // caso acceso è il test gemello più sotto.
+    process.env.F1_TYRE_SLIP_MODEL = '0';
+    try {
+        const p = { speed: 0, inputs: { throttle: 1 }, compound: 'medium', tyreWear: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
+        applyThrottle(p, false, 6.2);
+        assert.equal(p.speed, 0.186);
+    } finally {
+        delete process.env.F1_TYRE_SLIP_MODEL;
+    }
 });
 
 test('applyThrottle: clampa al tetto di velocità', () => {
@@ -46,12 +55,21 @@ test('effectiveAccel: Fase 2B, il fattore usura proviene sempre da TyreForceMode
     assert.ok(Math.abs(effectiveAccel(p, false) - expected) < 1e-9);
 });
 
-test('applyThrottle: Fase 3.1, F1_TYRE_SLIP_MODEL non impostata -> comportamento identico a prima anche da fermo a pieno gas su gomma nuova (baseline invariata), _tractionSlipDebt mai toccato', () => {
-    assert.equal(process.env.F1_TYRE_SLIP_MODEL, undefined);
-    const p = { speed: 0, inputs: { throttle: 1 }, compound: 'medium', tyreWear: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
-    applyThrottle(p, false, 6.2);
-    assert.equal(p.speed, 0.186);
-    assert.equal(p._tractionSlipDebt, undefined, 'a flag spento il debito non deve nemmeno essere creato');
+test("applyThrottle: Fase 3.1, F1_TYRE_SLIP_MODEL='0' -> comportamento identico a prima anche da fermo a pieno gas su gomma nuova (baseline invariata), _tractionSlipDebt mai toccato", () => {
+    // Lo spegnimento ora va DICHIARATO: dal 2026-08-11 il modello è ON di
+    // default, quindi "env var non impostata" non è più la baseline. Il
+    // percorso spento resta però bit-per-bit quello di prima, ed è proprio
+    // quello che questo caso continua a proteggere: è la via di fuga se il
+    // wheelspin dovesse dare problemi in gara.
+    process.env.F1_TYRE_SLIP_MODEL = '0';
+    try {
+        const p = { speed: 0, inputs: { throttle: 1 }, compound: 'medium', tyreWear: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
+        applyThrottle(p, false, 6.2);
+        assert.equal(p.speed, 0.186);
+        assert.equal(p._tractionSlipDebt, undefined, 'a flag spento il debito non deve nemmeno essere creato');
+    } finally {
+        delete process.env.F1_TYRE_SLIP_MODEL;
+    }
 });
 
 test("applyThrottle: Fase 3.1, F1_TYRE_SLIP_MODEL='1' -> da fermo a pieno gas anche su gomma NUOVA l'accelerazione ottenuta è ridotta (wheelspin, primo tick: debito = eccesso*RISE_RATE)", () => {

@@ -38,11 +38,17 @@ test('applySteering: sotto la soglia di velocità/moto minima, nessun effetto', 
 // parte, non implementato) — solo la conseguenza diretta di brakingExcess
 // (già esistente, da TyreSlipModel/BrakingModel) sulla turnRate.
 
-test('applySteering: F1_TYRE_SLIP_MODEL non impostata -> comportamento identico a prima anche in frenata forte da alta velocità (baseline invariata)', () => {
-    assert.equal(process.env.F1_TYRE_SLIP_MODEL, undefined);
-    const p = { speed: 6.0, vx: 0, vz: 0, angle: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 }, inputs: { steer: 1, brake: 1 }, tyreWear: 0 };
-    applySteering(p, false, 6.2);
-    assert.ok(Math.abs(p.angle - 0.05274193548387097) < 1e-9);
+test("applySteering: F1_TYRE_SLIP_MODEL='0' -> comportamento identico a prima anche in frenata forte da alta velocità (baseline invariata)", () => {
+    // Vedi la nota gemella in PowertrainModel.test.js: dal 2026-08-11 il
+    // modello è ON di default, quindi lo spegnimento va dichiarato.
+    process.env.F1_TYRE_SLIP_MODEL = '0';
+    try {
+        const p = { speed: 6.0, vx: 0, vz: 0, angle: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 }, inputs: { steer: 1, brake: 1 }, tyreWear: 0 };
+        applySteering(p, false, 6.2);
+        assert.ok(Math.abs(p.angle - 0.05274193548387097) < 1e-9);
+    } finally {
+        delete process.env.F1_TYRE_SLIP_MODEL;
+    }
 });
 
 test("applySteering: F1_TYRE_SLIP_MODEL='1', bloccaggio (brake alto, velocità alta) -> capacità di sterzo ridotta rispetto al baseline", () => {

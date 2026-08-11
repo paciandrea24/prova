@@ -44,23 +44,54 @@ a parità di formule).
 
 ## Flag di confronto (percorsi sperimentali dietro env var)
 
-Nessuno di questi era documentato in modo centralizzato prima d'ora (solo
-sparsi tra commenti di codice e i piani/spec di ogni fase) — questa
-tabella è il punto unico da cui partire per sapere cosa esiste e come
-accenderlo. Tutti **spenti di default**; si attivano impostando la env var
-**prima** di avviare il server (`F1_XXX=1 node server.js` dalla cartella
-`backend/`, mai a runtime — vedi nota su `trackLoader`/cache di processo
-in fondo a questo file per lo stesso principio).
+Questa tabella è il punto unico da cui partire per sapere cosa esiste e in
+che stato è. La env var va impostata **prima** di avviare il server
+(`F1_XXX=... node server.js` dalla cartella `backend/`, mai a runtime — vedi
+nota su `trackLoader`/cache di processo in fondo a questo file per lo stesso
+principio).
 
-| Flag | Letto in | Consumato da | Dipende da |
-|---|---|---|---|
-| `F1_TYRE_SLIP_MODEL` | `TyreSlipModel.isTyreSlipModelActive` | `PowertrainModel.applyThrottle`, `BrakingModel.applyBrake`, `SteeringModel.applySteering` | — |
-| `F1_CORNERING_GRIP_MODEL` | `TyreSlipModel.isCorneringGripModelActive` | `VehiclePhysics.updateVelocity` | — |
-| `F1_AERO_DRAG_MODEL` | `AerodynamicsModel.isAeroDragModelActive` | `PowertrainModel.effectiveMaxSpeed` | — |
-| `F1_AERO_DOWNFORCE_MODEL` | `AerodynamicsModel.isAeroDownforceModelActive` | `AerodynamicsModel.effectiveGrip`, `CorneringGripModel.lateralExcess` | — |
-| `F1_AERO_DAMAGE_MODEL` | `AerodynamicsModel.isAeroDamageModelActive` | `dragFactor`/`downforceFactor` (penalità aggiuntiva da danno ala/fondo) | ha effetto solo se **anche** `F1_AERO_DRAG_MODEL`/`F1_AERO_DOWNFORCE_MODEL` sono attivi |
-| `F1_AERO_SLIPSTREAM_MODEL` | `AerodynamicsModel.isAeroSlipstreamModelActive` | `f1GameSocket.computeSlipstreamMult` | — |
-| `F1_RACELINE_SUFFIX` (valore stringa, non 0/1) | `trackLoader.racelineSuffix` | `trackLoader.loadRacelineData` | — |
+⚠️ **Non sono più "tutti spenti di default"**, come diceva questa nota fino
+al 2026-08-11. I flag promossi dopo un playtest positivo hanno la semantica
+ROVESCIATA: sono attivi sempre, e si spengono solo con `=0` esatto (qualunque
+altro valore, incluso non impostato, li lascia accesi). La colonna "default"
+dice quale regola vale per ciascuno.
+
+| Flag | Default | Letto in | Consumato da | Dipende da |
+|---|---|---|---|---|
+| `F1_TYRE_SLIP_MODEL` | **ON** (spegni con `=0`) | `TyreSlipModel.isTyreSlipModelActive` | `PowertrainModel.applyThrottle`, `BrakingModel.applyBrake`, `SteeringModel.applySteering` | — |
+| `F1_CORNERING_GRIP_MODEL` | OFF (accendi con `=1`) | `TyreSlipModel.isCorneringGripModelActive` | `VehiclePhysics.updateVelocity` | — |
+| `F1_AERO_DRAG_MODEL` | **ON** (spegni con `=0`) | `AerodynamicsModel.isAeroDragModelActive` | `PowertrainModel.effectiveMaxSpeed` | — |
+| `F1_AERO_DOWNFORCE_MODEL` | **ON** (spegni con `=0`) | `AerodynamicsModel.isAeroDownforceModelActive` | `AerodynamicsModel.effectiveGrip`, `CorneringGripModel.lateralExcess` | — |
+| `F1_AERO_DAMAGE_MODEL` | **ON** (spegni con `=0`) | `AerodynamicsModel.isAeroDamageModelActive` | `dragFactor`/`downforceFactor` (penalità aggiuntiva da danno ala/fondo) | ha effetto solo se **anche** `F1_AERO_DRAG_MODEL`/`F1_AERO_DOWNFORCE_MODEL` sono attivi |
+| `F1_AERO_SLIPSTREAM_MODEL` | **ON** (spegni con `=0`) | `AerodynamicsModel.isAeroSlipstreamModelActive` | `f1GameSocket.computeSlipstreamMult` | — |
+| `F1_RACELINE_SUFFIX` (valore stringa, non 0/1) | nessun suffisso | `trackLoader.racelineSuffix` | `trackLoader.loadRacelineData` | — |
+
+**`F1_TYRE_SLIP_MODEL` promosso a ON il 2026-08-11** (wheelspin in uscita
+lenta, bloccaggio in staccata, e il bloccaggio riduce anche lo sterzo). Non
+era spento per un difetto: la Fase 3.1 aveva tarato le soglie ma il playtest
+di promozione non era mai stato fatto. Misurato con `f1LapSimulator` prima di
+accendere, 30 giri per configurazione con parametri bot deterministici: il
+giro costa **+0.80s su prova (1.7%)** e **+0.25s su new-monza (0.7%)**, con
+30 giri su 30 completati — i bot non finiscono fuori e le racing line
+precalcolate (ottimizzate col flag spento) restano valide, non vanno
+rigenerate.
+
+Accendendolo sono emerse **due trappole NaN** ormai chiuse, che valgono come
+avvertimento per chi promuoverà il prossimo flag: `brakingExcess` riceveva
+`inputs.brake` e `TyreForceModel.brakingFactor` riceveva `p.tyreWear`, e da
+entrambi un campo assente produceva `NaN` — che `clamp01` non trattiene
+(`Math.min`/`Math.max` lo propagano) e che da `SteeringModel` sarebbe arrivato
+fino a `p.angle`, facendo sparire l'auto dal tracciato. Finché il flag era
+spento quel percorso era morto. Ora `tractionDemand`/`brakingDemand` e
+`getWearPenaltyFactor` trattano il campo assente come zero.
+
+I test che misurano formule a valore esatto (`VehiclePhysics.test.js`,
+`VehicleDynamics.test.js` a livello di file; singoli casi in
+`PowertrainModel`/`BrakingModel`/`f1GameSocket.physics`) sono ancorati a
+`F1_TYRE_SLIP_MODEL='0'`: caratterizzano la composizione delle formule, non la
+taratura dello slittamento, che ha i suoi test dedicati. ⚠️ Non ancorare un
+file INTERO se al suo interno qualche caso fa `delete process.env...` in un
+`finally`: la cancellazione riporta al default, che ora è ON.
 
 `F1_RACELINE_SUFFIX=-sa` carica `<trackId>-sa-raceline.json` invece del file
 di produzione `<trackId>-raceline.json` (stessa cartella `backend/tools/`) —
