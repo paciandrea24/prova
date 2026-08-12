@@ -765,6 +765,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     let lookBackKey = false;
     let lookBackPad = false;
     function isLookingBack() { return lookBackKey || lookBackPad; }
+    // ── Segnalazioni in gioco (M / Shift+M) ────────────────────────────
+    // Un id per ogni caricamento della pagina: tiene separati i giri di
+    // ricognizione e dà a Shift+M un bersaglio non ambiguo.
+    const sessioneSegnalazioni = F1Segnalazioni.nuovaSessioneId(new Date(), Math.random);
+    // Ultimo giro noto, per annotare la segnalazione. null = non ancora saputo.
+    let giroCorrente = null;
     let isRacing = false;
     let myFinalTime = null;
     // Tempo trascorso "vero" per il timer HUD live (Rif. 2026-08-07):
@@ -844,6 +850,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // `completedLaps` è il conteggio di giri già completati (0 all'inizio);
     // in qualifica il totale è sempre 1 giro secco, mai quello della gara vera.
     function setLapDisplay(completedLaps, phaseName) {
+        giroCorrente = completedLaps;   // unico punto in cui il giro cambia: lo intercetta anche per le segnalazioni
         const el = document.getElementById('lap-chip-value');
         // In qualifica non ha senso mostrare "1/1" (un solo giro secco non è
         // un rapporto giri/totale) — l'utente lo trovava fuorviante. Nota:
@@ -1955,6 +1962,70 @@ document.addEventListener('DOMContentLoaded', async () => {
         inputs.steer = (keys.a ? 1 : 0) + (keys.d ? -1 : 0);
     }
 
+    // ── Segnalazioni in gioco (M / Shift+M) ────────────────────────────
+    // Mostra l'esito per un attimo e poi sparisce. Un solo timer: due
+    // pressioni ravvicinate non devono lasciare il messaggio appeso.
+    let timerAvvisoSegnalazione = null;
+    function mostraAvvisoSegnalazione(testo, errore) {
+        const el = document.getElementById('segnalazione-avviso');
+        if (!el) return;
+        el.textContent = testo;
+        el.classList.toggle('segnalazione-errore', !!errore);
+        el.style.display = 'block';
+        clearTimeout(timerAvvisoSegnalazione);
+        timerAvvisoSegnalazione = setTimeout(() => { el.style.display = 'none'; }, 1500);
+    }
+
+    // Registra dove sei e dove stai guardando. Il numero mostrato è quello
+    // che il SERVER ha scritto nel file: così il "terzo punto" di cui si
+    // parla dopo in chat è lo stesso record per tutti e due.
+    async function registraSegnalazione() {
+        if (!myCarGroup) return;
+        const stato = serverState[myColor];
+        const rec = F1Segnalazioni.componiSegnalazione({
+            sessione: sessioneSegnalazioni,
+            t: new Date().toISOString(),
+            trackId,
+            pos: myCarGroup.position,
+            rotY: myCarGroup.rotation.y,
+            camera: cameraMode,
+            guardaDietro: isLookingBack(),
+            // Stessa conversione dell'HUD (speedEl, in animate): il valore
+            // nel file dev'essere quello che il giocatore aveva sotto gli occhi.
+            velocita: Math.abs((stato && stato.speed) || 0) * 55,
+            giro: giroCorrente
+        });
+        try {
+            const risposta = await fetch('/dev/f1-marker', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(rec)
+            });
+            const esito = await risposta.json();
+            if (esito.ok) mostraAvvisoSegnalazione(`Segnalazione ${esito.n} registrata`);
+            else mostraAvvisoSegnalazione('Segnalazione NON salvata', true);
+        } catch (err) {
+            // Mai una conferma falsa: se il server non ha risposto, il punto
+            // non esiste e chi guida deve saperlo subito, non dopo il giro.
+            mostraAvvisoSegnalazione('Segnalazione NON salvata', true);
+        }
+    }
+
+    async function annullaUltimaSegnalazione() {
+        try {
+            const risposta = await fetch('/dev/f1-marker/annulla', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessione: sessioneSegnalazioni })
+            });
+            const esito = await risposta.json();
+            if (esito.ok) mostraAvvisoSegnalazione(`Segnalazione ${esito.n} annullata`);
+            else mostraAvvisoSegnalazione('Niente da annullare', true);
+        } catch (err) {
+            mostraAvvisoSegnalazione('Annullamento NON riuscito', true);
+        }
+    }
+
     // Il campo nome del record (3 lettere) è l'unico input di testo della
     // pagina: mentre ci si scrive dentro, la freccia giù non deve essere
     // intercettata come "guarda dietro".
@@ -1979,6 +2050,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (k === 'h') {   // DEBUG: mostra/nascondi le hitbox di collisione
             showHitboxes = !showHitboxes;
             for (const mesh of Object.values(hitboxMeshes)) mesh.visible = showHitboxes;
+        }
+        // M segnala il punto in cui sei, Shift+M annulla l'ultima. `e.repeat`
+        // esclude l'autorepeat: tenendo premuto si riempirebbe il file di
+        // copie dello stesso punto.
+        if (k === 'm' && !e.repeat && !isTypingInField(e)) {
+            if (e.shiftKey) annullaUltimaSegnalazione();
+            else registraSegnalazione();
         }
         applyKeys();
     });

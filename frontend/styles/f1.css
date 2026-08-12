@@ -700,3 +700,25 @@ canvas.tyre-preview-canvas {
     letter-spacing: 2px;
     opacity: 0;
 }
+
+/* Avviso delle segnalazioni in gioco (M / Shift+M). In alto al centro, dove
+   non copre né la classifica (in alto a sinistra) né il pannello
+   timer/velocità. La posizione la eredita da .hud (fixed); qui solo dove e
+   com'è fatto. Niente emoji: solo testo, come il resto dell'UI. */
+.hud-segnalazione {
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 9px 18px;
+    font-family: 'Fredoka', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: 0.4px;
+    white-space: nowrap;
+    color: var(--f1-text);
+    z-index: 40;
+}
+
+.hud-segnalazione.segnalazione-errore {
+    color: #ff6b6b;
+}

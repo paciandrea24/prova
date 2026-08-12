@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260807d">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260812a">
 </head>
 
 <body>
@@ -122,8 +122,12 @@
                 id="debug-suspension">0%</span></div>
     </div>
 
+    <!-- Segnalazioni in gioco (M / Shift+M): conferma che il punto è stato
+         salvato, col numero assegnato dal server. -->
+    <div class="hud f1-panel hud-segnalazione" id="segnalazione-avviso" style="display:none;"></div>
+
     <!-- Suggerimento camera -->
-    <div class="camera-hint" id="camera-hint">C: cambia visuale · H: hitbox debug · G: debug usura/guasti</div>
+    <div class="camera-hint" id="camera-hint">C: cambia visuale · H: hitbox debug · G: debug usura/guasti · M: segnala punto</div>
 
     <!-- Overlay countdown: testo 3-2-1 per la qualifica, plancia luci per la
          gara (mostrati alternativamente in base alla fase, vedi f1.js) -->
@@ -258,7 +262,8 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
     <script src="shared/voxelizer.js?v=20260730a"></script>
     <script src="/shared/firebaseConfig.js" defer></script>
-    <script src="f1.js?v=20260812a"></script>
+    <script src="shared/f1Segnalazioni.js?v=20260812a"></script>
+    <script src="f1.js?v=20260812b"></script>
 </body>
 
 </html>
