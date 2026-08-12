@@ -770,6 +770,111 @@
     // (il raggio dell'anello stesso): più economico, stesso risultato.
     const EMBANKMENT_RING_COUNT = 4;
 
+    // Quanto percorso lungo il tracciato separa un punto dai suoi "parenti":
+    // entro questa distanza i campioni appartengono al proprio tratto e non
+    // devono tagliare niente, oltre sono un altro pezzo di circuito anche se
+    // in linea d'aria sono lì accanto. È in UNITÀ DI PISTA e non in campioni,
+    // che valgono 1.18 unità su monte-rosso e 5.17 su prova.
+    const EMBANKMENT_KIN_SPAN = 40;
+
+    // ⚠️ Il taglio è netto sulla mezzeria, senza margine di sovrapposizione.
+    // Provato (2026-08-12) a farlo sconfinare di 2 unità per assicurarsi
+    // contro le fessure, come fa buildGround con le celle di prato: misurato
+    // sui quattro tracciati, non chiudeva nessuna fessura (non ce n'erano) e
+    // in cambio su "prova" portava il terrapieno 4 unità dentro il territorio
+    // del tratto vicino, con 6 unità di scarto di quota là dove i due tratti
+    // affiancati corrono a quote diverse. Netto è meglio.
+
+    // Fin dove può arrivare il terrapieno di ogni campione, per lato, prima di
+    // finire su un pezzo di circuito che appartiene a un altro tratto.
+    //
+    // Il problema che risolve: buildEmbankment estrude gli anelli lateralmente
+    // da ogni campione alla quota di QUEL campione, senza sapere che esistono
+    // altri tratti. Dove il tracciato si ripiega entro la portata degli anelli
+    // (93.7 unità su "prova") il terrapieno di un tratto arriva sull'altro e
+    // gli passa sopra cordolo e barriere.
+    //
+    // Il taglio cade sulla mezzeria fra i due tratti — ognuno tiene la metà
+    // che gli è più vicina, esattamente come fa TrackGeometry.terrainHeightAt
+    // quando cerca il punto di pista più vicino. Sulla semiretta P + N·r il
+    // punto equidistante da P e da un punto estraneo Q si ricava in forma
+    // chiusa da |P + N·r − Q|² = r², cioè r = |PQ|² / (2 N·PQ): niente
+    // marcia a passi lungo la normale, un prodotto scalare per candidato.
+    function limitiDiVicinato(trackPts, innerEdge, embankOuter) {
+        const n = trackPts.length;
+        const pos = new Float64Array(n).fill(embankOuter);
+        const neg = new Float64Array(n).fill(embankOuter);
+        if (n < 2) return { pos, neg };
+
+        const cum = new Float64Array(n);
+        for (let i = 1; i < n; i++) {
+            cum[i] = cum[i - 1] + Math.hypot(trackPts[i].x - trackPts[i - 1].x, trackPts[i].z - trackPts[i - 1].z);
+        }
+        const giro = cum[n - 1] + Math.hypot(trackPts[0].x - trackPts[n - 1].x, trackPts[0].z - trackPts[n - 1].z);
+
+        // Griglia spaziale dei soli punti a terra: i tratti a ponte passano
+        // SOPRA il terreno e non devono accorciarlo — è proprio sotto un
+        // cavalcavia che il prato deve continuare indisturbato.
+        const cella = Math.max(1, embankOuter);
+        const chiave = (cx, cz) => cx + ',' + cz;
+        const griglia = new Map();
+        for (let i = 0; i < n; i++) {
+            if (trackPts[i].bridge) continue;
+            const k = chiave(Math.floor(trackPts[i].x / cella), Math.floor(trackPts[i].z / cella));
+            const lista = griglia.get(k);
+            if (lista) lista.push(i); else griglia.set(k, [i]);
+        }
+
+        // Oltre il doppio della portata la mezzeria cade comunque fuori
+        // dall'ultimo anello (r ≥ |PQ|/2): quei punti non possono tagliare.
+        const portata = 2 * embankOuter;
+        const raggioCelle = Math.ceil(portata / cella);
+
+        for (let i = 0; i < n; i++) {
+            const p = trackPts[i];
+            // `closed` a true anche sugli spezzoni aperti fra un ponte e
+            // l'altro: cambia la normale solo sui due campioni di testa dello
+            // spezzone, e di una frazione di grado.
+            const { nx, nz } = TrackGeometry.normalAt(trackPts, i, true);
+            const cx = Math.floor(p.x / cella), cz = Math.floor(p.z / cella);
+            let limPos = embankOuter, limNeg = embankOuter;
+
+            for (let gx = cx - raggioCelle; gx <= cx + raggioCelle; gx++) {
+                for (let gz = cz - raggioCelle; gz <= cz + raggioCelle; gz++) {
+                    const lista = griglia.get(chiave(gx, gz));
+                    if (!lista) continue;
+                    for (const j of lista) {
+                        let ds = Math.abs(cum[j] - cum[i]);
+                        if (giro - ds < ds) ds = giro - ds;
+                        if (ds < EMBANKMENT_KIN_SPAN) continue;
+
+                        const dx = trackPts[j].x - p.x, dz = trackPts[j].z - p.z;
+                        const d2 = dx * dx + dz * dz;
+                        if (d2 > portata * portata) continue;
+
+                        const proj = dx * nx + dz * nz;
+                        if (proj > 1e-9) {
+                            const r = d2 / (2 * proj);
+                            if (r < limPos) limPos = r;
+                        } else if (proj < -1e-9) {
+                            const r = d2 / (-2 * proj);
+                            if (r < limNeg) limNeg = r;
+                        }
+                    }
+                }
+            }
+
+            // Mai sotto l'attacco al cordolo: se due tratti sono così vicini
+            // da non lasciare spazio, il terrapieno lì si riduce a una mesh
+            // degenere (larghezza zero) invece di staccarsi dalla pista e
+            // lasciare vedere il cielo sotto il cordolo.
+            pos[i] = Math.max(innerEdge, limPos);
+            neg[i] = Math.max(innerEdge, limNeg);
+        }
+
+        return { pos, neg };
+    }
+
     // Costruita per spezzone (TrackGeometry.splitByBridge), non più come un
     // unico anello chiuso: un ponte non genera terrapieno (lo spezzone a
     // terra semplicemente si interrompe lì, il vuoto è dove vanno impalcato
@@ -804,6 +909,21 @@
         const ringCount = anelli.length;
         const material = new THREE.MeshStandardMaterial({ color: GRASS_COLOR, roughness: 1, metalness: 0, side: THREE.DoubleSide });
         const { groundRuns } = TrackGeometry.splitByBridge(trackPts);
+        const limiti = limitiDiVicinato(trackPts, innerEdge, embankOuter);
+
+        // Quota dell'anello in funzione del raggio, non del suo indice: quando
+        // un anello viene tagliato dal tratto vicino, tutti quelli oltre il
+        // taglio si accavallano sullo stesso raggio, e devono accavallarsi
+        // anche sulla stessa QUOTA — altrimenti al confine resta in piedi una
+        // paretina verticale che scende al prato. Sul raggio nominale questa
+        // formula restituisce esattamente la `te` tabulata sopra, quindi dove
+        // non c'è nulla da tagliare la mesh è identica a prima.
+        const rampa = Math.max(1e-6, embankOuter - plateauEnd);
+        function quotaAl(r) {
+            if (r <= plateauEnd) return 0;
+            const t = Math.min(1, (r - plateauEnd) / rampa);
+            return t * t * (3 - 2 * t);
+        }
 
         for (const run of groundRuns) {
             const indices = run.indices;
@@ -818,10 +938,11 @@
                     const { nx, nz } = TrackGeometry.normalAt(trackPts, i, run.closed);
                     const p = trackPts[i];
                     const baseY = p.y || 0;
+                    const limite = (side > 0 ? limiti.pos : limiti.neg)[i];
 
                     for (let j = 0; j < ringCount; j++) {
-                        const { r, te } = anelli[j];
-                        const y = baseY + (0 - baseY) * te;
+                        const r = Math.min(anelli[j].r, limite);
+                        const y = baseY + (0 - baseY) * quotaAl(r);
                         const vb = (k * ringCount + j) * 3;
                         pos[vb]     = p.x + nx * r * side;
                         pos[vb + 1] = y;
