@@ -193,6 +193,48 @@
 
     const GRAVEL_COLOR = Palette.SURFACES.gravel;
 
+    // ── Screziatura del terreno ──────────────────────────────────────────
+    // Erba e ghiaia erano due campiture di colore unico, e a terra si vedeva:
+    // superfici enormi assolutamente piatte. Qui la tinta varia leggermente da
+    // una zona all'altra, per VERTICE e senza texture — coerente con lo stile
+    // voxel del gioco (macchie grandi come una cella, non rumore fine) e con
+    // il motore cel-shaded, che conserva i vertex color e li fa passare per le
+    // sue bande di luce come qualunque altro colore.
+    //
+    // La variazione è calcolata dalla POSIZIONE nel mondo, non a caso: due
+    // caricamenti della stessa pista danno le stesse macchie, e mesh diverse
+    // che si toccano — prato e terrapieno — combaciano sul confine invece di
+    // mostrare due screziature scollegate.
+    const GROUND_MOTTLE = 0.06;   // quanto la tinta si scosta, in frazione
+    const MOTTLE_CELL = 9;        // unità di mondo per macchia
+
+    function mottleFactor(x, z) {
+        const cx = Math.floor(x / MOTTLE_CELL), cz = Math.floor(z / MOTTLE_CELL);
+        let h = (Math.imul(cx, 374761393) + Math.imul(cz, 668265263)) | 0;
+        h = Math.imul(h ^ (h >>> 13), 1274126177);
+        const t = ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+        return 1 + (t - 0.5) * 2 * GROUND_MOTTLE;
+    }
+
+    // Componenti [0..1] di un colore esadecimale, senza passare da THREE.Color.
+    function rgbDi(hex) {
+        return [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
+    }
+
+    // Colore screziato di un vertice di terreno, opzionalmente mescolato verso
+    // un secondo colore (`verso`, con peso `t`): serve alla ghiaia, che dove si
+    // assottiglia sfuma nell'erba invece di finire con un bordo netto.
+    function coloreTerreno(out, hex, x, z, verso, t) {
+        const f = mottleFactor(x, z);
+        const [r, g, b] = rgbDi(hex);
+        let rr = r * f, gg = g * f, bb = b * f;
+        if (verso !== undefined && t > 0) {
+            const [r2, g2, b2] = rgbDi(verso);
+            rr += (r2 * f - rr) * t; gg += (g2 * f - gg) * t; bb += (b2 * f - bb) * t;
+        }
+        out.push(rr, gg, bb);
+    }
+
     // Banda di ghiaia fra il bordo esterno del cordolo e la barriera, presente
     // solo dove il profilo è > 0 (all'esterno delle curve). Stessa tecnica di
     // buildCurbs — una striscia di triangoli lungo il giro — ma con il bordo
@@ -206,8 +248,17 @@
     function buildGravel(container, pts, roadHalf, curbW, profile) {
         const n = pts.length;
         const pos = [];
+        const col = [];
         const idx = [];
         let emesso = false;
+
+        // Sopra questa larghezza la banda è ghiaia piena; sotto, sfuma verso
+        // l'erba. Le due estremità di ogni zona di ghiaia — dove la banda si
+        // assottiglia entrando e uscendo di curva — sono l'unico punto in cui
+        // il confine fra le due superfici si vede davvero: sui lati lunghi lo
+        // nasconde la barriera. Senza sfumatura la ghiaia finisce con una
+        // punta netta, che si legge come un ritaglio.
+        const PIENA = 12;
 
         for (const side of [-1, 1]) {
             const banda = side > 0 ? profile.right : profile.left;
@@ -220,9 +271,14 @@
                 const y = (p.y || 0) + 0.03;
                 const inner = (roadHalf + curbW) * side;
                 const outer = (roadHalf + curbW + banda[i]) * side;
+                const versoErba = Math.max(0, 1 - banda[i] / PIENA);
 
-                pos.push(p.x + nx * inner, y, p.z + nz * inner);
-                pos.push(p.x + nx * outer, y, p.z + nz * outer);
+                const ix = p.x + nx * inner, iz = p.z + nz * inner;
+                const ox = p.x + nx * outer, oz = p.z + nz * outer;
+                pos.push(ix, y, iz);
+                pos.push(ox, y, oz);
+                coloreTerreno(col, GRAVEL_COLOR, ix, iz, GRASS_COLOR, versoErba);
+                coloreTerreno(col, GRAVEL_COLOR, ox, oz, GRASS_COLOR, versoErba);
             }
 
             for (let i = 0; i < n; i++) {
@@ -242,10 +298,13 @@
 
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(pos), 3));
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(col), 3));
         geo.setIndex(idx);
         geo.computeVertexNormals();
+        // Colore bianco + vertexColors: la tinta la portano i vertici, e il
+        // motore cel-shaded la conserva (toonStyle.toonFrom ricopia il flag).
         const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-            color: GRAVEL_COLOR, roughness: 1, side: THREE.DoubleSide
+            color: 0xffffff, vertexColors: true, roughness: 1, side: THREE.DoubleSide
         }));
         mesh.receiveShadow = true;
         container.add(mesh);
@@ -833,7 +892,9 @@
         // Dove le quote coincidono il piede collassa sull'ultimo anello e i
         // triangoli sono degeneri, cioè invisibili.
         const ringCount = anelli.length + 1;
-        const material = new THREE.MeshStandardMaterial({ color: GRASS_COLOR, roughness: 1, metalness: 0, side: THREE.DoubleSide });
+        const material = new THREE.MeshStandardMaterial({
+            color: 0xffffff, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide
+        });
         const { groundRuns } = TrackGeometry.splitByBridge(trackPts);
         // Fin dove il terrapieno di ogni campione può estendersi senza finire
         // sul territorio di un altro tratto di pista, e a che quota riprende
@@ -863,6 +924,7 @@
 
             for (const side of [-1, 1]) {
                 const pos = new Float32Array(m * ringCount * 3);
+                const col = [];
 
                 for (let k = 0; k < m; k++) {
                     const i = indices[k];
@@ -894,6 +956,7 @@
                         pos[vb]     = p.x + nx * r * side;
                         pos[vb + 1] = y;
                         pos[vb + 2] = p.z + nz * r * side;
+                        coloreTerreno(col, GRASS_COLOR, pos[vb], pos[vb + 2]);
                     }
                 }
 
@@ -913,6 +976,7 @@
 
                 const geo = new THREE.BufferGeometry();
                 geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+                geo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(col), 3));
                 geo.setIndex(idx);
                 geo.computeVertexNormals();
                 const mesh = new THREE.Mesh(geo, material);
@@ -961,7 +1025,7 @@
     function buildGround(container, trackPts, embankOuter, worldSize) {
         const groundPts = trackPts.filter(p => !p.bridge);
         const material = new THREE.MeshStandardMaterial({
-            color: GRASS_COLOR, roughness: 1, metalness: 0, side: THREE.DoubleSide
+            color: 0xffffff, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide
         });
 
         let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -975,6 +1039,7 @@
         const cols = Math.ceil((maxX - minX) / GROUND_GRID_CELL);
         const rows = Math.ceil((maxZ - minZ) / GROUND_GRID_CELL);
         const pos = [];
+        const col = [];
         const idx = [];
 
         // Emette una cella: piano superiore + i fianchi verso le vicine più
@@ -985,6 +1050,10 @@
             const x1 = x0 + size, z1 = z0 + size;
             let base = pos.length / 3;
             pos.push(x0, y, z0,  x1, y, z0,  x1, y, z1,  x0, y, z1);
+            // Una macchia per cella, non per vertice: i quattro angoli
+            // prendono lo stesso colore, così il prato si legge a chiazze
+            // piatte come il resto della grafica invece di sfumare.
+            for (let v = 0; v < 4; v++) coloreTerreno(col, GRASS_COLOR, x0 + size / 2, z0 + size / 2);
             idx.push(base, base + 1, base + 2,  base, base + 2, base + 3);
             if (y <= 0) return;
 
@@ -999,6 +1068,7 @@
                 if (ny >= y - 0.01) continue;   // vicina più alta o pari: nessuna fessura
                 base = pos.length / 3;
                 pos.push(s.ax, y, s.az,  s.bx, y, s.bz,  s.bx, ny, s.bz,  s.ax, ny, s.az);
+                for (let v = 0; v < 4; v++) coloreTerreno(col, GRASS_COLOR, (s.ax + s.bx) / 2, (s.az + s.bz) / 2);
                 idx.push(base, base + 1, base + 2,  base, base + 2, base + 3);
             }
         }
@@ -1092,14 +1162,20 @@
 
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(pos), 3));
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(col), 3));
         geo.setIndex(idx);
         geo.computeVertexNormals();
         const grid = new THREE.Mesh(geo, material);
         grid.receiveShadow = true;
         container.add(grid);
 
+        // Il prato lontano è un piano solo, senza vertici da screziare: gli
+        // serve il colore pieno sul materiale, non i vertex color (che senza
+        // attributo renderebbero nero).
         const farGeo = new THREE.PlaneGeometry(worldSize, worldSize);
-        const far = new THREE.Mesh(farGeo, material);
+        const far = new THREE.Mesh(farGeo, new THREE.MeshStandardMaterial({
+            color: GRASS_COLOR, roughness: 1, metalness: 0, side: THREE.DoubleSide
+        }));
         far.rotation.x = -Math.PI / 2;
         // Leggermente sotto la griglia (a y=0): la griglia resta sempre
         // sopra al bordo della propria estensione, niente z-fighting.

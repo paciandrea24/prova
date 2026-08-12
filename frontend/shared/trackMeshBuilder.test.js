@@ -9,10 +9,17 @@ global.THREE = {
     BufferGeometry: class { constructor() { this.attributes = {}; } setAttribute(n, a) { this.attributes[n] = a; } setIndex(i) { this.index = i; } computeVertexNormals() {} },
     Float32BufferAttribute: class { constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; } },
     MeshStandardMaterial: class { constructor(o) { Object.assign(this, o); } },
-    Mesh: class { constructor(g, m) { this.geometry = g; this.material = m; } },
+    Mesh: class {
+        constructor(g, m) {
+            this.geometry = g; this.material = m;
+            this.rotation = { x: 0, y: 0, z: 0 };
+            this.position = { x: 0, y: 0, z: 0, set() {} };
+        }
+    },
     DoubleSide: 2,
     Object3D: class { constructor() { this.children = []; } add(c) { this.children.push(c); } },
     BoxGeometry: class {},
+    PlaneGeometry: class { constructor() { this.attributes = {}; } rotateX() {} translate() {} },
     InstancedMesh: class { constructor() {} setMatrixAt() {} },
     Color: class {},
     Vector3: class {},
@@ -112,6 +119,42 @@ test('buildGravel: la banda va dal bordo del cordolo alla barriera', () => {
     // Bordo esterno = 13.8 + 25 = 38.8 -> raggio 138.8
     assert.ok(Math.abs(min - 113.8) < 0.5, `bordo interno a ${min.toFixed(1)}, atteso 113.8`);
     assert.ok(Math.abs(max - 138.8) < 0.5, `bordo esterno a ${max.toFixed(1)}, atteso 138.8`);
+});
+
+test('terreno screziato: un colore per vertice, in gamma, e macchie diverse fra loro', () => {
+    // Erba e ghiaia non sono più due campiture piatte: la tinta varia per
+    // vertice. Se l'attributo colore avesse una lunghezza diversa da quello
+    // delle posizioni, Three legge oltre la fine e il terreno diventa nero a
+    // chiazze — un difetto che nessun test di geometria vedrebbe.
+    const pts = cerchio();
+    const piena = new Float64Array(pts.length).fill(25);
+    const fuori = latoEsterno(pts);
+    const prof = fuori > 0
+        ? { right: piena, left: new Float64Array(pts.length) }
+        : { right: new Float64Array(pts.length), left: piena };
+
+    const c = contenitore();
+    TrackMeshBuilder.buildGravel(c, pts, 11, 2.8, prof);
+    TrackMeshBuilder.buildEmbankment(c, pts, INNER, PLATEAU, OUTER);
+    TrackMeshBuilder.buildGround(c, pts, OUTER, 3000);
+
+    let conColore = 0;
+    for (const mesh of c.children) {
+        const posizioni = mesh.geometry.attributes.position;
+        const colori = mesh.geometry.attributes.color;
+        if (!colori) continue;   // il prato lontano è un piano a tinta unita
+        conColore++;
+        assert.equal(colori.array.length, posizioni.array.length,
+            'un colore per vertice, esattamente');
+        const distinti = new Set();
+        for (let v = 0; v < colori.array.length; v++) {
+            const q = colori.array[v];
+            assert.ok(q >= 0 && q <= 1, `componente di colore fuori gamma: ${q}`);
+            if (v % 3 === 0) distinti.add(q.toFixed(3));
+        }
+        assert.ok(distinti.size > 1, 'la superficie deve avere più di una tinta');
+    }
+    assert.ok(conColore >= 3, `attese almeno 3 mesh screziate, trovate ${conColore}`);
 });
 
 test('buildGravel: con profilo tutto a zero non produce nulla', () => {
