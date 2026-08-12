@@ -4,7 +4,39 @@
 
 **Goal:** aggiungere le vie di fuga in ghiaia all'esterno delle curve, con barriere e scenografia traslate solo dove c'è la ghiaia, e barriere che diventano un muro solido su tutto il giro.
 
-## STATO AL 2026-08-11 (sera) — LEGGERE QUESTO, il resto è storia
+## STATO AL 2026-08-12 — TUTTI E CINQUE I LAVORI CHIUSI, il resto è storia
+
+I cinque lavori elencati la sera dell'11 sono fatti, uno per commit, in attesa
+del playtest finale dell'utente. In tre casi su cinque la causa scritta nel
+piano si è rivelata sbagliata: vale la pena leggere il perché.
+
+1. **Terrapieno che sborda** — `ba90f89`, `ae9116f`. Taglio sulla mezzeria fra
+   i tratti (`TrackGeometry.neighbourLimits`), più una parete che chiude il
+   confine dove le due quote differiscono. Su prova: vertici in territorio
+   altrui 1298 → 1, buchi verticali 0.
+2. **Fisarmonica del muro** — `cd22f6f`. La causa NON era una serie di
+   restringimenti brevi da riempire: era la regola del tratto traguardo/box,
+   che vale su entrambi i lati mentre la corsia corre da uno solo, con la
+   ghiaia che spingeva fuori il muro sul lato libero. La chiusura morfologica
+   prevista qui è stata implementata, misurata (zero campioni cambiati) e
+   scartata.
+3. **Tribune storte e spettatori fuori posto** — `43f81ce`. Nessuna delle due
+   cause ipotizzate: la rotazione è a posto e il file dei posti vale per tutte
+   e tre le varianti (la gradinata è la stessa, cambia solo il tetto). Era
+   `traslaOltreLaGhiaia` che spostava ogni voce per conto suo. Compenetrazioni
+   8 → 0, spettatori fuori posto 2394 → 0.
+4. **Muro solido lato server (Task 7c)** — `ceb5a2b`. Fatto come previsto qui
+   sotto, adattato a `barrierProfile` (che nel frattempo ha sostituito
+   `gravelProfile`). Tempi sul giro invariati al millisecondo.
+5. **Erba e ghiaia con dettaglio** — `57e2f6b`. Vertex color dalla posizione,
+   macchie da 9 unità, e la ghiaia che sfuma nell'erba dove si assottiglia.
+
+Le note tecniche sono in `docs/f1-notes.md`, sezione "Vie di fuga, muro solido,
+terreno (2026-08-12)", con l'elenco delle cose provate e scartate.
+
+---
+
+## STATO AL 2026-08-11 (sera) — storia
 
 L'obiettivo si è **allargato** rispetto al titolo del piano: non più solo vie
 di fuga in ghiaia, ma **rendere il circuito fisicamente chiuso** senza che ogni

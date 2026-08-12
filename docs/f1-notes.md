@@ -505,3 +505,88 @@ boschi (~200-280 alberi) e spettatori.
   inginocchiati stavano esattamente lì e si vedevano dentro la macchina; ora
   stanno a fianco del muso e della coda, oltre `CAR_HALF_LENGTH`. Scala
   `CREW_SCALE = 1.25` per presenza scenica, stessa logica del 6× dei Kenney.
+
+---
+
+## Vie di fuga, muro solido, terreno (2026-08-12)
+
+Il circuito è **fisicamente chiuso**: la barriera è un muro anche fuori dai
+ponti. È stato possibile solo dopo aver arretrato la barriera con le vie di
+fuga — a 4 unità dal cordolo, com'era, ogni pista sarebbe diventata Monte
+Carlo. Spec `docs/superpowers/specs/2026-08-10-f1-vie-di-fuga-ghiaia-design.md`,
+piano `docs/superpowers/plans/2026-08-10-f1-vie-di-fuga-ghiaia.md`.
+
+### Chi decide cosa
+
+- `TrackGravel.barrierProfile` è la **sorgente unica** della distanza del muro,
+  campione per campione e lato per lato. Ne derivano: la barriera disegnata, la
+  banda di ghiaia, la traslazione della scenografia e il muro fisico lato
+  server. Chi ne aggiunge un quinto consumatore deve passare di lì.
+- `trackLoader` espone `barrierProfile` e `pitGapPts` calcolandoli con le
+  stesse funzioni condivise del client. Un test in `trackLoader.test.js` rifà
+  la catena di input del client e pretende che i due profili coincidano
+  campione per campione: se divergessero, in gioco si sbatterebbe contro un
+  muro invisibile.
+- `applyBridgeBarrier` non esiste più: si chiama `applyBarrier` e vale su tutto
+  il giro. Senza `barrierProfile` (editor, test storici) torna al
+  comportamento vecchio, muro solo sui ponti.
+
+### Due funzioni di quota del terreno, non una
+
+- `TrackGeometry.terrainHeightAt` = superficie **ideale**, dal campione più
+  vicino. La usano oggetti e fisica.
+- `TrackGeometry.terrainTopAt` = terreno **disegnato**, cioè il più alto dei
+  settori sovrapposti. La usa la barriera per posarci il piede.
+
+Divergono in curva mentre la pista sale, dove i settori del terrapieno si
+accavallano: usare la prima al posto della seconda seppelliva la barriera sotto
+il terreno per 20 unità di pista. Il criterio di quali campioni coprono un
+punto è per **settore** (la fascia fra la normale di un campione e quella del
+successivo), mai a raggio: a raggio la barriera si alzava fino a 3.75 unità
+sopra il terreno in 179 campioni di prova.
+
+### Territorio: dove il tracciato si ripiega su se stesso
+
+`TrackGeometry.neighbourLimits` dice fin dove ogni campione può estendersi
+prima di finire su un altro tratto di pista, e a che quota riprende il terreno
+di là. Il confine cade sulla mezzeria, in forma chiusa (`r = |PQ|²/(2·N·PQ)`).
+La usano il terrapieno (dove tagliare gli anelli) e il profilo della barriera
+(dove smettere di arretrare).
+
+⚠️ Tre cose provate, misurate e scartate — non ritentarle senza una misura
+nuova:
+- **margine di sovrapposizione** fra due terrapieni al confine: non chiude
+  nessuna fessura e porta 6 unità di scarto di quota dove i tratti affiancati
+  corrono a quote diverse;
+- **livellare il confine** lungo la pista: lascia scoperti 4 campioni di
+  terreno su prova e 59 su new-monza, perché accorciare dove il vicino non
+  arriva significa che non disegna più nessuno;
+- **chiusura morfologica** sul profilo del muro contro la fisarmonica: non
+  cambia un solo campione, perché tutti i restringimenti rimasti sono imposti
+  dal territorio.
+
+### La scenografia trasla, ma certe cose insieme
+
+`traslaOltreLaGhiaia` sposta ogni voce oltre il muro. Due categorie NON possono
+essere spostate voce per voce:
+- le **schiere di tribune** hanno un `group` e traslano rigide, del massimo fra
+  gli spostamenti dei loro moduli. Senza, la fila si accartoccia e i moduli si
+  compenetrano (misurate 8 coppie su prova, la peggiore a 10.7 invece di 19.2).
+- gli **spettatori** si generano DOPO la traslazione, perché i loro posti sono
+  in coordinate locali alla tribuna. Generandoli prima, 2394 su 2983 finivano
+  fuori dai gradoni. Usano un RNG separato per non spostare gli scatter
+  successivi (alberi, rocce) su tracciati già approvati.
+
+### Terreno
+
+Erba e ghiaia sono screziate con **vertex color** ricavati dalla posizione nel
+mondo (macchie da 9 unità, ampiezza 6%): niente texture, stessa tinta a ogni
+caricamento, e mesh che si toccano combaciano sul confine. Il motore
+cel-shaded li conserva. La ghiaia sfuma verso l'erba dove la banda si
+assottiglia — è l'unico punto dove il confine si vede, perché sui lati lunghi
+lo nasconde la barriera.
+
+Nel tratto del traguardo/box il muro resta stretto su ENTRAMBI i lati e la
+ghiaia non entra: la corsia box corre da una parte sola, ma il tratto va tenuto
+com'è tutto intero (richiesta dell'utente). Lasciando entrare la ghiaia, il
+muro sul lato libero faceva 15 → 45.7 → 15 → 33.8 in 200 unità di pista.
