@@ -308,6 +308,10 @@
         // Prima passata: la via di fuga di BASE, cioè quella che spetta al
         // punto a prescindere dalla ghiaia.
         const base = { left: new Float64Array(n), right: new Float64Array(n) };
+        // Dove vale la regola del tratto traguardo/box, che tiene tutto com'era
+        // prima delle vie di fuga. Segnata qui perché serve anche più sotto:
+        // dentro quel tratto la ghiaia non deve spingere fuori il muro.
+        const zonaBox = new Array(n).fill(false);
         for (let i = 0; i < n; i++) {
             const p = trackPts[i];
             let d;
@@ -316,6 +320,7 @@
             } else if (pitLanePts && pitLanePts.length
                        && TrackGeometry.nearestPoint(pitLanePts, p.x, p.z).dist < PIT_STRAIGHT_REACH) {
                 d = storica;
+                zonaBox[i] = true;
             } else {
                 d = bordoCordolo + RUNOFF_MIN;
             }
@@ -323,8 +328,65 @@
             base.right[i] = d;
         }
 
-        // Seconda passata: la corsia box non va inglobata. Si cammina in
-        // fuori dal bordo del cordolo finché non si entra nella sua fascia di
+        // Seconda passata: la ghiaia entra PRIMA del livellamento, non dopo.
+        //
+        // Il livellamento abbassa soltanto, quindi metterlo per primo
+        // sembrerebbe sicuro — non lo è: prendere il massimo con la ghiaia
+        // DOPO aver livellato ricrea i gradini appena tolti. Misurato su
+        // prova, all'imbocco di un ponte: il muro scendeva a 13 (valore del
+        // ponte) mentre la ghiaia in esaurimento lo teneva ancora a 19, per
+        // una pendenza di 1.155 contro un limite di 1.0.
+        //
+        // ⚠️ Sui ponti la ghiaia non partecipa affatto: `bordoCordolo + 0`
+        // non è "nessun vincolo", è il bordo del cordolo, e prenderlo come
+        // minimo spingerebbe fuori anche il muro dei ponti — che sta più
+        // dentro, a roadHalf + BRIDGE_MARGIN.
+        //
+        // ⚠️ E nemmeno nel tratto del traguardo: lì il muro resta dov'era su
+        // ENTRAMBI i lati, anche su quello dove la corsia box non passa.
+        // La corsia sta da una parte sola (su prova, 134 campioni protetti su
+        // 134 con la corsia a sinistra), ma il tratto va tenuto com'è tutto
+        // intero — è la richiesta dell'utente. Lasciando entrare la ghiaia, una
+        // curva dentro quel tratto spingeva fuori il muro sul lato libero e poi
+        // lo lasciava ricadere: 15 -> 39.6 -> 45.7 -> 29.3 -> 15 -> 33.8 in 200
+        // unità di pista, la "fisarmonica" segnalata dall'utente.
+        for (let i = 0; i < n; i++) {
+            if (trackPts[i].bridge) continue;
+            if (zonaBox[i]) {
+                // Niente ghiaia dove il muro non arretra: verrebbe rifilata a
+                // 1.2 unità, cioè una striscia beige larga un bordino.
+                gravel.left[i] = 0;
+                gravel.right[i] = 0;
+                continue;
+            }
+            if (gravel.left[i] > 0) base.left[i] = Math.max(base.left[i], bordoCordolo + gravel.left[i]);
+            if (gravel.right[i] > 0) base.right[i] = Math.max(base.right[i], bordoCordolo + gravel.right[i]);
+        }
+
+        // L'azzeramento appena fatto è netto, e la ghiaia arriva al bordo del
+        // tratto protetto ancora larga: si raccorda con la stessa pendenza
+        // massima del muro, se no la banda finisce di taglio.
+        for (const lato of ['left', 'right']) {
+            const g = gravel[lato];
+            for (let ripasso = 0; ripasso < 2; ripasso++) {
+                for (let i = 0; i < n; i++) g[i] = Math.min(g[i], g[(i - 1 + n) % n] + MAX_SLOPE * stepLen);
+                for (let i = n - 1; i >= 0; i--) g[i] = Math.min(g[i], g[(i + 1) % n] + MAX_SLOPE * stepLen);
+            }
+        }
+
+        // ⚠️ Qui NON c'è una chiusura morfologica che riempie i restringimenti
+        // brevi, che pure il piano prevedeva contro la "fisarmonica".
+        // Implementata e misurata il 2026-08-12: sui quattro tracciati non
+        // cambia un solo campione. Tutti i restringimenti rimasti — 21 unità
+        // su prova, 19 e 26 su new-monza — sono imposti dal territorio del
+        // tratto vicino, cioè da spazio che davvero non c'è, e la passata
+        // successiva li ripristina esattamente com'erano. La fisarmonica vera
+        // era una sola, quella del tratto del traguardo, e nasceva dalla
+        // ghiaia che entrava in una zona protetta: risolta sopra, alla radice.
+        // Se un tracciato nuovo la mostrasse altrove, è qui che va rimessa.
+
+        // Terza passata: la corsia box non va inglobata. Si cammina in fuori
+        // dal bordo del cordolo finché non si entra nella sua fascia di
         // rispetto — stessa regola che già limita la ghiaia, così barriera e
         // ghiaia non possono contraddirsi.
         if (pitLanePts && pitLanePts.length) {
@@ -344,25 +406,6 @@
                     }
                 }
             }
-        }
-
-        // Terza passata: la ghiaia entra PRIMA del livellamento, non dopo.
-        //
-        // Il livellamento abbassa soltanto, quindi metterlo per primo
-        // sembrerebbe sicuro — non lo è: prendere il massimo con la ghiaia
-        // DOPO aver livellato ricrea i gradini appena tolti. Misurato su
-        // prova, all'imbocco di un ponte: il muro scendeva a 13 (valore del
-        // ponte) mentre la ghiaia in esaurimento lo teneva ancora a 19, per
-        // una pendenza di 1.155 contro un limite di 1.0.
-        //
-        // ⚠️ Sui ponti la ghiaia non partecipa affatto: `bordoCordolo + 0`
-        // non è "nessun vincolo", è il bordo del cordolo, e prenderlo come
-        // minimo spingerebbe fuori anche il muro dei ponti — che sta più
-        // dentro, a roadHalf + BRIDGE_MARGIN.
-        for (let i = 0; i < n; i++) {
-            if (trackPts[i].bridge) continue;
-            if (gravel.left[i] > 0) base.left[i] = Math.max(base.left[i], bordoCordolo + gravel.left[i]);
-            if (gravel.right[i] > 0) base.right[i] = Math.max(base.right[i], bordoCordolo + gravel.right[i]);
         }
 
         // Quarta passata: lo spazio conteso con un altro tratto di pista.
@@ -412,7 +455,7 @@
             out[lato].set(b);
         }
 
-        // Quinta passata: la ghiaia si rifila sul muro. Il livellamento può
+        // Sesta passata: la ghiaia si rifila sul muro. Il livellamento può
         // aver abbassato la barriera sotto la banda disegnata — è quello che
         // succede avvicinandosi a un ponte — e una banda che esce da sotto il
         // muro si vede. Il minimo fra due profili a pendenza limitata resta a

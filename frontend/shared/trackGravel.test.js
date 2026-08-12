@@ -281,6 +281,34 @@ test('barrierProfile: nessun gradino nel muro, la pendenza resta entro MAX_SLOPE
     }
 });
 
+test('barrierProfile: nel tratto del traguardo il muro resta stretto e senza ghiaia', () => {
+    // La corsia box corre da un lato solo, ma il tratto va tenuto com'è su
+    // ENTRAMBI: è la richiesta dell'utente ("mi piace al momento"). Prima la
+    // ghiaia di una curva dentro quel tratto spingeva fuori il muro sul lato
+    // opposto e lo faceva andare a fisarmonica — misurato su prova, lato
+    // destro: 15 -> 39.6 -> 45.7 -> 29.3 -> 15 -> 33.8 nel giro di 200 unità.
+    const pts = ovale();
+    // Corsia box lungo il primo rettilineo, dal lato interno: tocca solo
+    // quello, mentre le curve dell'ovale hanno ghiaia da entrambe le parti.
+    const pit = [];
+    for (let k = 0; k <= 40; k++) pit.push({ x: -160 + k * 8, z: -60 + 25 });
+
+    const prof = TrackGravel.barrierProfile(pts, { roadHalf: ROAD_HALF, pitLanePts: pit, pitRoadHalf: 5 });
+
+    let protetti = 0;
+    for (let i = 0; i < pts.length; i++) {
+        if (TrackGeometry.nearestPoint(pit, pts[i].x, pts[i].z).dist >= TrackGravel.PIT_STRAIGHT_REACH) continue;
+        protetti++;
+        for (const lato of ['left', 'right']) {
+            assert.ok(prof[lato][i] <= STORICA + 0.01,
+                `campione ${i} lato ${lato}: muro a ${prof[lato][i].toFixed(1)} invece di ${STORICA} nel tratto dei box`);
+            assert.equal(prof.gravel[lato][i], 0,
+                `campione ${i} lato ${lato}: ghiaia nel tratto dei box`);
+        }
+    }
+    assert.ok(protetti > 10, 'il caso di prova deve avere un tratto protetto vero');
+});
+
 test('barrierProfile: la barriera non finisce sul territorio di un altro tratto', () => {
     // Ovale stretto: due rettilinei a 60 unità l'uno dall'altro, uniti da
     // semicerchi di raggio 30. Lo spazio è conteso — dalla mezzeria in poi il
