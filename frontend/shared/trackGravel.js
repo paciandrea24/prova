@@ -265,10 +265,25 @@
     // corsia box, in una manciata di punti che questo profilo restringe da sé.
     // ────────────────────────────────────────────────────────────────────
 
-    // Via di fuga minima oltre il cordolo dove non c'è ghiaia (erba). ~3
-    // lunghezze d'auto: sta fra la ghiaia più stretta (GRAVEL_WIDTH_MIN) e la
-    // più larga, così il giro risulta omogeneo invece che a fisarmonica.
-    const RUNOFF_MIN = 20;
+    // Distanza del muro oltre il bordo del cordolo dove niente lo costringe
+    // altrove: è la posizione "di riposo", quella che il muro tiene sulla
+    // stragrande maggioranza del giro.
+    //
+    // ⚠️ Scelta dall'utente il 2026-08-12 guardando i disegni dall'alto del
+    // circuito, non tarata a sensazione. Era 20, e a 20 il muro smetteva di
+    // somigliare a un guardrail: nelle curve la ghiaia lo spingeva fino a 25
+    // oltre il cordolo, il terreno conteso lo richiamava a 1.2, e le rampe fra
+    // i due valori disegnavano lunghe diagonali sul prato — quello che
+    // l'utente vedeva in gioco come "grovigli" e "grossi allungamenti".
+    // A 16 il muro resta un contorno della pista su tutto il giro.
+    const RUNOFF_MIN = 16;
+    // Tetto: per nessun motivo il muro va oltre questa distanza dal cordolo,
+    // nemmeno per far posto a una via di fuga larga. Oggi coincide con
+    // RUNOFF_MIN, quindi il muro è di fatto a distanza costante; sono due
+    // costanti separate perché rispondono a due domande diverse — "dove sta
+    // di norma" e "fin dove può arrivare" — e alzando solo questa si
+    // riottiene un muro che si allarga in curva, se un domani lo si vorrà.
+    const RUNOFF_MAX = 16;
     // Sui tratti a ponte non c'è terreno attorno: il muro resta a bordo
     // strada, dov'è sempre stato. Stesso valore di
     // CollisionResolver.BRIDGE_BARRIER_MARGIN — è la distanza che il muro
@@ -359,8 +374,14 @@
                 gravel.right[i] = 0;
                 continue;
             }
-            if (gravel.left[i] > 0) base.left[i] = Math.max(base.left[i], bordoCordolo + gravel.left[i]);
-            if (gravel.right[i] > 0) base.right[i] = Math.max(base.right[i], bordoCordolo + gravel.right[i]);
+            // La ghiaia spinge fuori il muro, ma solo fino al tetto: oltre,
+            // la banda viene rifilata sul muro dalla sesta passata. È una
+            // perdita voluta — con il muro a distanza costante la via di fuga
+            // larga non ci sta, e fra le due l'utente ha scelto la forma del
+            // muro (2026-08-12, decisa sui disegni).
+            const tetto = bordoCordolo + RUNOFF_MAX;
+            if (gravel.left[i] > 0) base.left[i] = Math.min(tetto, Math.max(base.left[i], bordoCordolo + gravel.left[i]));
+            if (gravel.right[i] > 0) base.right[i] = Math.min(tetto, Math.max(base.right[i], bordoCordolo + gravel.right[i]));
         }
 
         // L'azzeramento appena fatto è netto, e la ghiaia arriva al bordo del
@@ -497,7 +518,7 @@
     return {
         gravelProfile, gravelAt, barrierDistAt,
         barrierProfile, barrierAt, sceneryShiftAt,
-        RUNOFF_MIN, BRIDGE_MARGIN, PIT_STRAIGHT_REACH,
+        RUNOFF_MIN, RUNOFF_MAX, BRIDGE_MARGIN, PIT_STRAIGHT_REACH,
         pitGapSamples, PIT_MERGE_WINDOW,
         cornerSpeed, cornerGravelWidth,
         MAX_SPEED, TURN_SPEED_LOW, TURN_SPEED_HIGH,

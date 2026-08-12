@@ -215,13 +215,22 @@ test('barrierProfile: la banda di ghiaia non esce mai da sotto il muro', () => {
                 `campione ${i}: la barriera taglierebbe la banda di ghiaia`);
         }
     }
-    // E su un ovale senza ponti né corsia box la ghiaia non viene rifilata
-    // affatto: niente si perde per strada quando non serve.
+    // E su un ovale senza ponti né corsia box la ghiaia perde ESATTAMENTE
+    // quello che il tetto del muro le toglie, né più né meno.
+    //
+    // Fino al 2026-08-12 qui si pretendeva che non venisse rifilata affatto.
+    // Non vale più: il muro ha un tetto (RUNOFF_MAX) scelto dall'utente
+    // guardando i disegni dall'alto, e la ghiaia sta fra cordolo e muro,
+    // quindi oltre il tetto viene tagliata per forza. È il prezzo dichiarato
+    // di quella scelta, non un difetto — ma resta un tetto, non uno sconto
+    // libero: quello che ci sta sotto dev'essere intatto.
     const piena = TrackGravel.gravelProfile(pts, { roadHalf: ROAD_HALF });
     for (let i = 0; i < pts.length; i++) {
-        assert.ok(Math.abs(bar.gravel.left[i] - piena.left[i]) < 1e-9
-               && Math.abs(bar.gravel.right[i] - piena.right[i]) < 1e-9,
-            `campione ${i}: ghiaia rifilata senza motivo`);
+        for (const lato of ['left', 'right']) {
+            const atteso = Math.min(piena[lato][i], TrackGravel.RUNOFF_MAX);
+            assert.ok(Math.abs(bar.gravel[lato][i] - atteso) < 1e-9,
+                `campione ${i} ${lato}: ghiaia ${bar.gravel[lato][i].toFixed(2)}, attesa ${atteso.toFixed(2)}`);
+        }
     }
 });
 
