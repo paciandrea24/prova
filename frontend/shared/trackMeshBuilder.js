@@ -777,6 +777,19 @@
     // che valgono 1.18 unità su monte-rosso e 5.17 su prova.
     const EMBANKMENT_KIN_SPAN = 40;
 
+    // Quanto due campioni possono differire in distanza dal punto di confine
+    // ed essere considerati entrambi "quelli che stanno di là": serve a
+    // scegliere fin dove deve scendere la parete che chiude il confine.
+    const CONFINE_PARI_MERITO = 8;
+
+    // Di quanto il piede della parete affonda sotto la quota calcolata del
+    // terreno vicino. La quota di là si stima con la curva continua, ma la
+    // mesh del vicino è fatta di anelli e fra un anello e l'altro interpola
+    // dritto: misurato su "prova", le due si scostano fino a mezza unità, e
+    // lì resterebbe una fessura sottile. Affondare non costa nulla — quel
+    // pezzo di parete finisce sotto il terreno del vicino.
+    const PIEDE_AFFONDO = 0.6;
+
     // ⚠️ Il taglio è netto sulla mezzeria, senza margine di sovrapposizione.
     // Provato (2026-08-12) a farlo sconfinare di 2 unità per assicurarsi
     // contro le fessure, come fa buildGround con le celle di prato: misurato
@@ -804,7 +817,12 @@
         const n = trackPts.length;
         const pos = new Float64Array(n).fill(embankOuter);
         const neg = new Float64Array(n).fill(embankOuter);
-        if (n < 2) return { pos, neg };
+        // Quota della pista che ha imposto il taglio: serve a sapere a che
+        // altezza riprende il terreno appena oltre il confine, e quindi
+        // quanto deve scendere la parete che lo chiude.
+        const yPos = new Float64Array(n);
+        const yNeg = new Float64Array(n);
+        if (n < 2) return { pos, neg, yPos, yNeg };
 
         const cum = new Float64Array(n);
         for (let i = 1; i < n; i++) {
@@ -838,6 +856,7 @@
             const { nx, nz } = TrackGeometry.normalAt(trackPts, i, true);
             const cx = Math.floor(p.x / cella), cz = Math.floor(p.z / cella);
             let limPos = embankOuter, limNeg = embankOuter;
+            const vicini = [];
 
             for (let gx = cx - raggioCelle; gx <= cx + raggioCelle; gx++) {
                 for (let gz = cz - raggioCelle; gz <= cz + raggioCelle; gz++) {
@@ -852,6 +871,7 @@
                         const d2 = dx * dx + dz * dz;
                         if (d2 > portata * portata) continue;
 
+                        vicini.push(j);
                         const proj = dx * nx + dz * nz;
                         if (proj > 1e-9) {
                             const r = d2 / (2 * proj);
@@ -870,9 +890,39 @@
             // lasciare vedere il cielo sotto il cordolo.
             pos[i] = Math.max(innerEdge, limPos);
             neg[i] = Math.max(innerEdge, limNeg);
+
+            // A che quota riprende il terreno appena oltre il confine. Si
+            // guarda il punto di confine vero e si prende la quota PIÙ BASSA
+            // fra i campioni che se lo contendono, non quella del campione
+            // che ha imposto il taglio.
+            //
+            // Il caso che obbliga a fare così è il centro di un tornante: lì
+            // convergono decine di campioni della stessa curva, tutti alla
+            // stessa distanza esatta dal confine, e se la curva sale hanno
+            // quote diverse fra loro. "Il più vicino" è allora una scelta a
+            // caso fra pari merito, e sceglierne uno alto lascia scoperto il
+            // dislivello verso quelli bassi. Scendere più del necessario non
+            // costa nulla: la parete in eccesso resta sepolta sotto il
+            // terreno del vicino.
+            for (const [lato, lim] of [[1, pos[i]], [-1, neg[i]]]) {
+                const bx = p.x + nx * lim * lato, bz = p.z + nz * lim * lato;
+                let piuVicino = Infinity;
+                for (const j of vicini) {
+                    const d = (trackPts[j].x - bx) ** 2 + (trackPts[j].z - bz) ** 2;
+                    if (d < piuVicino) piuVicino = d;
+                }
+                const soglia = (Math.sqrt(piuVicino) + CONFINE_PARI_MERITO) ** 2;
+                let quota = Infinity;
+                for (const j of vicini) {
+                    const d = (trackPts[j].x - bx) ** 2 + (trackPts[j].z - bz) ** 2;
+                    if (d <= soglia) quota = Math.min(quota, trackPts[j].y || 0);
+                }
+                if (!isFinite(quota)) quota = 0;
+                if (lato > 0) yPos[i] = quota; else yNeg[i] = quota;
+            }
         }
 
-        return { pos, neg };
+        return { pos, neg, yPos, yNeg };
     }
 
     // Costruita per spezzone (TrackGeometry.splitByBridge), non più come un
@@ -906,7 +956,16 @@
             const t = j / (EMBANKMENT_RING_COUNT - 1);
             anelli.push({ r: plateauEnd + (embankOuter - plateauEnd) * t, te: t * t * (3 - 2 * t) });
         }
-        const ringCount = anelli.length;
+        // Un anello in più di quelli veri: è il PIEDE della parete che chiude
+        // il confine. Sta allo stesso raggio dell'ultimo anello e scende fino
+        // alla quota a cui riprende il terreno del tratto vicino — dove i due
+        // tratti affiancati corrono a quote diverse (su "prova", il ramo a
+        // terra accanto a quello sopraelevato di 7 unità) senza questa parete
+        // fra le due superfici resta aria, e si vede attraverso il terreno.
+        // Stesso motivo per cui buildGround dà i fianchi alle celle di prato.
+        // Dove le quote coincidono il piede collassa sull'ultimo anello e i
+        // triangoli sono degeneri, cioè invisibili.
+        const ringCount = anelli.length + 1;
         const material = new THREE.MeshStandardMaterial({ color: GRASS_COLOR, roughness: 1, metalness: 0, side: THREE.DoubleSide });
         const { groundRuns } = TrackGeometry.splitByBridge(trackPts);
         const limiti = limitiDiVicinato(trackPts, innerEdge, embankOuter);
@@ -939,10 +998,26 @@
                     const p = trackPts[i];
                     const baseY = p.y || 0;
                     const limite = (side > 0 ? limiti.pos : limiti.neg)[i];
+                    // Quota a cui il terreno riprende oltre il confine: quella
+                    // del tratto vicino, degradata come degrada la sua, così
+                    // le due superfici si incontrano davvero.
+                    const yVicino = (side > 0 ? limiti.yPos : limiti.yNeg)[i];
+                    const quotaTaglio = quotaAl(limite);
+                    const yBordo = baseY + (0 - baseY) * quotaTaglio;
+                    const yOltre = yVicino + (0 - yVicino) * quotaTaglio;
+                    // L'affondo si applica ogni volta che c'è un taglio, anche
+                    // quando le due quote sembrano combaciare: la stima e la
+                    // mesh del vicino non coincidono mai al centesimo, e una
+                    // gonnella di mezza unità sepolta costa meno di una
+                    // fessura. Dove non c'è taglio il piede resta sul bordo e
+                    // i triangoli sono degeneri, come prima di questa parete.
+                    const tagliato = limite < embankOuter - 1e-6;
+                    const yPiede = tagliato ? Math.min(yBordo, yOltre) - PIEDE_AFFONDO : yBordo;
 
                     for (let j = 0; j < ringCount; j++) {
-                        const r = Math.min(anelli[j].r, limite);
-                        const y = baseY + (0 - baseY) * quotaAl(r);
+                        const ultimo = j === ringCount - 1;
+                        const r = Math.min(ultimo ? limite : anelli[j].r, limite);
+                        const y = ultimo ? yPiede : baseY + (0 - baseY) * quotaAl(r);
                         const vb = (k * ringCount + j) * 3;
                         pos[vb]     = p.x + nx * r * side;
                         pos[vb + 1] = y;

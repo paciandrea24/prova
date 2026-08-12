@@ -192,8 +192,103 @@ test('dove è tagliato dal tratto vicino il terrapieno resta alla quota della pi
         if (Math.abs(v.z) > 30 || Math.abs(v.x) > 150) continue;
         if (v.y < piuBasso) piuBasso = v.y;
     }
-    assert.ok(piuBasso >= 8 - 0.05,
+    // La tolleranza copre il piede della parete di confine, che affonda di
+    // mezza unità sotto il terreno del vicino apposta (vedi PIEDE_AFFONDO):
+    // è geometria sepolta, non una conca. Resta ampiamente sotto le 8 unità
+    // di dislivello che avrebbe una conca vera.
+    assert.ok(piuBasso >= 8 - 0.7,
         `dentro l'ovale il terreno scende a ${piuBasso.toFixed(2)} invece di restare a 8`);
+});
+
+test('fra due tratti affiancati a quote diverse il confine è chiuso da una parete', () => {
+    // Stesso ovale stretto, ma con un rettilineo sopraelevato di 8 e l'altro a
+    // terra (i semicerchi raccordano le due quote). È la situazione di "prova"
+    // vicino al ponte: il taglio ferma i due terrapieni sulla mezzeria, uno a
+    // quota 8 e l'altro a 0, e fra le due superfici resta aria — un buco da cui
+    // si vede attraverso il terreno, segnalato dall'utente in gioco.
+    const pts = ovaleStretto();
+    for (const p of pts) p.y = p.z < 0 ? 8 : 0;
+    for (const p of pts) {
+        if (Math.abs(p.z) < 29.9) p.y = 8 * (0.5 - p.z / 60);   // raccordo sui semicerchi
+    }
+
+    const c = contenitore();
+    TrackMeshBuilder.buildEmbankment(c, pts, INNER, PLATEAU, OUTER);
+
+    // I vertici vanno presi per INDICE, non per posizione: due tratti
+    // affiancati giacciono sulla stessa normale, quindi un filtro geometrico
+    // finirebbe per prendere anche quelli del vicino. L'ordine emesso è
+    // (spezzone, lato, campione, anello); qui lo spezzone è uno solo e chiuso.
+    const perCampione = [];   // { i, side, vertici: [{x,y,z}], raggi: [] }
+    const facce = [];         // triangoli, col campione che li ha generati
+    for (let mesh = 0; mesh < c.children.length; mesh++) {
+        const geo = c.children[mesh].geometry;
+        const pos = geo.attributes.position.array;
+        const ring = pos.length / 3 / pts.length;
+        const side = mesh === 0 ? -1 : 1;
+        for (let i = 0; i < pts.length; i++) {
+            const v = [], r = [];
+            for (let j = 0; j < ring; j++) {
+                const vb = (i * ring + j) * 3;
+                v.push({ x: pos[vb], y: pos[vb + 1], z: pos[vb + 2] });
+                r.push(Math.hypot(pos[vb] - pts[i].x, pos[vb + 2] - pts[i].z));
+            }
+            perCampione.push({ i, side, vertici: v, raggi: r });
+        }
+        for (let f = 0; f < geo.index.length; f += 3) {
+            const a = geo.index[f], b = geo.index[f + 1], d = geo.index[f + 2];
+            facce.push({
+                i: Math.floor(a / ring),
+                v: [a, b, d].map(k => ({ x: pos[k * 3], y: pos[k * 3 + 1], z: pos[k * 3 + 2] })),
+            });
+        }
+    }
+
+    // Quota della superficie disegnata sopra un punto: si cerca il triangolo
+    // che lo contiene in pianta e si interpola. Prendere "il vertice più
+    // vicino" non basta — in mezzo a tre tratti che si contendono lo spazio
+    // il vertice più vicino può appartenere al bordo di un terzo tratto e
+    // dire una quota che lì non c'è. Si escludono le facce dei campioni
+    // parenti, che sono la superficie di questo stesso tratto.
+    function quotaSuperficieIn(x, z, iEscluso) {
+        let piuAlta = null;
+        for (const f of facce) {
+            const ds = Math.min(Math.abs(f.i - iEscluso), pts.length - Math.abs(f.i - iEscluso));
+            if (ds < 12) continue;
+            const [A, B, C] = f.v;
+            const d = (B.z - C.z) * (A.x - C.x) + (C.x - B.x) * (A.z - C.z);
+            if (Math.abs(d) < 1e-9) continue;   // triangolo degenere
+            const l1 = ((B.z - C.z) * (x - C.x) + (C.x - B.x) * (z - C.z)) / d;
+            const l2 = ((C.z - A.z) * (x - C.x) + (A.x - C.x) * (z - C.z)) / d;
+            const l3 = 1 - l1 - l2;
+            if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
+            const y = l1 * A.y + l2 * B.y + l3 * C.y;
+            if (piuAlta === null || y > piuAlta) piuAlta = y;
+        }
+        return piuAlta;
+    }
+
+    let peggiore = 0, dove = null;
+    for (const g of perCampione) {
+        if (g.i % 4) continue;
+        const bordo = Math.max(...g.raggi);
+        if (bordo > OUTER - 0.5) continue;      // non tagliato: nessun confine
+        const p = pts[g.i];
+        const { nx, nz } = TrackGeometry.normalAt(pts, g.i, true);
+
+        // Quota del terreno oltre il confine, e quota più bassa raggiunta dai
+        // vertici sul confine: se non scendono fin lì, resta un buco.
+        const ox = p.x + nx * (bordo + 3) * g.side, oz = p.z + nz * (bordo + 3) * g.side;
+        const oltre = quotaSuperficieIn(ox, oz, g.i);
+        if (oltre === null) continue;   // oltre il confine non disegna nessuno
+        const piede = Math.min(...g.vertici.filter((_, k) => g.raggi[k] > bordo - 0.5).map(v => v.y));
+        const buco = piede - oltre;
+        if (buco > peggiore) { peggiore = buco; dove = { i: g.i, bordo, piede, oltre }; }
+    }
+
+    assert.ok(peggiore < 0.35,
+        `al confine resta un salto verticale scoperto di ${peggiore.toFixed(2)} unità` +
+        (dove ? ` (campione ${dove.i}, bordo a ${dove.bordo.toFixed(1)}: il terreno finisce a ${dove.piede.toFixed(2)} e riprende a ${dove.oltre.toFixed(2)})` : ''));
 });
 
 test('senza tratti affiancati il terrapieno resta quello di prima', () => {
