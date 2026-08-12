@@ -44,16 +44,32 @@ function gradiVerso(da, a) {
 // I `quanti` oggetti di scenografia più vicini al punto, con distanza e
 // verso rispetto al muso: serve a distinguere l'oggetto che il giocatore
 // stava guardando da quello che aveva alle spalle.
+//
+// Un tipo di oggetto compare UNA volta sola, col suo esemplare più vicino.
+// Senza questo la lista è inutile dove conta: gli spettatori sono 2989 dei
+// 4075 elementi di `prova`, quindi accanto a una tribuna i cinque più vicini
+// sono cinque spettatori e la tribuna non si vede; e lungo una barriera sono
+// cinque pile di gomme identiche. Tutta la folla conta come un tipo solo.
 function vicini(layout, rec, quanti) {
-    return layout
+    const ordinati = layout
         .map(v => ({
             asset: v.asset,
             category: v.category,
             distanza: Math.round(Math.hypot(v.x - rec.pos.x, v.z - rec.pos.z) * 100) / 100,
             direzione: direzioneRelativa(rec.headingDeg, gradiVerso(rec.pos, v))
         }))
-        .sort((a, b) => a.distanza - b.distanza)
-        .slice(0, quanti);
+        .sort((a, b) => a.distanza - b.distanza);
+
+    const visti = new Set();
+    const scelti = [];
+    for (const v of ordinati) {
+        const tipo = v.category === 'crowd' ? 'crowd' : v.asset;
+        if (visti.has(tipo)) continue;
+        visti.add(tipo);
+        scelti.push(v);
+        if (scelti.length === quanti) break;
+    }
+    return scelti;
 }
 
 // Ricostruisce lo STESSO layout che il gioco ha generato al caricamento.

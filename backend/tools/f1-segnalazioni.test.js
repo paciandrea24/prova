@@ -122,3 +122,26 @@ for (const trackId of ['prova', 'monte-rosso', 'new-monza', 'baku']) {
         }
     });
 }
+
+test('un tipo di oggetto occupa una riga sola, col suo esemplare più vicino', () => {
+    const layout = [
+        { asset: 'tyreStack', category: 'safety', x: 10, z: 0 },
+        { asset: 'tyreStack', category: 'safety', x: 11, z: 0 },
+        { asset: 'tyreStack', category: 'safety', x: 12, z: 0 },
+        { asset: 'grandStand', category: 'grandstand', x: 20, z: 0 }
+    ];
+    const v = tool.vicini(layout, { pos: { x: 0, y: 0, z: 0 }, headingDeg: 0 }, 2);
+    assert.deepEqual(v.map(o => o.asset), ['tyreStack', 'grandStand']);
+    assert.equal(v[0].distanza, 10);
+});
+
+test('tutta la folla vale un tipo solo, o sommerge la tribuna', () => {
+    const layout = [
+        { asset: 'spectatorA', category: 'crowd', x: 5, z: 0 },
+        { asset: 'spectatorB', category: 'crowd', x: 6, z: 0 },
+        { asset: 'spectatorC', category: 'crowd', x: 7, z: 0 },
+        { asset: 'grandStand', category: 'grandstand', x: 12, z: 0 }
+    ];
+    const v = tool.vicini(layout, { pos: { x: 0, y: 0, z: 0 }, headingDeg: 0 }, 2);
+    assert.deepEqual(v.map(o => o.asset), ['spectatorA', 'grandStand']);
+});
