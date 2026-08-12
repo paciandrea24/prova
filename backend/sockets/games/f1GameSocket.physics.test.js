@@ -18,7 +18,7 @@ test('f1GameSocket.physics espone le funzioni pure attese', () => {
     const { physics } = f1GameSocket;
     for (const name of [
         'effectiveMaxSpeed', 'updateVelocity', 'integratePosition',
-        'applyOffTrackDrag', 'applyBridgeBarrier', 'updateTrackIndex',
+        'applyOffTrackDrag', 'applyBarrier', 'updateTrackIndex',
         'circularWithin', 'checkpointWindowFor', 'finishWindowFor'
     ]) {
         assert.equal(typeof physics[name], 'function', `atteso physics.${name} funzione`);
@@ -321,7 +321,7 @@ function makeBarrierTrack() {
     };
 }
 
-test('applyBridgeBarrier: nuovo urto contro il muro in gara applica danno (nessuna penalità)', () => {
+test('applyBarrier: nuovo urto contro il muro in gara applica danno (nessuna penalità)', () => {
     const { physics } = f1GameSocket;
     const track = makeBarrierTrack();
     // Fuori dal limite (roadHalf + margine), spinta forte verso l'esterno lungo x.
@@ -331,13 +331,13 @@ test('applyBridgeBarrier: nuovo urto contro il muro in gara applica danno (nessu
         pendingCollisionPenaltyEvents: []
     };
 
-    physics.applyBridgeBarrier(p, track, true);
+    physics.applyBarrier(p, track, true);
 
     assert.ok(p.damage > 0, 'atteso danno da impatto col muro');
     assert.equal(p.collisionPenaltyMs, 0, 'nessuna penalità da barriera');
 });
 
-test('applyBridgeBarrier: in qualifica (isRace=false) il muro frena comunque ma non danneggia', () => {
+test('applyBarrier: in qualifica (isRace=false) il muro frena comunque ma non danneggia', () => {
     const { physics } = f1GameSocket;
     const track = makeBarrierTrack();
     const p = {
@@ -346,13 +346,13 @@ test('applyBridgeBarrier: in qualifica (isRace=false) il muro frena comunque ma 
         pendingCollisionPenaltyEvents: []
     };
 
-    physics.applyBridgeBarrier(p, track, false);
+    physics.applyBarrier(p, track, false);
 
     assert.equal(p.damage, 0, 'nessun danno in qualifica');
     assert.ok(p.x < 15, 'il muro riporta comunque la posizione sul bordo (fisica invariata)');
 });
 
-test('applyBridgeBarrier: senza 3° argomento (retrocompatibile con f1LapSimulator/f1RaceLineOptimizer) non lancia e non danneggia', () => {
+test('applyBarrier: senza 3° argomento (retrocompatibile con f1LapSimulator/f1RaceLineOptimizer) non lancia e non danneggia', () => {
     const { physics } = f1GameSocket;
     const track = makeBarrierTrack();
     const p = {
@@ -361,8 +361,90 @@ test('applyBridgeBarrier: senza 3° argomento (retrocompatibile con f1LapSimulat
         pendingCollisionPenaltyEvents: []
     };
 
-    assert.doesNotThrow(() => physics.applyBridgeBarrier(p, track));
+    assert.doesNotThrow(() => physics.applyBarrier(p, track));
     assert.equal(p.damage, 0);
+});
+
+// Pista circolare tutta a terra, col profilo del muro come lo calcola il
+// server: serve a verificare che il muro esista anche fuori dai ponti.
+function makeClosedTrack({ muro = 15, varco = [] } = {}) {
+    const points = [];
+    for (let i = 0; i < 200; i++) {
+        const a = i / 200 * Math.PI * 2;
+        points.push({ x: Math.cos(a) * 100, z: Math.sin(a) * 100, y: 0, bridge: false });
+    }
+    const banda = new Float64Array(200).fill(muro);
+    return {
+        points, roadHalf: 11,
+        barrierProfile: { left: banda, right: banda },
+        pitGapPts: varco,
+    };
+}
+
+test('applyBarrier: il muro trattiene l\'auto anche fuori dai ponti', () => {
+    const { physics } = f1GameSocket;
+    const track = makeClosedTrack();
+    // Ben oltre il muro (raggio 115), spinta verso l'esterno.
+    const p = {
+        x: 130, z: 0, angle: 0, speed: 5, vx: 5, vz: 0,
+        trackIndex: 0, wallContact: false, damage: 0, collisionPenaltyMs: 0,
+        pendingCollisionPenaltyEvents: []
+    };
+    physics.applyBarrier(p, track, false);
+
+    const distanza = Math.hypot(p.x, p.z);
+    assert.ok(Math.abs(distanza - 115) < 0.5,
+        `l'auto va riportata sul muro (115), sta a ${distanza.toFixed(1)}`);
+    assert.ok(p.vx < 5, 'la spinta verso l\'esterno è stata smorzata');
+});
+
+test('applyBarrier: dove il muro è più lontano l\'auto non lo tocca', () => {
+    const { physics } = f1GameSocket;
+    const track = makeClosedTrack({ muro: 45 });
+    const p = {
+        x: 130, z: 0, angle: 0, speed: 5, vx: 5, vz: 0,
+        trackIndex: 0, wallContact: false, damage: 0, collisionPenaltyMs: 0,
+        pendingCollisionPenaltyEvents: []
+    };
+    physics.applyBarrier(p, track, false);
+    assert.ok(Math.abs(p.x - 130) < 1e-6, 'con la via di fuga larga il muro è oltre: nessuno spostamento');
+});
+
+test('applyBarrier: nel varco della corsia box non c\'è muro', () => {
+    const { physics } = f1GameSocket;
+    // Varco proprio dove sta l'auto del test: la soglia si misura dalla
+    // posizione dell'auto, non dal muro.
+    const track = makeClosedTrack({ varco: [{ x: 127, z: 0 }] });
+    const p = {
+        x: 130, z: 0, angle: 0, speed: 5, vx: 5, vz: 0,
+        trackIndex: 0, wallContact: false, damage: 0, collisionPenaltyMs: 0,
+        pendingCollisionPenaltyEvents: []
+    };
+    physics.applyBarrier(p, track, false);
+    assert.ok(Math.abs(p.x - 130) < 1e-6, 'nel varco si passa');
+});
+
+test('applyBarrier: senza profilo (editor, test storici) vale solo sui ponti, come prima', () => {
+    const { physics } = f1GameSocket;
+    const track = makeBarrierTrack();       // tratto a ponte, nessun barrierProfile
+    const p = {
+        x: 15, z: 0, angle: 0, speed: 8, vx: 8, vz: 0,
+        trackIndex: 0, wallContact: false, damage: 0, collisionPenaltyMs: 0,
+        pendingCollisionPenaltyEvents: []
+    };
+    physics.applyBarrier(p, track, false);
+    assert.ok(p.x < 15, 'sul ponte il muro c\'è comunque');
+
+    // Stessa pista ma a terra: senza profilo non c'è muro da nessuna parte.
+    const aTerra = makeBarrierTrack();
+    for (const pt of aTerra.points) pt.bridge = false;
+    const q = {
+        x: 15, z: 0, angle: 0, speed: 8, vx: 8, vz: 0,
+        trackIndex: 0, wallContact: false, damage: 0, collisionPenaltyMs: 0,
+        pendingCollisionPenaltyEvents: []
+    };
+    physics.applyBarrier(q, aTerra, false);
+    assert.equal(q.x, 15, 'senza profilo e fuori dai ponti si comporta come prima');
 });
 
 test('effectiveMaxSpeed: il danno al motore riduce la velocità massima in gara, non in qualifica', () => {

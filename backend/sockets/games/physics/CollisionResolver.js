@@ -5,6 +5,7 @@
 // senza modificarne la logica — stesse formule, stessi valori, stesso
 // comportamento.
 const TrackGeometry = require('../../../../frontend/shared/trackGeometry.js');
+const TrackGravel = require('../../../../frontend/shared/trackGravel.js');
 const { MIN_COLLISION_SEVERITY, applyCarCollisionDamage, applyBarrierDamage } = require('./DamageModel');
 
 // Ingombro reale dell'auto, misurato dal GLB (raceCarWhite.glb, bounding box
@@ -39,7 +40,7 @@ const BRIDGE_BARRIER_MARGIN = 2;
 // Quanta della componente di velocità che spinge oltre il muro (lungo la
 // normale, verso l'esterno) viene rimossa ad ogni contatto — la componente
 // parallela al muro non viene mai toccata da questo fattore (vedi
-// applyBridgeBarrier: nessun calcolo/scelta di verso, solo rimozione della
+// applyBarrier: nessun calcolo/scelta di verso, solo rimozione della
 // spinta verso l'esterno).
 const BRIDGE_BARRIER_SLOWDOWN = 0.5;
 // Attrito continuo applicato a tutta la velocità (non solo alla componente
@@ -52,16 +53,29 @@ const BRIDGE_BARRIER_SLOWDOWN = 0.5;
 const BRIDGE_BARRIER_CONTACT_DRAG = 0.01;
 
 // Finestra di ricerca locale (con wrap) dell'indice campionato più vicino:
-// usata sia qui (applyBridgeBarrier) sia da updateTrackIndex in
+// usata sia qui (applyBarrier) sia da updateTrackIndex in
 // f1GameSocket.js. DEVE restare lo stesso valore nei due punti — per questo
 // f1GameSocket.js importa questa costante invece di definirne una propria.
 const TRACK_INDEX_WINDOW = 20;
 
-// Muro rigido sui tratti ponte (Fase 3): a differenza di applyOffTrackDrag
-// (che si applica ovunque e frena soltanto), qui — solo dove il punto pista
-// più vicino è bridge:true — si impedisce fisicamente di superare la
-// soglia. La sicurezza (non superare mai il muro) viene prima di tutto: la
-// posizione è sempre riportata sul bordo.
+// Quanto vicino a un punto del varco corsia box la barriera smette di
+// esistere. STESSO valore di BARRIER_PIT_GAP_THRESHOLD in trackMeshBuilder.js,
+// che decide dove il varco viene disegnato: se i due divergessero, all'ingresso
+// dei box si passerebbe attraverso un muro visibile o si sbatterebbe contro uno
+// invisibile.
+const BARRIER_PIT_GAP_THRESHOLD = 8;
+
+// Muro rigido lungo TUTTO il giro, alla distanza che dice il profilo della
+// barriera: a differenza di applyOffTrackDrag (che si applica ovunque e frena
+// soltanto), qui si impedisce fisicamente di superare la soglia. La sicurezza
+// (non superare mai il muro) viene prima di tutto: la posizione è sempre
+// riportata sul bordo.
+//
+// Fino al 2026-08-12 il muro esisteva solo sui tratti a ponte e si chiamava
+// applyBridgeBarrier: fuori di lì si finiva nel prato e si tornava in pista da
+// qualunque parte. Con le vie di fuga il muro è arretrato abbastanza da poter
+// diventare solido ovunque senza trasformare ogni circuito in un cittadino —
+// è il senso di tutto il lavoro sulle vie di fuga.
 //
 // Redesign 2026-07-23 (vedi
 // docs/superpowers/specs/2026-07-23-f1-barriera-ponte-redesign-design.md):
@@ -76,25 +90,50 @@ const TRACK_INDEX_WINDOW = 20;
 // qualunque componente parallela al muro l'auto avesse già — in qualunque
 // verso, anche debole o ambigua — resta esattamente quella, senza alcuna
 // correzione di direzione o di orientamento.
-function applyBridgeBarrier(p, track, isRace) {
+function applyBarrier(p, track, isRace) {
     const idx = TrackGeometry.nearestIndexNear(track.points, p.trackIndex || 0, p.x, p.z, TRACK_INDEX_WINDOW);
     const pt = track.points[idx];
-    if (!pt.bridge) return;
 
     const dx = p.x - pt.x, dz = p.z - pt.z;
     const dist = Math.hypot(dx, dz);
-    const limit = track.roadHalf + BRIDGE_BARRIER_MARGIN;
-
-    if (dist <= limit) {
-        p.wallContact = false;
-        return;
-    }
 
     const { nx, nz } = TrackGeometry.normalAt(track.points, idx, true);
     // normalAt punta sempre verso lo stesso lato fisso: va orientata verso
     // il lato da cui l'auto è effettivamente uscita.
     const side = (dx * nx + dz * nz) >= 0 ? 1 : -1;
     const wallNx = nx * side, wallNz = nz * side;
+
+    // Dove sta il muro. Il profilo è calcolato dalla STESSA funzione con cui
+    // il client lo disegna (TrackGravel.barrierProfile, via trackLoader): il
+    // muro fisico e quello disegnato non possono divergere, che è l'unico
+    // modo per non sbattere contro qualcosa che non si vede.
+    //
+    // Senza profilo — editor, test storici, piste caricate a mano — resta il
+    // comportamento di prima: muro solo sui tratti a ponte, dove uscire di
+    // lato significherebbe cadere nel vuoto.
+    let limit;
+    if (track.barrierProfile) {
+        limit = TrackGravel.barrierAt(track.barrierProfile, idx, side);
+    } else if (pt.bridge) {
+        limit = track.roadHalf + BRIDGE_BARRIER_MARGIN;
+    } else {
+        return;
+    }
+
+    if (dist <= limit) {
+        p.wallContact = false;
+        return;
+    }
+
+    // Varco della corsia box: lì la barriera non esiste né disegnata né
+    // fisica. Se le due regole divergessero si sbatterebbe contro un muro
+    // invisibile entrando ai box, ed è per questo che il varco lo decide una
+    // funzione sola (TrackGravel.pitGapSamples) per tutti e due.
+    if (track.pitGapPts && track.pitGapPts.length
+        && TrackGeometry.nearestPoint(track.pitGapPts, p.x, p.z).dist < BARRIER_PIT_GAP_THRESHOLD) {
+        p.wallContact = false;
+        return;
+    }
 
     // Riporta l'auto ESATTAMENTE sul bordo sottraendo solo l'eccesso lungo
     // la normale dalla sua posizione ATTUALE (non ricostruendola da zero sul
@@ -293,5 +332,5 @@ module.exports = {
     COLLISION_SUBSTEPS, TRACK_INDEX_WINDOW,
     CAR_HALF_LENGTH, CAR_HALF_WIDTH, COLLISION_BOUNCE,
     BRIDGE_BARRIER_MARGIN, BRIDGE_BARRIER_SLOWDOWN, BRIDGE_BARRIER_CONTACT_DRAG,
-    applyBridgeBarrier, resolveCollisions
+    applyBarrier, resolveCollisions
 };

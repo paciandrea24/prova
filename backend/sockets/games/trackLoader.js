@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
+const TrackGravel = require('../../../frontend/shared/trackGravel.js');
 
 const TRACKS_DIR = path.join(__dirname, '..', '..', '..', 'frontend', 'tracks');
 // backend/tools, NON frontend/tracks: listTracks() scansiona frontend/tracks
@@ -223,11 +224,26 @@ function buildTrack(id, raw) {
     const pitLanePts = TrackGeometry.tuckPitEndsToTrack(
         TrackGeometry.sampleOpenPath(pitPath, PIT_LANE_SAMPLES), points);
 
+    // Dove sta il muro, campione per campione e lato per lato, e dove si apre
+    // per la corsia box. Calcolati con le STESSE funzioni che usa il client
+    // per disegnarli (moduli condivisi frontend/shared): non sono dati del
+    // .json della pista ma valori derivati, quindi non possono andare fuori
+    // sincrono con quello che il giocatore vede. Un muro fisico che non
+    // coincide col muro disegnato è la cosa peggiore che possa capitare qui.
+    const barrierProfile = TrackGravel.barrierProfile(points, {
+        roadHalf: raw.roadHalfWidth,
+        pitLanePts,
+        pitRoadHalf: raw.pit.roadHalfWidth,
+    });
+    const pitGapPts = TrackGravel.pitGapSamples(pitLanePts);
+
     return {
         id,
         name: raw.name,
         points,
         roadHalf: raw.roadHalfWidth,
+        barrierProfile,
+        pitGapPts,
         lapLength,
         totalLaps,
         pitPath,

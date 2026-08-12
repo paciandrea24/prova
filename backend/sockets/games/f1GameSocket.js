@@ -41,7 +41,7 @@ const VehicleDynamics = require('./physics/VehicleDynamics');
 const {
     COLLISION_SUBSTEPS,
     updateVelocity, integratePosition, applyOffTrackDrag,
-    applyBridgeBarrier, resolveCollisions,
+    applyBarrier, resolveCollisions,
     applyTyreWear
 } = VehicleDynamics;
 
@@ -1240,7 +1240,7 @@ function tickGame(io, lobbyId, game) {
         // collisioni auto-auto sono una questione di fair-play multiplayer),
         // il muro dei tratti ponte si applica sempre, anche in qualifica —
         // è un limite fisico della pista, non un'interazione tra giocatori.
-        for (const p of racing) applyBridgeBarrier(p, game.track, !isQuali);
+        for (const p of racing) applyBarrier(p, game.track, !isQuali);
     }
 
     for (const p of racing) {
@@ -1385,7 +1385,7 @@ function tickGame(io, lobbyId, game) {
 // l'ambiguità nel punto di saldatura fine/inizio giro, dove l'ultimo punto e
 // il primo sono quasi coincidenti nello spazio.
 // TRACK_INDEX_WINDOW è importato da CollisionResolver.js — stesso valore usato da
-// applyBridgeBarrier e updateTrackIndex, unica fonte di verità.
+// applyBarrier e updateTrackIndex, unica fonte di verità.
 // ====================================================
 // Il numero di campioni è sempre SAMPLES=1000 (vedi trackLoader.js),
 // indipendentemente dalla pista: questo indice resta una costante globale.
@@ -1987,7 +1987,7 @@ module.exports.physics = {
     ACCEL, BRAKE_MULT, TURN_SPEED_HIGH, HALF_LAP_IDX,
     SECTOR1_REL_IDX, SECTOR2_REL_IDX, SECTOR_RECAP_DURATION_MS, fillGaps,
     effectiveMaxSpeed, effectiveAccel, effectiveBrakeMult, corneringCapacity, updateVelocity, integratePosition,
-    applyOffTrackDrag, applyBridgeBarrier, updateTrackIndex,
+    applyOffTrackDrag, applyBarrier, updateTrackIndex,
     circularWithin, checkpointWindowFor, finishWindowFor,
     assignGridSpawns, resetPlayers,
     MIN_COLLISION_SEVERITY, DAMAGE_CAP_PER_HIT, COLLISION_PENALTY_CAP_MS,

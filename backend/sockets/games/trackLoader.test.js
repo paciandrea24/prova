@@ -270,3 +270,40 @@ test('validateTrackData: startFinish malformato (manca x o z) viene rifiutato', 
     });
     assert.throws(() => saveTrack(data), /startFinish non valido/);
 });
+
+test('il muro del server sta esattamente dove il client lo disegna', () => {
+    // Il muro fisico e quello disegnato nascono dalla stessa funzione, ma da
+    // due catene di input diverse (server: buildTrack; client: f1.js). Qui si
+    // rifà la catena del client e si pretende che i due profili coincidano
+    // campione per campione: se qualcuno cambiasse il numero di campioni, o il
+    // modo di ricavare la corsia box, da una parte sola, in gioco si
+    // sbatterebbe contro un muro invisibile — o si passerebbe attraverso uno
+    // visibile.
+    const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
+    const TrackGravel = require('../../../frontend/shared/trackGravel.js');
+
+    for (const id of ['prova', 'new-monza', 'baku']) {
+        const track = loadTrack(id);
+        const raw = JSON.parse(fs.readFileSync(path.join(TRACKS_DIR, id + '.json'), 'utf8'));
+
+        // Esattamente quello che fa f1.js prima di disegnare.
+        const trackPts = TrackGeometry.sampleLoop(raw.controlPoints, 1000);
+        const pitPath = TrackGeometry.snapPitPathEnds(raw.pit.path, trackPts, raw.roadHalfWidth);
+        const pitPts = TrackGeometry.tuckPitEndsToTrack(
+            TrackGeometry.sampleOpenPath(pitPath, 300), trackPts);
+        const disegnato = TrackGravel.barrierProfile(trackPts, {
+            roadHalf: raw.roadHalfWidth, curbW: 2.8,
+            pitLanePts: pitPts, pitRoadHalf: raw.pit.roadHalfWidth,
+        });
+
+        assert.ok(track.barrierProfile, `${id}: il server non espone il profilo del muro`);
+        assert.ok(Array.isArray(track.pitGapPts) && track.pitGapPts.length > 0,
+            `${id}: manca il varco della corsia box`);
+        for (const lato of ['left', 'right']) {
+            for (let i = 0; i < trackPts.length; i++) {
+                assert.ok(Math.abs(track.barrierProfile[lato][i] - disegnato[lato][i]) < 1e-9,
+                    `${id}: al campione ${i} lato ${lato} il muro sta a ${track.barrierProfile[lato][i].toFixed(2)} ma è disegnato a ${disegnato[lato][i].toFixed(2)}`);
+            }
+        }
+    }
+});

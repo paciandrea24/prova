@@ -68,7 +68,7 @@ function simulateLap(track, opts) {
         physics.updateVelocity(p, true, 1);
         for (let s = 0; s < physics.COLLISION_SUBSTEPS; s++) {
             physics.integratePosition(p, 1 / physics.COLLISION_SUBSTEPS);
-            physics.applyBridgeBarrier(p, track);
+            physics.applyBarrier(p, track);
         }
         physics.applyOffTrackDrag(p, track);
         physics.updateTrackIndex(p, track);

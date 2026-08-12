@@ -11,11 +11,11 @@
 // debbano più toccare f1GameSocket.js.
 const { applyTyreWear } = require('./TyreModel');
 const { updateVelocity, integratePosition, applyOffTrackDrag } = require('./VehiclePhysics');
-const { COLLISION_SUBSTEPS, applyBridgeBarrier, resolveCollisions } = require('./CollisionResolver');
+const { COLLISION_SUBSTEPS, applyBarrier, resolveCollisions } = require('./CollisionResolver');
 
 module.exports = {
     COLLISION_SUBSTEPS,
     updateVelocity, integratePosition, applyOffTrackDrag,
-    applyBridgeBarrier, resolveCollisions,
+    applyBarrier, resolveCollisions,
     applyTyreWear
 };

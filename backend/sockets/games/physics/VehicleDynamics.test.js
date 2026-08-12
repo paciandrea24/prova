@@ -19,8 +19,8 @@ test('VehicleDynamics: updateVelocity/integratePosition/applyOffTrackDrag sono l
     assert.equal(VehicleDynamics.applyOffTrackDrag, VehiclePhysics.applyOffTrackDrag);
 });
 
-test('VehicleDynamics: applyBridgeBarrier/resolveCollisions/COLLISION_SUBSTEPS sono lo STESSO riferimento esportato da CollisionResolver', () => {
-    assert.equal(VehicleDynamics.applyBridgeBarrier, CollisionResolver.applyBridgeBarrier);
+test('VehicleDynamics: applyBarrier/resolveCollisions/COLLISION_SUBSTEPS sono lo STESSO riferimento esportato da CollisionResolver', () => {
+    assert.equal(VehicleDynamics.applyBarrier, CollisionResolver.applyBarrier);
     assert.equal(VehicleDynamics.resolveCollisions, CollisionResolver.resolveCollisions);
     assert.equal(VehicleDynamics.COLLISION_SUBSTEPS, CollisionResolver.COLLISION_SUBSTEPS);
 });
