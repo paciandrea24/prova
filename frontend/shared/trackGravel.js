@@ -298,13 +298,6 @@
     // ritoccando 16 campioni su 1000 nel caso peggiore.
     const BARRIER_SMOOTH_REACH = 10;
 
-    // Quanto deve ancora avanzare il nastro della barriera fra due campioni,
-    // in frazione dell'avanzamento della pista. Sotto zero il nastro si
-    // ripiega (cuspide), a zero i quad sono degeneri: si pretende una
-    // frazione vera. 0.35 è il valore più basso che azzera i ripiegamenti su
-    // tutti e quattro i tracciati senza stringere il muro dove non serve.
-    const BARRIER_MIN_ADVANCE = 0.35;
-
     // Distanza della barriera dall'ASSE pista, campione per campione e lato
     // per lato. Valore assoluto e non un incremento, perché lo consumano tre
     // sistemi diversi (disegno, muro fisico, traslazione della scenografia) e
@@ -500,62 +493,9 @@
             }
             return out;
         };
-
-        // Quarta passata e tre quarti: niente cuspidi sul lato interno.
-        //
-        // La barriera è la pista spostata di `d` lungo la normale. Sul lato
-        // INTERNO di una curva quello spostamento accorcia il percorso, e
-        // oltre il raggio di curvatura lo fa diventare negativo: il nastro
-        // indietreggia invece di avanzare, si ripiega e forma prima una
-        // cuspide e poi un cappio. È lo stesso motivo per cui non esiste una
-        // circonferenza concentrica di raggio negativo — geometria, non
-        // taratura: nessun livellamento del profilo può toglierla.
-        //
-        // Misurato in gioco dall'utente il 2026-08-12 ("questa specie di
-        // cuspide con le barriere") e ritrovato ai campioni esatti che aveva
-        // marcato: su prova 133-134 a destra, 336-337 / 646-647 / 763-765 a
-        // sinistra. new-monza e baku ne avevano una trentina ciascuno.
-        //
-        // Il tetto si ricava dalla STESSA formula con cui la mesh piazza i
-        // vertici (trackMeshBuilder.js::buildBarriers): l'avanzamento del
-        // punto di barriera è lineare in d, quindi la distanza massima che
-        // lascia il nastro in avanti si risolve in forma chiusa, senza
-        // passare dal raggio di curvatura e dal suo segno — una convenzione
-        // in meno da sbagliare.
-        // ⚠️ Il tetto va messo sul campione di ARRIVO del segmento, non su
-        // quello di partenza: la normale di partenza è per costruzione
-        // perpendicolare alla tangente del suo stesso campione, quindi la sua
-        // distanza non entra nell'avanzamento. Sbagliato al primo tentativo:
-        // su prova sembrava funzionare lo stesso (campioni vicini hanno
-        // distanze simili), ma su baku restavano 31 ripiegamenti.
-        for (let i = 0; i < n; i++) {
-            const prev = (i - 1 + n) % n;
-            if (trackPts[i].bridge || trackPts[prev].bridge) continue;
-            const t = TrackGeometry.tangentAt(trackPts, prev, true);
-            const nQui = TrackGeometry.normalAt(trackPts, i, true);
-            // Avanzamento del nastro fra prev e i, in funzione della distanza
-            // del muro QUI: A + C*d.
-            const A = (trackPts[i].x - trackPts[prev].x) * t.tx + (trackPts[i].z - trackPts[prev].z) * t.tz;
-            for (const side of [-1, 1]) {
-                const C = side * (nQui.nx * t.tx + nQui.nz * t.tz);
-                if (C >= 0) continue;             // lato esterno: si allunga, nessun rischio
-                const banda = side > 0 ? base.right : base.left;
-                // Non basta A + C*d > 0: a filo di zero il nastro avanza di
-                // nulla e i quad restano degeneri. Se ne pretende una
-                // frazione, che è anche il margine per il campionamento.
-                const tetto = Math.max(storica, A * (1 - BARRIER_MIN_ADVANCE) / (-C));
-                if (banda[i] > tetto) banda[i] = tetto;
-            }
+        for (const lato of ['left', 'right']) {
+            base[lato] = mobile(mobile(base[lato], Math.min), Math.max);
         }
-
-        // L'apertura va DOPO il tetto anti-cuspide, non prima: il tetto
-        // abbassa singoli campioni e lascia vallette strette, che rendono
-        // sporgenti i campioni accanto (misurato su new-monza: 5.95 al
-        // campione 172, con l'ordine invertito). L'apertura non alza mai
-        // nulla sopra il proprio ingresso, quindi applicarla per ultima
-        // liscia le vallette E lascia intatto il tetto.
-        // L'apertura è applicata in fondo alla passata successiva, non qui:
-        // vedi il commento nel livellamento.
 
         // Quinta passata: livellamento anti-gradino. Il giro è chiuso, quindi
         // due giri per verso servono a propagare il vincolo anche oltre il
@@ -567,22 +507,7 @@
                 for (let i = 0; i < n; i++) b[i] = Math.min(b[i], b[(i - 1 + n) % n] + passoMax);
                 for (let i = n - 1; i >= 0; i--) b[i] = Math.min(b[i], b[(i + 1) % n] + passoMax);
             }
-            // L'apertura va PER ULTIMA, dopo il livellamento.
-            //
-            // "Il livellamento abbassa soltanto, quindi non può creare
-            // sporgenze" è falso, e mi ha portato fuori strada: abbassando i
-            // FIANCHI di un plateau largo, la cresta che resta è una
-            // sporgenza nuova. Misurato su new-monza il 2026-08-12: prima del
-            // livellamento i campioni 171-175 erano un plateau largo e
-            // legittimo a 36.8, dopo restavano tre campioni isolati.
-            //
-            // Metterla qui è sicuro su tutti e tre i vincoli già stabiliti:
-            // l'apertura non alza mai nulla sopra il proprio ingresso (quindi
-            // regge il tetto anti-cuspide e non riporta il muro oltre il
-            // territorio), minimo e massimo mobili non peggiorano la pendenza
-            // (quindi il livellamento resta valido), e il minimo di valori
-            // tutti >= storica resta >= storica.
-            out[lato].set(mobile(mobile(b, Math.min), Math.max));
+            out[lato].set(b);
         }
 
         // Sesta passata: la ghiaia si rifila sul muro. Il livellamento può
