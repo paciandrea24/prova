@@ -17,6 +17,9 @@ graphify-out/
 # Telemetria generata da f1LapSimulator (output, non sorgente)
 backend/tools/*-telemetry.json
 
+# Segnalazioni raccolte in gioco col tasto M (materiale di lavoro, non sorgente)
+backend/tools/f1-segnalazioni.json
+
 # Output della pipeline scultura-per-silhouette del modello auto F1
 # (rigenerabile con f1CarVoxelize.py + f1CarBuilder.py, vedi
 # docs/superpowers/plans/2026-07-24-f1-auto-custom-cockpit.md)
