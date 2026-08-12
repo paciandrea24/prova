@@ -43,6 +43,10 @@ if (process.env.NODE_ENV !== 'production') {
             res.status(500).json({ error: e.message });
         }
     });
+
+    // Segnalazioni in gioco (tasto M): stesso spirito di /dev/minimap, un
+    // canale di sviluppo che scrive un file di lavoro. Mai in produzione.
+    require('./dev/segnalazioniRoutes').registra(app);
 }
 
 // PRIMA dei parser globali: una livrea reale (~550 KB) sfonda il limite
