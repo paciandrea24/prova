@@ -50,3 +50,75 @@ test('la destra è la destra del pilota, non quella della mappa', () => {
     assert.equal(tool.direzioneRelativa(0, 90), 'a destra');
     assert.equal(tool.direzioneRelativa(0, 270), 'a sinistra');
 });
+
+test('i vicini escono in ordine di distanza, col loro verso', () => {
+    const layout = [
+        { asset: 'albero', category: 'nature', x: 100, z: 0 },
+        { asset: 'tribuna', category: 'grandstand', x: 10, z: 0 },
+        { asset: 'roccia', category: 'nature', x: 0, z: -30 }
+    ];
+    // Auto nell'origine, muso verso +Z (0 gradi).
+    const rec = { pos: { x: 0, y: 0, z: 0 }, headingDeg: 0 };
+    const v = tool.vicini(layout, rec, 2);
+    assert.equal(v.length, 2);
+    assert.deepEqual(v.map(o => o.asset), ['tribuna', 'roccia']);
+    assert.equal(v[0].distanza, 10);
+    assert.equal(v[0].direzione, 'a destra');    // +X con muso a 0 è la destra del pilota
+    assert.equal(v[1].direzione, 'dietro');      // -Z con muso a 0
+});
+
+test('chiedere più vicini di quanti ce ne sono non rompe niente', () => {
+    const layout = [{ asset: 'albero', category: 'nature', x: 5, z: 0 }];
+    const v = tool.vicini(layout, { pos: { x: 0, y: 0, z: 0 }, headingDeg: 0 }, 5);
+    assert.equal(v.length, 1);
+});
+
+// ── L'invariante che tiene in piedi tutto il tool ──────────────────────
+//
+// Il tool ricostruisce la scenografia partendo da trackLoader; il gioco la
+// genera con una catena sua (frontend/f1.js:155-247, 655). Se le due
+// divergono, il tool stampa nomi di oggetti che il giocatore non aveva
+// davanti — un errore silenzioso, peggiore del non avere il tool. Questo
+// test replica la catena del client e pretende che i due layout coincidano
+// elemento per elemento.
+const fs = require('fs');
+const path = require('path');
+const TrackGeometry = require('../../frontend/shared/trackGeometry.js');
+const TrackGravel = require('../../frontend/shared/trackGravel.js');
+const TrackScenery = require('../../frontend/shared/trackScenery.js');
+const { loadTrack } = require('../sockets/games/trackLoader.js');
+
+function layoutComeIlClient(trackId) {
+    const radice = path.join(__dirname, '..', '..');
+    const trackData = JSON.parse(fs.readFileSync(
+        path.join(radice, 'frontend', 'tracks', `${trackId}.json`), 'utf8'));
+    const seatAnchors = JSON.parse(fs.readFileSync(path.join(radice, 'frontend', 'assets',
+        'custom', 'circuit', 'grandStandSeats.json'), 'utf8')).seats;
+    const ROAD_HALF = trackData.roadHalfWidth;
+    const CURB_W = 2.8;                                   // f1.js:156
+    const BARRIER_D = ROAD_HALF + CURB_W + 1.2;           // f1.js:157
+    const trackPts = TrackGeometry.sampleLoop(trackData.controlPoints, 1000);   // f1.js:170-171
+    const PIT_PATH = TrackGeometry.snapPitPathEnds(trackData.pit.path, trackPts, ROAD_HALF);
+    const PIT_PTS = TrackGeometry.tuckPitEndsToTrack(
+        TrackGeometry.sampleOpenPath(PIT_PATH, 300), trackPts);                 // f1.js:228
+    const BARRIER_PROFILE = TrackGravel.barrierProfile(trackPts, {              // f1.js:242
+        roadHalf: ROAD_HALF, curbW: CURB_W,
+        pitLanePts: PIT_PTS, pitRoadHalf: trackData.pit.roadHalfWidth,
+    });
+    return TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D,
+        45, seatAnchors, BARRIER_PROFILE);                                      // f1.js:655
+}
+
+for (const trackId of ['prova', 'monte-rosso', 'new-monza', 'baku']) {
+    test(`la scenografia ricostruita dal tool è quella del gioco (${trackId})`, () => {
+        const daTool = tool.layoutDi(trackId, loadTrack(trackId));
+        const daClient = layoutComeIlClient(trackId);
+        assert.equal(daTool.length, daClient.length);
+        for (let i = 0; i < daTool.length; i++) {
+            assert.equal(daTool[i].asset, daClient[i].asset);
+            assert.equal(daTool[i].category, daClient[i].category);
+            assert.equal(daTool[i].x, daClient[i].x);
+            assert.equal(daTool[i].z, daClient[i].z);
+        }
+    });
+}

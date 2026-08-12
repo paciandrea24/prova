@@ -6,8 +6,11 @@
 // misurare a tappeto tutto il circuito.
 //
 // Uso:  node backend/tools/f1-segnalazioni.js
+const fs = require('fs');
+const path = require('path');
 const store = require('../dev/segnalazioniStore');
 const TrackGeometry = require('../../frontend/shared/trackGeometry.js');
+const TrackScenery = require('../../frontend/shared/trackScenery.js');
 const { loadTrack } = require('../sockets/games/trackLoader');
 
 // Dove sei rispetto alla pista: campione più vicino, quanto sei avanti nel
@@ -38,18 +41,69 @@ function gradiVerso(da, a) {
     return ((g % 360) + 360) % 360;
 }
 
+// I `quanti` oggetti di scenografia più vicini al punto, con distanza e
+// verso rispetto al muso: serve a distinguere l'oggetto che il giocatore
+// stava guardando da quello che aveva alle spalle.
+function vicini(layout, rec, quanti) {
+    return layout
+        .map(v => ({
+            asset: v.asset,
+            category: v.category,
+            distanza: Math.round(Math.hypot(v.x - rec.pos.x, v.z - rec.pos.z) * 100) / 100,
+            direzione: direzioneRelativa(rec.headingDeg, gradiVerso(rec.pos, v))
+        }))
+        .sort((a, b) => a.distanza - b.distanza)
+        .slice(0, quanti);
+}
+
+// Ricostruisce lo STESSO layout che il gioco ha generato al caricamento.
+// Ogni argomento qui sotto corrisponde a uno di frontend/f1.js:655 — se uno
+// diverge, gli oggetti che stampiamo non sono quelli che il giocatore aveva
+// davanti.
+const CURB_W = 2.8;              // f1.js:156
+const EMBANKMENT_WIDTH = 45;     // f1.js:168
+
+function layoutDi(trackId, track) {
+    // Il .json grezzo della pista, non l'oggetto derivato di loadTrack:
+    // generateLayout vuole controlPoints, pit.path, pit.boxIndex.
+    const raw = JSON.parse(fs.readFileSync(
+        path.join(__dirname, '..', '..', 'frontend', 'tracks', `${trackId}.json`), 'utf8'));
+    // I posti a sedere: il client li prende con una fetch (f1.js:646), qui si
+    // leggono dal file. Se mancano, la scenografia si genera lo stesso senza
+    // spettatori — che per noi non sono oggetti da segnalare.
+    let seatAnchors = null;
+    try {
+        seatAnchors = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'frontend',
+            'assets', 'custom', 'circuit', 'grandStandSeats.json'), 'utf8')).seats;
+    } catch (err) { /* tribune vuote, come fa il client */ }
+
+    const BARRIER_D = raw.roadHalfWidth + CURB_W + 1.2;   // f1.js:157
+    // track.points e track.pitLanePts sono campionati con le stesse costanti
+    // del client (1000 e 300 campioni, vedi trackLoader.js:14-17).
+    return TrackScenery.generateLayout(raw, track.points, track.pitLanePts,
+        BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, track.barrierProfile);
+}
+
 function stampa(file) {
     const records = store.leggi(file);
     if (!records.length) {
         console.log('Nessuna segnalazione. Il file è vuoto o non esiste ancora.');
         return;
     }
-    let ultimoTrack = null, track = null;
+    let ultimoTrack = null, track = null, layout = null;
     for (const rec of records) {
         if (rec.trackId !== ultimoTrack) {
             track = loadTrack(rec.trackId);
+            layout = layoutDi(rec.trackId, track);
             ultimoTrack = rec.trackId;
             console.log(`\n=== ${track.name} (${rec.trackId}) ===`);
+            // Riepilogo per confrontare la ricostruzione col client: se questi
+            // numeri non coincidono con quelli loggati dal gioco, i nomi degli
+            // oggetti stampati sotto NON sono attendibili.
+            const perCategoria = {};
+            for (const v of layout) perCategoria[v.category] = (perCategoria[v.category] || 0) + 1;
+            console.log(`    scenografia ricostruita: ${layout.length} elementi —`,
+                Object.entries(perCategoria).map(([c, n]) => `${c}:${n}`).join(' '));
         }
         const d = descriviPuntoPista(track.points, track.roadHalf, rec);
         const dove = d.dentroPista ? 'in pista' : `fuori pista, ${d.distanzaAsse} dall'asse`;
@@ -57,10 +111,13 @@ function stampa(file) {
         console.log(`\n[${rec.n}] ${dove} — ${d.progressione}% del giro (campione ${d.indice})`);
         console.log(`     posizione  x=${rec.pos.x} y=${rec.pos.y} z=${rec.pos.z}`);
         console.log(`     muso ${rec.headingDeg}°, ${rec.velocita} km/h, ${giro}, camera ${rec.camera}${rec.guardaDietro ? ' (guardava dietro)' : ''}`);
+        for (const v of vicini(layout, rec, 5)) {
+            console.log(`     · ${v.asset} (${v.category}) a ${v.distanza}, ${v.direzione}`);
+        }
     }
     console.log('');
 }
 
 if (require.main === module) stampa(store.FILE_DEFAULT);
 
-module.exports = { descriviPuntoPista, direzioneRelativa, gradiVerso, stampa };
+module.exports = { descriviPuntoPista, direzioneRelativa, gradiVerso, vicini, layoutDi, stampa };

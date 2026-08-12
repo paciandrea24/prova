@@ -590,3 +590,26 @@ Nel tratto del traguardo/box il muro resta stretto su ENTRAMBI i lati e la
 ghiaia non entra: la corsia box corre da una parte sola, ma il tratto va tenuto
 com'è tutto intero (richiesta dell'utente). Lasciando entrare la ghiaia, il
 muro sul lato libero faceva 15 → 45.7 → 15 → 33.8 in 200 unità di pista.
+
+## Segnalazioni in gioco (tasto M) — 2026-08-12
+
+Durante una gara in locale, `M` registra dove sei e dove stai guardando;
+`Shift+M` annulla l'ultima. Il numero che compare a schermo è quello scritto
+nel file, assegnato dal server: client e file non possono divergere.
+
+- Le route stanno in `backend/dev/segnalazioniRoutes.js` e sono attive solo
+  fuori produzione, come `/dev/minimap`. **Il server va riavviato** dopo un
+  aggiornamento del backend, altrimenti rispondono 404.
+- Il file è `backend/tools/f1-segnalazioni.json` (in `.gitignore`).
+- Per rileggerle: `node backend/tools/f1-segnalazioni.js`. Stampa, per ogni
+  punto, la posizione sul giro e i cinque elementi di scenografia più vicini
+  con distanza e verso rispetto al muso ("davanti", "a destra"…).
+
+Il tool rigenera la scenografia con `TrackScenery.generateLayout` partendo da
+`trackLoader`, mentre il gioco la genera con una catena sua
+(`frontend/f1.js:155-247` e `655`). Che le due coincidano **non è ovvio** ed è
+l'unico modo in cui questo tool può sbagliare in silenzio: se divergono,
+stampa nomi di oggetti che il giocatore non aveva davanti. L'invariante è
+protetta da quattro test in `backend/tools/f1-segnalazioni.test.js`, uno per
+tracciato, che replicano la catena del client e pretendono layout identici.
+**Se tocchi quella catena in f1.js, quei test sono la prima cosa da rilanciare.**
