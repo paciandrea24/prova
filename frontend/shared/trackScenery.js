@@ -552,7 +552,16 @@
     // scartare subito la tribuna — un circuito con una corsia box lunga
     // (es. Monte Rosso) altrimenti perderebbe troppe tribune invece di
     // limitarsi a spostarle di qualche metro.
-    function buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankStart, embankOuter, fitsUnderBridge, mainStand) {
+    // Distanza a cui appoggiare una struttura che segue il bordo del circuito:
+    // il muro dove il profilo c'è, la barriera storica dove non c'è (editor,
+    // chiamanti vecchi). È il modo per far nascere le cose già al loro posto
+    // invece di spostarle dopo.
+    function distanzaDalMuro(barrierProfile, barrierDist, margine) {
+        if (!barrierProfile) return barrierDist + margine;
+        return (idx, side) => TrackGravel.barrierAt(barrierProfile, idx, side) + margine;
+    }
+
+    function buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankStart, embankOuter, fitsUnderBridge, mainStand, barrierProfile) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const lapLen = TrackGeometry.lapLength(trackPts);
@@ -604,7 +613,8 @@
             // o un cavalcavia la interrompono.
             const asset = STAND_VARIANTS[Math.floor(rng() * STAND_VARIANTS.length)];
             const modules = buildStandRow(
-                trackPts, idx, side, barrierDist + GRANDSTAND_OFFSET_MARGIN, ROW_MAX_COLS,
+                trackPts, idx, side,
+                distanzaDalMuro(barrierProfile, barrierDist, GRANDSTAND_OFFSET_MARGIN), ROW_MAX_COLS,
                 (m) => {
                     if (trackPts[m.idx].bridge) return false;
                     if (TrackGeometry.nearestPoint(pitPts, m.x, m.z).dist < pitRoadHalf + GRANDSTAND_PIT_MARGIN) return false;
@@ -627,13 +637,11 @@
             // schiera lunga, si legge come un buco (segnalato dall'utente).
             if (modules.length < ROW_MIN_COLS) continue;
 
-            // `group`: i moduli di una schiera sono un edificio solo e devono
-            // muoversi insieme quando la scenografia trasla oltre la via di
-            // fuga (vedi traslaOltreLaGhiaia).
-            const gruppo = 'stand-' + layout.length;
+            // `suMisuraSulMuro`: questi moduli sono già alla distanza giusta
+            // dalla barriera, traslarli di nuovo li porterebbe nel prato.
             for (const m of modules) {
                 const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);
-                const stand = { asset, category: 'grandstand', group: gruppo,
+                const stand = { asset, category: 'grandstand', suMisuraSulMuro: !!barrierProfile,
                                 x: m.x, y, z: m.z, rotY: m.rotY, scale: CUSTOM_MODEL_SCALE };
                 layout.push(stand);
                 accepted.push(stand);
@@ -683,12 +691,24 @@
     // `accept(module)` decide se un modulo può stare lì: la catena si ferma al
     // primo rifiuto in quella direzione, così una schiera non salta un
     // ostacolo lasciando un vuoto in mezzo.
+    // `offset`: distanza dall'asse pista, numero oppure funzione (idx) =>
+    // numero. Con la funzione la fila segue il MURO invece della barriera
+    // storica, e questa è la differenza che conta: una fila generata sulla
+    // barriera storica e poi spostata in blocco finisce dove la pista ha
+    // un'altra direzione e resta girata come stava prima — allineata alle
+    // compagne ma non alla barriera che ha davanti, segnalato in gioco il
+    // 2026-08-12. Generandola già alla distanza giusta, ogni modulo prende la
+    // rotazione del punto in cui sta davvero, e la catena continua a garantire
+    // le distanze fra i moduli.
     function buildStandRow(trackPts, startIdx, side, offset, maxCols, accept) {
+        const distanzaA = typeof offset === 'function' ? offset : () => offset;
+
         function moduleAt(idx) {
             const p = trackPts[idx];
             const { nx, nz } = TrackGeometry.normalAt(trackPts, idx, true);
-            const x = p.x + nx * offset * side;
-            const z = p.z + nz * offset * side;
+            const d = distanzaA(idx);
+            const x = p.x + nx * d * side;
+            const z = p.z + nz * d * side;
             return { x, z, idx, rotY: Math.atan2(p.x - x, p.z - z) };
         }
 
@@ -738,13 +758,14 @@
         return modules;
     }
 
-    function buildMainGrandstandLayout(trackPts, barrierDist, side, embankStart, embankOuter, fitsUnderBridge) {
+    function buildMainGrandstandLayout(trackPts, barrierDist, side, embankStart, embankOuter, fitsUnderBridge, barrierProfile) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const stackHeight = MAIN_STAND_TIER_HEIGHT * MAIN_STAND_TIERS;
 
         const modules = buildStandRow(
-            trackPts, 0, side, barrierDist + MAIN_STAND_OFFSET_MARGIN, MAIN_STAND_COLS,
+            trackPts, 0, side,
+            distanzaDalMuro(barrierProfile, barrierDist, MAIN_STAND_OFFSET_MARGIN), MAIN_STAND_COLS,
             (m) => {
                 // Se lì sopra passa un cavalcavia, la tribuna lo attraversa.
                 const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);
@@ -756,10 +777,7 @@
             for (let tier = 0; tier < MAIN_STAND_TIERS; tier++) {
                 layout.push({
                     asset: MAIN_STAND_ASSET, category: 'grandstand-main',
-                    // Unico gruppo per tutta la fila del traguardo: è
-                    // l'edificio più visibile del circuito, e deve traslare
-                    // rigido come le altre schiere.
-                    group: 'main-stand',
+                    suMisuraSulMuro: !!barrierProfile,
                     x: m.x, y: baseY + tier * MAIN_STAND_TIER_HEIGHT,
                     z: m.z, rotY: m.rotY, scale: CUSTOM_MODEL_SCALE
                 });
@@ -997,31 +1015,14 @@
     function traslaOltreLaGhiaia(layout, trackPts, barrierProfile, groundPts, barrierDist, embankStart, embankOuter) {
         if (!barrierProfile) return layout;
 
-        // Prima i gruppi rigidi, poi tutto il resto voce per voce.
-        const gruppi = new Map();
         for (const voce of layout) {
-            if (!voce.group) continue;
-            if (!gruppi.has(voce.group)) gruppi.set(voce.group, []);
-            gruppi.get(voce.group).push(voce);
-        }
-        for (const membri of gruppi.values()) {
-            let scelto = null;
-            for (const voce of membri) {
-                const s = spostamentoDi(voce, trackPts, barrierProfile, barrierDist);
-                if (s && (!scelto || s.quanto > scelto.quanto)) scelto = s;
-            }
-            if (!scelto) continue;
-            for (const voce of membri) {
-                voce.x += scelto.dx;
-                voce.z += scelto.dz;
-                if (typeof voce.y === 'number') {
-                    voce.y = TrackGeometry.terrainHeightAt(groundPts, voce.x, voce.z, embankStart, embankOuter);
-                }
-            }
-        }
-
-        for (const voce of layout) {
-            if (voce.group) continue;
+            // Le tribune e le reti che le proteggono NON passano di qui: sono
+            // già nate alla distanza del muro (`distanzaDalMuro`), e spostarle
+            // una seconda volta le porterebbe nel prato. È anche il motivo per
+            // cui la fila resta parallela alla barriera: ogni modulo prende la
+            // rotazione del punto in cui sta davvero, invece di conservare
+            // quella del punto da cui è partito.
+            if (voce.suMisuraSulMuro) continue;
             const near = TrackGeometry.nearestPoint(trackPts, voce.x, voce.z);
             const p = trackPts[near.index];
             const { nx, nz } = TrackGeometry.normalAt(trackPts, near.index, true);
@@ -1128,9 +1129,9 @@
 
 
         const paddock   = buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
-        const mainStand = buildMainGrandstandLayout(trackPts, barrierDist, side, embankStart, embankOuter, fitsUnderBridge);
+        const mainStand = buildMainGrandstandLayout(trackPts, barrierDist, side, embankStart, embankOuter, fitsUnderBridge, barrierProfile);
         const accepted  = [...paddock, ...mainStand];
-        const grandstand = buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankStart, embankOuter, fitsUnderBridge, mainStand);
+        const grandstand = buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankStart, embankOuter, fitsUnderBridge, mainStand, barrierProfile);
 
         // Landmark (torre, ponte semafori, podio, passerella): calcolati
         // prima della natura, così lo scatter degli alberi li vede fra gli
@@ -1145,7 +1146,7 @@
         // frenata, commissari, reti, barriere di cemento, decoro paddock).
         const trackside = SceneryTrackside.buildTrackside({
             trackPts, pitPts, barrierDist, pitRoadHalf, embankStart, embankOuter, mainSide: side, rng,
-            playerBoxFootprints, insidePlayerBoxFootprint, fitsUnderBridge,
+            playerBoxFootprints, insidePlayerBoxFootprint, fitsUnderBridge, barrierProfile,
             grandstands: [...mainStand, ...grandstand],
         });
 

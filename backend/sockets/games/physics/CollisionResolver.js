@@ -120,6 +120,23 @@ function applyBarrier(p, track, isRace) {
         return;
     }
 
+    // Il muro ferma la MACCHINA, non il suo centro. Quanto sporge l'auto verso
+    // il muro dipende da come è messa: di muso mezza lunghezza (3.58), di
+    // fianco mezza larghezza (1.74), di sbieco una via di mezzo. È la
+    // proiezione del rettangolo orientato sulla normale del muro — lo stesso
+    // rettangolo che le collisioni fra auto usano da sempre (SAT/OBB qui
+    // sotto), non una misura nuova.
+    //
+    // Senza questa correzione il vincolo era sul solo centro e metà vettura
+    // passava oltre prima di bloccarsi: segnalato in gioco il 2026-08-12
+    // ("mezza macchina ci passa e poi si blocca"). Valeva anche per il muro
+    // dei ponti, dove si notava meno perché quel muro è appena fuori dalla
+    // pista e ci si arriva quasi sempre di striscio.
+    const musoX = Math.sin(p.angle || 0), musoZ = Math.cos(p.angle || 0);
+    const sporgenza = Math.abs(CAR_HALF_LENGTH * (musoX * wallNx + musoZ * wallNz))
+                    + Math.abs(CAR_HALF_WIDTH * (musoZ * wallNx - musoX * wallNz));
+    limit = Math.max(0, limit - sporgenza);
+
     if (dist <= limit) {
         p.wallContact = false;
         return;

@@ -392,10 +392,48 @@ test('applyBarrier: il muro trattiene l\'auto anche fuori dai ponti', () => {
     };
     physics.applyBarrier(p, track, false);
 
+    // Muro a 115, auto di fianco: si ferma la FIANCATA, quindi il centro sta
+    // mezza larghezza più in qua (1.74).
     const distanza = Math.hypot(p.x, p.z);
-    assert.ok(Math.abs(distanza - 115) < 0.5,
-        `l'auto va riportata sul muro (115), sta a ${distanza.toFixed(1)}`);
+    assert.ok(Math.abs(distanza - (115 - 1.74)) < 0.5,
+        `l'auto va appoggiata al muro con la fiancata (113.26), sta a ${distanza.toFixed(1)}`);
     assert.ok(p.vx < 5, 'la spinta verso l\'esterno è stata smorzata');
+});
+
+test('applyBarrier: si ferma la MACCHINA, non il suo centro', () => {
+    // Segnalato in gioco il 2026-08-12: "mezza macchina ci passa e poi si
+    // blocca". Il muro vincolava il centro dell'auto e ignorava il suo
+    // ingombro, mentre le collisioni fra auto usano da sempre il rettangolo
+    // orientato. Con l'auto di muso contro il muro, metà lunghezza — 3.58
+    // unità, più di mezza vettura — finiva oltre.
+    const { physics } = f1GameSocket;
+    const track = makeClosedTrack();          // muro a 115 dal centro pista
+    const p = {
+        // angle = PI/2: il muso punta lungo +x, cioè dritto contro il muro.
+        x: 130, z: 0, angle: Math.PI / 2, speed: 5, vx: 5, vz: 0,
+        trackIndex: 0, wallContact: false, damage: 0, collisionPenaltyMs: 0,
+        pendingCollisionPenaltyEvents: []
+    };
+    physics.applyBarrier(p, track, false);
+
+    const centro = Math.hypot(p.x, p.z);
+    const muso = centro + 3.58;               // CAR_HALF_LENGTH, di muso
+    assert.ok(muso <= 115.1,
+        `il muso sfonda il muro di ${(muso - 115).toFixed(2)} unità (centro a ${centro.toFixed(1)})`);
+
+    // Di fianco l'auto è più stretta e deve poter arrivare più vicina: se si
+    // fermasse sempre alla stessa distanza, resterebbe un vuoto visibile fra
+    // fiancata e muro.
+    const q = {
+        x: 130, z: 0, angle: 0, speed: 5, vx: 5, vz: 0,   // muso lungo +z, fianco al muro
+        trackIndex: 0, wallContact: false, damage: 0, collisionPenaltyMs: 0,
+        pendingCollisionPenaltyEvents: []
+    };
+    physics.applyBarrier(q, track, false);
+    const centroDiFianco = Math.hypot(q.x, q.z);
+    assert.ok(centroDiFianco > centro + 1,
+        `di fianco deve avvicinarsi di più: ${centroDiFianco.toFixed(1)} contro ${centro.toFixed(1)}`);
+    assert.ok(centroDiFianco + 1.74 <= 115.1, 'ma la fiancata non sfonda');
 });
 
 test('applyBarrier: dove il muro è più lontano l\'auto non lo tocca', () => {

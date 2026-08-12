@@ -7,9 +7,12 @@
 // numero di istanze dipende da quante curve ha il tracciato.
 // Modulo puro, nessuna dipendenza da Three.js.
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory(require('./trackGeometry.js'));
-    else root.SceneryTrackside = factory(root.TrackGeometry);
-})(typeof self !== 'undefined' ? self : this, function (TrackGeometry) {
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory(require('./trackGeometry.js'), require('./trackGravel.js'));
+    } else {
+        root.SceneryTrackside = factory(root.TrackGeometry, root.TrackGravel);
+    }
+})(typeof self !== 'undefined' ? self : this, function (TrackGeometry, TrackGravel) {
 
     // findCorners e la sua soglia stanno in trackGeometry.js: le usano due
     // sistemi indipendenti — questa scenografia e il profilo delle vie di
@@ -73,7 +76,7 @@
         // il terrapieno allargato (test, chiamanti storici) continua a
         // funzionare invece di produrre coordinate NaN.
         const { trackPts, pitPts, barrierDist, pitRoadHalf, embankStart = barrierDist, embankOuter, mainSide,
-                playerBoxFootprints, insidePlayerBoxFootprint, grandstands } = ctx;
+                playerBoxFootprints, insidePlayerBoxFootprint, grandstands, barrierProfile } = ctx;
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const n = trackPts.length;
@@ -149,13 +152,32 @@
             // pista->tribuna sulla normale.
             const side = Math.sign((stand.x - trackPts[near.index].x) * nrm.nx +
                                    (stand.z - trackPts[near.index].z) * nrm.nz) || 1;
+            // La rete nasce sul MURO, come la tribuna che protegge, e sul
+            // campione DELLA TRIBUNA: se nascesse sulla barriera storica per
+            // poi essere traslata a valle, le due vedrebbero campioni diversi
+            // e si separerebbero (misurate 3 reti su 99 finite fino a 11.3
+            // unità fuori posto). Prendere il muro sul campione della rete
+            // invece che su quello della tribuna riapre lo stesso problema in
+            // piccolo, dove il muro cambia distanza fra i due.
+            // Il massimo fra il muro sotto la tribuna e quello sotto i due
+            // moduli di rete: uno solo dei tre lascerebbe la rete dentro la
+            // via di fuga dove il muro si allontana fra un campione e l'altro
+            // (misurate reti fino a 4.9 unità oltre la linea del muro).
+            let muro = barrierDist;
+            if (barrierProfile) {
+                for (const s of [-fenceHalfSamples, 0, fenceHalfSamples]) {
+                    const k = ((near.index + s) % n + n) % n;
+                    muro = Math.max(muro, TrackGravel.barrierAt(barrierProfile, k, side));
+                }
+            }
             for (let s = -fenceHalfSamples; s <= fenceHalfSamples; s += fenceHalfSamples * 2) {
                 const idx = ((near.index + s) % n + n) % n;
                 if (onBridge(idx)) continue;
-                const pos = place(trackPts, groundPts, idx, barrierDist + FENCE_MARGIN,
+                const pos = place(trackPts, groundPts, idx, muro + FENCE_MARGIN,
                                   side, barrierDist, embankStart, embankOuter);
                 if (!usable('catchFence', pos.x, pos.z, pos.y, pitRoadHalf + 5)) continue;
-                layout.push(Object.assign({ asset: 'catchFence', category: 'safety', scale: 1 }, pos));
+                layout.push(Object.assign(
+                    { asset: 'catchFence', category: 'safety', scale: 1, suMisuraSulMuro: !!barrierProfile }, pos));
             }
         }
 
