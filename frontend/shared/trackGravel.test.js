@@ -281,6 +281,49 @@ test('barrierProfile: nessun gradino nel muro, la pendenza resta entro MAX_SLOPE
     }
 });
 
+test('barrierProfile: la barriera non finisce sul territorio di un altro tratto', () => {
+    // Ovale stretto: due rettilinei a 60 unità l'uno dall'altro, uniti da
+    // semicerchi di raggio 30. Lo spazio è conteso — dalla mezzeria in poi il
+    // terreno appartiene al tratto di fronte, che lo disegna alla PROPRIA
+    // quota. Una barriera piazzata di là si ritrova appoggiata su un terreno
+    // che non è il suo: ci affonda dentro o ci fluttua sopra, come segnalato
+    // in gioco dall'utente il 2026-08-12.
+    const pts = [];
+    const push = (x, z) => pts.push({ x, z, y: 0, bridge: false });
+    for (let k = 0; k < 100; k++) push(-200 + k * 4, -30);
+    for (let k = 0; k < 24; k++) { const a = -Math.PI / 2 + k / 24 * Math.PI; push(200 + Math.cos(a) * 30, Math.sin(a) * 30); }
+    for (let k = 0; k < 100; k++) push(200 - k * 4, 30);
+    for (let k = 0; k < 24; k++) { const a = Math.PI / 2 + k / 24 * Math.PI; push(-200 + Math.cos(a) * 30, Math.sin(a) * 30); }
+
+    const prof = TrackGravel.barrierProfile(pts, { roadHalf: ROAD_HALF });
+    const n = pts.length;
+    const cum = [0];
+    for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
+    const giro = cum[n - 1] + Math.hypot(pts[0].x - pts[n - 1].x, pts[0].z - pts[n - 1].z);
+
+    let peggiore = 0, dove = null;
+    for (let i = 0; i < n; i++) {
+        const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
+        for (const side of [-1, 1]) {
+            const d = TrackGravel.barrierAt(prof, i, side);
+            const bx = pts[i].x + nx * d * side, bz = pts[i].z + nz * d * side;
+            // Il punto più vicino fra i campioni di un ALTRO tratto: se è più
+            // vicino di quanto lo sia il campione che genera la barriera, la
+            // barriera sta di là.
+            for (let j = 0; j < n; j++) {
+                let ds = Math.abs(cum[j] - cum[i]);
+                if (giro - ds < ds) ds = giro - ds;
+                if (ds < TrackGeometry.NEIGHBOUR_KIN_SPAN) continue;
+                const sconfino = d - Math.hypot(pts[j].x - bx, pts[j].z - bz);
+                if (sconfino > peggiore) { peggiore = sconfino; dove = { i, side, d }; }
+            }
+        }
+    }
+    assert.ok(peggiore < 0.5,
+        `la barriera sconfina di ${peggiore.toFixed(2)} unità nel territorio del tratto vicino` +
+        (dove ? ` (campione ${dove.i}, barriera a ${dove.d.toFixed(1)} dall'asse)` : ''));
+});
+
 test('barrierDistAt somma la ghiaia alla distanza base', () => {
     const pts = ovale();
     const prof = TrackGravel.gravelProfile(pts, { roadHalf: 11 });

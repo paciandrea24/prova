@@ -876,10 +876,159 @@
             });
     }
 
+    // Quanto percorso lungo il tracciato separa un punto dai suoi "parenti":
+    // entro questa distanza i campioni appartengono al proprio tratto, oltre
+    // sono un altro pezzo di circuito anche se in linea d'aria sono lì
+    // accanto. È in UNITÀ DI PISTA e non in campioni, che valgono 1.18 unità
+    // su monte-rosso e 5.17 su prova.
+    const NEIGHBOUR_KIN_SPAN = 40;
+    // Quanto due campioni possono differire in distanza dal punto di confine
+    // ed essere considerati entrambi "quelli che stanno di là".
+    const NEIGHBOUR_TIE_MARGIN = 8;
+
+    // Fin dove si estende il territorio di ogni campione, per lato, prima di
+    // finire su un pezzo di circuito che appartiene a un altro tratto — e a
+    // che quota riprende il terreno appena oltre quel confine.
+    //
+    // Serve a tutto ciò che si allontana lateralmente dalla pista e non può
+    // permettersi di scavalcare il tracciato vicino: il terrapieno (che
+    // altrimenti copre cordolo e barriere dell'altro tratto) e la barriera
+    // arretrata (che altrimenti si ritrova appoggiata sul terreno del vicino,
+    // a un'altra quota, e ci affonda o ci fluttua sopra).
+    //
+    // Il confine cade sulla mezzeria fra i due tratti — ognuno tiene la metà
+    // che gli è più vicina, come fa terrainHeightAt quando cerca il punto di
+    // pista più vicino. Sulla semiretta P + N·r il punto equidistante da P e
+    // da un punto estraneo Q si ricava in forma chiusa da |P + N·r − Q|² = r²,
+    // cioè r = |PQ|² / (2 N·PQ): un prodotto scalare per candidato, niente
+    // marcia a passi lungo la normale.
+    //
+    // `minDist` è il valore sotto cui il confine non scende mai (per il
+    // terrapieno il bordo del cordolo, per la barriera la sua posizione
+    // storica), `maxDist` quanto lontano ha senso guardare.
+    function neighbourLimits(trackPts, minDist, maxDist) {
+        const n = trackPts.length;
+        const pos = new Float64Array(n).fill(maxDist);
+        const neg = new Float64Array(n).fill(maxDist);
+        const yPos = new Float64Array(n);
+        const yNeg = new Float64Array(n);
+        // Candidati di ogni campione, tenuti da parte: le quote di confine si
+        // calcolano dopo il livellamento, sul confine definitivo.
+        const viciniDi = new Array(n);
+        if (n < 2) return { pos, neg, yPos, yNeg };
+
+        const cum = new Float64Array(n);
+        for (let i = 1; i < n; i++) {
+            cum[i] = cum[i - 1] + Math.hypot(trackPts[i].x - trackPts[i - 1].x, trackPts[i].z - trackPts[i - 1].z);
+        }
+        const giro = cum[n - 1] + Math.hypot(trackPts[0].x - trackPts[n - 1].x, trackPts[0].z - trackPts[n - 1].z);
+
+        // Griglia spaziale dei soli punti a terra: i tratti a ponte passano
+        // SOPRA il terreno e non rivendicano niente — è proprio sotto un
+        // cavalcavia che il prato deve continuare indisturbato.
+        const cella = Math.max(1, maxDist);
+        const chiave = (cx, cz) => cx + ',' + cz;
+        const griglia = new Map();
+        for (let i = 0; i < n; i++) {
+            if (trackPts[i].bridge) continue;
+            const k = chiave(Math.floor(trackPts[i].x / cella), Math.floor(trackPts[i].z / cella));
+            const lista = griglia.get(k);
+            if (lista) lista.push(i); else griglia.set(k, [i]);
+        }
+
+        // Oltre il doppio della portata la mezzeria cade comunque più in là
+        // del limite (r ≥ |PQ|/2): quei punti non possono restringere niente.
+        const portata = 2 * maxDist;
+        const raggioCelle = Math.ceil(portata / cella);
+
+        for (let i = 0; i < n; i++) {
+            const p = trackPts[i];
+            const { nx, nz } = normalAt(trackPts, i, true);
+            const cx = Math.floor(p.x / cella), cz = Math.floor(p.z / cella);
+            let limPos = maxDist, limNeg = maxDist;
+            const vicini = [];
+
+            for (let gx = cx - raggioCelle; gx <= cx + raggioCelle; gx++) {
+                for (let gz = cz - raggioCelle; gz <= cz + raggioCelle; gz++) {
+                    const lista = griglia.get(chiave(gx, gz));
+                    if (!lista) continue;
+                    for (const j of lista) {
+                        let ds = Math.abs(cum[j] - cum[i]);
+                        if (giro - ds < ds) ds = giro - ds;
+                        if (ds < NEIGHBOUR_KIN_SPAN) continue;
+
+                        const dx = trackPts[j].x - p.x, dz = trackPts[j].z - p.z;
+                        const d2 = dx * dx + dz * dz;
+                        if (d2 > portata * portata) continue;
+
+                        vicini.push(j);
+                        const proj = dx * nx + dz * nz;
+                        if (proj > 1e-9) {
+                            const r = d2 / (2 * proj);
+                            if (r < limPos) limPos = r;
+                        } else if (proj < -1e-9) {
+                            const r = d2 / (-2 * proj);
+                            if (r < limNeg) limNeg = r;
+                        }
+                    }
+                }
+            }
+
+            pos[i] = Math.max(minDist, limPos);
+            neg[i] = Math.max(minDist, limNeg);
+            viciniDi[i] = vicini;
+        }
+
+        // ⚠️ Il confine NON va livellato lungo la pista. Provato il
+        // 2026-08-12 con pendenza massima 1: livellare accorcia, e accorciare
+        // dove il vicino non arriva lascia terreno che non disegna nessuno —
+        // misurati 4 campioni scoperti su prova e 59 su new-monza, mentre il
+        // difetto che doveva risolvere (la barriera coperta dal terrapieno di
+        // fronte) restava identico. Il bordo resta a scalini, e va bene: i
+        // salti cadono dove due tratti si contendono lo spazio, cioè dove a
+        // coprire è comunque uno dei due.
+        for (let i = 0; i < n; i++) {
+            const p = trackPts[i];
+            const { nx, nz } = normalAt(trackPts, i, true);
+            const vicini = viciniDi[i];
+
+            // A che quota riprende il terreno appena oltre il confine: la
+            // quota PIÙ BASSA fra i campioni che se lo contendono, non quella
+            // del campione che ha imposto il limite.
+            //
+            // Il caso che obbliga a fare così è il centro di un tornante: lì
+            // convergono decine di campioni della stessa curva, tutti alla
+            // stessa distanza esatta dal confine, e se la curva sale hanno
+            // quote diverse fra loro. "Il più vicino" è allora una scelta a
+            // caso fra pari merito, e sceglierne uno alto lascia scoperto il
+            // dislivello verso quelli bassi.
+            for (const [lato, lim] of [[1, pos[i]], [-1, neg[i]]]) {
+                const bx = p.x + nx * lim * lato, bz = p.z + nz * lim * lato;
+                let piuVicino = Infinity;
+                for (const j of vicini) {
+                    const d = (trackPts[j].x - bx) ** 2 + (trackPts[j].z - bz) ** 2;
+                    if (d < piuVicino) piuVicino = d;
+                }
+                const soglia = (Math.sqrt(piuVicino) + NEIGHBOUR_TIE_MARGIN) ** 2;
+                let quota = Infinity;
+                for (const j of vicini) {
+                    const d = (trackPts[j].x - bx) ** 2 + (trackPts[j].z - bz) ** 2;
+                    if (d <= soglia) quota = Math.min(quota, trackPts[j].y || 0);
+                }
+                if (!isFinite(quota)) quota = 0;
+                if (lato > 0) yPos[i] = quota; else yNeg[i] = quota;
+            }
+        }
+
+        return { pos, neg, yPos, yNeg };
+    }
+
     return {
         isInsideLoop,
         findCorners,
         CORNER_RADIUS_MAX,
+        neighbourLimits,
+        NEIGHBOUR_KIN_SPAN,
         sampleLoop,
         sampleOpenPath,
         lapLength,

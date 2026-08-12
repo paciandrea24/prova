@@ -284,6 +284,11 @@
     // Una regola sola, che si adatta da sé a un tracciato nuovo disegnato in
     // editor: nessuna finestra in unità attorno all'indice 0 da ritarare.
     const PIT_STRAIGHT_REACH = 80;
+    // Di quanto la barriera resta dentro il confine col tratto vicino invece
+    // di appoggiarcisi sopra. Sul confine esatto il terreno è ambiguo — è il
+    // punto in cui le due mesh si incontrano — e mezza lunghezza d'auto di
+    // margine costa niente in una zona dove lo spazio è comunque conteso.
+    const BARRIER_NEIGHBOUR_MARGIN = 2;
 
     // Distanza della barriera dall'ASSE pista, campione per campione e lato
     // per lato. Valore assoluto e non un incremento, perché lo consumano tre
@@ -360,7 +365,41 @@
             if (gravel.right[i] > 0) base.right[i] = Math.max(base.right[i], bordoCordolo + gravel.right[i]);
         }
 
-        // Quarta passata: livellamento anti-gradino. Il giro è chiuso, quindi
+        // Quarta passata: lo spazio conteso con un altro tratto di pista.
+        //
+        // Dove il tracciato si ripiega su se stesso, dalla mezzeria in poi il
+        // terreno appartiene al tratto di fronte, che lo disegna alla PROPRIA
+        // quota. Una barriera piazzata di là si ritrova appoggiata su un
+        // terreno che non è il suo: se il vicino è più alto ci affonda dentro,
+        // se è più basso ci fluttua sopra. Segnalato in gioco dall'utente il
+        // 2026-08-12 su prova, dove un ramo a terra corre accanto a uno
+        // sopraelevato di 7.3 unità — misurati 23 campioni di barriera sepolta
+        // fino a 3.42 unità.
+        //
+        // Stessa funzione con cui il terrapieno decide dove fermarsi
+        // (TrackGeometry.neighbourLimits): se le due divergessero, il muro
+        // finirebbe di nuovo su un terreno che non è il suo.
+        //
+        // ⚠️ I ponti restano fuori: lì la barriera è a bordo strada e sotto
+        // non c'è terreno da contendere, c'è l'impalcato.
+        let piuLontana = storica;
+        for (let i = 0; i < n; i++) {
+            piuLontana = Math.max(piuLontana, base.left[i], base.right[i]);
+        }
+        // Il tetto passato a neighbourLimits è anche il valore che restituisce
+        // dove non c'è nessun vicino: va tenuto un margine sopra la barriera
+        // più lontana del giro, altrimenti la sottrazione qui sotto
+        // arretrerebbe di due unità l'intero tracciato invece dei soli punti
+        // contesi.
+        const territorio = TrackGeometry.neighbourLimits(trackPts, storica,
+            piuLontana + BARRIER_NEIGHBOUR_MARGIN);
+        for (let i = 0; i < n; i++) {
+            if (trackPts[i].bridge) continue;
+            base.right[i] = Math.max(storica, Math.min(base.right[i], territorio.pos[i] - BARRIER_NEIGHBOUR_MARGIN));
+            base.left[i] = Math.max(storica, Math.min(base.left[i], territorio.neg[i] - BARRIER_NEIGHBOUR_MARGIN));
+        }
+
+        // Quinta passata: livellamento anti-gradino. Il giro è chiuso, quindi
         // due giri per verso servono a propagare il vincolo anche oltre il
         // punto di raccordo dell'indice 0.
         const passoMax = MAX_SLOPE * stepLen;
