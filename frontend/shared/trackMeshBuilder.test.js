@@ -122,6 +122,102 @@ test('buildGravel: con profilo tutto a zero non produce nulla', () => {
     assert.equal(c.children.length, 0, 'nessuna mesh dove non c\'è ghiaia');
 });
 
+test('su prova la barriera non finisce sepolta nel terrapieno', () => {
+    // Caso vero, non sintetico: il difetto vive dove la curvatura CAMBIA
+    // mentre la pista sale, e un cerchio perfetto non lo riproduce (le sue
+    // fette di terrapieno sono radiali e non si accavallano mai). Su prova, in
+    // salita verso il ponte, i settori di campioni vicini si sovrappongono e
+    // quello più avanti — più alto — passa sopra la barriera di quello più
+    // indietro, che sparisce sotto terra. Segnalato in gioco il 2026-08-12.
+    const TrackGravel = require('./trackGravel.js');
+    const prova = require('../tracks/prova.json');
+
+    const roadHalf = prova.roadHalfWidth, curbW = 2.8;
+    const barrierD = roadHalf + curbW + 1.2, inner = roadHalf + curbW;
+    const pts = TrackGeometry.sampleLoop(prova.controlPoints, 1000);
+    const pitPts = TrackGeometry.tuckPitEndsToTrack(
+        TrackGeometry.sampleOpenPath(TrackGeometry.snapPitPathEnds(prova.pit.path, pts, roadHalf), 300), pts);
+    const profilo = TrackGravel.barrierProfile(pts, {
+        roadHalf, curbW, pitLanePts: pitPts, pitRoadHalf: prova.pit.roadHalfWidth,
+    });
+    const plateau = require('./trackScenery.js').embankmentStart(profilo, barrierD);
+    const outer = plateau + 45;
+
+    const terreno = contenitore();
+    TrackMeshBuilder.buildEmbankment(terreno, pts, inner, plateau, outer);
+    const muro = contenitore();
+    TrackMeshBuilder.buildBarriers(muro, pts,
+        (i, side) => TrackGravel.barrierAt(profilo, i, side), null,
+        (i, bx, bz) => TrackGeometry.terrainTopAt(pts, i, bx, bz, plateau));
+
+    // Triangoli del terreno in una griglia spaziale: senza, sono 12000 facce
+    // per 2000 punti e il test diventa impraticabile.
+    const CELLA = 40, griglia = new Map();
+    const facce = [];
+    for (const mesh of terreno.children) {
+        const pos = mesh.geometry.attributes.position.array;
+        for (let f = 0; f < mesh.geometry.index.length; f += 3) {
+            const id = [mesh.geometry.index[f], mesh.geometry.index[f + 1], mesh.geometry.index[f + 2]];
+            const V = id.map(k => ({ x: pos[k * 3], y: pos[k * 3 + 1], z: pos[k * 3 + 2] }));
+            const indice = facce.push(V) - 1;
+            const x0 = Math.floor(Math.min(V[0].x, V[1].x, V[2].x) / CELLA), x1 = Math.floor(Math.max(V[0].x, V[1].x, V[2].x) / CELLA);
+            const z0 = Math.floor(Math.min(V[0].z, V[1].z, V[2].z) / CELLA), z1 = Math.floor(Math.max(V[0].z, V[1].z, V[2].z) / CELLA);
+            for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) {
+                const k = gx + ',' + gz;
+                if (griglia.has(k)) griglia.get(k).push(indice); else griglia.set(k, [indice]);
+            }
+        }
+    }
+    function terrenoSopra(x, z) {
+        const lista = griglia.get(Math.floor(x / CELLA) + ',' + Math.floor(z / CELLA));
+        if (!lista) return null;
+        let alta = null;
+        for (const f of lista) {
+            const [A, B, C] = facce[f];
+            const den = (B.z - C.z) * (A.x - C.x) + (C.x - B.x) * (A.z - C.z);
+            if (Math.abs(den) < 1e-9) continue;
+            const l1 = ((B.z - C.z) * (x - C.x) + (C.x - B.x) * (z - C.z)) / den;
+            const l2 = ((C.z - A.z) * (x - C.x) + (A.x - C.x) * (z - C.z)) / den;
+            const l3 = 1 - l1 - l2;
+            if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
+            const y = l1 * A.y + l2 * B.y + l3 * C.y;
+            if (alta === null || y > alta) alta = y;
+        }
+        return alta;
+    }
+
+    // Cime della barriera indicizzate per posizione, così il confronto è fra
+    // due geometrie emesse e non fra una geometria e una formula.
+    const cime = new Map();
+    for (const mesh of muro.children) {
+        const pos = mesh.geometry.attributes.position.array;
+        for (let v = 0; v < pos.length; v += 3) {
+            const k = pos[v].toFixed(1) + ',' + pos[v + 2].toFixed(1);
+            if (!cime.has(k) || pos[v + 1] > cime.get(k)) cime.set(k, pos[v + 1]);
+        }
+    }
+
+    // La cima deve sporgere dal terreno per almeno metà della sua altezza
+    // (1.1): sotto quella soglia, in gioco si vede una barriera che sprofonda.
+    let peggiore = 0, dove = null;
+    for (let i = 0; i < pts.length; i++) {
+        if (pts[i].bridge) continue;
+        const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
+        for (const side of [-1, 1]) {
+            const d = TrackGravel.barrierAt(profilo, i, side);
+            const bx = pts[i].x + nx * d * side, bz = pts[i].z + nz * d * side;
+            const suolo = terrenoSopra(bx, bz);
+            const cima = cime.get(bx.toFixed(1) + ',' + bz.toFixed(1));
+            if (suolo === null || cima === undefined) continue;
+            const mancante = 0.55 - (cima - suolo);
+            if (mancante > peggiore) { peggiore = mancante; dove = { i, side, cima, suolo }; }
+        }
+    }
+    assert.ok(peggiore <= 0,
+        `la barriera sporge meno di mezza altezza dal terreno (manca ${peggiore.toFixed(2)})` +
+        (dove ? `: campione ${dove.i} lato ${dove.side > 0 ? '+' : '-'}, cima ${dove.cima.toFixed(2)}, terreno ${dove.suolo.toFixed(2)}` : ''));
+});
+
 // --- Terrapieno -------------------------------------------------------------
 //
 // Le tre distanze sono quelle vere di "prova": attacco al bordo del cordolo,

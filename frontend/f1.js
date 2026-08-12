@@ -308,9 +308,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // La barriera sta dove dice il profilo: arretrata della via di fuga
     // minima quasi ovunque, di più dove c'è la ghiaia, ferma dov'era nel
     // tratto del traguardo e dei box, a bordo strada sui ponti.
+    // Il piede va posato sul TERRENO, non sulla quota della pista: in curva
+    // mentre si sale i settori del terrapieno si accavallano e quello più
+    // avanti, più alto, seppellirebbe la barriera di quello più indietro
+    // (segnalato in gioco il 2026-08-12, in salita verso il ponte).
     TrackMeshBuilder.buildBarriers(scene, trackPts,
         (i, side) => TrackGravel.barrierAt(BARRIER_PROFILE, i, side),
-        PIT_MERGE_SAMPLES);
+        PIT_MERGE_SAMPLES,
+        (i, bx, bz) => TrackGeometry.terrainTopAt(trackPts, i, bx, bz, EMBANK_PLATEAU));
     TrackMeshBuilder.buildStartLine(scene, trackPts, ROAD_HALF);
     // drawBoxMarker=false: il riquadro giallo unico su boxIndex era il solo
     // indicatore visivo quando il box era un punto condiviso da tutti; ora

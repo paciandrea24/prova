@@ -1023,11 +1023,67 @@
         return { pos, neg, yPos, yNeg };
     }
 
+    // Quota più alta a cui il terrapieno arriva sopra un punto vicino al
+    // campione `i`, contando che i settori di campioni vicini si accavallano.
+    //
+    // Non è terrainHeightAt con un altro nome: quella risponde "che quota
+    // AVREBBE il terreno qui" prendendo il campione più vicino, ed è la
+    // superficie ideale; questa risponde "fin dove arriva il terreno
+    // DISEGNATO", che dove due settori si sovrappongono è il più alto dei due.
+    // Le due divergono in curva mentre la pista sale: lì il settore di un
+    // campione più avanti, e più alto, passa sopra quello di uno più indietro.
+    // Serve a posare la barriera sul terreno invece che sulla quota della
+    // pista, se no in quei punti sparisce sotto terra.
+    //
+    // Si guardano solo i campioni "parenti": quelli di un altro tratto non
+    // arrivano fin qui, perché neighbourLimits li ferma prima.
+    // Un campione copre il punto solo col SUO settore, cioè la fascia fra la
+    // sua normale e quella del campione successivo: il punto ci sta dentro
+    // quando è davanti all'uno e dietro all'altro. Prendere invece tutti i
+    // campioni entro il pianoro è troppo generoso — misurato, alzava la
+    // barriera fino a 3.75 unità sopra il terreno in 179 campioni di prova,
+    // scambiando un muro sepolto con un muro che fluttua.
+    function terrainTopAt(trackPts, i, x, z, plateauEnd) {
+        const n = trackPts.length;
+        const avanzamento = (j) => {
+            const t = tangentAt(trackPts, j, true);
+            return (x - trackPts[j].x) * t.tx + (z - trackPts[j].z) * t.tz;
+        };
+
+        let top = null;
+        for (const verso of [1, -1]) {
+            let percorso = 0;
+            for (let k = 0; k < n; k++) {
+                const j = ((i + verso * k) % n + n) % n;
+                const succ = (j + 1) % n;
+                if (k > 0) {
+                    const prec = ((i + verso * (k - 1)) % n + n) % n;
+                    percorso += Math.hypot(trackPts[j].x - trackPts[prec].x, trackPts[j].z - trackPts[prec].z);
+                    if (percorso > NEIGHBOUR_KIN_SPAN) break;
+                }
+                if (trackPts[j].bridge || trackPts[succ].bridge) continue;
+
+                const a = avanzamento(j), b = avanzamento(succ);
+                if (a < 0 || b > 0) continue;            // il punto non è in questo settore
+                if (Math.hypot(trackPts[j].x - x, trackPts[j].z - z) > plateauEnd) continue;
+
+                // Dove cade il punto dentro il settore, per interpolare le due
+                // quote come fa la mesh, che fra un campione e l'altro tira
+                // dritto.
+                const t = (a - b) > 1e-9 ? a / (a - b) : 0;
+                const y = (trackPts[j].y || 0) * (1 - t) + (trackPts[succ].y || 0) * t;
+                if (top === null || y > top) top = y;
+            }
+        }
+        return top === null ? (trackPts[i].y || 0) : top;
+    }
+
     return {
         isInsideLoop,
         findCorners,
         CORNER_RADIUS_MAX,
         neighbourLimits,
+        terrainTopAt,
         NEIGHBOUR_KIN_SPAN,
         sampleLoop,
         sampleOpenPath,

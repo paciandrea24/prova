@@ -294,7 +294,13 @@
     // che passa l'editor tracciato) oppure funzione (i, side) => distanza, con
     // cui la barriera segue il profilo di ghiaia allargandosi solo all'esterno
     // delle curve. Rif. trackGravel.js.
-    function buildBarriers(container, pts, distFromCenter, mergePoints) {
+    // quotaBase (opzionale): (i, x, z) => quota a cui posare il piede della
+    // barriera. Senza, il piede sta alla quota della PISTA — che è giusto
+    // finché sotto la barriera c'è il terrapieno del suo stesso campione, ma
+    // in curva mentre la pista sale i settori si accavallano e quello più
+    // avanti, più alto, seppellisce la barriera di quello indietro. Rif.
+    // TrackGeometry.terrainTopAt.
+    function buildBarriers(container, pts, distFromCenter, mergePoints, quotaBase) {
         const distAt = typeof distFromCenter === 'function'
             ? distFromCenter
             : () => distFromCenter;
@@ -313,10 +319,10 @@
             for (let i = 0; i < n; i++) {
                 const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
                 const p = pts[i];
-                const baseY = p.y || 0;
                 const dist = distAt(i, side);
                 const bx = p.x + nx * dist * side;
                 const bz = p.z + nz * dist * side;
+                const baseY = quotaBase ? quotaBase(i, bx, bz) : (p.y || 0);
 
                 if (mergePoints) gapped[i] = TrackGeometry.nearestPoint(mergePoints, bx, bz).dist < BARRIER_PIT_GAP_THRESHOLD;
 
