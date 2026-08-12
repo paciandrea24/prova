@@ -199,6 +199,11 @@
     // "un buco" accanto alla fila lunga.
     const ROW_MAX_COLS = 6;
     const ROW_MIN_COLS = 2;
+    // Quanto due moduli della stessa schiera possono avvicinarsi rispetto alla
+    // loro larghezza prima che la schiera si interrompa. 0.9 lascia passare le
+    // distanze vere delle schiere sane (misurate 17.4-24.1) e taglia quelle
+    // delle schiere accartocciate in curva (10.6-16.1).
+    const ROW_MIN_SPACING_RATIO = 0.9;
     // 1 livello e non 2: impilare due moduli era un'idea nata coi Kenney,
     // alti 5.38, dove serviva a dare volume. Col modulo custom alto 12.3 il
     // secondo livello si legge come due tribune sovrapposte — bocciato
@@ -622,10 +627,14 @@
             // schiera lunga, si legge come un buco (segnalato dall'utente).
             if (modules.length < ROW_MIN_COLS) continue;
 
+            // `group`: i moduli di una schiera sono un edificio solo e devono
+            // muoversi insieme quando la scenografia trasla oltre la via di
+            // fuga (vedi traslaOltreLaGhiaia).
+            const gruppo = 'stand-' + layout.length;
             for (const m of modules) {
                 const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);
-                const stand = { asset, category: 'grandstand', x: m.x, y, z: m.z,
-                                rotY: m.rotY, scale: CUSTOM_MODEL_SCALE };
+                const stand = { asset, category: 'grandstand', group: gruppo,
+                                x: m.x, y, z: m.z, rotY: m.rotY, scale: CUSTOM_MODEL_SCALE };
                 layout.push(stand);
                 accepted.push(stand);
             }
@@ -714,6 +723,14 @@
                 if (!hit) break;
                 const next = moduleBetween(hit.prevIdx, hit.idx, hit.t);
                 if (!accept(next)) break;   // la schiera si ferma qui, non salta l'ostacolo
+                // Rete di sicurezza contro i moduli accavallati: la catena
+                // avanza per distanza reale, quindi qui la distanza è già
+                // giusta, ma se un giorno smettesse di esserlo la schiera si
+                // interrompe invece di consegnare moduli sovrapposti. Contro
+                // TUTTI quelli già posati, perché in curva la catena può
+                // ripiegarsi su se stessa e non solo sull'ultimo.
+                if (modules.some(m => Math.hypot(m.x - next.x, m.z - next.z)
+                                      < MAIN_STAND_COL_SPACING * ROW_MIN_SPACING_RATIO)) break;
                 prev = next;
                 modules.push(prev);
             }
@@ -739,6 +756,10 @@
             for (let tier = 0; tier < MAIN_STAND_TIERS; tier++) {
                 layout.push({
                     asset: MAIN_STAND_ASSET, category: 'grandstand-main',
+                    // Unico gruppo per tutta la fila del traguardo: è
+                    // l'edificio più visibile del circuito, e deve traslare
+                    // rigido come le altre schiere.
+                    group: 'main-stand',
                     x: m.x, y: baseY + tier * MAIN_STAND_TIER_HEIGHT,
                     z: m.z, rotY: m.rotY, scale: CUSTOM_MODEL_SCALE
                 });
@@ -950,10 +971,57 @@
     //
     // Le colline e il prato NON passano di qui: sono terreno, non oggetti, e
     // stanno centinaia di unità più in là.
+    // ⚠️ Le schiere di tribuna traslano RIGIDE, non modulo per modulo.
+    // Ogni modulo vede un campione diverso e quindi uno spostamento diverso:
+    // lasciandoli liberi la schiera si accartoccia e i moduli si compenetrano
+    // — misurate 8 coppie su prova (la peggiore a 10.7 invece di 19.2, girate
+    // di 25°) e una a 4.9 su new-monza, cioè le "tribune storte" viste in
+    // gioco. Senza traslazione le stesse schiere non hanno una sola
+    // compenetrazione, il che dice che il difetto nasce qui e non nel modo in
+    // cui vengono composte.
+    //
+    // Il gruppo si sposta del MASSIMO fra gli spostamenti dei suoi moduli e
+    // lungo la direzione di quello che lo richiede: così nessun modulo resta
+    // dentro la via di fuga, e la schiera resta la fila dritta che era.
+    function spostamentoDi(voce, trackPts, barrierProfile, barrierDist) {
+        const near = TrackGeometry.nearestPoint(trackPts, voce.x, voce.z);
+        if (near.dist < barrierDist) return null;
+        const p = trackPts[near.index];
+        const { nx, nz } = TrackGeometry.normalAt(trackPts, near.index, true);
+        const lato = Math.sign((voce.x - p.x) * nx + (voce.z - p.z) * nz) || 1;
+        const quanto = TrackGravel.sceneryShiftAt(barrierProfile, near.index, lato, barrierDist);
+        if (quanto <= 0) return null;
+        return { dx: nx * quanto * lato, dz: nz * quanto * lato, quanto };
+    }
+
     function traslaOltreLaGhiaia(layout, trackPts, barrierProfile, groundPts, barrierDist, embankStart, embankOuter) {
         if (!barrierProfile) return layout;
 
+        // Prima i gruppi rigidi, poi tutto il resto voce per voce.
+        const gruppi = new Map();
         for (const voce of layout) {
+            if (!voce.group) continue;
+            if (!gruppi.has(voce.group)) gruppi.set(voce.group, []);
+            gruppi.get(voce.group).push(voce);
+        }
+        for (const membri of gruppi.values()) {
+            let scelto = null;
+            for (const voce of membri) {
+                const s = spostamentoDi(voce, trackPts, barrierProfile, barrierDist);
+                if (s && (!scelto || s.quanto > scelto.quanto)) scelto = s;
+            }
+            if (!scelto) continue;
+            for (const voce of membri) {
+                voce.x += scelto.dx;
+                voce.z += scelto.dz;
+                if (typeof voce.y === 'number') {
+                    voce.y = TrackGeometry.terrainHeightAt(groundPts, voce.x, voce.z, embankStart, embankOuter);
+                }
+            }
+        }
+
+        for (const voce of layout) {
+            if (voce.group) continue;
             const near = TrackGeometry.nearestPoint(trackPts, voce.x, voce.z);
             const p = trackPts[near.index];
             const { nx, nz } = TrackGeometry.normalAt(trackPts, near.index, true);
@@ -1081,12 +1149,6 @@
             grandstands: [...mainStand, ...grandstand],
         });
 
-        // Spettatori sulle tribune già piazzate. seatAnchors arriva da
-        // f1.js (fetch di grandStandSeats.json): questo modulo è puro e non
-        // accede alla rete. Se manca, si generano tribune vuote invece di
-        // far fallire il caricamento della pista.
-        const crowd = SceneryCrowd.buildCrowd([...mainStand, ...grandstand], seatAnchors, rng);
-
         const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
         const paddockLife = SceneryPaddock.buildLayout(rng, trackPts, pitPts, barrierDist, accepted,
             (voce) => itemHitsPlayerBoxZone(voce, playerBoxFootprints));
@@ -1102,10 +1164,29 @@
         const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints);
 
         const layout = [...paddock, ...mainStand, ...grandstand, ...landmarks,
-                        ...trackside, ...crowd, ...nature, ...woods, ...rocce, ...paddockLife];
+                        ...trackside, ...nature, ...woods, ...rocce, ...paddockLife];
         if (pond) layout.push(pond);
-        return traslaOltreLaGhiaia(layout, trackPts, barrierProfile,
+        traslaOltreLaGhiaia(layout, trackPts, barrierProfile,
             trackPts.filter(p => !p.bridge), barrierDist, embankStart, embankOuter);
+
+        // Spettatori DOPO la traslazione, non prima.
+        //
+        // Ogni posto è espresso in coordinate locali alla tribuna, quindi la
+        // folla va generata quando le tribune sono già dove staranno. Facendolo
+        // prima, traslaOltreLaGhiaia spostava tribuna e spettatori ognuno per
+        // conto proprio — sono in punti diversi, quindi vedono campioni e
+        // spostamenti diversi — e la gente si staccava dai gradoni: misurati
+        // 2394 spettatori su 2983 fuori posto su prova, fino a 11.85 unità.
+        // `mainStand` e `grandstand` contengono gli stessi oggetti del layout,
+        // che la traslazione ha già aggiornato sul posto.
+        //
+        // RNG separato apposta: pescare dalla sequenza principale in un punto
+        // diverso avrebbe cambiato tutti gli scatter successivi (alberi,
+        // rocce, boschi) su tracciati che l'utente ha già approvato.
+        const crowd = SceneryCrowd.buildCrowd([...mainStand, ...grandstand], seatAnchors,
+            mulberry32(hashString(trackData.id + ':crowd')));
+
+        return layout.concat(crowd);
     }
 
     return {
