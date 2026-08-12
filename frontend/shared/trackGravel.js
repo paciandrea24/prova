@@ -290,6 +290,14 @@
     // margine costa niente in una zona dove lo spazio è comunque conteso.
     const BARRIER_NEIGHBOUR_MARGIN = 2;
 
+    // Portata dell'apertura che toglie le sporgenze isolate del muro, in
+    // UNITÀ DI PISTA (mai in campioni: il passo vale 5.17 su prova e 1.18 su
+    // monte-rosso). Una sporgenza più stretta di questa viene rasata, una
+    // rampa o un allargamento più lungo restano intatti. Misurato il
+    // 2026-08-12: con 10 spariscono tutte le sporgenze dei quattro tracciati
+    // ritoccando 16 campioni su 1000 nel caso peggiore.
+    const BARRIER_SMOOTH_REACH = 10;
+
     // Distanza della barriera dall'ASSE pista, campione per campione e lato
     // per lato. Valore assoluto e non un incremento, perché lo consumano tre
     // sistemi diversi (disegno, muro fisico, traslazione della scenografia) e
@@ -440,6 +448,53 @@
             if (trackPts[i].bridge) continue;
             base.right[i] = Math.max(storica, Math.min(base.right[i], territorio.pos[i] - BARRIER_NEIGHBOUR_MARGIN));
             base.left[i] = Math.max(storica, Math.min(base.left[i], territorio.neg[i] - BARRIER_NEIGHBOUR_MARGIN));
+        }
+
+        // Quarta passata e mezzo: il muro non deve sporgere e rientrare.
+        //
+        // `territorio` è un vincolo MASSIMO, e un vincolo massimo non è una
+        // forma: la mezzeria col tratto di pista di fronte è frastagliata di
+        // natura, e fra due restringimenti c'è il campione in cui il muro
+        // potrebbe stare più fuori. Seguendolo alla lettera il muro esce e
+        // rientra, e siccome la mesh è un nastro continuo di quad
+        // (trackMeshBuilder.js::buildBarriers) il nastro si accartoccia: è il
+        // "groviglio di barriere" segnalato in gioco in quattro curve di
+        // `prova` il 2026-08-12 (campioni 134, 337, 646, 764).
+        //
+        // Il livellamento qui sotto NON è ridondante con questo e non basta
+        // da solo: limita la PENDENZA, e una punta che sale e scende di 5.17
+        // unità in 5.17 di pista la rispetta in pieno. Là si tolgono i
+        // gradini, qui le punte: due proprietà diverse.
+        //
+        // L'operatore è un'APERTURA (minimo mobile seguito da massimo mobile),
+        // non una semplice erosione: l'erosione toglie le punte ma abbassa
+        // anche le discese regolari, perché porta ogni campione al minimo di
+        // tutta la finestra. Provata il 2026-08-12: rasava le rampe e faceva
+        // rifilare la ghiaia dove il muro non era mai stato il vincolo.
+        // L'apertura invece rimette su quello che l'erosione ha tolto di
+        // troppo, e lascia intatto tutto ciò che è più largo della portata.
+        //
+        // ⚠️ I ponti restano fuori, come nelle passate 2 e 4: lì il muro sta
+        // a bordo strada per conto suo (roadHalf + BRIDGE_MARGIN, più DENTRO
+        // di `storica`), e farlo entrare nel minimo tirerebbe dentro anche il
+        // muro di terra all'imbocco.
+        const raggioApertura = Math.max(1, Math.round(BARRIER_SMOOTH_REACH / stepLen));
+        const mobile = (prof, scegli) => {
+            const out = new Float64Array(n);
+            for (let i = 0; i < n; i++) {
+                if (trackPts[i].bridge) { out[i] = prof[i]; continue; }
+                let v = prof[i];
+                for (let d = -raggioApertura; d <= raggioApertura; d++) {
+                    const j = (i + d + n) % n;
+                    if (trackPts[j].bridge) continue;
+                    v = scegli(v, prof[j]);
+                }
+                out[i] = v;
+            }
+            return out;
+        };
+        for (const lato of ['left', 'right']) {
+            base[lato] = mobile(mobile(base[lato], Math.min), Math.max);
         }
 
         // Quinta passata: livellamento anti-gradino. Il giro è chiuso, quindi

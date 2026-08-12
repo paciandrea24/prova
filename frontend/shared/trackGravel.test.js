@@ -362,3 +362,67 @@ test('barrierDistAt somma la ghiaia alla distanza base', () => {
     assert.equal(TrackGravel.barrierDistAt(prof, c.midIdx, c.side, base),
         base + larghezzaAttesa(pts, c));
 });
+
+// ---- barrierProfile: il muro non deve sporgere e rientrare ----
+//
+// Il vincolo del terreno conteso (neighbourLimits) è frastagliato di natura:
+// fra due restringimenti c'è il campione in cui il muro potrebbe stare più
+// fuori. Se il muro lo segue alla lettera, esce e rientra — e siccome la mesh
+// è un nastro continuo, il nastro si accartoccia. In gioco si vede come un
+// groviglio di barriere: segnalato dall'utente in quattro curve di `prova`
+// (campioni 134, 337, 646, 764) il 2026-08-12.
+//
+// Il livellamento anti-gradino NON basta: limita la pendenza, e una punta che
+// sale e scende a 45° la rispetta. Serve che nessun campione sporga rispetto
+// al MINIMO LOCALE, che è una proprietà diversa.
+const fs = require('fs');
+const path = require('path');
+
+// Quanto ogni campione sporge, cioè quanto sta sopra il muro "senza punte"
+// alla stessa ascissa. Il confronto è col profilo APERTO (minimo mobile
+// seguito da massimo mobile), non col minimo della finestra: col minimo
+// secco anche una discesa regolare risulterebbe una sporgenza — al campione
+// 413 di prova i valori sono 33.8 33.8 33.7 28.5 23.3, che è una rampa e non
+// una punta. Errore fatto e corretto il 2026-08-12: la metrica sbagliata
+// aveva fatto sembrare inefficace un fix che invece funzionava.
+//
+// La portata è in unità di pista, non in campioni: il passo vale 5.17 su
+// prova e 1.18 su monte-rosso, e una soglia per campione sarebbe quattro
+// soglie diverse in silenzio.
+function sporgenzaMax(prof, pts, raggioUnita) {
+    const n = prof.length;
+    const stepLen = TrackGeometry.lapLength(pts) / n;
+    const k = Math.max(1, Math.round(raggioUnita / stepLen));
+    const mobile = (p, scegli) => {
+        const out = new Float64Array(n);
+        for (let i = 0; i < n; i++) {
+            let v = p[i];
+            for (let d = -k; d <= k; d++) v = scegli(v, p[(i + d + n) % n]);
+            out[i] = v;
+        }
+        return out;
+    };
+    const aperto = mobile(mobile(prof, Math.min), Math.max);
+    let peggiore = 0, dove = -1;
+    for (let i = 0; i < n; i++) {
+        if (prof[i] - aperto[i] > peggiore) { peggiore = prof[i] - aperto[i]; dove = i; }
+    }
+    return { peggiore, dove };
+}
+
+function pistaVera(id) {
+    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'tracks', `${id}.json`), 'utf8'));
+    return { raw, pts: TrackGeometry.sampleLoop(raw.controlPoints, 1000) };
+}
+
+for (const id of ['prova', 'monte-rosso', 'new-monza', 'baku']) {
+    test(`barrierProfile: il muro non sporge e rientra (${id})`, () => {
+        const { raw, pts } = pistaVera(id);
+        const bar = TrackGravel.barrierProfile(pts, { roadHalf: raw.roadHalfWidth });
+        for (const lato of ['left', 'right']) {
+            const { peggiore, dove } = sporgenzaMax(bar[lato], pts, 10);
+            assert.ok(peggiore <= 0.5,
+                `${id} ${lato}: il muro sporge di ${peggiore.toFixed(2)} sul minimo locale al campione ${dove}`);
+        }
+    });
+}
