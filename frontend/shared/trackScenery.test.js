@@ -1322,20 +1322,39 @@ test('il decoro del paddock non finisce dentro nient\'altro', () => {
     }
 });
 
-test('nessun commissario o cartello di frenata finisce dentro una tribuna', () => {
+test('davanti a una tribuna non c\'è altro che la sua rete', () => {
+    // Segnalazioni M 21, 22 e 23 del 2026-08-13: muro di gomme, capanno
+    // commissari, rete e tribuna impilati nello stesso metro quadro.
+    // «Ora lì ci sono i grandstand e quindi li dobbiamo levare».
+    //
     // Non è un difetto del loro piazzamento — nascono ben davanti alle
-    // tribune — ma della traslazione oltre la ghiaia, che porta al muro chi
-    // non è già dimensionato sul muro. Lì ci sta anche la fila di tribune.
-    // Misurati 5 su prova e 8 su new-monza il 2026-08-13, uno a 2.2 unità dal
-    // centro della tribuna: si vede solo DOPO la traslazione, quindi solo lì
-    // si può scartare.
+    // tribune — ma di `traslaOltreLaGhiaia`, che porta al muro chi non è già
+    // dimensionato sul muro; e al muro ci sono le tribune, che non traslano.
+    // Si vede solo DOPO la traslazione, quindi solo lì si può scartare.
+    //
+    // I cartelli di frenata sono esclusi apposta: servono a chi guida, e
+    // l'utente non li ha segnalati. Per loro vale solo il divieto di finire
+    // DENTRO una tribuna.
+    const FASCIA = 22;
     for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
         const { layout } = circuitoVero(id);
         const tribune = layout.filter(v => (v.category || '').startsWith('grandstand'));
-        const dentro = layout.filter(v => (v.asset === 'marshalPost' || v.asset === 'brakingBoard')
+        const nellaFascia = layout.filter(v => (v.asset === 'tyreStack' || v.asset === 'marshalPost')
+            && tribune.some(g => {
+                const c = Math.cos(g.rotY || 0), s = Math.sin(g.rotY || 0);
+                const dx = v.x - g.x, dz = v.z - g.z;
+                const du = dx * c - dz * s, df = dx * s + dz * c;
+                const meta = (SceneryAssetSizes.sizeOf(g.asset).w * (g.scale || 1)
+                            + SceneryAssetSizes.sizeOf(v.asset).w * (v.scale || 1)) / 2;
+                return Math.abs(du) <= meta && df > 0 && df <= FASCIA;
+            }));
+        assert.equal(nellaFascia.length, 0,
+            `${id}: ${nellaFascia.length} fra gomme e commissari davanti a una tribuna — `
+            + [...new Set(nellaFascia.map(v => v.asset))].join(', '));
+
+        const dentro = layout.filter(v => v.asset === 'brakingBoard'
             && tribune.some(g => SceneryAssetSizes.itemsOverlap(v, g)));
-        assert.equal(dentro.length, 0,
-            `${id}: ${dentro.length} fra commissari e cartelli dentro una tribuna`);
+        assert.equal(dentro.length, 0, `${id}: ${dentro.length} cartelli di frenata dentro una tribuna`);
     }
 });
 

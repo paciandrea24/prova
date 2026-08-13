@@ -1410,23 +1410,51 @@
         traslaOltreLaGhiaia(layout, trackPts, barrierProfile,
             trackPts.filter(p => !p.bridge), barrierDist, embankStart, embankOuter);
 
-        // Commissari e cartelli di frenata finiti DENTRO una tribuna.
+        // DAVANTI A UNA TRIBUNA CI VA SOLO LA SUA RETE.
         //
-        // Non è un difetto del loro piazzamento: nascono a `barrierDist +
-        // margine`, ben davanti alle tribune. È la traslazione oltre la ghiaia
-        // che li porta al muro — e al muro, dove la via di fuga è larga, ci
-        // sta anche la fila di tribune. Le tribune NON traslano (portano
-        // `suMisuraSulMuro`), quindi il conflitto nasce solo qui, dopo, e solo
-        // qui si può vedere. Misurati 5 su prova e 8 su new-monza, uno a 2.2
-        // unità dal centro della tribuna, cioè dentro fino al collo.
+        // Le tre segnalazioni M 21, 22 e 23 del 2026-08-13 sono lo stesso
+        // quadro: muro di gomme, capanno commissari, rete, tribuna, tutti
+        // impilati nello stesso metro quadro. L'utente: «ora lì ci sono i
+        // grandstand e quindi li dobbiamo levare».
         //
-        // Si scartano: sono decoro ripetuto lungo tutto il giro, ce n'è in
-        // abbondanza, e un capanno dentro una tribuna è esattamente il tipo di
-        // cosa che l'utente ha già segnalato due volte.
+        // Non è un difetto del loro piazzamento: gomme e commissari nascono a
+        // `barrierDist + margine`, ben davanti alle tribune. È
+        // `traslaOltreLaGhiaia` che porta al muro tutto ciò che non è già
+        // dimensionato sul muro — e al muro, dove la via di fuga è larga, ci
+        // sta anche la fila di tribune, che invece NON trasla (porta
+        // `suMisuraSulMuro`). Il conflitto quindi esiste solo qui, dopo la
+        // traslazione, ed è l'unico punto in cui si può vedere.
+        //
+        // La fascia è larga quanto la tribuna e profonda 22 unità verso la
+        // pista, misurate dal suo centro: la rete sta a 12.5, il muro di gomme
+        // a ~19. Sul lato opposto della pista non arriva mai — la tribuna sta
+        // a muro+10 e il muro di fronte a -muro, cioè almeno 36 unità più in
+        // là.
+        const FASCIA_DAVANTI = 22;
+        const SOLO_LA_RETE = new Set(['tyreStack', 'marshalPost']);
         const tribune = [...mainStand, ...grandstand];
         for (let i = layout.length - 1; i >= 0; i--) {
-            if (layout[i].asset !== 'marshalPost' && layout[i].asset !== 'brakingBoard') continue;
-            if (tribune.some(g => SceneryAssetSizes.itemsOverlap(layout[i], g))) layout.splice(i, 1);
+            const v = layout[i];
+            // I cartelli di frenata restano: servono a chi guida, e sono
+            // l'unica voce di questa famiglia che l'utente non ha segnalato.
+            // Basta che non finiscano DENTRO una tribuna.
+            if (v.asset === 'brakingBoard') {
+                if (tribune.some(g => SceneryAssetSizes.itemsOverlap(v, g))) layout.splice(i, 1);
+                continue;
+            }
+            if (!SOLO_LA_RETE.has(v.asset)) continue;
+            const dentro = tribune.some(g => {
+                // Assi locali della tribuna: `u` lungo la sua larghezza, `f`
+                // nella direzione in cui guarda, cioè verso la pista.
+                const c = Math.cos(g.rotY || 0), s = Math.sin(g.rotY || 0);
+                const dx = v.x - g.x, dz = v.z - g.z;
+                const du = dx * c - dz * s;
+                const df = dx * s + dz * c;
+                const meta = (SceneryAssetSizes.sizeOf(g.asset).w * (g.scale || 1)
+                            + SceneryAssetSizes.sizeOf(v.asset).w * (v.scale || 1)) / 2;
+                return Math.abs(du) <= meta && df > 0 && df <= FASCIA_DAVANTI;
+            });
+            if (dentro) layout.splice(i, 1);
         }
 
         // Spettatori DOPO la traslazione, non prima.
