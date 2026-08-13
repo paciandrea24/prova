@@ -284,6 +284,12 @@
     // di norma" e "fin dove può arrivare" — e alzando solo questa si
     // riottiene un muro che si allarga in curva, se un domani lo si vorrà.
     const RUNOFF_MAX = 16;
+    // Quanto deve ancora avanzare il nastro della barriera fra due campioni,
+    // in frazione dell'avanzamento della pista. Sotto zero il nastro si
+    // ripiega (cuspide), a zero i quad sono degeneri: si pretende una
+    // frazione vera. 0.35 è il valore più basso che azzera i ripiegamenti su
+    // prova senza stringere il muro dove non serve.
+    const BARRIER_MIN_ADVANCE = 0.35;
     // Sui tratti a ponte non c'è terreno attorno: il muro resta a bordo
     // strada, dov'è sempre stato. Stesso valore di
     // CollisionResolver.BRIDGE_BARRIER_MARGIN — è la distanza che il muro
@@ -463,6 +469,54 @@
             base.left[i] = Math.max(storica, Math.min(base.left[i], territorio.neg[i] - BARRIER_NEIGHBOUR_MARGIN));
         }
 
+        // Quarta passata e tre quarti: niente cuspidi sul lato interno.
+        //
+        // La barriera è la pista spostata di `d` lungo la normale. Sul lato
+        // INTERNO di una curva quello spostamento accorcia il percorso, e
+        // oltre il raggio di curvatura lo fa diventare negativo: il nastro
+        // indietreggia invece di avanzare, si ripiega e forma prima una
+        // cuspide e poi un cappio. È lo stesso motivo per cui non esiste una
+        // circonferenza concentrica di raggio negativo — geometria, non
+        // taratura: nessun livellamento del profilo può toglierla.
+        //
+        // Misurato il 2026-08-12: su prova 12 campioni oltre il limite, e le
+        // zone annodate (130-137, 333-340, 644-649, 760-768) sono esattamente
+        // i quattro punti che l'utente aveva marcato in gioco col tasto M.
+        // monte-rosso, l'unico tracciato mai contestato, è l'unico con zero.
+        //
+        // Il tetto si ricava dalla STESSA formula con cui la mesh piazza i
+        // vertici (trackMeshBuilder.js::buildBarriers): l'avanzamento del
+        // punto di barriera è lineare in d, quindi la distanza massima che
+        // lascia il nastro in avanti si risolve in forma chiusa, senza
+        // passare dal raggio di curvatura e dal suo segno — una convenzione
+        // in meno da sbagliare.
+        //
+        // ⚠️ Il tetto va messo sul campione di ARRIVO del segmento, non su
+        // quello di partenza: la normale di partenza è per costruzione
+        // perpendicolare alla tangente del suo stesso campione, quindi la sua
+        // distanza non entra nell'avanzamento. Sbagliato al primo tentativo
+        // il 2026-08-12: su prova sembrava funzionare lo stesso (campioni
+        // vicini hanno distanze simili), ma su baku restavano 31 ripiegamenti.
+        for (let i = 0; i < n; i++) {
+            const prev = (i - 1 + n) % n;
+            if (trackPts[i].bridge || trackPts[prev].bridge) continue;
+            const t = TrackGeometry.tangentAt(trackPts, prev, true);
+            const nQui = TrackGeometry.normalAt(trackPts, i, true);
+            // Avanzamento del nastro fra prev e i, in funzione della distanza
+            // del muro QUI: A + C*d.
+            const A = (trackPts[i].x - trackPts[prev].x) * t.tx + (trackPts[i].z - trackPts[prev].z) * t.tz;
+            for (const side of [-1, 1]) {
+                const C = side * (nQui.nx * t.tx + nQui.nz * t.tz);
+                if (C >= 0) continue;             // lato esterno: si allunga, nessun rischio
+                const banda = side > 0 ? base.right : base.left;
+                // Non basta A + C*d > 0: a filo di zero il nastro avanza di
+                // nulla e i quad restano degeneri. Se ne pretende una
+                // frazione, che è anche il margine per il campionamento.
+                const tetto = Math.max(storica, A * (1 - BARRIER_MIN_ADVANCE) / (-C));
+                if (banda[i] > tetto) banda[i] = tetto;
+            }
+        }
+
         // Quinta passata: livellamento anti-gradino. Il giro è chiuso, quindi
         // due giri per verso servono a propagare il vincolo anche oltre il
         // punto di raccordo dell'indice 0.
@@ -518,7 +572,7 @@
     return {
         gravelProfile, gravelAt, barrierDistAt,
         barrierProfile, barrierAt, sceneryShiftAt,
-        RUNOFF_MIN, RUNOFF_MAX, BRIDGE_MARGIN, PIT_STRAIGHT_REACH,
+        RUNOFF_MIN, RUNOFF_MAX, BARRIER_MIN_ADVANCE, BRIDGE_MARGIN, PIT_STRAIGHT_REACH,
         pitGapSamples, PIT_MERGE_WINDOW,
         cornerSpeed, cornerGravelWidth,
         MAX_SPEED, TURN_SPEED_LOW, TURN_SPEED_HIGH,
