@@ -195,38 +195,93 @@
             // pista->tribuna sulla normale.
             const side = Math.sign((stand.x - trackPts[near.index].x) * nrm.nx +
                                    (stand.z - trackPts[near.index].z) * nrm.nz) || 1;
-            // La rete nasce sul MURO, come la tribuna che protegge. Si prende
-            // il muro PIÙ LONTANO fra quelli sotto il fronte della rete, non
-            // quello del solo centro: dove il muro si allontana da un campione
-            // all'altro, un'estremità resterebbe dentro la via di fuga
-            // (misurate reti fino a 4.9 unità oltre la linea del muro). La
-            // finestra è la mezza-larghezza in unità di pista, convertita in
-            // campioni qui e solo qui.
-            let muro = barrierDist;
-            if (barrierProfile) {
-                const mezza = Math.max(1, Math.round((larghezza / 2) / stepLen));
-                for (let s = -mezza; s <= mezza; s++) {
-                    const k = ((near.index + s) % n + n) % n;
-                    muro = Math.max(muro, TrackGravel.barrierAt(barrierProfile, k, side));
-                }
-            }
+            // Il muro del campione DELLA TRIBUNA, lo stesso su cui la tribuna
+            // si è posata.
+            //
+            // ⚠️ Qui c'era il massimo fra i muri sotto tutto il fronte della
+            // rete, per non lasciarne un'estremità dentro la via di fuga. Ma
+            // la tribuna non prende nessun massimo: si posa sul muro del suo
+            // campione e basta. Dove il muro fa una rampa le due misure
+            // divergono, il massimo si mangia tutto il distacco e la rete
+            // ARRETRA DENTRO LA TRIBUNA — su new-monza al campione 63 il muro
+            // passa da 18.0 a 32.8 sotto una tribuna che sta a 34.5, e la rete
+            // finiva a 0.24 unità dal suo centro; su prova al 615 finiva 1.84
+            // unità oltre il centro, dall'altra parte. Segnalato in gioco:
+            // "è inaccettabile avere la rete di protezione dentro la
+            // grandstand".
+            //
+            // La coppia tribuna-rete deve essere RIGIDA: stesso riferimento,
+            // stesso campione. Se il muro fa una rampa, la tribuna ci sta
+            // dentro esattamente quanto ci sta la rete, ed è una questione di
+            // dove si posano le tribune — non qualcosa che la rete possa
+            // compensare seppellendosi nella tribuna.
+            const muro = barrierProfile
+                ? TrackGravel.barrierAt(barrierProfile, near.index, side)
+                : barrierDist;
             // Dalla tribuna verso la pista, lungo la direzione in cui la
             // tribuna GUARDA. Non ricalcolare la posizione dal campione più
             // vicino: i moduli intermedi di una schiera cadono INTERPOLATI fra
             // due campioni, e ripartire dal campione perderebbe fino a mezzo
             // passo — di nuovo la rete sfalsata.
-            const avvicina = near.dist - (muro + FENCE_MARGIN);
+            //
+            // Il pavimento è l'invariante non negoziabile: la rete sta SEMPRE
+            // davanti alla tribuna, mezza profondità dell'una più mezza
+            // dell'altra, più un margine. Sui moduli interpolati fra due
+            // campioni il muro del campione può discostarsi di un paio di
+            // unità da quello che la tribuna ha visto davvero, e senza questo
+            // limite basterebbe quello a farci rientrare.
+            const distacco = (SceneryAssetSizes.sizeOf(stand.asset).d * (stand.scale || 1)
+                              + SceneryAssetSizes.sizeOf('catchFence').d * scale) / 2 + FENCE_MARGIN;
+            const avvicina = Math.max(near.dist - (muro + FENCE_MARGIN), distacco);
             const x = stand.x + Math.sin(stand.rotY) * avvicina;
             const z = stand.z + Math.cos(stand.rotY) * avvicina;
             const y = TrackGeometry.terrainHeightAt(groundPts, x, z, embankStart, embankOuter);
             // L'altezza da confrontare col cavalcavia è quella SCALATA: a
             // scala 1 la rete era alta 9 e ci passava sotto, a 1.6 no.
             if (!usable('catchFence', x, z, y, pitRoadHalf + 5, altezzaRete * scale)) continue;
-            layout.push({
+            const rete = {
                 asset: 'catchFence', category: 'safety', scale,
                 suMisuraSulMuro: !!barrierProfile,
                 x, y, z, rotY: stand.rotY,
-            });
+            };
+            // Mai dentro un'ALTRA tribuna, nemmeno per un angolo.
+            //
+            // Dove il muro fa una rampa, due moduli consecutivi della stessa
+            // fila si posano a distanze molto diverse dalla pista — su `prova`
+            // 39.9 e 28.2, quasi dodici unità di dislivello — e la fila
+            // scalina. Una rete rigida larga quanto la tribuna esterna arriva
+            // addosso a quella interna: misurate penetrazioni fino a 3.4
+            // unità. Non è la rete a poterlo risolvere: davanti non può andare
+            // (finirebbe dentro la via di fuga) e dietro c'è la sua tribuna.
+            //
+            // Si scarta, come si fa sotto le campate. Una tribuna senza rete
+            // dove la fila fa un gradino si legge come una scelta; una rete
+            // che taglia una tribuna no — l'utente l'ha vista in gioco e l'ha
+            // definita inaccettabile.
+            if (grandstands.some(g => (g.x.toFixed(2) + ',' + g.z.toFixed(2)) !== chiave
+                                      && SceneryAssetSizes.itemsOverlap(rete, g))) continue;
+            // E mai dentro la via di fuga.
+            //
+            // Prima questo lo garantiva il massimo dei muri sotto il fronte —
+            // ed è proprio quel massimo che seppelliva la rete nella tribuna.
+            // Tolto quello, va verificato dove serve davvero: sui QUATTRO
+            // ANGOLI del suo ingombro, ciascuno contro il muro del campione
+            // più vicino a quell'angolo. È più preciso di una finestra di
+            // campioni e non ha nulla da arrotondare. Senza, le reti
+            // rientravano nella ghiaia fino a 6.9 unità (monte-rosso, 821).
+            //
+            // Anche qui si scarta: dove il muro fa una rampa sotto una tribuna
+            // non esiste una posizione buona per un pannello dritto — davanti
+            // c'è la ghiaia, dietro la tribuna. La rampa più ripida misurata
+            // porta il muro da 13.0 a 28.5 nello spazio di una sola tribuna.
+            if (barrierProfile && SceneryAssetSizes.footprintCorners(rete).some(c => {
+                const q = TrackGeometry.nearestPoint(trackPts, c.x, c.z);
+                const nq = TrackGeometry.normalAt(trackPts, q.index, true);
+                const lato = Math.sign((c.x - trackPts[q.index].x) * nq.nx +
+                                       (c.z - trackPts[q.index].z) * nq.nz) || 1;
+                return TrackGravel.barrierAt(barrierProfile, q.index, lato) - q.dist > 0;
+            })) continue;
+            layout.push(rete);
         }
 
         // Decoro del paddock vicino al traguardo, sul lato corsia box.

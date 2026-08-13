@@ -1012,6 +1012,29 @@ function coperturaDellaTribuna(tribuna, reti) {
     return coperto / (2 * meta);
 }
 
+// Dove sarebbe caduta la rete di questa tribuna, ricostruito dalla sola
+// geometria pubblica: davanti alla tribuna, alla distanza del muro del suo
+// campione più il margine, con il pavimento del mezzo ingombro delle due.
+// Serve a spiegare le reti MANCANTI, quindi non può leggerle dal layout.
+//
+// ⚠️ Replica la formula di sceneryTrackside: se una delle due cambia, questo
+// test diventa rosso. È voluto — "mai una rete dentro una tribuna" è una
+// regola che l'utente ha dichiarato non negoziabile, e va rimisurata a mano
+// ogni volta che si tocca la posa.
+const FENCE_MARGIN_TEST = 1.5;
+function doveCadrebbeLaRete(trackPts, barrierProfile, tribuna) {
+    const { idx, side, dist } = doveSta(trackPts, tribuna);
+    const misura = SceneryAssetSizes.sizeOf(tribuna.asset);
+    const rete = SceneryAssetSizes.sizeOf('catchFence');
+    const scale = misura.w * (tribuna.scale || 1) / rete.w;
+    const muro = TrackGravel.barrierAt(barrierProfile, idx, side);
+    const distacco = (misura.d * (tribuna.scale || 1) + rete.d * scale) / 2 + FENCE_MARGIN_TEST;
+    const avvicina = Math.max(dist - (muro + FENCE_MARGIN_TEST), distacco);
+    return { asset: 'catchFence', scale, rotY: tribuna.rotY, y: tribuna.y,
+             x: tribuna.x + Math.sin(tribuna.rotY) * avvicina,
+             z: tribuna.z + Math.cos(tribuna.rotY) * avvicina };
+}
+
 // La rete NATA da questa tribuna: stessa rotazione e scarto tutto lungo la
 // direzione in cui la tribuna guarda, cioè zero lungo la sua larghezza.
 function laSuaRete(tribuna, reti) {
@@ -1048,29 +1071,90 @@ for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
             + scoperte.slice(0, 5).map(m => `${m.g.asset}@${m.dove.idx} al ${(m.f * 100).toFixed(0)}%`).join(', '));
     });
 
-    test(`scenografia: una tribuna resta senza rete solo per un motivo noto (${id})`, () => {
-        // I due soli motivi ammessi: la tribuna sta di fianco a un tratto
-        // sopraelevato (la rete prenderebbe la quota del terreno sottostante e
-        // resterebbe sospesa), oppure la sua rete cadrebbe dentro una campata
-        // che scavalca la pista. Qualunque altro motivo è un buco silenzioso —
-        // una tribuna senza protezione che nessuno ha deciso.
+    test(`scenografia: nessuna rete finisce dentro una tribuna (${id})`, () => {
+        // Segnalato in gioco il 2026-08-13: "è inaccettabile avere la rete di
+        // protezione dentro la grandstand".
         //
-        // Alla data: prova 1 (sotto il ponte semafori), baku 6 (di fianco al
-        // viadotto), zero su new-monza e monte-rosso.
+        // La rete si distanziava dalla tribuna partendo dal muro PIÙ LONTANO
+        // fra quelli sotto il suo fronte, mentre la tribuna si posa sul muro
+        // del PROPRIO campione. Dove il muro fa una rampa le due misure
+        // divergono e il distacco viene mangiato: su new-monza al campione 63
+        // il muro passa da 18.0 a 32.8 sotto una tribuna che sta a 34.5, e la
+        // rete finiva a 0.24 unità dal centro della tribuna, cioè dentro. Su
+        // `prova` al 615 finiva 1.84 unità OLTRE il centro, dall'altra parte.
         const { trackPts, layout } = circuitoVero(id);
         const reti = layout.filter(v => v.asset === 'catchFence');
+        const tribune = layout.filter(v => v.category === 'grandstand' || v.category === 'grandstand-main');
+        const dentro = [];
+        for (const r of reti) {
+            for (const g of tribune) {
+                if (SceneryAssetSizes.itemsOverlap(r, g)) {
+                    dentro.push({ r, g, dove: doveSta(trackPts, g),
+                                  d: Math.hypot(r.x - g.x, r.z - g.z) });
+                }
+            }
+        }
+        assert.equal(dentro.length, 0,
+            `${id}: ${dentro.length} reti compenetrano una tribuna — `
+            + dentro.slice(0, 5).map(m => `${m.g.asset}@${m.dove.idx} a ${m.d.toFixed(2)} dal centro`).join(', '));
+    });
+
+    test(`scenografia: nessuna rete rientra nella via di fuga (${id})`, () => {
+        // Prima lo garantiva il massimo dei muri sotto il fronte della rete —
+        // che però è esattamente ciò che la seppelliva nella tribuna. Tolto
+        // quello, l'invariante va preteso qui, e sui quattro ANGOLI: il muro
+        // cambia lungo il fronte, e il campione più vicino al centro non dice
+        // nulla su dove finiscono le estremità. Senza il controllo, misurate
+        // reti fino a 6.9 unità dentro la ghiaia (monte-rosso, campione 821).
+        const { trackPts, barrierProfile, layout } = circuitoVero(id);
+        const dentro = [];
+        for (const r of layout.filter(v => v.asset === 'catchFence')) {
+            for (const c of SceneryAssetSizes.footprintCorners(r)) {
+                const q = TrackGeometry.nearestPoint(trackPts, c.x, c.z);
+                const nq = TrackGeometry.normalAt(trackPts, q.index, true);
+                const lato = Math.sign((c.x - trackPts[q.index].x) * nq.nx +
+                                       (c.z - trackPts[q.index].z) * nq.nz) || 1;
+                const quanto = TrackGravel.barrierAt(barrierProfile, q.index, lato) - q.dist;
+                if (quanto > 0) dentro.push({ idx: q.index, quanto });
+            }
+        }
+        assert.equal(dentro.length, 0,
+            `${id}: ${dentro.length} angoli di rete dentro la via di fuga — `
+            + dentro.slice(0, 5).map(m => `@${m.idx} di ${m.quanto.toFixed(2)}`).join(', '));
+    });
+
+    test(`scenografia: una tribuna resta senza rete solo per un motivo noto (${id})`, () => {
+        // I quattro soli motivi ammessi: la tribuna sta di fianco a un tratto
+        // sopraelevato (la rete prenderebbe la quota del terreno sottostante e
+        // resterebbe sospesa); la sua rete cadrebbe dentro una campata che
+        // scavalca la pista; la sua rete entrerebbe in una tribuna vicina;
+        // la sua rete rientrerebbe nella via di fuga. Gli ultimi due sono la
+        // stessa cosa vista da due lati: dove il muro fa una rampa sotto una
+        // tribuna, un pannello dritto non ha posto — davanti c'è la ghiaia,
+        // dietro la tribuna. Qualunque ALTRO motivo è un buco silenzioso: una
+        // tribuna senza protezione che nessuno ha deciso.
+        //
+        // Alla data: prova 5 su 50, new-monza 5 su 65, monte-rosso 3 su 36,
+        // baku 6 su 14 (tutte e sei di fianco al viadotto).
+        const { trackPts, barrierProfile, layout } = circuitoVero(id);
+        const reti = layout.filter(v => v.asset === 'catchFence');
         const campate = layout.filter(v => v.asset === 'footbridge' || v.asset === 'startGantry');
-        for (const g of layout.filter(v => v.category === 'grandstand' || v.category === 'grandstand-main')) {
+        const tribune = layout.filter(v => v.category === 'grandstand' || v.category === 'grandstand-main');
+        for (const g of tribune) {
             if (laSuaRete(g, reti)) continue;
             const dove = doveSta(trackPts, g);
-            const larga = SceneryAssetSizes.sizeOf(g.asset).w * (g.scale || 1);
-            // Dove sarebbe caduta: davanti alla tribuna, a una distanza
-            // qualunque nell'ordine di grandezza giusto — serve solo a capire
-            // se finiva sotto una campata.
-            const finta = { asset: 'catchFence', scale: larga / SceneryAssetSizes.sizeOf('catchFence').w,
-                            x: g.x + Math.sin(g.rotY) * 12, z: g.z + Math.cos(g.rotY) * 12,
-                            y: g.y, rotY: g.rotY };
-            assert.ok(trackPts[dove.idx].bridge || campate.some(p => SceneryAssetSizes.itemsOverlap(p, finta)),
+            const finta = doveCadrebbeLaRete(trackPts, barrierProfile, g);
+            const nellaGhiaia = SceneryAssetSizes.footprintCorners(finta).some(c => {
+                const q = TrackGeometry.nearestPoint(trackPts, c.x, c.z);
+                const nq = TrackGeometry.normalAt(trackPts, q.index, true);
+                const lato = Math.sign((c.x - trackPts[q.index].x) * nq.nx +
+                                       (c.z - trackPts[q.index].z) * nq.nz) || 1;
+                return TrackGravel.barrierAt(barrierProfile, q.index, lato) - q.dist > 0;
+            });
+            assert.ok(trackPts[dove.idx].bridge
+                    || campate.some(p => SceneryAssetSizes.itemsOverlap(p, finta))
+                    || tribune.some(v => v !== g && SceneryAssetSizes.itemsOverlap(v, finta))
+                    || nellaGhiaia,
                 `${id}: ${g.asset}@${dove.idx} è senza rete e non si capisce perché`);
         }
     });
