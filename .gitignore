@@ -29,3 +29,6 @@ backend/tools/renders/
 # Bytecode Python (generato importando backend/tools/circuitAssets)
 __pycache__/
 *.pyc
+
+# disegni diagnostici del muro (rigenerabili con f1-barriera-dallalto.js)
+backend/tools/out/
