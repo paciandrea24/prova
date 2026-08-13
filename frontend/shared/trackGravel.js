@@ -529,9 +529,43 @@
         // distanza non entra nell'avanzamento. Sbagliato al primo tentativo
         // il 2026-08-12: su prova sembrava funzionare lo stesso (campioni
         // vicini hanno distanze simili), ma su baku restavano 31 ripiegamenti.
-        // Non basta pretendere un avanzamento > 0: a filo di zero il nastro
-        // avanza di nulla e i quad restano degeneri. Se ne pretende una
-        // frazione, che è anche il margine per il campionamento.
+        // Il tetto abbassa l'INTERO arco della curva, non il solo campione che
+        // sfora: intaccare solo l'apice lascia una punta acuta — provata,
+        // disegnata e bocciata dall'utente ("uncino") il 2026-08-12, e
+        // riproposta come variante A il 2026-08-13. Guardando i due disegni
+        // affiancati l'utente ha scelto l'arco: il muro scende dolcemente
+        // lungo tutta la curva e somiglia a un guardrail invece che a uno
+        // spuntone che entra nel prato. Costo misurato su prova: 148 vertici
+        // su 2000 arretrano, in media di 8.2 unità.
+        //
+        // ⚠️ findCorners restituisce in `side` il lato ESTERNO della curva
+        // (è il lato su cui va la ghiaia). Il tetto serve sull'INTERNO,
+        // quindi `-corner.side`: col segno sbagliato il tetto risulta finito
+        // su 1 curva di prova su 13 e la passata non fa quasi nulla.
+        for (const corner of TrackGeometry.findCorners(trackPts)) {
+            const dentro = -corner.side;
+            const arco = (corner.endIdx - corner.startIdx + n) % n;
+            let minimo = Infinity;
+            for (let s = 0; s <= arco; s++) {
+                const i = (corner.startIdx + s) % n;
+                if (trackPts[i].bridge) continue;
+                minimo = Math.min(minimo, tettoGeometrico(trackPts, i, dentro, BARRIER_MIN_ADVANCE));
+            }
+            if (!isFinite(minimo)) continue;
+            const limite = Math.max(storica, minimo);
+            const banda = dentro > 0 ? base.right : base.left;
+            for (let s = 0; s <= arco; s++) {
+                const i = (corner.startIdx + s) % n;
+                if (trackPts[i].bridge) continue;
+                if (banda[i] > limite) banda[i] = limite;
+            }
+        }
+
+        // Garanzia dura: quello che sta fuori dagli archi riconosciuti da
+        // findCorners deve comunque rispettare il tetto. Non basta pretendere
+        // un avanzamento > 0: a filo di zero il nastro avanza di nulla e i
+        // quad restano degeneri, quindi se ne pretende una frazione — che è
+        // anche il margine per il campionamento.
         for (let i = 0; i < n; i++) {
             const prev = (i - 1 + n) % n;
             if (trackPts[i].bridge || trackPts[prev].bridge) continue;

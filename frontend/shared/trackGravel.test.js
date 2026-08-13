@@ -452,3 +452,26 @@ test('la ghiaia cresce con la velocità della curva, oltre la base di 16', () =>
     assert.ok(massimo > TrackGravel.RUNOFF_MIN + 2,
         `il muro non supera mai ${TrackGravel.RUNOFF_MIN} dal cordolo (massimo ${massimo.toFixed(1)}): la ghiaia non cresce più con la curva`);
 });
+
+test('nelle curve strette il muro scende su tutto l\'arco, non solo sull\'apice', () => {
+    const { raw, pts } = pistaVera('prova');
+    const bar = TrackGravel.barrierProfile(pts, { roadHalf: raw.roadHalfWidth });
+    const n = pts.length;
+
+    // Curva 126-144 di prova, raggio 40.4: è una di quelle in cui il tetto
+    // morde. Se il muro scende solo sull'apice, la distanza ha una V stretta;
+    // se scende su tutto l'arco, i campioni vicini all'apice stanno entro
+    // poco dal minimo.
+    //
+    // ⚠️ Il lato è il +1 (destro), che qui è l'INTERNO della curva: è lì che
+    // il nastro si ripiegava (dx133, dx134, dx135 nella misura del
+    // 2026-08-12). Sul lato esterno il tetto non interviene mai e il test
+    // passerebbe sempre, anche col muro a punta.
+    const apice = 134;
+    const dApice = TrackGravel.barrierAt(bar, apice, 1);
+    for (const off of [-6, -4, 4, 6]) {
+        const d = TrackGravel.barrierAt(bar, (apice + off + n) % n, 1);
+        assert.ok(d - dApice < 6,
+            `il muro risale di ${(d - dApice).toFixed(1)} a ${off} campioni dall'apice: è una punta, non un raccordo`);
+    }
+});
