@@ -1156,6 +1156,29 @@ for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
             + dentro.slice(0, 5).map(m => `@${m.idx} di ${m.quanto.toFixed(2)}`).join(', '));
     });
 
+    test(`scenografia: la tribuna principale non arriva sotto il ponte semafori (${id})`, () => {
+        // Segnalato in gioco il 2026-08-13: "c'è un grandstand vicinissimo
+        // all'asset dei semafori del traguardo che non ha la rete protettiva".
+        // La fila principale è centrata sul traguardo e si allungava di 3
+        // moduli in avanti, arrivando addosso al ponte semafori che sta 75
+        // unità più avanti: la rete del modulo di testa sarebbe finita dentro
+        // la campata e veniva scartata.
+        //
+        // La rete NON si può spostare per rimediare: sta al muro, e ancorarla
+        // alla tribuna la porterebbe a venticinque unità dall'asse col muro a
+        // quindici, sospesa in mezzo al prato. Si sposta la fila, che ora si
+        // allunga all'indietro lungo la griglia.
+        const { trackPts, barrierProfile, layout } = circuitoVero(id);
+        const campate = layout.filter(v => v.asset === 'footbridge' || v.asset === 'startGantry');
+        for (const g of layout.filter(v => v.category === 'grandstand-main')) {
+            const finta = doveCadrebbeLaRete(trackPts, barrierProfile, g);
+            const sotto = campate.filter(p => SceneryAssetSizes.itemsOverlap(p, finta));
+            assert.equal(sotto.length, 0,
+                `${id}: la tribuna principale al campione ${doveSta(trackPts, g).idx} ha la rete `
+                + `dentro ${sotto.map(p => p.asset).join(', ')}`);
+        }
+    });
+
     test(`scenografia: una tribuna resta senza rete solo per un motivo noto (${id})`, () => {
         // I quattro soli motivi ammessi: la tribuna sta di fianco a un tratto
         // sopraelevato (la rete prenderebbe la quota del terreno sottostante e

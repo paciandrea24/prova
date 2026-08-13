@@ -185,6 +185,14 @@
     // grandstand continui che seguono l'andamento della pista"). A 18.4 di
     // passo la fila è lunga ~129 unità.
     const MAIN_STAND_COLS          = 7;
+    // Quanti dei 7 moduli stanno OLTRE il traguardo, nel verso di marcia. Uno
+    // solo: gli altri sei si allungano all'indietro, lungo la griglia, che è
+    // dove il pubblico ha qualcosa da guardare. Con la ripartizione simmetrica
+    // (3 avanti) il modulo di testa arrivava sotto il ponte semafori — che sta
+    // GANTRY_AHEAD_OF_GRID = 75 unità avanti — e la sua rete protettiva veniva
+    // scartata perché sarebbe finita dentro la campata: una tribuna scoperta
+    // proprio al traguardo, segnalata in gioco il 2026-08-13.
+    const MAIN_STAND_COLS_AVANTI   = 1;
     // Distanza minima di una tribuna SPARSA dalla fila principale. Con la sola
     // STRUCTURE_CLEARANCE (22) una tribuna finiva a 32.4 dal modulo esterno:
     // troppo lontana per leggersi come continuazione della fila, troppo vicina
@@ -608,15 +616,15 @@
     // massimo cala e può riallungarsi. Poche iterazioni bastano — il massimo
     // non può che scendere — e senza si perdevano tribune: su baku da 7 a 3.
     function filaAllineata(trackPts, seedIdx, side, barrierProfile, barrierDist, margine,
-                           maxCols, accept, spanSamples) {
+                           maxCols, accept, spanSamples, avanti) {
         let moduli = buildStandRow(trackPts, seedIdx, side,
-            distanzaDalMuro(barrierProfile, barrierDist, margine), maxCols, accept, spanSamples);
+            distanzaDalMuro(barrierProfile, barrierDist, margine), maxCols, accept, spanSamples, avanti);
         let muro = null;
         for (let giro = 0; giro < 4 && moduli.length; giro++) {
             const nuovo = muroDellaFila(trackPts, barrierProfile, barrierDist, moduli, side, spanSamples);
             if (muro !== null && Math.abs(nuovo - muro) < 1e-9) break;   // punto fisso
             muro = nuovo;
-            moduli = buildStandRow(trackPts, seedIdx, side, muro + margine, maxCols, accept, spanSamples);
+            moduli = buildStandRow(trackPts, seedIdx, side, muro + margine, maxCols, accept, spanSamples, avanti);
         }
         return { moduli, margine };
     }
@@ -778,7 +786,7 @@
         return Math.max(1, Math.round(misura.w * (scale || 1) / 2 / stepLen));
     }
 
-    function buildStandRow(trackPts, startIdx, side, offset, maxCols, accept, spanSamples) {
+    function buildStandRow(trackPts, startIdx, side, offset, maxCols, accept, spanSamples, avanti) {
         const distanzaA = typeof offset === 'function' ? offset : () => offset;
 
         function moduleAt(idx) {
@@ -825,8 +833,16 @@
         const center = moduleAt(startIdx);
         if (!accept(center)) return [];
         const modules = [center];
-        const back = Math.floor((maxCols - 1) / 2);
-        const forward = maxCols - 1 - back;
+        // `avanti`, se dato, è quanti moduli si allungano NEL VERSO DI MARCIA:
+        // il resto va all'indietro. Serve alla tribuna principale, che è
+        // centrata sul traguardo ma deve guardare la GRIGLIA, che sta dietro
+        // di esso — e soprattutto non deve arrivare addosso al ponte semafori,
+        // che sta 75 unità avanti. Con la ripartizione simmetrica (3 avanti su
+        // 7) il modulo di testa ci finiva sotto e restava senza rete
+        // protettiva, segnalato in gioco il 2026-08-13.
+        const forward = avanti === undefined ? maxCols - 1 - Math.floor((maxCols - 1) / 2)
+                                             : Math.min(avanti, maxCols - 1);
+        const back = maxCols - 1 - forward;
         for (const dirWanted of [[1, forward], [-1, back]]) {
             const dir = dirWanted[0];
             let prev = center;
@@ -865,7 +881,8 @@
                 const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);
                 return fitsUnderBridge('__stack__', m.x, m.z, y, stackHeight);
             },
-            campioniDiMezzaLarghezza(trackPts, MAIN_STAND_ASSET, 1));
+            campioniDiMezzaLarghezza(trackPts, MAIN_STAND_ASSET, 1),
+            MAIN_STAND_COLS_AVANTI);
 
         for (const m of modules) {
             const baseY = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);
