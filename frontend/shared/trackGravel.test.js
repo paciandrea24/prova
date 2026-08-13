@@ -215,21 +215,23 @@ test('barrierProfile: la banda di ghiaia non esce mai da sotto il muro', () => {
                 `campione ${i}: la barriera taglierebbe la banda di ghiaia`);
         }
     }
-    // E su un ovale senza ponti né corsia box la ghiaia perde ESATTAMENTE
-    // quello che il tetto del muro le toglie, né più né meno.
+    // E su un ovale senza ponti né corsia box la ghiaia NON viene rifilata
+    // affatto: il muro le fa posto tutto.
     //
-    // Fino al 2026-08-12 qui si pretendeva che non venisse rifilata affatto.
-    // Non vale più: il muro ha un tetto (RUNOFF_MAX) scelto dall'utente
-    // guardando i disegni dall'alto, e la ghiaia sta fra cordolo e muro,
-    // quindi oltre il tetto viene tagliata per forza. È il prezzo dichiarato
-    // di quella scelta, non un difetto — ma resta un tetto, non uno sconto
-    // libero: quello che ci sta sotto dev'essere intatto.
+    // Per una sera (2026-08-12) qui si pretendeva invece `min(piena,
+    // RUNOFF_MAX)`, perché un tetto fisso a 16 tosava le vie di fuga più
+    // larghe. Quel tetto non c'è più: a limitare il muro resta solo il tetto
+    // geometrico, che morde dove il raggio della curva non regge la distanza.
+    // Sull'ovale le curve hanno raggio 60 contro un muro a 21 dal cordolo,
+    // quindi non morde: misurata una rifilatura di 0.0000 su tutti i
+    // campioni. Se un domani questo test tornasse rosso, la domanda giusta è
+    // "che raggio ha la curva rispetto alla via di fuga che chiede", non
+    // "di quanto va alzato un tetto".
     const piena = TrackGravel.gravelProfile(pts, { roadHalf: ROAD_HALF });
     for (let i = 0; i < pts.length; i++) {
         for (const lato of ['left', 'right']) {
-            const atteso = Math.min(piena[lato][i], TrackGravel.RUNOFF_MAX);
-            assert.ok(Math.abs(bar.gravel[lato][i] - atteso) < 1e-9,
-                `campione ${i} ${lato}: ghiaia ${bar.gravel[lato][i].toFixed(2)}, attesa ${atteso.toFixed(2)}`);
+            assert.ok(Math.abs(bar.gravel[lato][i] - piena[lato][i]) < 1e-9,
+                `campione ${i} ${lato}: ghiaia ${bar.gravel[lato][i].toFixed(2)}, attesa ${piena[lato][i].toFixed(2)}`);
         }
     }
 });
@@ -431,3 +433,22 @@ for (const id of ['prova', 'monte-rosso', 'new-monza', 'baku']) {
         }
     });
 }
+
+test('la ghiaia cresce con la velocità della curva, oltre la base di 16', () => {
+    const { raw, pts } = pistaVera('prova');
+    const bar = TrackGravel.barrierProfile(pts, { roadHalf: raw.roadHalfWidth });
+    const bordoCordolo = raw.roadHalfWidth + TrackGravel.CURB_W;
+
+    let massimo = 0;
+    for (let i = 0; i < pts.length; i++) {
+        for (const side of [-1, 1]) {
+            massimo = Math.max(massimo, TrackGravel.barrierAt(bar, i, side) - bordoCordolo);
+        }
+    }
+    // Su prova le curve veloci chiedono 20.7, 22, 25.1 e 31.9 unità di
+    // ghiaia: se il muro non supera mai RUNOFF_MIN significa che un tetto
+    // fisso le sta tosando tutte, e le vie di fuga non raccontano più che
+    // curva sia.
+    assert.ok(massimo > TrackGravel.RUNOFF_MIN + 2,
+        `il muro non supera mai ${TrackGravel.RUNOFF_MIN} dal cordolo (massimo ${massimo.toFixed(1)}): la ghiaia non cresce più con la curva`);
+});

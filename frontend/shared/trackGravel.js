@@ -277,13 +277,14 @@
     // l'utente vedeva in gioco come "grovigli" e "grossi allungamenti".
     // A 16 il muro resta un contorno della pista su tutto il giro.
     const RUNOFF_MIN = 16;
-    // Tetto: per nessun motivo il muro va oltre questa distanza dal cordolo,
-    // nemmeno per far posto a una via di fuga larga. Oggi coincide con
-    // RUNOFF_MIN, quindi il muro è di fatto a distanza costante; sono due
-    // costanti separate perché rispondono a due domande diverse — "dove sta
-    // di norma" e "fin dove può arrivare" — e alzando solo questa si
-    // riottiene un muro che si allarga in curva, se un domani lo si vorrà.
-    const RUNOFF_MAX = 16;
+    // ⚠️ Qui NON c'è un RUNOFF_MAX, cioè un tetto fisso oltre il quale il muro
+    // non va mai. C'è stato per una sera (2026-08-12) e valeva 16, come
+    // RUNOFF_MIN: il muro era di fatto a distanza costante e la gradazione
+    // "curva veloce = più ghiaia" spariva quasi del tutto. La regola decisa
+    // dall'utente è "16 ovunque tranne nelle curve che in base alla velocità
+    // ne necessitano di più", e a limitare il muro basta il tetto geometrico
+    // qui sotto, che è locale: stringe dove la curva non regge quella
+    // larghezza e lascia stare dove invece ci sta.
     // Quanto deve ancora avanzare il nastro della barriera fra due campioni,
     // in frazione dell'avanzamento della pista. Sotto zero il nastro si
     // ripiega (cuspide), a zero i quad sono degeneri: si pretende una
@@ -310,6 +311,22 @@
     // punto in cui le due mesh si incontrano — e mezza lunghezza d'auto di
     // margine costa niente in una zona dove lo spazio è comunque conteso.
     const BARRIER_NEIGHBOUR_MARGIN = 2;
+
+    // Distanza massima a cui il muro può stare al campione `i` senza che il
+    // nastro si ripieghi. Ricavata in forma chiusa dall'avanzamento del punto
+    // di barriera, che è lineare nella distanza: A + C*d, con C negativo sul
+    // lato interno. Restituisce Infinity sul lato esterno, dove il nastro si
+    // allunga e nessun vincolo serve.
+    function tettoGeometrico(trackPts, i, side, minAdvance) {
+        const n = trackPts.length;
+        const prev = (i - 1 + n) % n;
+        const t = TrackGeometry.tangentAt(trackPts, prev, true);
+        const nQui = TrackGeometry.normalAt(trackPts, i, true);
+        const C = side * (nQui.nx * t.tx + nQui.nz * t.tz);
+        if (C >= 0) return Infinity;
+        const A = (trackPts[i].x - trackPts[prev].x) * t.tx + (trackPts[i].z - trackPts[prev].z) * t.tz;
+        return A * (1 - minAdvance) / (-C);
+    }
 
     // Distanza della barriera dall'ASSE pista, campione per campione e lato
     // per lato. Valore assoluto e non un incremento, perché lo consumano tre
@@ -380,14 +397,29 @@
                 gravel.right[i] = 0;
                 continue;
             }
-            // La ghiaia spinge fuori il muro, ma solo fino al tetto: oltre,
-            // la banda viene rifilata sul muro dalla sesta passata. È una
-            // perdita voluta — con il muro a distanza costante la via di fuga
-            // larga non ci sta, e fra le due l'utente ha scelto la forma del
-            // muro (2026-08-12, decisa sui disegni).
-            const tetto = bordoCordolo + RUNOFF_MAX;
-            if (gravel.left[i] > 0) base.left[i] = Math.min(tetto, Math.max(base.left[i], bordoCordolo + gravel.left[i]));
-            if (gravel.right[i] > 0) base.right[i] = Math.min(tetto, Math.max(base.right[i], bordoCordolo + gravel.right[i]));
+            for (const side of [-1, 1]) {
+                const larghezza = side > 0 ? gravel.right[i] : gravel.left[i];
+                if (larghezza <= 0) continue;
+                const banda = side > 0 ? base.right : base.left;
+                // La ghiaia spinge fuori il muro quanto la curva chiede: le
+                // curve veloci hanno una via di fuga più ampia, quelle lente
+                // quasi niente. Non c'è più un tetto fisso — a limitare il
+                // muro è il tetto geometrico della passata più sotto, che è
+                // locale: dove la curva è troppo stretta perché quella
+                // larghezza ci stia, il muro scende da sé.
+                //
+                // ⚠️ Ma la ghiaia non deve MAI spingere il muro oltre il
+                // punto in cui il nastro regge. Su baku le curve hanno raggio
+                // 9.9 con pista di semi-larghezza 11: lì nemmeno la distanza
+                // storica sta dentro il raggio, e il tetto geometrico non può
+                // salvarla perché non scende sotto `storica`. Lasciando
+                // spingere la ghiaia i ripiegamenti passavano da 31 a 45,
+                // misurato il 2026-08-12. `limite` non scende mai sotto il
+                // valore che il campione ha già: la spinta può solo fermarsi,
+                // mai peggiorare la situazione di partenza.
+                const limite = Math.max(banda[i], tettoGeometrico(trackPts, i, side, BARRIER_MIN_ADVANCE));
+                banda[i] = Math.max(banda[i], Math.min(bordoCordolo + larghezza, limite));
+            }
         }
 
         // L'azzeramento appena fatto è netto, e la ghiaia arriva al bordo del
@@ -497,23 +529,18 @@
         // distanza non entra nell'avanzamento. Sbagliato al primo tentativo
         // il 2026-08-12: su prova sembrava funzionare lo stesso (campioni
         // vicini hanno distanze simili), ma su baku restavano 31 ripiegamenti.
+        // Non basta pretendere un avanzamento > 0: a filo di zero il nastro
+        // avanza di nulla e i quad restano degeneri. Se ne pretende una
+        // frazione, che è anche il margine per il campionamento.
         for (let i = 0; i < n; i++) {
             const prev = (i - 1 + n) % n;
             if (trackPts[i].bridge || trackPts[prev].bridge) continue;
-            const t = TrackGeometry.tangentAt(trackPts, prev, true);
-            const nQui = TrackGeometry.normalAt(trackPts, i, true);
-            // Avanzamento del nastro fra prev e i, in funzione della distanza
-            // del muro QUI: A + C*d.
-            const A = (trackPts[i].x - trackPts[prev].x) * t.tx + (trackPts[i].z - trackPts[prev].z) * t.tz;
             for (const side of [-1, 1]) {
-                const C = side * (nQui.nx * t.tx + nQui.nz * t.tz);
-                if (C >= 0) continue;             // lato esterno: si allunga, nessun rischio
+                const tetto = tettoGeometrico(trackPts, i, side, BARRIER_MIN_ADVANCE);
+                if (!isFinite(tetto)) continue;   // lato esterno: si allunga, nessun rischio
                 const banda = side > 0 ? base.right : base.left;
-                // Non basta A + C*d > 0: a filo di zero il nastro avanza di
-                // nulla e i quad restano degeneri. Se ne pretende una
-                // frazione, che è anche il margine per il campionamento.
-                const tetto = Math.max(storica, A * (1 - BARRIER_MIN_ADVANCE) / (-C));
-                if (banda[i] > tetto) banda[i] = tetto;
+                const limite = Math.max(storica, tetto);
+                if (banda[i] > limite) banda[i] = limite;
             }
         }
 
@@ -572,7 +599,7 @@
     return {
         gravelProfile, gravelAt, barrierDistAt,
         barrierProfile, barrierAt, sceneryShiftAt,
-        RUNOFF_MIN, RUNOFF_MAX, BARRIER_MIN_ADVANCE, BRIDGE_MARGIN, PIT_STRAIGHT_REACH,
+        RUNOFF_MIN, BARRIER_MIN_ADVANCE, BRIDGE_MARGIN, PIT_STRAIGHT_REACH,
         pitGapSamples, PIT_MERGE_WINDOW,
         cornerSpeed, cornerGravelWidth,
         MAX_SPEED, TURN_SPEED_LOW, TURN_SPEED_HIGH,
