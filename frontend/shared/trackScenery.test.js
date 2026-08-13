@@ -878,16 +878,50 @@ function deviazioneDalMuro(trackPts, barrierProfile, voce) {
 const PARALLELI_AL_MURO = new Set(['catchFence', 'grandStandCovered',
     'grandStandAwning', 'grandStand', 'grandStandSmall']);
 
+// Quanto il muro GIRA sotto l'oggetto, da un suo estremo all'altro. È il
+// limite fisico di quanto un oggetto rigido può allinearsi: se il muro cambia
+// direzione di 40° sotto una tribuna, qualunque angolo si scelga un'estremità
+// resta fuori. L'ottimo è la corda, che sta a metà fra le due direzioni
+// estreme, quindi l'errore inevitabile è metà della rotazione.
+function rotazioneDelMuroSotto(trackPts, barrierProfile, voce) {
+    const { idx, side } = doveSta(trackPts, voce);
+    const n = trackPts.length;
+    const stepLen = TrackGeometry.lapLength(trackPts) / n;
+    const misura = SceneryAssetSizes.sizeOf(voce.asset);
+    const w = Math.max(1, Math.round((misura ? misura.w : 12) * (voce.scale || 1) / 2 / stepLen));
+    const punto = (k) => {
+        const { nx, nz } = TrackGeometry.normalAt(trackPts, k, true);
+        const d = TrackGravel.barrierAt(barrierProfile, k, side);
+        return { x: trackPts[k].x + nx * d * side, z: trackPts[k].z + nz * d * side };
+    };
+    const dir = (a, b) => {
+        const p = punto(((a % n) + n) % n), q = punto(((b % n) + n) % n);
+        return Math.atan2(q.x - p.x, q.z - p.z) * 180 / Math.PI;
+    };
+    let g = ((dir(idx, idx + w) - dir(idx - w, idx)) % 360 + 360) % 360;
+    if (g > 180) g -= 360;
+    return Math.abs(g);
+}
+
 for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
     test(`scenografia: tribune e reti restano parallele al muro (${id})`, () => {
         const { trackPts, barrierProfile, layout } = circuitoVero(id);
+        // La soglia non è un numero fisso ma il limite geometrico del punto:
+        // metà di quanto il muro gira sotto l'oggetto, più 8° di tolleranza
+        // per la discretizzazione (la posa cade fra due campioni, quindi
+        // l'oggetto e la misura non guardano esattamente lo stesso tratto).
+        // Dove il muro è dritto la soglia vale 8° e il test è severissimo; ed
+        // è lì che stavano i difetti veri, fino a 48°.
         const storti = layout
             .filter(v => PARALLELI_AL_MURO.has(v.asset))
-            .map(v => ({ v, d: deviazioneDalMuro(trackPts, barrierProfile, v), dove: doveSta(trackPts, v) }))
-            .filter(m => m.d > 10);
+            .map(v => ({ v, dove: doveSta(trackPts, v),
+                         d: deviazioneDalMuro(trackPts, barrierProfile, v),
+                         limite: rotazioneDelMuroSotto(trackPts, barrierProfile, v) / 2 + 8 }))
+            .filter(m => m.d > m.limite);
         assert.equal(storti.length, 0,
-            `${id}: ${storti.length} elementi oltre 10° dal muro — `
-            + storti.slice(0, 5).map(m => `${m.v.asset}@${m.dove.idx} ${m.d.toFixed(1)}°`).join(', '));
+            `${id}: ${storti.length} elementi più storti di quanto il muro giri sotto di loro — `
+            + storti.slice(0, 5).map(m => `${m.v.asset}@${m.dove.idx} ${m.d.toFixed(1)}° `
+                + `(limite ${m.limite.toFixed(1)}°)`).join(', '));
     });
 }
 
