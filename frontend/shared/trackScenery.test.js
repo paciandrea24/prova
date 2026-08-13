@@ -812,3 +812,121 @@ test('con le vie di fuga il layout resta deterministico', () => {
     }
 });
 
+
+// ---- tribune e reti allineate al muro ----
+//
+// L'utente ha chiesto in gioco (2026-08-12, segnalazione al campione 620)
+// che "orientamento della tribuna E della catchFence davanti seguano
+// l'andamento delle barriere". Fino al 2026-08-13 seguivano la normale della
+// PISTA, che è la stessa cosa solo dove il muro sta a distanza costante.
+const TrackGravel = require('./trackGravel.js');
+const fsAllineamento = require('fs');
+const pathAllineamento = require('path');
+
+function circuitoVero(id) {
+    const raw = JSON.parse(fsAllineamento.readFileSync(pathAllineamento.join(
+        __dirname, '..', 'tracks', `${id}.json`), 'utf8'));
+    const trackPts = TrackGeometry.sampleLoop(raw.controlPoints, 1000);
+    // Stessi campionamenti del caricatore di pista (trackLoader.js:14-17):
+    // la corsia box non può essere nulla, la scenografia la usa per decidere
+    // dove NON mettere le cose.
+    const pitPath = TrackGeometry.snapPitPathEnds(raw.pit.path, trackPts, raw.roadHalfWidth);
+    const pitLanePts = TrackGeometry.sampleOpenPath(pitPath, 300);
+    const barrierProfile = TrackGravel.barrierProfile(trackPts, {
+        roadHalf: raw.roadHalfWidth, pitLanePts, pitRoadHalf: raw.pit.roadHalfWidth });
+    const BARRIER_D = raw.roadHalfWidth + 2.8 + 1.2;
+    const layout = TrackScenery.generateLayout(raw, trackPts, pitLanePts, BARRIER_D, 45, null, barrierProfile);
+    return { raw, trackPts, barrierProfile, layout, BARRIER_D };
+}
+
+// Su che lato della pista sta una voce, e a che campione.
+function doveSta(trackPts, voce) {
+    const v = TrackGeometry.nearestPoint(trackPts, voce.x, voce.z);
+    const { nx, nz } = TrackGeometry.normalAt(trackPts, v.index, true);
+    const seg = (voce.x - trackPts[v.index].x) * nx + (voce.z - trackPts[v.index].z) * nz;
+    return { idx: v.index, side: seg >= 0 ? 1 : -1, dist: v.dist };
+}
+
+// Quanto una voce devia dalla parallela al nastro del muro, in gradi.
+// ⚠️ rotY è la direzione in cui l'oggetto GUARDA, cioè perpendicolare al
+// nastro: una tribuna messa bene ha 90° di scarto dalla tangente, non 0.
+// L'oggetto è un segmento rigido: si confronta con la CORDA del muro che
+// sottende, cioè fra i campioni che cadono ai suoi due estremi. Misurarlo
+// contro una finestra fissa confronterebbe un'asse lunga con un tratto di
+// muro più corto o più lungo di lei.
+function deviazioneDalMuro(trackPts, barrierProfile, voce) {
+    const { idx, side } = doveSta(trackPts, voce);
+    const n = trackPts.length;
+    const stepLen = TrackGeometry.lapLength(trackPts) / n;
+    const misura = SceneryAssetSizes.sizeOf(voce.asset);
+    const w = Math.max(1, Math.round((misura ? misura.w : 12) * (voce.scale || 1) / 2 / stepLen));
+    const punto = (k) => {
+        const { nx, nz } = TrackGeometry.normalAt(trackPts, k, true);
+        const d = TrackGravel.barrierAt(barrierProfile, k, side);
+        return { x: trackPts[k].x + nx * d * side, z: trackPts[k].z + nz * d * side };
+    };
+    const a = punto(((idx - w) % n + n) % n), b = punto((idx + w) % n);
+    const angNastro = Math.atan2(b.x - a.x, b.z - a.z) * 180 / Math.PI;
+    let s = ((voce.rotY * 180 / Math.PI - angNastro) % 180 + 180) % 180;
+    if (s > 90) s -= 180;
+    return Math.abs(90 - Math.abs(s));
+}
+
+// Tipi per cui il parallelismo al muro È la regola. tyreStack e brakingBoard
+// sono esclusi apposta: un cartello di frenata sta perpendicolare alla pista
+// per essere letto, e per lui 79° di scarto non sono un difetto.
+const PARALLELI_AL_MURO = new Set(['catchFence', 'grandStandCovered',
+    'grandStandAwning', 'grandStand', 'grandStandSmall']);
+
+for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+    test(`scenografia: tribune e reti restano parallele al muro (${id})`, () => {
+        const { trackPts, barrierProfile, layout } = circuitoVero(id);
+        const storti = layout
+            .filter(v => PARALLELI_AL_MURO.has(v.asset))
+            .map(v => ({ v, d: deviazioneDalMuro(trackPts, barrierProfile, v), dove: doveSta(trackPts, v) }))
+            .filter(m => m.d > 10);
+        assert.equal(storti.length, 0,
+            `${id}: ${storti.length} elementi oltre 10° dal muro — `
+            + storti.slice(0, 5).map(m => `${m.v.asset}@${m.dove.idx} ${m.d.toFixed(1)}°`).join(', '));
+    });
+}
+
+test('scenografia: ogni tribuna sta alla distanza del muro del PROPRIO lato', () => {
+    // `distanzaDalMuro` restituisce una funzione (idx, side), ma fino al
+    // 2026-08-13 buildStandRow la chiamava con il solo idx: side arrivava
+    // undefined e `barrierAt` faceva `side > 0 ? right : left`, quindi TUTTE
+    // le tribune prendevano il muro sinistro. Su new-monza una finiva a 14.3
+    // unità dal posto giusto.
+    // ⚠️ Una tribuna non sta SUL muro, sta a muro + margine. Confrontare la
+    // distanza nuda con i due muri dà un falso allarme ogni volta che il
+    // margine è più grande della differenza fra i lati. Si misura invece lo
+    // scostamento dal margine, che deve essere lo stesso per tutte: dove il
+    // codice sbagliasse lato, le tribune con i due muri diversi sarebbero le
+    // uniche fuori squadra.
+    for (const id of ['prova', 'new-monza', 'monte-rosso']) {
+        const { trackPts, barrierProfile, layout } = circuitoVero(id);
+        const tribune = layout.filter(v => v.category === 'grandstand' || v.category === 'grandstand-main')
+            .map(v => {
+                const { idx, side, dist } = doveSta(trackPts, v);
+                return { v, idx, side, dist,
+                         suo: TrackGravel.barrierAt(barrierProfile, idx, side),
+                         sinistro: TrackGravel.barrierAt(barrierProfile, idx, -1) };
+            });
+        const margini = tribune.map(t => t.dist - t.suo).sort((a, b) => a - b);
+        const margine = margini[margini.length >> 1];
+
+        for (const t of tribune) {
+            if (Math.abs(t.suo - t.sinistro) < 0.5) continue;   // i due lati coincidono: non discrimina
+            // Soglia 3 e non 1: i moduli intermedi di una schiera sono
+            // interpolati fra due campioni (`moduleBetween`), quindi dove il
+            // muro cambia fra i due la distanza risulta intermedia — misurate
+            // 1.9 unità sulla tribuna del campione 812 di `prova`. Il lato
+            // sbagliato produce scarti molto più grossi: 6.3 sullo stesso
+            // campione, 14.3 su new-monza.
+            assert.ok(Math.abs((t.dist - t.suo) - margine) < 3,
+                `${id}: ${t.v.asset} al campione ${t.idx} lato ${t.side > 0 ? 'dx' : 'sx'} sta a `
+                + `${(t.dist - t.suo).toFixed(1)} dal proprio muro invece dei ${margine.toFixed(1)} `
+                + `delle altre (muro suo ${t.suo.toFixed(1)}, sinistro ${t.sinistro.toFixed(1)})`);
+        }
+    }
+});

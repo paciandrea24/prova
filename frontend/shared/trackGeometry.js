@@ -259,8 +259,15 @@
     // orientato sulla normale della pista risulta storto di altrettanto:
     // misurati 37° sulla rete del campione 414 di `prova` e 31° sulla tribuna
     // del 615, quella segnalata in gioco dall'utente il 2026-08-12.
-    function ribbonFacingAt(points, i, side, distanzaA) {
+    // `spanSamples` è la mezza-larghezza dell'oggetto, in campioni: la
+    // direzione si prende sulla CORDA del nastro che l'oggetto sottende, non
+    // sulla tangente in un punto. Un oggetto è un segmento rigido, e in una
+    // rampa breve la tangente al centro non è parallela alla corda: con
+    // spanSamples 1 su un oggetto largo 4 campioni restavano 17° di scarto
+    // sulla tribuna del campione 615 di `prova` (misurato il 2026-08-13).
+    function ribbonFacingAt(points, i, side, distanzaA, spanSamples) {
         const n = points.length;
+        const w = Math.max(1, Math.round(spanSamples || 1));
         const punto = (k) => {
             const { nx, nz } = normalAt(points, k, true);
             const d = distanzaA(k, side);
@@ -268,7 +275,7 @@
         };
         const qui = punto(i);
         const versoPista = { x: points[i].x - qui.x, z: points[i].z - qui.z };
-        const a = punto((i - 1 + n) % n), b = punto((i + 1) % n);
+        const a = punto(((i - w) % n + n) % n), b = punto((i + w) % n);
         let tx = b.x - a.x, tz = b.z - a.z;
         const len = Math.hypot(tx, tz);
         // Nastro degenere (i due vicini coincidono): non c'è una tangente da

@@ -630,7 +630,8 @@
                         if (SceneryAssetSizes.itemsOverlap(cand, p)) return false;
                     }
                     return fitsUnderBridge(asset, m.x, m.z, y);
-                });
+                },
+                campioniDiMezzaLarghezza(trackPts, asset, CUSTOM_MODEL_SCALE));
 
             // Mai una tribuna isolata: o è una schiera leggibile, o niente.
             // Una singola in mezzo al nulla, o peggio a mezza distanza da una
@@ -700,21 +701,49 @@
     // 2026-08-12. Generandola già alla distanza giusta, ogni modulo prende la
     // rotazione del punto in cui sta davvero, e la catena continua a garantire
     // le distanze fra i moduli.
-    function buildStandRow(trackPts, startIdx, side, offset, maxCols, accept) {
+    // Mezza-larghezza di un asset espressa in campioni di pista: è la finestra
+    // su cui prendere la direzione del muro, perché un modulo è un segmento
+    // rigido e deve stare parallelo alla CORDA che sottende, non alla tangente
+    // del suo centro. In unità di pista e non in campioni fissi: il passo vale
+    // 5.17 unità su `prova` e 1.18 su `monte-rosso`.
+    function campioniDiMezzaLarghezza(trackPts, asset, scale) {
+        const stepLen = TrackGeometry.lapLength(trackPts) / trackPts.length;
+        const misura = SceneryAssetSizes.sizeOf(asset);
+        if (!misura || !stepLen) return 1;
+        return Math.max(1, Math.round(misura.w * (scale || 1) / 2 / stepLen));
+    }
+
+    function buildStandRow(trackPts, startIdx, side, offset, maxCols, accept, spanSamples) {
         const distanzaA = typeof offset === 'function' ? offset : () => offset;
 
         function moduleAt(idx) {
             const p = trackPts[idx];
             const { nx, nz } = TrackGeometry.normalAt(trackPts, idx, true);
-            const d = distanzaA(idx);
+            // ⚠️ `side` va passato: `distanzaDalMuro` restituisce una funzione
+            // di DUE argomenti e `barrierAt` fa `side > 0 ? right : left`.
+            // Chiamandola col solo indice, side arrivava undefined e ogni
+            // tribuna prendeva il muro sinistro — su new-monza una finiva a
+            // 14.3 unità dal posto giusto (misurato il 2026-08-13).
+            const d = distanzaA(idx, side);
             const x = p.x + nx * d * side;
             const z = p.z + nz * d * side;
-            return { x, z, idx, rotY: Math.atan2(p.x - x, p.z - z) };
+            // L'oggetto guarda perpendicolarmente al NASTRO del muro, non
+            // alla pista: dove il muro è in rampa le due direzioni divergono
+            // e la tribuna risultava storta fino a 31°, che è la segnalazione
+            // dell'utente al campione 620 di `prova`.
+            return { x, z, idx,
+                     rotY: TrackGeometry.ribbonFacingAt(trackPts, idx, side, distanzaA, spanSamples) };
         }
 
-        // rotY si interpola come i due punti: fra campioni adiacenti la
-        // differenza è di frazioni di grado, ma va normalizzata per non
+        // rotY si interpola come i due punti, e va normalizzato per non
         // attraversare il salto a ±π.
+        //
+        // ⚠️ Provato il 2026-08-13 a ricalcolarlo sul campione più vicino
+        // invece di interpolarlo, pensando che l'interpolazione fosse la
+        // causa delle tribune ancora storte in posizione intermedia: PEGGIORA
+        // (prova, campione 412: da 12.9° a 23.5°). L'interpolazione fra i due
+        // estremi è più vicina alla corda del modulo di quanto lo sia la
+        // direzione di uno solo dei due.
         function moduleBetween(prevIdx, idx, t) {
             const a = moduleAt(prevIdx), b = moduleAt(idx);
             let dRot = b.rotY - a.rotY;
@@ -770,7 +799,8 @@
                 // Se lì sopra passa un cavalcavia, la tribuna lo attraversa.
                 const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);
                 return fitsUnderBridge('__stack__', m.x, m.z, y, stackHeight);
-            });
+            },
+            campioniDiMezzaLarghezza(trackPts, MAIN_STAND_ASSET, 1));
 
         for (const m of modules) {
             const baseY = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);

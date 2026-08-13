@@ -703,3 +703,27 @@ test('ribbonFacingAt: riceve il lato e lo passa alla funzione di distanza', () =
     assert.ok(visti.length > 0 && visti.every(s => s === -1),
         `atteso lato -1 a ogni chiamata, visti ${[...new Set(visti)].join(',')}`);
 });
+
+test('ribbonFacingAt: si allinea alla corda che l\'oggetto sottende', () => {
+    // Nastro che si allontana solo per un tratto breve: al centro della rampa
+    // la tangente puntuale e la corda sottesa da un oggetto largo divergono.
+    // Un oggetto è un segmento rigido: deve stare parallelo alla corda, o le
+    // sue estremità restano staccate dal muro.
+    const pts = rettilineo();
+    const dist = (i) => 20 + (i >= 48 && i <= 52 ? (i - 48) * 5 : (i > 52 ? 20 : 0));
+    const stretto = TrackGeometry.ribbonFacingAt(pts, 50, 1, dist, 1);
+    const largo = TrackGeometry.ribbonFacingAt(pts, 50, 1, dist, 4);
+
+    // La corda su ±4 campioni comprende anche i tratti piatti prima e dopo la
+    // rampa, quindi è meno inclinata della tangente al centro.
+    const inclinazione = (rot) => {
+        const dritto = TrackGeometry.ribbonFacingAt(pts, 50, 1, () => 20, 1);
+        let d = rot - dritto;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        return Math.abs(d);
+    };
+    assert.ok(inclinazione(largo) < inclinazione(stretto),
+        `la corda larga dovrebbe essere meno inclinata: ${(inclinazione(largo) * 180 / Math.PI).toFixed(1)}° `
+        + `contro ${(inclinazione(stretto) * 180 / Math.PI).toFixed(1)}°`);
+});
