@@ -643,3 +643,63 @@ test('findCorners: minRadius è il raggio più stretto dell\'arco, non quello di
             `minRadius deve trovare l'arco stretto (~30), ottenuto ${c.minRadius.toFixed(1)}`);
     }
 });
+
+// ---- ribbonFacingAt: guardare il nastro, non la pista ----
+//
+// Un oggetto posato accanto alla pista deve guardare perpendicolarmente al
+// NASTRO su cui sta, che coincide con la pista solo se la distanza è
+// costante. Dove il muro sale o scende il nastro è inclinato, e un oggetto
+// orientato sulla normale della pista risulta storto: misurati 30° sulla
+// tribuna del campione 615 di `prova` (2026-08-13).
+
+function rettilineo(n = 200, passo = 5) {
+    const pts = [];
+    for (let i = 0; i < n; i++) pts.push({ x: i * passo, z: 0, y: 0 });
+    return pts;
+}
+
+test('ribbonFacingAt: a distanza costante coincide con la normale della pista', () => {
+    const pts = rettilineo();
+    for (const side of [-1, 1]) {
+        const atteso = Math.atan2(0, -side);   // guarda verso la pista
+        const avuto = TrackGeometry.ribbonFacingAt(pts, 50, side, () => 20);
+        const d = Math.abs(Math.atan2(Math.sin(avuto - atteso), Math.cos(avuto - atteso)));
+        assert.ok(d < 1e-9, `lato ${side}: atteso ${atteso}, avuto ${avuto}`);
+    }
+});
+
+test('ribbonFacingAt: su una rampa ruota quanto il nastro è inclinato', () => {
+    // Il nastro si allontana di 5 unità ogni campione, e il campione è lungo
+    // 5: il nastro sta a 45° rispetto alla pista, quindi anche la
+    // perpendicolare al nastro sta a 45° dalla normale della pista.
+    const pts = rettilineo();
+    const dritto = TrackGeometry.ribbonFacingAt(pts, 50, 1, () => 20);
+    const inRampa = TrackGeometry.ribbonFacingAt(pts, 50, 1, (i) => 20 + i * 5);
+    let delta = inRampa - dritto;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    assert.ok(Math.abs(Math.abs(delta) - Math.PI / 4) < 1e-6,
+        `attesi 45°, avuti ${(delta * 180 / Math.PI).toFixed(2)}°`);
+});
+
+test('ribbonFacingAt: guarda sempre verso la pista, su entrambi i lati', () => {
+    const pts = rettilineo();
+    for (const side of [-1, 1]) {
+        const rot = TrackGeometry.ribbonFacingAt(pts, 50, side, (i) => 20 + i * 2);
+        const { nx, nz } = TrackGeometry.normalAt(pts, 50, true);
+        const d = 20 + 50 * 2;
+        const qui = { x: pts[50].x + nx * d * side, z: pts[50].z + nz * d * side };
+        // il verso indicato da rotY deve avvicinarsi al punto pista
+        const vx = Math.sin(rot), vz = Math.cos(rot);
+        assert.ok((pts[50].x - qui.x) * vx + (pts[50].z - qui.z) * vz > 0,
+            `lato ${side}: l'oggetto dà le spalle alla pista`);
+    }
+});
+
+test('ribbonFacingAt: riceve il lato e lo passa alla funzione di distanza', () => {
+    const pts = rettilineo();
+    const visti = [];
+    TrackGeometry.ribbonFacingAt(pts, 50, -1, (i, side) => { visti.push(side); return 20; });
+    assert.ok(visti.length > 0 && visti.every(s => s === -1),
+        `atteso lato -1 a ogni chiamata, visti ${[...new Set(visti)].join(',')}`);
+});

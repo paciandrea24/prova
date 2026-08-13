@@ -248,6 +248,39 @@
         return { nx: -tz, nz: tx };
     }
 
+    // Direzione in cui deve guardare un oggetto posato su un nastro parallelo
+    // alla pista a distanza `distanzaA(idx, side)`: perpendicolare al NASTRO,
+    // non alla pista.
+    //
+    // Dove la distanza è costante le due direzioni coincidono — è il motivo
+    // per cui questa funzione non cambia nulla su 136 elementi di 149. Dove
+    // il muro sale o scende, il nastro è inclinato rispetto alla pista di
+    // atan(variazione della distanza / passo di pista), e un oggetto
+    // orientato sulla normale della pista risulta storto di altrettanto:
+    // misurati 37° sulla rete del campione 414 di `prova` e 31° sulla tribuna
+    // del 615, quella segnalata in gioco dall'utente il 2026-08-12.
+    function ribbonFacingAt(points, i, side, distanzaA) {
+        const n = points.length;
+        const punto = (k) => {
+            const { nx, nz } = normalAt(points, k, true);
+            const d = distanzaA(k, side);
+            return { x: points[k].x + nx * d * side, z: points[k].z + nz * d * side };
+        };
+        const qui = punto(i);
+        const versoPista = { x: points[i].x - qui.x, z: points[i].z - qui.z };
+        const a = punto((i - 1 + n) % n), b = punto((i + 1) % n);
+        let tx = b.x - a.x, tz = b.z - a.z;
+        const len = Math.hypot(tx, tz);
+        // Nastro degenere (i due vicini coincidono): non c'è una tangente da
+        // cui ricavare la perpendicolare, si torna alla normale della pista
+        // invece di produrre un NaN.
+        if (len < 1e-9) return Math.atan2(versoPista.x, versoPista.z);
+        tx /= len; tz /= len;
+        let fx = -tz, fz = tx;
+        if (versoPista.x * fx + versoPista.z * fz < 0) { fx = -fx; fz = -fz; }
+        return Math.atan2(fx, fz);
+    }
+
     // Quota della pista SOPRAELEVATA che passa sopra il punto (x, z), o
     // Infinity se lì sopra non passa nulla entro `radius`.
     //
@@ -1095,6 +1128,7 @@
         splitByBridge,
         tangentAt,
         normalAt,
+        ribbonFacingAt,
         curvatureAt,
         bridgeHeightAt,
         pitBoxAnchors,
