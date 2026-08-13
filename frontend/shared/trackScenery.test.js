@@ -1438,10 +1438,14 @@ test('niente scenografia dentro gli asset che scavalcano la pista', () => {
 // `baku` è un caso a sé: 909 campioni su 1000 sono viadotto, quindi a terra
 // non ha vuoti da riempire e le sue quote restano altissime per costruzione.
 // Il tetto sulla quota serve solo a non farlo peggiorare.
+// ⚠️ Soglie tornate ai valori PRIMA delle infrastrutture, perché la palette
+// di produzione è di nuovo vuota: i segnaposto sono stati bocciati al
+// playtest. Vanno strette di nuovo quando i modelli veri entreranno in gioco,
+// e i numeri da battere sono quelli della colonna "dopo" qui sopra.
 const VUOTI_ATTESI = {
-    'prova':       { peggiore: 300, quota: 0.30 },
-    'new-monza':   { peggiore: 170, quota: 0.10 },
-    'monte-rosso': { peggiore: 40,  quota: 0.08 },
+    'prova':       { peggiore: 330, quota: 0.45 },
+    'new-monza':   { peggiore: 230, quota: 0.20 },
+    'monte-rosso': { peggiore: 130, quota: 0.20 },
     'baku':        { peggiore: 10,  quota: 0.85 },
 };
 

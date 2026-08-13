@@ -185,15 +185,19 @@
     // ⚠️ L'ordine dentro ogni contesto è l'ordine di PREFERENZA: se il primo
     // non entra si prova il successivo, invece di lasciare un buco.
     //
-    // `pylon` è alto 26.2 e `flagPole` 15: entrambi superano gli 11.5 unità di
-    // dislivello del viadotto di `prova`, ma solo `pylon` è dichiarato per il
-    // contesto 'viadotto' — `flagPole` lì si leggerebbe come un dettaglio
-    // perso in basso. `billboardLow` è alto 4.5 e non può starci per vincolo.
-    const PALETTE_INFRASTRUTTURE = [
-        { asset: 'pylon',        contesti: ['rettilineo', 'viadotto'], passoMinimo: 400 },
-        { asset: 'flagPole',     contesti: ['curvaEsterno', 'stretto'], passoMinimo: 220 },
-        { asset: 'billboardLow', contesti: ['rettilineo', 'stretto'],  passoMinimo: 160 },
-    ];
+    // ⚠️ VUOTA di proposito, finché i modelli nuovi non esistono.
+    //
+    // Il 2026-08-13 l'avevo riempita con asset che esistevano già — `pylon`,
+    // `flagPole`, `billboardLow` — per poter giudicare la distribuzione prima
+    // di modellare. Bocciata dall'utente al playtest, e a ragione: cartelloni
+    // e pennoni sparsi non riempiono un circuito, lo sporcano. Un asset di
+    // segnaletica messo dove servirebbe un volume non è un segnaposto: è un
+    // difetto.
+    //
+    // Ha fatto emergere anche un difetto vero del modulo: il contesto
+    // 'stretto' è un ripiego buono-per-tutto, e accetta quasi ovunque
+    // qualunque asset lo dichiari. Va ripensato insieme ai modelli veri.
+    const PALETTE_INFRASTRUTTURE = [];
 
     // Tribuna principale: unica per tracciato, vicino al rettilineo di
     // partenza. È la variante CON LA COPERTURA, mentre le schiere sparse per
