@@ -612,35 +612,11 @@
     // riferimento è UNO, quindi la rete davanti a ogni modulo sta a distanza
     // costante dalla sua tribuna e non può né entrarci né finire in ghiaia.
     // Aggiungere tribune diventa sicuro ovunque.
-    // Un modulo deve GUARDARE la pista che ha davvero davanti, cioè stare
-    // perpendicolare al campione che gli è più vicino. Non è la stessa cosa di
-    // essere perpendicolare al campione da cui è stato costruito: dove la
-    // pista fa un tornante, le due branche si avvicinano e un modulo posato
-    // per la prima si ritrova più vicino alla seconda.
     //
-    // Il 2026-08-13, allungando le schiere da 6 a 8 moduli, su `prova` una
-    // fila finiva con sette moduli a 45.8 dall'asse e l'ottavo a 40.4 girato
-    // di 77°, e un'altra nasceva già storta di 37° perché il SEME cadeva lì.
-    // Sono la "tribuna storta" e il "gradino nella fila" che i test misurano:
-    // un solo modulo li produceva entrambi.
-    //
-    // 30°: i moduli sani deviano meno di 1°, e il caso limite noto e accettato
-    // — il muro che gira più di quanto la tribuna sia larga, prova @412 —
-    // arriva a 18.5°. Separa i due mondi senza inseguire nessuno dei due.
-    const SCARTO_DALLA_PISTA_MAX = Math.PI / 6;
-
-    function guardaLaSuaPista(trackPts, m) {
-        const q = TrackGeometry.nearestPoint(trackPts, m.x, m.z);
-        const nrm = TrackGeometry.normalAt(trackPts, q.index, true);
-        const lato = Math.sign((m.x - trackPts[q.index].x) * nrm.nx +
-                               (m.z - trackPts[q.index].z) * nrm.nz) || 1;
-        // Direzione che va dal modulo verso l'asse: è dove deve guardare.
-        const verso = Math.atan2(-nrm.nx * lato, -nrm.nz * lato);
-        let d = (m.rotY || 0) - verso;
-        while (d > Math.PI) d -= Math.PI * 2;
-        while (d < -Math.PI) d += Math.PI * 2;
-        return Math.abs(d) <= SCARTO_DALLA_PISTA_MAX;
-    }
+    // ⚠️ Il vincolo «un modulo deve guardare la pista che ha davvero davanti»
+    // vive in `TrackGeometry.guardaVersoLaPista`: è geometria pura e serve
+    // anche a `sceneryInfrastructure.js`. La storia di come è nato — la fila
+    // di 8 moduli con l'ottavo girato di 77° — sta nel commento lì.
 
     function muroDellaFila(trackPts, barrierProfile, barrierDist, moduli, side, mezzaInCampioni) {
         if (!barrierProfile) return barrierDist;
@@ -720,7 +696,7 @@
             // due branche si avvicinano, tutta la fila nasce storta e la
             // ricerca dello slot è il posto giusto per scansarlo — scorrendo
             // di qualche campione invece di perdere la schiera.
-            if (!guardaLaSuaPista(trackPts, {
+            if (!TrackGeometry.guardaVersoLaPista(trackPts, {
                 x, z, rotY: TrackGeometry.ribbonFacingAt(trackPts, idx, side,
                     () => barrierDist + GRANDSTAND_OFFSET_MARGIN, 1) })) return false;
             if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + GRANDSTAND_PIT_MARGIN) return false;
@@ -903,7 +879,7 @@
         }
 
         const center = moduleAt(startIdx);
-        if (!accept(center) || !guardaLaSuaPista(trackPts, center)) return [];
+        if (!accept(center) || !TrackGeometry.guardaVersoLaPista(trackPts, center)) return [];
         const modules = [center];
         // `avanti`, se dato, è quanti moduli si allungano NEL VERSO DI MARCIA:
         // il resto va all'indietro. Serve alla tribuna principale, che è
@@ -925,7 +901,7 @@
                 if (!hit) break;
                 const next = moduleBetween(hit.prevIdx, hit.idx, hit.t);
                 if (!accept(next)) break;   // la schiera si ferma qui, non salta l'ostacolo
-                if (!guardaLaSuaPista(trackPts, next)) break;
+                if (!TrackGeometry.guardaVersoLaPista(trackPts, next)) break;
                 // Rete di sicurezza contro i moduli accavallati: la catena
                 // avanza per distanza reale, quindi qui la distanza è già
                 // giusta, ma se un giorno smettesse di esserlo la schiera si

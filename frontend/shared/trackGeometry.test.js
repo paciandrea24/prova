@@ -727,3 +727,27 @@ test('ribbonFacingAt: si allinea alla corda che l\'oggetto sottende', () => {
         `la corda larga dovrebbe essere meno inclinata: ${(inclinazione(largo) * 180 / Math.PI).toFixed(1)}° `
         + `contro ${(inclinazione(stretto) * 180 / Math.PI).toFixed(1)}°`);
 });
+
+test('guardaVersoLaPista: passa chi guarda la pista, boccia chi le dà il fianco', () => {
+    // Anello di raggio 100 centrato nell'origine, campionato fitto.
+    const pts = [];
+    for (let i = 0; i < 400; i++) {
+        const a = (i / 400) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * 100, z: Math.sin(a) * 100 });
+    }
+    // Oggetto a 130 dal centro, sul raggio a 0°: la pista gli sta verso
+    // l'origine, quindi deve guardare in quella direzione.
+    const buono = { x: 130, z: 0, rotY: Math.atan2(0 - 130, 0 - 0) };
+    assert.ok(TrackGeometry.guardaVersoLaPista(pts, buono),
+        'un oggetto che guarda verso l\'asse deve passare');
+
+    // Stesso posto, girato di 90°: dà il fianco alla pista.
+    const storto = { x: 130, z: 0, rotY: buono.rotY + Math.PI / 2 };
+    assert.ok(!TrackGeometry.guardaVersoLaPista(pts, storto),
+        'un oggetto girato di 90° deve essere bocciato');
+
+    // 20° di scarto: sotto la soglia di 30°, passa.
+    const quasi = { x: 130, z: 0, rotY: buono.rotY + Math.PI / 9 };
+    assert.ok(TrackGeometry.guardaVersoLaPista(pts, quasi),
+        '20° di scarto stanno sotto la soglia di 30° e devono passare');
+});
