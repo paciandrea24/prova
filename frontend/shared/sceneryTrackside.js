@@ -27,7 +27,8 @@
     const BOARD_DISTANCES = [100, 50];
     const BOARD_MARGIN = 4;
     const MARSHAL_MARGIN = 8;
-    const FENCE_STEP = 12;           // passo di affiancamento del modello catchFence
+    // Nessun passo di affiancamento per le reti: dal 2026-08-13 ce n'è una
+    // sola per tribuna, scalata sulla larghezza della tribuna stessa.
     // 1.5 e non 3: la rete va subito dietro la barriera, non a metà strada
     // fra barriera e tribuna. A 3 il suo spessore arrivava a barrierDist+3.25
     // e i PILASTRI della tettoia delle tribune coperte — che scendono fino a
@@ -60,27 +61,23 @@
     const PIT_BARRIER_TRACK_CLEARANCE = 5;
 
 
-    // `profiloPerRotazione`, se dato, è la distanza del MURO campione per
-    // campione: serve solo a orientare l'oggetto lungo il nastro del muro.
-    // La POSIZIONE continua a venire da `offset`, che per le reti è un valore
-    // costante calcolato apposta (vedi più sotto, il massimo fra tre
-    // campioni): se la rete seguisse il muro anche in distanza, tornerebbe a
-    // staccarsi dalla tribuna che protegge.
+    // Oggetto piazzato di lato alla pista, che la guarda. Restano di qui i
+    // pezzi piccoli — gomme, commissari, cartelli — per cui la normale della
+    // pista basta.
     //
-    // `spanSamples` è la mezza-larghezza dell'oggetto in campioni: un modulo
-    // è un segmento rigido e va parallelo alla CORDA che sottende, non alla
-    // tangente del suo centro.
-    function place(trackPts, groundPts, idx, offset, side, barrierDist, embankStart, embankOuter,
-                   profiloPerRotazione, spanSamples) {
+    // Le reti NON passano più di qui dal 2026-08-13: nascono dalla tribuna che
+    // proteggono e ne ereditano centro e rotazione, quindi seguono il nastro
+    // del muro esattamente quanto lo segue la tribuna. Prima si orientavano da
+    // sole con `TrackGeometry.ribbonFacingAt`, e finivano storte rispetto alla
+    // tribuna che avevano davanti.
+    function place(trackPts, groundPts, idx, offset, side, barrierDist, embankStart, embankOuter) {
         const p = trackPts[idx];
         const { nx, nz } = TrackGeometry.normalAt(trackPts, idx, true);
         const x = p.x + nx * offset * side;
         const z = p.z + nz * offset * side;
         return {
             x, z,
-            rotY: profiloPerRotazione
-                ? TrackGeometry.ribbonFacingAt(trackPts, idx, side, profiloPerRotazione, spanSamples)
-                : Math.atan2(p.x - x, p.z - z),
+            rotY: Math.atan2(p.x - x, p.z - z),
             y: TrackGeometry.terrainHeightAt(groundPts, x, z, embankStart, embankOuter),
         };
     }
@@ -102,10 +99,12 @@
         // o se l'oggetto è troppo alto per stare sotto un cavalcavia che
         // passa lì sopra (la rete di protezione, alta 9, bucava la pista
         // sopraelevata del tracciato "prova" — segnalato con screenshot).
-        function usable(asset, x, z, y, pitClearance) {
+        // `altezza`, se data, sostituisce quella nominale dell'asset: serve a
+        // chi lo scala (le reti, dimensionate sulla tribuna).
+        function usable(asset, x, z, y, pitClearance, altezza) {
             if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitClearance) return false;
             if (insidePlayerBoxFootprint(x, z, playerBoxFootprints)) return false;
-            return fitsUnderBridge(asset, x, z, y);
+            return fitsUnderBridge(asset, x, z, y, altezza);
         }
 
         // Un oggetto affiancato a un tratto SOPRAELEVATO va scartato del
@@ -153,56 +152,81 @@
             }
         }
 
-        // Reti di protezione davanti a ogni tribuna già piazzata: si copre un
-        // tratto largo quanto la tribuna, centrato su di essa.
-        // Due moduli affiancati e centrati sulla tribuna, non tre a passo
-        // pieno: la tribuna è larga 19.2 e la rete 12, quindi tre moduli
-        // coprivano 36 unità e sporgevano di 8 per lato oltre la tribuna
-        // (segnalato dall'utente: "griglie che sporgono oltre").
-        const fenceHalfSamples = Math.max(1, Math.round((FENCE_STEP / 2) / stepLen));
+        // Reti di protezione: UNA per tribuna, larga esattamente quanto lei.
+        //
+        // Fino al 2026-08-13 erano due moduli a scala 1 affiancati a un passo
+        // arrotondato in CAMPIONI. Su `prova` un campione vale 5.17 unità,
+        // quindi l'arrotondamento portava i due moduli a ±5.17 invece di ±6:
+        // sfalsati rispetto alla tribuna, che restava scoperta per un pezzo.
+        // Al campione 615 la copertura era del 54% — "un grandstand per metà
+        // protetto e per metà no", segnalato in gioco. Su new-monza erano 57
+        // tribune su 65; su monte-rosso, dove il campione vale 1.18, il
+        // difetto non esisteva. È l'ennesima soglia geometrica espressa per
+        // campione invece che in unità di pista.
+        //
+        // Ora la rete NASCE dalla tribuna: stesso centro, stessa rotazione, e
+        // una scala tale che la sua larghezza sia quella della tribuna. La
+        // copertura è esatta per costruzione, non per taratura di un passo — e
+        // la rete è parallela al muro esattamente quanto lo è la tribuna,
+        // senza doverlo ricalcolare per conto suo.
+        //
+        // ⚠️ La scala è UNIFORME (f1.js fa `dummy.scale.setScalar`): portando
+        // la larghezza da 12 a 19.2 la rete si alza da 9 a 14.4, cioè fino al
+        // tetto della tribuna. L'utente lo ha accettato esplicitamente il
+        // 2026-08-13 ("va bene chiudere tutto fino al tetto"). Se un giorno la
+        // si volesse più bassa, serve una scala non uniforme nel renderer.
+        const larghezzaRete = SceneryAssetSizes.sizeOf('catchFence').w;
+        const altezzaRete = SceneryAssetSizes.sizeOf('catchFence').h;
+        const gia = new Set();
         for (const stand of grandstands) {
+            // La tribuna principale può essere impilata su più livelli allo
+            // stesso x/z: una rete sola, non una per livello, altrimenti sono
+            // superfici complanari che sfarfallano.
+            const chiave = stand.x.toFixed(2) + ',' + stand.z.toFixed(2);
+            if (gia.has(chiave)) continue;
+            gia.add(chiave);
+
+            const larghezza = SceneryAssetSizes.sizeOf(stand.asset).w * (stand.scale || 1);
+            const scale = larghezza / larghezzaRete;
             const near = TrackGeometry.nearestPoint(trackPts, stand.x, stand.z);
+            if (onBridge(near.index)) continue;
             const nrm = TrackGeometry.normalAt(trackPts, near.index, true);
             // Da che parte della pista sta la tribuna: proiezione del vettore
             // pista->tribuna sulla normale.
             const side = Math.sign((stand.x - trackPts[near.index].x) * nrm.nx +
                                    (stand.z - trackPts[near.index].z) * nrm.nz) || 1;
-            // La rete nasce sul MURO, come la tribuna che protegge, e sul
-            // campione DELLA TRIBUNA: se nascesse sulla barriera storica per
-            // poi essere traslata a valle, le due vedrebbero campioni diversi
-            // e si separerebbero (misurate 3 reti su 99 finite fino a 11.3
-            // unità fuori posto). Prendere il muro sul campione della rete
-            // invece che su quello della tribuna riapre lo stesso problema in
-            // piccolo, dove il muro cambia distanza fra i due.
-            // Il massimo fra il muro sotto la tribuna e quello sotto i due
-            // moduli di rete: uno solo dei tre lascerebbe la rete dentro la
-            // via di fuga dove il muro si allontana fra un campione e l'altro
-            // (misurate reti fino a 4.9 unità oltre la linea del muro).
+            // La rete nasce sul MURO, come la tribuna che protegge. Si prende
+            // il muro PIÙ LONTANO fra quelli sotto il fronte della rete, non
+            // quello del solo centro: dove il muro si allontana da un campione
+            // all'altro, un'estremità resterebbe dentro la via di fuga
+            // (misurate reti fino a 4.9 unità oltre la linea del muro). La
+            // finestra è la mezza-larghezza in unità di pista, convertita in
+            // campioni qui e solo qui.
             let muro = barrierDist;
             if (barrierProfile) {
-                for (const s of [-fenceHalfSamples, 0, fenceHalfSamples]) {
+                const mezza = Math.max(1, Math.round((larghezza / 2) / stepLen));
+                for (let s = -mezza; s <= mezza; s++) {
                     const k = ((near.index + s) % n + n) % n;
                     muro = Math.max(muro, TrackGravel.barrierAt(barrierProfile, k, side));
                 }
             }
-            for (let s = -fenceHalfSamples; s <= fenceHalfSamples; s += fenceHalfSamples * 2) {
-                const idx = ((near.index + s) % n + n) % n;
-                if (onBridge(idx)) continue;
-                // La rete guarda il nastro del MURO, non la normale della
-                // pista: dove il muro è in rampa le due direzioni divergono e
-                // la rete risultava storta fino a 48°. La sua POSIZIONE resta
-                // quella di prima — `muro` è il valore costante calcolato
-                // sopra, e cambiarlo la staccherebbe dalla tribuna.
-                const pos = place(trackPts, groundPts, idx, muro + FENCE_MARGIN,
-                                  side, barrierDist, embankStart, embankOuter,
-                                  barrierProfile
-                                      ? (k, s) => TrackGravel.barrierAt(barrierProfile, k, s)
-                                      : null,
-                                  Math.max(1, Math.round(FENCE_STEP / 2 / stepLen)));
-                if (!usable('catchFence', pos.x, pos.z, pos.y, pitRoadHalf + 5)) continue;
-                layout.push(Object.assign(
-                    { asset: 'catchFence', category: 'safety', scale: 1, suMisuraSulMuro: !!barrierProfile }, pos));
-            }
+            // Dalla tribuna verso la pista, lungo la direzione in cui la
+            // tribuna GUARDA. Non ricalcolare la posizione dal campione più
+            // vicino: i moduli intermedi di una schiera cadono INTERPOLATI fra
+            // due campioni, e ripartire dal campione perderebbe fino a mezzo
+            // passo — di nuovo la rete sfalsata.
+            const avvicina = near.dist - (muro + FENCE_MARGIN);
+            const x = stand.x + Math.sin(stand.rotY) * avvicina;
+            const z = stand.z + Math.cos(stand.rotY) * avvicina;
+            const y = TrackGeometry.terrainHeightAt(groundPts, x, z, embankStart, embankOuter);
+            // L'altezza da confrontare col cavalcavia è quella SCALATA: a
+            // scala 1 la rete era alta 9 e ci passava sotto, a 1.6 no.
+            if (!usable('catchFence', x, z, y, pitRoadHalf + 5, altezzaRete * scale)) continue;
+            layout.push({
+                asset: 'catchFence', category: 'safety', scale,
+                suMisuraSulMuro: !!barrierProfile,
+                x, y, z, rotY: stand.rotY,
+            });
         }
 
         // Decoro del paddock vicino al traguardo, sul lato corsia box.

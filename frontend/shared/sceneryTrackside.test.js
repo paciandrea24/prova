@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const TrackGeometry = require('./trackGeometry.js');
 const SceneryTrackside = require('./sceneryTrackside.js');
+const SceneryAssetSizes = require('./sceneryAssetSizes.js');
 const monteRosso = require('../tracks/monte-rosso.json');
 
 const BARRIER_D = monteRosso.roadHalfWidth + 2.8 + 1.2;
@@ -65,9 +66,11 @@ test('buildTrackside è deterministico a parità di seed', () => {
     assert.equal(a, b);
 });
 
-test('tutte le voci hanno scala 1, una categoria e coordinate finite', () => {
+// Le reti fanno eccezione dal 2026-08-13: si dimensionano sulla tribuna che
+// proteggono, quindi la loro scala vale 19.2/12. Tutto il resto è a scala 1.
+test('tutte le voci hanno una scala, una categoria e coordinate finite', () => {
     for (const item of SceneryTrackside.buildTrackside(ctx())) {
-        assert.equal(item.scale, 1);
+        assert.ok(item.scale > 0, `scala non valida per ${item.asset}: ${item.scale}`);
         assert.ok(typeof item.category === 'string' && item.category.length > 0);
         assert.ok(Number.isFinite(item.x) && Number.isFinite(item.y) && Number.isFinite(item.z),
             `coordinate non finite per ${item.asset}`);
@@ -112,23 +115,60 @@ test('il decoro del paddock finisce solo dove c\'è spazio, senza ripieghi', () 
 // ingombri dei box giocatore coprono tutte le collocazioni candidate e gli
 // asset sparivano lo stesso.
 
-test('catchFence: guarda il muro, ma resta dove sta', () => {
-    // Rettilineo con il muro che si allontana: il nastro è inclinato di 45°
-    // rispetto alla pista, quindi la rete deve ruotare di 45° — ma la sua
-    // POSIZIONE non deve muoversi di un millimetro, perché la distanza dei
-    // moduli è quella che li tiene attaccati alla tribuna che proteggono.
-    const trackPts = [];
-    for (let i = 0; i < 200; i++) trackPts.push({ x: i * 5, z: 0, y: 0 });
+// Una tribuna finta, messa dove le mette buildGrandstandLayout: sul lato
+// esterno, a barrierDist + GRANDSTAND_OFFSET_MARGIN, che guarda la pista.
+function tribunaFinta(trackPts, idx, asset) {
+    const p = trackPts[idx];
+    const { nx, nz } = TrackGeometry.normalAt(trackPts, idx, true);
+    const off = BARRIER_D + 10;
+    const x = p.x + nx * off, z = p.z + nz * off;
+    return { asset, category: 'grandstand', scale: 1, x, z, y: 0,
+             rotY: Math.atan2(p.x - x, p.z - z) };
+}
 
-    const dritto = SceneryTrackside.place(trackPts, trackPts, 50, 30, 1, 15, 15, 60);
-    const inclinato = SceneryTrackside.place(trackPts, trackPts, 50, 30, 1, 15, 15, 60,
-        (i) => 20 + i * 5);
+test('una rete per tribuna, larga quanto lei e centrata su di lei', () => {
+    // Fino al 2026-08-13 le reti erano due moduli a scala 1 affiancati a un
+    // passo arrotondato in CAMPIONI, quindi si sfalsavano rispetto alla
+    // tribuna e ne lasciavano scoperto un pezzo (segnalato in gioco: "un
+    // grandstand per metà protetto e per metà no").
+    const c = ctx();
+    const stand = tribunaFinta(c.trackPts, 300, 'grandStandCovered');
+    const reti = SceneryTrackside.buildTrackside(ctx({ grandstands: [stand] }))
+        .filter(i => i.asset === 'catchFence');
 
-    assert.ok(Math.abs(dritto.x - inclinato.x) < 1e-9 && Math.abs(dritto.z - inclinato.z) < 1e-9,
-        `la rete si è spostata: (${dritto.x}, ${dritto.z}) -> (${inclinato.x}, ${inclinato.z})`);
-    let delta = inclinato.rotY - dritto.rotY;
-    while (delta > Math.PI) delta -= Math.PI * 2;
-    while (delta < -Math.PI) delta += Math.PI * 2;
-    assert.ok(Math.abs(Math.abs(delta) - Math.PI / 4) < 1e-6,
-        `attesi 45° di rotazione, avuti ${(delta * 180 / Math.PI).toFixed(2)}°`);
+    assert.equal(reti.length, 1, `${reti.length} reti per una tribuna sola`);
+    const rete = reti[0];
+    const largaQuanto = SceneryAssetSizes.sizeOf('catchFence').w * rete.scale;
+    assert.ok(Math.abs(largaQuanto - SceneryAssetSizes.sizeOf(stand.asset).w) < 1e-9,
+        `rete larga ${largaQuanto.toFixed(2)} per una tribuna larga `
+        + SceneryAssetSizes.sizeOf(stand.asset).w);
+    assert.ok(Math.abs(rete.rotY - stand.rotY) < 1e-9,
+        `rete ruotata di ${((rete.rotY - stand.rotY) * 180 / Math.PI).toFixed(2)}° rispetto alla tribuna`);
+
+    // Centrata: lo scarto fra i due centri deve stare TUTTO lungo la
+    // direzione in cui la tribuna guarda, zero lungo la sua larghezza.
+    // L'asse larghezza è la X locale, che footprintCorners costruisce come
+    // (cos rotY, -sin rotY).
+    const lungo = (rete.x - stand.x) * Math.cos(stand.rotY)
+                - (rete.z - stand.z) * Math.sin(stand.rotY);
+    assert.ok(Math.abs(lungo) < 1e-9, `rete sfalsata di ${lungo.toFixed(3)} lungo la tribuna`);
+
+    // E sta DAVANTI, cioè fra la tribuna e la pista.
+    assert.ok(TrackGeometry.nearestPoint(c.trackPts, rete.x, rete.z).dist
+            < TrackGeometry.nearestPoint(c.trackPts, stand.x, stand.z).dist,
+        'la rete non è davanti alla tribuna');
+});
+
+test('due tribune affiancate ricevono due reti contigue, senza sovrapporsi', () => {
+    // Le schiere sono moduli contigui a passo 19.2: le reti, larghe
+    // altrettanto, devono affiancarsi allo stesso modo. Se si sovrapponessero
+    // avremmo due superfici complanari spesse 0.5 — sfarfallio garantito.
+    const c = ctx();
+    const a = tribunaFinta(c.trackPts, 300, 'grandStand');
+    const b = tribunaFinta(c.trackPts, 300 + Math.round(19.2 / (TrackGeometry.lapLength(c.trackPts) / c.trackPts.length)), 'grandStand');
+    const reti = SceneryTrackside.buildTrackside(ctx({ grandstands: [a, b] }))
+        .filter(i => i.asset === 'catchFence');
+    assert.equal(reti.length, 2);
+    assert.equal(SceneryAssetSizes.itemsOverlap(reti[0], reti[1]), false,
+        'le due reti si compenetrano');
 });

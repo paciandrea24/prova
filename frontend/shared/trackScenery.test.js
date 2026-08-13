@@ -380,6 +380,12 @@ test('gli asset custom sono istanziati a scala 1, gli alberi Kenney a 6', () => 
             assert.equal(item.scale, 6, `${item.asset} deve restare a scala Kenney`);
         } else if (SPANNING_ASSETS.has(item.asset)) {
             assert.ok(item.scale >= 1, `${item.asset} non può essere rimpicciolito`);
+        } else if (item.asset === 'catchFence') {
+            // Terza eccezione, dal 2026-08-13: la rete si dimensiona sulla
+            // tribuna che protegge (19.2 / 12 = 1.6), altrimenti ne lascia
+            // scoperto un pezzo. La scala è uniforme, quindi la rete si alza
+            // insieme alla larghezza — accettato dall'utente.
+            assert.ok(item.scale > 1, `${item.asset} non è stata dimensionata sulla tribuna`);
         } else {
             assert.equal(item.scale, 1, `${item.asset} è custom, deve stare a scala 1`);
         }
@@ -875,7 +881,16 @@ function deviazioneDalMuro(trackPts, barrierProfile, voce) {
 // Tipi per cui il parallelismo al muro È la regola. tyreStack e brakingBoard
 // sono esclusi apposta: un cartello di frenata sta perpendicolare alla pista
 // per essere letto, e per lui 79° di scarto non sono un difetto.
-const PARALLELI_AL_MURO = new Set(['catchFence', 'grandStandCovered',
+//
+// Dal 2026-08-13 è escluso anche catchFence, e non per farlo passare: la rete
+// non si orienta più da sola, EREDITA la rotazione della tribuna da cui nasce,
+// quindi misurarla di nuovo contro il muro conterebbe due volte lo scarto
+// della tribuna e ci aggiungerebbe il rumore di una misura presa 8.5 unità più
+// avanti, dove il campione più vicino può già essere un altro. L'invariante
+// che conta per la rete è "parallela alla sua tribuna", ed è verificato in
+// modo esatto (1e-9) dal test `una rete per tribuna` in
+// sceneryTrackside.test.js e da `nessuna tribuna protetta a metà` qui sotto.
+const PARALLELI_AL_MURO = new Set(['grandStandCovered',
     'grandStandAwning', 'grandStand', 'grandStandSmall']);
 
 // Quanto il muro GIRA sotto l'oggetto, da un suo estremo all'altro. È il
@@ -964,6 +979,102 @@ test('scenografia: ogni tribuna sta alla distanza del muro del PROPRIO lato', ()
         }
     }
 });
+
+// Quanta parte del fronte di una tribuna è coperta dalle reti. Si proietta
+// tutto sull'asse LARGHEZZA della tribuna — la sua X locale, che
+// footprintCorners costruisce come (cos rotY, -sin rotY) — e si misura
+// l'unione degli intervalli coperti.
+function coperturaDellaTribuna(tribuna, reti) {
+    const mezza = (v) => SceneryAssetSizes.sizeOf(v.asset).w * (v.scale || 1) / 2;
+    const ux = Math.cos(tribuna.rotY), uz = -Math.sin(tribuna.rotY);
+    const meta = mezza(tribuna);
+    const pezzi = [];
+    for (const r of reti) {
+        // Solo le reti che possono avere a che fare con questa tribuna: senza
+        // filtro, una rete dall'altra parte della pista entrerebbe nel conto
+        // per la sola proiezione.
+        if (Math.hypot(r.x - tribuna.x, r.z - tribuna.z) > meta + mezza(r) + 20) continue;
+        const t = [-1, 1].map(seg => {
+            const px = r.x + seg * mezza(r) * Math.cos(r.rotY);
+            const pz = r.z - seg * mezza(r) * Math.sin(r.rotY);
+            return (px - tribuna.x) * ux + (pz - tribuna.z) * uz;
+        });
+        const lo = Math.max(-meta, Math.min(t[0], t[1]));
+        const hi = Math.min(meta, Math.max(t[0], t[1]));
+        if (hi > lo) pezzi.push([lo, hi]);
+    }
+    pezzi.sort((a, b) => a[0] - b[0]);
+    let coperto = 0, fine = -Infinity;
+    for (const [lo, hi] of pezzi) {
+        const da = Math.max(lo, fine);
+        if (hi > da) { coperto += hi - da; fine = hi; }
+    }
+    return coperto / (2 * meta);
+}
+
+// La rete NATA da questa tribuna: stessa rotazione e scarto tutto lungo la
+// direzione in cui la tribuna guarda, cioè zero lungo la sua larghezza.
+function laSuaRete(tribuna, reti) {
+    return reti.find(r => Math.abs(r.rotY - tribuna.rotY) < 1e-9
+        && Math.abs((r.x - tribuna.x) * Math.cos(tribuna.rotY)
+                  - (r.z - tribuna.z) * Math.sin(tribuna.rotY)) < 1e-6
+        && Math.hypot(r.x - tribuna.x, r.z - tribuna.z) < 40);
+}
+
+for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+    test(`scenografia: nessuna tribuna protetta a metà (${id})`, () => {
+        // Segnalazione in gioco del 2026-08-13 (punti M 14 e 15): "un
+        // grandstand è per metà protetto e per metà no". Le reti erano due
+        // moduli a scala 1 affiancati a un passo arrotondato in CAMPIONI: su
+        // `prova` un campione vale 5.17 unità, quindi i due finivano a ±5.17
+        // invece di ±6 e si sfalsavano rispetto alla tribuna. Misurate allora:
+        // 3 tribune su 50 non coperte del tutto su prova (la peggiore al 54%),
+        // 57 su 65 su new-monza, 6 su 14 su baku.
+        //
+        // Non si pretende che OGNI tribuna abbia la rete: dove la rete
+        // cadrebbe sotto una campata o di fianco a un viadotto viene scartata
+        // di proposito, ed è il test qui sotto a esigere che sia sempre per uno
+        // di quei due motivi. Qui si pretende che dove la rete c'è, copra
+        // tutto: mezza tribuna scoperta è il difetto segnalato.
+        const { trackPts, layout } = circuitoVero(id);
+        const reti = layout.filter(v => v.asset === 'catchFence');
+        const tribune = layout.filter(v => v.category === 'grandstand' || v.category === 'grandstand-main');
+        const scoperte = tribune
+            .filter(g => laSuaRete(g, reti))
+            .map(g => ({ g, f: coperturaDellaTribuna(g, reti), dove: doveSta(trackPts, g) }))
+            .filter(m => m.f < 0.999);
+        assert.equal(scoperte.length, 0,
+            `${id}: ${scoperte.length} tribune coperte solo in parte su ${tribune.length} — `
+            + scoperte.slice(0, 5).map(m => `${m.g.asset}@${m.dove.idx} al ${(m.f * 100).toFixed(0)}%`).join(', '));
+    });
+
+    test(`scenografia: una tribuna resta senza rete solo per un motivo noto (${id})`, () => {
+        // I due soli motivi ammessi: la tribuna sta di fianco a un tratto
+        // sopraelevato (la rete prenderebbe la quota del terreno sottostante e
+        // resterebbe sospesa), oppure la sua rete cadrebbe dentro una campata
+        // che scavalca la pista. Qualunque altro motivo è un buco silenzioso —
+        // una tribuna senza protezione che nessuno ha deciso.
+        //
+        // Alla data: prova 1 (sotto il ponte semafori), baku 6 (di fianco al
+        // viadotto), zero su new-monza e monte-rosso.
+        const { trackPts, layout } = circuitoVero(id);
+        const reti = layout.filter(v => v.asset === 'catchFence');
+        const campate = layout.filter(v => v.asset === 'footbridge' || v.asset === 'startGantry');
+        for (const g of layout.filter(v => v.category === 'grandstand' || v.category === 'grandstand-main')) {
+            if (laSuaRete(g, reti)) continue;
+            const dove = doveSta(trackPts, g);
+            const larga = SceneryAssetSizes.sizeOf(g.asset).w * (g.scale || 1);
+            // Dove sarebbe caduta: davanti alla tribuna, a una distanza
+            // qualunque nell'ordine di grandezza giusto — serve solo a capire
+            // se finiva sotto una campata.
+            const finta = { asset: 'catchFence', scale: larga / SceneryAssetSizes.sizeOf('catchFence').w,
+                            x: g.x + Math.sin(g.rotY) * 12, z: g.z + Math.cos(g.rotY) * 12,
+                            y: g.y, rotY: g.rotY };
+            assert.ok(trackPts[dove.idx].bridge || campate.some(p => SceneryAssetSizes.itemsOverlap(p, finta)),
+                `${id}: ${g.asset}@${dove.idx} è senza rete e non si capisce perché`);
+        }
+    });
+}
 
 test('footbridge: la luce copre il muro di dove sta, su entrambi i lati', () => {
     // Su `prova` la passerella cade al campione 412, dove il muro sta a 34.5
