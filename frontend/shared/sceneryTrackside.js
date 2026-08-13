@@ -232,7 +232,20 @@
             // limite basterebbe quello a farci rientrare.
             const distacco = (SceneryAssetSizes.sizeOf(stand.asset).d * (stand.scale || 1)
                               + SceneryAssetSizes.sizeOf('catchFence').d * scale) / 2 + FENCE_MARGIN;
-            const avvicina = Math.max(near.dist - (muro + FENCE_MARGIN), distacco);
+            // `margineDalMuro` è il margine con cui la TRIBUNA si è posata sul
+            // muro della sua FILA. Ci si avvicina di quel tanto meno il
+            // margine della rete, e la coppia resta rigida ovunque.
+            //
+            // ⚠️ Non ricalcolare il muro sotto la rete: dal 2026-08-13 una
+            // fila sta tutta alla distanza del suo punto più largo, quindi
+            // sotto un modulo il muro locale può essere quindici unità più
+            // vicino di quello della fila — e la rete schizzerebbe in avanti,
+            // staccandosi dalla tribuna che protegge.
+            const avvicina = Math.max(
+                stand.margineDalMuro !== undefined
+                    ? stand.margineDalMuro - FENCE_MARGIN
+                    : near.dist - (muro + FENCE_MARGIN),
+                distacco);
             const x = stand.x + Math.sin(stand.rotY) * avvicina;
             const z = stand.z + Math.cos(stand.rotY) * avvicina;
             const y = TrackGeometry.terrainHeightAt(groundPts, x, z, embankStart, embankOuter);

@@ -861,14 +861,21 @@ function doveSta(trackPts, voce) {
 // contro una finestra fissa confronterebbe un'asse lunga con un tratto di
 // muro più corto o più lungo di lei.
 function deviazioneDalMuro(trackPts, barrierProfile, voce) {
-    const { idx, side } = doveSta(trackPts, voce);
+    const { idx, side, dist } = doveSta(trackPts, voce);
     const n = trackPts.length;
     const stepLen = TrackGeometry.lapLength(trackPts) / n;
     const misura = SceneryAssetSizes.sizeOf(voce.asset);
     const w = Math.max(1, Math.round((misura ? misura.w : 12) * (voce.scale || 1) / 2 / stepLen));
     const punto = (k) => {
         const { nx, nz } = TrackGeometry.normalAt(trackPts, k, true);
-        const d = TrackGravel.barrierAt(barrierProfile, k, side);
+        // ⚠️ Il nastro si costruisce alla distanza DELL'OGGETTO, non a quella
+        // del muro. Dal 2026-08-13 una fila di tribune sta tutta alla distanza
+        // del suo punto più largo (scelta dell'utente: la fila è una linea di
+        // confine dritta, non una scala che insegue ogni rampa del muro).
+        // Dove il muro corre a distanza costante le due misure coincidono ed è
+        // lì che stavano i difetti veri, fino a 48°; dove il muro fa una rampa
+        // seguirlo non è più la regola.
+        const d = dist;
         return { x: trackPts[k].x + nx * d * side, z: trackPts[k].z + nz * d * side };
     };
     const a = punto(((idx - w) % n + n) % n), b = punto((idx + w) % n);
@@ -899,14 +906,14 @@ const PARALLELI_AL_MURO = new Set(['grandStandCovered',
 // resta fuori. L'ottimo è la corda, che sta a metà fra le due direzioni
 // estreme, quindi l'errore inevitabile è metà della rotazione.
 function rotazioneDelMuroSotto(trackPts, barrierProfile, voce) {
-    const { idx, side } = doveSta(trackPts, voce);
+    const { idx, side, dist } = doveSta(trackPts, voce);
     const n = trackPts.length;
     const stepLen = TrackGeometry.lapLength(trackPts) / n;
     const misura = SceneryAssetSizes.sizeOf(voce.asset);
     const w = Math.max(1, Math.round((misura ? misura.w : 12) * (voce.scale || 1) / 2 / stepLen));
     const punto = (k) => {
         const { nx, nz } = TrackGeometry.normalAt(trackPts, k, true);
-        const d = TrackGravel.barrierAt(barrierProfile, k, side);
+        const d = dist;   // stesso nastro di deviazioneDalMuro: vedi lì il perché
         return { x: trackPts[k].x + nx * d * side, z: trackPts[k].z + nz * d * side };
     };
     const dir = (a, b) => {
@@ -940,42 +947,68 @@ for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
     });
 }
 
-test('scenografia: ogni tribuna sta alla distanza del muro del PROPRIO lato', () => {
-    // `distanzaDalMuro` restituisce una funzione (idx, side), ma fino al
-    // 2026-08-13 buildStandRow la chiamava con il solo idx: side arrivava
-    // undefined e `barrierAt` faceva `side > 0 ? right : left`, quindi TUTTE
-    // le tribune prendevano il muro sinistro. Su new-monza una finiva a 14.3
-    // unità dal posto giusto.
-    // ⚠️ Una tribuna non sta SUL muro, sta a muro + margine. Confrontare la
-    // distanza nuda con i due muri dà un falso allarme ogni volta che il
-    // margine è più grande della differenza fra i lati. Si misura invece lo
-    // scostamento dal margine, che deve essere lo stesso per tutte: dove il
-    // codice sbagliasse lato, le tribune con i due muri diversi sarebbero le
-    // uniche fuori squadra.
+test('scenografia: ogni tribuna sta oltre il muro del PROPRIO lato, per tutto il suo fronte', () => {
+    // Sostituisce (2026-08-13) il confronto fra i margini di tutte le tribune,
+    // che presupponeva un margine uguale per tutte: ora una fila sta alla
+    // distanza del suo punto più largo, quindi dove il muro è vicino la
+    // tribuna è legittimamente più indietro delle altre.
+    //
+    // L'invariante che resta, ed è più forte: sotto TUTTO il fronte di una
+    // tribuna il muro del SUO lato deve stare almeno `margineDalMuro` più
+    // vicino di lei. Il bug che questo test è nato per prendere — side
+    // undefined, quindi `barrierAt` restituiva sempre il muro sinistro —
+    // metterebbe la tribuna dentro il proprio muro dove i due lati differiscono
+    // (su new-monza una finiva a 14.3 unità dal posto giusto).
     for (const id of ['prova', 'new-monza', 'monte-rosso']) {
         const { trackPts, barrierProfile, layout } = circuitoVero(id);
-        const tribune = layout.filter(v => v.category === 'grandstand' || v.category === 'grandstand-main')
-            .map(v => {
-                const { idx, side, dist } = doveSta(trackPts, v);
-                return { v, idx, side, dist,
-                         suo: TrackGravel.barrierAt(barrierProfile, idx, side),
-                         sinistro: TrackGravel.barrierAt(barrierProfile, idx, -1) };
-            });
-        const margini = tribune.map(t => t.dist - t.suo).sort((a, b) => a - b);
-        const margine = margini[margini.length >> 1];
+        const n = trackPts.length;
+        const stepLen = TrackGeometry.lapLength(trackPts) / n;
+        for (const v of layout.filter(x => x.category === 'grandstand' || x.category === 'grandstand-main')) {
+            const { idx, side, dist } = doveSta(trackPts, v);
+            const mezza = Math.max(1, Math.round(
+                SceneryAssetSizes.sizeOf(v.asset).w * (v.scale || 1) / 2 / stepLen));
+            for (let s = -mezza; s <= mezza; s++) {
+                const k = ((idx + s) % n + n) % n;
+                const muro = TrackGravel.barrierAt(barrierProfile, k, side);
+                assert.ok(dist >= muro + v.margineDalMuro - 0.5,
+                    `${id}: ${v.asset}@${idx} sta a ${dist.toFixed(1)} dalla pista ma al campione ${k} `
+                    + `il muro del suo lato (${side > 0 ? 'dx' : 'sx'}) è a ${muro.toFixed(1)}: `
+                    + `margine ${(dist - muro).toFixed(1)} invece di ${v.margineDalMuro}`);
+            }
+        }
+    }
+});
 
-        for (const t of tribune) {
-            if (Math.abs(t.suo - t.sinistro) < 0.5) continue;   // i due lati coincidono: non discrimina
-            // Soglia 3 e non 1: i moduli intermedi di una schiera sono
-            // interpolati fra due campioni (`moduleBetween`), quindi dove il
-            // muro cambia fra i due la distanza risulta intermedia — misurate
-            // 1.9 unità sulla tribuna del campione 812 di `prova`. Il lato
-            // sbagliato produce scarti molto più grossi: 6.3 sullo stesso
-            // campione, 14.3 su new-monza.
-            assert.ok(Math.abs((t.dist - t.suo) - margine) < 3,
-                `${id}: ${t.v.asset} al campione ${t.idx} lato ${t.side > 0 ? 'dx' : 'sx'} sta a `
-                + `${(t.dist - t.suo).toFixed(1)} dal proprio muro invece dei ${margine.toFixed(1)} `
-                + `delle altre (muro suo ${t.suo.toFixed(1)}, sinistro ${t.sinistro.toFixed(1)})`);
+test('scenografia: i moduli di una fila stanno tutti alla stessa distanza dalla pista', () => {
+    // È la regola scelta dall'utente il 2026-08-13 dopo tre segnalazioni in
+    // gioco: la fila è una linea di confine dritta. Se un modulo prendesse il
+    // muro per conto suo, la fila tornerebbe a scalinare — su monte-rosso il
+    // gradino misurava 14.8 unità — e la rete larga quanto la tribuna non
+    // potrebbe più stare né davanti né di lato senza entrare in qualcosa.
+    for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+        const { trackPts, layout } = circuitoVero(id);
+        const tribune = layout.filter(x => x.category === 'grandstand' || x.category === 'grandstand-main')
+            .map(v => ({ v, ...doveSta(trackPts, v) }));
+        // Fila = moduli contigui, entro un modulo e mezzo l'uno dall'altro.
+        const restanti = [...tribune];
+        while (restanti.length) {
+            const fila = [restanti.shift()];
+            for (let cresce = true; cresce;) {
+                cresce = false;
+                for (let i = restanti.length - 1; i >= 0; i--) {
+                    if (fila.some(m => Math.hypot(m.v.x - restanti[i].v.x, m.v.z - restanti[i].v.z) < 29)) {
+                        fila.push(restanti.splice(i, 1)[0]); cresce = true;
+                    }
+                }
+            }
+            const dist = fila.map(m => m.dist);
+            const gradino = Math.max(...dist) - Math.min(...dist);
+            // 0.5 e non 0: i moduli intermedi cadono interpolati fra due
+            // campioni, e la distanza misurata dal campione più vicino oscilla
+            // di qualche decimo. Il difetto vero valeva 11.7 e 14.8.
+            assert.ok(gradino < 0.5,
+                `${id}: la fila di ${fila.length} moduli al campione ${fila[0].idx} scalina di `
+                + `${gradino.toFixed(1)} unità (da ${Math.min(...dist).toFixed(1)} a ${Math.max(...dist).toFixed(1)})`);
         }
     }
 });

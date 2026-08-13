@@ -561,6 +561,66 @@
         return (idx, side) => TrackGravel.barrierAt(barrierProfile, idx, side) + margine;
     }
 
+    // Il muro PIÙ LONTANO sotto tutta la fila, cioè la distanza a cui si
+    // allinea l'INTERA fila.
+    //
+    // Una fila che prende il muro modulo per modulo diventa una SCALA dove il
+    // muro cambia: all'ingresso di una via di fuga passa da 15 a 30, e due
+    // moduli consecutivi finiscono a quindici unità di distanza diversa dalla
+    // pista (misurato: 14.8 su monte-rosso, 11.7 su prova). Una rete rigida
+    // larga quanto la tribuna non può seguire una scala — o entra nella
+    // tribuna vicina o entra nella ghiaia — e infatti veniva scartata,
+    // lasciando tribune senza protezione. L'utente le ha viste in gioco tre
+    // volte (segnalazioni M 16, 17, 18 del 2026-08-13) e ha scelto questa
+    // strada: la fila è una linea di confine, dritta, come nei circuiti veri
+    // dietro le vie di fuga.
+    //
+    // Conseguenza che rende tutto il resto facile: dentro una fila il
+    // riferimento è UNO, quindi la rete davanti a ogni modulo sta a distanza
+    // costante dalla sua tribuna e non può né entrarci né finire in ghiaia.
+    // Aggiungere tribune diventa sicuro ovunque.
+    function muroDellaFila(trackPts, barrierProfile, barrierDist, moduli, side, mezzaInCampioni) {
+        if (!barrierProfile) return barrierDist;
+        const n = trackPts.length;
+        let muro = barrierDist;
+        for (const m of moduli) {
+            // Tutto il FRONTE di ogni modulo, non il solo centro: il muro può
+            // salire fra un campione e l'altro sotto la stessa tribuna.
+            for (let s = -mezzaInCampioni; s <= mezzaInCampioni; s++) {
+                const k = ((m.idx + s) % n + n) % n;
+                muro = Math.max(muro, TrackGravel.barrierAt(barrierProfile, k, side));
+            }
+        }
+        return muro;
+    }
+
+    // Una fila si costruisce DUE VOLTE: la prima con il muro modulo per modulo,
+    // solo per sapere fin dove arriva; poi si prende il muro più lontano sotto
+    // quella lunghezza e la si ricostruisce tutta a quella distanza.
+    //
+    // Non basterebbe guardare una finestra fissa attorno al seme: una fila si
+    // dimensiona da sé (si ferma sui cavalcavia, sulla corsia box, sugli
+    // ostacoli), e una finestra della lunghezza massima arretrerebbe anche le
+    // file corte, che il problema non ce l'hanno.
+    // Si itera fino al punto fisso, non una passata sola: arretrando, la fila
+    // può trovare occupato un posto che alla distanza di prima era libero e
+    // accorciarsi. Una fila più corta però attraversa meno muro, quindi il suo
+    // massimo cala e può riallungarsi. Poche iterazioni bastano — il massimo
+    // non può che scendere — e senza si perdevano tribune: su baku da 7 a 3.
+    function filaAllineata(trackPts, seedIdx, side, barrierProfile, barrierDist, margine,
+                           maxCols, accept, spanSamples) {
+        let moduli = buildStandRow(trackPts, seedIdx, side,
+            distanzaDalMuro(barrierProfile, barrierDist, margine), maxCols, accept, spanSamples);
+        let muro = null;
+        for (let giro = 0; giro < 4 && moduli.length; giro++) {
+            const nuovo = muroDellaFila(trackPts, barrierProfile, barrierDist, moduli, side, spanSamples);
+            if (muro !== null && Math.abs(nuovo - muro) < 1e-9) break;   // punto fisso
+            muro = nuovo;
+            moduli = buildStandRow(trackPts, seedIdx, side, muro + margine, maxCols, accept, spanSamples);
+        }
+        return { moduli, margine };
+    }
+
     function buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankStart, embankOuter, fitsUnderBridge, mainStand, barrierProfile) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
@@ -612,9 +672,9 @@
             // dimensiona da sé: lunga sui rettilinei, corta dove la corsia box
             // o un cavalcavia la interrompono.
             const asset = STAND_VARIANTS[Math.floor(rng() * STAND_VARIANTS.length)];
-            const modules = buildStandRow(
-                trackPts, idx, side,
-                distanzaDalMuro(barrierProfile, barrierDist, GRANDSTAND_OFFSET_MARGIN), ROW_MAX_COLS,
+            const { moduli: modules } = filaAllineata(
+                trackPts, idx, side, barrierProfile, barrierDist, GRANDSTAND_OFFSET_MARGIN,
+                ROW_MAX_COLS,
                 (m) => {
                     if (trackPts[m.idx].bridge) return false;
                     if (TrackGeometry.nearestPoint(pitPts, m.x, m.z).dist < pitRoadHalf + GRANDSTAND_PIT_MARGIN) return false;
@@ -642,7 +702,12 @@
             // dalla barriera, traslarli di nuovo li porterebbe nel prato.
             for (const m of modules) {
                 const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);
+                // `margineDalMuro` viaggia con la tribuna perché la rete che
+                // la protegge deve sapere di quanto avvicinarsi: il muro della
+                // FILA non è quello del campione sotto il singolo modulo, e
+                // ricalcolarlo lì la staccherebbe dalla tribuna.
                 const stand = { asset, category: 'grandstand', suMisuraSulMuro: !!barrierProfile,
+                                margineDalMuro: GRANDSTAND_OFFSET_MARGIN,
                                 x: m.x, y, z: m.z, rotY: m.rotY, scale: CUSTOM_MODEL_SCALE };
                 layout.push(stand);
                 accepted.push(stand);
@@ -792,9 +857,9 @@
         const groundPts = trackPts.filter(p => !p.bridge);
         const stackHeight = MAIN_STAND_TIER_HEIGHT * MAIN_STAND_TIERS;
 
-        const modules = buildStandRow(
-            trackPts, 0, side,
-            distanzaDalMuro(barrierProfile, barrierDist, MAIN_STAND_OFFSET_MARGIN), MAIN_STAND_COLS,
+        const { moduli: modules } = filaAllineata(
+            trackPts, 0, side, barrierProfile, barrierDist, MAIN_STAND_OFFSET_MARGIN,
+            MAIN_STAND_COLS,
             (m) => {
                 // Se lì sopra passa un cavalcavia, la tribuna lo attraversa.
                 const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);
@@ -808,6 +873,7 @@
                 layout.push({
                     asset: MAIN_STAND_ASSET, category: 'grandstand-main',
                     suMisuraSulMuro: !!barrierProfile,
+                    margineDalMuro: MAIN_STAND_OFFSET_MARGIN,
                     x: m.x, y: baseY + tier * MAIN_STAND_TIER_HEIGHT,
                     z: m.z, rotY: m.rotY, scale: CUSTOM_MODEL_SCALE
                 });
