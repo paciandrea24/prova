@@ -218,6 +218,33 @@ nessun pixel può essere scuro per via di un'ombra — ogni pixel nero residuo
 coordinate mondo via raycast. Va rilanciato dopo ogni modifica alla
 geometria.
 
+### Budget di rendering
+
+```
+node backend/tools/f1-costo-scenografia.js [tracciato ...]
+```
+
+Stampa istanze e triangoli per categoria, e la classifica degli asset che
+costano più draw call.
+
+⚠️ **Il numero che conta non è il triangolo** — gli asset del circuito sono
+leggeri — **ma l'`InstancedMesh`**: `f1.js::loadScenery` ne crea uno per ogni
+mesh di ogni asset in ogni cella di `sceneryChunks`, e ognuno è una draw call.
+Il GLTFLoader spezza per materiale, quindi a parità di istanze **un asset con
+sei materiali costa il doppio di uno con tre**: è la ragione per cui i modelli
+nuovi vanno tenuti sotto i quattro materiali invece di arrivare al tetto di
+sei imposto da `kit.finish()`.
+
+Le draw call NON sono attribuibili a una categoria: un `InstancedMesh`
+contiene tutte le istanze di un asset in una cella, quali che siano le
+categorie che lo usano — `billboardLow`, `flagPole` e `pylon` per esempio
+stanno sia nel decoro del paddock sia fra le infrastrutture. Per quelle vale
+solo la classifica per asset.
+
+Riferimento al 2026-08-13 su `prova`: 7199 istanze, 701 `InstancedMesh`,
+1666k triangoli. I due blocchi grossi sono la folla (727k) e le barriere di
+gomme (369k).
+
 ### Convenzioni NON ovvie (violarle rompe l'asset)
 
 - **Scala 1:1 in unità di gioco.** Questi asset NON vanno scalati
