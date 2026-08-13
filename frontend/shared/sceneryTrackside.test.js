@@ -111,3 +111,24 @@ test('il decoro del paddock finisce solo dove c\'è spazio, senza ripieghi', () 
 // sempre — un test verde che non dimostrava nulla, mentre nel gioco vero gli
 // ingombri dei box giocatore coprono tutte le collocazioni candidate e gli
 // asset sparivano lo stesso.
+
+test('catchFence: guarda il muro, ma resta dove sta', () => {
+    // Rettilineo con il muro che si allontana: il nastro è inclinato di 45°
+    // rispetto alla pista, quindi la rete deve ruotare di 45° — ma la sua
+    // POSIZIONE non deve muoversi di un millimetro, perché la distanza dei
+    // moduli è quella che li tiene attaccati alla tribuna che proteggono.
+    const trackPts = [];
+    for (let i = 0; i < 200; i++) trackPts.push({ x: i * 5, z: 0, y: 0 });
+
+    const dritto = SceneryTrackside.place(trackPts, trackPts, 50, 30, 1, 15, 15, 60);
+    const inclinato = SceneryTrackside.place(trackPts, trackPts, 50, 30, 1, 15, 15, 60,
+        (i) => 20 + i * 5);
+
+    assert.ok(Math.abs(dritto.x - inclinato.x) < 1e-9 && Math.abs(dritto.z - inclinato.z) < 1e-9,
+        `la rete si è spostata: (${dritto.x}, ${dritto.z}) -> (${inclinato.x}, ${inclinato.z})`);
+    let delta = inclinato.rotY - dritto.rotY;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    assert.ok(Math.abs(Math.abs(delta) - Math.PI / 4) < 1e-6,
+        `attesi 45° di rotazione, avuti ${(delta * 180 / Math.PI).toFixed(2)}°`);
+});

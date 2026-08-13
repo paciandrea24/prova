@@ -59,14 +59,27 @@
     const PIT_BARRIER_TRACK_CLEARANCE = 5;
 
 
-    function place(trackPts, groundPts, idx, offset, side, barrierDist, embankStart, embankOuter) {
+    // `profiloPerRotazione`, se dato, è la distanza del MURO campione per
+    // campione: serve solo a orientare l'oggetto lungo il nastro del muro.
+    // La POSIZIONE continua a venire da `offset`, che per le reti è un valore
+    // costante calcolato apposta (vedi più sotto, il massimo fra tre
+    // campioni): se la rete seguisse il muro anche in distanza, tornerebbe a
+    // staccarsi dalla tribuna che protegge.
+    //
+    // `spanSamples` è la mezza-larghezza dell'oggetto in campioni: un modulo
+    // è un segmento rigido e va parallelo alla CORDA che sottende, non alla
+    // tangente del suo centro.
+    function place(trackPts, groundPts, idx, offset, side, barrierDist, embankStart, embankOuter,
+                   profiloPerRotazione, spanSamples) {
         const p = trackPts[idx];
         const { nx, nz } = TrackGeometry.normalAt(trackPts, idx, true);
         const x = p.x + nx * offset * side;
         const z = p.z + nz * offset * side;
         return {
             x, z,
-            rotY: Math.atan2(p.x - x, p.z - z),
+            rotY: profiloPerRotazione
+                ? TrackGeometry.ribbonFacingAt(trackPts, idx, side, profiloPerRotazione, spanSamples)
+                : Math.atan2(p.x - x, p.z - z),
             y: TrackGeometry.terrainHeightAt(groundPts, x, z, embankStart, embankOuter),
         };
     }
@@ -173,8 +186,17 @@
             for (let s = -fenceHalfSamples; s <= fenceHalfSamples; s += fenceHalfSamples * 2) {
                 const idx = ((near.index + s) % n + n) % n;
                 if (onBridge(idx)) continue;
+                // La rete guarda il nastro del MURO, non la normale della
+                // pista: dove il muro è in rampa le due direzioni divergono e
+                // la rete risultava storta fino a 48°. La sua POSIZIONE resta
+                // quella di prima — `muro` è il valore costante calcolato
+                // sopra, e cambiarlo la staccherebbe dalla tribuna.
                 const pos = place(trackPts, groundPts, idx, muro + FENCE_MARGIN,
-                                  side, barrierDist, embankStart, embankOuter);
+                                  side, barrierDist, embankStart, embankOuter,
+                                  barrierProfile
+                                      ? (k, s) => TrackGravel.barrierAt(barrierProfile, k, s)
+                                      : null,
+                                  Math.max(1, Math.round(FENCE_STEP / 2 / stepLen)));
                 if (!usable('catchFence', pos.x, pos.z, pos.y, pitRoadHalf + 5)) continue;
                 layout.push(Object.assign(
                     { asset: 'catchFence', category: 'safety', scale: 1, suMisuraSulMuro: !!barrierProfile }, pos));
@@ -255,5 +277,5 @@
         return layout;
     }
 
-    return { buildTrackside, findCorners, CORNER_RADIUS_MAX };
+    return { buildTrackside, place, findCorners, CORNER_RADIUS_MAX };
 });
