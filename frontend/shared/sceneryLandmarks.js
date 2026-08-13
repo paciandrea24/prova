@@ -7,11 +7,12 @@
 // ruolo che ha. Modulo puro, nessuna dipendenza da Three.js.
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
-        module.exports = factory(require('./trackGeometry.js'), require('./sceneryAssetSizes.js'));
+        module.exports = factory(require('./trackGeometry.js'), require('./sceneryAssetSizes.js'),
+                                 require('./trackGravel.js'));
     } else {
-        root.SceneryLandmarks = factory(root.TrackGeometry, root.SceneryAssetSizes);
+        root.SceneryLandmarks = factory(root.TrackGeometry, root.SceneryAssetSizes, root.TrackGravel);
     }
-})(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryAssetSizes) {
+})(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryAssetSizes, TrackGravel) {
 
     // Semiluce interna dei due asset che scavalcano la pista, misurata sui
     // .glb: il gantry ha i piloni a ±15 larghi 3 (filo interno 13.5), la
@@ -44,8 +45,23 @@
     const PODIUM_OFFSET_MARGIN = 14;  // oltre barrierDist, fra pista e corsia box
     const PODIUM_PIT_CLEARANCE = 12;  // dal bordo corsia box
 
-    function spanScale(barrierDist, nativeHalfSpan) {
-        return Math.max(1, (barrierDist + SPAN_CLEARANCE) / nativeHalfSpan);
+    // `daCoprire` è la distanza che la campata deve scavalcare: il muro vero
+    // del punto in cui l'asset viene posato, non la barriera storica. Fino al
+    // 2026-08-13 arrivava qui `barrierDist`, cioè 15.0 fisse: dopo le vie di
+    // fuga il muro arriva a 34.5 e la passerella di `prova` restava corta di
+    // 13 unità, con i piedi dentro la ghiaia.
+    function spanScale(daCoprire, nativeHalfSpan) {
+        return Math.max(1, (daCoprire + SPAN_CLEARANCE) / nativeHalfSpan);
+    }
+
+    // Il muro più lontano dei due lati al campione `idx`: una campata
+    // scavalca la pista, quindi deve coprire il peggiore dei due, non quello
+    // del lato da cui si comincia a misurare.
+    function muroDaScavalcare(barrierProfile, barrierDist, idx) {
+        if (!barrierProfile) return barrierDist;
+        return Math.max(barrierDist,
+                        TrackGravel.barrierAt(barrierProfile, idx, -1),
+                        TrackGravel.barrierAt(barrierProfile, idx, 1));
     }
 
     // Punto a distanza `offset` dal centro pista sul lato `side`, con la
@@ -65,7 +81,8 @@
     // Asset che attraversa la pista: centrato sull'asse, allineato alla
     // tangente (la campata è modellata lungo X locale) e scalato per
     // scavalcare le barriere.
-    function placeAcross(trackPts, idx, groundPts, barrierDist, embankStart, embankOuter, nativeHalfSpan) {
+    function placeAcross(trackPts, idx, groundPts, barrierDist, embankStart, embankOuter, nativeHalfSpan,
+                         barrierProfile) {
         const p = trackPts[idx];
         const t = TrackGeometry.tangentAt(trackPts, idx, true);
         return {
@@ -76,13 +93,13 @@
             // alle auto in arrivo — alla partenza si vedeva il retro del
             // ponte semafori invece delle luci.
             rotY: Math.atan2(t.tx, t.tz) + Math.PI,
-            scale: spanScale(barrierDist, nativeHalfSpan),
+            scale: spanScale(muroDaScavalcare(barrierProfile, barrierDist, idx), nativeHalfSpan),
         };
     }
 
     function buildLandmarks(trackPts, pitPts, barrierDist, mainSide, embankStart, embankOuter,
                             playerBoxFootprints, insidePlayerBoxFootprint,
-                            fitsUnderBridge, pitRoadHalf, accepted) {
+                            fitsUnderBridge, pitRoadHalf, accepted, barrierProfile) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const n = trackPts.length;
@@ -144,7 +161,7 @@
         for (let d = 0; d < 200; d += 4) {
             const idx = (gantryWalk.fromIdx + d) % n;
             const cand = placeAcross(trackPts, idx, groundPts, barrierDist,
-                                     embankStart, embankOuter, GANTRY_NATIVE_HALF_SPAN);
+                                     embankStart, embankOuter, GANTRY_NATIVE_HALF_SPAN, barrierProfile);
             if (!freeOf('startGantry', cand, cand.scale)) continue;
             layout.push({ asset: 'startGantry', category: 'landmark', ...cand });
             break;
@@ -156,20 +173,39 @@
         // con un cavalcavia sopra: a indice fisso, su "prova" cadeva proprio
         // sotto un ponte e lo attraversava (top a 13.3 contro un intradosso
         // a 11.2).
+        //
+        // Fra i punti utili si preferiscono quelli dove il muro NON è
+        // arretrato per una via di fuga: lì la campata resta di dimensioni
+        // normali. Prima passata pretendendo un muro stretto; se un punto
+        // così non esiste, seconda passata che accetta qualunque punto — e lì
+        // `placeAcross` allunga la campata quanto serve, invece di lasciarla
+        // corta con i piedi nella ghiaia. Su `prova` la passerella cadeva al
+        // campione 412, dove il muro sta a 34.5, ed era corta di 13 unità.
+        // ⚠️ Non una soglia assoluta sul muro: con le vie di fuga il muro
+        // normale di `prova` sta a 29.8, cioè il doppio della barriera
+        // storica, e una soglia tarata su quest'ultima non è mai soddisfatta
+        // — la passerella finirebbe sempre nel ripiego, allungata a 81 unità
+        // e alta 30. Si scandiscono invece TUTTI i punti utili e si tiene il
+        // migliore, cioè quello col muro più stretto. Su `prova` la
+        // differenza è fra una campata 51x19 e una 82x30.
         const half = Math.floor(n / 2);
+        let migliore = null;
         for (let d = 0; d < Math.floor(n / 4); d += 4) {
             for (const idx of [(half + d) % n, ((half - d) % n + n) % n]) {
                 if (trackPts[idx].bridge) continue;
                 const cand = placeAcross(trackPts, idx, groundPts, barrierDist, embankStart, embankOuter,
-                                         FOOTBRIDGE_NATIVE_HALF_SPAN);
+                                         FOOTBRIDGE_NATIVE_HALF_SPAN, barrierProfile);
                 const topH = SPANNING_HEIGHTS.footbridge * cand.scale;
                 if (!fits('footbridge', cand.x, cand.z, cand.y, topH)) continue;
                 if (!freeOf('footbridge', cand, cand.scale)) continue;
-                layout.push({ asset: 'footbridge', category: 'landmark', ...cand });
-                d = n;   // trovato: esce da entrambi i cicli
-                break;
+                // A parità di muro vince il primo trovato, e la scansione
+                // parte da metà giro: la passerella resta il più possibile
+                // dalla parte opposta al ponte semafori, che è il motivo per
+                // cui la si mette lì.
+                if (!migliore || cand.scale < migliore.scale) migliore = cand;
             }
         }
+        if (migliore) layout.push({ asset: 'footbridge', category: 'landmark', ...migliore });
 
         // Podio: FRA I BOX E LA PISTA, vicino al traguardo.
         //

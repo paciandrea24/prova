@@ -930,3 +930,29 @@ test('scenografia: ogni tribuna sta alla distanza del muro del PROPRIO lato', ()
         }
     }
 });
+
+test('footbridge: la luce copre il muro di dove sta, su entrambi i lati', () => {
+    // Su `prova` la passerella cade al campione 412, dove il muro sta a 34.5
+    // a sinistra: con semi-luce 21.5 era corta di 13 unità e i piedi
+    // atterravano dentro la ghiaia. Era dimensionata su `barrierDist`, la
+    // distanza storica del muro (15.0), che dopo le vie di fuga non vale più.
+    //
+    // ⚠️ Il test sta qui e non in sceneryLandmarks.test.js perché il difetto
+    // emerge solo nel layout COMPLETO: chiamando buildLandmarks da sola, con
+    // nessuna struttura già accettata, la passerella trova libero il campione
+    // 416 — dove il muro è a 18.2 e la luce basta. È l'ingombro delle altre
+    // strutture a spingerla dove il muro è largo.
+    for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+        const { trackPts, barrierProfile, layout } = circuitoVero(id);
+        for (const ponte of layout.filter(v => v.asset === 'footbridge' || v.asset === 'startGantry')) {
+            const semiLuce = SceneryAssetSizes.sizeOf(ponte.asset).w * ponte.scale / 2;
+            const v = TrackGeometry.nearestPoint(trackPts, ponte.x, ponte.z);
+            for (const side of [-1, 1]) {
+                const muro = TrackGravel.barrierAt(barrierProfile, v.index, side);
+                assert.ok(semiLuce >= muro,
+                    `${id}: ${ponte.asset} al campione ${v.index} ha semi-luce ${semiLuce.toFixed(1)} `
+                    + `ma il muro lato ${side > 0 ? 'dx' : 'sx'} sta a ${muro.toFixed(1)}: i piedi cadono nella ghiaia`);
+            }
+        }
+    }
+});

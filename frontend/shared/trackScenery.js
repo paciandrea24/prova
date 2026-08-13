@@ -1169,7 +1169,7 @@
         const landmarks = SceneryLandmarks.buildLandmarks(
             trackPts, pitPts, barrierDist, side, embankStart, embankOuter,
             playerBoxFootprints, insidePlayerBoxFootprint, fitsUnderBridge, pitRoadHalf,
-            accepted);
+            accepted, barrierProfile);
         accepted.push(...landmarks);
 
         // Elementi distribuiti in base alla curvatura (gomme, cartelli di

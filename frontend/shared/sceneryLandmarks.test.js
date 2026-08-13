@@ -61,3 +61,4 @@ test('i landmark laterali stanno fuori dal corridoio pista', () => {
 test('buildLandmarks è deterministico (nessun PRNG)', () => {
     assert.equal(JSON.stringify(build()), JSON.stringify(build()));
 });
+
