@@ -10,17 +10,20 @@
         module.exports = factory(require('./trackGeometry.js'), require('./sceneryLandmarks.js'),
                                  require('./sceneryTrackside.js'), require('./sceneryCrowd.js'),
                                  require('./sceneryAssetSizes.js'), require('./sceneryHills.js'),
-                                 require('./sceneryPaddock.js'), require('./trackGravel.js'));
+                                 require('./sceneryPaddock.js'), require('./trackGravel.js'),
+                                 require('./sceneryInfrastructure.js'));
     } else {
         root.TrackScenery = factory(root.TrackGeometry, root.SceneryLandmarks,
                                     root.SceneryTrackside, root.SceneryCrowd,
                                     root.SceneryAssetSizes, root.SceneryHills,
-                                    root.SceneryPaddock, root.TrackGravel);
+                                    root.SceneryPaddock, root.TrackGravel,
+                                    root.SceneryInfrastructure);
     }
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryLandmarks,
                                                         SceneryTrackside, SceneryCrowd,
                                                         SceneryAssetSizes, SceneryHills,
-                                                        SceneryPaddock, TrackGravel) {
+                                                        SceneryPaddock, TrackGravel,
+                                                        SceneryInfrastructure) {
 
     // Hash FNV-1a 32 bit di una stringa: seed deterministico dall'id del
     // tracciato, così lo stesso tracciato genera sempre lo stesso layout
@@ -171,6 +174,26 @@
     // altre — non affiancabili a un bordo dritto, verificato con un render di
     // confronto durante il brainstorming).
     const STAND_VARIANTS = ['grandStand', 'grandStandAwning', 'grandStandCovered'];
+
+    // Palette delle infrastrutture distribuite lungo il giro (spec
+    // 2026-08-13-f1-infrastrutture-circuito-design.md). Per ora SOLO asset che
+    // esistono già: gli otto modelli nuovi — maxischermo, torre faro, torre
+    // servizi, terrazza hospitality, suite VIP, torretta TV, gru di recupero,
+    // cancello pista — entrano qui uno per volta man mano che il piano 2 li
+    // produce e l'utente ne approva il render.
+    //
+    // ⚠️ L'ordine dentro ogni contesto è l'ordine di PREFERENZA: se il primo
+    // non entra si prova il successivo, invece di lasciare un buco.
+    //
+    // `pylon` è alto 26.2 e `flagPole` 15: entrambi superano gli 11.5 unità di
+    // dislivello del viadotto di `prova`, ma solo `pylon` è dichiarato per il
+    // contesto 'viadotto' — `flagPole` lì si leggerebbe come un dettaglio
+    // perso in basso. `billboardLow` è alto 4.5 e non può starci per vincolo.
+    const PALETTE_INFRASTRUTTURE = [
+        { asset: 'pylon',        contesti: ['rettilineo', 'viadotto'], passoMinimo: 400 },
+        { asset: 'flagPole',     contesti: ['curvaEsterno', 'stretto'], passoMinimo: 220 },
+        { asset: 'billboardLow', contesti: ['rettilineo', 'stretto'],  passoMinimo: 160 },
+    ];
 
     // Tribuna principale: unica per tracciato, vicino al rettilineo di
     // partenza. È la variante CON LA COPERTURA, mentre le schiere sparse per
@@ -1357,6 +1380,24 @@
         // sull'orizzonte passavano dal 16% al 20% — il tetto del test.
         accepted.push(...trackside.filter(v => v.category === 'paddock-decor'));
 
+        // Infrastrutture: DOPO il trackside, così vedono tribune, reti, gomme
+        // e landmark già posati; PRIMA della natura, così sono gli alberi a
+        // scansarsi da loro e non viceversa.
+        //
+        // RNG proprio, come folla e boschi: pescare dalla sequenza condivisa
+        // legherebbe la scenografia a quante infrastrutture ci stanno, ed è
+        // esattamente il difetto che ha fatto diradare i boschi il 2026-08-13.
+        const infrastrutture = SceneryInfrastructure.buildInfrastructure({
+            trackPts, pitPts, barrierDist, pitRoadHalf, embankStart, embankOuter,
+            barrierProfile, playerBoxFootprints, insidePlayerBoxFootprint, fitsUnderBridge,
+            accepted: [...accepted, ...trackside],
+            grandstands: [...mainStand, ...grandstand],
+            spanning: landmarks.filter(v => v.asset === 'footbridge' || v.asset === 'startGantry'),
+            rng: mulberry32(hashString(trackData.id + ':infra')),
+            palette: PALETTE_INFRASTRUTTURE,
+        });
+        accepted.push(...infrastrutture);
+
         const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
         const paddockLife = SceneryPaddock.buildLayout(rng, trackPts, pitPts, barrierDist, accepted,
             (voce) => itemHitsPlayerBoxZone(voce, playerBoxFootprints));
@@ -1381,7 +1422,8 @@
         const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints);
 
         const layout = [...paddock, ...mainStand, ...grandstand, ...landmarks,
-                        ...trackside, ...nature, ...woods, ...rocce, ...paddockLife];
+                        ...trackside, ...infrastrutture,
+                        ...nature, ...woods, ...rocce, ...paddockLife];
         if (pond) layout.push(pond);
         traslaOltreLaGhiaia(layout, trackPts, barrierProfile,
             trackPts.filter(p => !p.bridge), barrierDist, embankStart, embankOuter);

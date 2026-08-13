@@ -1415,23 +1415,33 @@ test('niente scenografia dentro gli asset che scavalcano la pista', () => {
 // nell'algoritmo di piazzamento per scelta: il modulo posa dove c'è posto, il
 // test pretende che alla fine non resti spoglio niente di lungo.
 //
-// Fotografia del 2026-08-13, PRIMA che le infrastrutture esistessero, con un
-// filo di margine sui numeri misurati:
-//     prova        peggiore a terra 315   dx 33%  sx 42%
-//     new-monza    peggiore a terra 215   dx 17%  sx 18%
-//     monte-rosso  peggiore a terra 116   dx  5%  sx 18%
-//     baku         peggiore a terra   0   dx 78%  sx 83%
+// Misure del 2026-08-13, prima e dopo l'arrivo delle infrastrutture:
 //
-// ⚠️ Queste soglie vanno STRETTE quando il modulo sarà in piedi, mai
-// allargate: se il riempimento non arriva, è il piano a essere sbagliato.
+//                  peggiore a terra        lato dx          lato sx
+//     prova           315 →  284          33% → 27%        42% → 23%
+//     new-monza       215 →  157          17% →  5%        18% →  7%
+//     monte-rosso     116 →   24           5% →  0%        18% →  4%
+//     baku              0 →    0          78% → 65%        83% → 83%
+//
+// ⚠️ Le soglie si STRINGONO, mai si allargano: se il riempimento non arriva è
+// il piano a essere sbagliato.
+//
+// PERCHÉ SU `prova` IL PEGGIORE RESTA A 284. Il tratto è il 143-197 sul lato
+// destro, e non è riempibile: lì la pista fa un tornante e le due branche si
+// sfiorano. Un oggetto posato alla distanza normale dal muro (39 unità
+// dall'asse, perché lì il muro della via di fuga sta a 29.8) cade a **3 unità
+// dal campione 513**, cioè in mezzo alla carreggiata dell'altro ramo. È
+// `guardaVersoLaPista` a rifiutarlo, e fa bene. Nessun parametro può
+// cambiarlo: fra le due branche non c'è spazio. Il modulo lo lascia vuoto
+// invece di piantarci qualcosa in mezzo alla pista.
 //
 // `baku` è un caso a sé: 909 campioni su 1000 sono viadotto, quindi a terra
-// non ha praticamente vuoti da riempire e le sue quote restano altissime per
-// costruzione. Il tetto sulla quota lo si tiene solo perché non peggiori.
+// non ha vuoti da riempire e le sue quote restano altissime per costruzione.
+// Il tetto sulla quota serve solo a non farlo peggiorare.
 const VUOTI_ATTESI = {
-    'prova':       { peggiore: 330, quota: 0.45 },
-    'new-monza':   { peggiore: 230, quota: 0.20 },
-    'monte-rosso': { peggiore: 130, quota: 0.20 },
+    'prova':       { peggiore: 300, quota: 0.30 },
+    'new-monza':   { peggiore: 170, quota: 0.10 },
+    'monte-rosso': { peggiore: 40,  quota: 0.08 },
     'baku':        { peggiore: 10,  quota: 0.85 },
 };
 
