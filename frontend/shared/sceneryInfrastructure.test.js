@@ -78,3 +78,159 @@ test('senza profilo del muro si ripiega sulla barriera storica', () => {
     assert.equal(c.muro, ctx.barrierDist,
         'chi non conosce le vie di fuga deve continuare a funzionare');
 });
+
+// ---- la camminata e i sette vincoli ----
+//
+// Palette di prova fatta di asset che ESISTONO GIÀ: nessuna modellazione, ma
+// basta a mettere sotto test tutta la macchina. Gli otto modelli nuovi della
+// spec entreranno qui uno per volta col piano 2.
+const PALETTE_ESISTENTI = [
+    { asset: 'pylon',        contesti: ['rettilineo', 'viadotto'], passoMinimo: 400 },
+    { asset: 'flagPole',     contesti: ['curvaEsterno', 'stretto'], passoMinimo: 200 },
+    { asset: 'billboardLow', contesti: ['rettilineo', 'stretto'],  passoMinimo: 150 },
+];
+
+const TRACCIATI = ['prova', 'new-monza', 'monte-rosso', 'baku'];
+
+test('con una palette vera posa qualcosa su tutti i tracciati', () => {
+    for (const id of TRACCIATI) {
+        const out = SceneryInfrastructure.buildInfrastructure(
+            contesto(id, { palette: PALETTE_ESISTENTI }));
+        assert.ok(out.length >= 5, `${id}: solo ${out.length} infrastrutture posate`);
+        for (const v of out) {
+            assert.equal(v.category, 'infrastructure');
+            assert.equal(v.suMisuraSulMuro, true,
+                'senza il flag, traslaOltreLaGhiaia le sposterebbe una seconda volta');
+        }
+    }
+});
+
+test('niente si compenetra fra le infrastrutture stesse', () => {
+    for (const id of TRACCIATI) {
+        const out = SceneryInfrastructure.buildInfrastructure(
+            contesto(id, { palette: PALETTE_ESISTENTI }));
+        for (let i = 0; i < out.length; i++) {
+            for (let j = i + 1; j < out.length; j++) {
+                assert.ok(!SceneryAssetSizes.itemsOverlap(out[i], out[j]),
+                    `${id}: ${out[i].asset} e ${out[j].asset} si compenetrano`);
+            }
+        }
+    }
+});
+
+test('niente si compenetra con le strutture già accettate', () => {
+    for (const id of TRACCIATI) {
+        // Un ostacolo finto piantato al campione 0, largo e profondo: se il
+        // modulo non guarda `accepted`, ci finisce dentro.
+        const c = circuitoVero(id);
+        const p = c.trackPts[0];
+        const nrm = TrackGeometry.normalAt(c.trackPts, 0, true);
+        const d = 30;
+        const ostacolo = { asset: 'pitsOffice', category: 'paddock',
+                           x: p.x + nrm.nx * d, y: 0, z: p.z + nrm.nz * d, rotY: 0, scale: 1 };
+        const out = SceneryInfrastructure.buildInfrastructure(
+            contesto(id, { palette: PALETTE_ESISTENTI, accepted: [ostacolo] }));
+        for (const v of out) {
+            assert.ok(!SceneryAssetSizes.itemsOverlap(v, ostacolo),
+                `${id}: ${v.asset} finisce dentro l'ostacolo piantato al campione 0`);
+        }
+    }
+});
+
+test('ogni infrastruttura guarda la pista che ha davanti', () => {
+    for (const id of TRACCIATI) {
+        const ctx = contesto(id, { palette: PALETTE_ESISTENTI });
+        for (const v of SceneryInfrastructure.buildInfrastructure(ctx)) {
+            assert.ok(TrackGeometry.guardaVersoLaPista(ctx.trackPts, v),
+                `${id}: ${v.asset} non guarda la pista`);
+        }
+    }
+});
+
+test('nessun angolo finisce dentro la via di fuga', () => {
+    for (const id of TRACCIATI) {
+        const ctx = contesto(id, { palette: PALETTE_ESISTENTI });
+        for (const v of SceneryInfrastructure.buildInfrastructure(ctx)) {
+            for (const k of SceneryAssetSizes.footprintCorners(v)) {
+                const q = TrackGeometry.nearestPoint(ctx.trackPts, k.x, k.z);
+                const nrm = TrackGeometry.normalAt(ctx.trackPts, q.index, true);
+                const lato = Math.sign((k.x - ctx.trackPts[q.index].x) * nrm.nx +
+                                       (k.z - ctx.trackPts[q.index].z) * nrm.nz) || 1;
+                const dentro = TrackGravel.barrierAt(ctx.barrierProfile, q.index, lato) - q.dist;
+                assert.ok(dentro <= 0,
+                    `${id}: un angolo di ${v.asset} è dentro la ghiaia di ${dentro.toFixed(2)}`);
+            }
+        }
+    }
+});
+
+test('accanto a un tratto sopraelevato solo ciò che è più alto del dislivello', () => {
+    const ctx = contesto('prova', { palette: PALETTE_ESISTENTI });
+    let visti = 0;
+    for (const v of SceneryInfrastructure.buildInfrastructure(ctx)) {
+        const q = TrackGeometry.nearestPoint(ctx.trackPts, v.x, v.z);
+        const c = SceneryInfrastructure.contestoAl(ctx, q.index, 1);
+        if (!c.viadotto) continue;
+        visti++;
+        const alto = SceneryAssetSizes.sizeOf(v.asset).h;
+        assert.ok(alto > c.dislivello,
+            `${v.asset} è alto ${alto} accanto a un viadotto di ${c.dislivello.toFixed(1)}`);
+    }
+    assert.ok(visti > 0, 'su prova qualcosa deve pur finire accanto al viadotto');
+});
+
+test('niente nella fascia davanti a una tribuna', () => {
+    const c = circuitoVero('prova');
+    // Una tribuna finta al campione 200, alla distanza a cui stanno le vere.
+    const p = c.trackPts[200];
+    const nrm = TrackGeometry.normalAt(c.trackPts, 200, true);
+    const d = TrackGravel.barrierAt(c.barrierProfile, 200, 1) + 10;
+    const tx = p.x + nrm.nx * d, tz = p.z + nrm.nz * d;
+    const tribuna = { asset: 'grandStandCovered', category: 'grandstand',
+                      x: tx, y: 0, z: tz, scale: 1,
+                      rotY: Math.atan2(p.x - tx, p.z - tz) };
+    const ctx = contesto('prova', { palette: PALETTE_ESISTENTI, grandstands: [tribuna] });
+    for (const v of SceneryInfrastructure.buildInfrastructure(ctx)) {
+        const co = Math.cos(tribuna.rotY), si = Math.sin(tribuna.rotY);
+        const dx = v.x - tribuna.x, dz = v.z - tribuna.z;
+        const du = dx * co - dz * si, df = dx * si + dz * co;
+        const meta = (SceneryAssetSizes.sizeOf(tribuna.asset).w
+                    + SceneryAssetSizes.sizeOf(v.asset).w) / 2;
+        assert.ok(!(Math.abs(du) <= meta && df > 0 && df <= 22),
+            `${v.asset} è nella fascia davanti alla tribuna `
+            + `(du ${du.toFixed(1)}, df ${df.toFixed(1)})`);
+    }
+});
+
+test('niente sotto una campata che scavalca la pista', () => {
+    const c = circuitoVero('prova');
+    const p = c.trackPts[300];
+    const tg = TrackGeometry.tangentAt(c.trackPts, 300, true);
+    const campata = { asset: 'startGantry', category: 'landmark',
+                      x: p.x, y: 0, z: p.z,
+                      rotY: Math.atan2(tg.tx, tg.tz) + Math.PI, scale: 1.5 };
+    const ctx = contesto('prova', { palette: PALETTE_ESISTENTI, spanning: [campata] });
+    for (const v of SceneryInfrastructure.buildInfrastructure(ctx)) {
+        assert.ok(!SceneryAssetSizes.itemsOverlap(v, campata),
+            `${v.asset} finisce dentro la campata`);
+    }
+});
+
+test('niente dentro la corsia box', () => {
+    for (const id of TRACCIATI) {
+        const ctx = contesto(id, { palette: PALETTE_ESISTENTI });
+        for (const v of SceneryInfrastructure.buildInfrastructure(ctx)) {
+            const d = TrackGeometry.nearestPoint(ctx.pitPts, v.x, v.z).dist;
+            assert.ok(d > ctx.pitRoadHalf,
+                `${id}: ${v.asset} è a ${d.toFixed(1)} dall'asse della corsia box`);
+        }
+    }
+});
+
+test('lo stesso tracciato dà sempre lo stesso layout', () => {
+    const a = SceneryInfrastructure.buildInfrastructure(
+        contesto('prova', { palette: PALETTE_ESISTENTI }));
+    const b = SceneryInfrastructure.buildInfrastructure(
+        contesto('prova', { palette: PALETTE_ESISTENTI }));
+    assert.deepEqual(a, b, 'il layout deve essere deterministico');
+});

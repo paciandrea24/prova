@@ -92,10 +92,134 @@
         };
     }
 
+    // Quali gruppi di contesto descrivono questo punto, in ordine di
+    // specificità. Il viadotto vince su tutto perché non è una preferenza ma
+    // un VINCOLO: lì sotto, quello che è basso sparisce alla vista.
+    function etichette(c) {
+        if (c.viadotto) return ['viadotto'];
+        const out = [];
+        if (c.curva && c.esterno) out.push('curvaEsterno');
+        if (c.visuale) out.push('rettilineo');
+        out.push('stretto');
+        return out;
+    }
+
+    // La stessa fascia usata da trackScenery.js dopo la traslazione: larga
+    // quanto la tribuna, profonda FASCIA_DAVANTI_TRIBUNA verso la pista.
+    // Davanti a una tribuna ci va solo la sua rete.
+    function davantiAUnaTribuna(v, grandstands) {
+        return grandstands.some(g => {
+            const co = Math.cos(g.rotY || 0), si = Math.sin(g.rotY || 0);
+            const dx = v.x - g.x, dz = v.z - g.z;
+            const du = dx * co - dz * si;
+            const df = dx * si + dz * co;
+            const meta = (SceneryAssetSizes.sizeOf(g.asset).w * (g.scale || 1)
+                        + SceneryAssetSizes.sizeOf(v.asset).w * (v.scale || 1)) / 2;
+            return Math.abs(du) <= meta && df > 0 && df <= FASCIA_DAVANTI_TRIBUNA;
+        });
+    }
+
     function buildInfrastructure(ctx) {
-        const { palette } = ctx;
+        const { trackPts, pitPts, barrierDist, pitRoadHalf, barrierProfile,
+                accepted = [], grandstands = [], spanning = [], palette } = ctx;
         if (!palette || !palette.length) return [];
-        return [];
+
+        const n = trackPts.length;
+        const giro = TrackGeometry.lapLength(trackPts);
+        const passoCampioni = Math.max(1, Math.round(PASSO / (giro / n)));
+        const groundPts = trackPts.filter(p => !p.bridge);
+        const curve = SceneryTrackside.findCorners(trackPts);
+        const fitsUnderBridge = ctx.fitsUnderBridge || (() => true);
+        const insideBox = ctx.insidePlayerBoxFootprint || (() => false);
+        const base = { trackPts, barrierProfile, barrierDist,
+                       embankStart: ctx.embankStart, embankOuter: ctx.embankOuter,
+                       groundPts, curve };
+
+        const posate = [];
+
+        for (let i = 0; i < n; i += passoCampioni) {
+            for (const lato of [1, -1]) {
+                const c = contestoAl(base, i, lato);
+                const gruppi = etichette(c);
+
+                // Lista di PREFERENZA, non una scelta sola: se il primo asset
+                // non entra si prova il successivo, invece di lasciare un buco.
+                const candidati = [];
+                for (const g of gruppi) {
+                    for (const voce of palette) {
+                        if (voce.contesti.indexOf(g) >= 0 && candidati.indexOf(voce) < 0) {
+                            candidati.push(voce);
+                        }
+                    }
+                }
+
+                for (const voce of candidati) {
+                    const dim = SceneryAssetSizes.sizeOf(voce.asset);
+                    if (!dim) continue;
+
+                    // VINCOLO 7 — accanto a un tratto sopraelevato solo ciò che
+                    // è più alto del dislivello: sotto quella soglia l'oggetto
+                    // prende la quota del terreno e sprofonda fuori dalla vista
+                    // di chi guida.
+                    if (c.viadotto && dim.h <= c.dislivello) continue;
+
+                    // Posa: oltre il muro del PROPRIO lato, guardando la pista.
+                    const d = c.muro + MARGINE_DAL_MURO + dim.d / 2;
+                    const nrm = TrackGeometry.normalAt(trackPts, i, true);
+                    const x = trackPts[i].x + nrm.nx * d * lato;
+                    const z = trackPts[i].z + nrm.nz * d * lato;
+
+                    // Spaziatura per famiglia: le gru non si ammucchiano e due
+                    // maxischermi non si vedono insieme. ⚠️ Si misura fra le
+                    // posizioni degli OGGETTI, non fra l'oggetto e il centro
+                    // pista: due esemplari sui due lati opposti sono lontani
+                    // fra loro anche quando il campione è lo stesso.
+                    const troppoVicino = posate.some(v => v.asset === voce.asset
+                        && Math.hypot(v.x - x, v.z - z) < voce.passoMinimo);
+                    if (troppoVicino) continue;
+
+                    const y = TrackGeometry.terrainHeightAt(
+                        groundPts, x, z, ctx.embankStart, ctx.embankOuter);
+                    const cand = {
+                        asset: voce.asset, category: 'infrastructure',
+                        suMisuraSulMuro: !!barrierProfile,
+                        x, y, z,
+                        rotY: Math.atan2(trackPts[i].x - x, trackPts[i].z - z),
+                        scale: 1,
+                    };
+
+                    // VINCOLO 6 — deve guardare la pista che ha davvero davanti.
+                    if (!TrackGeometry.guardaVersoLaPista(trackPts, cand)) continue;
+                    // VINCOLO 3 — corsia box e box giocatore.
+                    if (TrackGeometry.nearestPoint(pitPts, x, z).dist
+                        < pitRoadHalf + dim.d / 2 + 6) continue;
+                    if (insideBox(x, z, ctx.playerBoxFootprints)) continue;
+                    // VINCOLO 4 — cavalcavia e campate che scavalcano la pista.
+                    if (!fitsUnderBridge(voce.asset, x, z, y)) continue;
+                    if (spanning.some(p => SceneryAssetSizes.itemsOverlap(cand, p))) continue;
+                    // VINCOLO 2 — mai dentro un'altra struttura, né dentro una
+                    // già posata da questa stessa passata.
+                    if (accepted.some(p => SceneryAssetSizes.itemsOverlap(cand, p))) continue;
+                    if (posate.some(p => SceneryAssetSizes.itemsOverlap(cand, p))) continue;
+                    // VINCOLO 5 — mai nella fascia davanti a una tribuna.
+                    if (davantiAUnaTribuna(cand, grandstands)) continue;
+                    // VINCOLO 1 — mai nella via di fuga, e sui QUATTRO angoli:
+                    // il muro cambia sotto l'oggetto, il campione del centro
+                    // non dice nulla su dove finiscono le estremità.
+                    if (barrierProfile && SceneryAssetSizes.footprintCorners(cand).some(k => {
+                        const q = TrackGeometry.nearestPoint(trackPts, k.x, k.z);
+                        const nq = TrackGeometry.normalAt(trackPts, q.index, true);
+                        const l = Math.sign((k.x - trackPts[q.index].x) * nq.nx +
+                                            (k.z - trackPts[q.index].z) * nq.nz) || 1;
+                        return TrackGravel.barrierAt(barrierProfile, q.index, l) - q.dist > 0;
+                    })) continue;
+
+                    posate.push(cand);
+                    break;   // uno per punto e per lato
+                }
+            }
+        }
+        return posate;
     }
 
     return { buildInfrastructure, contestoAl,
