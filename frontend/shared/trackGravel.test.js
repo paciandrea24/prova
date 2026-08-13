@@ -371,3 +371,63 @@ test('barrierDistAt somma la ghiaia alla distanza base', () => {
     assert.equal(TrackGravel.barrierDistAt(prof, c.midIdx, c.side, base),
         base + larghezzaAttesa(pts, c));
 });
+
+// ---- barrierProfile: il nastro della barriera non si ripiega ----
+//
+// La barriera è la pista spostata lungo la normale: sul lato interno di una
+// curva, oltre il raggio di curvatura il punto di barriera INDIETREGGIA e il
+// nastro si ripiega su se stesso, formando prima una cuspide e poi un cappio.
+// In gioco l'utente lo ha visto come "groviglio di barriere" ai campioni 132,
+// 337, 646 e 764 di `prova` (2026-08-12), e la misura ha ritrovato le zone
+// annodate esattamente lì.
+//
+// Il test misura i VERTICI con la stessa formula del costruttore della mesh
+// (trackMeshBuilder.js::buildBarriers), non il profilo: un profilo liscio può
+// benissimo produrre un nastro ripiegato, ed è proprio quello che succedeva.
+const fs = require('fs');
+const path = require('path');
+
+function pistaVera(id) {
+    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'tracks', `${id}.json`), 'utf8'));
+    return { raw, pts: TrackGeometry.sampleLoop(raw.controlPoints, 1000) };
+}
+
+function ripiegamentiDi(pts, distDi) {
+    const n = pts.length;
+    const out = [];
+    for (const side of [-1, 1]) {
+        for (let i = 0; i < n; i++) {
+            const prev = (i - 1 + n) % n;
+            const t = TrackGeometry.tangentAt(pts, prev, true);
+            const nQui = TrackGeometry.normalAt(pts, i, true);
+            const avanti = (pts[i].x - pts[prev].x) * t.tx + (pts[i].z - pts[prev].z) * t.tz
+                + side * distDi(i, side) * (nQui.nx * t.tx + nQui.nz * t.tz);
+            if (avanti <= 0) out.push(`${side > 0 ? 'dx' : 'sx'}${i}`);
+        }
+    }
+    return out;
+}
+
+for (const id of ['prova', 'monte-rosso', 'new-monza', 'baku']) {
+    test(`barrierProfile: il nastro non si ripiega (${id})`, () => {
+        const { raw, pts } = pistaVera(id);
+        const bar = TrackGravel.barrierProfile(pts, { roadHalf: raw.roadHalfWidth });
+        const storica = raw.roadHalfWidth + TrackGravel.CURB_W + TrackGravel.BARRIER_GAP;
+
+        // Riferimento: il muro alla distanza storica, cioè la regola in vigore
+        // prima delle vie di fuga. Su baku qualche curva ha raggio 9.9 con
+        // pista di semi-larghezza 11 — il centro di curvatura cade dentro
+        // l'asfalto e NESSUNA barriera interna è possibile, a nessuna
+        // distanza. Quello che le vie di fuga non possono fare è peggiorare
+        // il conto: il limite è del tracciato, non di questo modulo.
+        const prima = ripiegamentiDi(pts, () => storica);
+        const adesso = ripiegamentiDi(pts, (i, side) => TrackGravel.barrierAt(bar, i, side));
+
+        assert.ok(adesso.length <= prima.length,
+            `${id}: ${adesso.length} ripiegamenti contro i ${prima.length} del muro storico — ${adesso.slice(0, 8).join(' ')}`);
+        if (prima.length === 0) {
+            assert.equal(adesso.length, 0,
+                `${id}: il muro storico non si ripiegava, questo sì — ${adesso.slice(0, 8).join(' ')}`);
+        }
+    });
+}
