@@ -401,6 +401,7 @@ test('gli asset custom sono istanziati a scala 1, gli alberi Kenney a 6', () => 
 // fino a 11.5 di quota) succedeva a reti, tribune, torre e passerella —
 // segnalato dall'utente con uno screenshot.
 const SceneryAssetSizes = require('./sceneryAssetSizes.js');
+const SceneryGaps = require('./sceneryGaps.js');
 const prova = require('../tracks/prova.json');
 
 test('nessun oggetto scenico attraversa un tratto di pista sopraelevata', () => {
@@ -1406,3 +1407,54 @@ test('niente scenografia dentro gli asset che scavalcano la pista', () => {
         }
     }
 });
+
+// ---- quanto circuito resta senza niente di fianco ----
+//
+// È il criterio con cui si giudica il lavoro sulle infrastrutture (spec
+// 2026-08-13-f1-infrastrutture-circuito-design.md), e sta qui e non
+// nell'algoritmo di piazzamento per scelta: il modulo posa dove c'è posto, il
+// test pretende che alla fine non resti spoglio niente di lungo.
+//
+// Fotografia del 2026-08-13, PRIMA che le infrastrutture esistessero, con un
+// filo di margine sui numeri misurati:
+//     prova        peggiore a terra 315   dx 33%  sx 42%
+//     new-monza    peggiore a terra 215   dx 17%  sx 18%
+//     monte-rosso  peggiore a terra 116   dx  5%  sx 18%
+//     baku         peggiore a terra   0   dx 78%  sx 83%
+//
+// ⚠️ Queste soglie vanno STRETTE quando il modulo sarà in piedi, mai
+// allargate: se il riempimento non arriva, è il piano a essere sbagliato.
+//
+// `baku` è un caso a sé: 909 campioni su 1000 sono viadotto, quindi a terra
+// non ha praticamente vuoti da riempire e le sue quote restano altissime per
+// costruzione. Il tetto sulla quota lo si tiene solo perché non peggiori.
+const VUOTI_ATTESI = {
+    'prova':       { peggiore: 330, quota: 0.45 },
+    'new-monza':   { peggiore: 230, quota: 0.20 },
+    'monte-rosso': { peggiore: 130, quota: 0.20 },
+    'baku':        { peggiore: 10,  quota: 0.85 },
+};
+
+for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+    test(`scenografia: quanto circuito resta senza niente di fianco (${id})`, () => {
+        const { trackPts, layout } = circuitoVero(id);
+        const tratti = SceneryGaps.trattiVuoti(trackPts, layout);
+        const giro = TrackGeometry.lapLength(trackPts);
+        // Il viadotto ha regole sue: di fianco a un tratto sopraelevato può
+        // stare solo ciò che è più alto del dislivello, quindi il suo vuoto
+        // non è confrontabile con quello a terra.
+        const aTerra = tratti.filter(t => !t.suViadotto);
+        const peggiore = aTerra.length ? aTerra[0].lunghezza : 0;
+        const atteso = VUOTI_ATTESI[id];
+        assert.ok(peggiore <= atteso.peggiore,
+            `${id}: il tratto vuoto più lungo a terra è ${peggiore.toFixed(0)} unità, `
+            + `sopra il tetto di ${atteso.peggiore}`);
+        for (const lato of [1, -1]) {
+            const quota = tratti.filter(t => t.lato === lato)
+                .reduce((s, t) => s + t.lunghezza, 0) / giro;
+            assert.ok(quota <= atteso.quota,
+                `${id}: il lato ${lato > 0 ? 'destro' : 'sinistro'} è vuoto per il `
+                + `${(quota * 100).toFixed(0)}%, sopra il tetto del ${(atteso.quota * 100).toFixed(0)}%`);
+        }
+    });
+}
