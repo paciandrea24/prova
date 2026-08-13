@@ -381,8 +381,27 @@
         //
         // Si scarta invece di spostare: sotto una campata larga 80 unità un
         // oggetto non ha dove andare che non sia altrettanto sbagliato.
+        //
+        // ⚠️ TRANNE la rete di protezione, e non per comodità. La linea delle
+        // reti e i piloni delle campate sono la STESSA linea per costruzione:
+        // la rete sta a `muro + FENCE_MARGIN`, il filo interno del pilone a
+        // `muro + SPAN_CLEARANCE`, e i due margini valgono entrambi 1.5.
+        // Quindi o si incrociano, o dove passa una campata la tribuna resta
+        // scoperta — e questo l'utente l'ha già bocciato due volte
+        // ("è inaccettabile", "ho notato più tribune senza rete di prima").
+        // Allargare la campata per farla stare fuori non è una via d'uscita:
+        // il suo ingombro cresce di 1.28 volte il filo interno e su new-monza
+        // arriverebbe addosso alla tribuna principale (misurato).
+        //
+        // L'incrocio è profondo quanto lo SPESSORE della rete (misurato:
+        // 0.40-0.45 unità su tutti e tre i tracciati che hanno una fila sotto
+        // il ponte semafori) e la rete passa sotto la traversa con 3 unità di
+        // franco. È come sono i circuiti veri, dove la rete è imbullonata alla
+        // gamba del portale. Il test "la rete incrocia il ponte semafori solo
+        // sul pilone" tiene ferme entrambe le misure.
         if (spanning.length) {
-            return layout.filter(v => !spanning.some(p => SceneryAssetSizes.itemsOverlap(p, v)));
+            return layout.filter(v => v.asset === 'catchFence'
+                || !spanning.some(p => SceneryAssetSizes.itemsOverlap(p, v)));
         }
         return layout;
     }

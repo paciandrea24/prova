@@ -173,26 +173,33 @@
     const STAND_VARIANTS = ['grandStand', 'grandStandAwning', 'grandStandCovered'];
 
     // Tribuna principale: unica per tracciato, vicino al rettilineo di
-    // partenza. 'grandStand' (base, senza tettoia sporgente) impilata su 2
-    // livelli: verificato con un render di confronto a scala reale che
-    // 'grandStandAwning' impilata romperebbe la tribuna sopra (il telo della
-    // tettoia sporge oltre il modulo), mentre 'grandStand'/'grandStandCovered'
-    // (tetto piatto o assente) si impilano senza artefatti — qui si usa la
-    // variante senza tetto per restare leggera.
-    const MAIN_STAND_ASSET         = 'grandStand';
-    // 7 e non 3: l'utente vuole una tribuna unica e lunga, che segua la pista
-    // senza interruzioni (playtest 2026-08-09 — "non voglio un buco, voglio
-    // grandstand continui che seguono l'andamento della pista"). A 18.4 di
-    // passo la fila è lunga ~129 unità.
-    const MAIN_STAND_COLS          = 7;
-    // Quanti dei 7 moduli stanno OLTRE il traguardo, nel verso di marcia. Uno
-    // solo: gli altri sei si allungano all'indietro, lungo la griglia, che è
-    // dove il pubblico ha qualcosa da guardare. Con la ripartizione simmetrica
-    // (3 avanti) il modulo di testa arrivava sotto il ponte semafori — che sta
-    // GANTRY_AHEAD_OF_GRID = 75 unità avanti — e la sua rete protettiva veniva
-    // scartata perché sarebbe finita dentro la campata: una tribuna scoperta
-    // proprio al traguardo, segnalata in gioco il 2026-08-13.
-    const MAIN_STAND_COLS_AVANTI   = 1;
+    // partenza. È la variante CON LA COPERTURA, mentre le schiere sparse per
+    // il circuito pescano a caso fra le tre (richiesta dell'utente,
+    // 2026-08-13): la tribuna del traguardo è quella importante, e il tetto
+    // la distingue da lontano. Con MAIN_STAND_TIERS = 1 non c'è più il
+    // vincolo dell'impilamento che imponeva 'grandStand' — restava documentato
+    // che 'grandStandAwning' impilata rompe la tribuna sopra (il telo sporge
+    // oltre il modulo) mentre tetto piatto e nessun tetto si impilano puliti.
+    const MAIN_STAND_ASSET         = 'grandStandCovered';
+    // La fila unica e lunga che segue la pista senza interruzioni è una
+    // richiesta vecchia dell'utente (playtest 2026-08-09 — "non voglio un
+    // buco, voglio grandstand continui che seguono l'andamento della pista").
+    // 12 e non 7. A 7 la fila finiva ~28 unità dopo il traguardo, cioè PRIMA
+    // del ponte semafori (che sta GANTRY_AHEAD_OF_GRID = 75 avanti), e fra la
+    // sua coda e la prima schiera secondaria restava un vuoto di 72 unità
+    // proprio nel punto più guardato del circuito: segnalazione M 20 del
+    // 2026-08-13, "lungo il traguardo non c'è una schiera unica".
+    // A 12 la fila è lunga ~210 unità e copre tutto il rettilineo, ponte
+    // semafori incluso. Non si allunga a piacere: si ferma da sola sui
+    // viadotti, sulla corsia box e sugli ingombri già accettati (vedi
+    // buildMainGrandstandLayout).
+    const MAIN_STAND_COLS          = 12;
+    // Quanti dei 12 moduli stanno OLTRE il traguardo, nel verso di marcia.
+    // Cinque avanti (96 unità, il ponte semafori è a 75) e sei indietro, lungo
+    // la griglia, che è dove il pubblico ha qualcosa da guardare. La
+    // ripartizione non è simmetrica apposta: davanti serve solo arrivare oltre
+    // il ponte, dietro c'è tutta la griglia di partenza.
+    const MAIN_STAND_COLS_AVANTI   = 5;
     // Distanza minima di una tribuna SPARSA dalla fila principale. Con la sola
     // STRUCTURE_CLEARANCE (22) una tribuna finiva a 32.4 dal modulo esterno:
     // troppo lontana per leggersi come continuazione della fila, troppo vicina
@@ -227,7 +234,7 @@
     // (TrackGeometry.advanceToDistancePoint) il contatto è esatto e il
     // trucco non serve più.
     const MAIN_STAND_COL_SPACING   = 19.2;
-    const MAIN_STAND_TIER_HEIGHT   = 12.3;  // era 5.4: altezza reale del modulo
+    const MAIN_STAND_TIER_HEIGHT   = SceneryAssetSizes.sizeOf(MAIN_STAND_ASSET).h;
     // Deve superare il raggio esterno dei cartelloni sponsor del paddock
     // (centrati a barrierDist+PADDOCK_MARGIN=5, mezza profondità billboard
     // 0.8 -> bordo esterno a barrierDist+5.8) sommato alla mezza profondità
@@ -868,18 +875,45 @@
         return modules;
     }
 
-    function buildMainGrandstandLayout(trackPts, barrierDist, side, embankStart, embankOuter, fitsUnderBridge, barrierProfile) {
+    function buildMainGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankStart, embankOuter, fitsUnderBridge, barrierProfile, accepted) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const stackHeight = MAIN_STAND_TIER_HEIGHT * MAIN_STAND_TIERS;
+        const gia = accepted || [];
+
+        // Il seme è il traguardo, ma se il traguardo sta su un viadotto la
+        // fila non può nascere lì: si poserebbe alla quota del terreno
+        // SOTTOSTANTE e attraverserebbe la pista sopraelevata. Su `baku` 909
+        // campioni su 1000 sono sopraelevati, traguardo compreso: senza questa
+        // ricerca la tribuna principale sparisce del tutto, mentre prima
+        // esisteva ma stava per metà dentro il viadotto. Si cerca il campione
+        // a terra più vicino, in tutte e due le direzioni.
+        let seme = 0;
+        for (let d = 1; d < trackPts.length / 2 && trackPts[seme].bridge; d++) {
+            const avanti = d % trackPts.length;
+            const dietro = (trackPts.length - d) % trackPts.length;
+            if (!trackPts[avanti].bridge) seme = avanti;
+            else if (!trackPts[dietro].bridge) seme = dietro;
+        }
 
         const { moduli: modules } = filaAllineata(
-            trackPts, 0, side, barrierProfile, barrierDist, MAIN_STAND_OFFSET_MARGIN,
+            trackPts, seme, side, barrierProfile, barrierDist, MAIN_STAND_OFFSET_MARGIN,
             MAIN_STAND_COLS,
             (m) => {
+                // Gli stessi controlli delle schiere secondarie. Finché la fila
+                // era di 7 moduli restava sul rettilineo di partenza e non
+                // incontrava nulla; lunga il doppio arriva dove il tracciato
+                // fa altro, e senza questi si posava su un viadotto (baku:
+                // 6 moduli su 12, che poi restavano senza rete perché la rete
+                // il controllo ce l'ha) o addosso al paddock.
+                if (trackPts[m.idx].bridge) return false;
+                if (TrackGeometry.nearestPoint(pitPts, m.x, m.z).dist < pitRoadHalf + GRANDSTAND_PIT_MARGIN) return false;
                 // Se lì sopra passa un cavalcavia, la tribuna lo attraversa.
                 const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);
-                return fitsUnderBridge('__stack__', m.x, m.z, y, stackHeight);
+                if (!fitsUnderBridge('__stack__', m.x, m.z, y, stackHeight)) return false;
+                const cand = { asset: MAIN_STAND_ASSET, x: m.x, y, z: m.z, rotY: m.rotY,
+                               scale: CUSTOM_MODEL_SCALE };
+                return !gia.some(p => SceneryAssetSizes.itemsOverlap(cand, p));
             },
             campioniDiMezzaLarghezza(trackPts, MAIN_STAND_ASSET, 1),
             MAIN_STAND_COLS_AVANTI);
@@ -1242,7 +1276,7 @@
 
 
         const paddock   = buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
-        const mainStand = buildMainGrandstandLayout(trackPts, barrierDist, side, embankStart, embankOuter, fitsUnderBridge, barrierProfile);
+        const mainStand = buildMainGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankStart, embankOuter, fitsUnderBridge, barrierProfile, paddock);
         const accepted  = [...paddock, ...mainStand];
         const grandstand = buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankStart, embankOuter, fitsUnderBridge, mainStand, barrierProfile);
 

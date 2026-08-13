@@ -163,18 +163,20 @@ test('il paddock usa cartelloni sponsor e box, mai pylon/bandiere/tenda', () => 
     }
 });
 
-// 7 moduli su UN solo livello. Storia del numero: 12 (6x2) coi Kenney alti
-// 5.38, poi 6 (3x2) col modulo custom largo 19.2, poi 3 (3x1) perché a due
-// livelli si legge come due tribune sovrapposte, infine 7 (7x1) perché
-// l'utente vuole una fila unica lunga che segua la pista senza interruzioni
-// (playtest 2026-08-09).
-test('la tribuna principale è unica, 7 moduli su un livello, vicino alla partenza', () => {
+// 12 moduli su UN solo livello, tutti CON LA COPERTURA. Storia del numero:
+// 12 (6x2) coi Kenney alti 5.38, poi 6 (3x2) col modulo custom largo 19.2,
+// poi 3 (3x1) perché a due livelli si legge come due tribune sovrapposte,
+// poi 7 (7x1) perché l'utente vuole una fila unica lunga che segua la pista
+// senza interruzioni (playtest 2026-08-09), infine 12 (12x1) perché a 7 la
+// fila finiva prima del ponte semafori e lasciava un vuoto proprio al
+// traguardo (segnalazione M 20 del 2026-08-13).
+test('la tribuna principale è unica, 12 moduli coperti su un livello, vicino alla partenza', () => {
     const { trackPts, pitPts } = buildReal();
     const layout = TrackScenery.generateLayout(monteRosso, trackPts, pitPts, BARRIER_D);
     const main = layout.filter(i => i.category === 'grandstand-main');
-    assert.equal(main.length, 7, `attesi 7 moduli tribuna principale, trovati ${main.length}`);
+    assert.equal(main.length, 12, `attesi 12 moduli tribuna principale, trovati ${main.length}`);
     for (const m of main) {
-        assert.equal(m.asset, 'grandStand');
+        assert.equal(m.asset, 'grandStandCovered');
         const d = TrackGeometry.nearestPoint(trackPts, m.x, m.z).dist;
         assert.ok(d >= BARRIER_D, `modulo tribuna principale dentro il corridoio pista: ${d}`);
     }
@@ -1156,26 +1158,79 @@ for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
             + dentro.slice(0, 5).map(m => `@${m.idx} di ${m.quanto.toFixed(2)}`).join(', '));
     });
 
-    test(`scenografia: la tribuna principale non arriva sotto il ponte semafori (${id})`, () => {
-        // Segnalato in gioco il 2026-08-13: "c'è un grandstand vicinissimo
-        // all'asset dei semafori del traguardo che non ha la rete protettiva".
-        // La fila principale è centrata sul traguardo e si allungava di 3
-        // moduli in avanti, arrivando addosso al ponte semafori che sta 75
-        // unità più avanti: la rete del modulo di testa sarebbe finita dentro
-        // la campata e veniva scartata.
+    test(`scenografia: la fila del traguardo è unica, senza vuoti (${id})`, () => {
+        // Segnalazione M 20 del 2026-08-13: "lungo il traguardo non c'è una
+        // schiera unica di grandstand … una zona nei pressi dell'asset dei
+        // semafori che presenta un vuoto".
         //
-        // La rete NON si può spostare per rimediare: sta al muro, e ancorarla
-        // alla tribuna la porterebbe a venticinque unità dall'asse col muro a
-        // quindici, sospesa in mezzo al prato. Si sposta la fila, che ora si
-        // allunga all'indietro lungo la griglia.
-        const { trackPts, barrierProfile, layout } = circuitoVero(id);
+        // Storia: la fila era stata ACCORCIATA in avanti (1 modulo su 7)
+        // proprio per non arrivare sotto il ponte semafori, che sta 75 unità
+        // avanti al traguardo — la rete del modulo di testa finiva dentro la
+        // campata e veniva scartata. Il rimedio ha spostato il difetto: al
+        // posto della tribuna scoperta è comparso un buco di 72 unità fra la
+        // fine della fila e la prima schiera secondaria.
+        //
+        // Ora la fila attraversa il ponte semafori e tiene le sue reti (vedi
+        // il test sull'incrocio rete/pilone qui sotto). Qui si pretende
+        // l'unica cosa che l'utente vede: la fila è CONTINUA, nessuno stacco
+        // maggiore di un modulo e mezzo.
+        const { trackPts, layout } = circuitoVero(id);
+        const main = layout.filter(v => v.category === 'grandstand-main');
+        assert.ok(main.length >= 3, `${id}: solo ${main.length} moduli di tribuna principale`);
+        // In ordine LUNGO LA PISTA, non per vicinanza: partendo da un modulo
+        // di mezzo, il "vicino più prossimo" salta da una parte all'altra
+        // della fila e conta un vuoto che non esiste.
+        const giro = TrackGeometry.lapLength(trackPts);
+        const passo = giro / trackPts.length;
+        const inFila = main.map(m => {
+            let a = doveSta(trackPts, m).idx * passo;
+            if (a > giro / 2) a -= giro;      // con segno rispetto al traguardo
+            return { a, m };
+        }).sort((p, q) => p.a - q.a);
+        const stacchi = [];
+        for (let i = 1; i < inFila.length; i++) {
+            stacchi.push({ d: Math.hypot(inFila[i].m.x - inFila[i - 1].m.x,
+                                         inFila[i].m.z - inFila[i - 1].m.z),
+                           idx: doveSta(trackPts, inFila[i].m).idx });
+        }
+        // 19.2 è il passo nominale (MAIN_STAND_COL_SPACING); 1.5 volte lascia
+        // passare l'assestamento in curva e taglia il modulo mancante.
+        const buchi = stacchi.filter(s => s.d > 19.2 * 1.5);
+        assert.equal(buchi.length, 0,
+            `${id}: ${buchi.length} vuoti nella fila del traguardo — `
+            + buchi.map(s => `@${s.idx} di ${s.d.toFixed(1)}`).join(', '));
+    });
+
+    test(`scenografia: la rete incrocia il ponte semafori solo sul pilone (${id})`, () => {
+        // La fila del traguardo passa sotto il ponte semafori, quindi la sua
+        // rete e i piloni del ponte si incontrano: sono la stessa linea per
+        // costruzione, perché entrambi partono da "muro + margine".
+        //
+        // Non è un difetto da eliminare — è come sono i circuiti veri, dove la
+        // rete è imbullonata alla gamba del portale. Ma va tenuto entro il suo
+        // ordine di grandezza: la rete può entrare nel pilone al massimo per
+        // il proprio spessore, e deve passare SOTTO la traversa. Se un giorno
+        // uno dei due si spostasse davvero, questo test lo vede.
+        const LUCE = { startGantry: 13.5, footbridge: 14.0 };   // filo INTERNO del pilone
+        const PILONE = { startGantry: 16.5, footbridge: 18.0 }; // filo ESTERNO del pilone
+        const INTRADOSSO = { startGantry: 14.25, footbridge: 11.75 };
+        const { trackPts, layout } = circuitoVero(id);
         const campate = layout.filter(v => v.asset === 'footbridge' || v.asset === 'startGantry');
-        for (const g of layout.filter(v => v.category === 'grandstand-main')) {
-            const finta = doveCadrebbeLaRete(trackPts, barrierProfile, g);
-            const sotto = campate.filter(p => SceneryAssetSizes.itemsOverlap(p, finta));
-            assert.equal(sotto.length, 0,
-                `${id}: la tribuna principale al campione ${doveSta(trackPts, g).idx} ha la rete `
-                + `dentro ${sotto.map(p => p.asset).join(', ')}`);
+        for (const r of layout.filter(v => v.asset === 'catchFence')) {
+            for (const p of campate) {
+                if (!SceneryAssetSizes.itemsOverlap(p, r)) continue;
+                const q = TrackGeometry.nearestPoint(trackPts, r.x, r.z);
+                const mezzo = SceneryAssetSizes.sizeOf('catchFence').d * (r.scale || 1) / 2;
+                const dentro = Math.min(q.dist + mezzo, PILONE[p.asset] * p.scale)
+                             - Math.max(q.dist - mezzo, LUCE[p.asset] * p.scale);
+                assert.ok(dentro <= mezzo * 2 + 0.01,
+                    `${id}: la rete @${q.index} entra nel pilone di ${p.asset} per `
+                    + `${dentro.toFixed(2)}, più del suo spessore (${(mezzo * 2).toFixed(2)})`);
+                const alta = SceneryAssetSizes.sizeOf('catchFence').h * (r.scale || 1);
+                assert.ok(alta <= INTRADOSSO[p.asset] * p.scale,
+                    `${id}: la rete @${q.index} è alta ${alta.toFixed(1)} e buca la traversa `
+                    + `di ${p.asset}, che comincia a ${(INTRADOSSO[p.asset] * p.scale).toFixed(1)}`);
+            }
         }
     });
 
@@ -1249,11 +1304,19 @@ test('niente scenografia dentro gli asset che scavalcano la pista', () => {
     // problema restava latente; allargandola per coprire le vie di fuga
     // (2026-08-13) sono comparse le compenetrazioni — segnalate dall'utente
     // guardando il disegno, non in pista.
+    //
+    // ⚠️ La rete di protezione è l'unica eccezione, e non per comodità: la
+    // sua linea e i piloni della campata sono la STESSA linea per costruzione
+    // (entrambi partono da "muro + margine"), quindi o si incrociano o una
+    // delle due non c'è. Che non ci sia la rete l'utente l'ha già bocciato
+    // due volte. Quanto sia profondo l'incrocio lo verifica il test
+    // "la rete incrocia il ponte semafori solo sul pilone", per tracciato.
     for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
         const { layout } = circuitoVero(id);
         const scavalcano = layout.filter(v => v.asset === 'footbridge' || v.asset === 'startGantry');
         for (const p of scavalcano) {
-            const dentro = layout.filter(o => o !== p && SceneryAssetSizes.itemsOverlap(p, o));
+            const dentro = layout.filter(o => o !== p && o.asset !== 'catchFence'
+                                              && SceneryAssetSizes.itemsOverlap(p, o));
             assert.equal(dentro.length, 0,
                 `${id}: ${p.asset} compenetra ${dentro.length} oggetti — `
                 + [...new Set(dentro.map(o => o.asset))].join(', '));
