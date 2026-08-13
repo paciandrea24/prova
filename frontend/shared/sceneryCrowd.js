@@ -21,13 +21,23 @@
     const VARIANTS = ['spectatorA', 'spectatorB', 'spectatorC'];
 
     // Tetto complessivo di figure per tracciato. Le draw call non dipendono
-    // dal numero di spettatori (12 InstancedMesh in tutto), ma i TRIANGOLI sì,
-    // e loadScenery disattiva il frustum culling: vengono disegnati tutti a
-    // ogni frame, anche quelli alle spalle della camera. Da quando le tribune
-    // secondarie sono schiere di 6 moduli invece di singole, i posti
-    // disponibili sono passati da ~1600 a ~5900 per tracciato: senza tetto
-    // sarebbero ~880.000 triangoli sempre in scena.
-    const MAX_TOTAL = 3000;
+    // dal numero di spettatori (poche InstancedMesh per cella), ma i TRIANGOLI
+    // sì: 120 a figura.
+    //
+    // Era 3000, e la ragione scritta qui era che loadScenery teneva SPENTO il
+    // frustum culling — venivano disegnati tutti a ogni frame, anche quelli
+    // alle spalle della camera. Da allora `sceneryChunks` divide le istanze in
+    // celle da 350 unità con un ingombro proprio e `im.frustumCulled = true`:
+    // le celle fuori inquadratura non si disegnano più, né per la camera né
+    // per la mappa delle ombre. Quel motivo non vale più.
+    //
+    // 6000 il 2026-08-13, insieme al raddoppio delle tribune. Il tetto NON è
+    // un numero di figure che si vede: è un budget che si spalma su tutte le
+    // tribune del circuito (vedi `fillCap`), quindi alzando le tribune senza
+    // alzare questo le tribune si SVUOTANO — 115 tribune a 3000 figure fanno
+    // 26 spettatori l'una contro i 54 di prima. A 6000 restano 52 l'una,
+    // cioè piene come sono sempre state.
+    const MAX_TOTAL = 6000;
 
     function buildCrowd(grandstands, seatAnchors, rng) {
         if (!seatAnchors || !seatAnchors.length) return [];

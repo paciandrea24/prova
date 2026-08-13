@@ -1322,6 +1322,23 @@ test('il decoro del paddock non finisce dentro nient\'altro', () => {
     }
 });
 
+test('nessun commissario o cartello di frenata finisce dentro una tribuna', () => {
+    // Non è un difetto del loro piazzamento — nascono ben davanti alle
+    // tribune — ma della traslazione oltre la ghiaia, che porta al muro chi
+    // non è già dimensionato sul muro. Lì ci sta anche la fila di tribune.
+    // Misurati 5 su prova e 8 su new-monza il 2026-08-13, uno a 2.2 unità dal
+    // centro della tribuna: si vede solo DOPO la traslazione, quindi solo lì
+    // si può scartare.
+    for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+        const { layout } = circuitoVero(id);
+        const tribune = layout.filter(v => (v.category || '').startsWith('grandstand'));
+        const dentro = layout.filter(v => (v.asset === 'marshalPost' || v.asset === 'brakingBoard')
+            && tribune.some(g => SceneryAssetSizes.itemsOverlap(v, g)));
+        assert.equal(dentro.length, 0,
+            `${id}: ${dentro.length} fra commissari e cartelli dentro una tribuna`);
+    }
+});
+
 test('gli edifici della corsia box non si compenetrano fra loro', () => {
     // La catena li affianca alla distanza dettata dalle larghezze reali, che
     // sul dritto basta. Dove la corsia curva però i due rettangoli sono anche

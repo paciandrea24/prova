@@ -212,7 +212,12 @@
     // Sotto ROW_MIN_COLS la schiera viene scartata del tutto: una tribuna
     // isolata in mezzo al nulla è proprio ciò che l'utente ha segnalato come
     // "un buco" accanto alla fila lunga.
-    const ROW_MAX_COLS = 6;
+    // 8 e non 6: allungare le schiere è l'unico modo di infittire i circuiti
+    // CORTI, dove il numero di schiere è già al suo pavimento (monte-rosso
+    // passa così da 41 a 50 tribune, mentre alzando il tetto delle schiere non
+    // cambiava di una). Una schiera si dimensiona comunque da sé e si ferma
+    // dove non ci sta più.
+    const ROW_MAX_COLS = 8;
     const ROW_MIN_COLS = 2;
     // Quanto due moduli della stessa schiera possono avvicinarsi rispetto alla
     // loro larghezza prima che la schiera si interrompa. 0.9 lascia passare le
@@ -607,6 +612,36 @@
     // riferimento è UNO, quindi la rete davanti a ogni modulo sta a distanza
     // costante dalla sua tribuna e non può né entrarci né finire in ghiaia.
     // Aggiungere tribune diventa sicuro ovunque.
+    // Un modulo deve GUARDARE la pista che ha davvero davanti, cioè stare
+    // perpendicolare al campione che gli è più vicino. Non è la stessa cosa di
+    // essere perpendicolare al campione da cui è stato costruito: dove la
+    // pista fa un tornante, le due branche si avvicinano e un modulo posato
+    // per la prima si ritrova più vicino alla seconda.
+    //
+    // Il 2026-08-13, allungando le schiere da 6 a 8 moduli, su `prova` una
+    // fila finiva con sette moduli a 45.8 dall'asse e l'ottavo a 40.4 girato
+    // di 77°, e un'altra nasceva già storta di 37° perché il SEME cadeva lì.
+    // Sono la "tribuna storta" e il "gradino nella fila" che i test misurano:
+    // un solo modulo li produceva entrambi.
+    //
+    // 30°: i moduli sani deviano meno di 1°, e il caso limite noto e accettato
+    // — il muro che gira più di quanto la tribuna sia larga, prova @412 —
+    // arriva a 18.5°. Separa i due mondi senza inseguire nessuno dei due.
+    const SCARTO_DALLA_PISTA_MAX = Math.PI / 6;
+
+    function guardaLaSuaPista(trackPts, m) {
+        const q = TrackGeometry.nearestPoint(trackPts, m.x, m.z);
+        const nrm = TrackGeometry.normalAt(trackPts, q.index, true);
+        const lato = Math.sign((m.x - trackPts[q.index].x) * nrm.nx +
+                               (m.z - trackPts[q.index].z) * nrm.nz) || 1;
+        // Direzione che va dal modulo verso l'asse: è dove deve guardare.
+        const verso = Math.atan2(-nrm.nx * lato, -nrm.nz * lato);
+        let d = (m.rotY || 0) - verso;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        return Math.abs(d) <= SCARTO_DALLA_PISTA_MAX;
+    }
+
     function muroDellaFila(trackPts, barrierProfile, barrierDist, moduli, side, mezzaInCampioni) {
         if (!barrierProfile) return barrierDist;
         const n = trackPts.length;
@@ -653,7 +688,17 @@
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const lapLen = TrackGeometry.lapLength(trackPts);
-        const count = Math.max(6, Math.min(10, Math.round(lapLen / 220)));
+        // Quante SCHIERE tentare lungo il giro. Il tetto era 10: su `prova`
+        // (giro 5170) la formula ne chiedeva 23 e il tetto ne lasciava passare
+        // 10, di cui 8 trovavano posto — un circuito con lunghi tratti spogli.
+        // Alzato a 18 su richiesta dell'utente ("vorrei vederlo bello pieno",
+        // 2026-08-13), scelto su una tabella misurata di quattro densità.
+        //
+        // ⚠️ Il PAVIMENTO (6) è quello che conta sui circuiti corti: su
+        // monte-rosso, giro 1177, la formula chiede 5 e il tetto non tocca
+        // nulla. Lì la densità cresce solo allungando le schiere
+        // (ROW_MAX_COLS), non alzando questo numero.
+        const count = Math.max(6, Math.min(18, Math.round(lapLen / 220)));
         const n = trackPts.length;
         const step = n / count;
         const searchWindow = Math.max(10, Math.floor(n / (count * 2)));
@@ -671,6 +716,13 @@
             // viadotto (copertura "corrotta" segnalata dall'utente).
             if (trackPts[idx].bridge) return false;
             const { x, z } = slotXZ(idx, side);
+            // Il seme deve già guardare la pista che ha davanti: se cade dove
+            // due branche si avvicinano, tutta la fila nasce storta e la
+            // ricerca dello slot è il posto giusto per scansarlo — scorrendo
+            // di qualche campione invece di perdere la schiera.
+            if (!guardaLaSuaPista(trackPts, {
+                x, z, rotY: TrackGeometry.ribbonFacingAt(trackPts, idx, side,
+                    () => barrierDist + GRANDSTAND_OFFSET_MARGIN, 1) })) return false;
             if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + GRANDSTAND_PIT_MARGIN) return false;
             if (isTooCloseToAny(accepted, x, z, STRUCTURE_CLEARANCE)) return false;
             // Mai a ridosso della fila principale: o la tribuna continua la
@@ -851,7 +903,7 @@
         }
 
         const center = moduleAt(startIdx);
-        if (!accept(center)) return [];
+        if (!accept(center) || !guardaLaSuaPista(trackPts, center)) return [];
         const modules = [center];
         // `avanti`, se dato, è quanti moduli si allungano NEL VERSO DI MARCIA:
         // il resto va all'indietro. Serve alla tribuna principale, che è
@@ -873,6 +925,7 @@
                 if (!hit) break;
                 const next = moduleBetween(hit.prevIdx, hit.idx, hit.t);
                 if (!accept(next)) break;   // la schiera si ferma qui, non salta l'ostacolo
+                if (!guardaLaSuaPista(trackPts, next)) break;
                 // Rete di sicurezza contro i moduli accavallati: la catena
                 // avanza per distanza reale, quindi qui la distanza è già
                 // giusta, ma se un giorno smettesse di esserlo la schiera si
@@ -1335,7 +1388,16 @@
         // Boschi DOPO la natura: le macchie vedono fra gli oggetti già
         // accettati anche gli alberi vicini alla pista, e non ci finiscono
         // sopra.
-        const woods  = buildWoodsLayout(rng, trackPts, barrierDist, embankOuter, accepted, fitsUnderBridge);
+        // RNG separato, come per la folla e per lo stesso motivo al contrario:
+        // la fittezza dei boschi è una LOTTERIA della sequenza condivisa. Il
+        // 2026-08-13, raddoppiando le tribune, sono bastate le poche estrazioni
+        // in più consumate a monte (una per schiera, per scegliere la variante)
+        // a far scivolare la densità media da 3.0 a 2.9 vicini per albero —
+        // sotto la soglia del test, senza che nessun albero avesse cambiato
+        // posto per un motivo geometrico. Con un seme suo, i boschi non
+        // dipendono più da quante tribune ci sono.
+        const woods  = buildWoodsLayout(mulberry32(hashString(trackData.id + ':woods')),
+                                        trackPts, barrierDist, embankOuter, accepted, fitsUnderBridge);
         // Le rocce dopo gli alberi: si scansano da loro e non viceversa,
         // perché sono molte meno e possono permettersi di cercare posto.
         const rocce  = buildRockLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf,
@@ -1347,6 +1409,25 @@
         if (pond) layout.push(pond);
         traslaOltreLaGhiaia(layout, trackPts, barrierProfile,
             trackPts.filter(p => !p.bridge), barrierDist, embankStart, embankOuter);
+
+        // Commissari e cartelli di frenata finiti DENTRO una tribuna.
+        //
+        // Non è un difetto del loro piazzamento: nascono a `barrierDist +
+        // margine`, ben davanti alle tribune. È la traslazione oltre la ghiaia
+        // che li porta al muro — e al muro, dove la via di fuga è larga, ci
+        // sta anche la fila di tribune. Le tribune NON traslano (portano
+        // `suMisuraSulMuro`), quindi il conflitto nasce solo qui, dopo, e solo
+        // qui si può vedere. Misurati 5 su prova e 8 su new-monza, uno a 2.2
+        // unità dal centro della tribuna, cioè dentro fino al collo.
+        //
+        // Si scartano: sono decoro ripetuto lungo tutto il giro, ce n'è in
+        // abbondanza, e un capanno dentro una tribuna è esattamente il tipo di
+        // cosa che l'utente ha già segnalato due volte.
+        const tribune = [...mainStand, ...grandstand];
+        for (let i = layout.length - 1; i >= 0; i--) {
+            if (layout[i].asset !== 'marshalPost' && layout[i].asset !== 'brakingBoard') continue;
+            if (tribune.some(g => SceneryAssetSizes.itemsOverlap(layout[i], g))) layout.splice(i, 1);
+        }
 
         // Spettatori DOPO la traslazione, non prima.
         //
