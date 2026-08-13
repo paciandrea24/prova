@@ -8,11 +8,12 @@
 // Modulo puro, nessuna dipendenza da Three.js.
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
-        module.exports = factory(require('./trackGeometry.js'), require('./trackGravel.js'));
+        module.exports = factory(require('./trackGeometry.js'), require('./trackGravel.js'),
+                                 require('./sceneryAssetSizes.js'));
     } else {
-        root.SceneryTrackside = factory(root.TrackGeometry, root.TrackGravel);
+        root.SceneryTrackside = factory(root.TrackGeometry, root.TrackGravel, root.SceneryAssetSizes);
     }
-})(typeof self !== 'undefined' ? self : this, function (TrackGeometry, TrackGravel) {
+})(typeof self !== 'undefined' ? self : this, function (TrackGeometry, TrackGravel, SceneryAssetSizes) {
 
     // findCorners e la sua soglia stanno in trackGeometry.js: le usano due
     // sistemi indipendenti — questa scenografia e il profilo delle vie di
@@ -89,7 +90,8 @@
         // il terrapieno allargato (test, chiamanti storici) continua a
         // funzionare invece di produrre coordinate NaN.
         const { trackPts, pitPts, barrierDist, pitRoadHalf, embankStart = barrierDist, embankOuter, mainSide,
-                playerBoxFootprints, insidePlayerBoxFootprint, grandstands, barrierProfile } = ctx;
+                playerBoxFootprints, insidePlayerBoxFootprint, grandstands, barrierProfile,
+                spanning = [] } = ctx;
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const n = trackPts.length;
@@ -274,6 +276,22 @@
             });
         }
 
+        // Niente dentro gli asset che SCAVALCANO la pista.
+        //
+        // Passerella e ponte semafori si posano prima di tutto questo, quindi
+        // controllano le strutture già accettate; ma quello che viene dopo —
+        // gomme, reti, cartelli, commissari — non li guardava affatto. Finché
+        // le campate erano strette il difetto restava latente: si vedeva un
+        // solo urto su `prova`, fra il ponte semafori e una rete, ed era lì
+        // da sempre. Allargando la passerella per coprire le vie di fuga
+        // (2026-08-13) sono diventati 2 su prova e 5 su new-monza, e
+        // l'utente li ha visti nel disegno.
+        //
+        // Si scarta invece di spostare: sotto una campata larga 80 unità un
+        // oggetto non ha dove andare che non sia altrettanto sbagliato.
+        if (spanning.length) {
+            return layout.filter(v => !spanning.some(p => SceneryAssetSizes.itemsOverlap(p, v)));
+        }
         return layout;
     }
 

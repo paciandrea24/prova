@@ -1177,6 +1177,9 @@
         const trackside = SceneryTrackside.buildTrackside({
             trackPts, pitPts, barrierDist, pitRoadHalf, embankStart, embankOuter, mainSide: side, rng,
             playerBoxFootprints, insidePlayerBoxFootprint, fitsUnderBridge, barrierProfile,
+            // Gli asset che scavalcano la pista: quello che si posa qui sotto
+            // deve stargli fuori, e finora non li guardava nessuno.
+            spanning: landmarks.filter(v => v.asset === 'footbridge' || v.asset === 'startGantry'),
             grandstands: [...mainStand, ...grandstand],
         });
 

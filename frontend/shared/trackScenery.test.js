@@ -990,3 +990,22 @@ test('footbridge: la luce copre il muro di dove sta, su entrambi i lati', () => 
         }
     }
 });
+
+test('niente scenografia dentro gli asset che scavalcano la pista', () => {
+    // Passerella e ponte semafori si posano PRIMA di gomme, reti e cartelli:
+    // loro controllano le strutture già accettate, ma chi viene dopo non
+    // controllava affatto i landmark. Finché la campata era stretta il
+    // problema restava latente; allargandola per coprire le vie di fuga
+    // (2026-08-13) sono comparse le compenetrazioni — segnalate dall'utente
+    // guardando il disegno, non in pista.
+    for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+        const { layout } = circuitoVero(id);
+        const scavalcano = layout.filter(v => v.asset === 'footbridge' || v.asset === 'startGantry');
+        for (const p of scavalcano) {
+            const dentro = layout.filter(o => o !== p && SceneryAssetSizes.itemsOverlap(p, o));
+            assert.equal(dentro.length, 0,
+                `${id}: ${p.asset} compenetra ${dentro.length} oggetti — `
+                + [...new Set(dentro.map(o => o.asset))].join(', '));
+        }
+    }
+});
