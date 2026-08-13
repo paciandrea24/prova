@@ -529,13 +529,24 @@
         // solo edificio in tutta la corsia).
         let altBuilding = 0;
         let idx = firstIdx;
+        const posati = [];
         while (idx < lastIdx) {
             const asset = (altBuilding % 2 === 0) ? 'pitsGarageClosed' : 'pitsOffice';
             const b = buildingAt(idx);
+            const cand = { asset, x: b.x, y: b.y, z: b.z, rotY: b.rotY, scale: CUSTOM_MODEL_SCALE };
 
             const blocked = itemHitsPlayerBoxZone(
                     { asset, x: b.x, z: b.z, rotY: b.rotY, scale: CUSTOM_MODEL_SCALE },
                     playerBoxFootprints)
+                // La distanza fra i CENTRI è già quella giusta, ma due
+                // rettangoli larghi 20.6 affiancati su una corsia che curva
+                // sono anche RUOTATI l'uno rispetto all'altro, e gli spigoli
+                // si incrociano lo stesso: su baku due coppie di edifici si
+                // compenetravano a 22.7 e 23.2 di centro, cioè alla distanza
+                // nominale esatta. Qui si guarda l'ingombro vero: se si tocca,
+                // si avanza di un campione e si riprova, così il fronte si
+                // richiude appena la corsia si raddrizza.
+                || posati.some(p => SceneryAssetSizes.itemsOverlap(cand, p))
                 // Niente edifici all'IMBOCCO della corsia box, dove corsia e
                 // pista corrono ancora affiancate: lì un edificio profondo
                 // 14.7 si sovrappone all'ingresso e lo rende illeggibile
@@ -545,8 +556,10 @@
 
             if (blocked) { idx++; continue; }
 
-            layout.push({ asset, category: 'paddock', x: b.x, y: b.y, z: b.z,
-                          rotY: b.rotY, scale: CUSTOM_MODEL_SCALE });
+            const posato = { asset, category: 'paddock', x: b.x, y: b.y, z: b.z,
+                             rotY: b.rotY, scale: CUSTOM_MODEL_SCALE };
+            layout.push(posato);
+            posati.push(posato);
             altBuilding++;
             const nextAsset = (altBuilding % 2 === 0) ? 'pitsGarageClosed' : 'pitsOffice';
             const need = (SceneryAssetSizes.sizeOf(asset).w
@@ -1298,7 +1311,22 @@
             // deve stargli fuori, e finora non li guardava nessuno.
             spanning: landmarks.filter(v => v.asset === 'footbridge' || v.asset === 'startGantry'),
             grandstands: [...mainStand, ...grandstand],
+            // Tutto ciò che è già a terra: serve al decoro del paddock, che
+            // finiva dentro gli edifici box (vedi buildTrackside).
+            accepted,
         });
+
+        // Il verde deve vedere il DECORO del paddock, che il trackside ha
+        // appena posato: tende e birilli stanno larghi, lontano dalla
+        // barriera, e un albero ci cresceva dentro (1 caso su prova, 1 su
+        // baku — proprio ciò che l'utente ha segnalato).
+        //
+        // ⚠️ Solo il decoro, non tutto il trackside. Gomme, cartelli e
+        // commissari stanno a ridosso della barriera, dove alberi non ce ne
+        // sono: misurati ZERO alberi dentro di loro. Aggiungerli toglieva 9
+        // alberi su prova senza correggere niente, e le direzioni spoglie
+        // sull'orizzonte passavano dal 16% al 20% — il tetto del test.
+        accepted.push(...trackside.filter(v => v.category === 'paddock-decor'));
 
         const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
         const paddockLife = SceneryPaddock.buildLayout(rng, trackPts, pitPts, barrierDist, accepted,

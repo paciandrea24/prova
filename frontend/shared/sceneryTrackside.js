@@ -88,7 +88,7 @@
         // funzionare invece di produrre coordinate NaN.
         const { trackPts, pitPts, barrierDist, pitRoadHalf, embankStart = barrierDist, embankOuter, mainSide,
                 playerBoxFootprints, insidePlayerBoxFootprint, grandstands, barrierProfile,
-                spanning = [] } = ctx;
+                spanning = [], accepted = [] } = ctx;
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const n = trackPts.length;
@@ -332,6 +332,26 @@
                     // pennoni devono restare un gruppo ordinato, non una pila.
                     if (decorPlaced.some(q => Math.hypot(q.x - pos.x, q.z - pos.z) < PADDOCK_DECOR_SPACING)) continue;
                     const item = Object.assign({ asset: d.asset, category: 'paddock-decor', scale: 1 }, pos);
+                    // E soprattutto: non DENTRO qualcosa.
+                    //
+                    // Questo controllo non c'era affatto. Il decoro guardava la
+                    // corsia box, i box giocatore e i cavalcavia — cioè il
+                    // TERRENO — ma non gli edifici che ci stanno sopra, che si
+                    // posano prima di qui. Su tutti e quattro i tracciati 4 o 5
+                    // dei 6 pezzi finivano dentro un ufficio box, un garage, la
+                    // torre di direzione, il podio o una tribuna; le due tende
+                    // (16.8 x 13.0) finivano per giunta una dentro l'altra,
+                    // perché PADDOCK_DECOR_SPACING vale 12 e misura i CENTRI.
+                    // Segnalato in gioco: "compenetrazione del paddockTent".
+                    //
+                    // Ingombri reali orientati, non un raggio: la tenda è larga
+                    // 16.8 e profonda 13.0, l'ufficio box 20.7 — con un raggio
+                    // unico o si accetta la compenetrazione o non si piazza più
+                    // niente. `accepted` arriva da generateLayout e contiene
+                    // paddock, tribune e landmark; `layout` è quello che questa
+                    // stessa passata ha già posato (gomme, reti, cartelli).
+                    if (accepted.some(p => SceneryAssetSizes.itemsOverlap(item, p))) continue;
+                    if (layout.some(p => SceneryAssetSizes.itemsOverlap(item, p))) continue;
                     layout.push(item);
                     decorPlaced.push(item);
                     done = true;

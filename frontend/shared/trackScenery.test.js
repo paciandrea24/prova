@@ -1297,6 +1297,53 @@ test('footbridge: la luce copre il muro di dove sta, su entrambi i lati', () => 
     }
 });
 
+test('il decoro del paddock non finisce dentro nient\'altro', () => {
+    // Segnalato in gioco: "la compenetrazione del paddockTent". Il decoro
+    // controllava la corsia box, i box giocatore e i cavalcavia — cioè il
+    // TERRENO — ma non gli edifici che ci stanno sopra, che si posano prima.
+    // Misurato prima del rimedio: 4 o 5 dei 6 pezzi dentro qualcosa su tutti e
+    // quattro i tracciati (uffici box, garage, torre di direzione, podio, una
+    // tribuna), e le due tende una dentro l'altra perché il loro distanziamento
+    // misurava i CENTRI a 12 unità mentre la tenda è larga 16.8.
+    //
+    // Il verde è compreso apposta: alberi e rocce si posano DOPO il decoro e
+    // non lo guardavano, e su prova e baku ci cresceva dentro un albero.
+    for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+        const { layout } = circuitoVero(id);
+        const decoro = layout.filter(v => v.category === 'paddock-decor');
+        assert.equal(decoro.length, 6, `${id}: attesi 6 pezzi di decoro, trovati ${decoro.length}`);
+        for (const d of decoro) {
+            const dentro = layout.filter(o => o !== d && o.category !== 'crowd'
+                                              && SceneryAssetSizes.itemsOverlap(d, o));
+            assert.equal(dentro.length, 0,
+                `${id}: ${d.asset} compenetra ${dentro.length} oggetti — `
+                + [...new Set(dentro.map(o => o.asset))].join(', '));
+        }
+    }
+});
+
+test('gli edifici della corsia box non si compenetrano fra loro', () => {
+    // La catena li affianca alla distanza dettata dalle larghezze reali, che
+    // sul dritto basta. Dove la corsia curva però i due rettangoli sono anche
+    // RUOTATI l'uno rispetto all'altro e gli spigoli si incrociano lo stesso:
+    // su baku due coppie si compenetravano a 22.7 e 23.2 di distanza fra i
+    // centri, cioè alla distanza nominale esatta (22.65). La distanza fra i
+    // centri non basta a descrivere due rettangoli orientati.
+    for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+        const { layout } = circuitoVero(id);
+        const edifici = layout.filter(v => v.category === 'paddock' && /^pits/.test(v.asset));
+        assert.ok(edifici.length > 0, `${id}: nessun edificio nella corsia box`);
+        for (let i = 0; i < edifici.length; i++) {
+            for (let j = i + 1; j < edifici.length; j++) {
+                assert.ok(!SceneryAssetSizes.itemsOverlap(edifici[i], edifici[j]),
+                    `${id}: ${edifici[i].asset} e ${edifici[j].asset} si compenetrano, `
+                    + `centri a ${Math.hypot(edifici[i].x - edifici[j].x,
+                                             edifici[i].z - edifici[j].z).toFixed(2)}`);
+            }
+        }
+    }
+});
+
 test('niente scenografia dentro gli asset che scavalcano la pista', () => {
     // Passerella e ponte semafori si posano PRIMA di gomme, reti e cartelli:
     // loro controllano le strutture già accettate, ma chi viene dopo non
