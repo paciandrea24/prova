@@ -241,9 +241,10 @@ categorie che lo usano — `billboardLow`, `flagPole` e `pylon` per esempio
 stanno sia nel decoro del paddock sia fra le infrastrutture. Per quelle vale
 solo la classifica per asset.
 
-Riferimento al 2026-08-13 su `prova`: 7199 istanze, 701 `InstancedMesh`,
-1666k triangoli. I due blocchi grossi sono la folla (727k) e le barriere di
-gomme (369k).
+Riferimento al 2026-08-14 su `prova`: 7344 istanze, 779 `InstancedMesh`,
+1698k triangoli. I due blocchi grossi sono la folla (746k) e le barriere di
+gomme (369k). Scomposizione del salto rispetto alle 670 draw call di prima
+delle infrastrutture: vedi «Infrastrutture distribuite» più sotto.
 
 ### Convenzioni NON ovvie (violarle rompe l'asset)
 
@@ -312,6 +313,39 @@ Note per il piazzamento:
 - I 3 gradini di `podium` sono nodi distinti e nominati
   (`podium_step_p1/p2/p3`), predisposti per una futura cerimonia — che NON
   è implementata.
+
+### Infrastrutture distribuite
+
+`frontend/shared/sceneryInfrastructure.js` cammina il giro a passo di 25 unità
+e posa un'infrastruttura per punto e per lato, scegliendo dalla palette di
+`trackScenery.js` (`PALETTE_INFRASTRUTTURE`) il primo asset il cui contesto
+combacia e che superi i sette vincoli. I contesti sono `viadotto`, `stretto`
+(muro della via di fuga ≤ 20), `curvaEsterno`, `rettilineo` (visuale lunga) e
+`aperto`, che fa da rete per gli ultimi due.
+
+Quanto circuito resti senza niente di fianco si misura con
+`frontend/shared/sceneryGaps.js`, e i tetti stanno in `VUOTI_ATTESI` dentro
+`trackScenery.test.js`: **si stringono, mai si allargano**.
+
+⚠️ Nella palette vanno **volumi**, non segnaletica: cartelloni e pennoni
+sparsi sono stati provati il 2026-08-13 e bocciati al playtest.
+
+**Spettatori sulle terrazze.** `hospitalityDeck` e `vipSuite` sono tribune, e
+vuote si leggono come edifici chiusi: `SceneryCrowd.buildTerraceCrowd` ci posa
+sopra `spectatorStandA`/`B` leggendo le ancore da
+`frontend/assets/custom/circuit/terraceAnchors.json`, generato dal builder
+(`infrastructure.terrace_anchors()`) come i sedili delle tribune. Budget
+proprio, `MAX_TERRACE = 900`, separato da `MAX_TOTAL`: pescare dal budget
+delle tribune lascerebbe le terrazze deserte ogni volta che le tribune
+crescono.
+
+**Costo, misurato il 2026-08-14 su `prova`** (`f1-costo-scenografia.js`):
+7344 istanze, 779 InstancedMesh, 1698k triangoli, contro le 670 InstancedMesh
+e 1661k triangoli di prima. Il delta si scompone così: **+37 draw call gli
+otto edifici** (43 istanze, 4-5 mesh l'una, sparse su molte celle) e **+72 gli
+spettatori delle terrazze** — 2 varianti × 4 mesh × 9 celle, indipendenti dal
+numero di figure. Chi dovesse rientrare in un budget di draw call ha lì il
+taglio più grosso a parità di volumi: una sola variante ne restituisce 36.
 
 ### Seconda tornata (2026-08-09): figure, bordo pista, box giocatore
 
