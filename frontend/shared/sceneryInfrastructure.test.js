@@ -234,3 +234,76 @@ test('lo stesso tracciato dà sempre lo stesso layout', () => {
         contesto('prova', { palette: PALETTE_ESISTENTI }));
     assert.deepEqual(a, b, 'il layout deve essere deterministico');
 });
+
+// ---- la tassonomia dei contesti ----
+//
+// Il playtest del 2026-08-13 ha bocciato la distribuzione, e la causa non era
+// solo la palette di segnaposto: 'stretto' era il ripiego di ogni punto che
+// non fosse viadotto, curva esterna o visuale lunga — il 34% di prova e il 55%
+// di monte-rosso. Un asset che lo dichiarava finiva ovunque.
+
+test('stretto vuol dire muro sottile, non "tutto il resto"', () => {
+    const ctx = contesto('prova');
+    let stretti = 0, larghi = 0;
+    for (let i = 0; i < ctx.trackPts.length; i += 5) {
+        for (const lato of [1, -1]) {
+            const c = SceneryInfrastructure.contestoAl(ctx, i, lato);
+            if (c.viadotto) continue;
+            const et = SceneryInfrastructure.etichette(c);
+            if (et.indexOf('stretto') >= 0) {
+                stretti++;
+                assert.ok(c.muro <= SceneryInfrastructure.MURO_STRETTO,
+                    `stretto con muro ${c.muro.toFixed(1)}, sopra la soglia`);
+            } else {
+                larghi++;
+                assert.ok(c.muro > SceneryInfrastructure.MURO_STRETTO,
+                    `non stretto con muro ${c.muro.toFixed(1)}, sotto la soglia`);
+            }
+        }
+    }
+    assert.ok(stretti > 0 && larghi > 0, 'servono entrambi i casi per dire qualcosa');
+});
+
+test('nessun contesto è il ripiego di mezzo circuito', () => {
+    // La soglia è al 50%. Il vecchio 'stretto' stava al 55% su monte-rosso, ed
+    // era un ripiego vero: veniva aggiunto in fondo a OGNI lista, a
+    // prescindere dal punto. I massimi legittimi misurati il 2026-08-14 sono
+    // 'rettilineo' al 48% su new-monza — un tracciato veloce ha davvero
+    // visuale lunga su metà giro — e 'aperto' al 39% su monte-rosso.
+    for (const id of ['prova', 'new-monza', 'monte-rosso']) {
+        const ctx = contesto(id);
+        const conta = new Map();
+        let punti = 0;
+        for (let i = 0; i < ctx.trackPts.length; i += 5) {
+            for (const lato of [1, -1]) {
+                const et = SceneryInfrastructure.etichette(
+                    SceneryInfrastructure.contestoAl(ctx, i, lato));
+                conta.set(et[0], (conta.get(et[0]) || 0) + 1);
+                punti++;
+            }
+        }
+        for (const [gruppo, n] of conta) {
+            // Il viadotto è esente: su baku è il 90% del giro per costruzione,
+            // ed è un fatto del tracciato, non una scelta di tassonomia.
+            if (gruppo === 'viadotto') continue;
+            assert.ok(n / punti <= 0.50,
+                `${id}: il contesto ${gruppo} copre il ${(n / punti * 100).toFixed(0)}% del giro`);
+        }
+    }
+});
+
+test('il viadotto e il muro sottile non hanno ripieghi, i tratti larghi sì', () => {
+    const viadotto = { viadotto: true, muro: 30, curva: false, esterno: false, visuale: true };
+    assert.deepEqual(SceneryInfrastructure.etichette(viadotto), ['viadotto'],
+        'accanto al viadotto vale il vincolo di altezza e nient\'altro');
+    const stretto = { viadotto: false, muro: 14, curva: true, esterno: true, visuale: true };
+    assert.deepEqual(SceneryInfrastructure.etichette(stretto), ['stretto'],
+        'col muro sottile non c\'è spazio per gli asset dei tratti larghi');
+    const curva = { viadotto: false, muro: 30, curva: true, esterno: true, visuale: false };
+    assert.deepEqual(SceneryInfrastructure.etichette(curva), ['curvaEsterno', 'aperto'],
+        'sui tratti larghi "aperto" fa da rete se lo specifico non entra');
+    const dritto = { viadotto: false, muro: 30, curva: false, esterno: false, visuale: true };
+    assert.deepEqual(SceneryInfrastructure.etichette(dritto), ['rettilineo', 'aperto']);
+    const altro = { viadotto: false, muro: 30, curva: false, esterno: false, visuale: false };
+    assert.deepEqual(SceneryInfrastructure.etichette(altro), ['aperto']);
+});

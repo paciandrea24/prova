@@ -44,6 +44,11 @@
     // Sopra questo raggio una curva si comporta come un rettilineo per chi ci
     // mette oggetti di fianco: il muro gira poco e un oggetto rigido lo segue.
     const RAGGIO_RETTILINEO = 200;
+    // Sotto questo muro il tratto è STRETTO. Non è un numero a sentimento: il
+    // muro della via di fuga è bimodale sui quattro tracciati — sta a 13-15
+    // dove la barriera è addosso alla pista, a 29.8-32.8 dove c'è la ghiaia, e
+    // in mezzo non c'è quasi niente. 20 cade dentro il salto.
+    const MURO_STRETTO = 20;
 
     // Che cosa descrive un punto del giro, dal punto di vista di chi ci deve
     // posare qualcosa di fianco.
@@ -93,15 +98,26 @@
     }
 
     // Quali gruppi di contesto descrivono questo punto, in ordine di
-    // specificità. Il viadotto vince su tutto perché non è una preferenza ma
-    // un VINCOLO: lì sotto, quello che è basso sparisce alla vista.
+    // preferenza. Il primo è il contesto proprio, l'eventuale secondo è la
+    // rete di sicurezza.
+    //
+    // ⚠️ Fino al 2026-08-13 'stretto' stava in fondo a OGNI lista, come
+    // ripiego universale: copriva il 34% di prova e il 55% di monte-rosso, e
+    // qualunque asset lo dichiarasse finiva sparso su mezzo circuito. È metà
+    // della ragione per cui il playtest ha bocciato la distribuzione.
     function etichette(c) {
+        // Il viadotto vince su tutto: non è una preferenza ma un vincolo
+        // fisico, e ciò che è più basso del dislivello lì sparisce alla vista.
         if (c.viadotto) return ['viadotto'];
-        const out = [];
-        if (c.curva && c.esterno) out.push('curvaEsterno');
-        if (c.visuale) out.push('rettilineo');
-        out.push('stretto');
-        return out;
+        // Muro sottile: la barriera è addosso alla pista e oltre c'è poco. Non
+        // ha senso provarci prima gli asset dei tratti larghi.
+        if (c.muro <= MURO_STRETTO) return ['stretto'];
+        // Sui tratti larghi 'aperto' fa da rete: se l'asset del contesto
+        // specifico non entra, si prova quello generico invece di lasciare un
+        // buco.
+        if (c.curva && c.esterno) return ['curvaEsterno', 'aperto'];
+        if (c.visuale) return ['rettilineo', 'aperto'];
+        return ['aperto'];
     }
 
     // La stessa fascia usata da trackScenery.js dopo la traslazione: larga
@@ -222,6 +238,7 @@
         return posate;
     }
 
-    return { buildInfrastructure, contestoAl,
-             PASSO, MARGINE_DAL_MURO, FASCIA_DAVANTI_TRIBUNA, VISUALE, RAGGIO_RETTILINEO };
+    return { buildInfrastructure, contestoAl, etichette,
+             PASSO, MARGINE_DAL_MURO, FASCIA_DAVANTI_TRIBUNA, VISUALE,
+             RAGGIO_RETTILINEO, MURO_STRETTO };
 });
