@@ -483,6 +483,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         spectatorA: '/assets/custom/circuit/spectatorA.glb',
         spectatorB: '/assets/custom/circuit/spectatorB.glb',
         spectatorC: '/assets/custom/circuit/spectatorC.glb',
+        // Infrastrutture di circuito (spec 2026-08-13): modellate 1:1 in unità
+        // di gioco come gli altri custom, quindi istanziate con scale 1.
+        giantScreen: '/assets/custom/circuit/giantScreen.glb',
+        floodlightTower: '/assets/custom/circuit/floodlightTower.glb',
+        hospitalityDeck: '/assets/custom/circuit/hospitalityDeck.glb',
+        vipSuite: '/assets/custom/circuit/vipSuite.glb',
+        serviceBuilding: '/assets/custom/circuit/serviceBuilding.glb',
+        tvTower: '/assets/custom/circuit/tvTower.glb',
+        recoveryCrane: '/assets/custom/circuit/recoveryCrane.glb',
+        trackGate: '/assets/custom/circuit/trackGate.glb',
     };
 
     // Asset che NON proiettano ombra. Il costo di un InstancedMesh in ombra
@@ -495,6 +505,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         'treeLarge', 'treeSmall', 'treeBroad', 'treeYoung', 'treePine', 'treeRound',
         'bushLow', 'bushTall', 'rockSingle', 'rockCluster',
         'spectatorA', 'spectatorB', 'spectatorC',
+        // La torre faro è alta 32.5: la sua ombra attraversa la pista da parte
+        // a parte e si muove col sole, ed è l'oggetto sbagliato su cui spendere
+        // la risoluzione della shadow map. Gli spettatori in piedi seguono la
+        // stessa regola dei loro fratelli seduti.
+        'floodlightTower', 'spectatorStandA', 'spectatorStandB',
     ]);
 
     // Asset esclusi dai CONTORNI (Rif. playtest 2026-08-10): figure minute e
