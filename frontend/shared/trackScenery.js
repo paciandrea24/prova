@@ -175,29 +175,36 @@
     // confronto durante il brainstorming).
     const STAND_VARIANTS = ['grandStand', 'grandStandAwning', 'grandStandCovered'];
 
-    // Palette delle infrastrutture distribuite lungo il giro (spec
-    // 2026-08-13-f1-infrastrutture-circuito-design.md). Per ora SOLO asset che
-    // esistono già: gli otto modelli nuovi — maxischermo, torre faro, torre
-    // servizi, terrazza hospitality, suite VIP, torretta TV, gru di recupero,
-    // cancello pista — entrano qui uno per volta man mano che il piano 2 li
-    // produce e l'utente ne approva il render.
+    // Palette delle infrastrutture distribuite. Dentro ogni contesto l'ordine
+    // è l'ordine di PREFERENZA: se il primo non entra si prova il successivo,
+    // invece di lasciare un buco.
     //
-    // ⚠️ L'ordine dentro ogni contesto è l'ordine di PREFERENZA: se il primo
-    // non entra si prova il successivo, invece di lasciare un buco.
+    // ⚠️ SOLO i modelli nuovi. Il 2026-08-13 ci avevo messo `pylon`,
+    // `flagPole` e `billboardLow` per giudicare la distribuzione prima di
+    // modellare, e il playtest l'ha bocciata: «non hai riempito niente, hai
+    // solo inserito cartelloni in posti sbagliati». Riempire un circuito vuole
+    // VOLUMI. La segnaletica non torna qui nemmeno come ripiego.
     //
-    // ⚠️ VUOTA di proposito, finché i modelli nuovi non esistono.
-    //
-    // Il 2026-08-13 l'avevo riempita con asset che esistevano già — `pylon`,
-    // `flagPole`, `billboardLow` — per poter giudicare la distribuzione prima
-    // di modellare. Bocciata dall'utente al playtest, e a ragione: cartelloni
-    // e pennoni sparsi non riempiono un circuito, lo sporcano. Un asset di
-    // segnaletica messo dove servirebbe un volume non è un segnaposto: è un
-    // difetto.
-    //
-    // Ha fatto emergere anche un difetto vero del modulo: il contesto
-    // 'stretto' è un ripiego buono-per-tutto, e accetta quasi ovunque
-    // qualunque asset lo dichiari. Va ripensato insieme ai modelli veri.
-    const PALETTE_INFRASTRUTTURE = [];
+    // `passoMinimo` è la distanza minima in unità fra due esemplari dello
+    // stesso asset: è ciò che distingue "distribuito" da "ammucchiato", e vale
+    // per famiglia perché due gru vicine sono una stonatura mentre una gru e
+    // una torretta TV vicine no.
+    const PALETTE_INFRASTRUTTURE = [
+        // Esterno curva: è il contesto che la spec voleva servire per primo,
+        // ed è raro (6-10% del giro). Gli asset che ci vanno sono quelli che
+        // "guardano" la curva.
+        { asset: 'recoveryCrane',   contesti: ['curvaEsterno'],                     passoMinimo: 320 },
+        { asset: 'tvTower',         contesti: ['curvaEsterno', 'viadotto'],         passoMinimo: 380 },
+        { asset: 'hospitalityDeck', contesti: ['curvaEsterno', 'aperto'],           passoMinimo: 260 },
+        { asset: 'vipSuite',        contesti: ['curvaEsterno', 'aperto'],           passoMinimo: 700 },
+        // Visuale lunga: il maxischermo va visto da lontano, e uno solo per
+        // volta — 900 unità su un giro di 5170 vuol dire al più cinque.
+        { asset: 'giantScreen',     contesti: ['rettilineo', 'viadotto'],           passoMinimo: 900 },
+        { asset: 'serviceBuilding', contesti: ['rettilineo', 'aperto'],             passoMinimo: 480 },
+        { asset: 'floodlightTower', contesti: ['viadotto', 'rettilineo', 'aperto'], passoMinimo: 300 },
+        // Muro sottile: l'unico degli otto abbastanza piatto (profondo 1.5).
+        { asset: 'trackGate',       contesti: ['stretto'],                          passoMinimo: 220 },
+    ];
 
     // Tribuna principale: unica per tracciato, vicino al rettilineo di
     // partenza. È la variante CON LA COPERTURA, mentre le schiere sparse per
