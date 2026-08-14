@@ -92,12 +92,18 @@ function layoutDi(trackId, track) {
         seatAnchors = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'frontend',
             'assets', 'custom', 'circuit', 'grandStandSeats.json'), 'utf8')).seats;
     } catch (err) { /* tribune vuote, come fa il client */ }
+    // Idem per le ancore degli spettatori sulle terrazze delle infrastrutture.
+    let terraceAnchors = null;
+    try {
+        terraceAnchors = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'frontend',
+            'assets', 'custom', 'circuit', 'terraceAnchors.json'), 'utf8')).anchors;
+    } catch (err) { /* terrazze vuote, come fa il client */ }
 
     const BARRIER_D = raw.roadHalfWidth + CURB_W + 1.2;   // f1.js:157
     // track.points e track.pitLanePts sono campionati con le stesse costanti
     // del client (1000 e 300 campioni, vedi trackLoader.js:14-17).
     return TrackScenery.generateLayout(raw, track.points, track.pitLanePts,
-        BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, track.barrierProfile);
+        BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, track.barrierProfile, terraceAnchors);
 }
 
 function stampa(file) {

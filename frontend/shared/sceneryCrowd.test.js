@@ -71,3 +71,50 @@ test('senza posti in ingresso non genera nulla invece di fallire', () => {
     assert.deepEqual(SceneryCrowd.buildCrowd(STANDS, null, rngFactory()), []);
     assert.deepEqual(SceneryCrowd.buildCrowd(STANDS, [], rngFactory()), []);
 });
+
+test('gli spettatori delle terrazze stanno sopra la terrazza, non a mezz\'aria', () => {
+    const ancore = { hospitalityDeck: [{ x: 2, y: 5.4, z: 3.7 }] };
+    // Terrazza ruotata di 90°: se la rotazione non viene applicata, la figura
+    // resta sull'asse sbagliato e il test lo vede.
+    const terrazze = [{ asset: 'hospitalityDeck', x: 100, y: 7, z: -50,
+                        rotY: Math.PI / 2, scale: 1 }];
+    const out = SceneryCrowd.buildTerraceCrowd(terrazze, ancore, () => 0.1);
+    assert.equal(out.length, 1);
+    const f = out[0];
+    assert.ok(f.asset === 'spectatorStandA' || f.asset === 'spectatorStandB');
+    assert.equal(f.category, 'crowd');
+    assert.ok(Math.abs(f.y - (7 + 5.4)) < 1e-6, 'la quota è quella della terrazza più l\'ancora');
+    // (x,z) locali (2, 3.7) ruotati di 90°: x' = x·cos + z·sin = 3.7,
+    // z' = -x·sin + z·cos = -2.
+    assert.ok(Math.abs(f.x - (100 + 3.7)) < 1e-6, `x atteso 103.7, ottenuto ${f.x}`);
+    assert.ok(Math.abs(f.z - (-50 - 2)) < 1e-6, `z atteso -52, ottenuto ${f.z}`);
+    assert.ok(Math.abs(f.rotY - Math.PI / 2) < 1e-6, 'guarda dove guarda la terrazza');
+});
+
+test('un asset senza ancore non produce spettatori', () => {
+    const out = SceneryCrowd.buildTerraceCrowd(
+        [{ asset: 'giantScreen', x: 0, y: 0, z: 0, rotY: 0 }], {}, () => 0.1);
+    assert.equal(out.length, 0);
+});
+
+test('le terrazze hanno un budget proprio, separato da quello delle tribune', () => {
+    const ancore = { hospitalityDeck: [] };
+    for (let i = 0; i < 20; i++) ancore.hospitalityDeck.push({ x: i, y: 5.4, z: 3.7 });
+    const terrazze = [];
+    for (let i = 0; i < 200; i++) {
+        terrazze.push({ asset: 'hospitalityDeck', x: i * 40, y: 0, z: 0, rotY: 0 });
+    }
+    // 200 terrazze × 20 posti = 4000 richiesti contro un tetto di 900.
+    //
+    // ⚠️ Qui serve un rng UNIFORME, non una costante. Il filtro è
+    // `rng() > fill`: un rng che ritorna sempre 0 passa qualunque soglia e il
+    // test non potrebbe fallire. Il tetto è statistico come quello delle
+    // tribune, non un taglio netto — da qui il 15% di tolleranza.
+    let s = 12345;
+    const rng = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+    const out = SceneryCrowd.buildTerraceCrowd(terrazze, ancore, rng);
+    assert.ok(out.length <= SceneryCrowd.MAX_TERRACE * 1.15,
+        `${out.length} figure, sopra il tetto di ${SceneryCrowd.MAX_TERRACE}`);
+    assert.ok(out.length > SceneryCrowd.MAX_TERRACE * 0.5,
+        `${out.length} figure: il budget non viene nemmeno avvicinato`);
+});

@@ -19,6 +19,8 @@ const SceneryChunks = require(path.join(ROOT, 'frontend/shared/sceneryChunks.js'
 const { loadTrack } = require(path.join(ROOT, 'backend/sockets/games/trackLoader.js'));
 const seats = require(path.join(ROOT,
     'frontend/assets/custom/circuit/grandStandSeats.json')).seats;
+const terraceAnchors = require(path.join(ROOT,
+    'frontend/assets/custom/circuit/terraceAnchors.json')).anchors;
 
 const CARTELLE = [path.join(ROOT, 'frontend/assets/custom/circuit'),
                   path.join(ROOT, 'frontend/assets/kenney')];
@@ -61,7 +63,7 @@ for (const id of tracciati) {
         path.join(ROOT, 'frontend/tracks', id + '.json'), 'utf8'));
     const t = loadTrack(id);
     const layout = TrackScenery.generateLayout(raw, t.points, t.pitLanePts,
-        raw.roadHalfWidth + 2.8 + 1.2, 45, seats, t.barrierProfile);
+        raw.roadHalfWidth + 2.8 + 1.2, 45, seats, t.barrierProfile, terraceAnchors);
 
     const perAsset = new Map();
     for (const v of layout) {

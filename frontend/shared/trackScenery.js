@@ -1311,7 +1311,7 @@
     // barrierProfile (opzionale): profilo della barriera, da
     // TrackGravel.barrierProfile. Omesso, il layout è identico a quello di
     // prima che le vie di fuga esistessero.
-    function generateLayout(trackData, trackPts, pitPts, barrierDist, embankmentWidth = 45, seatAnchors = null, barrierProfile = null) {
+    function generateLayout(trackData, trackPts, pitPts, barrierDist, embankmentWidth = 45, seatAnchors = null, barrierProfile = null, terraceAnchors = null) {
         const rng = mulberry32(hashString(trackData.id));
         const pitRoadHalf = trackData.pit.roadHalfWidth;
         const side = mainStandSide(trackPts, pitPts);
@@ -1503,7 +1503,18 @@
         const crowd = SceneryCrowd.buildCrowd([...mainStand, ...grandstand], seatAnchors,
             mulberry32(hashString(trackData.id + ':crowd')));
 
-        return layout.concat(crowd);
+        // Spettatori sulle terrazze: RNG proprio, come la folla delle tribune,
+        // e per lo stesso motivo — legarli alla sequenza condivisa farebbe
+        // cambiare la folla ogni volta che cambia il numero di infrastrutture.
+        // Anche loro dopo la traslazione, per la stessa ragione della folla:
+        // le ancore sono locali all'oggetto, quindi l'oggetto deve già essere
+        // dove starà.
+        const terrazze = infrastrutture.filter(
+            v => v.asset === 'hospitalityDeck' || v.asset === 'vipSuite');
+        const terraceCrowd = SceneryCrowd.buildTerraceCrowd(
+            terrazze, terraceAnchors || {}, mulberry32(hashString(trackData.id + ':terrace')));
+
+        return layout.concat(crowd, terraceCrowd);
     }
 
     return {

@@ -518,3 +518,43 @@ def build_track_gate(kit):
     kit.box('red', (1.6, 0.16, 0.3), (0, -0.32 + EPS, GATE_H + 0.35))
 
     return GATE_X * 2 + 0.8, GATE_H + 0.85
+
+
+# --- Dove stanno gli spettatori sulle terrazze -----------------------------
+# Stessa idea di grandstands.seat_anchors(): le posizioni nascono dalla
+# geometria del modello, così non possono divergerne. Coordinate GIOCO
+# relative all'origine dell'asset — Blender (x, y, z) -> gioco (x, z, -y) —
+# col pivot della figura ai piedi.
+def terrace_anchors():
+    fronte = []
+    z_pav = DECK_Z + 0.8
+    # Terrazza: una fila al parapetto, dove si sta a guardare, più qualcuno
+    # sparso fra i tavolini.
+    for i in range(11):
+        x = (i - 5) * 1.3
+        fronte.append({'x': round(x, 3), 'y': round(z_pav, 3),
+                       'z': round(DECK_D / 2 - 1.3, 3)})
+    for sx in (-1, 0, 1):
+        for sy in (-1, 1):
+            fronte.append({'x': round(sx * 4.2 + 0.8, 3), 'y': round(z_pav, 3),
+                           'z': round(-(sy * 1.9) + 1.0, 3)})
+
+    # Suite: si guarda dalla terrazza in copertura, non da dietro la vetrata.
+    tetto = []
+    z_tetto = ROOF_Z + 0.7
+    for i in range(9):
+        x = (i - 4) * 1.5
+        tetto.append({'x': round(x, 3), 'y': round(z_tetto, 3),
+                      'z': round(DECK_D / 2 - 0.9, 3)})
+    # ⚠️ NON sotto i gazebo, per due motivi misurati sul modello: la panca
+    # bianca alla loro base è 1.3 di lato, e una figura affiancata a 0.8 dal
+    # centro le entrerebbe dentro di 0.30; il tettuccio sta a 2.1 dal piano
+    # mentre la figura è alta 2.3, quindi la testa lo sfonderebbe. Le quattro
+    # restanti vanno nel corridoio fra i due gazebo e nella fascia dietro le
+    # fioriere, le uniche zone del tetto libere per tutta l'altezza.
+    for sx in (-1, 1):
+        tetto.append({'x': round(sx * 0.9, 3), 'y': round(z_tetto, 3),
+                      'z': 1.6})
+        tetto.append({'x': round(sx * 2.4, 3), 'y': round(z_tetto, 3),
+                      'z': -3.8})
+    return {'hospitalityDeck': fronte, 'vipSuite': tetto}

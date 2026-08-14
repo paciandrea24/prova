@@ -664,10 +664,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
         console.warn('[F1] posti tribuna non caricati, tribune vuote:', err);
     }
+    // Ancore degli spettatori sulle terrazze, stesso discorso dei posti a
+    // sedere: file generato dal builder, TrackScenery non può fare fetch.
+    let terraceAnchors = null;
+    try {
+        const terrRes = await fetch('/assets/custom/circuit/terraceAnchors.json');
+        if (terrRes.ok) terraceAnchors = (await terrRes.json()).anchors;
+    } catch (err) {
+        console.warn('[F1] ancore terrazze non caricate, terrazze vuote:', err);
+    }
     // BARRIER_PROFILE come ultimo argomento: la scenografia si calcola con la
     // barriera storica e poi segue il muro dove si è spostato. Senza questo,
     // tribune e cartelloni resterebbero dentro la via di fuga o murati.
-    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, BARRIER_PROFILE);
+    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, BARRIER_PROFILE, terraceAnchors);
     loadScenery(scene, sceneryLayout);
 
     // ====================================================

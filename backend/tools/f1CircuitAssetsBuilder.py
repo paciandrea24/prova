@@ -24,6 +24,7 @@ if SCRIPT_DIR not in sys.path:
 import voxelKit  # noqa: E402
 from circuitAssets import ASSET_BUILDERS  # noqa: E402
 from circuitAssets import grandstands  # noqa: E402
+from circuitAssets import infrastructure  # noqa: E402
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 wanted = None
@@ -65,3 +66,17 @@ with open(seats_path, 'w', encoding='utf-8') as f:
         'seats': seats,
     }, f, indent=1)
 print(f'[circuitAssets] {len(seats)} posti a sedere -> {seats_path}')
+
+# Ancore degli spettatori sulle terrazze delle infrastrutture. Stesso motivo
+# del file dei sedili: dato derivato dalla geometria, scritto sempre.
+anchors = infrastructure.terrace_anchors()
+anchors_path = os.path.join(voxelKit.GLB_DIR, 'terraceAnchors.json')
+with open(anchors_path, 'w', encoding='utf-8') as f:
+    json.dump({
+        'comment': ('Posizioni degli spettatori in piedi sulle terrazze, in '
+                    "coordinate GIOCO relative all'origine dell'asset (pivot "
+                    'della figura ai piedi). Generato da '
+                    'backend/tools/f1CircuitAssetsBuilder.py - non modificare a mano.'),
+        'anchors': anchors,
+    }, f, indent=1)
+print(f'[circuitAssets] ancore terrazze -> {anchors_path}')
