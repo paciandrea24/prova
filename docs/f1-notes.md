@@ -291,6 +291,14 @@ Servono a chi farà l'integrazione: le costanti di piazzamento in
 | `pylon` | 6.4 | 26.2 | 3.0 | 6 |
 | `flagPole` | 5.4 | 15.0 | 1.6 | 4 |
 | `paddockTent` | 16.8 | 7.2 | 13.0 | 5 |
+| `giantScreen` | 15.0 | 17.9 | 2.5 | 5 |
+| `floodlightTower` | 7.6 | 32.5 | 4.0 | 4 |
+| `hospitalityDeck` | 16.0 | 9.7 | 11.0 | 4 |
+| `vipSuite` | 16.3 | 12.1 | 12.5 | 5 |
+| `serviceBuilding` | 13.6 | 16.1 | 12.1 | 5 |
+| `tvTower` | 4.8 | 15.2 | 5.4 | 5 |
+| `recoveryCrane` | 10.3 | 15.0 | 12.4 | 4 |
+| `trackGate` | 9.3 | 5.2 | 1.5 | 5 |
 
 Note per il piazzamento:
 - `grandStand` è l'unico pensato per essere **impilato** (2 livelli in
