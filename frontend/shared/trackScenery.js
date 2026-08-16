@@ -132,7 +132,16 @@
     // un'area così grande dà un prato spennacchiato, non un bosco — ed è
     // esattamente il tentativo già bocciato in passato.
     const WOOD_CLUSTERS       = 60;   // macchie tentate per tracciato
-    const WOOD_PER_CLUSTER    = 16;   // alberi tentati per macchia
+    // 20 e non 16: il tetto di WOOD_MAX_TREES viene raggiunto comunque, quindi
+    // alzare questo numero NON aggiunge alberi — cambia soltanto in quante
+    // macchie si spalmano gli stessi 430, e macchie più piene sono più fitte.
+    // Con 16 la densità misurata era 2.96-3.33 vicini su TUTTI E QUATTRO i
+    // tracciati, cioè appena sopra la soglia di 3 sotto la quale il bosco si
+    // legge come prato spennacchiato: qualunque metro quadro sottratto la
+    // faceva sprofondare, ed è ciò che è successo quando il tratto 558-614 di
+    // `prova` ha smesso di essere marcato `bridge` (2.96). Con 20 si sta fra
+    // 3.53 e 3.71, con margine.
+    const WOOD_PER_CLUSTER    = 20;   // alberi tentati per macchia
     // Raggio STRETTO di proposito: allargarlo dirada la macchia invece di
     // ingrandirla, e un bosco rado non ferma lo sguardo. La massa visiva viene
     // dalla densità interna, non dall area coperta.
