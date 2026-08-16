@@ -198,13 +198,26 @@
     // stesso asset: è ciò che distingue "distribuito" da "ammucchiato", e vale
     // per famiglia perché due gru vicine sono una stonatura mentre una gru e
     // una torretta TV vicine no.
+    //
+    // ⚠️ Dal 2026-08-16 si misura LUNGO LA PISTA e non più in linea d'aria
+    // (vedi sceneryInfrastructure.js), quindi a parità di numero è più severo:
+    // due rami del giro che si sfiorano non si tolgono più il posto, ma un
+    // tratto non può nemmeno riempirsi meglio del passo più corto fra i suoi
+    // candidati. Ne segue una regola per tarare questi numeri: **il vuoto
+    // peggiore di un contesto vale quanto il passoMinimo più piccolo che quel
+    // contesto ammette**. Su `new-monza` il tetto del test è 110 e il vuoto
+    // misurato era 157, cioè i 155 di `hospitalityDeck`.
     const PALETTE_INFRASTRUTTURE = [
         // Esterno curva: è il contesto che la spec voleva servire per primo,
         // ed è raro (6-10% del giro). Gli asset che ci vanno sono quelli che
         // "guardano" la curva.
         { asset: 'recoveryCrane',   contesti: ['curvaEsterno'],                     passoMinimo: 260 },
         { asset: 'tvTower',         contesti: ['curvaEsterno', 'viadotto'],         passoMinimo: 300 },
-        { asset: 'hospitalityDeck', contesti: ['curvaEsterno', 'aperto'],           passoMinimo: 155 },
+        // 100 e non 155: è il passo più corto del contesto `aperto`, quindi è
+        // lui a fissare il vuoto peggiore dove non c'è altro. A 155 restavano
+        // 157 unità spoglie su new-monza, a 120 ne restano 106 — quattro sotto
+        // il tetto, troppo poco margine — a 100 ne restano 80.
+        { asset: 'hospitalityDeck', contesti: ['curvaEsterno', 'aperto'],           passoMinimo: 100 },
         { asset: 'vipSuite',        contesti: ['curvaEsterno', 'aperto'],           passoMinimo: 520 },
         // Visuale lunga: il maxischermo va visto da lontano, e uno solo per
         // volta — 700 unità su un giro di 5170 vuol dire al più sette.

@@ -204,6 +204,57 @@ test('accanto a un tratto sopraelevato solo ciò che è più alto del dislivello
         'nessuna posa dove il dislivello supera il cartello: il vincolo non è stato esercitato');
 });
 
+test('un altro ramo del giro che passa vicino non svuota il tratto', () => {
+    // Il difetto, misurato su `prova` il 2026-08-16: il viadotto (campioni
+    // 417-557, 730 unità di pista) restava COMPLETAMENTE spoglio, ed era il
+    // buco più lungo del circuito con 672 unità. La causa non era nessuno dei
+    // sette vincoli ma la spaziatura per famiglia, misurata in linea d'aria:
+    // il viadotto passa a 50-160 unità da tratti già arredati che lungo il
+    // giro stanno a 700-2249 unità. Su 56 blocchi contati lì, 46 venivano da
+    // un oggetto che lungo la pista era lontanissimo.
+    //
+    // La spaziatura è un RITMO DEL GIRO — «non incontrare due gru di fila» —
+    // e va misurata lungo la pista. Contro l'ammasso visivo fra due rami che
+    // si sfiorano resta la guardia in linea d'aria, molto più corta.
+    //
+    // ⚠️ Il pylon dev'essere candidato ANCHE fuori dal viadotto: sono proprio
+    // gli esemplari posati sul resto del giro a bloccarlo, e una palette che
+    // lo ammette solo lì non riprodurrebbe niente.
+    const palette = [{ asset: 'pylon', contesti: ['viadotto', 'rettilineo', 'aperto',
+                                                  'curvaEsterno', 'stretto'], passoMinimo: 250 }];
+    const ctx = contesto('prova', { palette });
+    const suViadotto = SceneryInfrastructure.buildInfrastructure(ctx).filter(v => {
+        const q = TrackGeometry.nearestPoint(ctx.trackPts, v.x, v.z);
+        return SceneryInfrastructure.contestoAl(ctx, q.index, 1).viadotto;
+    });
+    // 730 unità di viadotto con un passo di 250: almeno due ci devono stare.
+    assert.ok(suViadotto.length >= 2,
+        `solo ${suViadotto.length} infrastrutture sul viadotto di prova, `
+        + 'lungo 730 unità con un passo di 250');
+});
+
+test('la spaziatura per famiglia vale anche lungo la pista', () => {
+    // L'altra metà dello stesso vincolo: allentare la misura in linea d'aria
+    // non deve far nascere due esemplari di fila. Si controlla sul giro vero,
+    // dove il ritmo conta.
+    const palette = [{ asset: 'pylon', contesti: ['viadotto', 'rettilineo', 'aperto',
+                                                  'curvaEsterno', 'stretto'], passoMinimo: 250 }];
+    const ctx = contesto('prova', { palette });
+    const posate = SceneryInfrastructure.buildInfrastructure(ctx);
+    const giro = TrackGeometry.lapLength(ctx.trackPts);
+    const n = ctx.trackPts.length;
+    const idx = posate.map(v => TrackGeometry.nearestPoint(ctx.trackPts, v.x, v.z).index);
+    for (let a = 0; a < posate.length; a++) {
+        for (let b = a + 1; b < posate.length; b++) {
+            const d = Math.abs(idx[a] - idx[b]);
+            const lungo = Math.min(d, n - d) * (giro / n);
+            assert.ok(lungo >= 250 - giro / n,
+                `due pylon a ${lungo.toFixed(0)} unità lungo la pista, `
+                + `ai campioni ${idx[a]} e ${idx[b]}`);
+        }
+    }
+});
+
 test('niente nella fascia davanti a una tribuna', () => {
     const c = circuitoVero('prova');
     // Una tribuna finta al campione 200, alla distanza a cui stanno le vere.

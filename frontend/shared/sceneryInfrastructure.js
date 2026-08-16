@@ -49,6 +49,14 @@
     // dove la barriera è addosso alla pista, a 29.8-32.8 dove c'è la ghiaia, e
     // in mezzo non c'è quasi niente. 20 cade dentro il salto.
     const MURO_STRETTO = 20;
+    // Frazione del `passoMinimo` che vale ANCHE in linea d'aria, fra due rami
+    // del giro che si sfiorano. Il passo è un ritmo del giro — «non incontrare
+    // due gru di fila» — e si misura lungo la pista; ma due esemplari a
+    // cavallo di un tornante finiscono nella stessa inquadratura pur essendo
+    // lontanissimi lungo il tracciato, e quella soglia serve a non ammucchiarli.
+    // Un terzo mantiene le proporzioni fra famiglie già tarate: 62 unità per la
+    // torre faro (185), 233 per il maxischermo (700).
+    const FRAZIONE_IN_ARIA = 1 / 3;
 
     // Che cosa descrive un punto del giro, dal punto di vista di chi ci deve
     // posare qualcosa di fianco.
@@ -152,6 +160,16 @@
                        groundPts, curve };
 
         const posate = [];
+        // Campione di posa di ciascuna, in parallelo a `posate`: serve a
+        // misurare la spaziatura lungo il giro, e non finisce nel layout.
+        const campioneDi = [];
+        const unitaPerCampione = giro / n;
+        // Distanza fra due campioni lungo la pista, sul giro CHIUSO: fra il
+        // campione 10 e il 990 di mille corrono 20 campioni, non 980.
+        const lungoLaPista = (a, b) => {
+            const d = Math.abs(a - b);
+            return Math.min(d, n - d) * unitaPerCampione;
+        };
 
         for (let i = 0; i < n; i += passoCampioni) {
             for (const lato of [1, -1]) {
@@ -186,12 +204,28 @@
                     const z = trackPts[i].z + nrm.nz * d * lato;
 
                     // Spaziatura per famiglia: le gru non si ammucchiano e due
-                    // maxischermi non si vedono insieme. ⚠️ Si misura fra le
+                    // maxischermi non si vedono insieme. È un RITMO DEL GIRO,
+                    // quindi si misura LUNGO LA PISTA.
+                    //
+                    // ⚠️ Misurarla in linea d'aria — come faceva fino al
+                    // 2026-08-16 — svuota i tratti che passano accanto a un
+                    // altro ramo del tracciato. Sul viadotto di `prova` non
+                    // entrava più niente: 730 unità di pista spoglie, il buco
+                    // più lungo del circuito, e su 56 candidati scartati lì 46
+                    // erano bloccati da un oggetto che lungo il giro stava fra
+                    // 700 e 2249 unità di distanza. Lo stesso difetto era già
+                    // annotato per il vuoto 624-722 di `monte-rosso`, dove il
+                    // giro è 1177 e un raggio di 260-700 copre quasi tutto.
+                    //
+                    // Contro l'ammasso visivo fra due rami che si sfiorano
+                    // resta la soglia in linea d'aria, ridotta a
+                    // FRAZIONE_IN_ARIA. ⚠️ Anche quella si misura fra le
                     // posizioni degli OGGETTI, non fra l'oggetto e il centro
-                    // pista: due esemplari sui due lati opposti sono lontani
-                    // fra loro anche quando il campione è lo stesso.
-                    const troppoVicino = posate.some(v => v.asset === voce.asset
-                        && Math.hypot(v.x - x, v.z - z) < voce.passoMinimo);
+                    // pista.
+                    const troppoVicino = posate.some((v, k) => v.asset === voce.asset
+                        && (lungoLaPista(campioneDi[k], i) < voce.passoMinimo
+                            || Math.hypot(v.x - x, v.z - z)
+                               < voce.passoMinimo * FRAZIONE_IN_ARIA));
                     if (troppoVicino) continue;
 
                     const y = TrackGeometry.terrainHeightAt(
@@ -231,6 +265,7 @@
                     })) continue;
 
                     posate.push(cand);
+                    campioneDi.push(i);
                     break;   // uno per punto e per lato
                 }
             }
