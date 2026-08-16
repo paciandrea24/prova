@@ -184,6 +184,15 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             if (outline) outline.setSize(renderer);
         });
+        // Il buffer dei contorni a mezza risoluzione: una delle tre passate
+        // del frame ne riempie un quarto. Il colore della scena non passa di
+        // lì e resta intatto — cambia solo quanto sono precisi i contorni.
+        if (outline && outline.setScala) {
+            interruttore(box, 'contorni a piena risoluzione', true, (on) => {
+                outline.setScala(renderer, on ? 1 : 0.5);
+            });
+        }
+
         // Ombre dinamiche accese/spente DAVVERO, non solo congelate: è la
         // prova che dice se conviene cuocerle in una texture, perché toglie
         // il campionamento della mappa dallo shader di ogni superficie — il

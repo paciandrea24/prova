@@ -177,12 +177,29 @@
         ready = true;
     }
 
+    // Scala del buffer di normali e profondità rispetto allo schermo. È una
+    // delle TRE passate che la scena paga a ogni frame, e su questo gioco il
+    // frame lo decidono i pixel: a 0.5 quella passata ne riempie un quarto.
+    // Il prezzo si vede solo sui contorni, che vengono cercati su
+    // un'immagine più piccola e quindi si arrotondano un poco; il colore
+    // della scena non passa di qui e resta a piena risoluzione.
+    let scala = 1;
+
+    function setScala(renderer, s) {
+        scala = s;
+        setSize(renderer);
+    }
+
     function setSize(renderer) {
         if (!ready) return;
         const size = renderer.getSize(new THREE.Vector2());
         const pr = renderer.getPixelRatio();
-        const w = Math.floor(size.x * pr), h = Math.floor(size.y * pr);
+        const w = Math.max(1, Math.floor(size.x * pr * scala));
+        const h = Math.max(1, Math.floor(size.y * pr * scala));
         target.setSize(w, h);
+        // ⚠️ uResolution è la dimensione del BUFFER, non dello schermo: il
+        // fragment shader la usa per spostarsi di un texel quando cerca i
+        // bordi, e con un buffer ridotto un texel non è più un pixel.
         uniforms.uResolution.value.set(w, h);
     }
 
@@ -236,7 +253,7 @@
     }
 
     return {
-        init, render, setSize, uniforms, stats,
+        init, render, setSize, setScala, uniforms, stats,
         get enabled() { return enabled; },
         setEnabled(on) { enabled = !!on; },
     };
