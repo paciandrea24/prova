@@ -193,17 +193,27 @@
         // Esterno curva: è il contesto che la spec voleva servire per primo,
         // ed è raro (6-10% del giro). Gli asset che ci vanno sono quelli che
         // "guardano" la curva.
-        { asset: 'recoveryCrane',   contesti: ['curvaEsterno'],                     passoMinimo: 320 },
-        { asset: 'tvTower',         contesti: ['curvaEsterno', 'viadotto'],         passoMinimo: 380 },
-        { asset: 'hospitalityDeck', contesti: ['curvaEsterno', 'aperto'],           passoMinimo: 260 },
-        { asset: 'vipSuite',        contesti: ['curvaEsterno', 'aperto'],           passoMinimo: 700 },
+        { asset: 'recoveryCrane',   contesti: ['curvaEsterno'],                     passoMinimo: 260 },
+        { asset: 'tvTower',         contesti: ['curvaEsterno', 'viadotto'],         passoMinimo: 300 },
+        { asset: 'hospitalityDeck', contesti: ['curvaEsterno', 'aperto'],           passoMinimo: 155 },
+        { asset: 'vipSuite',        contesti: ['curvaEsterno', 'aperto'],           passoMinimo: 520 },
         // Visuale lunga: il maxischermo va visto da lontano, e uno solo per
-        // volta — 900 unità su un giro di 5170 vuol dire al più cinque.
-        { asset: 'giantScreen',     contesti: ['rettilineo', 'viadotto'],           passoMinimo: 900 },
-        { asset: 'serviceBuilding', contesti: ['rettilineo', 'aperto'],             passoMinimo: 480 },
-        { asset: 'floodlightTower', contesti: ['viadotto', 'rettilineo', 'aperto'], passoMinimo: 300 },
-        // Muro sottile: l'unico degli otto abbastanza piatto (profondo 1.5).
-        { asset: 'trackGate',       contesti: ['stretto'],                          passoMinimo: 220 },
+        // volta — 700 unità su un giro di 5170 vuol dire al più sette.
+        { asset: 'giantScreen',     contesti: ['rettilineo', 'viadotto'],           passoMinimo: 700 },
+        { asset: 'serviceBuilding', contesti: ['rettilineo', 'aperto'],             passoMinimo: 270 },
+        { asset: 'floodlightTower', contesti: ['viadotto', 'rettilineo', 'aperto'], passoMinimo: 185 },
+        // ⚠️ `trackGate` NON è distribuito, per decisione dell'utente al
+        // playtest del 2026-08-14: «i nuovi cancelli non hanno motivo di essere
+        // distribuiti in giro per la pista». Un cancello è un varco di
+        // servizio, e ha senso dove si entra davvero — non ogni 220 unità
+        // lungo il muro. Il modello resta in repo, caricato e misurato: se un
+        // giorno servirà un accesso in un punto scelto, è già pronto.
+        //
+        // Conseguenza da tenere presente: il contesto `stretto` (18% del giro
+        // su prova, 32% su monte-rosso) resta senza nessun candidato, e quei
+        // tratti restano spogli. È una scelta, non una svista: nella palette
+        // vanno volumi, e nessuno degli altri sette entra dove il muro della
+        // via di fuga sta a 13-15.
     ];
 
     // Tribuna principale: unica per tracciato, vicino al rettilineo di
@@ -1484,6 +1494,36 @@
                 return Math.abs(du) <= meta && df > 0 && df <= FASCIA_DAVANTI;
             });
             if (dentro) layout.splice(i, 1);
+        }
+
+        // ...E DENTRO UN'INFRASTRUTTURA NON CI VA NIENTE.
+        //
+        // Stesso identico meccanismo del blocco qui sopra, e per questo sta
+        // qui e non fra i vincoli del modulo: `buildInfrastructure` guarda
+        // `trackside` e non ci finisce dentro, ma poi `traslaOltreLaGhiaia`
+        // porta al muro gomme, capanni, cartelli e striscioni — che non sono
+        // dimensionati sul muro — mentre le infrastrutture NON traslano
+        // (`suMisuraSulMuro`). Il conflitto nasce dopo, ed è visibile solo
+        // qui: misurate 7 compenetrazioni sui quattro tracciati il 2026-08-14
+        // (gru dentro i muri di gomme, terrazze sopra un capanno commissari).
+        //
+        // A cedere è l'arredo minore, non il volume: è la stessa scelta fatta
+        // per le tribune. Solo oggetti PUNTUALI e ripetuti — reti e barriere
+        // continue restano dove sono, perché toglierne un pezzo aprirebbe un
+        // varco nella protezione.
+        const CEDONO_ALL_INFRASTRUTTURA = new Set([
+            'tyreStack', 'marshalPost', 'brakingBoard', 'banner']);
+        if (infrastrutture.length) {
+            for (let i = layout.length - 1; i >= 0; i--) {
+                const v = layout[i];
+                if (!CEDONO_ALL_INFRASTRUTTURA.has(v.asset)) continue;
+                // Ingombro reale orientato, mai la distanza fra i centri: una
+                // gru è 10.3 × 12.4 e un capanno 5.5 × 4.5, e a 6 unità di
+                // distanza fra i centri sono già uno dentro l'altro.
+                if (infrastrutture.some(g => SceneryAssetSizes.itemsOverlap(v, g))) {
+                    layout.splice(i, 1);
+                }
+            }
         }
 
         // Spettatori DOPO la traslazione, non prima.
