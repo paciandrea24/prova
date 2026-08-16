@@ -89,6 +89,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1200);
 
+    // Misure del frame condivise col pannello F9. `logica` la riempie
+    // animate(), il resto lo legge il pannello da renderer e camera.
+    const F1Perf = { logica: 0 };
+
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -366,7 +370,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // `outline` resta null finché ToonOutline non entra in gioco.
     ToonPanel.install({
         style: ToonStyle, sky: toonSky, outline: TOON_ON ? ToonOutline : null, scene,
-        lights: { sun, hemi }, renderer, attivo: TOON_ON,
+        lights: { sun, hemi }, renderer, attivo: TOON_ON, perf: F1Perf,
     });
 
     // ====================================================
@@ -2331,6 +2335,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function animate() {
         requestAnimationFrame(animate);
+        // Quanto di un frame è LOGICA e quanto è disegno. Senza questa
+        // separazione il pannello dice solo "disegno 11 ms su 20", e gli
+        // altri 9 restano un buco nero in cui può esserci di tutto: fisica
+        // del client, interpolazione, audio, o semplicemente l'attesa che la
+        // GPU finisca il frame precedente.
+        const _tLogica = performance.now();
 
         if (typeof F1GamepadInput !== 'undefined') {
             const gp = F1GamepadInput.poll();
@@ -2598,6 +2608,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (tyreSelectActive) updateTyreSelectCamera();
         else updateCamera();
         toonSky.update(camera);
+        F1Perf.logica = performance.now() - _tLogica;
         ToonOutline.render(renderer, scene, camera);
     }
 

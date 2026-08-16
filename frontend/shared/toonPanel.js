@@ -46,8 +46,9 @@
         return box;
     }
 
-    function install({ style, sky, outline, scene, lights, renderer, attivo }) {
+    function install({ style, sky, outline, scene, lights, renderer, attivo, perf }) {
         const u = style.uniforms;
+        const lucePrincipale = lights && lights.sun;
 
         const box = document.createElement('div');
         box.style.cssText = [
@@ -170,6 +171,28 @@
             if (renderer) renderer.shadowMap.autoUpdate = on;
         });
 
+        // Le due prove che distinguono un collo di bottiglia da PIXEL da uno
+        // da OGGETTI. Se il gioco va molto meglio a mezza risoluzione o con
+        // l'ombra piccola, il costo è nel riempimento e ridurre le draw call
+        // non servirà a niente; se non cambia nulla, è il contrario.
+        interruttore(box, 'risoluzione piena', true, (on) => {
+            if (!renderer) return;
+            renderer.setPixelRatio(on ? Math.min(window.devicePixelRatio, 2) : 1);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            if (outline) outline.setSize(renderer);
+        });
+        interruttore(box, 'ombra a piena risoluzione', true, (on) => {
+            if (!lucePrincipale) return;
+            // La mappa va buttata: Three la ricrea alla misura nuova al primo
+            // frame utile. Senza dispose resterebbe quella vecchia e
+            // l'interruttore non farebbe niente di visibile.
+            if (lucePrincipale.shadow.map) {
+                lucePrincipale.shadow.map.dispose();
+                lucePrincipale.shadow.map = null;
+            }
+            lucePrincipale.shadow.mapSize.set(on ? 4096 : 1024, on ? 4096 : 1024);
+        });
+
         const audit = document.createElement('button');
         audit.textContent = 'elenca materiali non convertiti';
         audit.style.cssText = 'margin-top:8px;width:100%;font:11px monospace;padding:4px;cursor:pointer;';
@@ -190,6 +213,7 @@
         // significa che la GPU sta compilando shader a caldo, ed è una causa
         // classica di micro-blocchi.
         let frame = 0, t0 = performance.now(), tPrec = t0, peggiore = 0, disegnoMax = 0;
+        let logicaMax = 0;
         function tick() {
             const ora = performance.now();
             const dt = ora - tPrec;
@@ -197,6 +221,7 @@
             frame++;
             if (dt > peggiore) peggiore = dt;
             if (outline && outline.stats && outline.stats.ms > disegnoMax) disegnoMax = outline.stats.ms;
+            if (perf && perf.logica > logicaMax) logicaMax = perf.logica;
             if (ora - t0 >= 500) {
                 const medio = Math.round(frame * 1000 / (ora - t0));
                 // "disegno" è il tempo speso a renderizzare; se resta basso
@@ -210,9 +235,25 @@
                         ? outline.stats
                         : { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles };
                     testo += `\ndraw ${s.calls}   triangoli ${(s.triangles / 1000).toFixed(0)}k   programmi ${renderer.info.programs ? renderer.info.programs.length : '—'}`;
+                    // Pixel VERI mandati alla GPU a ogni passata: con
+                    // pixelRatio 2 sono quattro volte quelli della finestra, e
+                    // la passata dei contorni e quella delle normali li
+                    // ripagano entrambe. È la parte di costo che non dipende
+                    // da quanti oggetti ci sono in scena.
+                    const d = renderer.getDrawingBufferSize
+                        ? renderer.getDrawingBufferSize(new THREE.Vector2())
+                        : { x: 0, y: 0 };
+                    testo += `\npixel ${d.x}x${d.y} (ratio ${renderer.getPixelRatio().toFixed(2)})`
+                        + `   ombra ${lucePrincipale ? lucePrincipale.shadow.mapSize.x : '—'}`;
                 }
+                // Quanti InstancedMesh di scenografia esistono davvero, e
+                // quanto dura la LOGICA del frame: i due numeri che dicono se
+                // il collo di bottiglia è il disegno o tutto il resto.
+                let gruppi = 0;
+                scene.traverse((c) => { if (c.isInstancedMesh && c.userData.sceneryAsset) gruppi++; });
+                testo += `\nlogica ${logicaMax.toFixed(1)} ms   gruppi scenografia ${gruppi}`;
                 fps.textContent = testo;
-                frame = 0; t0 = ora; peggiore = 0; disegnoMax = 0;
+                frame = 0; t0 = ora; peggiore = 0; disegnoMax = 0; logicaMax = 0;
             }
             requestAnimationFrame(tick);
         }
