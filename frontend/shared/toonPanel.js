@@ -184,6 +184,25 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             if (outline) outline.setSize(renderer);
         });
+        // Ombre dinamiche accese/spente DAVVERO, non solo congelate: è la
+        // prova che dice se conviene cuocerle in una texture, perché toglie
+        // il campionamento della mappa dallo shader di ogni superficie — il
+        // costo per pixel, che è quello che su questo gioco decide il frame.
+        //
+        // ⚠️ Cambiare `shadowMap.enabled` cambia i define dei materiali, e
+        // senza `needsUpdate` Three continuerebbe a usare i programmi già
+        // compilati: l'interruttore sembrerebbe non fare niente. La
+        // ricompilazione blocca il gioco per un attimo, quindi il primo
+        // mezzo secondo dopo il clic va ignorato.
+        interruttore(box, 'ombre dinamiche (ricompila)', true, (on) => {
+            if (!renderer) return;
+            renderer.shadowMap.enabled = on;
+            scene.traverse((c) => {
+                if (!c.material) return;
+                const mats = Array.isArray(c.material) ? c.material : [c.material];
+                for (const m of mats) m.needsUpdate = true;
+            });
+        });
         interruttore(box, 'ombra a piena risoluzione', true, (on) => {
             if (!lucePrincipale) return;
             // La mappa va buttata: Three la ricrea alla misura nuova al primo
