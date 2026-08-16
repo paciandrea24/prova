@@ -75,3 +75,33 @@ test('la voce senza quota vale come quota zero', () => {
     assert.ok(Number.isFinite(b.y), 'y non è finito con voci prive di y');
     assert.equal(b.y, 0);
 });
+
+// ── quando conviene dividere ─────────────────────────────────────────────
+// Misurato in gioco il 2026-08-16 (pannello F9, circuito `prova`): il tempo
+// di disegno segue le DRAW CALL — ~5 ms fissi più ~0.013 ms l'una — e non i
+// triangoli. Spegnendo i 449k triangoli degli spettatori gli fps non
+// salivano; togliendo 104 draw call di alberi scendeva di 1 ms.
+
+test('un asset leggero e sparso non va diviso: le celle costano più del culling', () => {
+    // treeBroad su prova: 131 alberi, 44k triangoli in tutto, sparsi su 26
+    // celle. Dividerlo costa 78 draw call (26 celle x 3 materiali) per
+    // risparmiarne al massimo 44k di triangoli, che non pesano.
+    assert.equal(SceneryChunks.vaDivisoInCelle(131, 44000), false);
+});
+
+test('un asset pesante va diviso anche se le istanze sono poche', () => {
+    // grandStandCovered: 44 tribune ma 165k triangoli. Qui il culling ripaga.
+    assert.equal(SceneryChunks.vaDivisoInCelle(44, 165000), true);
+});
+
+test('pochi oggetti non si dividono comunque, per quanto pesanti', () => {
+    // La soglia storica sulle istanze resta: un gruppo di 10 oggetti diviso
+    // in celle produce gruppi da 2-3, e ogni gruppo è una draw call.
+    assert.equal(SceneryChunks.vaDivisoInCelle(10, 900000), false);
+});
+
+test('la folla resta divisa: è il caso che il culling serve davvero', () => {
+    // spectatorC: 2035 figure, 244k triangoli. Senza celle sarebbero sempre
+    // tutte in coda alla GPU, anche quelle alle spalle della camera.
+    assert.equal(SceneryChunks.vaDivisoInCelle(2035, 244000), true);
+});

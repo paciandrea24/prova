@@ -539,6 +539,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const meshes = [];
                 gltf.scene.traverse((child) => { if (child.isMesh) meshes.push(child); });
 
+                // Peso dell'asset in scena, in triangoli: serve a decidere se
+                // spezzarlo in celle. Si conta su TUTTE le mesh del modello e
+                // una volta sola, perché la decisione è dell'asset e non della
+                // singola mesh — mesh dello stesso oggetto divise in modo
+                // diverso darebbero gruppi disallineati.
+                let triAsset = 0;
+                for (const mesh of meshes) {
+                    const g = mesh.geometry;
+                    triAsset += (g.index ? g.index.count : g.attributes.position.count) / 3;
+                }
+                triAsset *= items.length;
+                const dividi = SceneryChunks.vaDivisoInCelle(items.length, triAsset);
+
                 for (const mesh of meshes) {
                     const localMatrix = mesh.matrixWorld;
                     // Raggio e centro del singolo oggetto, per dimensionare
@@ -553,7 +566,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // così il frustum culling può funzionare (vedi il commento
                     // in testa a sceneryChunks.js). Sotto la soglia resta un
                     // gruppo unico, che comunque riceve un ingombro corretto.
-                    const gruppi = items.length >= SceneryChunks.MIN_FOR_SPLIT
+                    const gruppi = dividi
                         ? SceneryChunks.groupByCell(items, SceneryChunks.CELL)
                         : new Map([['unico', items]]);
 

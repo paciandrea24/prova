@@ -80,10 +80,12 @@ for (const id of tracciati) {
     for (const [asset, items] of perAsset) {
         const c = costoDi(asset);
         if (!c) mancanti.push(asset);
-        const celle = items.length >= SceneryChunks.MIN_FOR_SPLIT
+        const tri = (c ? c.tri : 0) * items.length;
+        // Stessa regola di f1.js::loadScenery: si divide in celle solo chi
+        // pesa abbastanza da far ripagare il culling.
+        const celle = SceneryChunks.vaDivisoInCelle(items.length, tri)
             ? SceneryChunks.groupByCell(items, SceneryChunks.CELL).size : 1;
         const mesh = celle * (c ? c.mesh : 1);
-        const tri = (c ? c.tri : 0) * items.length;
         istanze += items.length; gruppi += mesh; triangoli += tri;
         righe.push({ asset, n: items.length, mesh, tri, celle });
     }
