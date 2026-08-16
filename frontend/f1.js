@@ -120,7 +120,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderer.setPixelRatio(Number.isFinite(ratioChiesto) && ratioChiesto > 0
         ? Math.min(ratioChiesto, 2)
         : 1);
-    renderer.shadowMap.enabled = true;
+    // `?ombre=off` toglie le ombre dinamiche. Non è un'opzione di qualità: è
+    // la MISURA che dice se conviene cuocere le ombre della scenografia in una
+    // texture. Spegnere la mappa non basta a rispondere — quella costa CPU, e
+    // abbiamo visto che la CPU qui ha margine — perché il costo vero è nello
+    // shader di OGNI superficie, che per ogni pixel campiona la mappa per
+    // sapere se è in ombra. Solo togliendo `shadowMap.enabled` quel codice
+    // sparisce dai materiali, ed è per questo che va fatto al caricamento:
+    // cambia i define e li fa ricompilare tutti.
+    renderer.shadowMap.enabled = urlParams.get('ombre') !== 'off';
     // Ombra NETTA ma non scalettata: PCF semplice con raggio 1 dà un bordo
     // stretto. PCFSoftShadowMap lo sfuma troppo per un look cel-shaded,
     // BasicShadowMap lo rende netto ma a scaletta (si vedrebbe la griglia dei
