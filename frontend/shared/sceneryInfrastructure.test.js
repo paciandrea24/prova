@@ -165,8 +165,24 @@ test('nessun angolo finisce dentro la via di fuga', () => {
 });
 
 test('accanto a un tratto sopraelevato solo ciò che è più alto del dislivello', () => {
-    const ctx = contesto('prova', { palette: PALETTE_ESISTENTI });
-    let visti = 0;
+    // Palette costruita per METTERE ALLA PROVA il vincolo: due candidati per
+    // il solo contesto `viadotto`, uno più basso del dislivello (billboardLow,
+    // h 4.5) e uno più alto (pylon, h 26.2), con una spaziatura abbastanza
+    // corta da non escluderli mai per conto suo.
+    //
+    // ⚠️ Con PALETTE_ESISTENTI questo test era VACUO sul viadotto vero di
+    // prova (campioni 417-557): il suo unico candidato per il contesto è il
+    // pylon, che il proprio `passoMinimo` di 400 esclude da tutti e 141 i
+    // campioni perché ne sta già uno sul rettilineo prima. L'assert passava
+    // grazie all'unica posa "su viadotto" del tracciato, al campione 570 —
+    // dentro un tratto che era marcato `bridge` ma correva a terra, e che
+    // l'utente ha poi smarcato il 2026-08-16.
+    const palette = [
+        { asset: 'billboardLow', contesti: ['viadotto'], passoMinimo: 60 },
+        { asset: 'pylon',        contesti: ['viadotto'], passoMinimo: 60 },
+    ];
+    const ctx = contesto('prova', { palette });
+    let visti = 0, deviati = 0;
     for (const v of SceneryInfrastructure.buildInfrastructure(ctx)) {
         const q = TrackGeometry.nearestPoint(ctx.trackPts, v.x, v.z);
         const c = SceneryInfrastructure.contestoAl(ctx, q.index, 1);
@@ -175,8 +191,17 @@ test('accanto a un tratto sopraelevato solo ciò che è più alto del dislivello
         const alto = SceneryAssetSizes.sizeOf(v.asset).h;
         assert.ok(alto > c.dislivello,
             `${v.asset} è alto ${alto} accanto a un viadotto di ${c.dislivello.toFixed(1)}`);
+        // Il primo della palette è il cartello basso: dove il dislivello lo
+        // supera, il vincolo deve aver fatto scorrere la scelta sul pylon.
+        if (c.dislivello >= SceneryAssetSizes.sizeOf('billboardLow').h) {
+            deviati++;
+            assert.equal(v.asset, 'pylon',
+                `col dislivello a ${c.dislivello.toFixed(1)} il cartello basso non doveva vincere`);
+        }
     }
     assert.ok(visti > 0, 'su prova qualcosa deve pur finire accanto al viadotto');
+    assert.ok(deviati > 0,
+        'nessuna posa dove il dislivello supera il cartello: il vincolo non è stato esercitato');
 });
 
 test('niente nella fascia davanti a una tribuna', () => {
