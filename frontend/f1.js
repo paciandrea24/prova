@@ -93,9 +93,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     // animate(), il resto lo legge il pannello da renderer e camera.
     const F1Perf = { logica: 0 };
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    // ANTIALIAS: `?aa=off` lo spegne. Non è un capriccio da menu, è una
+    // misura: con antialias il canvas è multisample e ogni pixel coperto
+    // costa più campioni, ed è il tipo di costo che su questo gioco domina
+    // il frame (vedi PIXEL_RATIO qui sotto). Va giudicato guardando il
+    // gioco, perché il tratto nero dei contorni maschera buona parte della
+    // scalettatura che l'antialias serve a togliere.
+    const renderer = new THREE.WebGLRenderer({ antialias: urlParams.get('aa') !== 'off' });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // PIXEL RATIO — misurato in gioco il 2026-08-16, ed è la leva più
+    // efficace che abbia questo gioco:
+    //
+    //   1920x868 (ratio 1.25) -> 47 fps, disegno 9.8 ms
+    //   1536x695 (ratio 1.00) -> 58 fps, disegno 7.4 ms
+    //
+    // Il 36% di pixel in meno vale 11 fps, mentre 3 ms di CPU risparmiati
+    // altrove (ombra da 4096 a 1024) non ne valgono nemmeno uno: il frame lo
+    // decide la GPU, e la GPU la decidono i pixel. Con lo scaling di Windows
+    // al 125% il browser dichiara 1.25 e si finiva a renderizzare un quarto
+    // di pixel in più di quelli della finestra, per poi rimpicciolirli.
+    //
+    // 1 è il valore predefinito; `?ratio=1.5` (o qualunque numero) lo alza
+    // per chi ha GPU da spendere, e l'interruttore «risoluzione piena» del
+    // pannello F9 fa il confronto a caldo.
+    const ratioChiesto = parseFloat(urlParams.get('ratio'));
+    renderer.setPixelRatio(Number.isFinite(ratioChiesto) && ratioChiesto > 0
+        ? Math.min(ratioChiesto, 2)
+        : 1);
     renderer.shadowMap.enabled = true;
     // Ombra NETTA ma non scalettata: PCF semplice con raggio 1 dà un bordo
     // stretto. PCFSoftShadowMap lo sfuma troppo per un look cel-shaded,

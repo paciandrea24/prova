@@ -175,7 +175,10 @@
         // da OGGETTI. Se il gioco va molto meglio a mezza risoluzione o con
         // l'ombra piccola, il costo è nel riempimento e ridurre le draw call
         // non servirà a niente; se non cambia nulla, è il contrario.
-        interruttore(box, 'risoluzione piena', true, (on) => {
+        // Parte dallo stato VERO del renderer: dal 2026-08-16 il gioco
+        // renderizza a ratio 1 di default, quindi una casella spuntata
+        // direbbe il falso e il confronto partirebbe già sballato.
+        interruttore(box, 'risoluzione dello schermo', renderer && renderer.getPixelRatio() > 1, (on) => {
             if (!renderer) return;
             renderer.setPixelRatio(on ? Math.min(window.devicePixelRatio, 2) : 1);
             renderer.setSize(window.innerWidth, window.innerHeight);
