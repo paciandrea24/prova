@@ -926,7 +926,22 @@ function addLaneIndices(track, anchors) {
 
 function startPitLaneEntry(io, lobbyId, game, p) {
     p.pitAutoState = 'entering';
-    p.pitPathIndex = 1;
+    // L'autopilota riparte da DOVE L'AUTO È, non dall'imbocco della corsia.
+    //
+    // Prima puntava sempre al campione 1, ma il trigger d'ingresso non sta
+    // sopra il campione 1: sta dove il tracciato lo mette. Misurato, la
+    // distanza fra i due: 42.3 unità su prova, 41.4 su new-monza, 4.5 su
+    // monte-rosso. L'auto entrava, tornava INDIETRO fino all'imbocco e solo
+    // dopo ripartiva — segnalato in playtest, e presente da sempre; su
+    // monte-rosso quasi non si notava proprio perché lì lo scarto è piccolo.
+    //
+    // +1 sul campione più vicino: si punta al successivo, non a quello su cui
+    // si è già sopra, altrimenti il primo passo dell'autopilota non ha una
+    // direzione in cui andare.
+    const pl = game.track.pitLanePts;
+    p.pitPathIndex = pl
+        ? Math.min(pl.length - 1, TrackGeometry.nearestPoint(pl, p.x, p.z).index + 1)
+        : 1;
     const sid = game.socketByColor[p.color];
     if (sid) io.to(sid).emit('f1PitLaneEntered');
 }
@@ -2089,7 +2104,7 @@ module.exports.physics = {
     applyDamageSteerNoise, DAMAGE_STEER_NOISE_MAX, effectiveGrip,
     createDamageParts, FRONT_WING_STEER_PENALTY_MAX,
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
-    buildPublicState, playersVisibleTo, checkLap, updateSectorTiming, finalizeSessionFinish, resolvePendingFinish,
+    buildPublicState, playersVisibleTo, startPitLaneEntry, checkLap, updateSectorTiming, finalizeSessionFinish, resolvePendingFinish,
     computeSlipstreamMult,
     updatePitAutopilot, PIT_AUTO_SPEED, PIT_AUTO_ARRIVE_DIST
 };
