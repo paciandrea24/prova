@@ -2141,29 +2141,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 50ms (PHYSICS_TICK_MS), un rebuild completo ad ogni chiamata
     // distruggerebbe qualsiasi animazione di sorpasso dopo un solo frame,
     // prima ancora che potesse essere visibile.
-    // Oltre questo numero di piloti la classifica non ci sta più a schermo, e
-    // soprattutto non serve tutta: in gara contano il leader, chi devi
-    // attaccare e chi ti sta attaccando.
-    const CLASSIFICA_COMPLETA_MAX = 6;
-    const CLASSIFICA_SOPRA = 2;   // quanti davanti a te
-    // Uno dietro: senza, non sai di essere sotto pressione e ti giochi male
-    // la difesa. È la sola aggiunta rispetto a "il primo più quelli davanti".
-    const CLASSIFICA_SOTTO = 1;
+    // La classifica mostra SEMPRE sei righe, quante ne sta comoda a schermo, e
+    // scorre attorno alla propria posizione: da primo si vede dal 1° al 6°, da
+    // ultimo di dieci dal 5° al 10°.
+    //
+    // Niente leader appuntato in cima: da primo restavano due sole righe (tu e
+    // quello dietro), e chi corre in fondo non ha bisogno di sapere quanto è
+    // lontano il primo — lo rivedrà risalendo. Le informazioni che contano in
+    // gara sono chi devi attaccare e chi ti sta attaccando.
+    const CLASSIFICA_FINESTRA = 6;
+    // Tre davanti e due dietro: con sei righe non si può stare esattamente al
+    // centro, e vedere chi si insegue conta più di vedere chi insegue te.
+    const CLASSIFICA_SOPRA = 3;
 
-    // Il primo, poi la finestra attorno alla propria posizione. Con pochi
-    // piloti resta l'elenco intero, che ci sta comodo.
     function finestraClassifica(entries) {
-        if (entries.length <= CLASSIFICA_COMPLETA_MAX) return entries;
+        if (entries.length <= CLASSIFICA_FINESTRA) return entries;
 
         const mio = entries.findIndex(([color]) => color === myColor);
         // Chi guarda senza essere in gara (rientro, spettatore): i primi.
-        if (mio < 0) return entries.slice(0, CLASSIFICA_COMPLETA_MAX);
+        if (mio < 0) return entries.slice(0, CLASSIFICA_FINESTRA);
 
-        const da = Math.max(0, mio - CLASSIFICA_SOPRA);
-        const finestra = entries.slice(da, Math.min(entries.length, mio + CLASSIFICA_SOTTO + 1));
-        // Il leader in testa, se non è già dentro la finestra.
-        if (da > 0) finestra.unshift(entries[0]);
-        return finestra;
+        // La finestra si ferma agli estremi invece di accorciarsi: le righe
+        // restano sei anche in testa e in coda alla classifica.
+        const da = Math.max(0, Math.min(mio - CLASSIFICA_SOPRA,
+                                        entries.length - CLASSIFICA_FINESTRA));
+        return entries.slice(da, da + CLASSIFICA_FINESTRA);
     }
 
     function updateStandings(state) {
@@ -2211,10 +2213,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 rowsEl.appendChild(rowEl);
             }
             rowEl.classList.toggle('me', color === myColor);
-            // Stacco visivo sotto il leader quando in mezzo mancano dei
-            // piloti: senza, "1° e 8°" si leggono come "1° e 2°".
-            rowEl.classList.toggle('is-staccato',
-                d.position === 1 && entries.length > 1 && entries[1][1].position > 2);
             renderStandingRowContent(rowEl, color, d);
         }
 

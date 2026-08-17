@@ -464,21 +464,6 @@ canvas.tyre-preview-canvas {
 }
 .f1-standing-row.me { background: rgba(255,255,255,0.05); }
 
-/* Con più di sei piloti la classifica mostra il leader e la finestra attorno
-   alla propria posizione: fra i due c'è un salto di posizioni, e va detto —
-   altrimenti "1° e 8°" si leggono come "1° e 2°". */
-.f1-standing-row.is-staccato {
-    position: relative;
-    margin-bottom: 10px;
-}
-.f1-standing-row.is-staccato::after {
-    content: '';
-    position: absolute;
-    left: 8px;
-    right: 8px;
-    bottom: -6px;
-    border-top: 2px dotted rgba(255, 255, 255, 0.28);
-}
 
 .f1-standing-row.is-lifting {
     position: relative;
