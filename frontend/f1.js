@@ -802,7 +802,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         // Dopo applicaStile: registraSemaforo sostituisce il
                         // materiale toon con uno base, e farlo prima
                         // significherebbe farselo riconvertire subito dopo.
-                        registraSemaforo(im);
+                        registraSemaforo(im, container);
                         container.add(im);
                     }
                 }
@@ -891,21 +891,65 @@ document.addEventListener('DOMContentLoaded', async () => {
     // pole il gruppo di lenti occupa il 12% dell'altezza dello schermo, da P6
     // circa la metà: senza questo stacco netto, a quella dimensione non si
     // distinguerebbe acceso da spento.
-    const SEMAFORO_SPENTO = 0x3a0a08;
-    const SEMAFORO_ACCESO = 0xff2a1a;
+    // Rosso pieno da acceso, e un rosso quasi nero da spento: più i due stati
+    // sono lontani, più la lampada si legge da lontano. È la stessa ragione
+    // per cui il materiale non è toon.
+    const SEMAFORO_SPENTO = 0x2a0806;
+    const SEMAFORO_ACCESO = 0xff0000;
     const semaforiPonte = [];   // InstancedMesh, in ordine da 1 a 5
+    const bagliori = [];        // l'alone attorno a ciascuna, stesso ordine
 
-    function registraSemaforo(im) {
+    // Alone: una macchia luminosa che sfuma verso il bordo, disegnata una
+    // volta e riusata da tutte e cinque. Un colore pieno non può superare il
+    // bianco, quindi da solo non "illumina": è l'alone che si somma allo
+    // sfondo (blending additivo) a dare l'impressione di luce che esce.
+    function texturaBagliore() {
+        const c = document.createElement('canvas');
+        c.width = c.height = 128;
+        const g = c.getContext('2d').createRadialGradient(64, 64, 0, 64, 64, 64);
+        g.addColorStop(0.00, 'rgba(255,110,90,1)');
+        g.addColorStop(0.25, 'rgba(255,40,20,0.55)');
+        g.addColorStop(1.00, 'rgba(255,0,0,0)');
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, 128, 128);
+        return new THREE.CanvasTexture(c);
+    }
+    let _texBagliore = null;
+
+    function registraSemaforo(im, container) {
         const n = /^gantry_light_(\d+)$/.exec(im.userData.sceneryMesh || '');
         if (!n) return;
+        const i = parseInt(n[1], 10) - 1;
         im.material = new THREE.MeshBasicMaterial({ color: SEMAFORO_SPENTO });
-        semaforiPonte[parseInt(n[1], 10) - 1] = im;
+        semaforiPonte[i] = im;
+
+        // L'alone va dove stanno le lenti: il centro dell'ingombro
+        // dell'InstancedMesh è già in coordinate mondo (lo calcola
+        // loadScenery poco sopra).
+        const sfera = im.geometry.boundingSphere;
+        if (!sfera) return;
+        if (!_texBagliore) _texBagliore = texturaBagliore();
+        const alone = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: _texBagliore,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,   // non deve nascondere ciò che ha dietro
+            transparent: true,
+            opacity: 0,
+        }));
+        alone.position.copy(sfera.center);
+        alone.scale.setScalar(sfera.radius * 3.2);
+        alone.renderOrder = 2;
+        container.add(alone);
+        bagliori[i] = alone;
     }
 
     function accendiSemafori(quanti) {
         for (let i = 0; i < semaforiPonte.length; i++) {
+            const acceso = i < quanti;
             const im = semaforiPonte[i];
-            if (im) im.material.color.setHex(i < quanti ? SEMAFORO_ACCESO : SEMAFORO_SPENTO);
+            if (im) im.material.color.setHex(acceso ? SEMAFORO_ACCESO : SEMAFORO_SPENTO);
+            if (bagliori[i]) bagliori[i].material.opacity = acceso ? 1 : 0;
         }
     }
 

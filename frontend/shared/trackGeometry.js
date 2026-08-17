@@ -588,7 +588,17 @@
         return {
             x: x + nx * (laneSign * GRID_LANE_OFFSET),
             z: z + nz * (laneSign * GRID_LANE_OFFSET),
-            angle: Math.atan2(ntx, ntz)
+            angle: Math.atan2(ntx, ntz),
+            // Campione di pista su cui cade lo schieramento. Chi posiziona
+            // un'auto qui DEVE usarlo per `p.trackIndex`: la fisica cerca il
+            // punto pista in una finestra stretta attorno all'indice che
+            // l'auto dichiara (nearestIndexNear, ±20 campioni), e uno spawn
+            // che dichiara 0 mentre sta al campione 41 fa misurare al muro la
+            // distanza dal punto sbagliato — l'auto viene spinta di lato al
+            // primo tick di gara. Succedeva su monte-rosso, dove i campioni
+            // valgono 1.18 unità e la pole cade al 41°; su prova (5.17 per
+            // campione, pole al 9°) restava dentro la finestra per caso.
+            index: fromIdx,
         };
     }
 

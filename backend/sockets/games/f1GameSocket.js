@@ -857,7 +857,12 @@ function assignGridSpawns(game) {
         p.deltaToPreviousLapMs = null; p.lapTrulyStarted = false;
         p.lapRecapSectorTimes = null; p.lapRecapExpiresAtMs = null;
         p.pendingFinishTime = null;
-        p.trackIndex = 0;
+        // L'indice VERO dello schieramento, non 0: vedi il commento in
+        // TrackGeometry.gridSpawnPoint. Dichiarando 0 mentre l'auto sta al
+        // campione 41 (monte-rosso), la fisica cercava il punto pista attorno
+        // a quello sbagliato e il muro spingeva l'auto di lato al primo tick
+        // di gara — misurato, 11.6 unità.
+        p.trackIndex = spawn.index || 0;
         p.tyreWear = 0;   // gomme fresche per la gara vera (l'usura conta solo in gara, non in qualifica)
         p.damage = 0;   // auto perfetta a inizio gara vera — stesso confine di tyreWear
         p.damageParts = createDamageParts();   // fresco ad ogni gara — mai riutilizzare l'oggetto precedente
