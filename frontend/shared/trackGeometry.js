@@ -1118,6 +1118,38 @@
         return top === null ? (trackPts[i].y || 0) : top;
     }
 
+    // Un oggetto scenico deve GUARDARE la pista che ha davvero davanti, cioè
+    // stare perpendicolare al campione che gli è PIÙ VICINO. Non è la stessa
+    // cosa di essere perpendicolare al campione da cui è stato costruito: dove
+    // la pista fa un tornante le due branche si avvicinano, e un oggetto
+    // posato per la prima si ritrova più vicino alla seconda.
+    //
+    // Il 2026-08-13, allungando le schiere di tribune da 6 a 8 moduli, su
+    // `prova` una fila finiva con sette moduli a 45.8 dall'asse e l'ottavo a
+    // 40.4 girato di 77°, e un'altra nasceva già storta di 37° perché il SEME
+    // cadeva lì. Sono la "tribuna storta" e il "gradino nella fila" che i test
+    // misurano: un solo modulo li produceva entrambi.
+    //
+    // 30° di default: gli oggetti sani deviano meno di 1°, e il caso limite
+    // noto e accettato — il muro che gira più di quanto l'oggetto sia largo,
+    // prova @412 — arriva a 18.5°. Separa i due mondi senza inseguire nessuno
+    // dei due.
+    const SCARTO_DALLA_PISTA_MAX = Math.PI / 6;
+
+    function guardaVersoLaPista(trackPts, item, scartoMax) {
+        const limite = scartoMax === undefined ? SCARTO_DALLA_PISTA_MAX : scartoMax;
+        const q = nearestPoint(trackPts, item.x, item.z);
+        const nrm = normalAt(trackPts, q.index, true);
+        const lato = Math.sign((item.x - trackPts[q.index].x) * nrm.nx +
+                               (item.z - trackPts[q.index].z) * nrm.nz) || 1;
+        // Direzione che va dall'oggetto verso l'asse: è dove deve guardare.
+        const verso = Math.atan2(-nrm.nx * lato, -nrm.nz * lato);
+        let d = (item.rotY || 0) - verso;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        return Math.abs(d) <= limite;
+    }
+
     return {
         isInsideLoop,
         findCorners,
@@ -1139,6 +1171,8 @@
         curvatureAt,
         bridgeHeightAt,
         pitBoxAnchors,
+        guardaVersoLaPista,
+        SCARTO_DALLA_PISTA_MAX,
         walkClosedLoop,
         advanceToDistance,
         advanceToDistancePoint,

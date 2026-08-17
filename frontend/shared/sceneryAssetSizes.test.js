@@ -72,3 +72,53 @@ test('createCollisionIndex trova le collisioni anche a cavallo di più celle', (
     index.add(item('startGantry', 40, 0));
     assert.equal(index.fits(item('marshalPost', 50, 0)), false, 'collisione persa a cavallo di due celle');
 });
+
+// ---- le misure dichiarate devono essere quelle dei .glb ----
+//
+// Una misura sbagliata non rompe niente in modo evidente: produce solo
+// compenetrazioni che si vedono guardando il circuito, cioè al playtest. Qui
+// si legge la bounding box vera dal file e si confronta.
+const fs = require('fs');
+const path = require('path');
+
+// glTF ha Y in alto, e l'export Blender mappa (x,y,z)_blender -> (x,z,-y)_gltf:
+// quindi w = X, h = Y, d = Z, le stesse tre lettere di SIZES.
+function ingombroGlb(asset) {
+    const file = path.join(__dirname, '..', 'assets', 'custom', 'circuit', asset + '.glb');
+    if (!fs.existsSync(file)) return null;
+    const buf = fs.readFileSync(file);
+    const json = JSON.parse(buf.slice(20, 20 + buf.readUInt32LE(12)).toString('utf8'));
+    const lo = [Infinity, Infinity, Infinity];
+    const hi = [-Infinity, -Infinity, -Infinity];
+    for (const m of json.meshes || []) {
+        for (const p of m.primitives) {
+            const acc = json.accessors[p.attributes.POSITION];
+            for (let i = 0; i < 3; i++) {
+                lo[i] = Math.min(lo[i], acc.min[i]);
+                hi[i] = Math.max(hi[i], acc.max[i]);
+            }
+        }
+    }
+    return { w: hi[0] - lo[0], h: hi[1] - lo[1], d: hi[2] - lo[2], base: lo[1] };
+}
+
+const INFRASTRUTTURE = ['giantScreen', 'floodlightTower', 'hospitalityDeck',
+                        'vipSuite', 'serviceBuilding', 'tvTower',
+                        'recoveryCrane', 'trackGate',
+                        'spectatorStandA', 'spectatorStandB'];
+
+for (const asset of INFRASTRUTTURE) {
+    test(`${asset}: le misure dichiarate sono quelle del .glb`, () => {
+        const vero = ingombroGlb(asset);
+        assert.ok(vero, `manca frontend/assets/custom/circuit/${asset}.glb`);
+        const detto = SceneryAssetSizes.sizeOf(asset);
+        for (const k of ['w', 'h', 'd']) {
+            assert.ok(Math.abs(detto[k] - vero[k]) <= 0.15,
+                `${asset}.${k}: dichiarato ${detto[k]}, misurato ${vero[k].toFixed(2)}`);
+        }
+        // Pivot alla base: il layout piazza gli oggetti a terrainHeightAt, e un
+        // modello che parte sotto lo zero affonda nel terreno.
+        assert.ok(Math.abs(vero.base) <= 0.05,
+            `${asset}: la base del modello è a y=${vero.base.toFixed(2)}, non a 0`);
+    });
+}

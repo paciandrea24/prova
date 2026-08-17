@@ -94,6 +94,8 @@ function layoutComeIlClient(trackId) {
         path.join(radice, 'frontend', 'tracks', `${trackId}.json`), 'utf8'));
     const seatAnchors = JSON.parse(fs.readFileSync(path.join(radice, 'frontend', 'assets',
         'custom', 'circuit', 'grandStandSeats.json'), 'utf8')).seats;
+    const terraceAnchors = JSON.parse(fs.readFileSync(path.join(radice, 'frontend', 'assets',
+        'custom', 'circuit', 'terraceAnchors.json'), 'utf8')).anchors;
     const ROAD_HALF = trackData.roadHalfWidth;
     const CURB_W = 2.8;                                   // f1.js:156
     const BARRIER_D = ROAD_HALF + CURB_W + 1.2;           // f1.js:157
@@ -106,7 +108,7 @@ function layoutComeIlClient(trackId) {
         pitLanePts: PIT_PTS, pitRoadHalf: trackData.pit.roadHalfWidth,
     });
     return TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D,
-        45, seatAnchors, BARRIER_PROFILE);                                      // f1.js:655
+        45, seatAnchors, BARRIER_PROFILE, terraceAnchors);                      // f1.js:670
 }
 
 for (const trackId of ['prova', 'monte-rosso', 'new-monza', 'baku']) {

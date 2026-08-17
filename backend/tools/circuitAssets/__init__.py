@@ -3,7 +3,7 @@ Ogni build() scolpisce i pezzi con il kit e ritorna l'ingombro orizzontale e
 l'altezza, usati solo per inquadrare il render."""
 from . import (grandstands, billboards, pitBuildings, raceStructures, safety,
                decor, people, trackside, pitBox, vegetation, rocks,
-               paddock, life)
+               paddock, life, infrastructure)
 
 ASSET_BUILDERS = {
     'grandStand':        grandstands.build_grand_stand,
@@ -49,6 +49,15 @@ ASSET_BUILDERS = {
     'brakingBoard':      trackside.build_braking_board,
     'concreteBarrier':   trackside.build_concrete_barrier,
     'footbridge':        trackside.build_footbridge,
+    # Infrastrutture distribuite (spec 2026-08-13).
+    'giantScreen':       infrastructure.build_giant_screen,
+    'floodlightTower':   infrastructure.build_floodlight_tower,
+    'hospitalityDeck':   infrastructure.build_hospitality_deck,
+    'vipSuite':          infrastructure.build_vip_suite,
+    'serviceBuilding':   infrastructure.build_service_building,
+    'tvTower':           infrastructure.build_tv_tower,
+    'recoveryCrane':     infrastructure.build_recovery_crane,
+    'trackGate':         infrastructure.build_track_gate,
     # Non scenografia: è il box del giocatore, ricolorato a runtime.
     'pitBox':            pitBox.build_pit_box,
 }

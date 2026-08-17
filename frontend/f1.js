@@ -89,10 +89,46 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1200);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    // Misure del frame condivise col pannello F9. `logica` la riempie
+    // animate(), il resto lo legge il pannello da renderer e camera.
+    const F1Perf = { logica: 0 };
+
+    // ANTIALIAS: `?aa=off` lo spegne. Non è un capriccio da menu, è una
+    // misura: con antialias il canvas è multisample e ogni pixel coperto
+    // costa più campioni, ed è il tipo di costo che su questo gioco domina
+    // il frame (vedi PIXEL_RATIO qui sotto). Va giudicato guardando il
+    // gioco, perché il tratto nero dei contorni maschera buona parte della
+    // scalettatura che l'antialias serve a togliere.
+    const renderer = new THREE.WebGLRenderer({ antialias: urlParams.get('aa') !== 'off' });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
+    // PIXEL RATIO — misurato in gioco il 2026-08-16, ed è la leva più
+    // efficace che abbia questo gioco:
+    //
+    //   1920x868 (ratio 1.25) -> 47 fps, disegno 9.8 ms
+    //   1536x695 (ratio 1.00) -> 58 fps, disegno 7.4 ms
+    //
+    // Il 36% di pixel in meno vale 11 fps, mentre 3 ms di CPU risparmiati
+    // altrove (ombra da 4096 a 1024) non ne valgono nemmeno uno: il frame lo
+    // decide la GPU, e la GPU la decidono i pixel. Con lo scaling di Windows
+    // al 125% il browser dichiara 1.25 e si finiva a renderizzare un quarto
+    // di pixel in più di quelli della finestra, per poi rimpicciolirli.
+    //
+    // 1 è il valore predefinito; `?ratio=1.5` (o qualunque numero) lo alza
+    // per chi ha GPU da spendere, e l'interruttore «risoluzione piena» del
+    // pannello F9 fa il confronto a caldo.
+    const ratioChiesto = parseFloat(urlParams.get('ratio'));
+    renderer.setPixelRatio(Number.isFinite(ratioChiesto) && ratioChiesto > 0
+        ? Math.min(ratioChiesto, 2)
+        : 1);
+    // `?ombre=off` toglie le ombre dinamiche. Non è un'opzione di qualità: è
+    // la MISURA che dice se conviene cuocere le ombre della scenografia in una
+    // texture. Spegnere la mappa non basta a rispondere — quella costa CPU, e
+    // abbiamo visto che la CPU qui ha margine — perché il costo vero è nello
+    // shader di OGNI superficie, che per ogni pixel campiona la mappa per
+    // sapere se è in ombra. Solo togliendo `shadowMap.enabled` quel codice
+    // sparisce dai materiali, ed è per questo che va fatto al caricamento:
+    // cambia i define e li fa ricompilare tutti.
+    renderer.shadowMap.enabled = urlParams.get('ombre') !== 'off';
     // Ombra NETTA ma non scalettata: PCF semplice con raggio 1 dà un bordo
     // stretto. PCFSoftShadowMap lo sfuma troppo per un look cel-shaded,
     // BasicShadowMap lo rende netto ma a scaletta (si vedrebbe la griglia dei
@@ -366,7 +402,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // `outline` resta null finché ToonOutline non entra in gioco.
     ToonPanel.install({
         style: ToonStyle, sky: toonSky, outline: TOON_ON ? ToonOutline : null, scene,
-        lights: { sun, hemi }, renderer, attivo: TOON_ON,
+        lights: { sun, hemi }, renderer, attivo: TOON_ON, perf: F1Perf,
     });
 
     // ====================================================
@@ -483,6 +519,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         spectatorA: '/assets/custom/circuit/spectatorA.glb',
         spectatorB: '/assets/custom/circuit/spectatorB.glb',
         spectatorC: '/assets/custom/circuit/spectatorC.glb',
+        // Infrastrutture di circuito (spec 2026-08-13): modellate 1:1 in unità
+        // di gioco come gli altri custom, quindi istanziate con scale 1.
+        giantScreen: '/assets/custom/circuit/giantScreen.glb',
+        floodlightTower: '/assets/custom/circuit/floodlightTower.glb',
+        hospitalityDeck: '/assets/custom/circuit/hospitalityDeck.glb',
+        vipSuite: '/assets/custom/circuit/vipSuite.glb',
+        serviceBuilding: '/assets/custom/circuit/serviceBuilding.glb',
+        tvTower: '/assets/custom/circuit/tvTower.glb',
+        recoveryCrane: '/assets/custom/circuit/recoveryCrane.glb',
+        trackGate: '/assets/custom/circuit/trackGate.glb',
     };
 
     // Asset che NON proiettano ombra. Il costo di un InstancedMesh in ombra
@@ -495,6 +541,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         'treeLarge', 'treeSmall', 'treeBroad', 'treeYoung', 'treePine', 'treeRound',
         'bushLow', 'bushTall', 'rockSingle', 'rockCluster',
         'spectatorA', 'spectatorB', 'spectatorC',
+        // La torre faro è alta 32.5: la sua ombra attraversa la pista da parte
+        // a parte e si muove col sole, ed è l'oggetto sbagliato su cui spendere
+        // la risoluzione della shadow map. Gli spettatori in piedi seguono la
+        // stessa regola dei loro fratelli seduti.
+        'floodlightTower', 'spectatorStandA', 'spectatorStandB',
     ]);
 
     // Asset esclusi dai CONTORNI (Rif. playtest 2026-08-10): figure minute e
@@ -524,6 +575,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const meshes = [];
                 gltf.scene.traverse((child) => { if (child.isMesh) meshes.push(child); });
 
+                // Peso dell'asset in scena, in triangoli: serve a decidere se
+                // spezzarlo in celle. Si conta su TUTTE le mesh del modello e
+                // una volta sola, perché la decisione è dell'asset e non della
+                // singola mesh — mesh dello stesso oggetto divise in modo
+                // diverso darebbero gruppi disallineati.
+                let triAsset = 0;
+                for (const mesh of meshes) {
+                    const g = mesh.geometry;
+                    triAsset += (g.index ? g.index.count : g.attributes.position.count) / 3;
+                }
+                triAsset *= items.length;
+                const dividi = SceneryChunks.vaDivisoInCelle(items.length, triAsset);
+
                 for (const mesh of meshes) {
                     const localMatrix = mesh.matrixWorld;
                     // Raggio e centro del singolo oggetto, per dimensionare
@@ -538,7 +602,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // così il frustum culling può funzionare (vedi il commento
                     // in testa a sceneryChunks.js). Sotto la soglia resta un
                     // gruppo unico, che comunque riceve un ingombro corretto.
-                    const gruppi = items.length >= SceneryChunks.MIN_FOR_SPLIT
+                    const gruppi = dividi
                         ? SceneryChunks.groupByCell(items, SceneryChunks.CELL)
                         : new Map([['unico', items]]);
 
@@ -649,10 +713,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
         console.warn('[F1] posti tribuna non caricati, tribune vuote:', err);
     }
+    // Ancore degli spettatori sulle terrazze, stesso discorso dei posti a
+    // sedere: file generato dal builder, TrackScenery non può fare fetch.
+    let terraceAnchors = null;
+    try {
+        const terrRes = await fetch('/assets/custom/circuit/terraceAnchors.json');
+        if (terrRes.ok) terraceAnchors = (await terrRes.json()).anchors;
+    } catch (err) {
+        console.warn('[F1] ancore terrazze non caricate, terrazze vuote:', err);
+    }
     // BARRIER_PROFILE come ultimo argomento: la scenografia si calcola con la
     // barriera storica e poi segue il muro dove si è spostato. Senza questo,
     // tribune e cartelloni resterebbero dentro la via di fuga o murati.
-    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, BARRIER_PROFILE);
+    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, BARRIER_PROFILE, terraceAnchors);
     loadScenery(scene, sceneryLayout);
 
     // ====================================================
@@ -2294,6 +2367,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function animate() {
         requestAnimationFrame(animate);
+        // Quanto di un frame è LOGICA e quanto è disegno. Senza questa
+        // separazione il pannello dice solo "disegno 11 ms su 20", e gli
+        // altri 9 restano un buco nero in cui può esserci di tutto: fisica
+        // del client, interpolazione, audio, o semplicemente l'attesa che la
+        // GPU finisca il frame precedente.
+        const _tLogica = performance.now();
 
         if (typeof F1GamepadInput !== 'undefined') {
             const gp = F1GamepadInput.poll();
@@ -2561,6 +2640,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (tyreSelectActive) updateTyreSelectCamera();
         else updateCamera();
         toonSky.update(camera);
+        F1Perf.logica = performance.now() - _tLogica;
         ToonOutline.render(renderer, scene, camera);
     }
 

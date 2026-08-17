@@ -10,17 +10,20 @@
         module.exports = factory(require('./trackGeometry.js'), require('./sceneryLandmarks.js'),
                                  require('./sceneryTrackside.js'), require('./sceneryCrowd.js'),
                                  require('./sceneryAssetSizes.js'), require('./sceneryHills.js'),
-                                 require('./sceneryPaddock.js'), require('./trackGravel.js'));
+                                 require('./sceneryPaddock.js'), require('./trackGravel.js'),
+                                 require('./sceneryInfrastructure.js'));
     } else {
         root.TrackScenery = factory(root.TrackGeometry, root.SceneryLandmarks,
                                     root.SceneryTrackside, root.SceneryCrowd,
                                     root.SceneryAssetSizes, root.SceneryHills,
-                                    root.SceneryPaddock, root.TrackGravel);
+                                    root.SceneryPaddock, root.TrackGravel,
+                                    root.SceneryInfrastructure);
     }
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryLandmarks,
                                                         SceneryTrackside, SceneryCrowd,
                                                         SceneryAssetSizes, SceneryHills,
-                                                        SceneryPaddock, TrackGravel) {
+                                                        SceneryPaddock, TrackGravel,
+                                                        SceneryInfrastructure) {
 
     // Hash FNV-1a 32 bit di una stringa: seed deterministico dall'id del
     // tracciato, così lo stesso tracciato genera sempre lo stesso layout
@@ -129,7 +132,16 @@
     // un'area così grande dà un prato spennacchiato, non un bosco — ed è
     // esattamente il tentativo già bocciato in passato.
     const WOOD_CLUSTERS       = 60;   // macchie tentate per tracciato
-    const WOOD_PER_CLUSTER    = 16;   // alberi tentati per macchia
+    // 20 e non 16: il tetto di WOOD_MAX_TREES viene raggiunto comunque, quindi
+    // alzare questo numero NON aggiunge alberi — cambia soltanto in quante
+    // macchie si spalmano gli stessi 430, e macchie più piene sono più fitte.
+    // Con 16 la densità misurata era 2.96-3.33 vicini su TUTTI E QUATTRO i
+    // tracciati, cioè appena sopra la soglia di 3 sotto la quale il bosco si
+    // legge come prato spennacchiato: qualunque metro quadro sottratto la
+    // faceva sprofondare, ed è ciò che è successo quando il tratto 558-614 di
+    // `prova` ha smesso di essere marcato `bridge` (2.96). Con 20 si sta fra
+    // 3.53 e 3.71, con margine.
+    const WOOD_PER_CLUSTER    = 20;   // alberi tentati per macchia
     // Raggio STRETTO di proposito: allargarlo dirada la macchia invece di
     // ingrandirla, e un bosco rado non ferma lo sguardo. La massa visiva viene
     // dalla densità interna, non dall area coperta.
@@ -171,6 +183,60 @@
     // altre — non affiancabili a un bordo dritto, verificato con un render di
     // confronto durante il brainstorming).
     const STAND_VARIANTS = ['grandStand', 'grandStandAwning', 'grandStandCovered'];
+
+    // Palette delle infrastrutture distribuite. Dentro ogni contesto l'ordine
+    // è l'ordine di PREFERENZA: se il primo non entra si prova il successivo,
+    // invece di lasciare un buco.
+    //
+    // ⚠️ SOLO i modelli nuovi. Il 2026-08-13 ci avevo messo `pylon`,
+    // `flagPole` e `billboardLow` per giudicare la distribuzione prima di
+    // modellare, e il playtest l'ha bocciata: «non hai riempito niente, hai
+    // solo inserito cartelloni in posti sbagliati». Riempire un circuito vuole
+    // VOLUMI. La segnaletica non torna qui nemmeno come ripiego.
+    //
+    // `passoMinimo` è la distanza minima in unità fra due esemplari dello
+    // stesso asset: è ciò che distingue "distribuito" da "ammucchiato", e vale
+    // per famiglia perché due gru vicine sono una stonatura mentre una gru e
+    // una torretta TV vicine no.
+    //
+    // ⚠️ Dal 2026-08-16 si misura LUNGO LA PISTA e non più in linea d'aria
+    // (vedi sceneryInfrastructure.js), quindi a parità di numero è più severo:
+    // due rami del giro che si sfiorano non si tolgono più il posto, ma un
+    // tratto non può nemmeno riempirsi meglio del passo più corto fra i suoi
+    // candidati. Ne segue una regola per tarare questi numeri: **il vuoto
+    // peggiore di un contesto vale quanto il passoMinimo più piccolo che quel
+    // contesto ammette**. Su `new-monza` il tetto del test è 110 e il vuoto
+    // misurato era 157, cioè i 155 di `hospitalityDeck`.
+    const PALETTE_INFRASTRUTTURE = [
+        // Esterno curva: è il contesto che la spec voleva servire per primo,
+        // ed è raro (6-10% del giro). Gli asset che ci vanno sono quelli che
+        // "guardano" la curva.
+        { asset: 'recoveryCrane',   contesti: ['curvaEsterno'],                     passoMinimo: 260 },
+        { asset: 'tvTower',         contesti: ['curvaEsterno', 'viadotto'],         passoMinimo: 300 },
+        // 100 e non 155: è il passo più corto del contesto `aperto`, quindi è
+        // lui a fissare il vuoto peggiore dove non c'è altro. A 155 restavano
+        // 157 unità spoglie su new-monza, a 120 ne restano 106 — quattro sotto
+        // il tetto, troppo poco margine — a 100 ne restano 80.
+        { asset: 'hospitalityDeck', contesti: ['curvaEsterno', 'aperto'],           passoMinimo: 100 },
+        { asset: 'vipSuite',        contesti: ['curvaEsterno', 'aperto'],           passoMinimo: 520 },
+        // Visuale lunga: il maxischermo va visto da lontano, e uno solo per
+        // volta — 700 unità su un giro di 5170 vuol dire al più sette.
+        { asset: 'giantScreen',     contesti: ['rettilineo', 'viadotto'],           passoMinimo: 700 },
+        { asset: 'serviceBuilding', contesti: ['rettilineo', 'aperto'],             passoMinimo: 270 },
+        { asset: 'floodlightTower', contesti: ['viadotto', 'rettilineo', 'aperto'], passoMinimo: 185 },
+        // ⚠️ `trackGate` NON è distribuito, per decisione dell'utente al
+        // playtest del 2026-08-14: «i nuovi cancelli non hanno motivo di essere
+        // distribuiti in giro per la pista». Un cancello è un varco di
+        // servizio, e ha senso dove si entra davvero — non ogni 220 unità
+        // lungo il muro. Il modello resta in repo, caricato e misurato: se un
+        // giorno servirà un accesso in un punto scelto, è già pronto.
+        //
+        // Conseguenza da tenere presente: il contesto `stretto` (18% del giro
+        // su prova, 32% su monte-rosso) resta senza nessun candidato, e quei
+        // tratti restano spogli. È una scelta, non una svista: nella palette
+        // vanno volumi, e nessuno degli altri sette entra dove il muro della
+        // via di fuga sta a 13-15.
+    ];
 
     // Tribuna principale: unica per tracciato, vicino al rettilineo di
     // partenza. È la variante CON LA COPERTURA, mentre le schiere sparse per
@@ -612,35 +678,11 @@
     // riferimento è UNO, quindi la rete davanti a ogni modulo sta a distanza
     // costante dalla sua tribuna e non può né entrarci né finire in ghiaia.
     // Aggiungere tribune diventa sicuro ovunque.
-    // Un modulo deve GUARDARE la pista che ha davvero davanti, cioè stare
-    // perpendicolare al campione che gli è più vicino. Non è la stessa cosa di
-    // essere perpendicolare al campione da cui è stato costruito: dove la
-    // pista fa un tornante, le due branche si avvicinano e un modulo posato
-    // per la prima si ritrova più vicino alla seconda.
     //
-    // Il 2026-08-13, allungando le schiere da 6 a 8 moduli, su `prova` una
-    // fila finiva con sette moduli a 45.8 dall'asse e l'ottavo a 40.4 girato
-    // di 77°, e un'altra nasceva già storta di 37° perché il SEME cadeva lì.
-    // Sono la "tribuna storta" e il "gradino nella fila" che i test misurano:
-    // un solo modulo li produceva entrambi.
-    //
-    // 30°: i moduli sani deviano meno di 1°, e il caso limite noto e accettato
-    // — il muro che gira più di quanto la tribuna sia larga, prova @412 —
-    // arriva a 18.5°. Separa i due mondi senza inseguire nessuno dei due.
-    const SCARTO_DALLA_PISTA_MAX = Math.PI / 6;
-
-    function guardaLaSuaPista(trackPts, m) {
-        const q = TrackGeometry.nearestPoint(trackPts, m.x, m.z);
-        const nrm = TrackGeometry.normalAt(trackPts, q.index, true);
-        const lato = Math.sign((m.x - trackPts[q.index].x) * nrm.nx +
-                               (m.z - trackPts[q.index].z) * nrm.nz) || 1;
-        // Direzione che va dal modulo verso l'asse: è dove deve guardare.
-        const verso = Math.atan2(-nrm.nx * lato, -nrm.nz * lato);
-        let d = (m.rotY || 0) - verso;
-        while (d > Math.PI) d -= Math.PI * 2;
-        while (d < -Math.PI) d += Math.PI * 2;
-        return Math.abs(d) <= SCARTO_DALLA_PISTA_MAX;
-    }
+    // ⚠️ Il vincolo «un modulo deve guardare la pista che ha davvero davanti»
+    // vive in `TrackGeometry.guardaVersoLaPista`: è geometria pura e serve
+    // anche a `sceneryInfrastructure.js`. La storia di come è nato — la fila
+    // di 8 moduli con l'ottavo girato di 77° — sta nel commento lì.
 
     function muroDellaFila(trackPts, barrierProfile, barrierDist, moduli, side, mezzaInCampioni) {
         if (!barrierProfile) return barrierDist;
@@ -720,7 +762,7 @@
             // due branche si avvicinano, tutta la fila nasce storta e la
             // ricerca dello slot è il posto giusto per scansarlo — scorrendo
             // di qualche campione invece di perdere la schiera.
-            if (!guardaLaSuaPista(trackPts, {
+            if (!TrackGeometry.guardaVersoLaPista(trackPts, {
                 x, z, rotY: TrackGeometry.ribbonFacingAt(trackPts, idx, side,
                     () => barrierDist + GRANDSTAND_OFFSET_MARGIN, 1) })) return false;
             if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + GRANDSTAND_PIT_MARGIN) return false;
@@ -903,7 +945,7 @@
         }
 
         const center = moduleAt(startIdx);
-        if (!accept(center) || !guardaLaSuaPista(trackPts, center)) return [];
+        if (!accept(center) || !TrackGeometry.guardaVersoLaPista(trackPts, center)) return [];
         const modules = [center];
         // `avanti`, se dato, è quanti moduli si allungano NEL VERSO DI MARCIA:
         // il resto va all'indietro. Serve alla tribuna principale, che è
@@ -925,7 +967,7 @@
                 if (!hit) break;
                 const next = moduleBetween(hit.prevIdx, hit.idx, hit.t);
                 if (!accept(next)) break;   // la schiera si ferma qui, non salta l'ostacolo
-                if (!guardaLaSuaPista(trackPts, next)) break;
+                if (!TrackGeometry.guardaVersoLaPista(trackPts, next)) break;
                 // Rete di sicurezza contro i moduli accavallati: la catena
                 // avanza per distanza reale, quindi qui la distanza è già
                 // giusta, ma se un giorno smettesse di esserlo la schiera si
@@ -1301,7 +1343,7 @@
     // barrierProfile (opzionale): profilo della barriera, da
     // TrackGravel.barrierProfile. Omesso, il layout è identico a quello di
     // prima che le vie di fuga esistessero.
-    function generateLayout(trackData, trackPts, pitPts, barrierDist, embankmentWidth = 45, seatAnchors = null, barrierProfile = null) {
+    function generateLayout(trackData, trackPts, pitPts, barrierDist, embankmentWidth = 45, seatAnchors = null, barrierProfile = null, terraceAnchors = null) {
         const rng = mulberry32(hashString(trackData.id));
         const pitRoadHalf = trackData.pit.roadHalfWidth;
         const side = mainStandSide(trackPts, pitPts);
@@ -1381,6 +1423,24 @@
         // sull'orizzonte passavano dal 16% al 20% — il tetto del test.
         accepted.push(...trackside.filter(v => v.category === 'paddock-decor'));
 
+        // Infrastrutture: DOPO il trackside, così vedono tribune, reti, gomme
+        // e landmark già posati; PRIMA della natura, così sono gli alberi a
+        // scansarsi da loro e non viceversa.
+        //
+        // RNG proprio, come folla e boschi: pescare dalla sequenza condivisa
+        // legherebbe la scenografia a quante infrastrutture ci stanno, ed è
+        // esattamente il difetto che ha fatto diradare i boschi il 2026-08-13.
+        const infrastrutture = SceneryInfrastructure.buildInfrastructure({
+            trackPts, pitPts, barrierDist, pitRoadHalf, embankStart, embankOuter,
+            barrierProfile, playerBoxFootprints, insidePlayerBoxFootprint, fitsUnderBridge,
+            accepted: [...accepted, ...trackside],
+            grandstands: [...mainStand, ...grandstand],
+            spanning: landmarks.filter(v => v.asset === 'footbridge' || v.asset === 'startGantry'),
+            rng: mulberry32(hashString(trackData.id + ':infra')),
+            palette: PALETTE_INFRASTRUTTURE,
+        });
+        accepted.push(...infrastrutture);
+
         const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
         const paddockLife = SceneryPaddock.buildLayout(rng, trackPts, pitPts, barrierDist, accepted,
             (voce) => itemHitsPlayerBoxZone(voce, playerBoxFootprints));
@@ -1405,7 +1465,8 @@
         const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints);
 
         const layout = [...paddock, ...mainStand, ...grandstand, ...landmarks,
-                        ...trackside, ...nature, ...woods, ...rocce, ...paddockLife];
+                        ...trackside, ...infrastrutture,
+                        ...nature, ...woods, ...rocce, ...paddockLife];
         if (pond) layout.push(pond);
         traslaOltreLaGhiaia(layout, trackPts, barrierProfile,
             trackPts.filter(p => !p.bridge), barrierDist, embankStart, embankOuter);
@@ -1457,6 +1518,36 @@
             if (dentro) layout.splice(i, 1);
         }
 
+        // ...E DENTRO UN'INFRASTRUTTURA NON CI VA NIENTE.
+        //
+        // Stesso identico meccanismo del blocco qui sopra, e per questo sta
+        // qui e non fra i vincoli del modulo: `buildInfrastructure` guarda
+        // `trackside` e non ci finisce dentro, ma poi `traslaOltreLaGhiaia`
+        // porta al muro gomme, capanni, cartelli e striscioni — che non sono
+        // dimensionati sul muro — mentre le infrastrutture NON traslano
+        // (`suMisuraSulMuro`). Il conflitto nasce dopo, ed è visibile solo
+        // qui: misurate 7 compenetrazioni sui quattro tracciati il 2026-08-14
+        // (gru dentro i muri di gomme, terrazze sopra un capanno commissari).
+        //
+        // A cedere è l'arredo minore, non il volume: è la stessa scelta fatta
+        // per le tribune. Solo oggetti PUNTUALI e ripetuti — reti e barriere
+        // continue restano dove sono, perché toglierne un pezzo aprirebbe un
+        // varco nella protezione.
+        const CEDONO_ALL_INFRASTRUTTURA = new Set([
+            'tyreStack', 'marshalPost', 'brakingBoard', 'banner']);
+        if (infrastrutture.length) {
+            for (let i = layout.length - 1; i >= 0; i--) {
+                const v = layout[i];
+                if (!CEDONO_ALL_INFRASTRUTTURA.has(v.asset)) continue;
+                // Ingombro reale orientato, mai la distanza fra i centri: una
+                // gru è 10.3 × 12.4 e un capanno 5.5 × 4.5, e a 6 unità di
+                // distanza fra i centri sono già uno dentro l'altro.
+                if (infrastrutture.some(g => SceneryAssetSizes.itemsOverlap(v, g))) {
+                    layout.splice(i, 1);
+                }
+            }
+        }
+
         // Spettatori DOPO la traslazione, non prima.
         //
         // Ogni posto è espresso in coordinate locali alla tribuna, quindi la
@@ -1474,7 +1565,18 @@
         const crowd = SceneryCrowd.buildCrowd([...mainStand, ...grandstand], seatAnchors,
             mulberry32(hashString(trackData.id + ':crowd')));
 
-        return layout.concat(crowd);
+        // Spettatori sulle terrazze: RNG proprio, come la folla delle tribune,
+        // e per lo stesso motivo — legarli alla sequenza condivisa farebbe
+        // cambiare la folla ogni volta che cambia il numero di infrastrutture.
+        // Anche loro dopo la traslazione, per la stessa ragione della folla:
+        // le ancore sono locali all'oggetto, quindi l'oggetto deve già essere
+        // dove starà.
+        const terrazze = infrastrutture.filter(
+            v => v.asset === 'hospitalityDeck' || v.asset === 'vipSuite');
+        const terraceCrowd = SceneryCrowd.buildTerraceCrowd(
+            terrazze, terraceAnchors || {}, mulberry32(hashString(trackData.id + ':terrace')));
+
+        return layout.concat(crowd, terraceCrowd);
     }
 
     return {

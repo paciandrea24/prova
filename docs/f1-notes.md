@@ -218,6 +218,34 @@ nessun pixel può essere scuro per via di un'ombra — ogni pixel nero residuo
 coordinate mondo via raycast. Va rilanciato dopo ogni modifica alla
 geometria.
 
+### Budget di rendering
+
+```
+node backend/tools/f1-costo-scenografia.js [tracciato ...]
+```
+
+Stampa istanze e triangoli per categoria, e la classifica degli asset che
+costano più draw call.
+
+⚠️ **Il numero che conta non è il triangolo** — gli asset del circuito sono
+leggeri — **ma l'`InstancedMesh`**: `f1.js::loadScenery` ne crea uno per ogni
+mesh di ogni asset in ogni cella di `sceneryChunks`, e ognuno è una draw call.
+Il GLTFLoader spezza per materiale, quindi a parità di istanze **un asset con
+sei materiali costa il doppio di uno con tre**: è la ragione per cui i modelli
+nuovi vanno tenuti sotto i quattro materiali invece di arrivare al tetto di
+sei imposto da `kit.finish()`.
+
+Le draw call NON sono attribuibili a una categoria: un `InstancedMesh`
+contiene tutte le istanze di un asset in una cella, quali che siano le
+categorie che lo usano — `billboardLow`, `flagPole` e `pylon` per esempio
+stanno sia nel decoro del paddock sia fra le infrastrutture. Per quelle vale
+solo la classifica per asset.
+
+Riferimento al 2026-08-14 su `prova`: 7344 istanze, 779 `InstancedMesh`,
+1698k triangoli. I due blocchi grossi sono la folla (746k) e le barriere di
+gomme (369k). Scomposizione del salto rispetto alle 670 draw call di prima
+delle infrastrutture: vedi «Infrastrutture distribuite» più sotto.
+
 ### Convenzioni NON ovvie (violarle rompe l'asset)
 
 - **Scala 1:1 in unità di gioco.** Questi asset NON vanno scalati
@@ -264,6 +292,14 @@ Servono a chi farà l'integrazione: le costanti di piazzamento in
 | `pylon` | 6.4 | 26.2 | 3.0 | 6 |
 | `flagPole` | 5.4 | 15.0 | 1.6 | 4 |
 | `paddockTent` | 16.8 | 7.2 | 13.0 | 5 |
+| `giantScreen` | 15.0 | 17.9 | 2.5 | 5 |
+| `floodlightTower` | 7.6 | 32.5 | 4.0 | 4 |
+| `hospitalityDeck` | 16.0 | 9.7 | 11.0 | 4 |
+| `vipSuite` | 16.3 | 12.1 | 12.5 | 5 |
+| `serviceBuilding` | 13.6 | 16.1 | 12.1 | 5 |
+| `tvTower` | 4.8 | 15.2 | 5.4 | 5 |
+| `recoveryCrane` | 10.3 | 15.0 | 12.4 | 4 |
+| `trackGate` | 9.3 | 5.2 | 1.5 | 5 |
 
 Note per il piazzamento:
 - `grandStand` è l'unico pensato per essere **impilato** (2 livelli in
@@ -277,6 +313,39 @@ Note per il piazzamento:
 - I 3 gradini di `podium` sono nodi distinti e nominati
   (`podium_step_p1/p2/p3`), predisposti per una futura cerimonia — che NON
   è implementata.
+
+### Infrastrutture distribuite
+
+`frontend/shared/sceneryInfrastructure.js` cammina il giro a passo di 25 unità
+e posa un'infrastruttura per punto e per lato, scegliendo dalla palette di
+`trackScenery.js` (`PALETTE_INFRASTRUTTURE`) il primo asset il cui contesto
+combacia e che superi i sette vincoli. I contesti sono `viadotto`, `stretto`
+(muro della via di fuga ≤ 20), `curvaEsterno`, `rettilineo` (visuale lunga) e
+`aperto`, che fa da rete per gli ultimi due.
+
+Quanto circuito resti senza niente di fianco si misura con
+`frontend/shared/sceneryGaps.js`, e i tetti stanno in `VUOTI_ATTESI` dentro
+`trackScenery.test.js`: **si stringono, mai si allargano**.
+
+⚠️ Nella palette vanno **volumi**, non segnaletica: cartelloni e pennoni
+sparsi sono stati provati il 2026-08-13 e bocciati al playtest.
+
+**Spettatori sulle terrazze.** `hospitalityDeck` e `vipSuite` sono tribune, e
+vuote si leggono come edifici chiusi: `SceneryCrowd.buildTerraceCrowd` ci posa
+sopra `spectatorStandA`/`B` leggendo le ancore da
+`frontend/assets/custom/circuit/terraceAnchors.json`, generato dal builder
+(`infrastructure.terrace_anchors()`) come i sedili delle tribune. Budget
+proprio, `MAX_TERRACE = 900`, separato da `MAX_TOTAL`: pescare dal budget
+delle tribune lascerebbe le terrazze deserte ogni volta che le tribune
+crescono.
+
+**Costo, misurato il 2026-08-14 su `prova`** (`f1-costo-scenografia.js`):
+7344 istanze, 779 InstancedMesh, 1698k triangoli, contro le 670 InstancedMesh
+e 1661k triangoli di prima. Il delta si scompone così: **+37 draw call gli
+otto edifici** (43 istanze, 4-5 mesh l'una, sparse su molte celle) e **+72 gli
+spettatori delle terrazze** — 2 varianti × 4 mesh × 9 celle, indipendenti dal
+numero di figure. Chi dovesse rientrare in un budget di draw call ha lì il
+taglio più grosso a parità di volumi: una sola variante ne restituisce 36.
 
 ### Seconda tornata (2026-08-09): figure, bordo pista, box giocatore
 

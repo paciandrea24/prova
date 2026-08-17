@@ -35,6 +35,33 @@
     // partecipano al culling.
     const MIN_FOR_SPLIT = 24;
 
+    // ...e nemmeno sotto questo peso in triangoli, per quante istanze ci
+    // siano. Dividere in celle è uno SCAMBIO: si paga una draw call per cella
+    // e per materiale, e si spera di risparmiare i triangoli delle celle
+    // fuori dall'inquadratura. Il cambio fra le due valute l'ha misurato il
+    // pannello F9 su `prova` il 2026-08-16, e non è alla pari:
+    //
+    //   - il tempo di disegno è ~5 ms fissi più ~0.013 ms per draw call;
+    //   - spegnere 449k triangoli su 1017k NON ha alzato gli fps;
+    //   - spegnere 104 draw call di alberi ha tolto 1 ms su 11.7.
+    //
+    // Con quel cambio, dividere `treeBroad` — 131 alberi, 44k triangoli in
+    // tutto, sparsi su 26 celle — costa 78 draw call, cioè ~1 ms per frame,
+    // per risparmiare triangoli che non pesano. La folla invece va divisa:
+    // 2035 figure sono 244k triangoli, e la maggior parte sta alle spalle.
+    //
+    // 50k è il ginocchio della curva misurata sui punti di vista di un giro
+    // intero: draw call in vista da 326 a 216 (-34%), triangoli da 787k a
+    // 890k (+13%). Sotto i 25k si recupera poco, sopra i 100k si comincia a
+    // pagare in triangoli senza togliere quasi più draw call.
+    const MIN_TRI_FOR_SPLIT = 50000;
+
+    // Conviene spezzare in celle questo asset? `triangoli` è il totale
+    // dell'asset in scena: triangoli del modello per numero di istanze.
+    function vaDivisoInCelle(istanze, triangoli) {
+        return istanze >= MIN_FOR_SPLIT && triangoli >= MIN_TRI_FOR_SPLIT;
+    }
+
     function cellKey(x, z, cell) {
         return `${Math.floor(x / cell)},${Math.floor(z / cell)}`;
     }
@@ -81,5 +108,6 @@
         return { x: cx, y: cy, z: cz, radius: maxDist + (raggio || 0) };
     }
 
-    return { CELL, MIN_FOR_SPLIT, cellKey, groupByCell, boundsOf };
+    return { CELL, MIN_FOR_SPLIT, MIN_TRI_FOR_SPLIT, vaDivisoInCelle,
+             cellKey, groupByCell, boundsOf };
 });

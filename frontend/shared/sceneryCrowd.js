@@ -78,5 +78,51 @@
         return layout;
     }
 
-    return { buildCrowd, FILL_MIN, FILL_MAX, MAIN_FILL_MIN };
+    // Spettatori in piedi sulle terrazze delle infrastrutture. Stessa idea
+    // della folla sulle tribune — posizioni locali all'oggetto, portate in
+    // coordinate mondo con la rotazione dell'oggetto — ma con budget PROPRIO:
+    // le terrazze sono poche e piccole, e farle pescare da MAX_TOTAL le
+    // lascerebbe deserte ogni volta che le tribune crescono.
+    const TERRACE_VARIANTS = ['spectatorStandA', 'spectatorStandB'];
+    const TERRACE_FILL_MIN = 0.5;
+    const MAX_TERRACE = 900;
+
+    function buildTerraceCrowd(terrazze, ancorePerAsset, rng) {
+        if (!terrazze || !terrazze.length || !ancorePerAsset) return [];
+        const layout = [];
+
+        let capacity = 0;
+        for (const t of terrazze) {
+            const a = ancorePerAsset[t.asset];
+            if (a) capacity += a.length;
+        }
+        if (!capacity) return [];
+        const fillCap = Math.min(FILL_MAX, MAX_TERRACE / capacity);
+
+        for (const t of terrazze) {
+            const ancore = ancorePerAsset[t.asset];
+            if (!ancore || !ancore.length) continue;
+            const min = Math.min(TERRACE_FILL_MIN, fillCap);
+            const fill = min + rng() * (fillCap - min);
+            const rot = t.rotY || 0;
+            const cos = Math.cos(rot);
+            const sin = Math.sin(rot);
+            for (const a of ancore) {
+                if (rng() > fill) continue;
+                layout.push({
+                    asset: TERRACE_VARIANTS[Math.floor(rng() * TERRACE_VARIANTS.length)],
+                    category: 'crowd',
+                    x: t.x + a.x * cos + a.z * sin,
+                    y: (t.y || 0) + a.y,
+                    z: t.z - a.x * sin + a.z * cos,
+                    rotY: rot,
+                    scale: 1,
+                });
+            }
+        }
+        return layout;
+    }
+
+    return { buildCrowd, buildTerraceCrowd,
+             FILL_MIN, FILL_MAX, MAIN_FILL_MIN, MAX_TERRACE };
 });

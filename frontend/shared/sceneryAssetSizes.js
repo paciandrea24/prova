@@ -35,6 +35,21 @@
         brakingBoard:      { w: 2.2,  h: 3.1,  d: 0.7 },
         concreteBarrier:   { w: 6.0,  h: 1.4,  d: 1.4 },
         footbridge:        { w: 36.5, h: 13.3, d: 4.5 },
+        // Infrastrutture di circuito (spec 2026-08-13), misurate sui .glb dal
+        // test qui accanto: se qualcuno rigenera un modello con dimensioni
+        // diverse e si dimentica di aggiornare questa riga, il test lo dice.
+        giantScreen:       { w: 15.0, h: 17.9, d: 2.5 },
+        floodlightTower:   { w: 7.6,  h: 32.5, d: 4.0 },
+        hospitalityDeck:   { w: 16.0, h: 9.7,  d: 11.0 },
+        vipSuite:          { w: 16.3, h: 12.1, d: 12.5 },
+        serviceBuilding:   { w: 13.6, h: 16.1, d: 12.1 },
+        tvTower:           { w: 4.8,  h: 15.2, d: 5.4 },
+        recoveryCrane:     { w: 10.3, h: 15.0, d: 12.4 },
+        trackGate:         { w: 9.3,  h: 5.2,  d: 1.5 },
+        // Spettatori in piedi: i modelli e il caricamento esistevano già dal
+        // 2026-08-09, ma non li piazzava nessuno. Li usa il Task 5.
+        spectatorStandA:   { w: 0.9,  h: 2.3,  d: 0.4 },
+        spectatorStandB:   { w: 0.9,  h: 2.3,  d: 0.4 },
         spectatorA:        { w: 0.6,  h: 1.4,  d: 0.7 },
         spectatorB:        { w: 0.6,  h: 1.4,  d: 0.7 },
         spectatorC:        { w: 0.6,  h: 1.4,  d: 0.7 },
