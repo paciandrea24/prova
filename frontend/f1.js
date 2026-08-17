@@ -940,6 +940,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         alone.position.copy(sfera.center);
         alone.scale.setScalar(sfera.radius * 3.2);
         alone.renderOrder = 2;
+        // Fuori dai contorni: lo sprite è un riquadro sempre rivolto alla
+        // camera, e il passaggio dei bordi ne disegnava il perimetro — a
+        // schermo si vedeva un pannello invisibile squadrato attorno alle
+        // luci, perpendicolare alla loro direzione (segnalato in playtest).
+        ToonStyle.excludeFromOutline(alone);
         container.add(alone);
         bagliori[i] = alone;
     }
