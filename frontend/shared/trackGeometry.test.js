@@ -755,3 +755,59 @@ test('guardaVersoLaPista: passa chi guarda la pista, boccia chi le dà il fianco
     assert.ok(TrackGeometry.guardaVersoLaPista(pts, quasi),
         '20° di scarto stanno sotto la soglia di 30° e devono passare');
 });
+
+// ═══════════ LA GRIGLIA DI POSIZIONI DELLA CORSIA BOX ═══════════
+//
+// Box dei piloti ed edifici decorativi stanno sulla STESSA fila. Finché
+// avevano due passi diversi (24 i box, ~22.65 la catena degli edifici) e due
+// fasi diverse, fra un elemento e l'altro restavano vuoti: su monte-rosso i
+// box occupavano tutti i campioni utili e gli edifici scendevano a zero.
+// pitLaneSlots è la griglia unica su cui si posano gli uni e gli altri.
+test('pitLaneSlots: posizioni regolari su tutta la corsia, a passo PIT_BOX_SPACING', () => {
+    const corsia = [];
+    for (let i = 0; i <= 150; i++) corsia.push({ x: i * 2, y: 0, z: 0 });
+    const pista = [];
+    for (let i = 0; i <= 150; i++) pista.push({ x: i * 2, y: 0, z: 40 });
+
+    const slot = TrackGeometry.pitLaneSlots(corsia, 75, pista, 5);
+
+    assert.ok(slot.length >= 12, `attese almeno 12 posizioni su 300 unità, trovate ${slot.length}`);
+    for (let i = 1; i < slot.length; i++) {
+        const d = Math.hypot(slot[i].x - slot[i - 1].x, slot[i].z - slot[i - 1].z);
+        assert.ok(Math.abs(d - TrackGeometry.PIT_BOX_SPACING) < 0.6,
+            `posizioni ${i - 1} e ${i} distanti ${d.toFixed(2)}, atteso ${TrackGeometry.PIT_BOX_SPACING}`);
+    }
+    slot.forEach((s, i) => assert.equal(s.indice, i, 'indice progressivo'));
+});
+
+test('pitBoxAnchors resta le posizioni CENTRALI della stessa griglia', () => {
+    const corsia = [];
+    for (let i = 0; i <= 150; i++) corsia.push({ x: i * 2, y: 0, z: 0 });
+    const pista = [];
+    for (let i = 0; i <= 150; i++) pista.push({ x: i * 2, y: 0, z: 40 });
+
+    const slot = TrackGeometry.pitLaneSlots(corsia, 75, pista, 5);
+    const box = TrackGeometry.pitBoxAnchors(corsia, 75, 4, pista, 5);
+
+    for (const b of box) {
+        const trovato = slot.some(s => Math.hypot(s.x - b.x, s.z - b.z) < 0.01);
+        assert.ok(trovato,
+            `box a (${b.x.toFixed(1)}, ${b.z.toFixed(1)}) non cade su nessuna posizione della griglia`);
+    }
+});
+
+// La griglia NON toglie margine agli estremi: e' geometria pura. Il primo
+// tentativo ne toglieva 40 per capo e su monte-rosso restavano 8 posizioni su
+// 13, cioe' meta' del guadagno del passo stretto buttata via. I controlli di
+// distanza dalla pista li fa chi posa gli edifici.
+test('pitLaneSlots copre la corsia per intero', () => {
+    const corsia = [];
+    for (let i = 0; i <= 150; i++) corsia.push({ x: i * 2, y: 0, z: 0 });
+    const pista = [];
+    for (let i = 0; i <= 150; i++) pista.push({ x: i * 2, y: 0, z: 40 });
+
+    const slot = TrackGeometry.pitLaneSlots(corsia, 75, pista, 5);
+    const attese = Math.floor(150 / TrackGeometry.PIT_BOX_SPACING) + Math.floor(150 / TrackGeometry.PIT_BOX_SPACING) + 1;
+    assert.equal(slot.length, attese,
+        `su 300 unita' a passo ${TrackGeometry.PIT_BOX_SPACING} attese ${attese} posizioni`);
+});

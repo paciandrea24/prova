@@ -623,31 +623,90 @@
     // centrale — coincide con l'imbocco del garage decorativo. La corsia
     // condivisa (pitPath) resta invariata: solo il punto di ARRIVO/sosta si
     // sposta, non il percorso di transito.
+    // Una posizione sulla corsia box, a `offset` unità dal punto `boxIndex`.
+    //
+    // È il mattone comune di pitBoxAnchors e pitLaneSlots: se le due
+    // calcolassero la posizione ognuna per conto suo, i box dei piloti e gli
+    // edifici decorativi finirebbero su due file leggermente diverse, e il
+    // fronte della corsia si leggerebbe sfalsato.
+    function pitSlotAt(pitPath, boxIndex, offset, trackPoints, pitRoadHalf) {
+        const { x, z, fromIdx, toIdx } = walkPitPath(pitPath, boxIndex, offset);
+        const a = pitPath[fromIdx], b = pitPath[toIdx];
+        const tx = b.x - a.x, tz = b.z - a.z;
+        const tlen = Math.hypot(tx, tz) || 1;
+        const ntx = tx / tlen, ntz = tz / tlen;
+        const slot = { x, z, tx: ntx, tz: ntz, fromIdx };
+
+        if (trackPoints && pitRoadHalf != null) {
+            const nx = -ntz, nz = ntx;   // normale, perpendicolare alla tangente
+            const distPlus = nearestPoint(trackPoints, x + nx, z + nz).dist;
+            const distMinus = nearestPoint(trackPoints, x - nx, z - nz).dist;
+            const side = distPlus >= distMinus ? 1 : -1;
+            const stallOffset = pitRoadHalf + PIT_STALL_CLEARANCE;
+            slot.stallX = x + nx * stallOffset * side;
+            slot.stallZ = z + nz * stallOffset * side;
+        }
+        return slot;
+    }
+
     function pitBoxAnchors(pitPath, boxIndex, count, trackPoints, pitRoadHalf) {
-        const mid = (count - 1) / 2;
+        // Math.floor e non (count-1)/2: con un numero PARI di box la mezza
+        // misura faceva cadere le ancore a metà passo, cioè FRA due posizioni
+        // della griglia — e gli edifici decorativi, che sulla griglia ci
+        // stanno, sarebbero finiti sfalsati di 7.5 unità rispetto ai box.
+        // Arrotondando, ogni box cade esattamente su una posizione: la fila
+        // resta centrata su boxIndex a meno di mezzo passo, che a occhio non
+        // si vede, e il fronte resta allineato, che invece si vede eccome.
+        const mid = Math.floor((count - 1) / 2);
         const anchors = [];
         for (let i = 0; i < count; i++) {
-            const offset = (i - mid) * PIT_BOX_SPACING;
-            const { x, z, fromIdx, toIdx } = walkPitPath(pitPath, boxIndex, offset);
-            const a = pitPath[fromIdx], b = pitPath[toIdx];
-            const tx = b.x - a.x, tz = b.z - a.z;
-            const tlen = Math.hypot(tx, tz) || 1;
-            const ntx = tx / tlen, ntz = tz / tlen;
-            const anchor = { x, z, tx: ntx, tz: ntz, fromIdx };
-
-            if (trackPoints && pitRoadHalf != null) {
-                const nx = -ntz, nz = ntx;   // normale, perpendicolare alla tangente
-                const distPlus = nearestPoint(trackPoints, x + nx, z + nz).dist;
-                const distMinus = nearestPoint(trackPoints, x - nx, z - nz).dist;
-                const side = distPlus >= distMinus ? 1 : -1;
-                const stallOffset = pitRoadHalf + PIT_STALL_CLEARANCE;
-                anchor.stallX = x + nx * stallOffset * side;
-                anchor.stallZ = z + nz * stallOffset * side;
-            }
-
-            anchors.push(anchor);
+            anchors.push(pitSlotAt(pitPath, boxIndex, (i - mid) * PIT_BOX_SPACING,
+                                   trackPoints, pitRoadHalf));
         }
         return anchors;
+    }
+
+    // Tutte le posizioni lungo la corsia box, in ordine di percorrenza, a
+    // passo PIT_BOX_SPACING e IN FASE con la fila dei box (che è centrata su
+    // boxIndex).
+    //
+    // È la griglia unica su cui si posano sia i box dei piloti sia gli edifici
+    // decorativi: avendo un passo solo e una fase sola, fra due elementi
+    // consecutivi non può restare un vuoto. Prima erano due sistemi con passi
+    // diversi che si evitavano a vicenda, e i vuoti nascevano da lì.
+    //
+    // GEOMETRIA PURA, nessun margine agli estremi: quante posizioni ci stanno
+    // e basta. Il primo tentativo ne toglieva 40 unità per capo, perché
+    // all'imbocco la corsia corre ancora affiancata alla pista e un garage lì
+    // sovrasta l'ingresso — ma così su monte-rosso restavano 8 posizioni su
+    // 13, cioè si buttava via metà del guadagno del passo stretto. Chi posa
+    // gli edifici ha già i suoi controlli di distanza dalla pista: le
+    // posizioni che non gli servono le salta lui, e i BOX possono usarle
+    // tutte, come hanno sempre fatto.
+    function pitLaneSlots(pitPath, boxIndex, trackPoints, pitRoadHalf) {
+        if (!pitPath || pitPath.length < 2) return [];
+
+        let prima = 0;
+        for (let i = 1; i <= boxIndex && i < pitPath.length; i++) {
+            prima += Math.hypot(pitPath[i].x - pitPath[i - 1].x,
+                                pitPath[i].z - pitPath[i - 1].z);
+        }
+        let dopo = 0;
+        for (let i = boxIndex + 1; i < pitPath.length; i++) {
+            dopo += Math.hypot(pitPath[i].x - pitPath[i - 1].x,
+                               pitPath[i].z - pitPath[i - 1].z);
+        }
+
+        const indietro = Math.floor(prima / PIT_BOX_SPACING);
+        const avanti = Math.floor(dopo / PIT_BOX_SPACING);
+
+        const slots = [];
+        for (let k = -indietro; k <= avanti; k++) {
+            const s = pitSlotAt(pitPath, boxIndex, k * PIT_BOX_SPACING, trackPoints, pitRoadHalf);
+            s.indice = slots.length;
+            slots.push(s);
+        }
+        return slots;
     }
 
     // Test "punto dentro un rettangolo orientato" — generalizza il vecchio
@@ -1191,6 +1250,7 @@
         curvatureAt,
         bridgeHeightAt,
         pitBoxAnchors,
+        pitLaneSlots,
         guardaVersoLaPista,
         SCARTO_DALLA_PISTA_MAX,
         walkClosedLoop,
