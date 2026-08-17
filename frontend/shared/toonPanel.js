@@ -122,8 +122,16 @@
                 (v) => { outline.uniforms.uThickness.value = v; });
             riga(box, 'sensib. normali', 0.05, 1, outline.uniforms.uNormalBias.value, 0.01,
                 (v) => { outline.uniforms.uNormalBias.value = v; });
+            riga(box, 'intensità contorno', 0.2, 1, outline.uniforms.uStrength.value, 0.05,
+                (v) => { outline.uniforms.uStrength.value = v; });
             riga(box, 'sensib. profondità', 0.001, 0.2, outline.uniforms.uDepthBias.value, 0.001,
                 (v) => { outline.uniforms.uDepthBias.value = v; });
+            // Quanta tolleranza in più concedere alle superfici viste di
+            // taglio, dove il terreno piatto produce da solo un salto di
+            // profondità. A 0 si torna alla soglia fissa di prima del
+            // 2026-08-17: è l'A/B della banda nera sull'halo-cam.
+            riga(box, 'tolleranza radenti', 0, 6, outline.uniforms.uSlopeK.value, 0.1,
+                (v) => { outline.uniforms.uSlopeK.value = v; });
             // Due dissolvenze separate: quella dei bordi INTERNI è la manopola
             // che toglie il nero impastato all'orizzonte.
             riga(box, 'sfuma bordi interni', 20, 400, outline.uniforms.uFadeNormStart.value, 5,

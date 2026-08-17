@@ -35,6 +35,59 @@
     // raccolta della memoria — e non serve a nulla alleggerire la grafica.
     const stats = { calls: 0, triangles: 0, ms: 0 };
 
+    // ── Perché la soglia di profondità non può essere un numero fisso ──
+    //
+    // Il bordo di silhouette si accende dove il salto RELATIVO di profondità
+    // fra due pixel vicini supera una soglia. Su una superficie PIANA vista di
+    // taglio quel salto non è un difetto: è geometria, e vale
+    //
+    //     salto ≈ (angolo di un pixel) × distanza / (altezza della camera)
+    //
+    // — inversamente proporzionale a quanto la camera è alta da terra. Una
+    // soglia fissa è quindi tarata su UNA sola altezza di camera. In F1 le due
+    // telecamere sono lo stesso oggetto (stessi near/far/fov) ma stanno a 5.5
+    // (terza persona) e 1.95 (halo) unità: sull'halo il terreno produce un
+    // salto 2.8 volte più grande, veniva scambiato per silhouette, e
+    // all'orizzonte compariva una banda nera piena proprio sopra la pista
+    // (segnalato il 2026-08-17; la stessa taratura in terza persona era
+    // corretta, ed è per questo che il difetto sembrava sparito).
+    //
+    // Rimedio: alla soglia base si somma il salto che una superficie piana
+    // produrrebbe in quel punto, ricavato dall'inclinazione fra normale e
+    // raggio di vista — la normale è già nel buffer che lo shader legge. Il
+    // criterio diventa "è una discontinuità vera" invece di "è un salto
+    // grosso", e smette di dipendere dall'altezza della camera. Sulle facce
+    // frontali la compensazione è nulla: i valori tarati al playtest del
+    // 2026-08-10 conservano esattamente il significato che avevano.
+    //
+    // Le tre funzioni sotto sono la SORGENTE della formula: lo shader viene
+    // costruito interpolandone le costanti, e `toonOutline.test.js` le misura
+    // sui numeri veri del gioco.
+
+    // Superficie perfettamente parallela allo sguardo = pendenza infinita: il
+    // tetto la limita. Va scelto in modo che il terreno torni sopra soglia
+    // solo OLTRE uFadeEnd, dove il contorno è comunque spento (con 0.003 e
+    // camera a 1.95 succede a ~1500 unità, ben oltre le 728 della dissolvenza).
+    const NDV_MIN = 0.003;
+    const SLOPE_K = 2;
+
+    // Quanto varia la profondità, in proporzione a se stessa e per radiante di
+    // apertura, su un piano la cui normale forma un coseno `ndv` col raggio.
+    function grazingSlope(ndv) {
+        const c = Math.min(1, Math.abs(ndv));
+        return Math.sqrt(Math.max(0, 1 - c * c)) / Math.max(c, NDV_MIN);
+    }
+
+    // Radianti coperti da un pixel verticale. I pixel sono quadrati, quindi
+    // vale anche in orizzontale.
+    function pixelAngle(fovDeg, heightPx) {
+        return 2 * Math.tan(fovDeg * Math.PI / 360) / heightPx;
+    }
+
+    function depthThreshold(depthBias, slopeK, slope, pxAngle, thickness) {
+        return depthBias + slopeK * slope * pxAngle * thickness;
+    }
+
     const uniforms = {
         uNormal: { value: null },
         uDepth: { value: null },
@@ -57,6 +110,16 @@
         uFadeEnd: { value: 728 },
         uNear: { value: 0.1 },
         uFar: { value: 1200 },
+        // Compensazione delle superfici RADENTI (vedi il blocco qui sotto).
+        // 0 = comportamento precedente al 2026-08-17, soglia fissa.
+        uSlopeK: { value: SLOPE_K },
+        // Quanto è pieno il nero del tratto (1 = nero pieno, com'era fino al
+        // 2026-08-17). 0.5 scelto dall'utente col pannello al playtest del
+        // 2026-08-17: il tratto pieno induriva troppo il disegno.
+        uStrength: { value: 0.5 },
+        uPixelAngle: { value: 0.0014 },    // radianti coperti da un pixel, da fov/risoluzione
+        uTanHalfFov: { value: 0.637 },
+        uAspect: { value: 1.777 },
     };
 
     function init(renderer, camera) {
@@ -129,6 +192,11 @@
                 'uniform float uFadeEnd;',
                 'uniform float uNear;',
                 'uniform float uFar;',
+                'uniform float uSlopeK;',
+                'uniform float uStrength;',
+                'uniform float uPixelAngle;',
+                'uniform float uTanHalfFov;',
+                'uniform float uAspect;',
                 'varying vec2 vUv;',
                 // dalla profondità del buffer (non lineare) alla distanza in
                 // unità di gioco: senza linearizzare, la soglia di salto
@@ -143,6 +211,18 @@
                 '    vec3 nC = normalize( texture2D( uNormal, vUv ).xyz * 2.0 - 1.0 );',
                 '    float bordoN = 0.0;',
                 '    float bordoD = 0.0;',
+                // Soglia di profondità del pixel: base + il salto che una
+                // superficie piana con QUESTA inclinazione produrrebbe qui.
+                // Il raggio di vista si ricava dalla posizione sullo schermo:
+                // usare l'asse della camera al suo posto sbaglia fino a 32°
+                // ai bordi dell'inquadratura, dove l'orizzonte spesso sta.
+                '    vec3 vDir = normalize( vec3(',
+                '        ( vUv.x * 2.0 - 1.0 ) * uTanHalfFov * uAspect,',
+                '        ( vUv.y * 2.0 - 1.0 ) * uTanHalfFov,',
+                '        -1.0 ) );',
+                '    float ndv = min( 1.0, abs( dot( nC, vDir ) ) );',
+                `    float pend = sqrt( max( 0.0, 1.0 - ndv * ndv ) ) / max( ndv, ${NDV_MIN} );`,
+                '    float sogliaD = uDepthBias + uSlopeK * pend * uPixelAngle * uThickness;',
                 '    vec2 offs[4];',
                 '    offs[0] = vec2( px.x, 0.0 );',
                 '    offs[1] = vec2( -px.x, 0.0 );',
@@ -162,9 +242,9 @@
                 // resistono.
                 '    float eN = smoothstep( uNormalBias, uNormalBias * 1.6, bordoN )',
                 '             * ( 1.0 - smoothstep( uFadeNormStart, uFadeNormEnd, dC ) );',
-                '    float eD = smoothstep( uDepthBias, uDepthBias * 1.8, bordoD )',
+                '    float eD = smoothstep( sogliaD, sogliaD * 1.8, bordoD )',
                 '             * ( 1.0 - smoothstep( uFadeStart, uFadeEnd, dC ) );',
-                '    gl_FragColor = vec4( 0.0, 0.0, 0.0, max( eN, eD ) );',
+                '    gl_FragColor = vec4( 0.0, 0.0, 0.0, max( eN, eD ) * uStrength );',
                 '}',
             ].join('\n'),
         });
@@ -198,6 +278,15 @@
 
         uniforms.uNear.value = camera.near;
         uniforms.uFar.value = camera.far;
+        // La compensazione delle superfici radenti ha bisogno di sapere quanto
+        // "mondo" copre un pixel: dipende da fov e risoluzione, entrambi
+        // variabili a runtime (ridimensionamento della finestra), quindi si
+        // rileggono a ogni frame invece di essere fissati in init.
+        if (camera.isPerspectiveCamera) {
+            uniforms.uPixelAngle.value = pixelAngle(camera.fov, uniforms.uResolution.value.y);
+            uniforms.uTanHalfFov.value = Math.tan(camera.fov * Math.PI / 360);
+            uniforms.uAspect.value = camera.aspect;
+        }
 
         // 1. normali + profondità, senza luci né ombre
         const shadowAuto = renderer.shadowMap.autoUpdate;
@@ -237,6 +326,7 @@
 
     return {
         init, render, setSize, uniforms, stats,
+        grazingSlope, pixelAngle, depthThreshold, NDV_MIN, SLOPE_K,
         get enabled() { return enabled; },
         setEnabled(on) { enabled = !!on; },
     };
