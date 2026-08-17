@@ -391,18 +391,35 @@
     const PLAYER_BOX_OFFSET_MARGIN = 23;
     // Un po' di respiro visivo oltre il vero muro del box, per non far
     // spuntare un albero/cartellone letteralmente a contatto.
-    const PLAYER_BOX_CLEARANCE = 3;
-    // MAX_GRID_SIZE (backend/sockets/games/f1Bot.js): la scenografia viene
-    // generata una volta al caricamento pista, PRIMA di sapere quanti
-    // giocatori parteciperanno davvero — si esclude lo spazio per il caso
-    // peggiore (griglia piena), non per il conteggio reale della partita.
+    //
+    // 1 e non più 3: col passo della corsia sceso a 15 e i box larghi 14.1,
+    // fra un box e il suo vicino di fronte restano 0.9 unità per lato. Un
+    // margine di 3 dichiarava occupato lo spazio del vicino, e nel fronte
+    // continuo il vicino c'è per progetto — è un garage, non un albero
+    // cresciuto lì per caso.
+    const PLAYER_BOX_CLEARANCE = 1;
+    // Numero di piloti usato quando il chiamante non lo dice (test storici,
+    // editor). Non è più il "caso peggiore" da riservare comunque: la
+    // scenografia riceve il numero VERO in `opzioni.gridSize`, perché arriva
+    // dalla lobby prima che la pista si carichi. Il commento che stava qui
+    // dichiarava l'opposto — "PRIMA di sapere quanti giocatori
+    // parteciperanno" — ed era la ragione per cui, con pochi piloti, restava
+    // corsia box vuota.
     const PLAYER_BOX_MAX_COUNT = 6;
+    // Mezzo passo: soglia per riconoscere che un'ancora di box e una posizione
+    // della griglia sono LO STESSO posto. Non si confronta l'uguaglianza
+    // esatta perché le due passano da percorsi di calcolo diversi.
+    const PIT_BOX_SPACING_HALF = TrackGeometry.PIT_BOX_SPACING / 2;
 
     // Angoli mondo dell'ingombro del box giocatore per un dato anchor —
     // stessa trasformazione di pitBoxLoader.js::loadPitBoxModel
     // (rotazione -90° perché l'apertura è modellata lungo +X locale, non
     // +Z), con PLAYER_BOX_CLEARANCE di margine extra su tutti i lati.
-    function playerBoxFootprintCorners(anchor, trackPts, pitRoadHalf) {
+    // `margine`: quanto allargare l'ingombro oltre il muro del box. Il valore
+    // predefinito serve a tenere lontani alberi e cartelloni; chi costruisce
+    // il FRONTE della corsia passa 0, perché lì il vicino è un garage messo
+    // apposta a fianco e il margine gli negherebbe il posto.
+    function playerBoxFootprintCorners(anchor, trackPts, pitRoadHalf, margine) {
         const nx = -anchor.tz, nz = anchor.tx;
         const distPlus  = TrackGeometry.nearestPoint(trackPts, anchor.x + nx, anchor.z + nz).dist;
         const distMinus = TrackGeometry.nearestPoint(trackPts, anchor.x - nx, anchor.z - nz).dist;
@@ -413,7 +430,7 @@
 
         const theta = rotY - Math.PI / 2;
         const cos = Math.cos(theta), sin = Math.sin(theta);
-        const c = PLAYER_BOX_CLEARANCE;
+        const c = margine != null ? margine : PLAYER_BOX_CLEARANCE;
         const { xMin, xMax, zMin, zMax } = PLAYER_BOX_LOCAL_BOUNDS;
         return [[xMin - c, zMin - c], [xMax + c, zMin - c], [xMax + c, zMax + c], [xMin - c, zMax + c]]
             .map(([lx, lz]) => ({ x: bx + lx * cos + lz * sin, z: bz - lx * sin + lz * cos }));
@@ -563,7 +580,7 @@
     // + edifici box (pitsGarageClosed/pitsOffice alternati) lungo la corsia
     // box. Nessun PRNG: posizioni deterministiche a intervalli fissi, area
     // "propria" non condivisa con lo scatter natura.
-    function buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, mainSide, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge) {
+    function buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, mainSide, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge, boxCtx) {
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const n = trackPts.length;
@@ -602,83 +619,110 @@
             }
         }
 
-        // Edifici box: quota invariata (p.y || 0, dalla corsia box stessa) —
-        // il terrapieno non copre la corsia box, fuori scope (vedi design).
-        // Passo in unità convertito in campioni sulla base della spaziatura
-        // reale dei punti di QUESTA corsia box.
-        const pitStepLen = TrackGeometry.lapLength(pitPts) / pitPts.length;
-        // Primo edificio ben oltre l'IMBOCCO della corsia: partendo
-        // dall'indice 10 il primo cadeva a ~16 unità dall'ingresso e, essendo
-        // largo 20.6, lo occupava di fatto rendendolo illeggibile. Il solo
-        // controllo di distanza dalla pista non bastava, perché la corsia si
-        // allontana subito ma l'edificio resta comunque addosso all'imbocco.
-        const firstIdx = Math.max(10, Math.round(PIT_BUILDING_ENTRY_CLEARANCE / pitStepLen));
-        const lastIdx = pitPts.length - 10;
-
-        // Punto dove sorgerebbe un edificio al campione idx, già spostato sul
-        // lato esterno della corsia: è fra i centri offsettati che deve valere
-        // la spaziatura, non sull'asse della corsia.
-        function buildingAt(idx) {
-            const p = pitPts[idx];
-            const { nx, nz } = TrackGeometry.normalAt(pitPts, idx, false);
-            // Lato "verso l'esterno" del tracciato principale: tra le due
-            // direzioni normali, si sceglie quella che allontana di più dal
-            // centro del circuito, generico per qualunque forma di corsia box.
-            const distPlus  = TrackGeometry.nearestPoint(trackPts, p.x + nx, p.z + nz).dist;
-            const distMinus = TrackGeometry.nearestPoint(trackPts, p.x - nx, p.z - nz).dist;
-            const side = distPlus >= distMinus ? 1 : -1;
-            const offset = pitRoadHalf + PIT_BUILDING_OFFSET_MARGIN;
-            const x = p.x + nx * offset * side, z = p.z + nz * offset * side;
-            return { x, z, idx, y: p.y || 0, rotY: Math.atan2(p.x - x, p.z - z) };
+        // ── Il fronte della corsia: una fila sola ──
+        //
+        // Box dei piloti ed edifici decorativi si alternano sulle STESSE
+        // posizioni (TrackGeometry.pitLaneSlots), a passo unico e in fase
+        // unica. Prima erano due sistemi con passi diversi — 24 i box, ~22.65
+        // la catena degli edifici, dettata dalle larghezze dei modelli — che
+        // si evitavano a vicenda, e i vuoti nascevano da lì: su monte-rosso i
+        // sei box occupavano tutti i campioni utili e gli edifici scendevano a
+        // ZERO, mentre con pochi piloti restava corsia vuota.
+        //
+        // Ora, per costruzione: le posizioni riservate ai box sono quelle
+        // centrali, tutte le altre prendono un edificio. Con un pilota c'è un
+        // box e tutto il resto è fronte; con venti, venti box e il resto
+        // fronte. Un vuoto può restare solo dove un controllo lo impone
+        // (imbocco della corsia, cavalcavia), non per disallineamento.
+        const slot = TrackGeometry.pitLaneSlots(boxCtx.pitPath, boxCtx.boxIndex,
+                                                trackPts, pitRoadHalf);
+        // Le posizioni dei box sono le stesse che sceglie pitBoxAnchors lato
+        // server: si ricavano confrontando le coordinate invece di ricopiarne
+        // la formula, così le due non possono divergere.
+        const ancore = TrackGeometry.pitBoxAnchors(boxCtx.pitPath, boxCtx.boxIndex,
+                                                   boxCtx.gridSize, trackPts, pitRoadHalf);
+        const riservate = new Set();
+        for (const a of ancore) {
+            let migliore = -1, minima = Infinity;
+            for (const s of slot) {
+                const d = Math.hypot(s.x - a.x, s.z - a.z);
+                if (d < minima) { minima = d; migliore = s.indice; }
+            }
+            if (migliore >= 0 && minima < PIT_BOX_SPACING_HALF) riservate.add(migliore);
         }
 
-        // Catena: ogni edificio si affianca al precedente alla distanza
-        // dettata dalle LARGHEZZE REALI dei due modelli. Un candidato scartato
-        // da un filtro fa avanzare di UN campione, non di un intero passo:
-        // così il fronte si richiude subito dopo l'ostacolo invece di lasciare
-        // un vuoto doppio (col passo fisso, su monte-rosso sopravviveva un
-        // solo edificio in tutta la corsia).
-        let altBuilding = 0;
-        let idx = firstIdx;
+        // Poligoni dei box veri: un edificio non deve entrarci dentro. Sulle
+        // curve la distanza fra i centri non basta a garantirlo, perché i due
+        // volumi sono anche RUOTATI l'uno rispetto all'altro.
+        const poligoniBox = ancore.map(a => playerBoxFootprintCorners(a, trackPts, pitRoadHalf, 0));
+
+        // Costruisce il candidato per una posizione, eventualmente scostata di
+        // `scarto` unità lungo la corsia.
+        function edificioA(s, asset, scarto) {
+            const base = scarto
+                ? TrackGeometry.pitSlotAt(boxCtx.pitPath, boxCtx.boxIndex, s.offset + scarto,
+                                          trackPts, pitRoadHalf)
+                : s;
+            const { nx, nz } = TrackGeometry.normalAt(pitPts, base.fromIdx, false);
+            const p = pitPts[Math.min(base.fromIdx, pitPts.length - 1)];
+            const distPlus = TrackGeometry.nearestPoint(trackPts, base.x + nx, base.z + nz).dist;
+            const distMinus = TrackGeometry.nearestPoint(trackPts, base.x - nx, base.z - nz).dist;
+            const side = distPlus >= distMinus ? 1 : -1;
+            const off = pitRoadHalf + PIT_BUILDING_OFFSET_MARGIN;
+            const x = base.x + nx * off * side, z = base.z + nz * off * side;
+            return {
+                asset, category: 'paddock', x, y: p.y || 0, z,
+                rotY: Math.atan2(base.x - x, base.z - z), scale: CUSTOM_MODEL_SCALE,
+            };
+        }
+
+        function libero(cand) {
+            if (posati.some(q => SceneryAssetSizes.itemsOverlap(cand, q))) return false;
+            const corners = SceneryAssetSizes.footprintCorners(cand);
+            return !poligoniBox.some(poly => SceneryAssetSizes.polysOverlap(corners, poly));
+        }
+
+        let alternanza = 0;
         const posati = [];
-        while (idx < lastIdx) {
-            const asset = (altBuilding % 2 === 0) ? 'pitsGarageClosed' : 'pitsOffice';
-            const b = buildingAt(idx);
-            const cand = { asset, x: b.x, y: b.y, z: b.z, rotY: b.rotY, scale: CUSTOM_MODEL_SCALE };
+        for (const s of slot) {
+            if (riservate.has(s.indice)) continue;
+            const asset = (alternanza % 2 === 0) ? 'pitsGarageClosed' : 'pitsOffice';
 
-            const blocked = itemHitsPlayerBoxZone(
-                    { asset, x: b.x, z: b.z, rotY: b.rotY, scale: CUSTOM_MODEL_SCALE },
-                    playerBoxFootprints)
-                // La distanza fra i CENTRI è già quella giusta, ma due
-                // rettangoli larghi 20.6 affiancati su una corsia che curva
-                // sono anche RUOTATI l'uno rispetto all'altro, e gli spigoli
-                // si incrociano lo stesso: su baku due coppie di edifici si
-                // compenetravano a 22.7 e 23.2 di centro, cioè alla distanza
-                // nominale esatta. Qui si guarda l'ingombro vero: se si tocca,
-                // si avanza di un campione e si riprova, così il fronte si
-                // richiude appena la corsia si raddrizza.
-                || posati.some(p => SceneryAssetSizes.itemsOverlap(cand, p))
-                // Niente edifici all'IMBOCCO della corsia box, dove corsia e
-                // pista corrono ancora affiancate: lì un edificio profondo
-                // 14.7 si sovrappone all'ingresso e lo rende illeggibile
-                // (segnalato dall'utente).
-                || TrackGeometry.nearestPoint(trackPts, b.x, b.z).dist < barrierDist + PIT_BUILDING_TRACK_CLEARANCE
-                || !fitsUnderBridge(asset, b.x, b.z, b.y);
+            // Dove la corsia PIEGA, due volumi affiancati sono anche ruotati
+            // l'uno rispetto all'altro e gli spigoli si incrociano pur avendo
+            // i centri alla distanza giusta. Misurato, la rotazione fra due
+            // posizioni vicine arriva a 31° su prova e 29° su monte-rosso —
+            // ma solo agli ESTREMI, dove la corsia si innesta sulla pista; nel
+            // tratto dritto in cui stanno i box è quasi nulla.
+            //
+            // Lì l'edificio si SCOSTA di poco lungo la corsia invece di essere
+            // saltato: saltarlo lascerebbe 17 unità di vuoto in mezzo al
+            // fronte — cioè il difetto che questo lavoro deve chiudere — e
+            // stringere i modelli abbastanza da non incrociarsi mai a 31°
+            // vorrebbe dire larghi 7 su un passo di 15, un fronte mezzo vuoto
+            // ovunque per un problema che esiste in due punti.
+            let cand = null;
+            // Provati anche scarti piccoli (±1.5, ±3): danno un fronte PIU'
+            // rado, non più fitto. Sulle curve serve spostarsi abbastanza da
+            // uscire dal cono del vicino, e mezzo passo è quanto serve.
+            for (const scarto of [0, 2, -2, 4, -4, 6, -6]) {
+                const prova = edificioA(s, asset, scarto);
+                if (TrackGeometry.nearestPoint(trackPts, prova.x, prova.z).dist
+                        < barrierDist + PIT_BUILDING_TRACK_CLEARANCE) continue;
+                if (!fitsUnderBridge(asset, prova.x, prova.z, prova.y)) continue;
+                if (!libero(prova)) continue;
+                cand = prova;
+                break;
+            }
+            // Niente edifici all'IMBOCCO della corsia, dove corsia e pista
+            // corrono ancora affiancate: lì un volume profondo 14.7 si
+            // sovrappone all'ingresso e lo rende illeggibile (segnalato
+            // dall'utente). È l'unico vuoto ammesso nel fronte.
+            if (!cand) continue;
 
-            if (blocked) { idx++; continue; }
-
-            const posato = { asset, category: 'paddock', x: b.x, y: b.y, z: b.z,
-                             rotY: b.rotY, scale: CUSTOM_MODEL_SCALE };
-            layout.push(posato);
-            posati.push(posato);
-            altBuilding++;
-            const nextAsset = (altBuilding % 2 === 0) ? 'pitsGarageClosed' : 'pitsOffice';
-            const need = (SceneryAssetSizes.sizeOf(asset).w
-                        + SceneryAssetSizes.sizeOf(nextAsset).w) / 2 + PIT_BUILDING_GAP;
-            const hit = TrackGeometry.advanceToDistancePoint(
-                pitPts, idx, 1, false, b, need, (i) => buildingAt(i));
-            if (!hit) break;   // corsia finita
-            idx = hit.idx;
+            layout.push(cand);
+            posati.push(cand);
+            alternanza++;
         }
 
         return layout;
@@ -1385,7 +1429,14 @@
     // barrierProfile (opzionale): profilo della barriera, da
     // TrackGravel.barrierProfile. Omesso, il layout è identico a quello di
     // prima che le vie di fuga esistessero.
-    function generateLayout(trackData, trackPts, pitPts, barrierDist, embankmentWidth = 45, seatAnchors = null, barrierProfile = null, terraceAnchors = null) {
+    function generateLayout(trackData, trackPts, pitPts, barrierDist, embankmentWidth = 45, seatAnchors = null, barrierProfile = null, terraceAnchors = null, opzioni = null) {
+        // Quanti box dei piloti occupano la corsia. Arriva dalla lobby (vedi
+        // f1.js: clientSettings.gridSize) e arriva PRIMA che la scenografia si
+        // generi — il commento storico su PLAYER_BOX_MAX_COUNT diceva il
+        // contrario ("si genera prima di sapere quanti giocatori
+        // parteciperanno") e da lì nasceva il difetto: si riservava sempre lo
+        // spazio del caso peggiore, e con pochi piloti restava corsia vuota.
+        const gridSize = Math.max(1, (opzioni && opzioni.gridSize) || PLAYER_BOX_MAX_COUNT);
         const rng = mulberry32(hashString(trackData.id));
         const pitRoadHalf = trackData.pit.roadHalfWidth;
         const side = mainStandSide(trackPts, pitPts);
@@ -1410,7 +1461,7 @@
         // PLAYER_BOX_MAX_COUNT box pieni — vedi commento sopra): calcolato
         // una volta qui, riusato per escludere paddock/natura/laghetto da
         // tutta la fila reale, non solo dal punto centrale pitBoxIndex.
-        const boxAnchors = TrackGeometry.pitBoxAnchors(trackData.pit.path, trackData.pit.boxIndex, PLAYER_BOX_MAX_COUNT);
+        const boxAnchors = TrackGeometry.pitBoxAnchors(trackData.pit.path, trackData.pit.boxIndex, gridSize);
         // Due poligoni per box: il garage e il grembiule di manovra davanti.
         // insidePlayerBoxFootprint li tratta indifferentemente, è già una
         // lista di poligoni.
@@ -1425,7 +1476,8 @@
         const fitsUnderBridge = makeBridgeFilter(trackPts, barrierDist);
 
 
-        const paddock   = buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
+        const paddock   = buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge,
+            { pitPath: trackData.pit.path, boxIndex: trackData.pit.boxIndex, gridSize });
         const mainStand = buildMainGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankStart, embankOuter, fitsUnderBridge, barrierProfile, paddock);
         const accepted  = [...paddock, ...mainStand];
         const grandstand = buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankStart, embankOuter, fitsUnderBridge, mainStand, barrierProfile);

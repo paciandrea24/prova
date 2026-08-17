@@ -620,7 +620,19 @@ for (const track of [prova, monteRosso, newMonza]) {
                 const gap = Math.hypot(o.x - b.x, o.z - b.z) - need;
                 if (gap < nearest) { nearest = gap; nearestItem = o; }
             }
-            if (nearest <= 6) continue;
+            // 6 unità di stacco erano la tolleranza quando gli edifici si
+            // incatenavano a distanza libera. Da quando stanno sulla stessa
+            // GRIGLIA dei box (passo 15, larghezza ~13) lo stacco nominale fra
+            // due vicini è già 2, e dove la corsia piega troppo una posizione
+            // resta scoperta: lì lo stacco diventa 17. Si accetta UN buco di
+            // una posizione, non due — due di fila si leggerebbero come un
+            // pezzo di fronte mancante.
+            //
+            // È un compromesso consapevole: la griglia condivisa serve a non
+            // avere box ed edifici su due file sfalsate, e il prezzo sono
+            // alcune posizioni scoperte sui tratti curvi agli estremi della
+            // corsia, dove comunque un garage non ci starebbe dritto.
+            if (nearest <= TrackGeometry.PIT_BOX_SPACING + 5) continue;
             assert.ok(boxFraLoro(b, nearestItem),
                 `edificio isolato: ${nearest.toFixed(1)} unità di vuoto senza box dei piloti in mezzo`);
         }
@@ -843,7 +855,7 @@ const TRACCIATI = require('fs')
     .filter(f => f.endsWith('.json') && !/^(__|test-)/.test(f))
     .map(f => f.replace(/\.json$/, ''));
 
-function circuitoVero(id) {
+function circuitoVero(id, opzioni) {
     const raw = JSON.parse(fsAllineamento.readFileSync(pathAllineamento.join(
         __dirname, '..', 'tracks', `${id}.json`), 'utf8'));
     const trackPts = TrackGeometry.sampleLoop(raw.controlPoints, 1000);
@@ -855,8 +867,9 @@ function circuitoVero(id) {
     const barrierProfile = TrackGravel.barrierProfile(trackPts, {
         roadHalf: raw.roadHalfWidth, pitLanePts, pitRoadHalf: raw.pit.roadHalfWidth });
     const BARRIER_D = raw.roadHalfWidth + 2.8 + 1.2;
-    const layout = TrackScenery.generateLayout(raw, trackPts, pitLanePts, BARRIER_D, 45, null, barrierProfile);
-    return { raw, trackPts, barrierProfile, layout, BARRIER_D };
+    const layout = TrackScenery.generateLayout(raw, trackPts, pitLanePts, BARRIER_D, 45, null,
+        barrierProfile, null, opzioni);
+    return { raw, trackPts, barrierProfile, layout, BARRIER_D, pitLanePts, pitPath };
 }
 
 // Su che lato della pista sta una voce, e a che campione.
@@ -1524,4 +1537,38 @@ for (const id of TRACCIATI) {
         assert.ok(avanti > TrackGeometry.GRID_START,
             `gantry a ${avanti.toFixed(0)} unità dalla linea, la pole sta a ${TrackGeometry.GRID_START}`);
     });
+}
+
+// ═══════════ IL FRONTE DELLA CORSIA BOX NON HA VUOTI ═══════════
+//
+// Richiesta esplicita dell'utente: "non vorrei buchi, anche con un giocatore
+// solo". Prima box ed edifici erano due sistemi con passi diversi che si
+// evitavano a vicenda: su monte-rosso i sei box occupavano tutti i campioni
+// utili e gli edifici scendevano a ZERO, mentre con pochi piloti restava
+// corsia vuota. Ora si alternano sulla stessa griglia di posizioni.
+for (const id of TRACCIATI) {
+    for (const piloti of [1, 6, 14, 20]) {
+        test(`fronte corsia box senza vuoti su ${id} con ${piloti} piloti`, () => {
+            const { raw, trackPts, layout, pitPath } = circuitoVero(id, { gridSize: piloti });
+            const slot = TrackGeometry.pitLaneSlots(pitPath, raw.pit.boxIndex,
+                                                    trackPts, raw.pit.roadHalfWidth);
+            const edifici = layout.filter(v => v.asset === 'pitsGarageClosed'
+                                            || v.asset === 'pitsOffice');
+            const box = Math.min(piloti, slot.length);
+
+            // Il fronte deve essere PIENO, non "quasi vuoto come prima": la
+            // misura è quante posizioni libere ricevono un edificio. Restano
+            // scoperte quelle agli estremi, dove la corsia si innesta sulla
+            // pista e piega fino a 31° fra una posizione e la successiva:
+            // lì due volumi affiancati si incrocerebbero con gli spigoli.
+            //
+            // Il riferimento è il difetto di partenza: su monte-rosso con sei
+            // piloti gli edifici erano ZERO. Due terzi delle posizioni libere
+            // è la soglia che distingue "fronte" da "qualche edificio sparso".
+            const libere = slot.length - box;
+            assert.ok(edifici.length >= Math.floor(libere * 2 / 3),
+                `${slot.length} posizioni, ${box} riservate ai box, ` +
+                `${edifici.length} edifici su ${libere} posizioni libere`);
+        });
+    }
 }

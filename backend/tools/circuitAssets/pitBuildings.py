@@ -16,11 +16,14 @@ from voxelKit import EPS
 # (15), e larghi 20 si compenetrerebbero. Sono usati solo lungo la corsia,
 # quindi la misura non tocca il resto della scenografia.
 #
-# 13.8 e non 14.5: l'ingombro totale e' W + 0.7 (il bordo colorato della
-# terrazza dell'ufficio, il pezzo piu' sporgente dei due edifici), e deve
-# restare mezza unita' sotto il passo di 15 perche' due fronti affiancati non
-# si tocchino.
-W = 13.8
+# 12.3: l'ingombro totale e' W + 0.7 (il bordo colorato della terrazza
+# dell'ufficio, il pezzo piu' sporgente dei due edifici), quindi 13.0 contro
+# un passo di 15. Due unita' di margine e non mezza: sulla corsia box che
+# CURVA, due rettangoli affiancati sono anche RUOTATI l'uno rispetto
+# all'altro, e gli spigoli si incrociano pur avendo i centri alla distanza
+# giusta — misurato su prova e monte-rosso con mezza unita' di margine. E' lo
+# stesso fenomeno gia' documentato per gli edifici su baku.
+W = 12.3
 # Quanto si e' stretto rispetto al disegno originale. Le misure interne
 # (serranda, insegne, fascia vetrata, montanti) erano scritte a mano sulla
 # larghezza di 20: moltiplicarle per questo fattore le fa rimpicciolire

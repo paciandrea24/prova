@@ -704,6 +704,11 @@
         for (let k = -indietro; k <= avanti; k++) {
             const s = pitSlotAt(pitPath, boxIndex, k * PIT_BOX_SPACING, trackPoints, pitRoadHalf);
             s.indice = slots.length;
+            // Distanza lungo la corsia da boxIndex: serve a chi deve spostare
+            // di poco un oggetto rispetto alla sua posizione (vedi il fronte
+            // della corsia in trackScenery, dove sulle curve strette un
+            // edificio va scostato per non incrociare il vicino).
+            s.offset = k * PIT_BOX_SPACING;
             slots.push(s);
         }
         return slots;
@@ -1251,6 +1256,9 @@
         bridgeHeightAt,
         pitBoxAnchors,
         pitLaneSlots,
+        // Serve a chi deve costruire una posizione scostata rispetto alla
+        // griglia (il fronte della corsia sulle curve strette).
+        pitSlotAt,
         guardaVersoLaPista,
         SCARTO_DALLA_PISTA_MAX,
         walkClosedLoop,
