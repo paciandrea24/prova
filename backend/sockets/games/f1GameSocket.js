@@ -475,7 +475,12 @@ module.exports = function (io, socket) {
         // l'attesa veniva letto come falsa partenza al via dopo — bug reale.
         // startRaceCountdown azzera comunque gli input di tutti prima di
         // aprire la finestra di rilevamento.
-        if (game.qualiEnded || game.raceEnded) return;
+        // La sessione CORRENTE, non una qualsiasi: `qualiEnded` resta vero
+        // per tutta la gara — la qualifica È finita — quindi guardarlo in gara
+        // buttava via ogni comando e l'auto non partiva ai semafori spenti
+        // (regressione trovata al playtest subito dopo).
+        const sessioneChiusa = game.phase === 'race' ? game.raceEnded : game.qualiEnded;
+        if (sessioneChiusa) return;
         // Clamp qui perché arriva dal client (analogico, valori liberi):
         // la fisica sotto assume i range dichiarati.
         game.players[playerColor].inputs = {

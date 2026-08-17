@@ -115,3 +115,34 @@ test('chi ha finito non urta piu nessuno: e un fantasma', (t) => {
     assert.ok(spinto < 0.05,
         `chi corre è stato spostato di ${spinto.toFixed(2)} da un'auto già arrivata`);
 });
+
+// ═══════════ LA GUARDIA SUGLI INPUT GUARDA LA SESSIONE CORRENTE ═══════════
+//
+// Regressione trovata al playtest: in gara l'auto non partiva ai semafori
+// spenti. Il rifiuto degli input era legato a `qualiEnded || raceEnded`, ma
+// `qualiEnded` resta vero per TUTTA la gara — la qualifica è finita davvero —
+// quindi ogni comando veniva buttato via.
+test('in gara i comandi valgono anche se la qualifica e finita', (t) => {
+    t.after(pulisci);
+    const { g, handlers } = partita();
+    g.qualiEnded = true;     // la qualifica è alle spalle, com'è normale in gara
+    g.raceEnded = false;
+    g.phase = 'race';
+
+    handlers.f1Input({ lobbyId: LOBBY, playerColor: 'red', inputs: { throttle: 1, brake: 0, steer: 0 } });
+    assert.equal(g.players.red.inputs.throttle, 1,
+        'il comando è stato ignorato: ai semafori spenti l\'auto non partirebbe');
+});
+
+test('a gara CHIUSA i comandi tornano ignorati', (t) => {
+    t.after(pulisci);
+    const { g, handlers } = partita();
+    g.phase = 'race';
+    g.raceEnded = true;
+    g.players.red.inputs = { throttle: 0, brake: 0, steer: 0 };
+
+    handlers.f1Input({ lobbyId: LOBBY, playerColor: 'red', inputs: { throttle: 1, brake: 0, steer: 0 } });
+    // È la protezione storica: un acceleratore tenuto premuto durante
+    // l'attesa veniva letto come falsa partenza al via successivo.
+    assert.equal(g.players.red.inputs.throttle, 0);
+});
