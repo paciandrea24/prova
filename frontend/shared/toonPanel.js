@@ -234,7 +234,9 @@
                 lucePrincipale.shadow.map.dispose();
                 lucePrincipale.shadow.map = null;
             }
-            lucePrincipale.shadow.mapSize.set(on ? 4096 : 1024, on ? 4096 : 1024);
+            // 2048 e' la piena risoluzione dal 2026-08-17 (era 4096: sedici
+            // volte i pixel dello schermo, misurati 25 ms di frame).
+            lucePrincipale.shadow.mapSize.set(on ? 2048 : 1024, on ? 2048 : 1024);
         });
 
         const audit = document.createElement('button');

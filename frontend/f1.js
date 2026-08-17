@@ -232,13 +232,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     scene.add(sun.target);
     sun.castShadow = true;
     sun.shadow.radius = 1;                // bordo stretto, vedi shadowMap.type sopra
-    sun.shadow.mapSize.set(4096, 4096);
+    // 2048 e non 4096. Misurato in gioco il 2026-08-17 su "prova" con dieci
+    // piloti: 30 fps con le ombre accese, 121 premendo O per spegnerle —
+    // ventacinque millisecondi di frame in una mappa sola.
+    //
+    // 4096 sono 16.8 milioni di pixel da riempire ogni frame, SEDICI VOLTE i
+    // pixel dello schermo (misurato: 1536x695, cioè poco più di un milione).
+    // Con il riquadro ristretto qui sotto la finezza dell'ombra resta la
+    // stessa di prima — 4.7 pixel per unità di mondo contro 6.8 — a un quarto
+    // del costo di riempimento.
+    sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = 600;
-    sun.shadow.camera.left = -300;
-    sun.shadow.camera.right = 300;
-    sun.shadow.camera.top = 300;
-    sun.shadow.camera.bottom = -300;
+    sun.shadow.camera.far = 520;
+    // ±220 e non più ±300: da quando il riquadro SEGUE l'auto non deve più
+    // coprire mezzo circuito sperando di intercettarlo, gli basta la zona
+    // attorno a chi guida. Meno area vuol dire due cose insieme: meno oggetti
+    // da ridisegnare nella mappa, e più pixel di mappa per ogni unità di
+    // mondo. La nebbia copre comunque ciò che sta oltre.
+    const OMBRA_SEMILATO = 220;
+    sun.shadow.camera.left = -OMBRA_SEMILATO;
+    sun.shadow.camera.right = OMBRA_SEMILATO;
+    sun.shadow.camera.top = OMBRA_SEMILATO;
+    sun.shadow.camera.bottom = -OMBRA_SEMILATO;
     sun.shadow.bias = -0.0005;
     scene.add(sun);
 
@@ -671,6 +686,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         // la risoluzione della shadow map. Gli spettatori in piedi seguono la
         // stessa regola dei loro fratelli seduti.
         'floodlightTower', 'spectatorStandA', 'spectatorStandB',
+        // Le barriere di gomme sono il singolo asset più pesante della scena
+        // (333k triangoli su "prova", un quinto del totale) e proiettano
+        // l'ombra di un muretto alto 1.9 addossato a una barriera: non si
+        // vede, e ridisegnarle nella mappa d'ombra ogni frame si paga. Stesso
+        // discorso per le reti, che proietterebbero una grata sottile.
+        'tyreStack', 'catchFence',
     ]);
 
     // Asset esclusi dai CONTORNI (Rif. playtest 2026-08-10): figure minute e
