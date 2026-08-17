@@ -10,6 +10,12 @@ const TRACKS_DIR = path.join(__dirname, '..', '..', '..', 'frontend', 'tracks');
 // backend/tools/f1RaceLineOptimizer.js, opzionali (una pista senza il file
 // corrispondente carica esattamente come oggi, zero differenza).
 const RACELINES_DIR = path.join(__dirname, '..', '..', 'tools');
+
+// Tetto assoluto di piloti per gara. Ricopiato da f1Bot.MAX_GRID_SIZE invece
+// di importarlo: trackLoader è caricato anche dagli strumenti offline e
+// dall'editor, dove il modulo dei bot non c'entra nulla. Un test in
+// f1Bot.test.js verifica che il valore sia 20 da entrambe le parti.
+const MAX_DRIVERS = 20;
 const TRACK_ID_PATTERN = /^[a-z0-9-]+$/;
 const SAMPLES = 1000;
 // Stesso valore usato da frontend/f1.js per campionare la corsia box: la
@@ -284,7 +290,19 @@ function listTracks() {
             const id = f.replace(/\.json$/, '');
             try {
                 const raw = JSON.parse(fs.readFileSync(path.join(TRACKS_DIR, f), 'utf8'));
-                return { id, name: raw.name };
+                // Quanti piloti regge questa pista: non è una regola di gioco
+                // ma una misura della sua corsia box — quanti box ci stanno,
+                // a passo PIT_BOX_SPACING. Serve alla lobby per non offrire
+                // venti piloti dove ne stanno tredici. Chi disegna una corsia
+                // più lunga alza il tetto senza toccare il codice.
+                //
+                // loadTrack sta DENTRO il try che c'era già: una pista
+                // malformata continua a essere saltata invece di far fallire
+                // l'elenco intero, che è quello che riempie il menu in lobby.
+                const t = loadTrack(id);
+                const posti = TrackGeometry.pitLaneSlots(
+                    t.pitPath, t.pitBoxIndex, t.points, t.pitRoadHalf).length;
+                return { id, name: raw.name, maxDrivers: Math.min(MAX_DRIVERS, posti) };
             } catch (err) {
                 console.warn(`listTracks: file pista malformato ignorato "${f}": ${err.message}`);
                 return null;

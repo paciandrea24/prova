@@ -317,3 +317,30 @@ test('il muro del server sta esattamente dove il client lo disegna', () => {
         }
     }
 });
+
+// ═══════════ QUANTI PILOTI REGGE UNA PISTA ═══════════
+//
+// Il tetto non è una regola di gioco ma una misura della corsia box: quanti
+// box ci stanno, a passo TrackGeometry.PIT_BOX_SPACING. Serve alla lobby per
+// non offrire venti piloti su una pista che ne regge tredici — i box in
+// eccesso finirebbero oltre la fine della corsia. Chi disegna una corsia più
+// lunga alza il tetto senza toccare il codice.
+test('listTracks dice quanti piloti regge ogni pista', () => {
+    const piste = listTracks();
+    assert.ok(piste.length > 0);
+    for (const p of piste) {
+        assert.ok(Number.isInteger(p.maxDrivers) && p.maxDrivers >= 1,
+            `${p.id}: maxDrivers mancante o non valido (${p.maxDrivers})`);
+        assert.ok(p.maxDrivers <= 20, `${p.id}: ${p.maxDrivers} supera il tetto assoluto di 20`);
+    }
+});
+
+test('il tetto di una pista coincide con le posizioni della sua corsia box', () => {
+    const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
+    for (const p of listTracks()) {
+        const t = loadTrack(p.id);
+        const posizioni = TrackGeometry.pitLaneSlots(t.pitPath, t.pitBoxIndex, t.points, t.pitRoadHalf).length;
+        assert.equal(p.maxDrivers, Math.min(20, posizioni),
+            `${p.id}: dichiara ${p.maxDrivers} piloti ma la corsia ha ${posizioni} posizioni`);
+    }
+});

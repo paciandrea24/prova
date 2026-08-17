@@ -31,6 +31,34 @@ document.addEventListener('DOMContentLoaded', () => {
     // (vedi backend/routes/lobbyRoutes.js — GET /api/f1/tracks). Viene
     // chiamato una sola volta all'avvio: l'elenco piste non cambia mentre
     // la pagina è aperta.
+    // Quanti piloti regge ogni pista: e' la lunghezza della sua corsia box
+    // diviso il passo dei box (vedi trackLoader.listTracks). Un tracciato con
+    // una corsia corta non puo' ospitare venti piloti — i box in eccesso
+    // finirebbero oltre la fine della corsia.
+    const capienzaPiste = {};
+
+    function aggiornaScaglioniPiloti() {
+        const track = document.getElementById('f1-trackId');
+        const piloti = document.getElementById('f1-gridSize');
+        if (!track || !piloti) return;
+        const max = capienzaPiste[track.value] || 20;
+        let ripiego = null;
+        for (const opt of piloti.options) {
+            const n = parseInt(opt.value, 10);
+            opt.disabled = n > max;
+            // Il motivo si legge nell'opzione stessa: farla sparire lascerebbe
+            // credere a un limite del gioco invece che di questa pista.
+            opt.textContent = n > max ? `${n} — pit lane too short` : String(n);
+            if (!opt.disabled) ripiego = opt.value;
+        }
+        // Se la scelta corrente non ci sta piu' (si e' cambiata pista), si
+        // scende al piu' alto che ci sta.
+        if (parseInt(piloti.value, 10) > max && ripiego) {
+            piloti.value = ripiego;
+            gameSettings.f1.gridSize = ripiego;
+        }
+    }
+
     function loadF1Tracks() {
         const select = document.getElementById('f1-trackId');
         if (!select) return;
@@ -43,8 +71,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     opt.value = t.id;
                     opt.textContent = t.name;
                     select.appendChild(opt);
+                    if (t.maxDrivers) capienzaPiste[t.id] = t.maxDrivers;
                 });
                 select.value = gameSettings.f1.trackId;
+                aggiornaScaglioniPiloti();
+                select.addEventListener('change', aggiornaScaglioniPiloti);
             })
             .catch(err => console.error('Impossibile caricare le piste F1:', err));
     }
