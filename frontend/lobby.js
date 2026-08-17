@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
         racing: { mode: 'championship', numTracks: 3, trackName: 'Monza' },
         football: { maxGoals: 3 },
         fps: { rounds: 5 }, // round FISSI a 5 (il server ignora comunque questo valore)
-        f1: { mode: 'championship', trackId: 'monte-rosso', botsEnabled: 'true' }
+        f1: { mode: 'championship', trackId: 'monte-rosso', botsEnabled: 'true', gridSize: '6' }
     };
 
     // Popola il menu "Track" delle impostazioni F1 con le piste disponibili

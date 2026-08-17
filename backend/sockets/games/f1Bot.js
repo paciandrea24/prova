@@ -16,7 +16,13 @@ const PALETTE = [
     '#795548', '#CDDC39', '#4B0082', '#455A64'
 ];
 
-const MAX_GRID_SIZE = 6;   // umani + bot totali per gara
+// TETTO ASSOLUTO di piloti per gara, non la dimensione della griglia: quella
+// si sceglie in lobby e arriva su `game.gridSize` (vedi f1GameSocket). Prima
+// questa costante era 6 ed ERA la griglia, scritta a mano qui e in altri due
+// file che nessun test confrontava.
+const MAX_GRID_SIZE = 20;
+// Quanti piloti se la lobby non lo dice (partite vecchie, test storici).
+const GRID_SIZE_DEFAULT = 6;
 
 // ====================================================
 // GUIDA — pure pursuit per lo sterzo, velocità in curva calcolata dalla
@@ -370,9 +376,23 @@ function estimateFinishTime(elapsedMs, progressFraction) {
 // ====================================================
 // ASSEGNAZIONE COLORI BOT
 // ====================================================
+// Colori in più per i BOT soltanto. La PALETTE sopra sono i colori che un
+// giocatore può scegliere in lobby e deve restare in sync con
+// frontend/index.js: sono dodici, e con venti piloti in griglia non bastano —
+// se ne servono fino a diciannove per i soli bot. Questi non compaiono nella
+// scelta colore: nessuno li "possiede", servono solo a distinguere le auto in
+// pista e i pallini in classifica.
+const PALETTE_BOT_EXTRA = [
+    '#16A085', '#D35400', '#8E44AD', '#C0392B',
+    '#27AE60', '#F39C12', '#7F8C8D', '#1ABC9C',
+    '#E91E8C', '#A0522D', '#2C3E50', '#BDC3C7',
+];
+
 function pickBotColors(humanColors, count, rng = Math.random) {
     const taken = new Set(humanColors.map(c => c.toUpperCase()));
-    const pool = PALETTE.filter(c => !taken.has(c));
+    // Prima i colori della piattaforma, poi la riserva: con pochi bot le auto
+    // restano quelle di sempre, e i colori in più entrano solo quando servono.
+    const pool = PALETTE.concat(PALETTE_BOT_EXTRA).filter(c => !taken.has(c));
     const n = Math.min(count, pool.length);
     const picked = [];
     for (let i = 0; i < n; i++) {
@@ -470,7 +490,9 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
     if (!botsEnabled) return;
 
     const humanColors = (lobby && (lobby.lockedPlayers || lobby.players)) || [];
-    const botsNeeded = MAX_GRID_SIZE - humanColors.length;
+    // Quanti piloti in tutto: la scelta della lobby, limitata dal tetto.
+    const inGriglia = Math.min(MAX_GRID_SIZE, game.gridSize || GRID_SIZE_DEFAULT);
+    const botsNeeded = inGriglia - humanColors.length;
     if (botsNeeded <= 0) return;
 
     const colors = pickBotColors(humanColors, botsNeeded, rng);
@@ -1250,7 +1272,7 @@ function updateBotInputs(game, deps) {
 }
 
 module.exports = {
-    PALETTE, MAX_GRID_SIZE, DEFAULT_TUNING,
+    PALETTE, PALETTE_BOT_EXTRA, MAX_GRID_SIZE, GRID_SIZE_DEFAULT, DEFAULT_TUNING,
     BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS,
     normalizeAngle, steerToward, lookaheadIndex, apexOffset, windowRadius, cornerApexNear, cornerTargetSpeed, overtakeOffset,
     nearestAheadPlayer, otherCarTargetSpeed, pickPostPitCompound, pickBotColors, estimateFinishTime,

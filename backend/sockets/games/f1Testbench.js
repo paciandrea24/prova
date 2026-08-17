@@ -61,16 +61,6 @@ function validateTestbenchScenario({ trackId, botCount, tyreWear, compound, dama
     return { valid: true };
 }
 
-// Colori fittizi per "riempire" gli slot umani agli occhi di createBots
-// (che calcola quanti bot creare come MAX_GRID_SIZE - humanColors.length):
-// nel banco prova non c'è NESSUN giocatore reale, quindi passiamo
-// (MAX_GRID_SIZE - botCount) colori fittizi come "già presi da umani" per
-// ottenere esattamente botCount bot, invece dei 6 di una partita normale.
-function fakeHumanColors(botCount) {
-    const count = Math.max(0, MAX_GRID_SIZE - botCount);
-    return Array.from({ length: count }, (_, i) => `#TESTBENCH-UNUSED-${i}`);
-}
-
 function createTestbenchSession({ trackId, botCount, tyreWear, compound, damageParts, racelineVariant }) {
     let track = loadTrack(trackId);
     if (racelineVariant) {
@@ -94,6 +84,7 @@ function createTestbenchSession({ trackId, botCount, tyreWear, compound, damageP
         players: {},
         grid: [],
         settings: {},
+        gridSize: botCount,
         tyreConfirmed: new Set(),
         socketByColor: {},
         raceStarted: true,
@@ -104,7 +95,14 @@ function createTestbenchSession({ trackId, botCount, tyreWear, compound, damageP
         lightsSequenceActive: false
     };
 
-    const lobby = { lockedPlayers: fakeHumanColors(botCount) };
+    // Nel banco prova non c'è nessun giocatore reale: la griglia è fatta di
+    // soli bot, quindi il numero di piloti È il numero di bot.
+    //
+    // Prima si passavano (MAX_GRID_SIZE - botCount) colori fittizi come "già
+    // presi da umani", perché createBots calcolava i bot come "tetto meno
+    // umani". Da quando il numero di piloti si sceglie in lobby e sta su
+    // game.gridSize, quel trucco non serve più — e non funzionerebbe.
+    const lobby = { lockedPlayers: [] };
     createBots(game, lobby, f1GameSocket.TYRE_COMPOUNDS);
 
     // Griglia = ordine di creazione dei bot (nessuna qualifica reale in

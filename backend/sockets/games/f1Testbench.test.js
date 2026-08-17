@@ -49,10 +49,14 @@ test('validateTestbenchScenario: trackId inesistente viene rifiutato', () => {
     assert.match(result.error, /pista/i);
 });
 
-test('validateTestbenchScenario: botCount fuori range [2,6] viene rifiutato', () => {
+test('validateTestbenchScenario: botCount fuori range [2, MAX_GRID_SIZE] viene rifiutato', () => {
     const trackId = listTracks()[0].id;
+    // Il limite alto si legge dalla costante: era 6 e dal 2026-08-17 e' 20,
+    // da quando il numero di piloti si sceglie in lobby. Un 7 scritto a mano
+    // qui diceva "fuori range" per un valore che ora e' legittimo.
+    const { MAX_GRID_SIZE } = require('./f1Bot.js');
     assert.equal(validateTestbenchScenario({ trackId, botCount: 1, tyreWear: 0, compound: 'medium' }).valid, false);
-    assert.equal(validateTestbenchScenario({ trackId, botCount: 7, tyreWear: 0, compound: 'medium' }).valid, false);
+    assert.equal(validateTestbenchScenario({ trackId, botCount: MAX_GRID_SIZE + 1, tyreWear: 0, compound: 'medium' }).valid, false);
 });
 
 test('validateTestbenchScenario: tyreWear fuori range [0,100] viene rifiutato', () => {

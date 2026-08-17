@@ -419,9 +419,15 @@ test('pickBotColors: esclude i colori umani, ne restituisce esattamente `count` 
     picked.forEach(c => assert.ok(!humanColors.includes(c)));
 });
 
-test('pickBotColors: clampa a colori liberi disponibili', () => {
-    const humanColors = PALETTE.slice(0, 10);   // solo 2 colori liberi
-    const picked = pickBotColors(humanColors, 5, () => 0);
+// Il numero di colori disponibili non e' piu' quello della sola PALETTE dei
+// giocatori: dal 2026-08-17 i bot attingono anche a PALETTE_BOT_EXTRA, che
+// serve a coprire venti piloti in griglia. Il test misura quindi la riserva
+// vera invece di ricopiarne la dimensione.
+test('pickBotColors: clampa ai colori liberi disponibili', () => {
+    const { PALETTE_BOT_EXTRA } = require('./f1Bot.js');
+    const tutti = PALETTE.concat(PALETTE_BOT_EXTRA);
+    const occupati = tutti.slice(0, tutti.length - 2);   // solo 2 colori liberi
+    const picked = pickBotColors(occupati, 5, () => 0);
     assert.equal(picked.length, 2);
 });
 
@@ -934,4 +940,59 @@ test('updateBotInputs: in gara botLapPaceMult NON viene ri-estratto entro lo ste
     const { game, p } = makePaceRolloverGame('race', 5, 1.5);
     updateBotInputs(game, makeGripAwarenessDeps());
     assert.equal(p.botLapPaceMult, 1.5, 'nessuna ri-estrazione attesa entro lo stesso segmento');
+});
+
+// ═══════════ QUANTI PILOTI IN GRIGLIA ═══════════
+//
+// Il numero non è più fisso a sei: si sceglie in lobby e arriva sulla
+// partita come `game.gridSize`. MAX_GRID_SIZE resta come TETTO assoluto,
+// non come dimensione della griglia.
+const { createBots: creaBot, MAX_GRID_SIZE: TETTO } = require('./f1Bot.js');
+const TYRE_COMPOUNDS_FINTE = { hard: {}, medium: {}, soft: {} };
+
+function partitaPerBot(gridSize) {
+    return {
+        track: {
+            qualiSpawn: { x: 0, z: 0, angle: 0 },
+            points: [{ x: 0, z: 0 }, { x: 10, z: 0 }],
+        },
+        players: {},
+        settings: {},
+        tyreConfirmed: new Set(),   // i bot si auto-confermano alla creazione
+        gridSize,
+    };
+}
+
+test('createBots riempie fino al numero di piloti scelto in lobby', () => {
+    for (const quanti of [6, 10, 14, 20]) {
+        const game = partitaPerBot(quanti);
+        creaBot(game, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE, () => 0.5);
+        assert.equal(Object.keys(game.players).length, quanti - 1,
+            `con gridSize ${quanti} attesi ${quanti - 1} bot, trovati ${Object.keys(game.players).length}`);
+    }
+});
+
+test('createBots senza gridSize resta ai sei di sempre', () => {
+    const game = partitaPerBot(undefined);
+    creaBot(game, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE, () => 0.5);
+    assert.equal(Object.keys(game.players).length, 5);
+});
+
+test('createBots non supera mai il tetto assoluto', () => {
+    const game = partitaPerBot(999);
+    creaBot(game, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE, () => 0.5);
+    assert.equal(Object.keys(game.players).length, TETTO - 1);
+});
+
+test('il tetto assoluto è 20', () => {
+    assert.equal(TETTO, 20);
+});
+
+test('i colori bastano per venti piloti, e sono tutti diversi', () => {
+    const game = partitaPerBot(20);
+    creaBot(game, { lockedPlayers: ['#E74C3C'] }, TYRE_COMPOUNDS_FINTE, () => 0.5);
+    const colori = Object.keys(game.players);
+    assert.equal(colori.length, 19, 'con un umano servono 19 bot');
+    assert.equal(new Set(colori.map(c => c.toUpperCase())).size, 19, 'nessun colore ripetuto');
+    assert.ok(!colori.some(c => c.toUpperCase() === '#E74C3C'), 'nessun bot col colore dell\'umano');
 });

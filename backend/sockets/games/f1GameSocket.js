@@ -251,6 +251,11 @@ module.exports = function (io, socket) {
                 // veloce confermava — chi stava ancora caricando la pista si
                 // ritrovava in qualifica senza aver scelto (bug con due schede).
                 attesiAllaPartenza: ((lobby && (lobby.lockedPlayers || lobby.players)) || [playerColor]).slice(),
+                // Quanti piloti in tutto, scelto in lobby. Sta sulla PARTITA e
+                // non si rilegge dalle impostazioni ad ogni uso: la lobby puo'
+                // cambiare mentre la gara e' in corso.
+                gridSize: Math.min(20, Math.max(1, parseInt(
+                    (lobby && lobby.gameSettings && lobby.gameSettings.gridSize), 10) || 6)),
                 grid: null,   // ordine di partenza determinato dalla qualifica (array di colori)
                 hostColor: lobby ? lobby.host : playerColor,
                 settings: lobby ? (lobby.gameSettings || {}) : {},
