@@ -394,7 +394,10 @@ const path = require('path');
 // rimossa (successo con `baku`, tolta il 2026-08-17).
 const TRACCIATI = require('fs')
     .readdirSync(require('path').join(__dirname, '..', 'tracks'))
-    .filter(f => f.endsWith('.json'))
+    // Le piste finte che altri test creano e cancellano al volo
+    // (`test-...`) vanno escluse: la suite gira in parallelo e
+    // altrimenti compaiono qui a seconda del momento.
+    .filter(f => f.endsWith('.json') && !/^(__|test-)/.test(f))
     .map(f => f.replace(/\.json$/, ''));
 
 function pistaVera(id) {

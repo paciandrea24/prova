@@ -237,6 +237,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     sun.shadow.bias = -0.0005;
     scene.add(sun);
 
+    // ── La mappa delle ombre segue l'auto ──
+    //
+    // Prima il riquadro delle ombre stava fermo attorno a (50, 100), un punto
+    // scritto nel codice. Misurato, quanta pista ci cadeva dentro:
+    // monte-rosso 100%, new-monza 49%, prova **0%** — su prova non c'era una
+    // sola ombra dinamica, ed è la ragione per cui le altre piste sembravano
+    // averle molto più marcate.
+    //
+    // Il sole non cambia direzione, si sposta soltanto: l'inclinazione delle
+    // ombre resta identica ovunque, cambia solo dove il riquadro è puntato.
+    const _dirSole = new THREE.Vector3().subVectors(sun.target.position, sun.position);
+    const DISTANZA_SOLE = _dirSole.length();
+    _dirSole.normalize();
+    // Il riquadro guarda un po' più avanti del muso: è la parte di circuito
+    // che il giocatore ha davanti, e a spendercela si guadagna dove serve.
+    const ANTICIPO_OMBRA = 120;
+    const _avanti = new THREE.Vector3();
+
+    function puntaOmbre(x, z) {
+        // Il centro si arrotonda al passo dei texel della mappa. Senza,
+        // muovendo il riquadro le ombre "nuotano": i bordi si ricampionano su
+        // texel diversi ad ogni frame e sfarfallano. Arrotondando, il
+        // campionamento resta agganciato alla stessa griglia mentre l'auto si
+        // sposta. Il sole è quasi a picco, quindi la griglia del mondo in XZ
+        // approssima bene quella della mappa.
+        const passo = (sun.shadow.camera.right - sun.shadow.camera.left) / sun.shadow.mapSize.x;
+        const cx = Math.round(x / passo) * passo;
+        const cz = Math.round(z / passo) * passo;
+        sun.target.position.set(cx, 0, cz);
+        sun.position.set(cx - _dirSole.x * DISTANZA_SOLE,
+                         -_dirSole.y * DISTANZA_SOLE,
+                         cz - _dirSole.z * DISTANZA_SOLE);
+    }
+
     // ====================================================
     // COSTRUZIONE PISTA 3D — dati caricati dal JSON della pista scelta
     // (vedi frontend/tracks/), stessa geometria usata dal server tramite
@@ -485,7 +519,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Pannello di taratura: F9 lo apre, F8 accende e spegne i contorni.
     // `outline` resta null finché ToonOutline non entra in gioco.
-    ToonPanel.install({
+    const pannello = ToonPanel.install({
         style: ToonStyle, sky: toonSky, outline: TOON_ON ? ToonOutline : null, scene,
         lights: { sun, hemi }, renderer, attivo: TOON_ON, perf: F1Perf,
     });
@@ -2317,18 +2351,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         inputs.steer = (keys.a ? 1 : 0) + (keys.d ? -1 : 0);
     }
 
-    // ── Segnalazioni in gioco (M / Shift+M) ────────────────────────────
-    // Mostra l'esito per un attimo e poi sparisce. Un solo timer: due
-    // pressioni ravvicinate non devono lasciare il messaggio appeso.
-    let timerAvvisoSegnalazione = null;
-    function mostraAvvisoSegnalazione(testo, errore) {
+    // ── Avvisi brevi a schermo ─────────────────────────────────────────
+    // Un messaggio che compare per un attimo e sparisce: lo usano le
+    // segnalazioni in gioco (M / Shift+M) e il tasto delle ombre (O). Un solo
+    // timer: due pressioni ravvicinate non devono lasciare il testo appeso.
+    let timerAvviso = null;
+    function mostraAvviso(testo, errore) {
         const el = document.getElementById('segnalazione-avviso');
         if (!el) return;
         el.textContent = testo;
         el.classList.toggle('segnalazione-errore', !!errore);
         el.style.display = 'block';
-        clearTimeout(timerAvvisoSegnalazione);
-        timerAvvisoSegnalazione = setTimeout(() => { el.style.display = 'none'; }, 1500);
+        clearTimeout(timerAvviso);
+        timerAvviso = setTimeout(() => { el.style.display = 'none'; }, 1500);
     }
 
     // Registra dove sei e dove stai guardando. Il numero mostrato è quello
@@ -2357,12 +2392,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 body: JSON.stringify(rec)
             });
             const esito = await risposta.json();
-            if (esito.ok) mostraAvvisoSegnalazione(`Segnalazione ${esito.n} registrata`);
-            else mostraAvvisoSegnalazione('Segnalazione NON salvata', true);
+            if (esito.ok) mostraAvviso(`Segnalazione ${esito.n} registrata`);
+            else mostraAvviso('Segnalazione NON salvata', true);
         } catch (err) {
             // Mai una conferma falsa: se il server non ha risposto, il punto
             // non esiste e chi guida deve saperlo subito, non dopo il giro.
-            mostraAvvisoSegnalazione('Segnalazione NON salvata', true);
+            mostraAvviso('Segnalazione NON salvata', true);
         }
     }
 
@@ -2374,10 +2409,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 body: JSON.stringify({ sessione: sessioneSegnalazioni })
             });
             const esito = await risposta.json();
-            if (esito.ok) mostraAvvisoSegnalazione(`Segnalazione ${esito.n} annullata`);
-            else mostraAvvisoSegnalazione('Niente da annullare', true);
+            if (esito.ok) mostraAvviso(`Segnalazione ${esito.n} annullata`);
+            else mostraAvviso('Niente da annullare', true);
         } catch (err) {
-            mostraAvvisoSegnalazione('Annullamento NON riuscito', true);
+            mostraAvviso('Annullamento NON riuscito', true);
         }
     }
 
@@ -2405,6 +2440,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (k === 'h') {   // DEBUG: mostra/nascondi le hitbox di collisione
             showHitboxes = !showHitboxes;
             for (const mesh of Object.values(hitboxMeshes)) mesh.visible = showHitboxes;
+        }
+        // O = ombre dinamiche. Passa dal pannello (ToonPanel) e non tocca il
+        // renderer da qui: la casella F9 e il tasto devono restare due modi di
+        // premere lo stesso interruttore, non due interruttori.
+        // Spegnendole si torna esattamente all'aspetto che aveva "prova"
+        // prima che il riquadro delle ombre seguisse l'auto: nessuna ombra.
+        if (k === 'o' && !e.repeat && !isTypingInField(e) && pannello && pannello.ombreDinamiche) {
+            const accese = !pannello.ombreAccese();
+            pannello.ombreDinamiche(accese);
+            mostraAvviso(accese ? 'Ombre accese' : 'Ombre spente');
         }
         // M segnala il punto in cui sei, Shift+M annulla l'ultima. `e.repeat`
         // esclude l'autorepeat: tenendo premuto si riempirebbe il file di
@@ -2534,6 +2579,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const _camOff = new THREE.Vector3();
     const _lookTgt = new THREE.Vector3();
+
+    // Dove puntare il riquadro delle ombre, frame per frame: durante la scelta
+    // mescola sul punto che il carosello sta inquadrando (altrimenti nelle
+    // inquadrature lontane dalla griglia non ci sarebbe un'ombra), in gara
+    // davanti all'auto. Avanti è +Z locale — la camera d'inseguimento sta a
+    // (0, 5.5, -13), cioè dietro.
+    function seguiConLeOmbre() {
+        if (tyreSelectActive) {
+            const s = anteprimaScatti[scattoCorrente];
+            if (s) puntaOmbre(s.target.x, s.target.z);
+            return;
+        }
+        if (!myCarGroup) return;
+        _avanti.set(0, 0, 1).applyQuaternion(myCarGroup.quaternion);
+        puntaOmbre(myCarGroup.position.x + _avanti.x * ANTICIPO_OMBRA,
+                   myCarGroup.position.z + _avanti.z * ANTICIPO_OMBRA);
+    }
 
     function updateCamera() {
         if (!myCarGroup) return;
@@ -2939,6 +3001,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (tyreSelectActive) updateTyreSelectCamera();
         else updateCamera();
+        seguiConLeOmbre();
         toonSky.update(camera);
         F1Perf.logica = performance.now() - _tLogica;
         ToonOutline.render(renderer, scene, camera);

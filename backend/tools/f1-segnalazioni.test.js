@@ -88,6 +88,16 @@ const TrackGravel = require('../../frontend/shared/trackGravel.js');
 const TrackScenery = require('../../frontend/shared/trackScenery.js');
 const { loadTrack } = require('../sockets/games/trackLoader.js');
 
+// Le piste si leggono dalla cartella invece di elencarle a mano: un elenco
+// scritto qui invecchia, e si rompe quando una pista viene aggiunta o tolta
+// (successo con `baku`, rimossa il 2026-08-17). Le piste finte create al volo
+// da altri test (`test-...`) restano fuori: la suite gira in parallelo.
+const TRACCIATI = require('fs')
+    .readdirSync(require('path').join(__dirname, '..', '..', 'frontend', 'tracks'))
+    .filter(f => f.endsWith('.json') && !/^(__|test-)/.test(f))
+    .map(f => f.replace(/\.json$/, ''));
+
+
 function layoutComeIlClient(trackId) {
     const radice = path.join(__dirname, '..', '..');
     const trackData = JSON.parse(fs.readFileSync(
@@ -111,7 +121,7 @@ function layoutComeIlClient(trackId) {
         45, seatAnchors, BARRIER_PROFILE, terraceAnchors);                      // f1.js:670
 }
 
-for (const trackId of ['prova', 'monte-rosso', 'new-monza', 'baku']) {
+for (const trackId of TRACCIATI) {
     test(`la scenografia ricostruita dal tool è quella del gioco (${trackId})`, () => {
         const daTool = tool.layoutDi(trackId, loadTrack(trackId));
         const daClient = layoutComeIlClient(trackId);

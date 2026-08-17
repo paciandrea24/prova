@@ -211,7 +211,7 @@
         // compilati: l'interruttore sembrerebbe non fare niente. La
         // ricompilazione blocca il gioco per un attimo, quindi il primo
         // mezzo secondo dopo il clic va ignorato.
-        interruttore(box, 'ombre dinamiche (ricompila)', true, (on) => {
+        function applicaOmbre(on) {
             if (!renderer) return;
             renderer.shadowMap.enabled = on;
             scene.traverse((c) => {
@@ -219,7 +219,12 @@
                 const mats = Array.isArray(c.material) ? c.material : [c.material];
                 for (const m of mats) m.needsUpdate = true;
             });
-        });
+        }
+        // Lo stato iniziale è quello del renderer, non un `true` fisso:
+        // `?ombre=off` nell'indirizzo le spegne al caricamento, e la casella
+        // deve dire la verità.
+        const casellaOmbre = interruttore(box, 'ombre dinamiche (ricompila)',
+            renderer ? renderer.shadowMap.enabled : true, applicaOmbre);
         interruttore(box, 'ombra a piena risoluzione', true, (on) => {
             if (!lucePrincipale) return;
             // La mappa va buttata: Three la ricrea alla misura nuova al primo
@@ -316,6 +321,14 @@
             dispose() {
                 window.removeEventListener('keydown', onKey);
                 box.remove();
+            },
+            // Le ombre si accendono anche da fuori (il tasto O in gara), ma
+            // passando SEMPRE di qui: così la casella del pannello e ciò che
+            // si vede a schermo non possono raccontare due cose diverse.
+            ombreAccese() { return casellaOmbre.checked; },
+            ombreDinamiche(on) {
+                casellaOmbre.checked = on;
+                applicaOmbre(on);
             },
         };
     }

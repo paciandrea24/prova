@@ -205,6 +205,16 @@ test('saveTrack: con startFinish.angle esplicito, qualiSpawn.angle usa quel valo
 
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 
+// Le piste si leggono dalla cartella invece di elencarle a mano: un elenco
+// scritto qui invecchia, e si rompe quando una pista viene aggiunta o tolta
+// (successo con `baku`, rimossa il 2026-08-17). Le piste finte create al volo
+// da altri test (`test-...`) restano fuori: la suite gira in parallelo.
+const TRACCIATI = require('fs')
+    .readdirSync(require('path').join(__dirname, '..', '..', '..', 'frontend', 'tracks'))
+    .filter(f => f.endsWith('.json') && !/^(__|test-)/.test(f))
+    .map(f => f.replace(/\.json$/, ''));
+
+
 function geometricAngleFor(controlPoints, startFinish) {
     const points = TrackGeometry.sampleLoop(controlPoints, 1000);
     const idx = TrackGeometry.nearestPoint(points, startFinish.x, startFinish.z).index;
@@ -282,7 +292,7 @@ test('il muro del server sta esattamente dove il client lo disegna', () => {
     const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
     const TrackGravel = require('../../../frontend/shared/trackGravel.js');
 
-    for (const id of ['prova', 'new-monza', 'baku']) {
+    for (const id of TRACCIATI) {
         const track = loadTrack(id);
         const raw = JSON.parse(fs.readFileSync(path.join(TRACKS_DIR, id + '.json'), 'utf8'));
 

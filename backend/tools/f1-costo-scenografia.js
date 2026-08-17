@@ -17,6 +17,16 @@ const ROOT = path.join(__dirname, '..', '..');
 const TrackScenery = require(path.join(ROOT, 'frontend/shared/trackScenery.js'));
 const SceneryChunks = require(path.join(ROOT, 'frontend/shared/sceneryChunks.js'));
 const { loadTrack } = require(path.join(ROOT, 'backend/sockets/games/trackLoader.js'));
+
+// Le piste si leggono dalla cartella invece di elencarle a mano: un elenco
+// scritto qui invecchia, e si rompe quando una pista viene aggiunta o tolta
+// (successo con `baku`, rimossa il 2026-08-17). Le piste finte create al volo
+// da altri test (`test-...`) restano fuori: la suite gira in parallelo.
+const TRACCIATI = require('fs')
+    .readdirSync(require('path').join(__dirname, '..', '..', 'frontend', 'tracks'))
+    .filter(f => f.endsWith('.json') && !/^(__|test-)/.test(f))
+    .map(f => f.replace(/\.json$/, ''));
+
 const seats = require(path.join(ROOT,
     'frontend/assets/custom/circuit/grandStandSeats.json')).seats;
 const terraceAnchors = require(path.join(ROOT,
@@ -56,7 +66,7 @@ function costoDi(asset) {
 }
 
 const tracciati = process.argv.slice(2).length ? process.argv.slice(2)
-                : ['prova', 'new-monza', 'monte-rosso', 'baku'];
+                : TRACCIATI;
 
 for (const id of tracciati) {
     const raw = JSON.parse(fs.readFileSync(
