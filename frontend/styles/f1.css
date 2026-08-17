@@ -546,6 +546,13 @@ canvas.tyre-preview-canvas {
     text-align: center;
     font-family: 'Fredoka', sans-serif;
 }
+.quali-waiting-conto {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--f1-text-dim);
+}
 .quali-waiting-titolo {
     display: block;
     font-size: 15px;

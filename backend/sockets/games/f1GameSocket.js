@@ -122,6 +122,15 @@ const GRID_DISPLAY_MS = 8000; // quanto resta a schermo l'animazione POLE + la g
 // cui i giocatori sono abituati tra una fase e l'altra.
 const QUALI_GRACE_MS = 8000;
 const QUALI_GRACE_TICKS = Math.round(QUALI_GRACE_MS / PHYSICS_TICK_MS);
+// Stessa idea per la GARA, con una finestra piu' lunga perche' i distacchi di
+// fine gara sono piu' larghi di quelli di un giro secco. Misurato con una
+// gara di soli bot: fra il primo e l'ultimo arrivato passano 76 secondi su
+// "prova" (5 giri) e 6 su monte-rosso (4 giri). Trenta secondi non bastano a
+// prendere tutti sulle piste lunghe — ne' devono: chi resta fuori e' comunque
+// in classifica, con la posizione esatta e il tempo proiettato dal suo ritmo.
+// Chi non vuole aspettare chiude prima (evento f1ChiudiGara).
+const RACE_GRACE_MS = 30000;
+const RACE_GRACE_TICKS = Math.round(RACE_GRACE_MS / PHYSICS_TICK_MS);
 // Il normale flusso qualifica->griglia->gara ha già una pausa naturale
 // (GRID_DISPLAY_MS) tra la fine di una sessione e l'inizio della prossima,
 // tempo per staccare il piede dall'acceleratore. "Riprova" (modalità
@@ -392,6 +401,17 @@ module.exports = function (io, socket) {
             }, PHYSICS_TICK_MS);
             startTyreSelect(io, lobbyId, game);
         }
+    });
+
+    // Chiusura anticipata della finestra di cortesia di fine gara: chi ha
+    // finito sta girando da fantasma in attesa dei bot e puo' decidere che
+    // basta cosi'. Accettata solo a finestra aperta — cioe' quando tutti gli
+    // umani hanno gia' tagliato il traguardo, quindi non c'e' modo di
+    // troncare la gara di qualcun altro.
+    socket.on('f1ChiudiGara', ({ lobbyId }) => {
+        const game = activeGames.get(lobbyId);
+        if (!game || game.raceEnded || !game.raceGraceEndTick) return;
+        endRace(io, lobbyId, game);
     });
 
     // Scelta mescola (fase tyre_select). Se tutti hanno confermato si passa
@@ -1548,9 +1568,22 @@ function tickGame(io, lobbyId, game) {
             }
         }
     } else if (game.phase === 'race') {
-        if (!game.raceEnded && connectedHumans.length > 0 && connectedHumans.every(p => p.finished)) {
-            endRace(io, lobbyId, game);
-            return;
+        // Come in qualifica: quando gli umani hanno finito la gara NON chiude
+        // subito, resta aperta fino a RACE_GRACE_MS. In quella finestra tutti
+        // continuano a girare (chi ha finito da fantasma) e i bot che tagliano
+        // il traguardo prendono il tempo VERO invece di quello proiettato.
+        if (!game.raceEnded) {
+            if (!game.raceGraceEndTick && connectedHumans.length > 0 && connectedHumans.every(p => p.finished)) {
+                game.raceGraceEndTick = game.raceTick + RACE_GRACE_TICKS;
+                io.to(lobbyId).emit('f1RaceGrace', { restaMs: RACE_GRACE_MS });
+            }
+            if (game.raceGraceEndTick) {
+                const tuttiArrivati = players.every(p => p.finished);
+                if (tuttiArrivati || game.raceTick >= game.raceGraceEndTick) {
+                    endRace(io, lobbyId, game);
+                    return;
+                }
+            }
         }
     }
 }
@@ -2002,10 +2035,37 @@ function endRace(io, lobbyId, game) {
     // — il client mostra la posizione, non un tempo inventato.
     const finished = Object.values(game.players).filter(p => p.time !== null);
     const unfinished = Object.values(game.players).filter(p => p.time === null);
+
+    // Chi non ha finito non resta senza tempo: si proietta il suo dal RITMO
+    // che ha davvero tenuto (tempo trascorso diviso la frazione di gara
+    // percorsa — estimateFinishTime, la stessa funzione che la qualifica usa
+    // da sempre per lo stesso motivo). Non è una simulazione: è la sua misura
+    // estesa fino al traguardo.
+    //
+    // Serve al campionato, dove una classifica con "non arrivato" al posto di
+    // un tempo non si può sommare né rileggere a distanza di gare. La
+    // POSIZIONE resta comunque quella vera, calcolata sul progresso: il tempo
+    // proiettato non riordina nessuno, si limita a esistere.
+    const n = game.track.points.length;
+    const distanzaGara = game.track.totalLaps * n;
+    const elapsed = game.raceTick * PHYSICS_TICK_MS;
+    const stime = new Map();
+    for (const p of unfinished) {
+        stime.set(p.color, estimateFinishTime(elapsed, progressScore(p, game.track) / distanzaGara));
+    }
+
     const podium = [
         ...finished.sort((a, b) => a.time - b.time),
         ...unfinished.sort((a, b) => progressScore(b, game.track) - progressScore(a, game.track))
-    ].map(p => ({ color: p.color, totalTime: p.time, pitPenalty: !!p.pitPenalty, falseStart: !!p.falseStart, collisionPenaltyMs: p.collisionPenaltyMs || 0 }));
+    ].map(p => ({
+        color: p.color,
+        totalTime: p.time !== null ? p.time : stime.get(p.color),
+        // Il client lo segna come proiezione invece di spacciarlo per un
+        // tempo cronometrato.
+        stimato: p.time === null,
+        pitPenalty: !!p.pitPenalty, falseStart: !!p.falseStart,
+        collisionPenaltyMs: p.collisionPenaltyMs || 0,
+    }));
     io.to(lobbyId).emit('f1RaceEnded', {
         podium,
         isFinal: true,

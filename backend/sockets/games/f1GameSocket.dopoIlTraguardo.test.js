@@ -146,3 +146,70 @@ test('a gara CHIUSA i comandi tornano ignorati', (t) => {
     // l'attesa veniva letto come falsa partenza al via successivo.
     assert.equal(g.players.red.inputs.throttle, 0);
 });
+
+// ═══════════ FINESTRA DI CORTESIA DI FINE GARA ═══════════
+//
+// Quando gli umani hanno finito la gara non chiude subito: resta aperta 30
+// secondi in cui tutti continuano a girare e i bot ancora in pista possono
+// tagliare il traguardo per davvero, prendendo il tempo VERO invece di quello
+// proiettato. Misurato con una gara di soli bot, fra il primo e l'ultimo
+// arrivato passano 76 s su "prova" e 6 su monte-rosso: aspettare tutti non è
+// ragionevole, aspettare un po' sì.
+test('la gara non chiude nell istante in cui l umano taglia il traguardo', (t) => {
+    t.after(pulisci);
+    const { g } = partita();
+    g.players.red.finished = true;
+    g.players.red.time = 60000;
+    // Un bot ancora in pista.
+    g.players.bot1 = { ...g.players.red, color: 'bot1', isBot: true, finished: false, time: null,
+                       carContacts: new Set(), pendingCollisionPenaltyEvents: [],
+                       inputs: { throttle: 0, brake: 0, steer: 0 } };
+
+    f1.tickGame(ioFinto, LOBBY, g);
+    assert.equal(g.raceEnded, false, 'ha chiuso subito: niente giro di rientro');
+    assert.ok(g.raceGraceEndTick > g.raceTick, 'la finestra di cortesia deve essere aperta');
+});
+
+test('la finestra si chiude da sola alla scadenza', (t) => {
+    t.after(pulisci);
+    const { g } = partita();
+    g.players.red.finished = true;
+    g.players.red.time = 60000;
+    g.players.bot1 = { ...g.players.red, color: 'bot1', isBot: true, finished: false, time: null,
+                       carContacts: new Set(), pendingCollisionPenaltyEvents: [],
+                       inputs: { throttle: 0, brake: 0, steer: 0 } };
+
+    f1.tickGame(ioFinto, LOBBY, g);
+    g.raceGraceEndTick = g.raceTick;   // scadenza raggiunta
+    f1.tickGame(ioFinto, LOBBY, g);
+    assert.equal(g.raceEnded, true);
+});
+
+test('chi non ha finito riceve un tempo proiettato, mai un vuoto', (t) => {
+    t.after(pulisci);
+    const emessi = [];
+    const ioSpia = { to: () => ({ emit: (evento, dati) => emessi.push({ evento, dati }) }) };
+    const { g } = partita();
+    g.raceTick = 1200;   // 60 secondi di gara
+    g.players.red.finished = true;
+    g.players.red.time = 60000;
+    g.players.bot1 = { ...g.players.red, color: 'bot1', isBot: true, finished: false, time: null,
+                       lap: 1, trackIndex: 200,
+                       carContacts: new Set(), pendingCollisionPenaltyEvents: [],
+                       inputs: { throttle: 0, brake: 0, steer: 0 } };
+
+    f1.physics.endRace ? f1.physics.endRace(ioSpia, LOBBY, g) : null;
+    // endRace non è esportata: si passa dal gate, chiudendo la finestra.
+    if (!g.raceEnded) {
+        g.raceGraceEndTick = 1;
+        f1.tickGame(ioSpia, LOBBY, g);
+    }
+
+    const fine = emessi.find(e => e.evento === 'f1RaceEnded');
+    assert.ok(fine, 'la gara deve chiudersi');
+    const voce = fine.dati.podium.find(v => v.color === 'bot1');
+    assert.ok(voce, 'chi non ha finito deve comparire in classifica');
+    assert.ok(Number.isFinite(voce.totalTime) && voce.totalTime > 0,
+        `tempo non utilizzabile in un campionato: ${voce.totalTime}`);
+    assert.equal(voce.stimato, true, 'va marcato come proiezione, non spacciato per cronometrato');
+});

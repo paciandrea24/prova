@@ -1619,6 +1619,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     // indistinguibile da un problema della propria connessione.
     // `attesi` arriva dal server (fotografia della lobby al via); se manca —
     // partita vecchia, server non aggiornato — si ricade sul contatore.
+    // Finestra di cortesia di fine gara: si continua a girare mentre i bot
+    // ancora in pista provano a tagliare il traguardo, così prendono il tempo
+    // vero invece di quello proiettato. Il server manda quanto resta, il conto
+    // lo tiene il client (gli orologi dei due capi non coincidono).
+    let fineGaraScadeA = null;
+    let fineGaraUltimoSec = null;
+
+    function aggiornaContoFineGara() {
+        const el = document.getElementById('quali-waiting-conto');
+        if (!el) return;
+        if (fineGaraScadeA == null) {
+            if (fineGaraUltimoSec !== null) { el.textContent = ''; fineGaraUltimoSec = null; }
+            return;
+        }
+        const sec = Math.max(0, Math.ceil((fineGaraScadeA - performance.now()) / 1000));
+        if (sec === fineGaraUltimoSec) return;
+        fineGaraUltimoSec = sec;
+        el.textContent = `Si chiude fra ${sec} s · INVIO per chiudere subito`;
+    }
+
+    socket.on('f1RaceGrace', ({ restaMs }) => {
+        fineGaraScadeA = performance.now() + (restaMs || 0);
+        fineGaraUltimoSec = null;
+    });
+
     // Scadenza della scelta mescola, in tempo LOCALE: il server manda quanto
     // resta (non l'istante), perché i due orologi non coincidono. Da qui in
     // poi il conto lo tiene il client, aggiornato dentro il ciclo di
@@ -2517,6 +2542,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     socket.on('f1RaceEnded', (data) => {
+        fineGaraScadeA = null;
         isRacing = false;
         const modal = document.getElementById('podium-modal');
         const list = document.getElementById('podium-list');
@@ -2535,12 +2561,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         (data.podium || []).forEach((entry, i) => {
             const t = entry.totalTime;
-            // null = ancora in pista quando la gara ha chiuso (un bot non
-            // ancora arrivato): mantiene la sua posizione attuale invece di
-            // un tempo — vedi endRace in f1GameSocket.js.
-            const timeStr = t === null
-                ? 'IN CORSA'
-                : `${Math.floor(t / 60000)}:${String(Math.floor((t % 60000) / 1000)).padStart(2, '0')}.${String(t % 1000).padStart(3, '0')}`;
+            // Nessuno resta senza tempo: chi non era ancora arrivato quando la
+            // gara ha chiuso riceve il tempo PROIETTATO dal ritmo che ha
+            // tenuto davvero (vedi endRace). Il "≈" dice che è una proiezione
+            // e non un tempo cronometrato — serve a chi rileggerà la
+            // classifica di campionato fra dieci gare.
+            const timeStr = (t === null || t === undefined)
+                ? '—'
+                : (entry.stimato ? '≈ ' : '') +
+                  `${Math.floor(t / 60000)}:${String(Math.floor((t % 60000) / 1000)).padStart(2, '0')}.${String(t % 1000).padStart(3, '0')}`;
             const li = document.createElement('li');
             li.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px 5px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:18px;';
             li.innerHTML = `
@@ -2552,7 +2581,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ${entry.falseStart ? '<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+5s FALSE START</span>' : ''}
                     ${entry.collisionPenaltyMs > 0 ? `<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+${(entry.collisionPenaltyMs / 1000).toFixed(1)}s COLLISIONI</span>` : ''}
                 </div>
-                <span style="font-family:monospace;font-weight:bold;">${timeStr}</span>`;
+                <span style="font-family:monospace;font-weight:bold;${entry.stimato ? 'opacity:0.72;' : ''}" ${entry.stimato ? 'title="Tempo proiettato dal ritmo tenuto in gara: non era ancora arrivato alla chiusura"' : ''}>${timeStr}</span>`;
             list.appendChild(li);
         });
 
@@ -2734,6 +2763,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             const board = document.getElementById('lights-board');
             if (board && lightsSequenceActive) board.style.display = indicatoreLuci ? 'flex' : 'none';
             mostraAvviso(indicatoreLuci ? 'Indicatore luci acceso' : 'Indicatore luci spento');
+        }
+        // Invio: chiude subito la finestra di cortesia di fine gara. Vale solo
+        // mentre la finestra è aperta, cioè quando tutti gli umani hanno già
+        // tagliato il traguardo.
+        if (e.key === 'Enter' && !e.repeat && !isTypingInField(e) && fineGaraScadeA != null) {
+            socket.emit('f1ChiudiGara', { lobbyId });
+            fineGaraScadeA = null;
         }
         if (k === 'o' && !e.repeat && !isTypingInField(e) && pannello && pannello.ombreDinamiche) {
             const accese = !pannello.ombreAccese();
@@ -3308,6 +3344,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // basta che il podio non sia ancora comparso, e ci pensa
                 // f1RaceEnded a nascondere l'avviso.
                 const sessioneAperta = currentPhase === 'race' ? isRacing : qualiSessionOpen;
+                aggiornaContoFineGara();
                 const avviso = document.getElementById('quali-waiting-overlay');
                 if (sessioneAperta && target.finished && target.time) {
                     const titolo = document.getElementById('quali-waiting-titolo');
