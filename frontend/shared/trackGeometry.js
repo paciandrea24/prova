@@ -731,6 +731,92 @@
         return Math.abs(localX) <= box.halfWidth && Math.abs(localZ) <= box.halfLength;
     }
 
+    // Distanza da un punto al bordo dello STESSO rettangolo orientato (0 se
+    // il punto è dentro). Sta qui, accanto a pointInOrientedBox, perché il
+    // formato del riquadro deve avere un proprietario solo: quando il
+    // trigger d'ingresso è passato da assi-allineato a orientabile, la
+    // guida dei bot ne aveva una copia che leggeva ancora xMin/xMax — campi
+    // spariti, confronto sempre falso, e nessun bot è più entrato ai box
+    // (vedi f1Bot.pitStop.test.js).
+    function distanceToOrientedBox(px, pz, box) {
+        const angle = box.angle || 0;
+        const dx = px - box.x, dz = pz - box.z;
+        const sin = Math.sin(angle), cos = Math.cos(angle);
+        const localZ = dx * sin + dz * cos;
+        const localX = dx * cos - dz * sin;
+        const fuoriX = Math.max(Math.abs(localX) - box.halfWidth, 0);
+        const fuoriZ = Math.max(Math.abs(localZ) - box.halfLength, 0);
+        return Math.hypot(fuoriX, fuoriZ);
+    }
+
+    // Il punto DENTRO il riquadro più vicino a (px,pz), tenuto a `margine`
+    // dal bordo. Se il punto è già dentro (e non a ridosso del bordo) torna
+    // se stesso.
+    //
+    // Serve a chi deve ATTRAVERSARE il riquadro, non solo a chi lo misura:
+    // il trigger d'ingresso ai box è un cancello, e mirare al punto di
+    // raccordo della corsia non basta perché su certe piste quel punto sta
+    // fuori dal cancello (monte-rosso: 7.1 unità oltre il bordo — il bot ci
+    // arrivava sopra e il varco non scattava mai). Il margine è limitato a
+    // metà della semi-estensione più corta: su un riquadro stretto un
+    // margine fisso lo ribalterebbe dall'altra parte.
+    function clampToOrientedBox(px, pz, box, margine) {
+        const angle = box.angle || 0;
+        const dx = px - box.x, dz = pz - box.z;
+        const sin = Math.sin(angle), cos = Math.cos(angle);
+        const localZ = dx * sin + dz * cos;
+        const localX = dx * cos - dz * sin;
+        const m = Math.min(margine || 0, box.halfWidth * 0.5, box.halfLength * 0.5);
+        const limX = Math.max(box.halfWidth - m, 0);
+        const limZ = Math.max(box.halfLength - m, 0);
+        const dentroX = Math.max(-limX, Math.min(limX, localX));
+        const dentroZ = Math.max(-limZ, Math.min(limZ, localZ));
+        return {
+            x: box.x + dentroX * cos + dentroZ * sin,
+            z: box.z - dentroX * sin + dentroZ * cos,
+        };
+    }
+
+    // Dove deve puntare chi vuole IMBOCCARE i box: un punto dentro il
+    // riquadro-trigger e sulla corsia, cioè raggiungibile guidando.
+    //
+    // Non si può usare né il centro del riquadro (sta 25-36 unità oltre il
+    // centro pista: puntarlo taglia dritto per il prato) né un punto del
+    // percorso disegnato in editor (`pit.path`), perché quei punti di
+    // controllo ogni pista li ha messi dove capitava: su new-monza il primo
+    // sta 31 unità fuori dal riquadro, su prova il secondo sta 50 unità di
+    // lato. La corsia CAMPIONATA invece parte sempre dal bordo pista e
+    // prosegue dentro, uguale ovunque.
+    //
+    // Si prende il campione a METÀ del tratto di corsia coperto dal riquadro,
+    // non il primo: l'imbocco del varco sta per costruzione sul BORDO, e su
+    // prova cadeva esattamente su un ANGOLO (entrambe le coordinate locali al
+    // limite). Mirare un angolo è il bersaglio più fragile che esista — il bot
+    // lo sfiorava per 0.26 unità e tirava dritto. Il centro del tratto lascia
+    // margine su tutti e due gli assi.
+    //
+    // Se il riquadro non copre NESSUN campione — succede: su monte-rosso sta
+    // 7.1 unità di fianco alla corsia, nel varco fra bordo pista e corsia — si
+    // mira al centro del riquadro, che è il punto più interno possibile.
+    // Tirarci dentro il campione più vicino lo depositerebbe di nuovo su un
+    // angolo, con lo stesso identico difetto.
+    function pitGateAimPoint(pitLanePts, trigger, margine) {
+        if (!pitLanePts || !pitLanePts.length || !trigger) return null;
+        let primoDentro = -1, ultimoDentro = -1;
+        for (let i = 0; i < pitLanePts.length; i++) {
+            const s = pitLanePts[i];
+            if (!pointInOrientedBox(s.x, s.z, trigger)) continue;
+            if (primoDentro < 0) primoDentro = i;
+            // Solo il tratto CONTIGUO: la corsia attraversa il riquadro una
+            // volta sola, un eventuale campione isolato più avanti (corsia
+            // che torna a sfiorarlo) non deve spostare il centro.
+            if (ultimoDentro < 0 || i === ultimoDentro + 1) ultimoDentro = i;
+        }
+        if (primoDentro < 0) return { x: trigger.x, z: trigger.z };
+        const rif = pitLanePts[Math.floor((primoDentro + ultimoDentro) / 2)];
+        return clampToOrientedBox(rif.x, rif.z, trigger, margine);
+    }
+
     // Aggancia il primo e l'ultimo punto della corsia box esattamente al
     // bordo della pista vera (roadHalf - insetMargin dal centro pista,
     // sullo stesso lato del punto grezzo originale), lasciando invariati i
@@ -1266,6 +1352,9 @@
         advanceToDistancePoint,
         gridSpawnPoint,
         pointInOrientedBox,
+        distanceToOrientedBox,
+        clampToOrientedBox,
+        pitGateAimPoint,
         snapPitPathEnds,
         tuckPitEndsToTrack,
         pitLeadInPoints,

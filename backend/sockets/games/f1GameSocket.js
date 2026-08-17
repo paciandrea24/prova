@@ -154,7 +154,39 @@ const PIT_REJOIN_LEAD_SAMPLES = 10;
 // qualunque orientamento nel mondo, non solo quelli allineati a X o Z
 // (Rif. richiesta utente 2026-08-08, editor trigger orientabile).
 function inPitEntryZone(p, track) {
-    return TrackGeometry.pointInOrientedBox(p.x, p.z, track.pitEntryTrigger);
+    if (TrackGeometry.pointInOrientedBox(p.x, p.z, track.pitEntryTrigger)) return true;
+    return nellaCorsiaBox(p, track);
+}
+
+// Frazione INIZIALE della corsia box che vale come "sto entrando": oltre ci
+// sono i box e poi l'uscita, che rientra sul nastro — riconoscere lì un
+// ingresso rimetterebbe ai box chi ne sta uscendo.
+const PIT_ENTRY_LANE_FRACTION = 0.25;
+
+// Rete di sicurezza geometrica: l'auto ha lasciato il nastro ed è dentro la
+// corsia box. Allora sta entrando ai box, comunque sia posato il riquadro.
+//
+// Serve perché il riquadro lo si piazza a mano nell'editor e può finire dove
+// non lo prende nessuno: su monte-rosso sta nel vuoto fra bordo pista e
+// corsia (7.1 unità dalla corsia, 5.7 dal nastro) e su quella pista NESSUNO
+// poteva fermarsi ai box — con in più i 30 secondi di penalità a fine gara
+// per non averlo fatto. Le due condizioni insieme (fuori dal nastro E dentro
+// la corsia) non possono scattare guidando in pista: c'è un test che le
+// prova su tutti e mille i campioni di ogni tracciato.
+function nellaCorsiaBox(p, track) {
+    const pl = track.pitLanePts;
+    if (!pl || !pl.length || !track.pitRoadHalf) return false;
+    const finestra = Math.min(pl.length - 1, Math.max(2, Math.floor(pl.length * PIT_ENTRY_LANE_FRACTION)));
+    let vicino = Infinity;
+    // Dal campione 1: lo 0 è agganciato al BORDO PISTA (snapPitEndpoint), chi
+    // passa lì sta ancora correndo.
+    for (let i = 1; i <= finestra; i++) {
+        const s = pl[i];
+        const d = Math.hypot(p.x - s.x, p.z - s.z);
+        if (d < vicino) vicino = d;
+    }
+    if (vicino > track.pitRoadHalf) return false;
+    return TrackGeometry.nearestPoint(track.points, p.x, p.z).dist > track.roadHalf;
 }
 
 // Tempo per scegliere prima che scatti la mescola di default. Da 20s a 45s il
@@ -1875,29 +1907,42 @@ function updateSectorTiming(p, game) {
 // updatePitAutopilot nel loop autoPiloted) quando l'ultimo giro si
 // completa mentre l'auto è ancora in manovra ai box (Rif. richiesta utente
 // 2026-08-07 — vedi il commento nel punto di chiamata in checkLap).
-function finalizeSessionFinish(p, crossingElapsedMs, game, io, lobbyId) {
-    p.finished = true;
-    p.time = crossingElapsedMs;
-    // Obbligo di almeno un pit stop in gara (regola vera F1): chi non
-    // ha mai cambiato gomme prende una penalità in tempo a fine gara,
-    // non viene bloccato né squalificato.
-    if (game.phase === 'race' && !p.hasPitted) {
-        p.time += PIT_PENALTY_MS;
+// Le penalità in tempo che si sommano a fine gara, in un posto solo.
+//
+// Chiamata sia da chi taglia il traguardo sia da chi la gara la chiude
+// ancora in pista (endRace, tempo proiettato): se le due strade non
+// applicano le stesse penalità, la classifica finisce per confrontare
+// grandezze diverse. È successo davvero — segnalazione dell'utente del
+// 2026-08-17: primo sotto la bandiera a scacchi con 43 secondi, classificato
+// dietro a bot proiettati a 50, perché i suoi +30 per il pit stop mancato
+// c'erano e quelli dei bot no.
+function applicaPenalitaFineGara(p, game) {
+    if (game.phase !== 'race') return 0;
+    let extra = 0;
+    // Obbligo di almeno un pit stop in gara (regola vera F1): chi non ha mai
+    // cambiato gomme prende una penalità in tempo, non viene bloccato né
+    // squalificato.
+    if (!p.hasPitted) {
+        extra += PIT_PENALTY_MS;
         p.pitPenalty = true;
     }
-    // Rete di sicurezza: se la falsa partenza non è mai stata scontata
-    // ai box (il giocatore non si è mai fermato), si somma comunque
-    // qui al tempo finale — mai persa in silenzio.
-    if (game.phase === 'race' && p.falseStart && !p.falseStartServed) {
-        p.time += FALSE_START_PENALTY_MS;
+    // Rete di sicurezza: se la falsa partenza non è mai stata scontata ai box
+    // (il giocatore non si è mai fermato), si somma comunque qui — mai persa
+    // in silenzio.
+    if (p.falseStart && !p.falseStartServed) {
+        extra += FALSE_START_PENALTY_MS;
         p.falseStartServed = true;
     }
-    // Penalità collisioni: accumulo di TUTTI gli incidenti causati in
-    // gara (non un flag singolo), già notificati live uno per uno
-    // (vedi drenaggio in tickGame) — qui solo la somma finale.
-    if (game.phase === 'race' && p.collisionPenaltyMs > 0) {
-        p.time += p.collisionPenaltyMs;
-    }
+    // Penalità collisioni: accumulo di TUTTI gli incidenti causati in gara
+    // (non un flag singolo), già notificati live uno per uno (vedi drenaggio
+    // in tickGame) — qui solo la somma finale.
+    if (p.collisionPenaltyMs > 0) extra += p.collisionPenaltyMs;
+    return extra;
+}
+
+function finalizeSessionFinish(p, crossingElapsedMs, game, io, lobbyId) {
+    p.finished = true;
+    p.time = crossingElapsedMs + applicaPenalitaFineGara(p, game);
     // Timer di sicurezza di gruppo: dà agli altri il tempo di finire la
     // sessione (giro di qualifica o gara, entrambe corse in parallelo)
     // anche se qualcuno resta molto indietro senza essersi disconnesso
@@ -2051,7 +2096,11 @@ function endRace(io, lobbyId, game) {
     const elapsed = game.raceTick * PHYSICS_TICK_MS;
     const stime = new Map();
     for (const p of unfinished) {
-        stime.set(p.color, estimateFinishTime(elapsed, progressScore(p, game.track) / distanzaGara));
+        // Stesse penalità di chi ha tagliato il traguardo: un pit stop non
+        // fatto pesa 30 secondi anche se la gara ti ha colto in pista, se no
+        // restare indietro conviene.
+        stime.set(p.color, estimateFinishTime(elapsed, progressScore(p, game.track) / distanzaGara)
+            + applicaPenalitaFineGara(p, game));
     }
 
     const podium = [
@@ -2142,6 +2191,11 @@ function buildPublicState(players, raceStarted, track, game) {
             // rumore motore fisso invece che legato all'accelerazione,
             // anche quando non è lui a "guidare" in quella fase.
             pitLimiter: !!p.pitAutoState,
+            // Sosta obbligatoria fatta o no: il client ne ricava l'avviso in
+            // HUD. Senza, la regola dei 30 secondi si scopriva solo nel
+            // pannello finale, a penalità già presa (segnalato dall'utente il
+            // 2026-08-17: primo in pista, ultimo in classifica).
+            hasPitted: !!p.hasPitted,
             // falseStartServed: il client lo usa per nascondere il badge
             // "!" in classifica live una volta scontata la penalità ai box
             // (resta invece visibile, senza questo campo, nel riepilogo di
@@ -2237,7 +2291,7 @@ module.exports.physics = {
     applyDamageSteerNoise, DAMAGE_STEER_NOISE_MAX, effectiveGrip,
     createDamageParts, FRONT_WING_STEER_PENALTY_MAX,
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
-    buildPublicState, playersVisibleTo, startPitLaneEntry, checkLap, updateSectorTiming, finalizeSessionFinish, resolvePendingFinish,
+    buildPublicState, playersVisibleTo, startPitLaneEntry, inPitEntryZone, checkLap, updateSectorTiming, finalizeSessionFinish, resolvePendingFinish,
     computeSlipstreamMult,
     updatePitAutopilot, PIT_AUTO_SPEED, PIT_AUTO_ARRIVE_DIST
 };

@@ -67,18 +67,6 @@ function normalizeAngle(a) {
     return a;
 }
 
-// Distanza minima da un punto (x,z) a un rettangolo allineato agli assi
-// {xMin,xMax,zMin,zMax} — 0 se il punto è dentro. Usata per scegliere quale
-// waypoint del percorso box (pitPath[0] o pitPath[1]) sta effettivamente più
-// vicino al riquadro-trigger, invece di assumere sempre lo stesso (Rif. Task
-// 8, bug new-monza vs prova/baku/monte-rosso: il waypoint "vicino al box"
-// non è lo stesso indice su tutte le piste).
-function distToRectXZ(point, rect) {
-    const dx = Math.max(rect.xMin - point.x, 0, point.x - rect.xMax);
-    const dz = Math.max(rect.zMin - point.z, 0, point.z - rect.zMax);
-    return Math.hypot(dx, dz);
-}
-
 // Sterzo (-1..1) per puntare dalla posizione attuale (px,pz), con heading
 // `angle` (stessa convenzione della fisica: vettore = (sin(angle),
 // cos(angle))), verso il punto (tx,tz). `gain` opzionale (default
@@ -1013,7 +1001,11 @@ function updateBotInputs(game, deps) {
             // passa comunque a inseguire pitPath[1] per proseguire nella
             // corsia box.
             const trig = track.pitEntryTrigger;
-            const insideTrigger = !!trig && p.x >= trig.xMin && p.x <= trig.xMax && p.z >= trig.zMin && p.z <= trig.zMax;
+            // Stessa identica prova che usa il server per far scattare
+            // l'ingresso (inPitEntryZone): se qui si usasse un'altra formula,
+            // il bot potrebbe credersi dentro quando il server dice di no — o
+            // viceversa, ed è esattamente quello che succedeva.
+            const insideTrigger = !!trig && TrackGeometry.pointInOrientedBox(p.x, p.z, trig);
             if (insideTrigger && track.pitPath[1]) {
                 const wp = track.pitPath[1];
                 steer = steerToward(p.x, p.z, p.angle, wp.x, wp.z);
@@ -1022,9 +1014,14 @@ function updateBotInputs(game, deps) {
                 const laneSource = track.racingLine || track.points;
                 const approachSamples = metersToSamples(BOT_PIT_APPROACH_M, track);
 
-                const anchor = (trig && track.pitPath[1] && distToRectXZ(track.pitPath[1], trig) < distToRectXZ(track.pitPath[0], trig))
-                    ? track.pitPath[1]
-                    : track.pitPath[0];
+                // Bersaglio dell'imbocco: dentro il riquadro-trigger e sulla
+                // corsia (track.pitGateAim, calcolato una volta per pista in
+                // trackLoader). Prima si sceglieva fra i due waypoint del
+                // percorso disegnato in editor quello "più vicino al
+                // riquadro": su monte-rosso il vincitore stava comunque 7.1
+                // unità FUORI, quindi il bot ci arrivava sopra, il varco non
+                // scattava e ripartiva per un altro giro all'infinito.
+                const anchor = track.pitGateAim || track.pitPath[0];
 
                 // Distanza laterale reale tra la linea principale e l'ancora
                 // (fissa per questa pista, non per-tick): quanto più è

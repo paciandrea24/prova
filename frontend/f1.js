@@ -1308,6 +1308,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         el.textContent = `${current}/${raceTotalLaps}`;
     }
 
+    // Quanti giri prima della fine l'avviso della sosta diventa rosso. Uno
+    // solo: è l'ultimo momento utile per rientrare senza restare fuori dalla
+    // finestra dei box.
+    const SOSTA_URGENTE_GIRI = 1;
+
+    // Avviso "sosta obbligatoria": compare in gara finché il pit stop non è
+    // fatto e sparisce appena lo si è fatto. Prima non esisteva niente del
+    // genere e i 30 secondi di penalità si scoprivano solo nel pannello
+    // finale, a gara conclusa — segnalato dall'utente il 2026-08-17: primo
+    // sotto la bandiera a scacchi, ultimo in classifica.
+    function aggiornaAvvisoSosta(data) {
+        const chip = document.getElementById('pit-duty-chip');
+        if (!chip) return;
+        if (data.hasPitted || data.finished) { chip.style.display = 'none'; return; }
+        chip.style.display = '';
+        const giriRimasti = raceTotalLaps - (data.lap || 0);
+        chip.classList.toggle('urgente', giriRimasti <= SOSTA_URGENTE_GIRI);
+    }
+
     const serverState = {};
     const visualState = {};
     const otherCars = {};
@@ -2076,6 +2095,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     document.getElementById('tyre-open').style.setProperty('--damage', wearColor(dmg));
                 }
             }
+            if (color === myColor && currentPhase === 'race') aggiornaAvvisoSosta(data);
             if (color === myColor) {
                 renderTyreVisibility();
                 slipstreamActive = !!data.slipstream;

@@ -213,3 +213,38 @@ test('chi non ha finito riceve un tempo proiettato, mai un vuoto', (t) => {
         `tempo non utilizzabile in un campionato: ${voce.totalTime}`);
     assert.equal(voce.stimato, true, 'va marcato come proiezione, non spacciato per cronometrato');
 });
+
+// ═══════════ LE PENALITÀ VALGONO ANCHE PER CHI NON HA FINITO ═══════════
+//
+// Segnalazione dell'utente (2026-08-17): primo sotto la bandiera a scacchi con
+// 43 secondi, classificato dietro a bot dati per ~50. I suoi 43 diventavano 73
+// per i 30 secondi del pit stop mai fatto; i bot, ancora in pista alla
+// chiusura, prendevano un tempo PROIETTATO su cui quella stessa penalità non
+// veniva mai applicata. Due strade diverse per la stessa regola.
+test('chi non ha finito e non si e fermato ai box porta comunque i suoi 30 secondi', (t) => {
+    t.after(pulisci);
+    const emessi = [];
+    const ioSpia = { to: () => ({ emit: (evento, dati) => emessi.push({ evento, dati }) }) };
+    const { g } = partita();
+    g.raceTick = 1200;   // 60 secondi di gara
+    g.players.red.finished = true;
+    g.players.red.time = 60000;
+    const base = {
+        ...g.players.red, isBot: true, finished: false, time: null, lap: 1, trackIndex: 200,
+        carContacts: new Set(), pendingCollisionPenaltyEvents: [],
+        inputs: { throttle: 0, brake: 0, steer: 0 },
+    };
+    g.players.fermato = { ...base, color: 'fermato', hasPitted: true };
+    g.players.dritto = { ...base, color: 'dritto', hasPitted: false };
+
+    g.raceGraceEndTick = 1;
+    f1.tickGame(ioSpia, LOBBY, g);
+
+    const podio = emessi.find(e => e.evento === 'f1RaceEnded').dati.podium;
+    const conSosta = podio.find(v => v.color === 'fermato');
+    const senzaSosta = podio.find(v => v.color === 'dritto');
+    assert.equal(senzaSosta.pitPenalty, true, 'la penalità deve comparire anche in classifica');
+    assert.equal(senzaSosta.totalTime - conSosta.totalTime, 30000,
+        `a pari progresso lo scarto deve essere esattamente la penalità: ` +
+        `${senzaSosta.totalTime} contro ${conSosta.totalTime}`);
+});

@@ -319,6 +319,66 @@ test('pointInOrientedBox: centro spostato dall\'origine', () => {
     assert.equal(TrackGeometry.pointInOrientedBox(0, 0, box), false);
 });
 
+// distanceToOrientedBox / clampToOrientedBox / pitGateAimPoint nascono tutte
+// dallo stesso difetto: il riquadro d'ingresso ai box è orientabile dal
+// 2026-08-08, ma chi lo leggeva altrove usava ancora {xMin,xMax,zMin,zMax}.
+// Campi spariti, confronti sempre falsi, e nessun bot è più entrato ai box.
+// Il formato del riquadro ha un proprietario solo, ed è questo modulo.
+test('distanceToOrientedBox: zero dentro, distanza dal BORDO fuori', () => {
+    const box = { x: 0, z: 0, halfWidth: 5, halfLength: 10, angle: 0 };
+    assert.equal(TrackGeometry.distanceToOrientedBox(0, 0, box), 0);
+    assert.equal(TrackGeometry.distanceToOrientedBox(3, 7, box), 0);
+    assert.equal(TrackGeometry.distanceToOrientedBox(8, 0, box), 3);
+    assert.equal(TrackGeometry.distanceToOrientedBox(0, -14, box), 4);
+    // In diagonale conta lo scarto su entrambi gli assi, non il maggiore.
+    assert.equal(TrackGeometry.distanceToOrientedBox(8, 14, box), 5);
+});
+
+test('distanceToOrientedBox: la rotazione conta davvero', () => {
+    const box = { x: 0, z: 0, halfWidth: 5, halfLength: 10, angle: Math.PI / 2 };
+    assert.equal(TrackGeometry.distanceToOrientedBox(9, 4, box), 0);
+    assert.ok(TrackGeometry.distanceToOrientedBox(4, 12, box) > 0);
+});
+
+test('clampToOrientedBox: riporta dentro col margine, e non tocca chi è già dentro', () => {
+    const box = { x: 0, z: 0, halfWidth: 20, halfLength: 8, angle: 0 };
+    const dentro = TrackGeometry.clampToOrientedBox(3, 2, box, 2);
+    assert.equal(dentro.x, 3);
+    assert.equal(dentro.z, 2);
+    const fuori = TrackGeometry.clampToOrientedBox(50, -50, box, 2);
+    assert.equal(fuori.x, 18);
+    assert.equal(fuori.z, -6);
+    assert.equal(TrackGeometry.pointInOrientedBox(fuori.x, fuori.z, box), true);
+});
+
+test('clampToOrientedBox: su un riquadro sottile il margine non lo ribalta', () => {
+    // Margine 5 su un riquadro profondo 2 (halfLength 1): senza il taglio a
+    // metà semi-estensione il punto finirebbe dall'altra parte del riquadro.
+    const box = { x: 0, z: 0, halfWidth: 20, halfLength: 1, angle: 0 };
+    const p = TrackGeometry.clampToOrientedBox(0, 30, box, 5);
+    assert.equal(TrackGeometry.pointInOrientedBox(p.x, p.z, box), true);
+    assert.ok(p.z > 0, `tirato dalla parte sbagliata: z ${p.z}`);
+});
+
+test('pitGateAimPoint: mira in mezzo al tratto di corsia coperto dal riquadro', () => {
+    const box = { x: 0, z: 0, halfWidth: 6, halfLength: 6, angle: 0 };
+    // Corsia che entra nel riquadro dal campione 2 al 6 (x da -4 a +4).
+    const corsia = [-12, -8, -4, -2, 0, 2, 4, 8, 12].map(x => ({ x, z: 0 }));
+    const mira = TrackGeometry.pitGateAimPoint(corsia, box, 1);
+    assert.equal(TrackGeometry.pointInOrientedBox(mira.x, mira.z, box), true);
+    assert.equal(mira.x, 0, 'il centro del tratto, non il suo imbocco sul bordo');
+});
+
+test('pitGateAimPoint: se la corsia non tocca il riquadro, mira al suo centro', () => {
+    // È il caso di monte-rosso: il riquadro sta 7 unità di lato alla corsia.
+    // Tirarci dentro il campione più vicino lo depositerebbe su un ANGOLO, e
+    // un angolo è il bersaglio più facile da mancare che esista.
+    const box = { x: 0, z: 0, halfWidth: 6, halfLength: 6, angle: 0 };
+    const corsia = [{ x: -20, z: 20 }, { x: 0, z: 20 }, { x: 20, z: 20 }];
+    const mira = TrackGeometry.pitGateAimPoint(corsia, box, 1);
+    assert.deepEqual(mira, { x: 0, z: 0 });
+});
+
 test('snapPitPathEnds: aggancia solo il primo e l\'ultimo punto, a roadHalf-insetMargin dal centro pista', () => {
     const square = [{ x: 0, z: 0 }, { x: 100, z: 0 }, { x: 100, z: 100 }, { x: 0, z: 100 }];
     const trackPts = TrackGeometry.sampleLoop(square, 400);

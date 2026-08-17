@@ -45,6 +45,41 @@ for (const id of TRACCIATI) {
             `campione ${p.pitPathIndex}, mentre l'auto sta sul ${TrackGeometry.nearestPoint(track.pitLanePts, p.x, p.z).index}`);
     });
 
+    // ═══ ESSERE NELLA CORSIA BOX BASTA, IL RIQUADRO NON È L'UNICA PORTA ═══
+    //
+    // Su monte-rosso il riquadro-trigger è posato nel vuoto fra bordo pista e
+    // corsia: la corsia campionata gli passa a 7.1 unità nel punto più vicino,
+    // il nastro a 5.7. Nessuno poteva entrare ai box su quella pista — né i
+    // bot né un umano — e chi non si ferma prende 30 secondi di penalità a fine
+    // gara. Segnalato dall'utente ("ci provano ma non riescono").
+    //
+    // Il riquadro resta il modo NORMALE di entrare (lo si piazza in editor per
+    // decidere dove comincia la corsia); questa è la rete di sicurezza
+    // geometrica: se l'auto ha lasciato il nastro ed è dentro la corsia,
+    // sta entrando ai box, comunque sia messo il riquadro.
+    test(`${id}: guidare dentro la corsia box fa scattare l'ingresso`, () => {
+        const track = loadTrack(id);
+        const s = track.pitLanePts[40];   // ben oltre il raccordo, fuori dal nastro su tutte le piste
+        assert.ok(f1.physics.inPitEntryZone({ x: s.x, z: s.z }, track),
+            `campione 40 della corsia box (${s.x.toFixed(1)}, ${s.z.toFixed(1)}) non riconosciuto come ingresso`);
+    });
+
+    test(`${id}: correre sul nastro non fa MAI scattare l'ingresso ai box`, () => {
+        const track = loadTrack(id);
+        const falsiAllarmi = [];
+        for (let i = 0; i < track.points.length; i++) {
+            const c = track.points[i];
+            if (f1.physics.inPitEntryZone({ x: c.x, z: c.z }, track)) falsiAllarmi.push(i);
+        }
+        // Il riquadro-trigger vero può coprire il centro pista (è lì per
+        // questo su alcune piste): si contano solo i campioni che scattano
+        // per la regola nuova, cioè quelli FUORI dal riquadro.
+        const perLaCorsia = falsiAllarmi.filter(i => !TrackGeometry.pointInOrientedBox(
+            track.points[i].x, track.points[i].z, track.pitEntryTrigger));
+        assert.deepEqual(perLaCorsia, [],
+            `campioni di pista scambiati per corsia box: ${perLaCorsia.join(', ')}`);
+    });
+
     test(`${id}: il punto mirato all'ingresso sta AVANTI, non dietro`, () => {
         const track = loadTrack(id);
         const trigger = track.pitEntryTrigger;

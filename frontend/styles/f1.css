@@ -454,6 +454,31 @@ canvas.tyre-preview-canvas {
     font-size: 17px; font-weight: 800; letter-spacing: 0.5px;
     color: var(--f1-text);
 }
+/* Sosta obbligatoria ancora da fare. Sta accanto al contagiri perché è al
+   contagiri che si guarda per decidere quando fermarsi. Neutro finché c'è
+   tempo, rosso quando i giri stanno per finire: il colore è l'unica cosa che
+   cambia, la scritta resta ferma per non spostare il resto della riga. */
+#pit-duty-chip {
+    margin-left: auto;
+    font-family: 'Fredoka', sans-serif;
+    text-transform: uppercase;
+    font-weight: 800; letter-spacing: 1.2px; font-size: 10px;
+    padding: 2px 7px; border-radius: 6px;
+    color: var(--f1-text-dim);
+    border: 1px solid var(--f1-panel-border);
+}
+#pit-duty-chip.urgente {
+    color: #fff; background: #c0392b; border-color: #e74c3c;
+    animation: pit-duty-pulsa 1.1s ease-in-out infinite;
+}
+@keyframes pit-duty-pulsa {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+    #pit-duty-chip.urgente { animation: none; }
+}
+
 #standings-rows { padding: 3px 0; }
 .f1-standing-row {
     display: flex; align-items: center; gap: 7px;
