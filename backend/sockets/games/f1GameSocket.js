@@ -148,7 +148,12 @@ function inPitEntryZone(p, track) {
     return TrackGeometry.pointInOrientedBox(p.x, p.z, track.pitEntryTrigger);
 }
 
-const TYRE_SELECT_MS = 20000;   // tempo per scegliere prima che scatti la mescola di default
+// Tempo per scegliere prima che scatti la mescola di default. Da 20s a 45s il
+// 2026-08-17: la schermata mostra un carosello di sei inquadrature del
+// circuito da ~5s l'una, e in venti secondi non se ne vedeva nemmeno metà.
+// Non è un'attesa imposta a nessuno — appena tutti confermano si parte (vedi
+// f1TyreChoice); è solo il tetto per chi resta fermo.
+const TYRE_SELECT_MS = 45000;
 
 // ====================================================
 // MINIGIOCO DI REAZIONE AL PIT STOP
@@ -330,6 +335,12 @@ module.exports = function (io, socket) {
             };
         }
 
+        // La scadenza si (ri)arma PRIMA di rispondere: chi arriva deve
+        // ricevere già in f1Setup quanto tempo ha, non scoprirlo al primo
+        // aggiornamento successivo. E ri-armarla è ciò che dà al ritardatario
+        // il suo tempo pieno invece degli avanzi di chi era già dentro.
+        if (game.phase === 'tyre_select' && !isRejoin) armaScadenzaMescola(io, lobbyId, game);
+
         const scelteMescola = statoScelteMescola(game);
         socket.emit('f1Setup', {
             playerColor,
@@ -353,14 +364,14 @@ module.exports = function (io, socket) {
             tyreAttesi: scelteMescola.attesi,
             tyreArrivati: scelteMescola.arrivati,
             tyreConfermati: scelteMescola.confermati,
+            tyreRestaMs: scelteMescola.restaMs,
         });
 
-        // Un pilota arrivato mentre gli altri erano già alla scelta mescola:
-        // aggiorna la lista su tutti i client e sposta in avanti la scadenza,
-        // così ha il suo tempo pieno per scegliere.
+        // Un pilota è arrivato mentre gli altri erano già alla scelta: gli
+        // altri client devono toglierlo dalla riga "in caricamento" e vedere
+        // la scadenza aggiornata.
         if (game.phase === 'tyre_select' && !isRejoin) {
-            armaScadenzaMescola(io, lobbyId, game);
-            io.to(lobbyId).emit('f1TyreConfirmed', statoScelteMescola(game));
+            io.to(lobbyId).emit('f1TyreConfirmed', scelteMescola);
         }
 
         // Tick e prima fase (scelta mescola) solo al primo giocatore
@@ -392,6 +403,7 @@ module.exports = function (io, socket) {
 
         if (tuttiHannoScelto(game)) {
             if (game.tyreSelectTimeout) { clearTimeout(game.tyreSelectTimeout); game.tyreSelectTimeout = null; }
+            game.tyreSelectScadeA = null;
             startQualifying(io, lobbyId, game);
         }
     });
@@ -609,6 +621,11 @@ function statoScelteMescola(game) {
         attesi,
         arrivati: attesi.filter(c => !!game.players[c]),
         confermati: attesi.filter(c => game.tyreConfirmed.has(c)),
+        // Quanto manca alla partenza d'ufficio. Si manda il RESIDUO e non
+        // l'istante di scadenza: l'orologio del client non è quello del
+        // server, e una differenza di qualche secondo fra i due farebbe
+        // partire il conto alla rovescia da un numero sbagliato.
+        restaMs: game.tyreSelectScadeA ? Math.max(0, game.tyreSelectScadeA - Date.now()) : null,
     };
 }
 
@@ -618,6 +635,7 @@ function statoScelteMescola(game) {
 // degli avanzi del tempo consumato dagli altri mentre caricava.
 function armaScadenzaMescola(io, lobbyId, game) {
     if (game.tyreSelectTimeout) clearTimeout(game.tyreSelectTimeout);
+    game.tyreSelectScadeA = Date.now() + TYRE_SELECT_MS;
     game.tyreSelectTimeout = setTimeout(() => {
         const g = activeGames.get(lobbyId);
         if (!g || g.phase !== 'tyre_select') return;
@@ -625,6 +643,7 @@ function armaScadenzaMescola(io, lobbyId, game) {
             if (!p.compound) p.compound = DEFAULT_COMPOUND;
         }
         g.tyreSelectTimeout = null;
+        g.tyreSelectScadeA = null;
         startQualifying(io, lobbyId, g);
     }, TYRE_SELECT_MS);
 }

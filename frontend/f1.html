@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260817b">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260817c">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -243,37 +243,62 @@
         </div>
     </div>
 
-    <!-- Overlay selezione mescola -->
-    <div id="tyre-select-overlay" class="menu-overlay-bg" style="display:none; position:fixed; inset:0; z-index:40;
-         flex-direction:column; align-items:center; justify-content:center; gap:20px;
-         color:var(--hud-text); text-align:center;">
-        <div style="font-size:28px; font-weight:900; letter-spacing:2px;">SCEGLI LA MESCOLA</div>
+    <!-- ═══════════ SCELTA MESCOLA ═══════════
+         Impaginata come il muretto box prima di una sessione: a sinistra il
+         circuito (l'unica cosa che conta guardare, quindi occupa lo spazio),
+         a destra una lavagna stretta con le mescole e chi manca all'appello.
+         Su due colonne e non in pila: in colonna la pagina superava l'altezza
+         dello schermo e le carte finivano tagliate.
 
-        <!-- Anteprima del circuito: a sinistra il carosello di inquadrature
-             (il canvas 3D viene riparentato dentro #tyre-preview-frame da
-             enterTyrePreview), a destra la mappa del tracciato con il pallino
-             del punto inquadrato. Gli scatti raccontano l'ambiente, la mappa
-             racconta la forma del giro: da sola nessuna delle due basta.
-             Le inquadrature le calcola shared/trackPreviewShots.js. -->
-        <div id="tyre-preview-row">
+         Il canvas 3D viene riparentato dentro #tyre-preview-frame da
+         enterTyrePreview; le inquadrature del carosello le calcola
+         shared/trackPreviewShots.js. -->
+    <div id="tyre-select-overlay" style="display:none;">
+        <div class="mescole-schermo">
+
             <div id="tyre-preview-frame">
                 <div id="tyre-shot-label"></div>
                 <!-- Velo nero per gli stacchi fra un'inquadratura e l'altra:
                      un taglio secco su una camera che si teletrasporta si
                      legge come un difetto. -->
                 <div id="tyre-shot-fade"></div>
+                <!-- La mappa sta DENTRO l'inquadratura e piccola: dice dove
+                     sei sul giro, che è un'informazione di contorno — il
+                     soggetto è il circuito, non la posizione. -->
+                <div id="tyre-preview-map">
+                    <svg viewBox="0 0 200 140">
+                        <path id="tyre-map-track" class="minimap-track-line"></path>
+                        <path id="tyre-map-pit" class="minimap-pit-line"></path>
+                        <circle id="tyre-map-dot" r="6" fill="#f1c40f" stroke="rgba(0,0,0,0.65)" stroke-width="2"></circle>
+                    </svg>
+                </div>
             </div>
-            <div id="tyre-preview-map">
-                <svg viewBox="0 0 200 140">
-                    <path id="tyre-map-track" class="minimap-track-line"></path>
-                    <path id="tyre-map-pit" class="minimap-pit-line"></path>
-                    <circle id="tyre-map-dot" r="5" fill="#f1c40f" stroke="rgba(0,0,0,0.55)" stroke-width="1.5"></circle>
-                </svg>
-            </div>
+
+            <aside class="mescole-lavagna">
+                <div class="mescole-eyebrow">Prima della qualifica</div>
+                <h2 id="tyre-track-name" class="mescole-titolo">Circuito</h2>
+                <!-- Cordolo: le stesse strisce rosso/bianco che buildCurbs
+                     disegna sul bordo pista, l'oggetto più riconoscibile di
+                     un autodromo. È il filo che lega questa schermata al
+                     mondo che ha dietro. -->
+                <div class="mescole-cordolo"></div>
+
+                <div class="mescole-istruzione">Scegli la mescola</div>
+                <div id="tyre-cards"></div>
+                <div id="tyre-strategy-hint"></div>
+
+                <div class="mescole-sep"></div>
+
+                <div class="mescole-eyebrow">Piloti</div>
+                <div id="tyre-confirm-status"></div>
+
+                <div class="mescole-partenza">
+                    <span class="mescole-eyebrow">In pista fra</span>
+                    <span id="tyre-countdown" class="hud-mono">—</span>
+                </div>
+            </aside>
+
         </div>
-        <div id="tyre-strategy-hint" style="font-size:16px; color:#f1c40f; font-weight:700;"></div>
-        <div id="tyre-cards" style="display:flex; gap:18px;"></div>
-        <div id="tyre-confirm-status" style="font-size:15px; color:#95a5a6;"></div>
     </div>
 
     <!-- Pannello pit stop (visibile SOLO al pilota in visita ai box). NON a
@@ -386,7 +411,7 @@
     <script src="shared/voxelizer.js?v=20260730a"></script>
     <script src="/shared/firebaseConfig.js" defer></script>
     <script src="shared/f1Segnalazioni.js?v=20260812a"></script>
-    <script src="f1.js?v=20260817b"></script>
+    <script src="f1.js?v=20260817c"></script>
 </body>
 
 </html>

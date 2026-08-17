@@ -127,6 +127,25 @@ test('f1Setup elenca chi è atteso e chi è già arrivato, per mostrare gli asse
     assert.deepEqual(setup.dati.tyreArrivati, ['red']);
 });
 
+test('f1Setup dice quanto tempo resta per scegliere, e il tempo si rinnova a ogni arrivo', (t) => {
+    t.after(pulisci);
+    preparaLobby(['red', 'blue']);
+    const io = ioFinto();
+
+    const primo = collega(io);
+    primo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    const restaPrimo = primo.emessi.find(e => e.evento === 'f1Setup').dati.tyreRestaMs;
+    assert.ok(restaPrimo > 30000, `atteso un tetto ampio per il carosello, ricevuto ${restaPrimo}ms`);
+
+    // Il ritardatario non deve ereditare il tempo già consumato dagli altri
+    // mentre lui caricava: la scadenza si ri-arma al suo arrivo.
+    const scadenzaPrima = activeGames.get(LOBBY).tyreSelectScadeA;
+    const secondo = collega(io);
+    secondo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue' });
+    assert.ok(activeGames.get(LOBBY).tyreSelectScadeA >= scadenzaPrima,
+        'la scadenza deve spostarsi in avanti, non restare quella di prima');
+});
+
 test('rete di sicurezza: chi non arriva mai non blocca la gara per sempre', (t) => {
     t.after(pulisci);
     t.mock.timers.enable({ apis: ['setTimeout'] });

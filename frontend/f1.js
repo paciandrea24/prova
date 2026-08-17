@@ -246,6 +246,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const trackRes = await fetch(`/tracks/${trackId}.json`);
     const trackData = await trackRes.json();
     caricamento.pista(trackData.name || trackId);
+    // Il nome del circuito è il titolo della schermata mescole: è la cosa che
+    // il giocatore vuole sapere per prima ("dove corro?"), e l'anteprima di
+    // fianco è la risposta lunga alla stessa domanda.
+    const titoloPista = document.getElementById('tyre-track-name');
+    if (titoloPista) titoloPista.textContent = trackData.name || trackId;
 
     const ROAD_HALF = trackData.roadHalfWidth;
     const CURB_W = 2.8;
@@ -1263,6 +1268,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
+        // Il conto alla rovescia vive qui: questa funzione gira ad ogni frame
+        // finché la schermata è aperta, quindi non serve un timer a parte
+        // (che poi andrebbe fermato all'uscita, ed è il tipo di cosa che ci
+        // si dimentica).
+        aggiornaContoPartenza();
+
         const ora = performance.now();
         if (!scattoDa) { scattoDa = ora; mostraScatto(anteprimaScatti[0]); }
 
@@ -1325,6 +1336,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         camera.updateProjectionMatrix();
         ToonOutline.setSize(renderer);
         if (veloScatto) veloScatto.style.opacity = '0';
+        mescoleScadeA = null;   // la scelta è chiusa: il conto non ha più senso
     }
 
     // Una riga per pilota atteso, con il suo stato. Sostituisce il vecchio
@@ -1333,9 +1345,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     // indistinguibile da un problema della propria connessione.
     // `attesi` arriva dal server (fotografia della lobby al via); se manca —
     // partita vecchia, server non aggiornato — si ricade sul contatore.
+    // Scadenza della scelta mescola, in tempo LOCALE: il server manda quanto
+    // resta (non l'istante), perché i due orologi non coincidono. Da qui in
+    // poi il conto lo tiene il client, aggiornato dentro il ciclo di
+    // rendering — nessun timer da creare e da ricordarsi di fermare.
+    let mescoleScadeA = null;
+    let mescoleUltimoSec = null;
+
+    function aggiornaContoPartenza() {
+        const el = document.getElementById('tyre-countdown');
+        if (!el) return;
+        if (mescoleScadeA == null) {
+            if (mescoleUltimoSec !== null) { el.textContent = '—'; mescoleUltimoSec = null; }
+            return;
+        }
+        const sec = Math.max(0, Math.ceil((mescoleScadeA - performance.now()) / 1000));
+        if (sec === mescoleUltimoSec) return;   // una scrittura al secondo, non 60
+        mescoleUltimoSec = sec;
+        el.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+        el.classList.toggle('in-scadenza', sec <= 10);
+    }
+
     function renderAttesaMescole(dati) {
         const box = document.getElementById('tyre-confirm-status');
         if (!box || !dati) return;
+        if (dati.restaMs != null) {
+            mescoleScadeA = performance.now() + dati.restaMs;
+            mescoleUltimoSec = null;   // forza la riscrittura al prossimo frame
+        }
         const attesi = dati.attesi || [];
         if (!attesi.length) {
             box.textContent = `${dati.count || 0}/${dati.total || 1} pronti`;
@@ -1360,7 +1397,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 testo.textContent = 'in caricamento…';
                 riga.classList.add('is-attesa');
             }
-            if (color === myColor) testo.textContent += ' (tu)';
+            if (color === myColor) {
+                riga.classList.add('is-me');
+                testo.textContent = 'tu · ' + testo.textContent;
+            }
             riga.append(pallino, testo);
             box.appendChild(riga);
         }
@@ -1377,6 +1417,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!c) continue;
             const card = document.createElement('div');
             card.className = 'tyre-card' + (myCompound === key ? ' selected' : '');
+            // Raggiungibile da tastiera: finora si sceglieva solo col mouse o
+            // col pad. Solo Invio e non anche la barra spaziatrice, che nel
+            // gioco è già la reazione al pit stop.
+            card.tabIndex = 0;
+            card.setAttribute('role', 'button');
+            card.onkeydown = (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); card.click(); } };
             card.innerHTML = `
                 <div class="tyre-card-dot" style="background:${c.color};"></div>
                 <div class="tyre-card-label">${c.label.toUpperCase()}</div>
@@ -1610,7 +1656,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ====================================================
     socket.on('f1Setup', ({ players, trackName, hostColor: hc, totalLaps, phase, raceStarted, elapsed,
         compounds, strategy, myCompound, tyreConfirmed, tyreTotal,
-        tyreAttesi, tyreArrivati, tyreConfermati }) => {
+        tyreAttesi, tyreArrivati, tyreConfermati, tyreRestaMs }) => {
         if (compounds) tyreCompoundsInfo = compounds;
         if (phase) currentPhase = phase;
         // Rientro a metà qualifica (reconnect): senza questo qualiSessionOpen
@@ -1667,11 +1713,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('tyre-select-overlay').style.display = 'flex';
             enterTyrePreview();
             document.getElementById('tyre-strategy-hint').textContent =
-                'Strategia consigliata: ' + (strategy || []).map(c => (compounds[c]?.label || c).toUpperCase()).join(' → ');
+                'Consigliata per ' + (raceTotalLaps || totalLaps || 1) + ' giri: ' +
+                (strategy || []).map(c => (compounds[c]?.label || c).toLowerCase()).join(' → ');
             renderTyreCards(compounds, myCompoundChoice, 'tyre-cards', 'f1TyreChoice');
             renderAttesaMescole({
                 attesi: tyreAttesi, arrivati: tyreArrivati, confermati: tyreConfermati,
-                count: tyreConfirmed, total: tyreTotal,
+                count: tyreConfirmed, total: tyreTotal, restaMs: tyreRestaMs,
             });
         }
     });

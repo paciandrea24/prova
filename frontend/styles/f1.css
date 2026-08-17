@@ -56,39 +56,79 @@ canvas.tyre-preview-canvas {
     height: 100% !important;
 }
 
-/* ════════════ ANTEPRIMA DEL CIRCUITO (schermata mescole) ════════════
-   Carosello di inquadrature a sinistra, mappa del tracciato a destra.
-   La cornice è 16:9 perché le inquadrature sono panoramiche: nel vecchio
-   riquadro 520x300 la veduta aerea usciva dai bordi. */
-#tyre-preview-row {
-    display: flex;
-    align-items: stretch;
-    gap: 14px;
+/* ═══════════════ SCELTA MESCOLA — "il muretto box" ═══════════════
+   Prima della qualifica il giocatore fa una cosa sola: sceglie la gomma. Ma
+   la domanda vera che si fa è "com'è questa pista?", e la risposta è il
+   carosello — che quindi si prende lo spazio. Le mescole stanno su una
+   lavagna stretta di fianco, come il muretto box di fianco al circuito.
+
+   Fondo PETROLIO e non nero: il nero spegneva l'anteprima invece di
+   incorniciarla, e il verde del prato e l'azzurro del cielo dell'immagine ci
+   stanno dentro senza stonare. */
+#tyre-select-overlay {
+    --sel-fondo-a:      #123138;
+    --sel-fondo-b:      #08191E;
+    --sel-lavagna:      #163A44;
+    --sel-rilievo:      #1E4B57;
+    --sel-filo:         rgba(255, 255, 255, 0.10);
+    --sel-testo:        #E9F3F5;
+    --sel-tenue:        #8CAEB6;
+    /* Rosso del cordolo: buildCurbs lo disegna a rosso pieno, qui è appena
+       smorzato perché a schermo non urli sopra al resto. */
+    --sel-cordolo:      #E23127;
+
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(10px, 2.5vh, 34px);
+    color: var(--sel-testo);
+    background:
+        radial-gradient(120% 90% at 22% 15%, var(--sel-fondo-a), var(--sel-fondo-b) 72%);
 }
 
+.mescole-schermo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(14px, 2vw, 30px);
+    width: 100%;
+    max-width: 1520px;
+}
+
+/* ── L'anteprima: l'eroe ──
+   Dimensionata sull'ALTEZZA della finestra e non sulla larghezza: era il
+   difetto della versione precedente, dove su uno schermo basso il fondo
+   della pagina finiva tagliato. Con height + aspect-ratio + max-width la
+   cornice si restringe da sola quando manca spazio, in entrambi i versi. */
 #tyre-preview-frame {
     position: relative;
-    width: min(680px, 62vw);
+    height: min(66vh, 640px);
     aspect-ratio: 16 / 9;
-    border: 5px solid var(--border-color);
-    border-radius: 16px;
+    max-width: 60vw;
+    flex: none;
+    border-radius: 14px;
     overflow: hidden;
-    box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.35);
-    background: #87CEEB;   /* colore del cielo: si vede solo prima del 1° frame */
+    background: #87CEEB;   /* cielo: si vede solo prima del primo frame */
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
 }
 
-/* Sopra il canvas riparentato: senza z-index il canvas, aggiunto dopo,
-   coprirebbe etichetta e velo. */
+/* Nessun bordo decorato sulla cornice, a parte l'ombra: il cordolo sta sulla
+   lavagna e basta. Metterlo anche qui sarebbe stato ripeterlo sopra
+   un'immagine in cui i cordoli veri si vedono già. */
+
+/* Etichetta, velo e mappa stanno SOPRA il canvas: enterTyrePreview lo
+   appende in coda, quindi senza z-index li coprirebbe tutti. */
 #tyre-shot-label {
     position: absolute;
-    left: 14px;
-    bottom: 12px;
+    left: 16px;
+    bottom: 14px;
     z-index: 2;
-    font-size: 15px;
-    font-weight: 900;
-    letter-spacing: 3px;
-    color: #fff;
-    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+    font-size: clamp(13px, 1.5vw, 17px);
+    font-weight: 700;
+    letter-spacing: 4px;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
     pointer-events: none;
 }
 
@@ -96,28 +136,234 @@ canvas.tyre-preview-canvas {
     position: absolute;
     inset: 0;
     z-index: 3;
-    background: #000;
+    background: var(--sel-fondo-b);
     opacity: 0;
     pointer-events: none;
 }
 
+/* La mappa è un inserto nell'angolo, non una seconda immagine di pari
+   dignità: dice dove sei mentre guardi, e basta. */
 #tyre-preview-map {
-    width: 190px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 8px;
-    border: 5px solid var(--border-color);
-    border-radius: 16px;
-    box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.35);
-    background: var(--f1-panel-strong);
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    z-index: 2;
+    width: clamp(88px, 11vw, 128px);
+    padding: 6px;
+    border-radius: 8px;
+    background: rgba(8, 25, 30, 0.72);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
 }
 
-#tyre-preview-map svg { width: 100%; height: auto; }
+#tyre-preview-map svg { display: block; width: 100%; height: auto; }
 
-/* Il pallino si sposta a scatti fra un'inquadratura e l'altra: la transizione
-   lo rende una scivolata lungo la mappa invece di un salto. */
-#tyre-map-dot { transition: cx 0.45s ease, cy 0.45s ease; }
+/* Il pallino salta da un'inquadratura all'altra: la transizione lo fa
+   scivolare lungo il tracciato invece di teletrasportarlo. */
+#tyre-map-dot { transition: cx 0.5s ease, cy 0.5s ease; }
+
+/* ── La lavagna ── */
+.mescole-lavagna {
+    flex: none;
+    width: clamp(272px, 25vw, 350px);
+    max-height: 92vh;
+    overflow-y: auto;
+    /* Esplicito: con overflow-y:auto l'asse orizzontale diventa auto da solo,
+       e il rimbalzo delle carte alla conferma (anime.js, scale 1.12) farebbe
+       comparire una barra di scorrimento per un terzo di secondo. */
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    /* Spaziature legate all'altezza della finestra e non fisse: su un portatile
+       a 720p con sei piloti in elenco la lavagna arrivava a sfiorare il bordo,
+       ed è il difetto da cui è partito questo ridisegno. */
+    gap: clamp(8px, 1.4vh, 14px);
+    padding: clamp(14px, 2vh, 24px) 20px;
+    border-radius: 14px;
+    background: var(--sel-lavagna);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 var(--sel-filo);
+    text-align: left;
+}
+
+.mescole-eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--sel-tenue);
+}
+
+.mescole-titolo {
+    margin: -4px 0 0;
+    font-size: clamp(26px, 3vw, 40px);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.5px;
+}
+
+.mescole-cordolo {
+    height: 6px;
+    border-radius: 2px;
+    background: repeating-linear-gradient(115deg,
+        var(--sel-cordolo) 0 14px, #FFFFFF 14px 28px);
+}
+
+.mescole-istruzione {
+    margin-top: 4px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--sel-testo);
+}
+
+.mescole-sep {
+    height: 1px;
+    background: var(--sel-filo);
+}
+
+/* ── Le tre mescole, in riga ──
+   In colonna erano tre card larghe affiancate e non ci stavano nella
+   lavagna. Come righe si leggono anche meglio: nome a sinistra, numeri
+   incolonnati a destra, come su un tabellone dei tempi.
+   Selettore legato a #tyre-cards apposta: le stesse .tyre-card servono
+   anche al pannello dei box, dove restano affiancate. */
+#tyre-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#tyre-cards .tyre-card {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: clamp(8px, 1.2vh, 12px) 13px;
+    border-radius: 10px;
+    background: var(--sel-rilievo);
+    box-shadow: inset 0 1px 0 var(--sel-filo);
+    text-align: left;
+}
+
+#tyre-cards .tyre-card:hover {
+    background: #24596A;
+    transform: none;   /* niente sollevamento: qui sono righe, non carte */
+}
+
+.tyre-card:focus-visible {
+    outline: 3px solid var(--f1-telemetry);
+    outline-offset: 2px;
+}
+
+/* Verde = "questa è la tua", la stessa lingua che il resto del gioco usa
+   per "confermato" (e che l'elenco piloti qui sotto ripete). Non un
+   bagliore ma un taglio pieno sul fianco: su una riga si legge meglio. */
+#tyre-cards .tyre-card.selected {
+    background: #24596A;
+    box-shadow: inset 4px 0 0 var(--green), inset 0 1px 0 var(--sel-filo);
+}
+
+#tyre-cards .tyre-card-dot {
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    border-width: 2px;
+    border-color: rgba(0, 0, 0, 0.35);
+}
+
+#tyre-cards .tyre-card-label {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--sel-testo);
+}
+
+/* I numeri in monospace: sono dati di telemetria, e incolonnati si
+   confrontano a colpo d'occhio fra una mescola e l'altra. */
+#tyre-cards .tyre-card-stats {
+    margin: 0;
+    text-align: right;
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+    line-height: 1.55;
+    white-space: nowrap;
+    color: var(--sel-tenue);
+}
+
+#tyre-strategy-hint {
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--sel-tenue);
+}
+
+/* ── Chi manca all'appello ── */
+#tyre-confirm-status {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.tyre-attesa-riga {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 13px;
+    color: var(--sel-tenue);
+}
+
+.tyre-attesa-riga.is-pronto { color: var(--green); }
+.tyre-attesa-riga.is-attesa { animation: tyre-attesa-pulsa 1.4s ease-in-out infinite; }
+.tyre-attesa-riga.is-me { color: var(--sel-testo); font-weight: 600; }
+
+.tyre-attesa-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid rgba(0, 0, 0, 0.4);
+    flex: none;
+}
+
+.tyre-attesa-riga.is-me .tyre-attesa-dot {
+    box-shadow: 0 0 0 2px var(--sel-testo);
+}
+
+@keyframes tyre-attesa-pulsa {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.45; }
+}
+
+.mescole-partenza {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 2px;
+    padding-top: 12px;
+    border-top: 1px solid var(--sel-filo);
+}
+
+#tyre-countdown {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--sel-testo);
+}
+
+/* Ultimi dieci secondi: il numero passa all'ambra del gioco. Non lampeggia —
+   il compito è informare, non mettere fretta. */
+#tyre-countdown.in-scadenza { color: var(--yellow); }
+
+@media (prefers-reduced-motion: reduce) {
+    .tyre-attesa-riga.is-attesa { animation: none; }
+    #tyre-map-dot { transition: none; }
+}
+
+/* Schermi stretti: la lavagna passa sotto l'anteprima e l'insieme scorre. */
+@media (max-width: 900px) {
+    .mescole-schermo { flex-direction: column; overflow-y: auto; }
+    #tyre-preview-frame { height: auto; width: 100%; max-width: 100%; }
+    .mescole-lavagna { width: 100%; max-width: 520px; }
+}
 
 /* ========================
    HUD — neumorfismo scuro
