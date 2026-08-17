@@ -653,30 +653,55 @@
 
         // Poligoni dei box veri: un edificio non deve entrarci dentro. Sulle
         // curve la distanza fra i centri non basta a garantirlo, perché i due
-        // volumi sono anche RUOTATI l'uno rispetto all'altro.
+        // volumi sono anche RUOTATI l'uno rispetto all'altro. Margine 0: nel
+        // fronte continuo il vicino di un box è un garage messo apposta a
+        // fianco, e il margine anti-albero gli negherebbe il posto.
         const poligoniBox = ancore.map(a => playerBoxFootprintCorners(a, trackPts, pitRoadHalf, 0));
 
-        // Costruisce il candidato per una posizione, eventualmente scostata di
-        // `scarto` unità lungo la corsia.
-        function edificioA(s, asset, scarto) {
-            const base = scarto
-                ? TrackGeometry.pitSlotAt(boxCtx.pitPath, boxCtx.boxIndex, s.offset + scarto,
-                                          trackPts, pitRoadHalf)
-                : s;
+        // Punto sul NASTRO degli edifici corrispondente a una posizione della
+        // corsia. `verso` è il punto di corsia che l'edificio deve guardare.
+        function puntoFronte(base) {
             const { nx, nz } = TrackGeometry.normalAt(pitPts, base.fromIdx, false);
             const p = pitPts[Math.min(base.fromIdx, pitPts.length - 1)];
             const distPlus = TrackGeometry.nearestPoint(trackPts, base.x + nx, base.z + nz).dist;
             const distMinus = TrackGeometry.nearestPoint(trackPts, base.x - nx, base.z - nz).dist;
             const side = distPlus >= distMinus ? 1 : -1;
             const off = pitRoadHalf + PIT_BUILDING_OFFSET_MARGIN;
-            const x = base.x + nx * off * side, z = base.z + nz * off * side;
             return {
-                asset, category: 'paddock', x, y: p.y || 0, z,
-                rotY: Math.atan2(base.x - x, base.z - z), scale: CUSTOM_MODEL_SCALE,
+                x: base.x + nx * off * side,
+                z: base.z + nz * off * side,
+                y: p.y || 0,
+                verso: { x: base.x, z: base.z },
             };
         }
 
-        function libero(cand) {
+        const fronte = slot.map(puntoFronte);
+
+        // Orientamento: perpendicolare al NASTRO su cui gli edifici sono
+        // allineati, non diretto al punto di corsia.
+        //
+        // Le due direzioni coincidono in rettilineo e divergono in curva,
+        // perché il nastro degli edifici corre 24 unità più in fuori e ha
+        // quindi un raggio diverso. Puntando al punto di corsia gli edifici si
+        // aprono a VENTAGLIO: i centri stanno alla distanza giusta ma i fronti
+        // divergono, e fra l'uno e l'altro resta uno spicchio di vuoto —
+        // segnalato in playtest su prova, "gli edifici sono orientati un
+        // pochino male, soprattutto quelli presso l'entrata", che è dove la
+        // corsia piega di più.
+        function orientamento(k) {
+            const a = fronte[Math.max(0, k - 1)];
+            const b = fronte[Math.min(fronte.length - 1, k + 1)];
+            let tx = b.x - a.x, tz = b.z - a.z;
+            const len = Math.hypot(tx, tz);
+            const q = fronte[k];
+            if (len < 1e-9) return Math.atan2(q.verso.x - q.x, q.verso.z - q.z);
+            tx /= len; tz /= len;
+            let fx = -tz, fz = tx;
+            if ((q.verso.x - q.x) * fx + (q.verso.z - q.z) * fz < 0) { fx = -fx; fz = -fz; }
+            return Math.atan2(fx, fz);
+        }
+
+        function libero(cand, posati) {
             if (posati.some(q => SceneryAssetSizes.itemsOverlap(cand, q))) return false;
             const corners = SceneryAssetSizes.footprintCorners(cand);
             return !poligoniBox.some(poly => SceneryAssetSizes.polysOverlap(corners, poly));
@@ -684,40 +709,39 @@
 
         let alternanza = 0;
         const posati = [];
-        for (const s of slot) {
+        for (let k = 0; k < slot.length; k++) {
+            const s = slot[k];
             if (riservate.has(s.indice)) continue;
             const asset = (alternanza % 2 === 0) ? 'pitsGarageClosed' : 'pitsOffice';
+            const rotY = orientamento(k);
 
-            // Dove la corsia PIEGA, due volumi affiancati sono anche ruotati
-            // l'uno rispetto all'altro e gli spigoli si incrociano pur avendo
-            // i centri alla distanza giusta. Misurato, la rotazione fra due
-            // posizioni vicine arriva a 31° su prova e 29° su monte-rosso —
-            // ma solo agli ESTREMI, dove la corsia si innesta sulla pista; nel
-            // tratto dritto in cui stanno i box è quasi nulla.
-            //
-            // Lì l'edificio si SCOSTA di poco lungo la corsia invece di essere
-            // saltato: saltarlo lascerebbe 17 unità di vuoto in mezzo al
-            // fronte — cioè il difetto che questo lavoro deve chiudere — e
-            // stringere i modelli abbastanza da non incrociarsi mai a 31°
-            // vorrebbe dire larghi 7 su un passo di 15, un fronte mezzo vuoto
-            // ovunque per un problema che esiste in due punti.
+            // Dove la corsia piega molto due volumi affiancati si incrociano
+            // comunque con gli spigoli: lì l'edificio si scosta di poco lungo
+            // la corsia. Gli scarti piccoli (±1.5, ±3) sono stati provati e
+            // danno un fronte PIÙ rado: per uscire dal cono del vicino serve
+            // spostarsi di quasi mezzo passo.
             let cand = null;
-            // Provati anche scarti piccoli (±1.5, ±3): danno un fronte PIU'
-            // rado, non più fitto. Sulle curve serve spostarsi abbastanza da
-            // uscire dal cono del vicino, e mezzo passo è quanto serve.
             for (const scarto of [0, 2, -2, 4, -4, 6, -6]) {
-                const prova = edificioA(s, asset, scarto);
+                const base = scarto
+                    ? TrackGeometry.pitSlotAt(boxCtx.pitPath, boxCtx.boxIndex, s.offset + scarto,
+                                              trackPts, pitRoadHalf)
+                    : s;
+                const q = scarto ? puntoFronte(base) : fronte[k];
+                const prova = {
+                    asset, category: 'paddock', x: q.x, y: q.y, z: q.z,
+                    rotY, scale: CUSTOM_MODEL_SCALE,
+                };
+                // Niente edifici all'IMBOCCO della corsia, dove corsia e pista
+                // corrono ancora affiancate: lì un volume profondo 14.7 si
+                // sovrappone all'ingresso e lo rende illeggibile (segnalato
+                // dall'utente).
                 if (TrackGeometry.nearestPoint(trackPts, prova.x, prova.z).dist
                         < barrierDist + PIT_BUILDING_TRACK_CLEARANCE) continue;
                 if (!fitsUnderBridge(asset, prova.x, prova.z, prova.y)) continue;
-                if (!libero(prova)) continue;
+                if (!libero(prova, posati)) continue;
                 cand = prova;
                 break;
             }
-            // Niente edifici all'IMBOCCO della corsia, dove corsia e pista
-            // corrono ancora affiancate: lì un volume profondo 14.7 si
-            // sovrappone all'ingresso e lo rende illeggibile (segnalato
-            // dall'utente). È l'unico vuoto ammesso nel fronte.
             if (!cand) continue;
 
             layout.push(cand);
