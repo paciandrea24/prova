@@ -446,6 +446,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const MAX_GRID_SIZE = 6;
     TrackMeshBuilder.buildStartingGrid(scene, trackPts, START_FINISH_INDEX, MAX_GRID_SIZE);
 
+    // Inquadrature dell'anteprima mostrata durante la scelta mescola. Si
+    // calcolano qui, una volta sola: dipendono solo dalla forma del
+    // tracciato, che da qui in poi non cambia più.
+    const anteprimaScatti = TrackPreviewShots.buildShots(trackPts, PIT_PTS, {
+        startFinishIndex: START_FINISH_INDEX,
+        barrierDist: BARRIER_D,
+    });
+
     // ====================================================
     // STILE CEL-SHADED — conversione dei materiali generati qui
     // (Rif. spec 2026-08-10-f1-art-direction-cel-shading-design.md)
@@ -1221,11 +1229,68 @@ document.addEventListener('DOMContentLoaded', async () => {
     let myCompoundChoice = null;
     let tyreCompoundsInfo = null;   // { hard:{...}, medium:{...}, soft:{...} }, ricevuto una volta in f1Setup
 
+    // ── Carosello dell'anteprima ────────────────────────────────────────
+    // Sostituisce l'orbita di prima, che girava attorno a (50, 0, 100): un
+    // punto scritto nel codice, che su "prova" cade a 828 unità dal circuito
+    // e su "baku" a 584. La camera guardava un pezzo di prato vuoto — è il
+    // motivo per cui l'anteprima non mostrava niente di interessante.
+    //
+    // Ora si passa fra le inquadrature calcolate da TrackPreviewShots
+    // (traguardo, curva più stretta, rettilineo, ponte, corsia box, veduta
+    // aerea), ognuna con una lenta deriva e uno stacco in dissolvenza.
+    const veloScatto = document.getElementById('tyre-shot-fade');
+    const etichettaScatto = document.getElementById('tyre-shot-label');
+    const STACCO_MS = 420;   // dissolvenza al nero a inizio e fine di ogni scatto
+    let scattoCorrente = 0;
+    let scattoDa = 0;        // performance.now() dell'inizio dello scatto in corso
+
+    function misto(a, b, t) { return a + (b - a) * t; }
+
+    function mostraScatto(s) {
+        if (etichettaScatto) etichettaScatto.textContent = s.etichetta;
+        aggiornaPallinoAnteprima(s.idx);
+    }
+
     function updateTyreSelectCamera() {
-        tyreOrbitAngle += 0.0022;
-        const radius = 150, height = 115;
-        camera.position.set(50 + Math.cos(tyreOrbitAngle) * radius, height, 100 + Math.sin(tyreOrbitAngle) * radius);
-        camera.lookAt(50, 0, 100);
+        // Tracciato senza inquadrature (caso degenere): orbita di scorta, ma
+        // sul centro VERO del circuito, non più su un punto fisso.
+        if (!anteprimaScatti.length) {
+            tyreOrbitAngle += 0.0022;
+            const c = TrackPreviewShots.ingombro(trackPts);
+            const r = Math.max(150, c.diagonale * 0.3);
+            camera.position.set(c.cx + Math.cos(tyreOrbitAngle) * r, r * 0.7, c.cz + Math.sin(tyreOrbitAngle) * r);
+            camera.lookAt(c.cx, 0, c.cz);
+            return;
+        }
+
+        const ora = performance.now();
+        if (!scattoDa) { scattoDa = ora; mostraScatto(anteprimaScatti[0]); }
+
+        const s = anteprimaScatti[scattoCorrente];
+        const trascorso = ora - scattoDa;
+        const t = Math.min(1, trascorso / s.durata);
+        const e = t * t * (3 - 2 * t);   // la deriva parte e finisce piano
+
+        camera.position.set(misto(s.cam.x, s.camFine.x, e),
+                            misto(s.cam.y, s.camFine.y, e),
+                            misto(s.cam.z, s.camFine.z, e));
+        camera.lookAt(misto(s.target.x, s.targetFine.x, e),
+                      misto(s.target.y, s.targetFine.y, e),
+                      misto(s.target.z, s.targetFine.z, e));
+
+        if (veloScatto) {
+            // Nero pieno allo stacco, trasparente in mezzo: senza, la camera
+            // sembrerebbe teletrasportarsi da un punto all'altro del circuito.
+            const restante = s.durata - trascorso;
+            const nero = Math.max(0, Math.max(1 - trascorso / STACCO_MS, 1 - restante / STACCO_MS));
+            veloScatto.style.opacity = Math.min(1, nero).toFixed(3);
+        }
+
+        if (t >= 1) {
+            scattoCorrente = (scattoCorrente + 1) % anteprimaScatti.length;
+            scattoDa = ora;
+            mostraScatto(anteprimaScatti[scattoCorrente]);
+        }
     }
 
     // Riparenta il canvas dentro la cornice della selezione mescola e lo
@@ -1239,6 +1304,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderer.setSize(w, h);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
+        // Il buffer dei contorni NON si adegua da solo (ToonOutline.render non
+        // rilegge la dimensione): senza questa riga resta grande quanto la
+        // finestra mentre il canvas è la cornice dell'anteprima, e il tratto
+        // nero finisce spostato rispetto all'immagine. Stessa ragione per cui
+        // la chiama il gestore di resize.
+        ToonOutline.setSize(renderer);
+        // Il carosello riparte dalla prima inquadratura ad ogni ingresso: la
+        // scelta mescola ricompare anche ai box, e riprendere da metà di uno
+        // scatto vecchio mostrerebbe un pezzo di circuito a caso.
+        scattoCorrente = 0;
+        scattoDa = 0;
     }
 
     function exitTyrePreview() {
@@ -1247,6 +1323,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderer.setSize(window.innerWidth, window.innerHeight);
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
+        ToonOutline.setSize(renderer);
+        if (veloScatto) veloScatto.style.opacity = '0';
     }
 
     // Una riga per pilota atteso, con il suo stato. Sostituisce il vecchio
@@ -2461,6 +2539,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     const minimapT = minimapTransform([...trackPts, ...PIT_PTS]);
     minimapTrackEl.setAttribute('d', minimapPathString(trackPts, minimapT, true));
     minimapPitEl.setAttribute('d', minimapPathString(PIT_PTS, minimapT, false));
+
+    // Mappa dell'anteprima (schermata mescole): stesso tracciato e stessa
+    // trasformazione della minimappa dell'HUD — hanno lo stesso viewBox — con
+    // in più il pallino del punto inquadrato dal carosello. È la metà che
+    // racconta la FORMA del giro: le inquadrature raccontano l'ambiente, e
+    // nessuna delle due da sola dice cos'è questo circuito.
+    const anteprimaMappaTrack = document.getElementById('tyre-map-track');
+    const anteprimaMappaPit = document.getElementById('tyre-map-pit');
+    const anteprimaMappaDot = document.getElementById('tyre-map-dot');
+    if (anteprimaMappaTrack) anteprimaMappaTrack.setAttribute('d', minimapPathString(trackPts, minimapT, true));
+    if (anteprimaMappaPit) anteprimaMappaPit.setAttribute('d', minimapPathString(PIT_PTS, minimapT, false));
+
+    function aggiornaPallinoAnteprima(idx) {
+        const p = trackPts[idx];
+        if (!anteprimaMappaDot || !p) return;
+        anteprimaMappaDot.setAttribute('cx', (p.x * minimapT.scale + minimapT.offX).toFixed(1));
+        anteprimaMappaDot.setAttribute('cy', (p.z * minimapT.scale + minimapT.offZ).toFixed(1));
+    }
 
     const minimapDots = {};   // color -> <circle> element
 

@@ -56,6 +56,69 @@ canvas.tyre-preview-canvas {
     height: 100% !important;
 }
 
+/* ════════════ ANTEPRIMA DEL CIRCUITO (schermata mescole) ════════════
+   Carosello di inquadrature a sinistra, mappa del tracciato a destra.
+   La cornice è 16:9 perché le inquadrature sono panoramiche: nel vecchio
+   riquadro 520x300 la veduta aerea usciva dai bordi. */
+#tyre-preview-row {
+    display: flex;
+    align-items: stretch;
+    gap: 14px;
+}
+
+#tyre-preview-frame {
+    position: relative;
+    width: min(680px, 62vw);
+    aspect-ratio: 16 / 9;
+    border: 5px solid var(--border-color);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.35);
+    background: #87CEEB;   /* colore del cielo: si vede solo prima del 1° frame */
+}
+
+/* Sopra il canvas riparentato: senza z-index il canvas, aggiunto dopo,
+   coprirebbe etichetta e velo. */
+#tyre-shot-label {
+    position: absolute;
+    left: 14px;
+    bottom: 12px;
+    z-index: 2;
+    font-size: 15px;
+    font-weight: 900;
+    letter-spacing: 3px;
+    color: #fff;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+    pointer-events: none;
+}
+
+#tyre-shot-fade {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+}
+
+#tyre-preview-map {
+    width: 190px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    border: 5px solid var(--border-color);
+    border-radius: 16px;
+    box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.35);
+    background: var(--f1-panel-strong);
+}
+
+#tyre-preview-map svg { width: 100%; height: auto; }
+
+/* Il pallino si sposta a scatti fra un'inquadratura e l'altra: la transizione
+   lo rende una scivolata lungo la mappa invece di un salto. */
+#tyre-map-dot { transition: cx 0.45s ease, cy 0.45s ease; }
+
 /* ========================
    HUD — neumorfismo scuro
    ======================== */
