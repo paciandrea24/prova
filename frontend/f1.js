@@ -1307,6 +1307,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Riparenta il canvas dentro la cornice della selezione mescola e lo
     // ridimensiona a quella: un vero modellino contenuto, non la scena a
     // schermo intero vista in trasparenza dietro l'overlay.
+    // Piano vicino usato SOLO durante l'anteprima. In gara la camera sta a
+    // pochi metri dall'auto e serve un near piccolo; nell'anteprima guarda da
+    // 250-320 unità, e lì un near di 0.1 non regge:
+    //
+    //   near 0.1 -> risoluzione in profondità 0.037 a 250 unità, 0.061 a 320
+    //   near 2   ->                           0.0019            0.0030
+    //
+    // L'asfalto sta 0.02 sopra l'impalcato e il cordolo 0.04 sopra la pista:
+    // col near di gioco il buffer di profondità non riesce a distinguerli e
+    // le superfici si contendono il pixel — è lo "sfarfallio" segnalato.
+    // Nulla di visibile sta entro 2 unità dalle camere del carosello.
+    const PREVIEW_NEAR = 2;
+    const nearDiGioco = camera.near;
+
     function enterTyrePreview() {
         const frame = document.getElementById('tyre-preview-frame');
         if (renderer.domElement.parentElement !== frame) frame.appendChild(renderer.domElement);
@@ -1314,6 +1328,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const w = frame.clientWidth, h = frame.clientHeight;
         renderer.setSize(w, h);
         camera.aspect = w / h;
+        camera.near = PREVIEW_NEAR;
         camera.updateProjectionMatrix();
         // Il buffer dei contorni NON si adegua da solo (ToonOutline.render non
         // rilegge la dimensione): senza questa riga resta grande quanto la
@@ -1333,6 +1348,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderer.domElement.classList.remove('tyre-preview-canvas');
         renderer.setSize(window.innerWidth, window.innerHeight);
         camera.aspect = window.innerWidth / window.innerHeight;
+        camera.near = nearDiGioco;
         camera.updateProjectionMatrix();
         ToonOutline.setSize(renderer);
         if (veloScatto) veloScatto.style.opacity = '0';

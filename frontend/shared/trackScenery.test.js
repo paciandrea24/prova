@@ -832,6 +832,14 @@ const TrackGravel = require('./trackGravel.js');
 const fsAllineamento = require('fs');
 const pathAllineamento = require('path');
 
+// Le piste si leggono dalla cartella invece di elencarle a mano: un elenco
+// scritto nel test invecchia, e si rompe quando una pista viene aggiunta o
+// rimossa (successo con `baku`, tolta il 2026-08-17).
+const TRACCIATI = require('fs')
+    .readdirSync(require('path').join(__dirname, '..', 'tracks'))
+    .filter(f => f.endsWith('.json'))
+    .map(f => f.replace(/\.json$/, ''));
+
 function circuitoVero(id) {
     const raw = JSON.parse(fsAllineamento.readFileSync(pathAllineamento.join(
         __dirname, '..', 'tracks', `${id}.json`), 'utf8'));
@@ -928,7 +936,7 @@ function rotazioneDelMuroSotto(trackPts, barrierProfile, voce) {
     return Math.abs(g);
 }
 
-for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+for (const id of TRACCIATI) {
     test(`scenografia: tribune e reti restano parallele al muro (${id})`, () => {
         const { trackPts, barrierProfile, layout } = circuitoVero(id);
         // La soglia non è un numero fisso ma il limite geometrico del punto:
@@ -988,7 +996,7 @@ test('scenografia: i moduli di una fila stanno tutti alla stessa distanza dalla 
     // muro per conto suo, la fila tornerebbe a scalinare — su monte-rosso il
     // gradino misurava 14.8 unità — e la rete larga quanto la tribuna non
     // potrebbe più stare né davanti né di lato senza entrare in qualcosa.
-    for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+    for (const id of TRACCIATI) {
         const { trackPts, layout } = circuitoVero(id);
         const tribune = layout.filter(x => x.category === 'grandstand' || x.category === 'grandstand-main')
             .map(v => ({ v, ...doveSta(trackPts, v) }));
@@ -1080,7 +1088,7 @@ function laSuaRete(tribuna, reti) {
         && Math.hypot(r.x - tribuna.x, r.z - tribuna.z) < 40);
 }
 
-for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+for (const id of TRACCIATI) {
     test(`scenografia: nessuna tribuna protetta a metà (${id})`, () => {
         // Segnalazione in gioco del 2026-08-13 (punti M 14 e 15): "un
         // grandstand è per metà protetto e per metà no". Le reti erano due
@@ -1283,7 +1291,7 @@ test('footbridge: la luce copre il muro di dove sta, su entrambi i lati', () => 
     // nessuna struttura già accettata, la passerella trova libero il campione
     // 416 — dove il muro è a 18.2 e la luce basta. È l'ingombro delle altre
     // strutture a spingerla dove il muro è largo.
-    for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+    for (const id of TRACCIATI) {
         const { trackPts, barrierProfile, layout } = circuitoVero(id);
         for (const ponte of layout.filter(v => v.asset === 'footbridge' || v.asset === 'startGantry')) {
             const semiLuce = SceneryAssetSizes.sizeOf(ponte.asset).w * ponte.scale / 2;
@@ -1309,7 +1317,7 @@ test('il decoro del paddock non finisce dentro nient\'altro', () => {
     //
     // Il verde è compreso apposta: alberi e rocce si posano DOPO il decoro e
     // non lo guardavano, e su prova e baku ci cresceva dentro un albero.
-    for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+    for (const id of TRACCIATI) {
         const { layout } = circuitoVero(id);
         const decoro = layout.filter(v => v.category === 'paddock-decor');
         assert.equal(decoro.length, 6, `${id}: attesi 6 pezzi di decoro, trovati ${decoro.length}`);
@@ -1337,7 +1345,7 @@ test('davanti a una tribuna non c\'è altro che la sua rete', () => {
     // l'utente non li ha segnalati. Per loro vale solo il divieto di finire
     // DENTRO una tribuna.
     const FASCIA = 22;
-    for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+    for (const id of TRACCIATI) {
         const { layout } = circuitoVero(id);
         const tribune = layout.filter(v => (v.category || '').startsWith('grandstand'));
         const nellaFascia = layout.filter(v => (v.asset === 'tyreStack' || v.asset === 'marshalPost')
@@ -1366,7 +1374,7 @@ test('gli edifici della corsia box non si compenetrano fra loro', () => {
     // su baku due coppie si compenetravano a 22.7 e 23.2 di distanza fra i
     // centri, cioè alla distanza nominale esatta (22.65). La distanza fra i
     // centri non basta a descrivere due rettangoli orientati.
-    for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+    for (const id of TRACCIATI) {
         const { layout } = circuitoVero(id);
         const edifici = layout.filter(v => v.category === 'paddock' && /^pits/.test(v.asset));
         assert.ok(edifici.length > 0, `${id}: nessun edificio nella corsia box`);
@@ -1395,7 +1403,7 @@ test('niente scenografia dentro gli asset che scavalcano la pista', () => {
     // delle due non c'è. Che non ci sia la rete l'utente l'ha già bocciato
     // due volte. Quanto sia profondo l'incrocio lo verifica il test
     // "la rete incrocia il ponte semafori solo sul pilone", per tracciato.
-    for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+    for (const id of TRACCIATI) {
         const { layout } = circuitoVero(id);
         const scavalcano = layout.filter(v => v.asset === 'footbridge' || v.asset === 'startGantry');
         for (const p of scavalcano) {
@@ -1466,7 +1474,7 @@ const VUOTI_ATTESI = {
     'baku':        { peggiore: 10,  quota: 0.85 },
 };
 
-for (const id of ['prova', 'new-monza', 'monte-rosso', 'baku']) {
+for (const id of TRACCIATI) {
     test(`scenografia: quanto circuito resta senza niente di fianco (${id})`, () => {
         const { trackPts, layout } = circuitoVero(id);
         const tratti = SceneryGaps.trattiVuoti(trackPts, layout);

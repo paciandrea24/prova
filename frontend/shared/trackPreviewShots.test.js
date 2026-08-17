@@ -16,7 +16,14 @@ const TrackPreviewShots = require('./trackPreviewShots.js');
 const TrackGeometry = require('./trackGeometry.js');
 const { loadTrack } = require(path.join(__dirname, '..', '..', 'backend/sockets/games/trackLoader.js'));
 
-const TRACCIATI = ['prova', 'monte-rosso', 'new-monza', 'baku'];
+// Le piste si leggono dalla cartella invece di elencarle qui: il punto di
+// questo modulo è che funziona su qualunque tracciato, comprese le piste
+// disegnate con l'editor dopo che questi test sono stati scritti. Un elenco
+// scritto a mano invecchia — e si rompe se una pista viene rimossa.
+const TRACCIATI = require('fs')
+    .readdirSync(path.join(__dirname, '..', 'tracks'))
+    .filter(f => f.endsWith('.json'))
+    .map(f => f.replace(/\.json$/, ''));
 
 function scattiDi(id) {
     const t = loadTrack(id);

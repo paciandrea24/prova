@@ -7,6 +7,14 @@ const TrackGravel = require('./trackGravel.js');
 const SceneryAssetSizes = require('./sceneryAssetSizes.js');
 const SceneryInfrastructure = require('./sceneryInfrastructure.js');
 
+// Le piste si leggono dalla cartella invece di elencarle a mano: un elenco
+// scritto nel test invecchia, e si rompe quando una pista viene aggiunta o
+// rimossa (successo con `baku`, tolta il 2026-08-17).
+const TRACCIATI = require('fs')
+    .readdirSync(require('path').join(__dirname, '..', 'tracks'))
+    .filter(f => f.endsWith('.json'))
+    .map(f => f.replace(/\.json$/, ''));
+
 // Lo stesso circuito vero usato dagli altri test di scenografia, con gli
 // stessi campionamenti del caricatore di pista.
 function circuitoVero(id) {
@@ -90,7 +98,6 @@ const PALETTE_ESISTENTI = [
     { asset: 'billboardLow', contesti: ['rettilineo', 'stretto'],  passoMinimo: 150 },
 ];
 
-const TRACCIATI = ['prova', 'new-monza', 'monte-rosso', 'baku'];
 
 test('con una palette vera posa qualcosa su tutti i tracciati', () => {
     for (const id of TRACCIATI) {

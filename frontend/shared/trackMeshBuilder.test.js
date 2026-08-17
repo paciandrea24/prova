@@ -13,12 +13,22 @@ global.THREE = {
         constructor(g, m) {
             this.geometry = g; this.material = m;
             this.rotation = { x: 0, y: 0, z: 0 };
-            this.position = { x: 0, y: 0, z: 0, set() {} };
+            // set() assegna davvero: i piloni del ponte si posizionano così, e
+            // per verificare dove arriva la loro sommità serve il valore.
+            this.position = {
+                x: 0, y: 0, z: 0,
+                set(x, y, z) { this.x = x; this.y = y; this.z = z; },
+            };
         }
     },
     DoubleSide: 2,
     Object3D: class { constructor() { this.children = []; } add(c) { this.children.push(c); } },
     BoxGeometry: class {},
+    CylinderGeometry: class {
+        constructor(radiusTop, radiusBottom, height, radialSegments) {
+            this.parameters = { radiusTop, radiusBottom, height, radialSegments };
+        }
+    },
     PlaneGeometry: class { constructor() { this.attributes = {}; } rotateX() {} translate() {} },
     InstancedMesh: class { constructor() {} setMatrixAt() {} },
     Color: class {},
@@ -456,4 +466,93 @@ test('senza tratti affiancati il terrapieno resta quello di prima', () => {
     for (const r of attesi) {
         assert.ok(raggi.has(r.toFixed(1)), `manca l'anello a ${r.toFixed(1)} dall'asse (trovati: ${[...raggi].join(', ')})`);
     }
+});
+
+// ═══════════════ PONTI: impalcato e piloni ═══════════════
+//
+// Difetto segnalato dall'utente ("la strada fluttua"): l'impalcato era un
+// piano SENZA spessore appeso 1.5 unità sotto la carreggiata, mentre i piloni
+// si fermavano a 2.5 sotto — cioè un'unità più giù del piano, calcolata come
+// se l'impalcato fosse un solido spesso BRIDGE_DECK_THICK che però nessuno
+// disegnava. Fra strada, piano e piloni restavano due strisce d'aria.
+
+const PONTE_QUOTA = 10;
+
+// Cerchio con un tratto in quota marcato come ponte, e i punti a terra
+// separati: è la stessa coppia (trackPts, groundPts) che f1.js passa.
+function cerchioConPonte(n = 200, da = 40, a = 60) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+        const ang = i / n * Math.PI * 2;
+        const suPonte = i >= da && i <= a;
+        pts.push({
+            x: Math.cos(ang) * 100, z: Math.sin(ang) * 100,
+            y: suPonte ? PONTE_QUOTA : 0,
+            bridge: suPonte,
+        });
+    }
+    return pts;
+}
+
+function costruisciPonte() {
+    const c = contenitore();
+    const pts = cerchioConPonte();
+    const groundPts = pts.filter(p => !p.bridge);
+    // Stessi argomenti di f1.js: semilarghezza impalcato = pista + cordolo.
+    TrackMeshBuilder.buildBridgeDecks(c, pts, groundPts, 13.8, 13.8, 45, 90);
+    const piloni = c.children.filter(m => m.geometry && m.geometry.parameters
+        && m.geometry.parameters.height !== undefined);
+    const impalcati = c.children.filter(m => m.geometry && m.geometry.attributes
+        && m.geometry.attributes.position);
+    return { piloni, impalcati };
+}
+
+function estremiY(mesh) {
+    const pos = mesh.geometry.attributes.position.array;
+    let min = Infinity, max = -Infinity;
+    for (let i = 1; i < pos.length; i += 3) {
+        if (pos[i] < min) min = pos[i];
+        if (pos[i] > max) max = pos[i];
+    }
+    return { min, max };
+}
+
+test('ponte: i piloni arrivano a toccare l\'impalcato, non si fermano prima', () => {
+    const { piloni, impalcati } = costruisciPonte();
+    assert.ok(piloni.length > 0, 'il tracciato di prova deve produrre dei piloni');
+    assert.ok(impalcati.length > 0, 'e un impalcato');
+
+    const sotto = Math.min(...impalcati.map(m => estremiY(m).min));
+    for (const pilone of piloni) {
+        const sommita = pilone.position.y + pilone.geometry.parameters.height / 2;
+        assert.ok(sommita >= sotto - 0.05,
+            `pilone fermo a ${sommita.toFixed(2)} mentre l'impalcato comincia a ${sotto.toFixed(2)}: ${(sotto - sommita).toFixed(2)} unità di vuoto`);
+    }
+});
+
+test('ponte: l\'impalcato ha uno spessore vero e arriva sotto la carreggiata', () => {
+    const { impalcati } = costruisciPonte();
+    const sopra = Math.max(...impalcati.map(m => estremiY(m).max));
+    const sotto = Math.min(...impalcati.map(m => estremiY(m).min));
+
+    assert.ok(sopra >= PONTE_QUOTA - 0.1,
+        `il bordo alto dell'impalcato è a ${sopra.toFixed(2)}, la strada a ${PONTE_QUOTA}: in mezzo si vedrebbe il vuoto`);
+    assert.ok(sopra - sotto > 0.3,
+        `impalcato spesso ${(sopra - sotto).toFixed(2)}: di taglio si legge come un foglio`);
+});
+
+test('le barriere sul ponte hanno gli stessi colori di tutte le altre', () => {
+    const c = contenitore();
+    TrackMeshBuilder.buildBarriers(c, cerchioConPonte(), 15, null);
+    const tinte = new Set();
+    for (const mesh of c.children) {
+        const col = mesh.geometry.attributes.color.array;
+        for (let i = 0; i < col.length; i += 3) {
+            tinte.add([col[i], col[i + 1], col[i + 2]].map(v => v.toFixed(2)).join(','));
+        }
+    }
+    // Due sole tinte su tutto il giro: la striscia chiara e quella rossa. Ora
+    // che ogni barriera è un muro solido, quella del ponte non ha più niente
+    // di diverso da segnalare.
+    assert.equal(tinte.size, 2, `attese 2 tinte, trovate ${tinte.size}: ${[...tinte].join(' | ')}`);
 });

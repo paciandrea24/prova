@@ -389,6 +389,14 @@ test('barrierDistAt somma la ghiaia alla distanza base', () => {
 const fs = require('fs');
 const path = require('path');
 
+// Le piste si leggono dalla cartella invece di elencarle a mano: un elenco
+// scritto nel test invecchia, e si rompe quando una pista viene aggiunta o
+// rimossa (successo con `baku`, tolta il 2026-08-17).
+const TRACCIATI = require('fs')
+    .readdirSync(require('path').join(__dirname, '..', 'tracks'))
+    .filter(f => f.endsWith('.json'))
+    .map(f => f.replace(/\.json$/, ''));
+
 function pistaVera(id) {
     const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'tracks', `${id}.json`), 'utf8'));
     return { raw, pts: TrackGeometry.sampleLoop(raw.controlPoints, 1000) };
@@ -410,7 +418,7 @@ function ripiegamentiDi(pts, distDi) {
     return out;
 }
 
-for (const id of ['prova', 'monte-rosso', 'new-monza', 'baku']) {
+for (const id of TRACCIATI) {
     test(`barrierProfile: il nastro non si ripiega (${id})`, () => {
         const { raw, pts } = pistaVera(id);
         const bar = TrackGravel.barrierProfile(pts, { roadHalf: raw.roadHalfWidth });

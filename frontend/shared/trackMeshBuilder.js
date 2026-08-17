@@ -389,13 +389,16 @@
                 pos[i * 6 + 3] = bx; pos[i * 6 + 4] = baseY + HEIGHT; pos[i * 6 + 5] = bz;
 
                 if (i > 0) { stripeAcc += stepLen; if (stripeAcc >= STRIPE) { stripeAcc = 0; isRed = !isRed; } }
-                // Sui tratti ponte la barriera è un muro rigido lato server
-                // (applyBridgeBarrier), non il solito fuoripista attraversabile:
-                // bianco/arancione invece di bianco/rosso, stessa cadenza di
-                // striping, per distinguerla a colpo d'occhio.
-                let r, g, bv;
-                if (p.bridge) { r = isRed ? 0.95 : 0.93; g = isRed ? 0.45 : 0.93; bv = isRed ? 0.05 : 0.96; }
-                else          { r = isRed ? 0.85 : 0.93; g = isRed ? 0.10 : 0.93; bv = isRed ? 0.10 : 0.96; }
+                // Bianco/rosso su TUTTO il giro, ponti compresi. Le barriere
+                // dei ponti erano bianco/arancione perché lì il muro era
+                // rigido mentre altrove il fuoripista si attraversava: quella
+                // differenza serviva a leggerla a colpo d'occhio. Dal
+                // 2026-08-12 il circuito è fisicamente chiuso e ogni barriera
+                // è un muro (vedi applyBarrier in trackGravel), quindi il
+                // colore diverso non segnalava più niente.
+                const r  = isRed ? 0.85 : 0.93;
+                const g  = isRed ? 0.10 : 0.93;
+                const bv = isRed ? 0.10 : 0.96;
                 col[i * 6] = r; col[i * 6 + 1] = g; col[i * 6 + 2] = bv;
                 col[i * 6 + 3] = r; col[i * 6 + 4] = g; col[i * 6 + 5] = bv;
             }
@@ -1185,8 +1188,16 @@
     }
 
     const BRIDGE_COLOR = Palette.SURFACES.bridge;
-    const BRIDGE_DECK_DROP      = 1.5;  // unità sotto la quota pista: dà l'idea di uno spessore strutturale
-    const BRIDGE_DECK_THICK     = 1.0;  // spessore dell'impalcato: solo per calcolare da dove partono i piloni
+    // Spessore VERO dell'impalcato: la lastra va dalla quota pista a
+    // BRIDGE_DECK_THICK sotto, ed è lì che poggiano i piloni.
+    //
+    // Prima erano due costanti che non tornavano: un DROP di 1.5 appendeva un
+    // piano SENZA spessore sotto la carreggiata, e un THICK di 1.0 serviva
+    // "solo per calcolare da dove partono i piloni" — cioè descriveva un
+    // solido che nessuno disegnava. Il risultato erano due strisce d'aria in
+    // sezione, 1.47 unità fra strada e piano e 1.03 fra piano e sommità dei
+    // piloni, su un'auto alta 1.79: il ponte sembrava galleggiare.
+    const BRIDGE_DECK_THICK     = 1.6;
     const BRIDGE_PILLAR_SPACING = 18;   // unità d'arco tra un pilone e il successivo
     const BRIDGE_PILLAR_RADIUS  = 1.2;
     const BRIDGE_PILLAR_MIN_HEIGHT = 0.5; // sotto questa altezza, niente pilone (evita geometria degenere)
@@ -1198,8 +1209,56 @@
     // il raggio del pilone, con un margine di sicurezza.
     const BRIDGE_PILLAR_CLEARANCE = 4;
 
-    // Impalcato (lastra sottile sotto il nastro pista, riusando buildOpenRibbon
-    // già esistente) + piloni (cilindri) fino al terreno vero sottostante, per
+    // Impalcato del ponte: un SOLIDO, non un piano. Va dalla quota pista a
+    // `thickness` sotto, e sono i suoi fianchi a far leggere il ponte come una
+    // struttura invece che come una strada sospesa nel vuoto.
+    //
+    // La faccia SUPERIORE non si disegna: la coprono per intero l'asfalto
+    // (quota pista + 0.02) e il cordolo (+ 0.04), che arrivano esattamente a
+    // `halfW`. Disegnarla sarebbe geometria invisibile e un rischio di
+    // z-fighting in più.
+    //
+    // Triangoli espliciti, senza indice: i vertici NON vanno condivisi fra
+    // fondo e fianchi, altrimenti computeVertexNormals media le due normali e
+    // lo spigolo si arrotonda. Qui gli spigoli devono restare netti, come nel
+    // resto degli asset.
+    function buildBridgeSlab(container, pts, halfW, thickness, material) {
+        const n = pts.length;
+        const v = [];
+
+        // lato: +1/-1 (i due bordi); alto: true = quota pista, false = sotto.
+        const bordo = (i, lato, alto) => {
+            const { nx, nz } = TrackGeometry.normalAt(pts, i, false);
+            const p = pts[i];
+            const y = (p.y || 0) - (alto ? 0 : thickness);
+            return [p.x + nx * halfW * lato, y, p.z + nz * halfW * lato];
+        };
+        const quad = (a, b, c, d) => { v.push(...a, ...b, ...c, ...c, ...b, ...d); };
+
+        for (let i = 0; i < n - 1; i++) {
+            // fondo
+            quad(bordo(i, 1, false), bordo(i, -1, false), bordo(i + 1, 1, false), bordo(i + 1, -1, false));
+            // fianco destro e sinistro
+            quad(bordo(i, 1, true), bordo(i, 1, false), bordo(i + 1, 1, true), bordo(i + 1, 1, false));
+            quad(bordo(i, -1, false), bordo(i, -1, true), bordo(i + 1, -1, false), bordo(i + 1, -1, true));
+        }
+        // Testate: chiudono i due capi, dove il ponte incontra il terreno.
+        // Senza, da sotto si vedrebbe dentro la lastra.
+        quad(bordo(0, 1, true), bordo(0, -1, true), bordo(0, 1, false), bordo(0, -1, false));
+        quad(bordo(n - 1, -1, true), bordo(n - 1, 1, true), bordo(n - 1, -1, false), bordo(n - 1, 1, false));
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(v), 3));
+        geo.computeVertexNormals();
+
+        const mesh = new THREE.Mesh(geo, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        container.add(mesh);
+        return mesh;
+    }
+
+    // Impalcato + piloni (cilindri) fino al terreno vero sottostante, per
     // ogni spezzone marcato ponte (TrackGeometry.splitByBridge). deckHalfWidth:
     // metà larghezza dell'impalcato (pista+cordoli). groundPts/embankStart/
     // embankOuter: per calcolare la quota del terreno vero sotto ogni pilone
@@ -1223,11 +1282,8 @@
         for (const indices of bridgeRuns) {
             if (indices.length < 2) continue;
 
-            const deckPts = indices.map(i => {
-                const p = trackPts[i];
-                return { x: p.x, y: (p.y || 0) - BRIDGE_DECK_DROP, z: p.z };
-            });
-            buildOpenRibbon(container, deckPts, deckHalfWidth, deckMaterial);
+            const deckPts = indices.map(i => trackPts[i]);
+            buildBridgeSlab(container, deckPts, deckHalfWidth, BRIDGE_DECK_THICK, deckMaterial);
 
             for (let k = 0; k < indices.length; k += pillarStepSamples) {
                 const i = indices[k];
@@ -1240,7 +1296,10 @@
                 const nearestGround = TrackGeometry.nearestPoint(groundPts, p.x, p.z);
                 if (nearestGround.dist < innerEdge + BRIDGE_PILLAR_CLEARANCE) continue;
                 const groundY = TrackGeometry.terrainHeightAt(groundPts, p.x, p.z, plateauEnd, embankOuter);
-                const bottomY = (p.y || 0) - BRIDGE_DECK_DROP - BRIDGE_DECK_THICK;
+                // La sommità del pilone coincide con il sotto della lastra:
+                // stessa espressione usata da buildBridgeSlab, così le due non
+                // possono divergere.
+                const bottomY = (p.y || 0) - BRIDGE_DECK_THICK;
                 const height = bottomY - groundY;
                 if (height < BRIDGE_PILLAR_MIN_HEIGHT) continue;
 
