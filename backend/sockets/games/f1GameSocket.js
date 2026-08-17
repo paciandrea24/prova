@@ -1168,20 +1168,31 @@ function completePitStop(io, lobbyId, game, p) {
 //   Per questo lo stato non può essere un'unica trasmissione condivisa (vedi
 //   broadcastState): ogni giocatore riceve un payload diverso, con dentro
 //   solo se stesso.
-// - tyre_select / grid_display: NESSUNO — il focus è sulla UI (selezione
-//   mescola, modal griglia), non sulla scena di gioco. IMPORTANTE: senza
+// - tyre_select: NESSUNO — il focus è sulla UI (selezione mescola) e le auto
+//   non sono ancora schierate. IMPORTANTE: senza
 //   questo, in tyre_select la trasmissione di gruppo (vedi broadcastState,
 //   che per questa fase non personalizza) manda a TUTTI la posizione di
 //   TUTTI — i client creano comunque i modelli delle altre auto
 //   (otherCars), e quando poi si passa a 'qualifying' — che filtra
 //   correttamente — quei modelli non vengono mai rimossi: restano fermi in
 //   scena, "fantasma" (bug segnalato dall'utente).
-// - race/altre fasi: tutti, in un'unica trasmissione condivisa.
+//   Il problema dei fantasmi NON si ripresenta con grid_display, che è
+//   sempre seguita da 'race': dopo di lei nessuna fase filtra più.
+// - grid_display/race/altre fasi: tutti, in un'unica trasmissione condivisa.
 function playersVisibleTo(game, viewerColor) {
     if (game.phase === 'qualifying') {
         return game.players[viewerColor] ? { [viewerColor]: game.players[viewerColor] } : {};
     }
-    if (game.phase === 'tyre_select' || game.phase === 'grid_display') return {};
+    // grid_display SÌ, a differenza di tyre_select: le auto sono già state
+    // schierate (assignGridSpawns gira all'inizio di questa fase), e senza
+    // mandarne la posizione il client continua a disegnarle dove le aveva
+    // lasciate il giro di qualifica. Riapparivano al posto giusto solo al
+    // primo aggiornamento della fase 'race', cioè quando comparivano i
+    // semafori: l'auto scivolava di lato sotto gli occhi del giocatore
+    // (segnalato in playtest su monte-rosso, "teletrasportato alla mia
+    // sinistra"). Ora lo spostamento avviene mentre l'animazione della pole
+    // copre lo schermo, che è il momento in cui deve avvenire.
+    if (game.phase === 'tyre_select') return {};
     return game.players;
 }
 
@@ -2073,7 +2084,7 @@ module.exports.physics = {
     applyDamageSteerNoise, DAMAGE_STEER_NOISE_MAX, effectiveGrip,
     createDamageParts, FRONT_WING_STEER_PENALTY_MAX,
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
-    buildPublicState, checkLap, updateSectorTiming, finalizeSessionFinish, resolvePendingFinish,
+    buildPublicState, playersVisibleTo, checkLap, updateSectorTiming, finalizeSessionFinish, resolvePendingFinish,
     computeSlipstreamMult,
     updatePitAutopilot, PIT_AUTO_SPEED, PIT_AUTO_ARRIVE_DIST
 };

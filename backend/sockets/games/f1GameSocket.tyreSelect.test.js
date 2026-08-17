@@ -161,3 +161,29 @@ test('rete di sicurezza: chi non arriva mai non blocca la gara per sempre', (t) 
     t.mock.timers.tick(60000);
     assert.equal(activeGames.get(LOBBY).phase, 'qualifying');
 });
+
+// ═══════════ POSIZIONI DURANTE LA FASE GRIGLIA ═══════════
+//
+// In grid_display le auto sono già schierate (assignGridSpawns gira
+// all'inizio della fase). Se il server non ne manda la posizione, il client
+// continua a disegnarle dove le aveva lasciate il giro di qualifica e le
+// vede scivolare al posto giusto solo quando compaiono i semafori —
+// segnalato in playtest su monte-rosso, "teletrasportato alla mia sinistra".
+test('in fase griglia il server manda le posizioni, non uno stato vuoto', () => {
+    const stato = { phase: 'grid_display', players: { red: { color: 'red' }, blue: { color: 'blue' } } };
+    const visibili = registraHandlerF1.physics.playersVisibleTo(stato, 'red');
+    assert.deepEqual(Object.keys(visibili).sort(), ['blue', 'red']);
+});
+
+test('in scelta mescola invece non si manda nessuna posizione', () => {
+    // Qui le auto non sono ancora schierate, e mandarle creerebbe i modelli
+    // delle altre vetture che poi la qualifica non rimuove più (i "fantasma"
+    // di cui parla il commento in f1GameSocket).
+    const stato = { phase: 'tyre_select', players: { red: { color: 'red' } } };
+    assert.deepEqual(registraHandlerF1.physics.playersVisibleTo(stato, 'red'), {});
+});
+
+test('in qualifica ognuno vede solo la propria auto', () => {
+    const stato = { phase: 'qualifying', players: { red: { color: 'red' }, blue: { color: 'blue' } } };
+    assert.deepEqual(Object.keys(registraHandlerF1.physics.playersVisibleTo(stato, 'red')), ['red']);
+});

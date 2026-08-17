@@ -2147,6 +2147,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             // all'evento, mai un timeout indipendente).
             lightsSequenceActive = true;
             num.style.display = 'none';
+            // Il pilota alza gli occhi al semaforo.
+            sguardoObiettivo = 1;
+            // Nome pista ed etichetta spariscono: al via si guarda il ponte,
+            // e tutto il resto è roba che sta davanti a quello che serve.
+            trackEl.style.display = 'none';
+            labelEl.style.display = 'none';
             lightsBoard.style.display = indicatoreLuci ? 'flex' : 'none';
             const bulbs = [0, 1, 2, 3, 4].map(i => document.getElementById(`light-${i}`));
             bulbs.forEach(b => b.classList.remove('on'));
@@ -2165,6 +2171,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         } else {
             num.style.display = '';
+            trackEl.style.display = '';
+            labelEl.style.display = '';
             lightsBoard.style.display = 'none';
             num.textContent = '3'; num.style.color = '#e74c3c';
             setTimeout(() => { num.textContent = '2'; num.style.color = '#f39c12'; }, 1000);
@@ -2195,6 +2203,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             // di questo stesso evento (niente testo "GO!" per la gara, lo
             // spegnimento simultaneo è già il segnale di partenza).
             accendiSemafori(0);
+            // Lo sguardo torna sulla pista, con calma: il ritorno dura quasi
+            // il doppio della salita (vedi SGUARDO_GIU_MS).
+            sguardoObiettivo = 0;
             // Suono diverso e più lungo di quello delle singole luci: è
             // l'unico momento in cui il semaforo dice di andare, e all'orecchio
             // non deve poter passare per la sesta accensione.
@@ -2676,6 +2687,55 @@ document.addEventListener('DOMContentLoaded', async () => {
     const _camOff = new THREE.Vector3();
     const _lookTgt = new THREE.Vector3();
 
+    // ── Sguardo ai semafori ────────────────────────────────────────────
+    // Dalla griglia le luci del ponte sono FUORI inquadratura: la camera
+    // d'inseguimento punta l'auto dall'alto (5.5 di quota verso 1.2), quindi
+    // guarda in giù di 18°, mentre le luci stanno 14° sopra l'orizzonte — 32°
+    // sopra il centro dell'immagine, cioè al limite esatto del campo visivo.
+    // Dall'halo-cam, che è ancora più bassa e inclinata di altri 10° in giù,
+    // non si vedono affatto. Misurato in griglia su tutti e tre i tracciati.
+    //
+    // Quindi durante il via la camera alza lo sguardo sulle luci e lo riporta
+    // giù quando la gara parte: è quello che fa un pilota vero. Solo il PUNTO
+    // MIRATO si sposta, la camera resta dov'è — cambiando anche la posizione
+    // sembrerebbe un cambio di inquadratura, non una testa che si alza.
+    //
+    // La salita è più rapida della discesa: alzare gli occhi è un gesto, il
+    // ritorno alla pista è l'attenzione che si riassesta.
+    const SGUARDO_SU_MS = 900;
+    const SGUARDO_GIU_MS = 1700;
+    let sguardoSemaforo = 0;    // 0 = pista, 1 = semafori
+    let sguardoObiettivo = 0;
+    const _puntoLuci = new THREE.Vector3();
+
+    // Centro delle luci nel mondo: la colonna di mezzo, che sta sopra l'asse
+    // della pista. Il raggio di ingombro dell'InstancedMesh è già in
+    // coordinate mondo (lo calcola loadScenery), quindi non serve altro.
+    function puntoSemafori() {
+        const centrale = semaforiPonte[2] || semaforiPonte[0];
+        if (!centrale || !centrale.geometry.boundingSphere) return null;
+        return centrale.geometry.boundingSphere.center;
+    }
+
+    function avanzaSguardo(dtMs) {
+        const durata = sguardoObiettivo > sguardoSemaforo ? SGUARDO_SU_MS : SGUARDO_GIU_MS;
+        const passo = dtMs / durata;
+        if (sguardoSemaforo < sguardoObiettivo) sguardoSemaforo = Math.min(sguardoObiettivo, sguardoSemaforo + passo);
+        else if (sguardoSemaforo > sguardoObiettivo) sguardoSemaforo = Math.max(sguardoObiettivo, sguardoSemaforo - passo);
+    }
+
+    // Sposta il punto mirato verso le luci, in proporzione a `sguardoSemaforo`.
+    // Con una progressione morbida agli estremi: lineare, l'inizio e la fine
+    // del movimento si sentono come due scatti.
+    function mescolaSguardoSemaforo(target) {
+        if (sguardoSemaforo <= 0) return;
+        const luci = puntoSemafori();
+        if (!luci) return;
+        const t = sguardoSemaforo * sguardoSemaforo * (3 - 2 * sguardoSemaforo);
+        _puntoLuci.copy(luci);
+        target.lerp(_puntoLuci, t);
+    }
+
     // Dove puntare il riquadro delle ombre, frame per frame: durante la scelta
     // mescola sul punto che il carosello sta inquadrando (altrimenti nelle
     // inquadrature lontane dalla griglia non ci sarebbe un'ombra), in gara
@@ -2712,6 +2772,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             _camOff.applyQuaternion(q);
             camera.position.copy(pos).add(_camOff);
             _lookTgt.copy(pos).add(new THREE.Vector3(0, 1.2, 0));
+            mescolaSguardoSemaforo(_lookTgt);
             camera.lookAt(_lookTgt);
         } else {
             // Halo-cam broadcast (F1 TV pod): misurato sulla mesh reale (non
@@ -2744,6 +2805,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             _lookTgt.set(0, COCKPIT_HEIGHT - lookDropY, lookDist);
             _lookTgt.applyQuaternion(q);
             _lookTgt.add(pos);
+            mescolaSguardoSemaforo(_lookTgt);
             camera.lookAt(_lookTgt);
         }
     }
@@ -2831,6 +2893,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         // del client, interpolazione, audio, o semplicemente l'attesa che la
         // GPU finisca il frame precedente.
         const _tLogica = performance.now();
+
+        // Durata del frame precedente: serve a far avanzare lo sguardo verso
+        // i semafori a tempo e non a frame, così il movimento dura uguale a
+        // 30 e a 144 fps. Il tetto di 100 ms evita che una pausa lunga (una
+        // scheda tornata in primo piano) lo faccia saltare tutto in un colpo.
+        const _dt = Math.min(100, _tLogica - (animate._ultimo || _tLogica));
+        animate._ultimo = _tLogica;
+        avanzaSguardo(_dt);
 
         if (typeof F1GamepadInput !== 'undefined') {
             const gp = F1GamepadInput.poll();
