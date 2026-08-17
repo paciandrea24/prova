@@ -102,8 +102,13 @@ function layoutDi(trackId, track) {
     const BARRIER_D = raw.roadHalfWidth + CURB_W + 1.2;   // f1.js:157
     // track.points e track.pitLanePts sono campionati con le stesse costanti
     // del client (1000 e 300 campioni, vedi trackLoader.js:14-17).
+    // gridSize esplicito: la scenografia dipende da quanti piloti
+    // occupano la corsia box, e questo strumento deve rifare ESATTAMENTE la
+    // catena del client — quattro test in f1-segnalazioni.test.js pretendono
+    // layout identici. Sei e' il default della lobby.
     return TrackScenery.generateLayout(raw, track.points, track.pitLanePts,
-        BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, track.barrierProfile, terraceAnchors);
+        BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, track.barrierProfile, terraceAnchors,
+        { gridSize: 6 });
 }
 
 function stampa(file) {

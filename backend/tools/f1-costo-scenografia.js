@@ -73,7 +73,8 @@ for (const id of tracciati) {
         path.join(ROOT, 'frontend/tracks', id + '.json'), 'utf8'));
     const t = loadTrack(id);
     const layout = TrackScenery.generateLayout(raw, t.points, t.pitLanePts,
-        raw.roadHalfWidth + 2.8 + 1.2, 45, seats, t.barrierProfile, terraceAnchors);
+        raw.roadHalfWidth + 2.8 + 1.2, 45, seats, t.barrierProfile, terraceAnchors,
+        { gridSize: 6 });
 
     const perAsset = new Map();
     for (const v of layout) {

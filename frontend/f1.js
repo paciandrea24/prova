@@ -5,6 +5,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const rawSettings = urlParams.get('settings');
     const clientSettings = rawSettings ? JSON.parse(decodeURIComponent(rawSettings)) : {};
     const trackId = clientSettings.trackId || 'monte-rosso';
+    // Numero di piloti della gara: scelto in lobby, viaggia nell'indirizzo e
+    // arriva qui PRIMA che si generi la scenografia. È ciò che permette di
+    // costruire il fronte della corsia box per il numero reale invece che per
+    // il caso peggiore — vedi la spec 2026-08-17-f1-piloti-configurabili.
+    const gridSize = Math.min(20, Math.max(1, parseInt(clientSettings.gridSize, 10) || 6));
 
     if (!lobbyId || !myColor) {
         window.location.href = '/';
@@ -476,14 +481,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // tecnica di startFinishIndex già usata server-side
     // (backend/sockets/games/trackLoader.js): indice campionato più vicino
     // al traguardo esplicito se la pista ne ha uno, altrimenti 0 (piste
-    // non ancora riaperte nell'editor). MAX_GRID_SIZE=6 non è geometrico
-    // (è una regola di gioco, f1Bot.js::MAX_GRID_SIZE) — tenerlo in sync a
-    // mano se mai cambiasse.
+    // non ancora riaperte nell'editor). Quante piazzole dipingere non è un
+    // dato geometrico ma il numero di piloti scelto in lobby: prima era un 6
+    // scritto qui a mano, da tenere in sync con altri due file — ed è
+    // esattamente la divergenza che questo lavoro ha tolto di mezzo.
     const START_FINISH_INDEX = trackData.startFinish
         ? TrackGeometry.nearestPoint(trackPts, trackData.startFinish.x, trackData.startFinish.z).index
         : 0;
-    const MAX_GRID_SIZE = 6;
-    TrackMeshBuilder.buildStartingGrid(scene, trackPts, START_FINISH_INDEX, MAX_GRID_SIZE);
+    TrackMeshBuilder.buildStartingGrid(scene, trackPts, START_FINISH_INDEX, gridSize);
 
     // Inquadrature dell'anteprima mostrata durante la scelta mescola. Si
     // calcolano qui, una volta sola: dipendono solo dalla forma del
@@ -990,7 +995,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     caricamento.passo('Disposizione della scenografia…', 0.52);
     await caricamento.respira();
-    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, BARRIER_PROFILE, terraceAnchors);
+    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, BARRIER_PROFILE, terraceAnchors, { gridSize });
     const scenografiaPronta = loadScenery(scene, sceneryLayout);
 
     // ====================================================
