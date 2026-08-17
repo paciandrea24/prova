@@ -692,18 +692,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         // vede, e ridisegnarle nella mappa d'ombra ogni frame si paga. Stesso
         // discorso per le reti, che proietterebbero una grata sottile.
         'tyreStack', 'catchFence',
-        // Le tribune: 399k triangoli e 102 gruppi su "prova", cioè la fetta
-        // più grossa di ciò che restava a carico della mappa d'ombra —
-        // misurato col pannello F9, le ombre costavano 348 draw call e 650k
-        // triangoli, più del doppio di quello che si vede a schermo.
-        //
-        // Quel che si perde: l'ombra lunga di una tribuna sul prato e sulla
-        // via di fuga dietro le barriere. Non cade quasi mai dove si guida, e
-        // la loro presenza si legge dal volume e dalla folla, non dall'ombra.
-        // Le altre strutture alte — torre di direzione, ponte semafori,
-        // palazzine, box — continuano a proiettarla.
+        // Le tribune non proiettano l'ombra col loro modello — 399k triangoli
+        // e 102 gruppi su "prova", la fetta più grossa di quel che restava a
+        // carico della mappa d'ombra. La proiettano con una SAGOMA: vedi
+        // SHADOW_PROXY_ASSETS qui sotto.
         'grandStand', 'grandStandAwning', 'grandStandCovered',
     ]);
+
+    // Asset la cui ombra è proiettata da una SCATOLA invisibile al posto del
+    // modello vero. È la tecnica dei giochi grossi: l'ombra di una tribuna
+    // vista da terra è un rettangolo scuro, e per disegnare un rettangolo
+    // scuro non servono 3.700 triangoli di gradoni, sedili e tettoia — ne
+    // bastano 12.
+    //
+    // Misurato su "prova": le tre varianti di tribuna pesavano 399k triangoli
+    // in 102 gruppi nella mappa d'ombra; le sagome ne mettono ~200 in 17.
+    // La scatola non si vede: si disegna senza scrivere colore né profondità,
+    // quindi nell'immagine non compare — esiste solo per la mappa d'ombra.
+    const SHADOW_PROXY_ASSETS = new Set(['grandStand', 'grandStandAwning', 'grandStandCovered']);
 
     // Asset esclusi dai CONTORNI (Rif. playtest 2026-08-10): figure minute e
     // ripetute in gran numero, sulle quali il tratto nero si legge come
@@ -760,6 +766,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 triAsset *= items.length;
                 const dividi = SceneryChunks.vaDivisoInCelle(items.length, triAsset);
+                // Calcolata una volta sola e riusata: la divisione in celle
+                // dipende dalle istanze, non dalla singola mesh, e serve anche
+                // alle sagome d'ombra qui sotto.
+                const gruppi = dividi
+                    ? SceneryChunks.groupByCell(items, SceneryChunks.CELL)
+                    : new Map([['unico', items]]);
 
                 for (const mesh of meshes) {
                     const localMatrix = mesh.matrixWorld;
@@ -775,10 +787,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // così il frustum culling può funzionare (vedi il commento
                     // in testa a sceneryChunks.js). Sotto la soglia resta un
                     // gruppo unico, che comunque riceve un ingombro corretto.
-                    const gruppi = dividi
-                        ? SceneryChunks.groupByCell(items, SceneryChunks.CELL)
-                        : new Map([['unico', items]]);
-
                     for (const sub of gruppi.values()) {
                         // Geometria "sottile": stessi attributi per riferimento
                         // (nessuna copia in memoria) ma volume di ingombro
@@ -843,6 +851,44 @@ document.addEventListener('DOMContentLoaded', async () => {
                         container.add(im);
                     }
                 }
+
+                // Sagoma d'ombra: una scatola grande quanto l'asset, che
+                // proietta l'ombra al posto del modello vero. Disegnata senza
+                // scrivere colore né profondità, quindi non compare
+                // nell'immagine — esiste solo per la mappa d'ombra.
+                if (SHADOW_PROXY_ASSETS.has(asset)) {
+                    const dim = SceneryAssetSizes.sizeOf(asset);
+                    if (dim) {
+                        const scatola = new THREE.BoxGeometry(dim.w, dim.h, dim.d);
+                        // Il pivot degli asset è alla BASE (vedi docs/f1-notes.md),
+                        // il centro di una scatola è a metà altezza: va alzata,
+                        // altrimenti l'ombra esce da un volume mezzo interrato.
+                        scatola.translate(0, dim.h / 2, 0);
+                        for (const sub of gruppi.values()) {
+                            const proxy = new THREE.InstancedMesh(
+                                scatola,
+                                new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }),
+                                sub.length);
+                            sub.forEach((it, i) => {
+                                dummy.position.set(it.x, it.y || 0, it.z);
+                                dummy.rotation.set(0, it.rotY || 0, 0);
+                                dummy.scale.setScalar(it.scale || 1);
+                                dummy.updateMatrix();
+                                proxy.setMatrixAt(i, dummy.matrix);
+                            });
+                            proxy.instanceMatrix.needsUpdate = true;
+                            proxy.castShadow = true;
+                            proxy.receiveShadow = false;
+                            proxy.frustumCulled = true;
+                            proxy.userData.sceneryAsset = asset + ' (sagoma ombra)';
+                            // Fuori dai contorni: il tratto nero seguirebbe gli
+                            // spigoli di una scatola che non si deve vedere.
+                            ToonStyle.excludeFromOutline(proxy);
+                            container.add(proxy);
+                        }
+                    }
+                }
+
                 segnaAssetFatto();
                 segnalaAsset();
             }, undefined, (err) => {
