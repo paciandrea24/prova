@@ -439,6 +439,82 @@ const PIT_CONVERGENCE_LEAD_FACTOR = 5;
 // verso la traiettoria normale prima di aver davvero attraversato il
 // riquadro che fa scattare l'ingresso ai box.
 const BOT_PIT_LANE_FOLLOW_M = 25;
+// Il bersaglio dell'imbocco si cerca solo nella prima METÀ della corsia box:
+// più avanti ci sono i box e poi l'uscita, che rientra sul nastro — un'auto
+// sul rettilineo potrebbe avere lì il suo campione di corsia più vicino e
+// verrebbe tirata all'indietro.
+const PIT_LANE_ENTRY_HALF = 0.5;
+// Lookahead dell'ingresso ai box, in unità di mondo — sempre in metri e mai
+// in campioni: la corsia ne ha 300 su ogni pista ma NON equispaziati, e su
+// monte-rosso i primi 34 coprono 20 unità (tuckPitEndsToTrack addensa il
+// raccordo). Un lookahead "a campioni" valeva lì 7 unità, un bersaglio a un
+// palmo dal muso che il bot non riusciva a inseguire.
+//
+// Più corto di quello di gara: qui si sta girando dentro un varco largo
+// quanto una corsia, e un lookahead lungo taglia l'angolo del muro.
+const PIT_ENTRY_LOOKAHEAD_MIN_M = 16;
+const PIT_ENTRY_LOOKAHEAD_TIME_S = 0.55;
+// Dentro la corsia lo sguardo si accorcia ancora e il gas cala: il raccordo
+// gira stretto, e un lookahead lungo su una curva stretta fa tagliare
+// l'angolo — misurato, il bot entrava sulla corsia a 2.4 unità e ne usciva a
+// 10.1 in cinque tick, rientrando in pista. Non è una taratura a sentimento:
+// è la stessa relazione fra raggio e velocità che governa tutta la guida.
+const PIT_LANE_LOOKAHEAD_MIN_M = 7;
+const PIT_LANE_LOOKAHEAD_TIME_S = 0.25;
+// Velocita' a cui affrontare il raccordo dei box. Non e' una taratura a
+// sentimento: l'autopilota del server percorre la corsia a 1.55 unita'/tick
+// (25% del massimo), e il raccordo ha lo stesso raggio. Un bot che ci arriva
+// a 4.7 - misurato - non puo' seguirlo comunque sterzi: taglia e rientra in
+// pista. Si frena PRIMA, come fa un pilota vero all'ingresso dei box.
+const PIT_ENTRY_SPEED = 1.9;
+// Da quanti metri prima del raccordo iniziare a rallentare.
+const PIT_ENTRY_BRAKE_M = 70;
+// Quanto dentro il bordo pista tenere il bersaglio dell'avvicinamento.
+const PIT_ENTRY_ASPHALT_MARGIN = 2;
+// Quanto oltre la semilarghezza della corsia si è ancora "sulla corsia": mezza
+// vettura di tolleranza, perché il bersaglio è un centro-corsia e l'auto lo
+// insegue, non ci sta incollata.
+const PIT_LANE_ON_LANE_MARGIN = 3;
+
+// Il campione dell'IMBOCCO della corsia box più vicino all'auto, e quanto
+// dista. Cercato solo nella prima metà: più avanti c'è l'uscita, che rientra
+// sul nastro, e un'auto sul rettilineo verrebbe agganciata a quella.
+function campioneImboccoPiuVicino(p, track) {
+    const pl = track.pitLanePts;
+    if (!pl || pl.length < 2) return null;
+    const finestra = Math.min(pl.length - 1, Math.max(1, Math.floor(pl.length * PIT_LANE_ENTRY_HALF)));
+    let vicino = 0, minD = Infinity;
+    for (let i = 0; i <= finestra; i++) {
+        const s = pl[i];
+        const d = (p.x - s.x) ** 2 + (p.z - s.z) ** 2;
+        if (d < minD) { minD = d; vicino = i; }
+    }
+    return { indice: vicino, dist: Math.sqrt(minD) };
+}
+
+// Riporta un punto dentro il nastro, se ne è uscito. Il margine tiene conto
+// del fatto che l'auto insegue il bersaglio con un ritardo: mirare esattamente
+// il bordo vuol dire passarci sopra.
+function riportaSullAsfalto(x, z, track) {
+    const limite = (track.roadHalf || 11) - PIT_ENTRY_ASPHALT_MARGIN;
+    const c = TrackGeometry.nearestPoint(track.points, x, z);
+    if (c.dist <= limite || c.dist === 0) return { x, z };
+    const k = limite / c.dist;
+    return { x: c.x + (x - c.x) * k, z: c.z + (z - c.z) * k };
+}
+
+// L'auto è arrivata sull'imbocco della corsia box: da qui in poi segue la
+// corsia e basta, la linea di gara non c'entra più.
+//
+// Non serve escludere il raccordo (campione 0, agganciato al bordo pista):
+// misurato, fuori dalla zona d'ingresso la linea di gara non si avvicina mai
+// a meno di 60 unità dai primi 150 campioni di corsia su nessuna pista, e
+// questa prova si fa solo su un bot che ha già deciso di fermarsi.
+function suImboccoCorsia(p, track) {
+    const q = campioneImboccoPiuVicino(p, track);
+    return !!q && q.dist <= (track.pitRoadHalf || 5) + PIT_LANE_ON_LANE_MARGIN;
+}
+
 // Su una pista corta (es. Monza, 3 giri) l'usura non arriva mai a
 // botPitThreshold (60-80%) con mescole medium/hard entro fine gara — non è
 // casualità, è la matematica di WEAR_LAPS_AT_MEDIUM/wearRate (misurato: fino
@@ -931,8 +1007,17 @@ function updateBotInputs(game, deps) {
         // vedi commento su BOT_PIT_APPROACH_M.
         const n = track.points.length;
         const idxUntilPitEntry = ((track.pitEntryIndex - (p.trackIndex || 0)) % n + n) % n;
+        // ...oppure ci sono già sopra. La finestra misurata sull'indice di
+        // pista si chiude nell'istante in cui lo si supera, ma su monte-rosso
+        // la corsia resta agganciata al bordo pista ancora per una trentina di
+        // campioni oltre quel punto: chiudere lì rimandava il bot in pista
+        // proprio mentre era arrivato sulla corsia, e il varco non scattava
+        // mai. Finché si è FISICAMENTE sull'imbocco della corsia, si continua a
+        // seguirla — è il server, non l'indice, a decidere quando l'ingresso
+        // è avvenuto.
+        const giaSullImbocco = p.botHeadingToPits && suImboccoCorsia(p, track);
         const nearPitEntry = p.botHeadingToPits &&
-            idxUntilPitEntry <= metersToSamples(BOT_PIT_APPROACH_M, track);
+            (idxUntilPitEntry <= metersToSamples(BOT_PIT_APPROACH_M, track) || giaSullImbocco);
 
         // Grip-awareness ora permanente (Fase 1 — cervello di guida
         // unificato): niente più flag, brakeDecel riflette sempre l'usura
@@ -949,113 +1034,98 @@ function updateBotInputs(game, deps) {
         let debugTargetSpeed = null, debugMaxSpeed = null, debugGripCapacityFactor = null;
         let debugTarget = null, debugGapToAhead = null;
 
-        let steer, throttle = 0, brake = 0;
+        let steer, throttle = 0, brake = 0, inCorsiaBox = false;
         if (nearPitEntry) {
             botState = 'PIT_ENTRY';
-            // pitPath[0] è il punto di raccordo NATURALE (misurato: solo
-            // ~12.5m di scostamento laterale dal centro pista a
-            // pitEntryIndex, contro gli 11m di mezza carreggiata — quindi
-            // praticamente al bordo pista, non un taglio). Il centro del
-            // riquadro-trigger (pitEntryTarget, ~30m di scostamento) era
-            // troppo lontano dalla pista: puntarlo tagliava dritto per il
-            // prato ignorando la curva (segnalato dall'utente in localhost,
-            // "salta l'ultima curva"). Finché non si è molto vicini a
-            // pitPath[0], il bersaglio è sfumato dal punto di inseguimento
-            // NORMALE sulla pista (stesso calcolo della guida normale sotto)
-            // verso pitPath[0] — nessun taglio, solo un cambio di corsia
-            // graduale verso il bordo. Una volta DENTRO il vero
-            // riquadro-trigger, si passa a inseguire pitPath[1] per
-            // attraversarlo con sicurezza invece di fermarsi su pitPath[0].
+            // ═══════════ INSEGUIRE UN PERCORSO, NON UN PUNTO ═══════════
             //
-            // Investigazione Task 8 (f1PitEntryCheck.js su prova/baku dopo il
-            // primo fix di questo task): scattare su pitPath[1] a raggio fisso
-            // (distanza da pitPath[0], indipendente dal box) presume che il
-            // segmento pitPath[0]->pitPath[1] resti dentro il riquadro-trigger
-            // per tutta la sua lunghezza — vero per new-monza/monte-rosso
-            // (misurato: z quasi costante lungo il segmento, dentro il range
-            // del box), falso per prova/baku, dove il segmento esce dal box
-            // sull'asse trasversale (tracciato con backend/tools/f1PitEntryCheck.js:
-            // il bot arrivava a ~15m da pitPath[0], poi pitPath[1] lo tirava
-            // via prima di attraversare). Il ramo `else` sotto (cubica, Task 8)
-            // converge già DA SOLO a pitPath[0] quando t=1 — un ramo
-            // intermedio "punta dritto a pitPath[0] sotto 25m" è stato provato
-            // e scartato: ridondante con quella convergenza ma senza il suo
-            // lookahead, produceva un ingresso molto più lento/irregolare su
-            // new-monza (pitPath[0] lì sta ~37m fuori dal box, quindi punterebbe
-            // dritto verso un bersaglio che non è nemmeno dentro il riquadro).
-            // Restare sempre sul ramo cubico finché non si è FISICAMENTE nel
-            // riquadro-trigger, e solo allora passare a inseguire pitPath[1],
-            // risolveva prova/baku/monte-rosso ma REGREDIVA new-monza: lì è
-            // pitPath[0] (non pitPath[1]) a stare ~37m fuori dal box, quindi
-            // convergere su pitPath[0] fa orbitare il bot attorno a un punto
-            // che non è mai dentro il riquadro (tracciato con
-            // backend/tools/f1PitEntryCheck.js + diagnostica per-tick:
-            // arrivava a 1.45m da pitPath[0] senza mai essere dentro il box,
-            // poi girava attorno). La regola che vale per TUTTE e 4 le piste,
-            // derivata dalla geometria reale invece che ipotizzata: l'ancora
-            // del blend cubico è QUALE dei due waypoint del percorso box
-            // (pitPath[0] o pitPath[1]) sta geometricamente più vicino al
-            // riquadro-trigger — per prova/baku/monte-rosso è pitPath[0]
-            // (dentro il box), per new-monza è pitPath[1] (anch'esso dentro,
-            // pitPath[0] lì è quello fuori). Una volta DENTRO il riquadro, si
-            // passa comunque a inseguire pitPath[1] per proseguire nella
-            // corsia box.
-            const trig = track.pitEntryTrigger;
-            // Stessa identica prova che usa il server per far scattare
-            // l'ingresso (inPitEntryZone): se qui si usasse un'altra formula,
-            // il bot potrebbe credersi dentro quando il server dice di no — o
-            // viceversa, ed è esattamente quello che succedeva.
-            const insideTrigger = !!trig && TrackGeometry.pointInOrientedBox(p.x, p.z, trig);
-            if (insideTrigger && track.pitPath[1]) {
-                const wp = track.pitPath[1];
+            // Entrare ai box è pure pursuit su un percorso solo: il nastro
+            // fino al raccordo, poi la corsia box. Il bersaglio è il punto a
+            // `lookahead` metri PIÙ AVANTI SU QUEL PERCORSO — quando il
+            // lookahead supera la distanza che manca al raccordo, sconfina
+            // sulla corsia e prosegue lì. Nient'altro: nessuna miscela, nessun
+            // punto d'ancoraggio, nessuna finestra di convergenza.
+            //
+            // La formulazione precedente (miscela cubica fra la linea di gara
+            // e un punto FISSO scelto sulla corsia o sul riquadro-trigger) è
+            // stata riscritta perché ha fallito in tutti i modi possibili, uno
+            // per pista: un punto fisso a 90 unità di distanza si raggiunge in
+            // linea retta, e in linea retta fra il nastro e la corsia c'è la
+            // BARRIERA. Al playtest del 2026-08-17 i bot ci si puntavano
+            // contro e ci scivolavano lungo fino al varco — misurato: una
+            // botta da 4.2 di danno, poi distanza dal nastro inchiodata a
+            // 12-13 unità per 70 unità di strada, a velocità 2. Il bersaglio
+            // di un pure pursuit sta sul percorso per definizione, e il
+            // percorso passa dal varco.
+            // Un pure pursuit puro però non basta da solo: all'imbocco la
+            // linea di gara può passare dal LATO OPPOSTO del nastro rispetto
+            // ai box (misurato su monte-rosso: l'auto a 4.8 dal centro pista
+            // e a 12.8 dalla corsia, cioè larga dall'altra parte), e un
+            // lookahead corto non fa in tempo ad attraversare. Serve anche uno
+            // spostamento laterale ANTICIPATO — ma verso il RACCORDO, che sta
+            // sul bordo pista dove la barriera si apre, non verso un punto in
+            // fondo alla corsia che sta oltre il muro.
+            const pl = track.pitLanePts;
+            const laneSource = track.racingLine || track.points;
+            const speedMs = Math.max(5, botSpeedMs(p.speed));
+            const lookM = Math.max(PIT_ENTRY_LOOKAHEAD_MIN_M, speedMs * PIT_ENTRY_LOOKAHEAD_TIME_S);
+
+            if (giaSullImbocco) {
+                // Fase 2 — sulla corsia: il percorso è solo la corsia, e la
+                // linea di gara non conta più niente.
+                const q = campioneImboccoPiuVicino(p, track);
+                const lookCorsiaM = Math.max(PIT_LANE_LOOKAHEAD_MIN_M, speedMs * PIT_LANE_LOOKAHEAD_TIME_S);
+                const wp = TrackGeometry.walkPitPath(pl, q.indice, lookCorsiaM);
                 steer = steerToward(p.x, p.z, p.angle, wp.x, wp.z);
                 debugTarget = { x: wp.x, z: wp.z };
+                inCorsiaBox = true;
             } else {
-                const laneSource = track.racingLine || track.points;
+                // Fase 1 — avvicinamento: si scivola dalla linea di gara al
+                // raccordo, con peso cubico. Cubico e non lineare perché per
+                // quasi tutta la finestra il bersaglio deve restare quello
+                // della guida normale (segue la curva vera): con peso lineare
+                // si taglia l'ultima curva prima ancora di essere ai box
+                // (segnalato dall'utente su New Monza).
+                // Le fixture dei test costruiscono piste senza corsia
+                // campionata: lì il raccordo è il primo punto del percorso
+                // disegnato, come prima di questa riscrittura.
+                const raccordo = (pl && pl.length) ? pl[0] : track.pitPath[0];
                 const approachSamples = metersToSamples(BOT_PIT_APPROACH_M, track);
-
-                // Bersaglio dell'imbocco: dentro il riquadro-trigger e sulla
-                // corsia (track.pitGateAim, calcolato una volta per pista in
-                // trackLoader). Prima si sceglieva fra i due waypoint del
-                // percorso disegnato in editor quello "più vicino al
-                // riquadro": su monte-rosso il vincitore stava comunque 7.1
-                // unità FUORI, quindi il bot ci arrivava sopra, il varco non
-                // scattava e ripartiva per un altro giro all'infinito.
-                const anchor = track.pitGateAim || track.pitPath[0];
-
-                // Distanza laterale reale tra la linea principale e l'ancora
-                // (fissa per questa pista, non per-tick): quanto più è
-                // grande, tanto più anticipo serve per convergere in tempo —
-                // non un'unica finestra buona per tutte le piste (Rif. bug
-                // monte-rosso/prova, Task 7/8 di questo piano).
                 const mainAtEntry = laneSource[track.pitEntryIndex] || laneSource[laneSource.length - 1];
-                const splitGapM = Math.hypot(mainAtEntry.x - anchor.x, mainAtEntry.z - anchor.z);
+                // Quanto è largo lo scostamento fra linea di gara e raccordo:
+                // più è largo, più anticipo serve per traversare in tempo.
+                const splitGapM = Math.hypot(mainAtEntry.x - raccordo.x, mainAtEntry.z - raccordo.z);
                 const convergenceLeadSamples = metersToSamples(Math.max(BOT_PIT_LANE_FOLLOW_M, splitGapM * PIT_CONVERGENCE_LEAD_FACTOR), track);
                 const denomSamples = Math.max(1, approachSamples - convergenceLeadSamples);
-                // Converge del tutto (t=1) con convergenceLeadSamples di
-                // anticipo PRIMA del vero punto d'ingresso, non esattamente
-                // lì come prima — dà tempo all'auto di essere già vicina
-                // all'ancora quando trackIndex raggiunge pitEntryIndex.
                 const tLinear = idxUntilPitEntry <= convergenceLeadSamples
                     ? 1
                     : Math.max(0, 1 - (idxUntilPitEntry - convergenceLeadSamples) / denomSamples);
-                // Cubica invece di lineare: per la maggior parte della
-                // finestra il bersaglio resta quasi quello della guida
-                // normale (segue la curva reale), lo spostamento vero verso
-                // l'ancora si concentra negli ultimi metri — altrimenti (peso
-                // lineare) si taglia l'ultima curva prima ancora di essere
-                // vicini ai box (segnalato dall'utente su New Monza).
                 const t = tLinear * tLinear * tLinear;
-                const speedMs      = Math.max(5, botSpeedMs(p.speed));
-                const lookM        = Math.max(BOT_LOOKAHEAD_MIN_M, speedMs * BOT_LOOKAHEAD_TIME_S);
-                const laneTargetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, metersToSamples(lookM, track));
-                const laneTarget   = laneSource[laneTargetIdx];
-                const targetX = laneTarget.x * (1 - t) + anchor.x * t;
-                const targetZ = laneTarget.z * (1 - t) + anchor.z * t;
-                steer = steerToward(p.x, p.z, p.angle, targetX, targetZ);
-                debugTarget = { x: targetX, z: targetZ };
+                const avanti = laneSource[lookaheadIndex(track.points.length, p.trackIndex || 0, metersToSamples(lookM, track))];
+                // Il bersaglio è la MEDIA di due punti che stanno su una
+                // curva: la media di due punti di una curva cade fuori dalla
+                // curva, ed è finita fuori dall'asfalto (misurato: 15.1 dal
+                // centro pista su prova, semilarghezza 11; 30.2 su new-monza,
+                // semilarghezza 14 — con la barriera lì in mezzo). Si riporta
+                // dentro il nastro per costruzione, invece di sperare che ci
+                // resti: il raccordo stesso sta sul bordo, quindi questo
+                // vincolo non gli toglie niente.
+                const mira = riportaSullAsfalto(
+                    avanti.x * (1 - t) + raccordo.x * t,
+                    avanti.z * (1 - t) + raccordo.z * t,
+                    track);
+                steer = steerToward(p.x, p.z, p.angle, mira.x, mira.z);
+                debugTarget = mira;
             }
-            throttle = 0.6;   // rallenta in ingresso corsia box
+            // Arrivare gia' lenti al raccordo: dentro la corsia non c'e'
+            // sterzata che tenga se si entra a velocita' di gara.
+            const mancaAlRaccordoM = idxUntilPitEntry * track.lapLength / track.points.length;
+            if (inCorsiaBox || mancaAlRaccordoM <= PIT_ENTRY_BRAKE_M) {
+                if (p.speed > PIT_ENTRY_SPEED) { brake = 1; throttle = 0; }
+                else { brake = 0; throttle = 0.35; }
+            } else {
+                throttle = 0.6;   // rallenta in avvicinamento
+            }
         } else if (track.racingLine) {
             // Racing line precalcolata OFFLINE (vedi
             // backend/tools/f1RaceLineOptimizer.js +

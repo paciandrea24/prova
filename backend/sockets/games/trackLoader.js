@@ -21,12 +21,6 @@ const SAMPLES = 1000;
 // Stesso valore usato da frontend/f1.js per campionare la corsia box: la
 // corsia disegnata e quella percorsa dall'autopilota devono coincidere.
 const PIT_LANE_SAMPLES = 300;
-// Quanto DENTRO il riquadro-trigger tenere il punto di mira dell'ingresso ai
-// box, invece che sul bordo: il varco scatta sul centro dell'auto, e mirare
-// esattamente il bordo lascia che una piccola imprecisione lo manchi. Due
-// unità stanno dentro il riquadro più stretto in circolazione (monte-rosso,
-// semi-lato 7.5).
-const PIT_GATE_AIM_MARGIN = 2;
 const QUALI_LEAD = 8;        // unità avanti alla linea di partenza per lo spawn di qualifica
 // GRID_START/GRID_STAGGER/GRID_LANE_OFFSET: vedi TrackGeometry (modulo
 // condiviso) — spostate lì così il disegno permanente della griglia sulla
@@ -249,13 +243,6 @@ function buildTrack(id, raw) {
     });
     const pitGapPts = TrackGravel.pitGapSamples(pitLanePts);
 
-    // Punto di mira per imboccare i box: dentro il riquadro-trigger E sulla
-    // corsia. Geometria fissa della pista, quindi si calcola una volta qui
-    // invece che ad ogni tick per ogni bot (Rif. bug "i bot ci provano ma non
-    // riescono a entrare ai box" — f1Bot.pitStop.test.js).
-    const pitGateAim = TrackGeometry.pitGateAimPoint(
-        pitLanePts, raw.pit.entryTrigger, PIT_GATE_AIM_MARGIN);
-
     return {
         id,
         name: raw.name,
@@ -267,7 +254,6 @@ function buildTrack(id, raw) {
         totalLaps,
         pitPath,
         pitLanePts,
-        pitGateAim,
         pitEntryIndex,
         startFinishIndex,
         pitBoxIndex: raw.pit.boxIndex,
