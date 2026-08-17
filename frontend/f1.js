@@ -864,18 +864,40 @@ document.addEventListener('DOMContentLoaded', async () => {
                         // il centro di una scatola è a metà altezza: va alzata,
                         // altrimenti l'ombra esce da un volume mezzo interrato.
                         scatola.translate(0, dim.h / 2, 0);
+                        const raggioScatola = Math.hypot(dim.w, dim.h, dim.d) / 2;
                         for (const sub of gruppi.values()) {
+                            // Geometria "sottile": stessi attributi per
+                            // riferimento, volume di ingombro proprio. Serve
+                            // per lo stesso motivo delle mesh vere qui sopra —
+                            // e senza, la sagoma NON SI VEDE AFFATTO: una
+                            // BoxGeometry ha l'ingombro centrato sull'origine
+                            // del mondo, quindi il culling la scarta prima di
+                            // disegnarla nella mappa d'ombra, ovunque sia in
+                            // realtà. È esattamente quello che è successo al
+                            // primo tentativo: le sagome c'erano e non
+                            // proiettavano niente.
+                            const geoProxy = new THREE.BufferGeometry();
+                            for (const nome of Object.keys(scatola.attributes)) {
+                                geoProxy.setAttribute(nome, scatola.attributes[nome]);
+                            }
+                            if (scatola.index) geoProxy.setIndex(scatola.index);
+
                             const proxy = new THREE.InstancedMesh(
-                                scatola,
+                                geoProxy,
                                 new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }),
                                 sub.length);
+                            const centriProxy = [];
                             sub.forEach((it, i) => {
                                 dummy.position.set(it.x, it.y || 0, it.z);
                                 dummy.rotation.set(0, it.rotY || 0, 0);
                                 dummy.scale.setScalar(it.scale || 1);
                                 dummy.updateMatrix();
                                 proxy.setMatrixAt(i, dummy.matrix);
+                                centriProxy.push({ x: it.x, y: (it.y || 0) + dim.h / 2, z: it.z });
                             });
+                            const bProxy = SceneryChunks.boundsOf(centriProxy, raggioScatola);
+                            geoProxy.boundingSphere = new THREE.Sphere(
+                                new THREE.Vector3(bProxy.x, bProxy.y, bProxy.z), bProxy.radius);
                             proxy.instanceMatrix.needsUpdate = true;
                             proxy.castShadow = true;
                             proxy.receiveShadow = false;
