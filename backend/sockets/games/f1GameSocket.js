@@ -371,6 +371,9 @@ module.exports = function (io, socket) {
         // altri client devono toglierlo dalla riga "in caricamento" e vedere
         // la scadenza aggiornata.
         if (game.phase === 'tyre_select' && !isRejoin) {
+            // Il nuovo arrivato cambia l'ordine dei partecipanti, quindi i box
+            // si riassegnano: altrimenti resterebbe senza il suo in anteprima.
+            assegnaBoxProvvisori(game);
             io.to(lobbyId).emit('f1TyreConfirmed', scelteMescola);
         }
 
@@ -648,6 +651,29 @@ function armaScadenzaMescola(io, lobbyId, game) {
     }, TYRE_SELECT_MS);
 }
 
+// I box colorati dei piloti, assegnati per ORDINE ATTUALE dei partecipanti.
+// Chiamata gia' durante la scelta mescola e non piu' solo all'inizio della
+// qualifica: l'anteprima del circuito mostra la corsia box, e senza questi il
+// giocatore vedeva i garage della scenografia ma nessun box colorato —
+// segnalato in playtest ("nella preview i box non vengono ancora
+// renderizzati, poi in gioco ci sono").
+//
+// Sono PROVVISORI: startQualifying li ricalcola sull'ordine definitivo. Qui
+// servono solo a far vedere qualcosa di giusto in anteprima.
+function assegnaBoxProvvisori(game) {
+    const ordine = Object.keys(game.players);
+    if (!ordine.length || !game.track.pitPath) return;
+    const anchors = TrackGeometry.pitBoxAnchors(
+        game.track.pitPath, game.track.pitBoxIndex, ordine.length,
+        game.track.points, game.track.pitRoadHalf
+    );
+    addLaneIndices(game.track, anchors);
+    ordine.forEach((color, i) => {
+        game.players[color].pitBoxAnchor = anchors[i];
+        game.players[color].pitBoxSlot = i;
+    });
+}
+
 function startTyreSelect(io, lobbyId, game) {
     game.phase = 'tyre_select';
     game.tyreConfirmed.clear();
@@ -660,6 +686,7 @@ function startTyreSelect(io, lobbyId, game) {
         if (game.players[color].isBot) game.tyreConfirmed.add(color);
     }
 
+    assegnaBoxProvvisori(game);
     armaScadenzaMescola(io, lobbyId, game);
 }
 
@@ -1244,7 +1271,18 @@ function broadcastState(io, lobbyId, game, raceStartedFlag) {
         }
         return;
     }
-    io.to(lobbyId).emit('f1StateUpdate', buildPublicState(playersVisibleTo(game, null), raceStartedFlag, game.track, game));
+    const payload = buildPublicState(playersVisibleTo(game, null), raceStartedFlag, game.track, game);
+    // In scelta mescola lo stato per-colore e' vuoto (le auto non sono ancora
+    // schierate), ma i BOX si: l'anteprima del circuito ha un'inquadratura
+    // sulla corsia, e li' devono esserci.
+    if (game.phase === 'tyre_select') {
+        const boxLayout = {};
+        for (const [color, p] of Object.entries(game.players)) {
+            if (p.pitBoxAnchor) boxLayout[color] = p.pitBoxAnchor;
+        }
+        payload.__boxLayout = boxLayout;
+    }
+    io.to(lobbyId).emit('f1StateUpdate', payload);
 }
 
 // Contatore live "X su N piloti al traguardo" durante la finestra di grazia

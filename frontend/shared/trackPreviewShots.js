@@ -198,16 +198,21 @@
             targetFine: centro,
         });
 
-        // 2. TRAGUARDO — camera bassa a bordo pista, dal lato della tribuna.
-        //    Carrella in avanti mentre guarda un punto più avanti sul
-        //    rettilineo d'arrivo.
+        // 2. TRAGUARDO — camera bassa a bordo pista, dal lato OPPOSTO alle
+        //    tribune, che diventano così lo sfondo dell'inquadratura: è la
+        //    posizione della telecamera televisiva al traguardo.
+        //
+        //    Dal lato delle tribune non funzionava: la fila principale ha il
+        //    fronte a ~7 unità oltre la barriera, cioè esattamente dove stava
+        //    la camera, e l'inquadratura finiva DENTRO i gradoni senza far
+        //    vedere la linea (segnalato in playtest).
         scatti.push({
             id: 'traguardo',
             etichetta: 'IL TRAGUARDO',
             idx: traguardo,
             durata: DURATA_MS,
-            cam: puntoLaterale(trackPts, avanti(n, traguardo, -campioniPer(trackPts, 55)), barriera + 7, latoTrib, 8),
-            camFine: puntoLaterale(trackPts, avanti(n, traguardo, -campioniPer(trackPts, 18)), barriera + 7, latoTrib, 8),
+            cam: puntoLaterale(trackPts, avanti(n, traguardo, -campioniPer(trackPts, 55)), barriera + 6, -latoTrib, 6),
+            camFine: puntoLaterale(trackPts, avanti(n, traguardo, -campioniPer(trackPts, 18)), barriera + 6, -latoTrib, 6),
             target: puntoPista(trackPts, avanti(n, traguardo, campioniPer(trackPts, 60)), 2),
             targetFine: puntoPista(trackPts, avanti(n, traguardo, campioniPer(trackPts, 130)), 2),
         });

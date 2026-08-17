@@ -44,6 +44,9 @@
     // che e dove passano le auto a fine gara.
     const PODIUM_OFFSET_MARGIN = 14;  // oltre barrierDist, fra pista e corsia box
     const PODIUM_PIT_CLEARANCE = 12;  // dal bordo corsia box
+    // Dagli IMBOCCHI della corsia (primo e ultimo punto), dove le auto si
+    // immettono e si staccano dalla pista.
+    const PODIUM_PIT_MOUTH_CLEARANCE = 60;
 
     // `daCoprire` è la distanza che la campata deve scavalcare: il muro vero
     // del punto in cui l'asset viene posato, non la barriera storica. Fino al
@@ -114,6 +117,20 @@
         // reali orientati (SceneryAssetSizes.itemsOverlap), non sulla distanza
         // fra centri: la torre è 14.6 x 12.6 e il gantry scavalca la pista,
         // un raggio unico non li descrive.
+        // La zona dei box guardata sull'INGOMBRO e non sul solo centro: il
+        // podio è 12 x 7.1 e può avere il centro fuori dal grembiule di
+        // manovra sporgendoci dentro con mezzo fianco. È la stessa trappola
+        // già chiusa per scenografia e decoro (docs/f1-notes.md, "SAT sugli
+        // ANGOLI, non il centro"), qui rimasta aperta: è emersa avvicinando il
+        // podio al traguardo su new-monza.
+        function dentroZonaBox(asset, cand, scale) {
+            if (insidePlayerBoxFootprint(cand.x, cand.z, playerBoxFootprints)) return true;
+            const corners = SceneryAssetSizes.footprintCorners({
+                asset, x: cand.x, z: cand.z, rotY: cand.rotY, y: cand.y, scale: scale || 1,
+            });
+            return (playerBoxFootprints || []).some(poly => SceneryAssetSizes.polysOverlap(corners, poly));
+        }
+
         function freeOf(asset, cand, scale) {
             const item = { asset, x: cand.x, z: cand.z, rotY: cand.rotY,
                            y: cand.y, scale: scale || 1 };
@@ -240,14 +257,33 @@
         for (let passo = 0; passo <= raggio; passo += 4) {
             for (const verso of (passo === 0 ? [1] : [1, -1])) {
                 const d = ((passo * verso) % n + n) % n;
-                // Oltre la fascia stretta ci si allontana anche dalla pista:
-                // là dietro c'è più spazio e non si ruba scena al traguardo.
-                const offset = barrierDist + (passo <= finestra
-                    ? PODIUM_OFFSET_MARGIN : PODIUM_OFFSET_MARGIN + 16);
-            const cand = placeBeside(trackPts, d % n, barrierDist + PODIUM_OFFSET_MARGIN,
-                                     -mainSide, groundPts, barrierDist, embankStart, embankOuter);
-            if (insidePlayerBoxFootprint(cand.x, cand.z, playerBoxFootprints)) continue;
-            if (TrackGeometry.nearestPoint(pitPts, cand.x, cand.z).dist < pitHalf + PODIUM_PIT_CLEARANCE) continue;
+                // Prima si prova ad ARRETRARE il podio restando vicino al
+                // traguardo, poi ci si allontana lungo il giro. Prima si
+                // provava un solo arretramento per posizione, e bastava che la
+                // fascia stretta fosse occupata — su monte-rosso lo è, dalla
+                // corsia box — perché il podio finisse dall'altra parte del
+                // circuito. Meglio un podio un po' più indietro ma al
+                // traguardo, che uno perfettamente allineato a 900 unità da lì.
+                for (const arretra of [0, 16, 32]) {
+                const offset = barrierDist + PODIUM_OFFSET_MARGIN + arretra;
+                // `offset` e non piu' la costante: la riga qui sotto lo
+                // calcolava e poi non lo usava, quindi il podio spinto lontano
+                // dal traguardo restava comunque nella fascia stretta fra
+                // barriera e corsia box — dove, su monte-rosso, cade proprio
+                // all'uscita dei box (segnalato in playtest).
+                const cand = placeBeside(trackPts, d % n, offset,
+                                         -mainSide, groundPts, barrierDist, embankStart, embankOuter);
+                if (dentroZonaBox('podium', cand)) continue;
+                if (TrackGeometry.nearestPoint(pitPts, cand.x, cand.z).dist < pitHalf + PODIUM_PIT_CLEARANCE) continue;
+                // Lontano dagli IMBOCCHI della corsia box: li' le auto si
+                // immettono e si staccano dalla pista, ed e' lo spazio in cui
+                // un volume di 12x7 sta peggio di ovunque altro. Il controllo
+                // di distanza dalla corsia non basta: agli imbocchi la corsia
+                // e la pista corrono affiancate, quindi un punto puo' essere
+                // "lontano dalla corsia" e stare comunque in mezzo al traffico.
+                if (Math.hypot(cand.x - pitPts[0].x, cand.z - pitPts[0].z) < PODIUM_PIT_MOUTH_CLEARANCE) continue;
+                if (Math.hypot(cand.x - pitPts[pitPts.length - 1].x,
+                               cand.z - pitPts[pitPts.length - 1].z) < PODIUM_PIT_MOUTH_CLEARANCE) continue;
             if (!fits('podium', cand.x, cand.z, cand.y)) continue;
             if (!freeOf('podium', cand)) continue;
             // Niente cartelloni DAVANTI, fra il podio e la pista: non si
@@ -266,9 +302,11 @@
                 if (dCart < dPod) { oscurato = true; break; }
             }
             if (oscurato) continue;
-            layout.push({ asset: 'podium', category: 'landmark', ...cand, scale: 1 });
-                passo = raggio + 1;   // trovato: esce da entrambi i cicli
+                layout.push({ asset: 'podium', category: 'landmark', ...cand, scale: 1 });
+                passo = raggio + 1;   // trovato: esce da tutti i cicli
                 break;
+                }
+                if (passo > raggio) break;
             }
         }
 
