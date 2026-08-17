@@ -239,6 +239,13 @@ module.exports = function (io, socket) {
                 qualiEndTimeout: null,   // timer di sicurezza: dà agli altri il tempo di finire il giro se qualcuno resta molto indietro
                 tyreSelectTimeout: null,
                 tyreConfirmed: new Set(),   // color di chi ha già scelto/confermato la mescola
+                // Piloti che questa partita ASPETTA: la fotografia della lobby
+                // scattata da startGame, la stessa fonte che createBots usa già
+                // per sapere quanti bot servono. Senza, la fase di scelta
+                // mescola contava solo i collegati e partiva appena il più
+                // veloce confermava — chi stava ancora caricando la pista si
+                // ritrovava in qualifica senza aver scelto (bug con due schede).
+                attesiAllaPartenza: ((lobby && (lobby.lockedPlayers || lobby.players)) || [playerColor]).slice(),
                 grid: null,   // ordine di partenza determinato dalla qualifica (array di colori)
                 hostColor: lobby ? lobby.host : playerColor,
                 settings: lobby ? (lobby.gameSettings || {}) : {},
@@ -323,6 +330,7 @@ module.exports = function (io, socket) {
             };
         }
 
+        const scelteMescola = statoScelteMescola(game);
         socket.emit('f1Setup', {
             playerColor,
             hostColor: game.hostColor,
@@ -336,9 +344,24 @@ module.exports = function (io, socket) {
             compounds: TYRE_COMPOUNDS,
             strategy: suggestStrategy(totalLaps),
             myCompound: game.players[playerColor].compound,
-            tyreConfirmed: game.tyreConfirmed.size,
-            tyreTotal: Object.keys(game.players).length
+            tyreConfirmed: scelteMescola.count,
+            tyreTotal: scelteMescola.total,
+            // Chi la partita aspetta, chi è già arrivato e chi ha già scelto:
+            // la schermata mescole li elenca, così un pilota vede che l'attesa
+            // è di qualcun altro che sta ancora caricando e non della propria
+            // connessione.
+            tyreAttesi: scelteMescola.attesi,
+            tyreArrivati: scelteMescola.arrivati,
+            tyreConfermati: scelteMescola.confermati,
         });
+
+        // Un pilota arrivato mentre gli altri erano già alla scelta mescola:
+        // aggiorna la lista su tutti i client e sposta in avanti la scadenza,
+        // così ha il suo tempo pieno per scegliere.
+        if (game.phase === 'tyre_select' && !isRejoin) {
+            armaScadenzaMescola(io, lobbyId, game);
+            io.to(lobbyId).emit('f1TyreConfirmed', statoScelteMescola(game));
+        }
 
         // Tick e prima fase (scelta mescola) solo al primo giocatore
         if (!game.tick) {
@@ -364,14 +387,10 @@ module.exports = function (io, socket) {
         p.compound = compound;
         game.tyreConfirmed.add(playerColor);
 
-        io.to(lobbyId).emit('f1TyreConfirmed', {
-            playerColor,
-            compound,
-            count: game.tyreConfirmed.size,
-            total: Object.keys(game.players).length
-        });
+        io.to(lobbyId).emit('f1TyreConfirmed', Object.assign(
+            { playerColor, compound }, statoScelteMescola(game)));
 
-        if (game.tyreConfirmed.size >= Object.keys(game.players).length) {
+        if (tuttiHannoScelto(game)) {
             if (game.tyreSelectTimeout) { clearTimeout(game.tyreSelectTimeout); game.tyreSelectTimeout = null; }
             startQualifying(io, lobbyId, game);
         }
@@ -563,6 +582,53 @@ function hardRemoveF1Player(io, lobbyId, color) {
 // qualifica. Chi non sceglie entro TYRE_SELECT_MS riceve la mescola di
 // default. Se tutti confermano prima, si passa subito (vedi f1TyreChoice).
 // ====================================================
+// Piloti attesi che non hanno ancora completato joinF1Game: stanno ancora
+// caricando la pista (qualche secondo, vedi la schermata di caricamento lato
+// client). I bot non compaiono qui — nascono già dentro game.players.
+function pilotiMancanti(game) {
+    return (game.attesiAllaPartenza || []).filter(c => !game.players[c]);
+}
+
+// Si passa alla qualifica solo se sono arrivati TUTTI e hanno TUTTI scelto.
+// La seconda condizione da sola faceva partire la gara appena il più veloce
+// confermava, perché chi non si era ancora collegato non era contato.
+function tuttiHannoScelto(game) {
+    return pilotiMancanti(game).length === 0
+        && game.tyreConfirmed.size >= Object.keys(game.players).length;
+}
+
+// Riepilogo mostrato nella schermata di scelta mescola: le tre liste sono
+// ristrette ai piloti attesi (umani), così il client può disegnare una riga
+// per ciascuno e dire chi sta ancora caricando. `total` include i mancanti,
+// altrimenti "1/1 pronti" mentirebbe mentre un pilota deve ancora arrivare.
+function statoScelteMescola(game) {
+    const attesi = (game.attesiAllaPartenza || []).slice();
+    return {
+        count: game.tyreConfirmed.size,
+        total: Object.keys(game.players).length + pilotiMancanti(game).length,
+        attesi,
+        arrivati: attesi.filter(c => !!game.players[c]),
+        confermati: attesi.filter(c => game.tyreConfirmed.has(c)),
+    };
+}
+
+// Scadenza di sicurezza: chi non sceglie (o non arriva) entro TYRE_SELECT_MS
+// non può bloccare la gara. Ri-armabile: ogni nuovo arrivo la sposta in
+// avanti, così il ritardatario ha il suo tempo pieno per scegliere invece
+// degli avanzi del tempo consumato dagli altri mentre caricava.
+function armaScadenzaMescola(io, lobbyId, game) {
+    if (game.tyreSelectTimeout) clearTimeout(game.tyreSelectTimeout);
+    game.tyreSelectTimeout = setTimeout(() => {
+        const g = activeGames.get(lobbyId);
+        if (!g || g.phase !== 'tyre_select') return;
+        for (const p of Object.values(g.players)) {
+            if (!p.compound) p.compound = DEFAULT_COMPOUND;
+        }
+        g.tyreSelectTimeout = null;
+        startQualifying(io, lobbyId, g);
+    }, TYRE_SELECT_MS);
+}
+
 function startTyreSelect(io, lobbyId, game) {
     game.phase = 'tyre_select';
     game.tyreConfirmed.clear();
@@ -575,15 +641,7 @@ function startTyreSelect(io, lobbyId, game) {
         if (game.players[color].isBot) game.tyreConfirmed.add(color);
     }
 
-    game.tyreSelectTimeout = setTimeout(() => {
-        const g = activeGames.get(lobbyId);
-        if (!g || g.phase !== 'tyre_select') return;
-        for (const p of Object.values(g.players)) {
-            if (!p.compound) p.compound = DEFAULT_COMPOUND;
-        }
-        g.tyreSelectTimeout = null;
-        startQualifying(io, lobbyId, g);
-    }, TYRE_SELECT_MS);
+    armaScadenzaMescola(io, lobbyId, game);
 }
 
 // ====================================================

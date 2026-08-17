@@ -71,6 +71,40 @@ document.addEventListener('DOMContentLoaded', () => {
     const socket = io();
     socket.emit('joinLobby', { lobbyId: lobbyId, color: selectedColor });
 
+    // Copre il tratto fra il clic di avvio e la comparsa della pagina di
+    // gioco: la lobby resta visibile finché il browser non ha la nuova
+    // pagina, e senza questo sembra che il clic non abbia fatto niente.
+    function showLaunchOverlay() {
+        if (document.getElementById('launch-overlay')) return;
+        const style = document.createElement('style');
+        style.textContent = `
+            #launch-overlay {
+                position: fixed; inset: 0; z-index: 9999;
+                background: rgba(10, 12, 16, 0.92); color: #f2f4f6;
+                display: flex; flex-direction: column; align-items: center;
+                justify-content: center; gap: 16px;
+                font-family: inherit; font-size: 20px; font-weight: 700;
+                letter-spacing: 2px;
+            }
+            #launch-overlay .launch-spinner {
+                width: 34px; height: 34px; border-radius: 50%;
+                border: 4px solid rgba(255, 255, 255, 0.18);
+                border-top-color: #39c7f2;
+                animation: launch-spin 0.8s linear infinite;
+            }
+            @keyframes launch-spin { to { transform: rotate(360deg); } }
+        `;
+        const box = document.createElement('div');
+        box.id = 'launch-overlay';
+        const spinner = document.createElement('div');
+        spinner.className = 'launch-spinner';
+        const label = document.createElement('div');
+        label.textContent = 'Starting game…';
+        box.append(spinner, label);
+        document.head.appendChild(style);
+        document.body.appendChild(box);
+    }
+
     socket.on('gameSelected', (data) => {
         const { gameId, settings } = data;
         const settingsParam = settings ? `&settings=${encodeURIComponent(JSON.stringify(settings))}` : '';
@@ -84,7 +118,14 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (gameId === 'fps') targetPage = '/fps.html';
         else if (gameId === 'f1') targetPage = '/f1.html';
 
-        window.location.href = `${targetPage}?lobby=${lobbyId}&color=${encodeURIComponent(selectedColor)}&game=${gameId}${settingsParam}`;
+        const url = `${targetPage}?lobby=${lobbyId}&color=${encodeURIComponent(selectedColor)}&game=${gameId}${settingsParam}`;
+        showLaunchOverlay();
+        // Due frame prima di navigare: l'overlay è appena entrato nel DOM e
+        // navigando subito il browser potrebbe non arrivare mai a dipingerlo.
+        // Costano ~30 ms, che è meno di quanto durava il clic senza risposta.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            window.location.href = url;
+        }));
     });
 
     // 4. Caricamento Dati Lobby

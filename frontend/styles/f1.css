@@ -417,6 +417,40 @@ canvas.tyre-preview-canvas {
     line-height: 1.6;
 }
 
+/* Elenco dei piloti attesi sotto le mescole (vedi renderAttesaMescole in
+   f1.js): una riga per pilota con il suo stato. Chi sta ancora caricando la
+   pista pulsa, così si vede a colpo d'occhio che l'attesa non dipende da noi. */
+#tyre-confirm-status {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.tyre-attesa-riga {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 14px;
+    color: var(--hud-text-dim);
+}
+
+.tyre-attesa-riga.is-pronto { color: var(--green); }
+.tyre-attesa-riga.is-attesa { animation: tyre-attesa-pulsa 1.4s ease-in-out infinite; }
+
+.tyre-attesa-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--hud-surface);
+    flex: none;
+}
+
+@keyframes tyre-attesa-pulsa {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.45; }
+}
+
 /* Pulsante riparazione danni ai box: stesso linguaggio neumorfico/toggle
    delle tyre-card (bagliore verde = selezionato), ma pill compatta invece
    di una card larga — è un singolo on/off, non una scelta tra 3. */

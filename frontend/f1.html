@@ -6,10 +6,109 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260812a">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260817a">
+
+    <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
+         Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
+         tratto di schermo nero più lungo cade PRIMA che f1.js esista (three.js,
+         GLTFLoader, firebase e i venti script di shared/ sono tutti bloccanti).
+         Un overlay creato da JavaScript arriverebbe a nero già finito, e uno
+         che dipende da un foglio esterno resterebbe invisibile finché quel
+         foglio non arriva. I colori sono ricopiati da :root di f1.css apposta:
+         qui non si possono usare le variabili, non sono ancora definite.
+
+         Le animazioni usano SOLO transform/opacity: girano sul compositor e
+         continuano a muoversi anche mentre il thread principale è fermo a
+         costruire la pista, che è esattamente il momento in cui servono. Una
+         animazione su width o su un colore si congelerebbe lì. -->
+    <style>
+        #f1-loading {
+            position: fixed;
+            inset: 0;
+            z-index: 200;
+            background: #0b0e13;
+            color: #f2f4f6;
+            font-family: 'Fredoka', 'Trebuchet MS', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            transition: opacity 0.35s ease;
+        }
+        #f1-loading.is-done { opacity: 0; pointer-events: none; }
+        #f1-loading-title {
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 6px;
+            color: #8b96a3;
+            text-transform: uppercase;
+        }
+        #f1-loading-track {
+            font-size: 34px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-align: center;
+            padding: 0 24px;
+        }
+        #f1-loading-bar {
+            position: relative;
+            width: min(420px, 70vw);
+            height: 14px;
+            background: #12151b;
+            border: 2px solid rgba(255, 255, 255, 0.14);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        /* La barra vera: scaleX invece di width, così anche l'avanzamento
+           passa dal compositor. Origine a sinistra, altrimenti cresce dal
+           centro in entrambe le direzioni. */
+        #f1-loading-fill {
+            position: absolute;
+            inset: 0;
+            background: #39c7f2;
+            transform: scaleX(0);
+            transform-origin: left center;
+            transition: transform 0.25s ease;
+        }
+        /* Riflesso che scorre: è l'unica parte che si muove da sola, e serve
+           a dire "sto lavorando" durante i blocchi sincroni in cui la barra
+           vera non può avanzare perché il JavaScript non gira. */
+        #f1-loading-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -40%;
+            width: 40%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+            animation: f1-loading-sweep 1.15s linear infinite;
+        }
+        @keyframes f1-loading-sweep {
+            from { transform: translateX(0); }
+            to   { transform: translateX(350%); }
+        }
+        #f1-loading-step {
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            color: #8b96a3;
+            min-height: 20px;
+        }
+    </style>
 </head>
 
 <body>
+
+    <!-- Primo elemento del body apposta: è ciò che il browser può dipingere
+         per primo. Il testo è già a schermo prima che parta qualunque script,
+         e f1.js lo aggiorna man mano (vedi passoCaricamento). -->
+    <div id="f1-loading">
+        <div id="f1-loading-title">Formula 1</div>
+        <div id="f1-loading-track">Caricamento del circuito</div>
+        <div id="f1-loading-bar"><div id="f1-loading-fill"></div></div>
+        <div id="f1-loading-step">Avvio…</div>
+    </div>
 
     <!-- HUD: classifica + giri — top-left, un pannello solo. Popolato da
          updateStandings()/setLapDisplay() in f1.js. Visibile solo in gara
@@ -264,7 +363,7 @@
     <script src="shared/voxelizer.js?v=20260730a"></script>
     <script src="/shared/firebaseConfig.js" defer></script>
     <script src="shared/f1Segnalazioni.js?v=20260812a"></script>
-    <script src="f1.js?v=20260816d"></script>
+    <script src="f1.js?v=20260817a"></script>
 </body>
 
 </html>

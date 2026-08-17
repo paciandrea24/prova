@@ -11,6 +11,63 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
+    // ====================================================
+    // SCHERMATA DI CARICAMENTO — il pannello è già a schermo (è HTML statico
+    // in f1.html, vedi lì il perché); qui lo si aggiorna e alla fine lo si
+    // spegne. Da qui in giù non deve esserci nessun tratto di esecuzione
+    // lungo senza un passoCaricamento: un avanzamento fermo si legge come un
+    // blocco anche quando il lavoro procede.
+    // ====================================================
+    const caricamento = (() => {
+        const box = document.getElementById('f1-loading');
+        const barra = document.getElementById('f1-loading-fill');
+        const riga = document.getElementById('f1-loading-step');
+        const titolo = document.getElementById('f1-loading-track');
+        let spento = false;
+        return {
+            pista(nome) { if (titolo && nome) titolo.textContent = nome; },
+            passo(testo, frazione) {
+                if (riga) riga.textContent = testo;
+                if (barra && frazione != null) {
+                    barra.style.transform = `scaleX(${Math.max(0, Math.min(1, frazione))})`;
+                }
+            },
+            // Cede il thread per un frame. Senza, il testo appena scritto non
+            // verrebbe mai dipinto: la funzione prosegue dentro lo stesso
+            // frame e il browser non ha occasione di disegnare nulla finché
+            // la costruzione della pista non è finita.
+            respira() {
+                return new Promise(r => {
+                    let fatto = false;
+                    const prosegui = () => { if (!fatto) { fatto = true; r(); } };
+                    requestAnimationFrame(prosegui);
+                    // In una scheda in SECONDO PIANO requestAnimationFrame non
+                    // scatta affatto: senza questa scorciatoia l'avvio si
+                    // fermerebbe qui fino al ritorno in primo piano — cioè
+                    // proprio nel caso delle due schede, dove la seconda
+                    // carica mentre si guarda la prima. setTimeout viene
+                    // rallentato in background, ma scatta.
+                    setTimeout(prosegui, 60);
+                });
+            },
+            spegni() {
+                if (spento || !box) return;
+                spento = true;
+                box.classList.add('is-done');
+                setTimeout(() => box.remove(), 400);
+            },
+        };
+    })();
+
+    // Segnali attesi prima di scoprire il gioco (vedi in fondo al file): la
+    // scenografia completa, la propria auto in scena e almeno un frame
+    // disegnato. Dichiarati qui perché chi li risolve sta sparso più sotto.
+    let segnalaAutoPronta, segnalaPrimoFrame;
+    const autoPronta = new Promise(r => { segnalaAutoPronta = r; });
+    const primoFrame = new Promise(r => { segnalaPrimoFrame = r; });
+
+    caricamento.passo('Collegamento all\'account…', 0.04);
+
     // --- INIZIO GESTIONE FIREBASE E LIVREA ---
     let loadedLivery = null;
 
@@ -185,8 +242,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // (vedi frontend/tracks/), stessa geometria usata dal server tramite
     // backend/sockets/games/trackLoader.js.
     // ====================================================
+    caricamento.passo('Dati del circuito…', 0.12);
     const trackRes = await fetch(`/tracks/${trackId}.json`);
     const trackData = await trackRes.json();
+    caricamento.pista(trackData.name || trackId);
 
     const ROAD_HALF = trackData.roadHalfWidth;
     const CURB_W = 2.8;
@@ -292,6 +351,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const EMBANK_PLATEAU = TrackScenery.embankmentStart(BARRIER_PROFILE, EMBANKMENT_START);
     const EMBANK_OUTER = EMBANK_PLATEAU + EMBANKMENT_WIDTH;
 
+    // I `respira()` sparsi fra un blocco di costruzione e l'altro non sono
+    // decorativi: queste chiamate bloccano il thread per centinaia di ms
+    // ciascuna, e senza cedere il controllo la barra resterebbe ferma
+    // dall'inizio alla fine della costruzione.
+    caricamento.passo('Terreno e dislivelli…', 0.20);
+    await caricamento.respira();
+
     const primaDelPrato = scene.children.length;
     TrackMeshBuilder.buildGround(scene, trackPts, EMBANK_OUTER, 3000);
     const mesheTerreno = scene.children.slice(primaDelPrato);
@@ -333,6 +399,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // di varco spurio su "prova"). Usare i campioni "abbracciati" alla curva
     // fa sì che anche la FORMA del varco segua la vera curvatura della pista.
     const PIT_MERGE_SAMPLES = TrackGravel.pitGapSamples(PIT_PTS);
+
+    caricamento.passo('Asfalto, cordoli e barriere…', 0.30);
+    await caricamento.respira();
 
     // DoubleSide evita artefatti di culling nelle zone ad alta curvatura
     TrackMeshBuilder.buildRibbon(scene, trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: ToonPalette.SURFACES.asphalt, roughness: 0.95, side: THREE.DoubleSide }));
@@ -388,6 +457,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Solo buildGround, non il terrapieno: quello sfuma dal colore della
     // pista al verde con i vertex color, e le chiazze verdi gli
     // ricoprirebbero il bordo asfaltato.
+    caricamento.passo('Stile del circuito…', 0.40);
+    await caricamento.respira();
+
     for (const mesh of mesheTerreno) {
         applicaStile(mesh, { saturation: ToonPalette.SATURATION.world, isGround: true });
     }
@@ -427,6 +499,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.addEventListener('pointerdown', resumeAudioContext, { once: true });
     window.addEventListener('keydown', resumeAudioContext, { once: true });
 
+    caricamento.passo('Audio…', 0.46);
     const engineBuffer = await new Promise((resolve, reject) => {
         new THREE.AudioLoader().load('/assets/audio/engine.wav', resolve, undefined, reject);
     });
@@ -555,6 +628,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const NO_OUTLINE_ASSETS = new Set(['spectatorA', 'spectatorB', 'spectatorC',
         'spectatorStandA', 'spectatorStandB', 'bushLow', 'bushTall']);
 
+    // Restituisce una Promise che si risolve quando OGNI asset ha finito —
+    // riuscito o fallito. La schermata di caricamento la aspetta per non
+    // scoprire un circuito a cui manca ancora metà scenografia; il fallimento
+    // conta come "finito" apposta: un solo file mancante non deve poter
+    // lasciare il giocatore davanti a una barra ferma per sempre.
     function loadScenery(container, layout) {
         const sceneryLoader = new THREE.GLTFLoader();
         const byAsset = new Map();
@@ -568,8 +646,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         const dummy = new THREE.Object3D();
+        const attese = [];
+        let fatti = 0;
+        const totale = byAsset.size;
+        // La scenografia occupa la seconda metà della barra: è la parte più
+        // lunga dell'avvio ed è l'unica di cui si conosce il denominatore.
+        const segnaAssetFatto = () => {
+            fatti++;
+            caricamento.passo(`Scenografia del circuito · ${fatti}/${totale}`, 0.55 + 0.42 * (fatti / totale));
+        };
         for (const [asset, items] of byAsset) {
             const url = SCENERY_ASSET_PATHS[asset];
+            let segnalaAsset;
+            attese.push(new Promise(r => { segnalaAsset = r; }));
             sceneryLoader.load(url, (gltf) => {
                 gltf.scene.updateMatrixWorld(true);
                 const meshes = [];
@@ -661,7 +750,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                         container.add(im);
                     }
                 }
-            }, undefined, (err) => console.error(`[F1] Errore caricando asset scenografia "${asset}":`, err));
+                segnaAssetFatto();
+                segnalaAsset();
+            }, undefined, (err) => {
+                console.error(`[F1] Errore caricando asset scenografia "${asset}":`, err);
+                segnaAssetFatto();
+                segnalaAsset();
+            });
         }
 
         // Asfalto del parcheggio: un rettangolo piano, come il laghetto ma
@@ -693,6 +788,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             applicaStile(pond, { saturation: ToonPalette.SATURATION.world });
             container.add(pond);
         }
+
+        return Promise.all(attese);
     }
 
     // Chiamata qui (dopo la dichiarazione di loadScenery/SCENERY_ASSET_PATHS,
@@ -725,8 +822,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // BARRIER_PROFILE come ultimo argomento: la scenografia si calcola con la
     // barriera storica e poi segue il muro dove si è spostato. Senza questo,
     // tribune e cartelloni resterebbero dentro la via di fuga o murati.
+    caricamento.passo('Disposizione della scenografia…', 0.52);
+    await caricamento.respira();
     const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, BARRIER_PROFILE, terraceAnchors);
-    loadScenery(scene, sceneryLayout);
+    const scenografiaPronta = loadScenery(scene, sceneryLayout);
 
     // ====================================================
     // LOADER GLB (macchina colorata per team)
@@ -1150,6 +1249,45 @@ document.addEventListener('DOMContentLoaded', async () => {
         camera.updateProjectionMatrix();
     }
 
+    // Una riga per pilota atteso, con il suo stato. Sostituisce il vecchio
+    // contatore "1/2 pronti", che diceva che si stava aspettando ma non CHI:
+    // con un pilota ancora fermo sul caricamento della pista, quel numero era
+    // indistinguibile da un problema della propria connessione.
+    // `attesi` arriva dal server (fotografia della lobby al via); se manca —
+    // partita vecchia, server non aggiornato — si ricade sul contatore.
+    function renderAttesaMescole(dati) {
+        const box = document.getElementById('tyre-confirm-status');
+        if (!box || !dati) return;
+        const attesi = dati.attesi || [];
+        if (!attesi.length) {
+            box.textContent = `${dati.count || 0}/${dati.total || 1} pronti`;
+            return;
+        }
+        const arrivati = new Set(dati.arrivati || []);
+        const confermati = new Set(dati.confermati || []);
+        box.innerHTML = '';
+        for (const color of attesi) {
+            const riga = document.createElement('div');
+            riga.className = 'tyre-attesa-riga';
+            const pallino = document.createElement('span');
+            pallino.className = 'tyre-attesa-dot';
+            pallino.style.background = color;
+            const testo = document.createElement('span');
+            if (confermati.has(color)) {
+                testo.textContent = 'pronto';
+                riga.classList.add('is-pronto');
+            } else if (arrivati.has(color)) {
+                testo.textContent = 'sta scegliendo…';
+            } else {
+                testo.textContent = 'in caricamento…';
+                riga.classList.add('is-attesa');
+            }
+            if (color === myColor) testo.textContent += ' (tu)';
+            riga.append(pallino, testo);
+            box.appendChild(riga);
+        }
+    }
+
     // Riusata sia per la selezione mescola pre-qualifica sia per il cambio
     // gomme ai box (containerId/eventName diversi, stessa presentazione).
     function renderTyreCards(compounds, myCompound, containerId, eventName) {
@@ -1393,7 +1531,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // SOCKET EVENTS
     // ====================================================
     socket.on('f1Setup', ({ players, trackName, hostColor: hc, totalLaps, phase, raceStarted, elapsed,
-        compounds, strategy, myCompound, tyreConfirmed, tyreTotal }) => {
+        compounds, strategy, myCompound, tyreConfirmed, tyreTotal,
+        tyreAttesi, tyreArrivati, tyreConfermati }) => {
         if (compounds) tyreCompoundsInfo = compounds;
         if (phase) currentPhase = phase;
         // Rientro a metà qualifica (reconnect): senza questo qualiSessionOpen
@@ -1418,7 +1557,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             myCarGroup = g;
             slipstreamGroup = buildSlipstreamEffect();
             myCarGroup.add(slipstreamGroup);
+            segnalaAutoPronta();
         }, TEST_LIVERY_COLORS);
+        else segnalaAutoPronta();
 
         for (const [color, state] of Object.entries(players)) {
             serverState[color] = { x: state.x, z: state.z, angle: state.angle, speed: 0 };
@@ -1450,7 +1591,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('tyre-strategy-hint').textContent =
                 'Strategia consigliata: ' + (strategy || []).map(c => (compounds[c]?.label || c).toUpperCase()).join(' → ');
             renderTyreCards(compounds, myCompoundChoice, 'tyre-cards', 'f1TyreChoice');
-            document.getElementById('tyre-confirm-status').textContent = `${tyreConfirmed || 0}/${tyreTotal || 1} pronti`;
+            renderAttesaMescole({
+                attesi: tyreAttesi, arrivati: tyreArrivati, confermati: tyreConfermati,
+                count: tyreConfirmed, total: tyreTotal,
+            });
         }
     });
 
@@ -1709,10 +1853,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         delete serverState[color]; delete visualState[color];
     });
 
-    socket.on('f1TyreConfirmed', ({ count, total }) => {
-        const status = document.getElementById('tyre-confirm-status');
-        if (status) status.textContent = `${count}/${total} pronti`;
-    });
+    socket.on('f1TyreConfirmed', renderAttesaMescole);
 
     socket.on('f1Countdown', (data) => {
         isRacing = false;
@@ -2642,9 +2783,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         toonSky.update(camera);
         F1Perf.logica = performance.now() - _tLogica;
         ToonOutline.render(renderer, scene, camera);
+        // Un frame è stato disegnato: da qui in poi togliere la schermata di
+        // caricamento non scopre un canvas ancora vuoto.
+        segnalaPrimoFrame();
     }
 
     animate();
+
+    // ====================================================
+    // FINE DEL CARICAMENTO
+    // ====================================================
+    // Si scopre il gioco solo a circuito COMPLETO: scenografia istanziata,
+    // propria auto in scena (che implica la risposta del server: è f1Setup a
+    // farla caricare) e un frame già disegnato.
+    //
+    // Il paracadute non è pessimismo: senza, un asset che non risponde o un
+    // f1Setup mai arrivato lascerebbero il giocatore davanti a una barra
+    // ferma, cioè un guasto peggiore dello schermo nero che stiamo togliendo.
+    const CARICAMENTO_MAX_MS = 20000;
+    Promise.race([
+        Promise.all([scenografiaPronta, autoPronta, primoFrame]),
+        new Promise(r => setTimeout(() => r('scaduto'), CARICAMENTO_MAX_MS)),
+    ]).then((esito) => {
+        if (esito === 'scaduto') {
+            console.warn(`[F1] caricamento oltre ${CARICAMENTO_MAX_MS / 1000}s: si prosegue comunque`);
+        }
+        caricamento.passo('Pronti', 1);
+        caricamento.spegni();
+    });
+    scenografiaPronta.then(() => caricamento.passo('Vetture…', 0.98));
 
     window.addEventListener('resize', () => {
         if (tyreSelectActive) {
