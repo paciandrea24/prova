@@ -692,6 +692,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         // vede, e ridisegnarle nella mappa d'ombra ogni frame si paga. Stesso
         // discorso per le reti, che proietterebbero una grata sottile.
         'tyreStack', 'catchFence',
+        // Le tribune: 399k triangoli e 102 gruppi su "prova", cioè la fetta
+        // più grossa di ciò che restava a carico della mappa d'ombra —
+        // misurato col pannello F9, le ombre costavano 348 draw call e 650k
+        // triangoli, più del doppio di quello che si vede a schermo.
+        //
+        // Quel che si perde: l'ombra lunga di una tribuna sul prato e sulla
+        // via di fuga dietro le barriere. Non cade quasi mai dove si guida, e
+        // la loro presenza si legge dal volume e dalla folla, non dall'ombra.
+        // Le altre strutture alte — torre di direzione, ponte semafori,
+        // palazzine, box — continuano a proiettarla.
+        'grandStand', 'grandStandAwning', 'grandStandCovered',
     ]);
 
     // Asset esclusi dai CONTORNI (Rif. playtest 2026-08-10): figure minute e
