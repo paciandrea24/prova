@@ -838,7 +838,15 @@ function updateBotInputs(game, deps) {
     const debugEnabled = game.debugEnabled !== false;
 
     for (const p of Object.values(game.players)) {
-        if (!p.isBot || p.finished) continue;
+        // `p.finished` NON esclude piu': chi ha tagliato il traguardo continua
+        // a girare fino a fine sessione. Prima si fermava sulla linea, e
+        // seguendo tutti la stessa traiettoria i bot arrivati formavano una
+        // fila ferma in mezzo alla pista (segnalato in playtest).
+        //
+        // Tengono il ritmo di gara e non rallentano: un treno lento di auto
+        // gia' arrivate davanti a chi corre ancora sarebbe lo stesso ingorgo,
+        // in movimento.
+        if (!p.isBot) continue;
 
         // Calcolata una volta per bot, prima di ogni ramo/uscita anticipata:
         // pura diagnostica, non entra in nessuna decisione più sotto.

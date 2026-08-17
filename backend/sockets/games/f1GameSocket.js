@@ -467,7 +467,15 @@ module.exports = function (io, socket) {
         // partenza al via successivo (bug reale, non solo un valore stantio
         // da un singolo istante: il client lo riscriveva di continuo).
         // Ignorarlo qui, alla fonte, non richiede fidarsi del client.
-        if (game.players[playerColor].finished) return;
+        // Chi ha finito continua a guidare fino a fine sessione, quindi i
+        // suoi comandi valgono ancora. Restano ignorati SOLO a sessione
+        // chiusa: il client continua a inviare finché non arriva la sessione
+        // successiva (isRacing si azzera con f1Countdown/f1RaceEnded, non al
+        // proprio traguardo), e un acceleratore tenuto premuto durante
+        // l'attesa veniva letto come falsa partenza al via dopo — bug reale.
+        // startRaceCountdown azzera comunque gli input di tutti prima di
+        // aprire la finestra di rilevamento.
+        if (game.qualiEnded || game.raceEnded) return;
         // Clamp qui perché arriva dal client (analogico, valori liberi):
         // la fisica sotto assume i range dichiarati.
         game.players[playerColor].inputs = {
@@ -1356,9 +1364,16 @@ function tickGame(io, lobbyId, game) {
     // In qualifica corrono TUTTI in parallelo (isolati solo visivamente, non
     // fisicamente: nessuna collisione tra loro — vedi sotto). Chi è fermo ai
     // box (pitting) o guidato dall'autopilota (pitAutoState) resta escluso
-    // dalla fisica normale come un giocatore finished, ma — come i finished —
-    // resta un ostacolo per resolveCollisions.
-    const racing = players.filter(p => !p.finished && !p.pitting && !p.pitAutoState);
+    // dalla fisica normale, ma resta un ostacolo per resolveCollisions.
+    //
+    // Chi ha FINITO invece continua a guidare fino a fine sessione: prima
+    // veniva escluso di qui e si inchiodava sul traguardo — con i bot, che
+    // seguono tutti la stessa traiettoria, si formava una fila ferma in mezzo
+    // alla pista. Da questo dipendeva anche il difetto delle ruote che
+    // continuavano a girare da ferme: la fisica non girava più e `speed`
+    // restava congelata all'ultimo valore, che il client usa per far ruotare
+    // le ruote e per il tono del motore.
+    const racing = players.filter(p => !p.pitting && !p.pitAutoState);
     const autoPiloted = players.filter(p => p.pitAutoState);
 
     // Velocità (accelerazione/freno/sterzo/grip): una volta per tick, come prima.
@@ -1386,7 +1401,11 @@ function tickGame(io, lobbyId, game) {
     // giocatori non-in-qualifica, non solo su chi corre.
     for (let s = 0; s < COLLISION_SUBSTEPS; s++) {
         for (const p of racing) integratePosition(p, 1 / COLLISION_SUBSTEPS);
-        if (!isQuali) resolveCollisions(players);
+        // Chi ha finito è un FANTASMA: si vede e continua a girare, ma non
+        // urta più nessuno e nessuno urta lui. A gara conclusa non rischia
+        // più niente, quindi un suo contatto costerebbe la posizione solo
+        // all'altro — scelta dell'utente al playtest.
+        if (!isQuali) resolveCollisions(players.filter(p => !p.finished));
         // A differenza di resolveCollisions (disabilitata in qualifica: le
         // collisioni auto-auto sono una questione di fair-play multiplayer),
         // il muro dei tratti ponte si applica sempre, anche in qualifica —
@@ -1399,9 +1418,11 @@ function tickGame(io, lobbyId, game) {
         updateTrackIndex(p, game.track);
         // L'usura conta solo in GARA: in qualifica le gomme restano quelle
         // scelte ma "fresche" fino al via vero (resettate in assignGridSpawns).
-        if (game.phase === 'race') applyTyreWear(p, offTrack, game.track);
+        // Usura e cronometraggio si fermano al traguardo: il giro di
+        // rientro non consuma gomme e non ha settori da misurare.
+        if (game.phase === 'race' && !p.finished) applyTyreWear(p, offTrack, game.track);
         checkLap(p, totalLaps, io, lobbyId, game);
-        updateSectorTiming(p, game);
+        if (!p.finished) updateSectorTiming(p, game);
 
         // Ingresso volontario nella corsia box (solo in gara: sterzare lì è
         // una scelta del giocatore). Da qui il server prende il volante — vedi
@@ -1876,6 +1897,10 @@ function resolvePendingFinish(p, game, io, lobbyId) {
 // dati invece che da coordinate scritte a mano per una singola pista.
 // ====================================================
 function checkLap(p, totalLaps, io, lobbyId, game) {
+    // Chi ha gia' finito continua a girare (vedi il filtro `racing` in
+    // tickGame) ma il suo tempo e' scritto: ripassare sul traguardo non deve
+    // contargli un altro giro ne' richiudergli la sessione.
+    if (p.finished) return;
     const n = game.track.points.length;
     const idx = p.trackIndex || 0;
     const startFinishIndex = game.track.startFinishIndex || 0;

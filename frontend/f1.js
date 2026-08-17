@@ -3301,8 +3301,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // al pannello dei tempi per tutti gli 8 secondi. qualiSessionOpen
                 // si autocorregge SEMPRE su eventi certi (mai su un dato che
                 // può congelarsi), quindi qui basta leggerlo.
-                document.getElementById('quali-waiting-overlay').style.display =
-                    (qualiSessionOpen && target.finished && target.time) ? 'flex' : 'none';
+                // Vale anche in GARA, non più solo in qualifica: da quando il
+                // traguardo non congela l'auto, chi ha finito continua a
+                // girare e ha bisogno di sapere perché la sessione non si
+                // chiude. `qualiSessionOpen` copre la qualifica; in gara
+                // basta che il podio non sia ancora comparso, e ci pensa
+                // f1RaceEnded a nascondere l'avviso.
+                const sessioneAperta = currentPhase === 'race' ? isRacing : qualiSessionOpen;
+                const avviso = document.getElementById('quali-waiting-overlay');
+                if (sessioneAperta && target.finished && target.time) {
+                    const titolo = document.getElementById('quali-waiting-titolo');
+                    if (titolo) {
+                        titolo.textContent = currentPhase === 'race'
+                            ? 'GARA COMPLETATA' : 'QUALIFICA COMPLETATA';
+                    }
+                    avviso.style.display = 'flex';
+                } else {
+                    avviso.style.display = 'none';
+                }
             }
         }
 

@@ -539,9 +539,20 @@ canvas.tyre-preview-canvas {
 
 /* ---- overlay "in attesa degli altri piloti" (fine qualifica, prima della griglia) ---- */
 .quali-waiting-box {
-    padding: 22px 40px;
+    /* Compatto e in alto: sotto si continua a guidare, e un pannello al
+       centro dello schermo starebbe davanti alla pista. */
+    margin-top: 3vh;
+    padding: 12px 26px;
     text-align: center;
     font-family: 'Fredoka', sans-serif;
+}
+.quali-waiting-titolo {
+    display: block;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: var(--f1-text);
+    margin-bottom: 4px;
 }
 .quali-waiting-box .eyebrow {
     display: block;
