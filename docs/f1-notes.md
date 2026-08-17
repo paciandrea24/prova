@@ -54,11 +54,13 @@ principio).
 al 2026-08-11. I flag promossi dopo un playtest positivo hanno la semantica
 ROVESCIATA: sono attivi sempre, e si spengono solo con `=0` esatto (qualunque
 altro valore, incluso non impostato, li lascia accesi). La colonna "default"
-dice quale regola vale per ciascuno.
+dice quale regola vale per ciascuno — **leggerla, non assumere**: il
+2026-08-17 `F1_TYRE_SLIP_MODEL` ha fatto il percorso inverso, da ON a OFF,
+dopo un playtest che l'ha bocciato.
 
 | Flag | Default | Letto in | Consumato da | Dipende da |
 |---|---|---|---|---|
-| `F1_TYRE_SLIP_MODEL` | **ON** (spegni con `=0`) | `TyreSlipModel.isTyreSlipModelActive` | `PowertrainModel.applyThrottle`, `BrakingModel.applyBrake`, `SteeringModel.applySteering` | — |
+| `F1_TYRE_SLIP_MODEL` | OFF (accendi con `=1`) — **ripristinato OFF il 2026-08-17**, vedi sotto | `TyreSlipModel.isTyreSlipModelActive` | `PowertrainModel.applyThrottle`, `BrakingModel.applyBrake`, `SteeringModel.applySteering` | — |
 | `F1_CORNERING_GRIP_MODEL` | OFF (accendi con `=1`) | `TyreSlipModel.isCorneringGripModelActive` | `VehiclePhysics.updateVelocity` | — |
 | `F1_AERO_DRAG_MODEL` | **ON** (spegni con `=0`) | `AerodynamicsModel.isAeroDragModelActive` | `PowertrainModel.effectiveMaxSpeed` | — |
 | `F1_AERO_DOWNFORCE_MODEL` | **ON** (spegni con `=0`) | `AerodynamicsModel.isAeroDownforceModelActive` | `AerodynamicsModel.effectiveGrip`, `CorneringGripModel.lateralExcess` | — |
@@ -66,15 +68,37 @@ dice quale regola vale per ciascuno.
 | `F1_AERO_SLIPSTREAM_MODEL` | **ON** (spegni con `=0`) | `AerodynamicsModel.isAeroSlipstreamModelActive` | `f1GameSocket.computeSlipstreamMult` | — |
 | `F1_RACELINE_SUFFIX` (valore stringa, non 0/1) | nessun suffisso | `trackLoader.racelineSuffix` | `trackLoader.loadRacelineData` | — |
 
-**`F1_TYRE_SLIP_MODEL` promosso a ON il 2026-08-11** (wheelspin in uscita
-lenta, bloccaggio in staccata, e il bloccaggio riduce anche lo sterzo). Non
-era spento per un difetto: la Fase 3.1 aveva tarato le soglie ma il playtest
-di promozione non era mai stato fatto. Misurato con `f1LapSimulator` prima di
-accendere, 30 giri per configurazione con parametri bot deterministici: il
-giro costa **+0.80s su prova (1.7%)** e **+0.25s su new-monza (0.7%)**, con
-30 giri su 30 completati — i bot non finiscono fuori e le racing line
-precalcolate (ottimizzate col flag spento) restano valide, non vanno
-rigenerate.
+### ⚠️ `F1_TYRE_SLIP_MODEL`: promosso il 2026-08-11, RIPRISTINATO OFF il 2026-08-17
+
+Il flag accende tre cose insieme: wheelspin in uscita lenta, bloccaggio in
+staccata, e il taglio dello sterzo da bloccaggio. Fu promosso a ON l'11/08
+(`543524a`) — non era spento per un difetto, la Fase 3.1 aveva tarato le
+soglie ma il playtest di promozione non era mai stato fatto.
+
+**Il playtest, fatto il 17/08, l'ha bocciato**: in qualifica e a gomme nuove
+l'utente non è riuscito a completare un giro, e prima ancora aveva segnalato
+di dover «rallentare un bel po' per prendere le curve» dove passava in pieno.
+Riportato a OFF (`isTyreSlipModelActive` torna a `=== '1'`).
+
+**Perché la misura di approvazione non l'aveva visto** — è la parte che serve
+alla prossima promozione. Era stato approvato su **+0.80s sul giro su prova
+(1.7%)**, un numero che sembra piccolo. Quel costo però non è spalmato sul
+giro: è concentrato nelle curve lente. Con `f1LapSimulator` su `prova`
+(deterministico, `isQuali=true`):
+
+| | flag OFF | flag ON |
+|---|---|---|
+| tempo sul giro | 48.55s | 49.30s (**+1.5%**) |
+| curva al 13.4% | 83.5 km/h | 73.2 km/h (**-12%**) |
+| curva al 76.4% | 97.4 km/h | 83.7 km/h (**-14%**) |
+
+**Un flag che cambia la GUIDA va valutato sulle velocità minime in curva, non
+sul tempo sul giro** — e comunque non si promuove senza che l'utente lo abbia
+guidato. Il tempo sul giro è una media, e una media non descrive mai cosa si
+sente al volante.
+
+Per ripromuoverlo servono soglie ritarate (`TRACTION_*`/`BRAKING_*` in
+`TyreSlipModel.js`) e un playtest, non una misura sul tempo sul giro.
 
 Accendendolo sono emerse **due trappole NaN** ormai chiuse, che valgono come
 avvertimento per chi promuoverà il prossimo flag: `brakingExcess` riceveva
@@ -89,9 +113,10 @@ I test che misurano formule a valore esatto (`VehiclePhysics.test.js`,
 `VehicleDynamics.test.js` a livello di file; singoli casi in
 `PowertrainModel`/`BrakingModel`/`f1GameSocket.physics`) sono ancorati a
 `F1_TYRE_SLIP_MODEL='0'`: caratterizzano la composizione delle formule, non la
-taratura dello slittamento, che ha i suoi test dedicati. ⚠️ Non ancorare un
-file INTERO se al suo interno qualche caso fa `delete process.env...` in un
-`finally`: la cancellazione riporta al default, che ora è ON.
+taratura dello slittamento, che ha i suoi test dedicati. Dal 2026-08-17 quegli
+ancoraggi coincidono col default, quindi sono ridondanti — vanno lasciati:
+rendono esplicito da cosa dipende il valore atteso e reggono a un'eventuale
+ripromozione del flag.
 
 `F1_RACELINE_SUFFIX=-sa` carica `<trackId>-sa-raceline.json` invece del file
 di produzione `<trackId>-raceline.json` (stessa cartella `backend/tools/`) —

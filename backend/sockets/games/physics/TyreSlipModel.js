@@ -170,28 +170,36 @@ function brakingExcess(brake, speedFrac, brakingFactor) {
     return clamp01(brakingDemand(brake, speedFrac) - brakingFactor);
 }
 
-// Promosso a default ON il 2026-08-11, su richiesta dell'utente ("vorrei
-// attivare di default wheelspin e bloccaggio che non so perché non sono
-// attivi"). Non era una dimenticanza: la Fase 3.1 aveva tarato le soglie ma
-// il playtest di promozione non era mai stato fatto, così il flag era
-// rimasto sul percorso di confronto mentre i modelli aero — quel playtest
-// lo avevano avuto — erano già passati a ON.
+// ⚠️ DEFAULT OFF. Promosso a ON l'11-08-2026 (`543524a`) e RIPORTATO A OFF il
+// 17-08-2026 dopo il playtest: al volante, in qualifica e a gomme nuove, la
+// macchina era inguidabile — l'utente non è riuscito a completare un giro, e
+// prima ancora aveva segnalato di dover "rallentare un bel po' per prendere
+// le curve" dove prima passava in pieno.
 //
-// Misurato con f1LapSimulator prima di accendere (30 giri per
-// configurazione, parametri bot deterministici): il giro costa +0.80s su
-// prova (1.7%) e +0.25s su new-monza (0.7%), e 30 giri su 30 restano
-// completati — i bot non finiscono fuori e le racing line precalcolate
-// (ottimizzate col flag spento) reggono, quindi non vanno rigenerate.
+// LA LEZIONE, che vale per la prossima promozione di un flag di guida: la
+// promozione era stata approvata su **+0.80s sul giro (1.7%)**, un numero che
+// sembra piccolo. Ma quel costo non è spalmato sul giro, è concentrato nelle
+// curve lente. Misurato con f1LapSimulator su `prova` (deterministico,
+// isQuali=true, cioè gomme nuove e nessun danno — nessun degrado a mascherare
+// il confronto):
 //
-// Rollback impostando esplicitamente F1_TYRE_SLIP_MODEL=0 — qualunque altro
-// valore, incluso non impostato, tiene il modello attivo. Stesso pattern e
-// stessa semantica dei flag aero. Flag DEDICATO e separato da
-// F1_TYRE_FORCE_MODEL (rimosso in Fase 2B): i due sistemi sono
-// concettualmente distinti (usura statica vs eccesso dinamico di richiesta).
-// Letto ad ogni chiamata e non cachato a require-time, così i test possono
-// accenderlo/spegnerlo senza riavviare il processo.
+//     curva al 13.4% del giro:  83.5 -> 73.2 km/h   (-12%)
+//     curva al 76.4% del giro:  97.4 -> 83.7 km/h   (-14%)
+//
+// È quello che sente chi guida, e nessuna media sul giro lo mostra. Un flag
+// che cambia la GUIDA va valutato sulle velocità minime in curva, non sul
+// tempo sul giro, e comunque non si promuove senza che l'utente lo guidi.
+//
+// Riaccenderlo: F1_TYRE_SLIP_MODEL=1 esatto (qualunque altro valore, incluso
+// non impostato, lo lascia spento). Prima di ripromuoverlo servono soglie
+// ritarate — TRACTION_*/BRAKING_* qui sopra — e un playtest, non una misura
+// sul tempo sul giro. Flag DEDICATO e separato da F1_TYRE_FORCE_MODEL
+// (rimosso in Fase 2B): i due sistemi sono concettualmente distinti (usura
+// statica vs eccesso dinamico di richiesta). Letto ad ogni chiamata e non
+// cachato a require-time, così i test possono accenderlo/spegnerlo senza
+// riavviare il processo.
 function isTyreSlipModelActive() {
-    return process.env.F1_TYRE_SLIP_MODEL !== '0';
+    return process.env.F1_TYRE_SLIP_MODEL === '1';
 }
 
 // Fase 4 (Rif. docs/superpowers/specs/2026-07-28-f1-cornering-grip-limit-design.md):

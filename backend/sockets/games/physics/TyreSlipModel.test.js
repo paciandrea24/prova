@@ -163,17 +163,21 @@ test('updateTractionSlipDebt: clamp — resta in [0,1] anche a input estremi rip
 
 // ---- isTyreSlipModelActive ----
 
-// Promosso a default ON il 2026-08-11: la semantica del flag si è ribaltata
-// (era "acceso solo con '1'", ora è "spento solo con '0'"), stessa dei flag
-// aero dopo la loro promozione. I tre casi sotto verificano il ribaltamento.
+// Promosso a default ON il 2026-08-11, RIPORTATO A OFF il 2026-08-17 dopo il
+// playtest: la semantica torna quella originale, "acceso solo con '1'". Il
+// perché sta nel commento della funzione — in breve, il costo non era il
+// +0.80s sul giro con cui era stato approvato, ma il 12-14% di velocità nelle
+// curve lente, e al volante l'utente non riusciva a completare un giro.
+// I tre casi sotto fissano il default: se un giorno lo si ripromuove, sono
+// questi a dover cambiare per primi, di proposito e non per sbaglio.
 
-test('isTyreSlipModelActive: di default (env var non impostata) è true', () => {
+test('isTyreSlipModelActive: di default (env var non impostata) è false', () => {
     assert.equal(process.env.F1_TYRE_SLIP_MODEL, undefined);
-    assert.equal(isTyreSlipModelActive(), true);
+    assert.equal(isTyreSlipModelActive(), false);
 });
 
-test("isTyreSlipModelActive: false solo quando F1_TYRE_SLIP_MODEL === '0' esattamente", () => {
-    for (const [valore, atteso] of [['0', false], ['1', true], ['true', true], ['', true]]) {
+test("isTyreSlipModelActive: true solo quando F1_TYRE_SLIP_MODEL === '1' esattamente", () => {
+    for (const [valore, atteso] of [['1', true], ['0', false], ['true', false], ['', false]]) {
         process.env.F1_TYRE_SLIP_MODEL = valore;
         try {
             assert.equal(isTyreSlipModelActive(), atteso,
@@ -185,12 +189,12 @@ test("isTyreSlipModelActive: false solo quando F1_TYRE_SLIP_MODEL === '0' esatta
 });
 
 test('isTyreSlipModelActive: indipendente da F1_TYRE_FORCE_MODEL (flag separato, Fase 2A/2B rimossa)', () => {
-    // F1_TYRE_FORCE_MODEL non deve poter SPEGNERE questo modello: sono due
-    // sistemi distinti, e ora che il default è ON l'unico modo di spegnerlo
-    // resta il suo flag dedicato a '0'.
-    process.env.F1_TYRE_FORCE_MODEL = '0';
+    // F1_TYRE_FORCE_MODEL non deve poter ACCENDERE questo modello: sono due
+    // sistemi distinti, e l'unico modo di accenderlo resta il suo flag
+    // dedicato a '1'.
+    process.env.F1_TYRE_FORCE_MODEL = '1';
     try {
-        assert.equal(isTyreSlipModelActive(), true, 'F1_TYRE_FORCE_MODEL non deve spegnere TyreSlipModel');
+        assert.equal(isTyreSlipModelActive(), false, 'F1_TYRE_FORCE_MODEL non deve accendere TyreSlipModel');
     } finally {
         delete process.env.F1_TYRE_FORCE_MODEL;
     }
