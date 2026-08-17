@@ -1500,3 +1500,28 @@ for (const id of TRACCIATI) {
         }
     });
 }
+
+// ═══════════ IL PONTE SEMAFORI NON È OPZIONALE ═══════════
+//
+// Da quando porta i semafori di partenza veri (f1.js accende `gantry_light_1..5`
+// sul modello) il ponte è l'unico posto in cui il giocatore legge il via: un
+// tracciato senza gantry sarebbe un tracciato in cui la gara parte senza che
+// nessuno se ne accorga. Prima la posa poteva fallire in silenzio, se tutte le
+// collocazioni cercate erano occupate.
+for (const id of TRACCIATI) {
+    test(`ogni circuito ha il suo ponte semafori, davanti alla griglia (${id})`, () => {
+        const { trackPts, layout } = circuitoVero(id);
+        const gantry = layout.filter(v => v.asset === 'startGantry');
+        assert.equal(gantry.length, 1, 'uno e uno solo');
+
+        // Deve stare DAVANTI a tutta la griglia: la pole parte a GRID_START
+        // dalla linea, gli altri più indietro, e chi è in fondo deve comunque
+        // vedere le luci senza girarsi.
+        const n = trackPts.length;
+        const passo = TrackGeometry.lapLength(trackPts) / n;
+        const vicino = TrackGeometry.nearestPoint(trackPts, gantry[0].x, gantry[0].z);
+        const avanti = ((vicino.index % n) + n) % n * passo;
+        assert.ok(avanti > TrackGeometry.GRID_START,
+            `gantry a ${avanti.toFixed(0)} unità dalla linea, la pole sta a ${TrackGeometry.GRID_START}`);
+    });
+}

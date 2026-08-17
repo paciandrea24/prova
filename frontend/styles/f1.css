@@ -904,6 +904,21 @@ canvas.tyre-preview-canvas {
     gap: 20px;
 }
 
+/* Partenza della GARA: il velo nero non c'è (coprirebbe il ponte con i
+   semafori veri) e il testo si sposta in alto, fuori dalla linea di vista.
+   Al centro dello schermo, senza fondo scuro dietro, starebbe esattamente
+   davanti alle luci che il giocatore deve guardare. */
+.overlay.is-gara {
+    justify-content: flex-start;
+    padding-top: 4vh;
+}
+
+/* Senza il velo il testo sta su cielo chiaro o su asfalto: serve un contorno
+   più deciso di quello che bastava sul nero. */
+.overlay.is-gara .countdown-track {
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9), 0 0 3px rgba(0, 0, 0, 0.8);
+}
+
 .countdown-track {
     font-size: 28px;
     font-weight: 700;

@@ -759,6 +759,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         // permette di spegnere per categoria e capire da dove
                         // viene il costo, senza ricaricare la pagina.
                         im.userData.sceneryAsset = asset;
+                        // Nome del nodo nel .glb: serve a ritrovare i pezzi
+                        // che il gioco deve comandare uno per uno, come i
+                        // cinque gruppi semaforo del ponte di partenza
+                        // (`gantry_light_1..5`, vedi raceStructures.py).
+                        im.userData.sceneryMesh = mesh.name;
                         // Gli spettatori NON prendono il contorno: sono
                         // centinaia di figure alte poco più di un pixel sullo
                         // schermo, il tratto le trasforma in sporco nero sulle
@@ -794,6 +799,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         im.frustumCulled = true;
 
                         applicaStile(im);
+                        // Dopo applicaStile: registraSemaforo sostituisce il
+                        // materiale toon con uno base, e farlo prima
+                        // significherebbe farselo riconvertire subito dopo.
+                        registraSemaforo(im);
                         container.add(im);
                     }
                 }
@@ -869,6 +878,67 @@ document.addEventListener('DOMContentLoaded', async () => {
     // BARRIER_PROFILE come ultimo argomento: la scenografia si calcola con la
     // barriera storica e poi segue il muro dove si è spostato. Senza questo,
     // tribune e cartelloni resterebbero dentro la via di fuga o murati.
+    // ====================================================
+    // SEMAFORO DI PARTENZA — quello VERO, sul ponte in fondo al rettilineo
+    // ====================================================
+    // Le cinque colonne di lenti sono cinque mesh distinte nel .glb
+    // (`gantry_light_1..5`), quindi hanno un InstancedMesh e un materiale
+    // ciascuna e si possono accendere una alla volta.
+    //
+    // Materiale BASE e non toon: una lampada accesa non deve obbedire alla
+    // luce del sole, deve essere sempre alla sua massima intensità — è quello
+    // che la fa leggere come accesa invece che come "rossa in ombra". Dalla
+    // pole il gruppo di lenti occupa il 12% dell'altezza dello schermo, da P6
+    // circa la metà: senza questo stacco netto, a quella dimensione non si
+    // distinguerebbe acceso da spento.
+    const SEMAFORO_SPENTO = 0x3a0a08;
+    const SEMAFORO_ACCESO = 0xff2a1a;
+    const semaforiPonte = [];   // InstancedMesh, in ordine da 1 a 5
+
+    function registraSemaforo(im) {
+        const n = /^gantry_light_(\d+)$/.exec(im.userData.sceneryMesh || '');
+        if (!n) return;
+        im.material = new THREE.MeshBasicMaterial({ color: SEMAFORO_SPENTO });
+        semaforiPonte[parseInt(n[1], 10) - 1] = im;
+    }
+
+    function accendiSemafori(quanti) {
+        for (let i = 0; i < semaforiPonte.length; i++) {
+            const im = semaforiPonte[i];
+            if (im) im.material.color.setHex(i < quanti ? SEMAFORO_ACCESO : SEMAFORO_SPENTO);
+        }
+    }
+
+    // Bip del semaforo, sintetizzato invece che scaricato: un file in più
+    // sarebbe un asset da caricare e una licenza da rispettare per mezzo
+    // secondo di suono. Onda quadra, come il resto dell'estetica del gioco.
+    // Passa dal listener (non da destination diretto) così segue il volume
+    // generale e non è posizionale: il semaforo lo senti uguale da qualunque
+    // posizione in griglia.
+    function bipSemaforo(freq, durata, volume) {
+        const ctx = listener.context;
+        if (!ctx || ctx.state !== 'running') return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = freq;
+        const t0 = ctx.currentTime;
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(volume, t0 + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + durata);
+        osc.connect(gain);
+        gain.connect(listener.getInput());
+        osc.start(t0);
+        osc.stop(t0 + durata + 0.03);
+    }
+
+    // Indicatore a schermo: il via lo danno i semafori sul ponte, questo è un
+    // aiuto facoltativo per chi parte in fondo alla griglia (da lì le luci
+    // occupano metà dello spazio che occupano dalla pole) o sta guardando
+    // altrove. Spento di default; la scelta resta fra una gara e l'altra.
+    let indicatoreLuci = false;
+    try { indicatoreLuci = localStorage.getItem('f1IndicatoreLuci') === '1'; } catch (e) { /* modalità privata */ }
+
     caricamento.passo('Disposizione della scenografia…', 0.52);
     await caricamento.respira();
     const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, BARRIER_PROFILE, terraceAnchors);
@@ -2060,7 +2130,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const lightsBoard = document.getElementById('lights-board');
         if (data?.trackName) trackEl.textContent = data.trackName;
         labelEl.textContent = data?.label || '';
-        overlay.style.background = 'rgba(0,0,0,0.65)';
+        // Niente velo nero alla partenza della GARA: coprirebbe proprio il
+        // ponte che porta i semafori. In qualifica resta, lì non c'è niente
+        // da guardare in pista durante il 3-2-1. La classe sposta anche il
+        // testo in alto, fuori dalla linea di vista (vedi .overlay.is-gara).
+        overlay.classList.toggle('is-gara', data?.phase === 'race');
+        overlay.style.background = data?.phase === 'race' ? 'transparent' : 'rgba(0,0,0,0.65)';
         overlay.style.display = 'flex';
 
         if (data?.phase === 'race') {
@@ -2072,12 +2147,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             // all'evento, mai un timeout indipendente).
             lightsSequenceActive = true;
             num.style.display = 'none';
-            lightsBoard.style.display = 'flex';
+            lightsBoard.style.display = indicatoreLuci ? 'flex' : 'none';
             const bulbs = [0, 1, 2, 3, 4].map(i => document.getElementById(`light-${i}`));
             bulbs.forEach(b => b.classList.remove('on'));
+            accendiSemafori(0);
             const LIGHT_INTERVAL_MS = 1000;
             bulbs.forEach((bulb, i) => {
                 setTimeout(() => {
+                    // Le luci vere sul ponte sono la cosa che conta; il bip
+                    // le accompagna, così il via si sente anche se in quel
+                    // momento stai guardando lo specchietto.
+                    accendiSemafori(i + 1);
+                    bipSemaforo(620, 0.16, 0.16);
                     bulb.classList.add('on');
                     anime({ targets: bulb, scale: [1, 1.18, 1], duration: 260, easing: 'easeOutQuad' });
                 }, i * LIGHT_INTERVAL_MS);
@@ -2113,6 +2194,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Le 5 luci si spengono tutte insieme, sincronizzate con l'arrivo
             // di questo stesso evento (niente testo "GO!" per la gara, lo
             // spegnimento simultaneo è già il segnale di partenza).
+            accendiSemafori(0);
+            // Suono diverso e più lungo di quello delle singole luci: è
+            // l'unico momento in cui il semaforo dice di andare, e all'orecchio
+            // non deve poter passare per la sesta accensione.
+            bipSemaforo(940, 0.42, 0.2);
             document.querySelectorAll('.light-bulb').forEach(b => b.classList.remove('on'));
         } else {
             num.textContent = 'GO!'; num.style.color = '#2ecc71';
@@ -2446,6 +2532,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         // premere lo stesso interruttore, non due interruttori.
         // Spegnendole si torna esattamente all'aspetto che aveva "prova"
         // prima che il riquadro delle ombre seguisse l'auto: nessuna ombra.
+        // L = indicatore luci a schermo durante il via. Il semaforo vero resta
+        // sempre quello sul ponte: questo è solo un aiuto per chi parte in
+        // fondo alla griglia. La scelta resta fra una gara e l'altra.
+        if (k === 'l' && !e.repeat && !isTypingInField(e)) {
+            indicatoreLuci = !indicatoreLuci;
+            try { localStorage.setItem('f1IndicatoreLuci', indicatoreLuci ? '1' : '0'); } catch (err) { /* modalità privata */ }
+            const board = document.getElementById('lights-board');
+            if (board && lightsSequenceActive) board.style.display = indicatoreLuci ? 'flex' : 'none';
+            mostraAvviso(indicatoreLuci ? 'Indicatore luci acceso' : 'Indicatore luci spento');
+        }
         if (k === 'o' && !e.repeat && !isTypingInField(e) && pannello && pannello.ombreDinamiche) {
             const accese = !pannello.ombreAccese();
             pannello.ombreDinamiche(accese);

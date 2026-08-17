@@ -157,14 +157,25 @@
         // la posizione del traguardo, che è ciò su cui il server conta i giri.
         // Si parte dalla posizione ideale e si avanza finché non è libera da
         // altre strutture: su new-monza il gantry cadeva addosso a una tribuna.
+        //
+        // ⚠️ Il gantry NON è opzionale: da quando porta i semafori di partenza
+        // veri (f1.js::accendiSemafori) è l'unico posto in cui il giocatore
+        // legge il via, quindi ogni tracciato deve averlo. Se nessuna delle
+        // collocazioni cercate è libera si posa comunque quella ideale: meglio
+        // un gantry che sfiora una tribuna che una gara senza semaforo.
         const gantryWalk = TrackGeometry.walkClosedLoop(trackPts, 0, GANTRY_AHEAD_OF_GRID);
+        let gantryPosato = null;
         for (let d = 0; d < 200; d += 4) {
             const idx = (gantryWalk.fromIdx + d) % n;
             const cand = placeAcross(trackPts, idx, groundPts, barrierDist,
                                      embankStart, embankOuter, GANTRY_NATIVE_HALF_SPAN, barrierProfile);
+            if (!gantryPosato) gantryPosato = cand;   // ripiego: la posizione ideale
             if (!freeOf('startGantry', cand, cand.scale)) continue;
-            layout.push({ asset: 'startGantry', category: 'landmark', ...cand });
+            gantryPosato = cand;
             break;
+        }
+        if (gantryPosato) {
+            layout.push({ asset: 'startGantry', category: 'landmark', ...gantryPosato });
         }
 
         // Passerella: circa a mezzo giro dal gantry, per non duplicare la

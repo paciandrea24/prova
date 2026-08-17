@@ -80,6 +80,10 @@ POST_X = 15.0
 POST_H = 15.0
 BEAM_Z = 15.0
 LIGHT_X = (-8.0, -4.0, 0.0, 4.0, 8.0)
+# Nomi dei cinque gruppi semaforo nel .glb, in ordine di X crescente. Il gioco
+# li cerca per nome (f1.js::loadScenery salva mesh.name nell'InstancedMesh):
+# cambiarli qui vuol dire cambiarli anche là.
+LIGHT_NAMES = tuple('gantry_light_%d' % (i + 1) for i in range(len(LIGHT_X)))
 
 
 def build_start_gantry(kit):
@@ -96,14 +100,21 @@ def build_start_gantry(kit):
         x = -15.0 + i * 3.0
         kit.box('steelDark', (0.35, 1.5, 1.1), (x, 0, BEAM_Z))
 
-    # Gruppi semaforo appesi sotto la corrente inferiore.
-    for x in LIGHT_X:
+    # Gruppi semaforo appesi sotto la corrente inferiore. Le quattro lenti di
+    # ogni colonna restano un oggetto A SÉ, nominato: in gioco si accendono
+    # una colonna al secondo (f1.js::accendiSemaforo), e per farlo servono
+    # cinque mesh distinte da poter ricolorare separatamente. Il corpo nero
+    # resta invece nel gruppo comune: non si accende mai.
+    nomi = []
+    for k, x in enumerate(LIGHT_X):
         kit.box('black', (1.6, 1.2, 4.1), (x, 0, 12.55))
-        for i in range(4):
-            kit.cyl('red', 0.4, 0.25, (x, -0.65, 11.1 + i * 0.8), axis='Y')
+        lenti = [kit.cyl('red', 0.4, 0.25, (x, -0.65, 11.1 + i * 0.8), axis='Y')
+                 for i in range(4)]
+        nomi.append(kit.raggruppa(lenti, LIGHT_NAMES[k]).name)
 
     kit.box('white', (12.0, 0.2, 1.2), (0, -0.8, BEAM_Z))
 
+    kit.keep_separate = tuple(nomi)
     return GANTRY_SPAN + 0.5, BEAM_Z + 1.0
 
 

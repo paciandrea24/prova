@@ -105,3 +105,29 @@ test('podium: i 3 gradini sono nodi separati e referenziabili per nome', () => {
         assert.ok(info.nodeNames.includes(step), `manca il nodo ${step} in ${info.nodeNames}`);
     }
 });
+
+// ═══════════ CONTRATTO SEMAFORI DEL PONTE DI PARTENZA ═══════════
+//
+// f1.js cerca i cinque gruppi semaforo PER NOME dentro startGantry.glb
+// (`registraSemaforo`) per accenderli uno alla volta al via. Il nome è
+// l'unico legame fra il builder (raceStructures.LIGHT_NAMES) e il gioco: se
+// si rompe, il modello resta identico a vedersi e la gara parte con i
+// semafori spenti, senza un solo errore in console.
+test('startGantry: i cinque gruppi semaforo esistono e sono separati', () => {
+    const buf = fs.readFileSync(path.join(GLB_DIR, 'startGantry.glb'));
+    const gltf = JSON.parse(buf.slice(20, 20 + buf.readUInt32LE(12)).toString('utf8'));
+    const nomi = (gltf.nodes || []).map(n => n.name);
+
+    for (let i = 1; i <= 5; i++) {
+        assert.ok(nomi.includes(`gantry_light_${i}`),
+            `manca il nodo gantry_light_${i}; presenti: ${nomi.join(', ')}`);
+    }
+
+    // Ognuno deve avere una mesh PROPRIA: se due colonne condividessero la
+    // stessa mesh si accenderebbero insieme.
+    const mesh = nomi
+        .map((nome, k) => ({ nome, mesh: gltf.nodes[k].mesh }))
+        .filter(v => /^gantry_light_\d+$/.test(v.nome))
+        .map(v => v.mesh);
+    assert.equal(new Set(mesh).size, 5, 'cinque mesh distinte, una per colonna');
+});

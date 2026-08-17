@@ -169,6 +169,33 @@ class VoxelKit:
         self.parts.append((mat, obj))
         return obj
 
+    def raggruppa(self, objs, nome):
+        """Fonde più pezzi in un oggetto solo e gli dà un nome parlante.
+
+        Serve a ciò che deve restare referenziabile nel .glb come UNA cosa:
+        i cinque gruppi semaforo del ponte di partenza si accendono uno alla
+        volta, quindi devono essere cinque mesh — non venti lenti sciolte
+        (venti InstancedMesh lato gioco) e nemmeno un unico blocco rosso
+        (che si accenderebbe tutto insieme).
+
+        Il nome va poi messo in `keep_separate`, altrimenti finish() lo rifonde
+        con gli altri pezzi dello stesso materiale."""
+        mat = next(m for m, o in self.parts if o is objs[0])
+        # La lista si ricalcola PRIMA della fusione: dopo, gli oggetti
+        # assorbiti non esistono più e leggerne il nome solleva.
+        resto = [(m, o) for m, o in self.parts if o not in objs]
+
+        bpy.ops.object.select_all(action='DESELECT')
+        for o in objs:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = objs[0]
+        if len(objs) > 1:
+            bpy.ops.object.join()
+        unito = bpy.context.active_object
+        unito.name = nome
+        self.parts = resto + [(mat, unito)]
+        return unito
+
     def finish(self, keep_separate=()):
         """Join per colore + transform_apply completo. Gli oggetti il cui nome
         è in keep_separate NON vengono joinati (servono referenziabili per
