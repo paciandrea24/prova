@@ -18,7 +18,26 @@ from voxelKit import EPS
 # (TrackGeometry), costante usata ANCHE dall'autopilota server-side. Un box
 # più largo ridurrebbe il gap fra box adiacenti da 2.3 a 1 unità, e allargare
 # lo spacing cambierebbe dove le auto si fermano davvero.
-W = 21.0        # larghezza (X)
+# Larghezza del CORPO. Era 21.0: il passo della corsia
+# (TrackGeometry.PIT_BOX_SPACING) e' sceso da 24 a 15 per far stare fino a 20
+# piloti anche in una corsia corta, e l'ingombro TOTALE di questo box e'
+# W + 1.2 (lo sbalzo del tetto). 13.3 lo porta a 14.5, mezza unita' sotto il
+# passo, cosi' due box affiancati non si toccano. Restano ~10.3 m: la
+# larghezza di un box di F1 vera, e un'auto larga 3.47 ci entra con i
+# meccanici ai lati. La PROFONDITA' resta 21: e' cio' che allinea questo
+# fronte a quello degli edifici decorativi.
+W = 13.3
+# Le misure interne (banco, pannello, pile di gomme) erano scritte a mano
+# sulla larghezza di 21: senza questo fattore le gomme resterebbero a +-8.2 e
+# finirebbero FUORI dalle pareti, che ora stanno a +-6.65.
+SX = W / 21.0
+# 14.5 e non 21: il passo della corsia (TrackGeometry.PIT_BOX_SPACING) e'
+# sceso da 24 a 15 per far stare fino a 20 piloti anche in una corsia
+# corta, e mezza unita' di stacco fra un box e il successivo evita che i
+# fronti affiancati si tocchino. 14.5 unita' sono ~11.3 m: la larghezza di
+# un box di F1 vera, e piu' che sufficiente per un'auto larga 3.47 con i
+# meccanici ai lati. La PROFONDITA' resta 21: e' cio' che allinea questo
+# fronte a quello degli edifici decorativi.
 D = 21.0        # profondità (Y)
 H = 9.4         # altezza delle pareti (il tetto sta sopra)
 WALL = 0.8
@@ -53,10 +72,10 @@ def build_pit_box(kit):
     # Attrezzatura interna: banco lungo la parete di fondo, pannello
     # portautensili e due pile di gomme. Senza, il box è una scatola vuota e
     # in gara non si capisce che è un garage.
-    kit.box('steelDark', (10.0, 1.4, 1.6), (0, BACK - 1.6, FLOOR_H + 0.8))
-    kit.box('steelDark', (10.0, 0.25, 2.4), (0, BACK - WALL - 0.2, 4.6))
+    kit.box('steelDark', (10.0 * SX, 1.4, 1.6), (0, BACK - 1.6, FLOOR_H + 0.8))
+    kit.box('steelDark', (10.0 * SX, 0.25, 2.4), (0, BACK - WALL - 0.2, 4.6))
     for i in range(3):
         for side in (-1, 1):
-            kit.cyl('black', 0.58, 0.44, (side * 8.2, BACK - 3.2, FLOOR_H + 0.22 + i * 0.40))
+            kit.cyl('black', 0.58, 0.44, (side * 8.2 * SX, BACK - 3.2, FLOOR_H + 0.22 + i * 0.40))
 
     return W + 1.2, H + 0.6

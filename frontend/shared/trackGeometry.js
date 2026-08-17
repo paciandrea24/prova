@@ -363,7 +363,17 @@
     // NON cambiare questa costante, che è condivisa con l'autopilota
     // server-side (backend/sockets/games/f1GameSocket.js) e determina dove
     // le auto si fermano davvero.
-    const PIT_BOX_SPACING = 24;
+    // 15 e non più 24: è la larghezza di un box di F1 vera (≈11,7 m) e
+    // triplica la capienza delle corsie corte — monte-rosso passa da 8 a 13
+    // posti, che è ciò che permette di scegliere in lobby fino a 20 piloti.
+    // I tre volumi che stanno su questa fila (pitBox, pitsGarageClosed,
+    // pitsOffice) sono larghi 14.1-14.5: mezza unità di stacco, così due
+    // fronti affiancati non si toccano.
+    //
+    // ⚠️ Condiviso con l'autopilota server-side: questa costante decide dove
+    // le auto si FERMANO davvero, non solo dove si disegna il box. Cambiandola
+    // serve un playtest della sosta, non un controllo a vista.
+    const PIT_BOX_SPACING = 15;
 
     // Distanza dal bordo della corsia box (pitRoadHalf) alla quale piazzare
     // lo STALLO di sosta di ogni auto (Rif. richiesta utente 2026-08-07,
@@ -1192,6 +1202,9 @@
         tuckPitEndsToTrack,
         pitLeadInPoints,
         PIT_STALL_CLEARANCE,
+        // Esportata perche' i test (e chiunque misuri il fronte della corsia)
+        // la leggano invece di ricopiarne il valore.
+        PIT_BOX_SPACING,
         GRID_START, GRID_STAGGER, GRID_LANE_OFFSET
     };
 });

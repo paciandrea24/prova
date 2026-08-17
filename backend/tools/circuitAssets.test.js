@@ -29,8 +29,8 @@ const EXPECTED = {
     grandStandCovered: { w: 18, h: 15, d: 12 },
     billboard:         { w: 16, h: 13, d: 1.6 },
     billboardLow:      { w: 16, h: 4.5, d: 1.4 },
-    pitsGarageClosed:  { w: 20, h: 9, d: 14 },
-    pitsOffice:        { w: 20, h: 13, d: 14 },
+    pitsGarageClosed:  { w: 14.5, h: 9, d: 14 },
+    pitsOffice:        { w: 14.5, h: 13, d: 14 },
     raceControlTower:  { w: 14, h: 34, d: 12 },
     startGantry:       { w: 34, h: 16, d: 2.4 },
     podium:            { w: 12, h: 9, d: 7 },
@@ -55,7 +55,7 @@ const EXPECTED = {
     brakingBoard:      { w: 2.2, h: 3.1, d: 0.7 },
     concreteBarrier:   { w: 6, h: 1.4, d: 1.4 },
     footbridge:        { w: 36.5, h: 13.3, d: 4.5 },
-    pitBox:            { w: 21.8, h: 10, d: 22 },
+    pitBox:            { w: 14.5, h: 10, d: 22 },
 };
 
 const TOL = 0.20;

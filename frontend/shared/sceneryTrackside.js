@@ -107,6 +107,19 @@
             return fitsUnderBridge(asset, x, z, y, altezza);
         }
 
+        // Il controllo qui sopra guarda il solo CENTRO. Dove l'oggetto è già
+        // formato (ha rotY e scala) si può guardare l'ingombro vero, ed è
+        // quello che serve: il pennone ha il pivot sull'asta e non al centro,
+        // quindi il suo corpo sporge tutto da un lato e con un centro appena
+        // fuori dallo spazio di manovra di un box ci finiva dentro comunque.
+        // È la trappola già scritta in docs/f1-notes.md ("SAT sugli ANGOLI,
+        // non il centro"), che qui non era mai stata chiusa: è emersa quando i
+        // box si sono stretti da 21.8 a 14.1 e la geometria attorno è cambiata.
+        function dentroLaZonaBox(item) {
+            const corners = SceneryAssetSizes.footprintCorners(item);
+            return playerBoxFootprints.some(poly => SceneryAssetSizes.polysOverlap(corners, poly));
+        }
+
         // Un oggetto affiancato a un tratto SOPRAELEVATO va scartato del
         // tutto. L'offset laterale lo porta fuori dal viadotto, ma la quota
         // viene dal terreno sottostante: l'oggetto precipita a terra e, dove
@@ -350,6 +363,7 @@
                     // niente. `accepted` arriva da generateLayout e contiene
                     // paddock, tribune e landmark; `layout` è quello che questa
                     // stessa passata ha già posato (gomme, reti, cartelli).
+                    if (dentroLaZonaBox(item)) continue;
                     if (accepted.some(p => SceneryAssetSizes.itemsOverlap(item, p))) continue;
                     if (layout.some(p => SceneryAssetSizes.itemsOverlap(item, p))) continue;
                     layout.push(item);

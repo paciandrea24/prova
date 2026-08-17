@@ -378,7 +378,10 @@
     // (non più 3.5x) e origine al centro, quindi bounds simmetrici — il
     // vecchio f1PitBox.glb aveva il fronte lungo +X e bounds asimmetrici.
     // Se il modello cambia, aggiornare ANCHE pitBoxLoader.js.
-    const PLAYER_BOX_LOCAL_BOUNDS = { xMin: -10.9, xMax: 10.9, zMin: -11, zMax: 11 };
+    // Misurato sul .glb reale: dal 2026-08-17 il box è largo 14.1 (era 21.8),
+    // stretto insieme al passo della corsia sceso da 24 a 15 per far stare
+    // fino a 20 piloti. La PROFONDITÀ non è cambiata.
+    const PLAYER_BOX_LOCAL_BOUNDS = { xMin: -7.05, xMax: 7.05, zMin: -11, zMax: 11 };
     // DEVE restare uguale a PitBoxLoader.PIT_BOX_OFFSET_MARGIN, altrimenti la
     // scenografia esclude una zona diversa da quella dove i box vengono
     // davvero piazzati. Era già successo: quando PIT_BOX_CLEARANCE passò da 2
@@ -453,6 +456,43 @@
     // protetta e sporgerci dentro con mezzo fianco — ed è esattamente così che
     // un garage è finito a fare da muro davanti all'ultimo box, togliendo lo
     // spazio per uscire (segnalato dall'utente 2026-08-10).
+    // Distanza dal bordo di un poligono.
+    function distanzaDalPoligono(x, z, poly) {
+        let minima = Infinity;
+        for (let i = 0; i < poly.length; i++) {
+            const a = poly[i], b = poly[(i + 1) % poly.length];
+            const dx = b.x - a.x, dz = b.z - a.z;
+            const len2 = dx * dx + dz * dz;
+            const t = len2 > 0
+                ? Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / len2))
+                : 0;
+            const d = Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t));
+            if (d < minima) minima = d;
+        }
+        return minima;
+    }
+
+    // Come insidePlayerBoxFootprint, ma guardando l'INGOMBRO e non il solo
+    // centro: un albero col tronco fuori dal grembiule di manovra ci arriva
+    // comunque con la chioma, e in gara si vede un ramo dentro il box.
+    //
+    // È la stessa trappola documentata in docs/f1-notes.md per gli edifici
+    // ("SAT sugli ANGOLI, non il centro"), qui rimasta aperta per natura e
+    // rocce. È emersa quando i box si sono stretti da 21.8 a 14.1: lo spazio
+    // liberato ha attirato uno scatter che prima cadeva altrove.
+    //
+    // Cerchio e non rettangolo orientato perché per una chioma o una roccia la
+    // rotazione è casuale e ininfluente, e perché il cerchio scarta qualcosa in
+    // più del necessario — il verso giusto in cui sbagliare quando si protegge
+    // lo spazio in cui una macchina manovra.
+    function ingombroInvadeBox(asset, x, z, footprints, scala) {
+        if (insidePlayerBoxFootprint(x, z, footprints)) return true;
+        const dim = SceneryAssetSizes.sizeOf(asset);
+        if (!dim) return false;
+        const raggio = Math.hypot(dim.w, dim.d) / 2 * (scala || 1);
+        return footprints.some(poly => distanzaDalPoligono(x, z, poly) < raggio);
+    }
+
     function itemHitsPlayerBoxZone(item, footprints) {
         const corners = SceneryAssetSizes.footprintCorners(item);
         for (const poly of footprints) {
@@ -553,7 +593,7 @@
                 // (verificato per misura diretta). Si scarta lo slot invece
                 // di ricollocarlo altrove.
                 if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + PADDOCK_PIT_CLEARANCE) continue;
-                if (insidePlayerBoxFootprint(x, z, playerBoxFootprints)) continue;
+                if (ingombroInvadeBox(asset, x, z, playerBoxFootprints)) continue;
 
                 const rotY = Math.atan2(p.x - x, p.z - z);
                 const y = TrackGeometry.terrainHeightAt(groundPts, x, z, embankStart, embankOuter);
@@ -1069,10 +1109,10 @@
             if (dTrack.dist < barrierDist + NATURE_MIN_MARGIN) continue;
             if (dTrack.dist > barrierDist + NATURE_MAX_MARGIN) continue;
             if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + PIT_NATURE_MARGIN) continue;
-            if (insidePlayerBoxFootprint(x, z, playerBoxFootprints)) continue;
             if (isTooCloseToAny(accepted, x, z, NATURE_MIN_SPACING)) continue;
 
             const asset = weightedPick(rng, NATURE_ASSETS);
+            if (ingombroInvadeBox(asset, x, z, playerBoxFootprints)) continue;
             // La quota è la somma di DUE rilievi disgiunti, esattamente come la
             // calcola trackMeshBuilder.buildGround, che è il terreno vero:
             // il terrapieno vale entro embankOuter, le colline solo oltre
@@ -1115,10 +1155,10 @@
             if (dTrack.dist < barrierDist + ROCK_MIN_MARGIN) continue;
             if (dTrack.dist > barrierDist + ROCK_MAX_MARGIN) continue;
             if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + ROCK_MIN_MARGIN) continue;
-            if (insidePlayerBoxFootprint(x, z, playerBoxFootprints)) continue;
             if (isTooCloseToAny(accepted, x, z, ROCK_MIN_SPACING)) continue;
 
             const asset = weightedPick(rng, ROCK_ASSETS);
+            if (ingombroInvadeBox(asset, x, z, playerBoxFootprints)) continue;
             const dGround = TrackGeometry.nearestPoint(groundPts, x, z).dist;
             const y = TrackGeometry.terrainHeightAt(groundPts, x, z, embankStart, embankOuter)
                     + SceneryHills.hillHeightAt(x, z, dGround, embankOuter,
@@ -1200,7 +1240,9 @@
             if (dTrack.dist < barrierDist + NATURE_MIN_MARGIN + POND_RADIUS) continue;
             if (dTrack.dist > barrierDist + NATURE_MAX_MARGIN) continue;
             if (TrackGeometry.nearestPoint(pitPts, x, z).dist < pitRoadHalf + PIT_NATURE_MARGIN + POND_RADIUS) continue;
-            if (insidePlayerBoxFootprint(x, z, playerBoxFootprints)) continue;
+            // Il laghetto non ha un asset: il suo ingombro è il raggio.
+            if (insidePlayerBoxFootprint(x, z, playerBoxFootprints)
+                || playerBoxFootprints.some(poly => distanzaDalPoligono(x, z, poly) < POND_RADIUS)) continue;
             if (isTooCloseToAny(accepted, x, z, POND_CLEARANCE)) continue;
 
             const y = TrackGeometry.terrainHeightAt(groundPts, x, z, embankStart, embankOuter);

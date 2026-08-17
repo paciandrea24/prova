@@ -220,12 +220,16 @@ test('pitBoxAnchors restituisce esattamente count posizioni', () => {
     assert.equal(anchors.length, 6);
 });
 
-test('pitBoxAnchors centra le posizioni su boxIndex, spaziate di 24 metri', () => {
+// La spaziatura si legge dalla costante invece di essere ricopiata: quando e'
+// passata da 24 a 15 (per far stare piu' box in una corsia corta) questo test
+// diceva "atteso x=76" senza spiegare da dove venisse quel 76.
+test('pitBoxAnchors centra le posizioni su boxIndex, spaziate di PIT_BOX_SPACING', () => {
+    const passo = TrackGeometry.PIT_BOX_SPACING;
     const path = [{ x: 0, z: 0 }, { x: 50, z: 0 }, { x: 100, z: 0 }, { x: 150, z: 0 }];
     const anchors = TrackGeometry.pitBoxAnchors(path, 2, 3);
-    assert.ok(Math.abs(anchors[0].x - 76) < 1e-6, `atteso x=76, trovato ${anchors[0].x}`);
+    assert.ok(Math.abs(anchors[0].x - (100 - passo)) < 1e-6, `atteso x=${100 - passo}, trovato ${anchors[0].x}`);
     assert.ok(Math.abs(anchors[1].x - 100) < 1e-6, `atteso x=100 (boxIndex), trovato ${anchors[1].x}`);
-    assert.ok(Math.abs(anchors[2].x - 124) < 1e-6, `atteso x=124, trovato ${anchors[2].x}`);
+    assert.ok(Math.abs(anchors[2].x - (100 + passo)) < 1e-6, `atteso x=${100 + passo}, trovato ${anchors[2].x}`);
     for (const a of anchors) assert.equal(a.z, 0);
 });
 
