@@ -128,7 +128,12 @@ const REJOIN_GRACE = 60000;   // finestra di riconnessione dopo un drop (scheda 
 // Il passaggio era brusco (richiesta utente 2026-08-18: "appena tutti hanno
 // finito la qualifica si viene subito catapultati sulla griglia"). Ora dura
 // più del doppio, ed è voluto: serve anche a dare tempo al caricamento.
-const SEQ_STACCO_MS = 2600;
+// 4200 e non 2600: al primo playtest lo stacco e' risultato illeggibile
+// ("la velocita' mi e' sembrata un po' troppa, non ci ho capito niente"). Il
+// disegno e' stato rifatto piu' calmo, ma serviva anche il tempo — dentro
+// questi millisecondi ci sta una SOSTA vera in cui lo schermo e' fermo e si
+// legge il nome del circuito, che prima non esisteva.
+const SEQ_STACCO_MS = 4200;
 const SEQ_POSIZIONE_MS = 3400;
 const SEQ_POLE_EXTRA_MS = 1000;   // quanto in più resta a schermo la scoperta della pole
 const SEQ_GRIGLIA_MS = 7000;

@@ -1,9 +1,9 @@
 // frontend/shared/f1Sting.js
 //
-// Stacco a tutto schermo in stile sigla televisiva: bande diagonali che
-// spazzano lo schermo, si comprimono in una lama di luce al centro e si
-// riaprono. Astratto di proposito — non c'è un logo da mostrare, e uno
-// inventato invecchierebbe male.
+// Stacco a tutto schermo in stile sigla televisiva: una lastra scura entra di
+// taglio coprendo la scena, si ferma il tempo di far leggere due righe, poi
+// esce dall'altra parte. Astratto di proposito — non c'è un logo da mostrare,
+// e uno inventato invecchierebbe male.
 //
 // Nasce per la transizione fra qualifica e gara (richiesta utente
 // 2026-08-18), ma è scritto per essere riusato ovunque serva coprire un
@@ -14,6 +14,22 @@
 // Perché DOM e non un rendering nel canvas: deve poter coprire anche i
 // momenti in cui il canvas non c'è ancora (caricamenti, cambi pagina), ed è
 // esattamente lì che servirà la prossima volta.
+//
+// ── Cosa NON funzionava nella prima versione (playtest 2026-08-18) ──
+// Sette bande orizzontali in cinque colori diversi, ognuna con la sua
+// partenza sfalsata. L'utente l'ha vista come "un fascio di linee sull'azzurro
+// giallo e nero, la velocità mi è sembrata un po' troppa, non ci ho capito
+// niente" — ed è esattamente ciò che era: tanti elementi piccoli, tanti
+// colori, nessuno abbastanza a lungo a schermo da essere letto. Il testo,
+// che è l'unica informazione vera dello stacco, competeva con lo sfondo
+// invece di essere servito da lui.
+//
+// Da cui le tre regole di questa versione:
+//   1. POCHI elementi grandi, non tanti piccoli. Tre lastre, non sette bande.
+//   2. UN accento solo su base scura. Il giallo è sparito: nero + azzurro si
+//      legge come una sigla, nero + azzurro + giallo come un monoscopio.
+//   3. La SOSTA è il momento più lungo. È lì che si legge, e prima non
+//      esisteva davvero.
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) module.exports = factory();
     else root.F1Sting = factory();
@@ -22,15 +38,21 @@
     const ID_STILE = 'f1-sting-style';
     const ID_NODO = 'f1-sting';
 
-    // Quante bande diagonali. Sotto le 5 si legge come una tendina, sopra le
-    // 9 diventano un pettine grigio: nessuna singola banda si distingue più.
-    const BANDE = 7;
+    // Durata di riferimento quando il chiamante non ne passa una.
+    const DURATA_DEFAULT = 4200;
+    // Sotto questa soglia non è uno stacco, è un lampo.
+    const DURATA_MINIMA = 1200;
 
-    // Frazioni della durata totale. Il senso: entrata rapida (una sigla
-    // comincia sempre di scatto), sosta breve, uscita più lenta della
-    // entrata — è l'uscita che deve "consegnare" la scena sotto.
-    const F_ENTRATA = 0.34;
-    const F_SOSTA = 0.26;
+    // Frazioni della durata totale. La sosta si prende la fetta più grande:
+    // è il momento in cui lo schermo è fermo e il testo si legge. Entrata e
+    // uscita servono solo ad arrivarci e ad andarsene.
+    const F_ENTRATA = 0.28;
+    const F_SOSTA = 0.44;
+
+    // Di quanto le due lastre secondarie precedono quella principale, in
+    // frazione della durata d'entrata. Serve a dare spessore al movimento
+    // senza aggiungere elementi che si notino da soli.
+    const ANTICIPO = 0.18;
 
     function iniettaStile() {
         if (document.getElementById(ID_STILE)) return;
@@ -40,118 +62,90 @@
             #${ID_NODO} {
                 position: fixed; inset: 0; z-index: 200;
                 overflow: hidden; pointer-events: none;
-                background: transparent;
             }
-            #${ID_NODO} .sting-fondo {
-                position: absolute; inset: 0;
-                background: var(--hud-screen-bg, #12151b);
-                opacity: 0;
-            }
-            /* Le bande sono più larghe dello schermo e ruotate: così i bordi
-               obliqui non lasciano mai scoperti gli angoli mentre spazzano. */
-            #${ID_NODO} .sting-banda {
+            /* Le lastre sono più larghe dello schermo e inclinate: il taglio
+               obliquo è ciò che le fa leggere come una sigla e non come una
+               tendina, ma va sempre fuori quadro o si vedrebbero gli angoli
+               scoperti mentre passa. */
+            #${ID_NODO} .sting-lastra {
                 position: absolute;
-                left: -60vw; width: 220vw;
-                transform-origin: center center;
-                will-change: transform, opacity;
+                top: -30vh; height: 160vh;
+                left: -40vw; width: 180vw;
+                transform: translateX(-200vw) skewX(-9deg);
+                will-change: transform;
             }
-            #${ID_NODO} .sting-lama {
-                position: absolute; left: 0; right: 0;
-                top: 50%; height: 2px; margin-top: -1px;
-                background: linear-gradient(90deg,
-                    transparent, var(--f1-telemetry, #39c7f2), #fff,
-                    var(--f1-telemetry, #39c7f2), transparent);
-                opacity: 0; transform: scaleX(0);
-                box-shadow: 0 0 24px var(--f1-telemetry, #39c7f2);
+            #${ID_NODO} .sting-l-principale { background: var(--hud-screen-bg, #12151b); }
+            #${ID_NODO} .sting-l-mezza      { background: var(--hud-surface, #1c212a); }
+            #${ID_NODO} .sting-l-accento    {
+                background: var(--f1-telemetry, #39c7f2);
+                width: 26vw; left: -13vw;
             }
+
             #${ID_NODO} .sting-testo {
                 position: absolute; inset: 0;
                 display: flex; flex-direction: column;
                 align-items: center; justify-content: center;
-                gap: 10px; text-align: center;
+                gap: 18px; text-align: center;
                 font-family: 'Segoe UI', system-ui, sans-serif;
+                padding: 0 6vw;
             }
             #${ID_NODO} .sting-titolo {
-                font-size: clamp(28px, 6vw, 64px);
-                font-weight: 900; letter-spacing: 0.14em;
+                font-size: clamp(34px, 7.5vw, 86px);
+                font-weight: 900; letter-spacing: 0.12em; line-height: 1.05;
                 color: var(--hud-text, #eef2f6);
                 text-transform: uppercase;
                 opacity: 0;
             }
+            /* Filo d'accento sotto il titolo: cresce dal centro durante la
+               sosta ed è l'unico elemento che si muove mentre si legge. */
+            #${ID_NODO} .sting-filo {
+                width: min(420px, 60vw); height: 3px;
+                background: var(--f1-telemetry, #39c7f2);
+                box-shadow: 0 0 18px var(--f1-telemetry, #39c7f2);
+                transform: scaleX(0);
+            }
             #${ID_NODO} .sting-sottotitolo {
-                font-size: clamp(12px, 1.6vw, 18px);
-                font-weight: 700; letter-spacing: 0.42em;
-                color: var(--f1-telemetry, #39c7f2);
+                font-size: clamp(13px, 1.7vw, 20px);
+                font-weight: 700; letter-spacing: 0.4em;
+                color: var(--f1-text-dim, #8b96a3);
                 text-transform: uppercase;
                 opacity: 0;
-            }
-            /* Lampo finale: copre lo stacco fra l'ultima banda e la scena. */
-            #${ID_NODO} .sting-lampo {
-                position: absolute; inset: 0;
-                background: #fff; opacity: 0;
             }
         `;
         document.head.appendChild(st);
     }
 
-    // Colori delle bande: due accenti e tre grigi di scena. Non un arcobaleno
-    // — una sigla si regge sul ritmo, non sulla varietà cromatica.
-    function coloreBanda(i) {
-        const stile = getComputedStyle(document.documentElement);
-        const leggi = (nome, ripiego) => (stile.getPropertyValue(nome) || '').trim() || ripiego;
-        const tavolozza = [
-            leggi('--f1-telemetry', '#39c7f2'),
-            leggi('--hud-surface', '#1c212a'),
-            leggi('--f1-wear-mid', '#f1c40f'),
-            leggi('--hud-screen-bg', '#12151b'),
-            leggi('--hud-surface', '#1c212a'),
-        ];
-        return tavolozza[i % tavolozza.length];
+    function lastra(classe) {
+        const d = document.createElement('div');
+        d.className = 'sting-lastra ' + classe;
+        return d;
     }
 
     function costruisci(titolo, sottotitolo) {
         const box = document.createElement('div');
         box.id = ID_NODO;
 
-        const fondo = document.createElement('div');
-        fondo.className = 'sting-fondo';
-        box.appendChild(fondo);
-
-        const bande = [];
-        const altezza = 100 / BANDE;
-        for (let i = 0; i < BANDE; i++) {
-            const b = document.createElement('div');
-            b.className = 'sting-banda';
-            b.style.top = `${i * altezza - 12}vh`;
-            b.style.height = `${altezza + 24}vh`;
-            b.style.background = coloreBanda(i);
-            // Inclinazione alternata leggerissima: perfettamente orizzontali
-            // sembrerebbero una serranda.
-            b.style.transform = `translateX(-120vw) rotate(${i % 2 ? -3.5 : -2.2}deg)`;
-            box.appendChild(b);
-            bande.push(b);
-        }
-
-        const lama = document.createElement('div');
-        lama.className = 'sting-lama';
-        box.appendChild(lama);
+        // Ordine di sovrapposizione: l'accento è il bordo d'attacco, quindi
+        // sta sotto alle altre due e sporge davanti a loro nel movimento.
+        const accento = lastra('sting-l-accento');
+        const mezza = lastra('sting-l-mezza');
+        const principale = lastra('sting-l-principale');
+        box.append(accento, mezza, principale);
 
         const testo = document.createElement('div');
         testo.className = 'sting-testo';
         const elTitolo = document.createElement('div');
         elTitolo.className = 'sting-titolo';
         elTitolo.textContent = titolo || '';
+        const filo = document.createElement('div');
+        filo.className = 'sting-filo';
         const elSotto = document.createElement('div');
         elSotto.className = 'sting-sottotitolo';
         elSotto.textContent = sottotitolo || '';
-        testo.append(elTitolo, elSotto);
+        testo.append(elTitolo, filo, elSotto);
         box.appendChild(testo);
 
-        const lampo = document.createElement('div');
-        lampo.className = 'sting-lampo';
-        box.appendChild(lampo);
-
-        return { box, fondo, bande, lama, elTitolo, elSotto, lampo };
+        return { box, accento, mezza, principale, elTitolo, filo, elSotto };
     }
 
     // Ripiego senza anime.js: lo stacco non è mai un motivo per non far
@@ -164,14 +158,14 @@
      * Riproduce lo stacco.
      *
      * @param {object} opz
-     * @param {number} opz.durataMs  quanto dura in tutto (default 2600)
+     * @param {number} [opz.durataMs]     quanto dura in tutto
      * @param {string} [opz.titolo]       riga grande al centro
      * @param {string} [opz.sottotitolo]  riga piccola sotto, spaziata
      * @returns {Promise<void>} risolta quando lo schermo è di nuovo libero
      */
     function play(opz) {
         const o = opz || {};
-        const durata = Math.max(600, o.durataMs || 2600);
+        const durata = Math.max(DURATA_MINIMA, o.durataMs || DURATA_DEFAULT);
         if (typeof document === 'undefined') return Promise.resolve();
         if (typeof anime !== 'function') return senzaAnimazioni(durata);
 
@@ -190,81 +184,87 @@
 
         return new Promise(risolvi => {
             const linea = anime.timeline({
-                easing: 'easeOutQuad',
                 complete: () => { el.box.remove(); risolvi(); },
             });
 
-            // ENTRATA — le bande spazzano da sinistra, sfalsate.
+            // ── ENTRATA ────────────────────────────────────────────────
+            // Le tre lastre attraversano da sinistra e si fermano a coprire
+            // lo schermo. L'accento arriva per primo e si ferma poco oltre il
+            // bordo destro: durante la sosta non si vede, ha già fatto il suo
+            // lavoro passando.
             linea.add({
-                targets: el.fondo, opacity: [0, 1],
-                duration: tEntrata * 0.5,
-            }).add({
-                targets: el.bande,
-                translateX: ['-120vw', '-10vw'],
-                delay: anime.stagger(tEntrata * 0.055),
-                duration: tEntrata * 0.7,
-                easing: 'easeOutExpo',
-            }, 0);
-
-            // SOSTA — le bande si comprimono verso il centro e restano una
-            // lama di luce; il testo entra qui, quando lo schermo e' fermo.
-            linea.add({
-                targets: el.bande,
-                scaleY: [1, 0.02],
-                opacity: [1, 0.25],
-                duration: tSosta * 0.6,
+                targets: el.accento,
+                translateX: ['-200vw', '120vw'],
+                duration: tEntrata * 1.15,
                 easing: 'easeInOutQuart',
-            }, tEntrata);
+            }, 0);
             linea.add({
-                targets: el.lama,
-                opacity: [0, 1], scaleX: [0, 1],
-                duration: tSosta * 0.6,
-                easing: 'easeOutExpo',
-            }, tEntrata);
+                targets: el.mezza,
+                translateX: ['-200vw', '0vw'],
+                duration: tEntrata,
+                easing: 'easeOutQuart',
+            }, tEntrata * ANTICIPO);
+            linea.add({
+                targets: el.principale,
+                translateX: ['-200vw', '0vw'],
+                duration: tEntrata,
+                easing: 'easeOutQuart',
+            }, tEntrata * ANTICIPO * 2);
+
+            // ── SOSTA ──────────────────────────────────────────────────
+            // Lo schermo è fermo. Entra il titolo con le lettere che si
+            // stringono, cresce il filo sotto, poi il sottotitolo. È il
+            // momento più lungo dei tre: è qui che si legge.
+            const inizioSosta = tEntrata + tEntrata * ANTICIPO * 2;
             if (o.titolo) {
                 linea.add({
                     targets: el.elTitolo,
-                    opacity: [0, 1], letterSpacing: ['0.34em', '0.14em'],
-                    duration: tSosta * 0.75,
-                }, tEntrata + tSosta * 0.2);
+                    opacity: [0, 1],
+                    letterSpacing: ['0.34em', '0.12em'],
+                    duration: tSosta * 0.42,
+                    easing: 'easeOutExpo',
+                }, inizioSosta);
             }
+            linea.add({
+                targets: el.filo,
+                scaleX: [0, 1],
+                duration: tSosta * 0.5,
+                easing: 'easeOutExpo',
+            }, inizioSosta + tSosta * 0.16);
             if (o.sottotitolo) {
                 linea.add({
                     targets: el.elSotto,
-                    opacity: [0, 1], translateY: [10, 0],
-                    duration: tSosta * 0.6,
-                }, tEntrata + tSosta * 0.42);
+                    opacity: [0, 1], translateY: [12, 0],
+                    duration: tSosta * 0.38,
+                    easing: 'easeOutQuad',
+                }, inizioSosta + tSosta * 0.3);
             }
 
-            // USCITA — lampo, poi la lama si riapre in verticale e scopre la
-            // scena. E' l'uscita che "consegna" cio' che c'e' sotto, quindi e'
-            // piu' lenta dell'entrata.
-            const inizioUscita = tEntrata + tSosta;
+            // ── USCITA ─────────────────────────────────────────────────
+            // Tutto se ne va nella stessa direzione in cui è arrivato, come
+            // un unico blocco: è l'uscita che "consegna" la scena sotto, e
+            // due movimenti diversi la spezzerebbero. Il testo parte per
+            // primo, così non lo si vede scorrere via deformato.
+            const inizioUscita = inizioSosta + tSosta;
             linea.add({
-                targets: el.lampo,
-                opacity: [0, 0.5, 0],
-                duration: tUscita * 0.3,
-                easing: 'easeOutQuad',
+                targets: [el.elTitolo, el.elSotto],
+                opacity: 0,
+                duration: tUscita * 0.28,
+                easing: 'easeInQuad',
             }, inizioUscita);
             linea.add({
-                targets: [el.elTitolo, el.elSotto, el.lama],
-                opacity: 0,
-                duration: tUscita * 0.35,
-            }, inizioUscita + tUscita * 0.1);
+                targets: el.filo,
+                scaleX: 0,
+                duration: tUscita * 0.28,
+                easing: 'easeInQuad',
+            }, inizioUscita);
             linea.add({
-                targets: el.bande,
-                translateX: ['-10vw', '120vw'],
-                scaleY: [0.02, 1],
-                opacity: [0.25, 1],
-                delay: anime.stagger(tUscita * 0.05, { from: 'last' }),
-                duration: tUscita * 0.62,
-                easing: 'easeInExpo',
-            }, inizioUscita + tUscita * 0.18);
-            linea.add({
-                targets: el.fondo,
-                opacity: [1, 0],
-                duration: tUscita * 0.5,
-            }, inizioUscita + tUscita * 0.45);
+                targets: [el.principale, el.mezza],
+                translateX: ['0vw', '200vw'],
+                delay: anime.stagger(tUscita * 0.12),
+                duration: tUscita * 0.8,
+                easing: 'easeInOutQuart',
+            }, inizioUscita + tUscita * 0.2);
         });
     }
 
@@ -275,6 +275,6 @@
         if (n) n.remove();
     }
 
-    return { play, stop, BANDE, F_ENTRATA, F_SOSTA };
+    return { play, stop, DURATA_DEFAULT, DURATA_MINIMA, F_ENTRATA, F_SOSTA };
 
 });

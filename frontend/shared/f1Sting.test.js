@@ -55,7 +55,7 @@ test('senza durata vale il default del modulo, non zero', (t) => {
 
     let risolta = false;
     F1Sting.play({}).then(() => { risolta = true; });
-    t.mock.timers.tick(2599);
+    t.mock.timers.tick(F1Sting.DURATA_DEFAULT - 1);
     assert.equal(risolta, false, 'si e risolta prima del default: la durata mancante e stata letta come zero');
     t.mock.timers.tick(2);
     return Promise.resolve().then(() => assert.equal(risolta, true));
@@ -68,7 +68,7 @@ test('una durata ridicola viene alzata al minimo leggibile', (t) => {
 
     let risolta = false;
     F1Sting.play({ durataMs: 40 }).then(() => { risolta = true; });
-    t.mock.timers.tick(599);
+    t.mock.timers.tick(F1Sting.DURATA_MINIMA - 1);
     assert.equal(risolta, false, '40 ms sono stati presi alla lettera: sarebbe un lampo, non uno stacco');
     t.mock.timers.tick(2);
     return Promise.resolve().then(() => assert.equal(risolta, true));
