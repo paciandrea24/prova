@@ -2995,7 +2995,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // verso il centro dello schermo (richiesta esplicita dell'utente).
     const VETRINA_DISTANZA = 10;    // unità davanti alla camera
     const VETRINA_FRAZIONE_X = 0.72; // centro della colonna destra, in frazione di schermo
-    const VETRINA_ANGOLO = -0.55;    // rad: tre quarti anteriore, muso verso il centro
+    // Quanto l'auto è girata RISPETTO A CHI LA GUARDA, non rispetto allo
+    // schermo. 0 sarebbe un frontale puro, π/2 un fianco: 0.68 rad (39°) è il
+    // tre quarti anteriore classico.
+    const VETRINA_TRE_QUARTI = 0.68;
     const VETRINA_LARGHEZZA_MIN = 900;   // sotto, la colonna non c'è (vedi f1.css)
     let autoInPole = null;
 
@@ -3005,11 +3008,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         // nella colonna destra su qualunque proporzione di schermo.
         const mezzaAltezza = Math.tan((camera.fov / 2) * Math.PI / 180) * VETRINA_DISTANZA;
         const mezzaLarghezza = mezzaAltezza * camera.aspect;
-        autoInPole.position.set(
-            (VETRINA_FRAZIONE_X - 0.5) * 2 * mezzaLarghezza,
-            -mezzaAltezza * 0.30,
-            -VETRINA_DISTANZA);
-        autoInPole.rotation.set(0, VETRINA_ANGOLO, 0);
+        const x = (VETRINA_FRAZIONE_X - 0.5) * 2 * mezzaLarghezza;
+        autoInPole.position.set(x, -mezzaAltezza * 0.30, -VETRINA_DISTANZA);
+
+        // ⚠️ La rotazione NON è un numero fisso, e il motivo è la ragione per
+        // cui il primo tentativo mostrava un frontale invece di un tre quarti
+        // (segnalato in playtest). L'auto non sta al centro dello schermo ma
+        // spostata a destra: la camera la guarda quindi già di sbieco, di un
+        // angolo φ = atan(x / distanza) — con questa disposizione, 27°. Una
+        // rotazione fissa di -31° cancellava quasi esattamente quei 27° e
+        // rimetteva l'obiettivo davanti al muso.
+        //
+        // Quello che conta è l'angolo fra il muso e la direzione da cui la si
+        // guarda, non quello rispetto allo schermo. Togliendo φ si ottiene
+        // sempre lo stesso tre quarti, a qualunque proporzione di finestra.
+        // Il segno negativo tiene il muso rivolto verso il centro, cioè verso
+        // il pannello della griglia.
+        const scorcio = Math.atan2(x, VETRINA_DISTANZA);
+        autoInPole.rotation.set(0, -(VETRINA_TRE_QUARTI + scorcio), 0);
     }
 
     function mostraAutoInPole(entry) {

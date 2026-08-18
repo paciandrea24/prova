@@ -139,7 +139,12 @@ const SEQ_STACCO_MS = 4200;
 // comprime tutti all'inizio, quindi serve piu' corsa per farli leggere.
 const SEQ_POSIZIONE_MS = 3900;
 const SEQ_POLE_EXTRA_MS = 1000;   // quanto in più resta a schermo la scoperta della pole
-const SEQ_GRIGLIA_MS = 7000;
+// 10000 e non 7000: al playtest il riepilogo con la griglia e il modello
+// dell'auto in pole risultava troppo corto per guardarlo davvero ("io farei
+// durare questa schermata qualche secondino in piu'"). E' anche il momento
+// che sta piu' comodo ad allungarsi: e' l'ultimo prima del semaforo, quindi
+// il tempo in piu' va tutto a chi carica ancora qualcosa.
+const SEQ_GRIGLIA_MS = 10000;
 const GRID_DISPLAY_MS = SEQ_STACCO_MS + SEQ_POSIZIONE_MS + SEQ_POLE_EXTRA_MS + SEQ_GRIGLIA_MS;
 // Finestra di grazia di fine qualifica (Rif. design 2026-08-07): quando
 // tutti gli umani connessi finiscono, la sessione NON chiude subito — resta
