@@ -219,10 +219,13 @@ test('in modalita singolo la partita resta viva dopo il podio (serve a "Riprova"
 // chiusa e rifatta.
 // ────────────────────────────────────────────────────────────────────────
 
-function avvia(socket, trackId) {
+// startGame SOSTITUISCE lobby.gameSettings: quello che non si passa qui viene
+// perso, modalita' compresa. Va detto perche' e' gia' costato un test rosso
+// che sembrava un difetto di produzione e non lo era.
+function avvia(socket, trackId, extra) {
     socket.handlers.startGame({
         lobbyId: LOBBY, gameId: 'f1',
-        settings: { trackId, botsEnabled: 'false', gridSize: '4' },
+        settings: Object.assign({ trackId, botsEnabled: 'false', gridSize: '4' }, extra || {}),
     });
 }
 
@@ -356,4 +359,101 @@ test('il socket della sessione precedente non tocca il pilota di quella nuova', 
     t.mock.timers.tick(120000);
     assert.ok(g.players.red, 'il pilota e stato cancellato dalla partita in corso: da li in poi non si muove piu');
     assert.deepEqual(lobbies.get(LOBBY).players, ['red'], 'e tolto anche dalla lobby');
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// IL CICLO COMPLETO CON LA PREMIAZIONE IN MEZZO
+//
+// La premiazione allunga la finestra fra la bandiera a scacchi e il rientro
+// in lobby da 8 a 19.2 secondi, e ci mette dentro due modi di uscire: il
+// pulsante e la scadenza del tempo. E' esattamente il tratto in cui vivevano
+// i difetti peggiori trovati finora (partita riusata, socket di una sessione
+// che tocca quella dopo), quindi il giro completo si verifica invece di
+// darlo per buono.
+// ────────────────────────────────────────────────────────────────────────
+
+function faiFinireLaGaraVera(io, socket) {
+    const g = activeGames.get(LOBBY);
+    g.phase = 'race';
+    let t = 300000;
+    for (const p of Object.values(g.players)) {
+        p.finished = true; p.time = (t += 900); p.lap = g.track.totalLaps;
+    }
+    registraHandlerF1.endRace(io, LOBBY, g);
+    return g;
+}
+
+test('premiazione, scadenza del tempo, e la gara dopo parte pulita', (t) => {
+    t.after(pulisci);
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    preparaLobby(['red']);
+    const io = ioFinto();
+
+    const a = collega(io);
+    avvia(a, 'monte-rosso');
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    const vecchia = faiFinireLaGaraVera(io, a);
+
+    // Il tempo scade: il client naviga da solo e il suo socket muore.
+    t.mock.timers.tick(19200);
+    a.handlers.disconnect();
+    t.mock.timers.tick(5000);
+    assert.equal(activeGames.has(LOBBY), false,
+        'a premiazione finita la partita deve essere smontata dal server');
+
+    // Nuova gara, altra pista.
+    const b = collega(io);
+    avvia(b, 'prova');
+    b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    const g = activeGames.get(LOBBY);
+    assert.notEqual(g, vecchia);
+    assert.equal(g.track.id, 'prova');
+    assert.equal(g.phase, 'tyre_select');
+    assert.equal(g.players.red.finished, false);
+});
+
+test('il pulsante di chi ospita chiude la partita e riporta tutti in lobby', (t) => {
+    t.after(pulisci);
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    preparaLobby(['red']);
+    const io = ioFinto();
+
+    const a = collega(io);
+    avvia(a, 'monte-rosso');
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    faiFinireLaGaraVera(io, a);
+
+    // Premuto a meta' premiazione, senza aspettare la scadenza.
+    t.mock.timers.tick(6000);
+    a.handlers.f1ReturnToLobby(LOBBY);
+    assert.equal(activeGames.has(LOBBY), false,
+        'il pulsante di chi ospita deve smontare la partita subito');
+
+    // E il timer di smontaggio gia' programmato non deve toccare nulla dopo.
+    t.mock.timers.tick(30000);
+    assert.equal(activeGames.has(LOBBY), false);
+    assert.deepEqual(lobbies.get(LOBBY).players, ['red'],
+        'chi e rientrato in lobby non deve sparire dalla lista');
+});
+
+test('"Riprova" durante la premiazione rilancia la stessa partita', (t) => {
+    t.after(pulisci);
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    preparaLobby(['red']);
+    const io = ioFinto();
+
+    const a = collega(io);
+    avvia(a, 'monte-rosso', { mode: 'single' });
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    const g = faiFinireLaGaraVera(io, a);
+    g.grid = ['red'];
+
+    t.mock.timers.tick(5000);
+    a.handlers.f1RestartRace(LOBBY);
+    t.mock.timers.tick(20000);
+
+    assert.equal(activeGames.get(LOBBY), g,
+        'Riprova deve riusare la partita, non crearne una nuova');
+    assert.equal(g.phase, 'race', 'e riportarla in gara');
+    assert.equal(g.raceEnded, false);
 });
