@@ -135,3 +135,25 @@ test('il semaforo scatta alla FINE della sequenza, non prima', (t) => {
     assert.equal(contoAllaRovescia().length, 1,
         'il semaforo non e scattato alla fine della sequenza');
 });
+
+test('la scoperta della pole ci sta dentro, e resta tempo per il riepilogo', (t) => {
+    // Chi fa la pole spende sulla scoperta posizioneMs + poleExtraMs, gli
+    // altri solo posizioneMs: stesso monte totale per tutti, distribuito
+    // diverso. Se pero' stacco + scoperta piu' lunga arrivassero a mangiarsi
+    // il totale, al pilota in pole il semaforo scatterebbe mentre la sua
+    // animazione e' ancora a schermo - e il riepilogo con la griglia non lo
+    // vedrebbe affatto.
+    t.after(pulisci);
+    const emessi = [];
+    const { io, game } = prepara(emessi);
+    chiudiQualifica(io, game);
+    const s = emessi.filter(e => e.ev === 'f1QualiEnded').pop().dati.sequenza;
+
+    const spesoDallaPole = s.staccoMs + s.posizioneMs + s.poleExtraMs;
+    assert.ok(spesoDallaPole < s.totaleMs,
+        `chi fa la pole spende ${spesoDallaPole} ms su ${s.totaleMs}: il semaforo lo coglie a meta animazione`);
+
+    const riepilogoPole = s.totaleMs - spesoDallaPole;
+    assert.ok(riepilogoPole >= 2000,
+        `al pilota in pole restano ${riepilogoPole} ms di riepilogo: troppo pochi per leggere la griglia`);
+});

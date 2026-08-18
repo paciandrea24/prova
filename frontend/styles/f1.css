@@ -1017,17 +1017,76 @@ canvas.tyre-preview-canvas {
     box-shadow: 0 0 18px 4px rgba(255,44,44,0.85), inset 0 0 6px rgba(255,255,255,0.3);
 }
 
-/* Animazione POLE: rivelata lettera per lettera via anime.stagger (vedi
-   playRevealAnimation in f1.js) — il colore (oro per la pole, chiaro per
-   gli altri) è impostato via JS su textEl.style.color, non qui. */
-.pole-text {
+/* SCOPERTA DELLA POSIZIONE IN GRIGLIA (#grid-reveal)
+   Il conteggio parte dall'ultima posizione e risale fermandosi sulla propria:
+   più a lungo scorre, meglio sei andato. La pole se lo vede correre fino in
+   fondo e poi si prende raggi e anello d'urto, che per le altre posizioni
+   restano spenti — è l'unica differenza di trattamento, chiesta
+   esplicitamente ("la scoperta della posizione dovrebbe essere enfatizzata
+   per la pole").
+   Il movimento lo fa il JS; qui c'è solo come sono fatti i pezzi. */
+.reveal-corpo {
+    display: flex; flex-direction: column;
+    align-items: center; gap: 6px;
+    position: relative; z-index: 2;
+}
+.reveal-etichetta {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: clamp(11px, 1.4vw, 16px);
+    font-weight: 700; letter-spacing: 0.42em;
+    text-transform: uppercase;
+    color: var(--f1-text-dim);
+    opacity: 0;
+}
+.reveal-numero {
     font-family: 'Fredoka', sans-serif;
     font-weight: 900;
-    font-size: 100px;
-    letter-spacing: 6px;
-    white-space: nowrap;
+    font-size: clamp(90px, 19vw, 240px);
+    line-height: 1;
+    letter-spacing: 2px;
+    color: var(--hud-text);
+    text-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+    /* Cifre a larghezza fissa: senza, il numero salta a ogni scatto del
+       conteggio perché "1" è più stretta di "8". */
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+}
+.reveal-numero.e-pole {
+    color: #f1c40f;
+    text-shadow: 0 0 60px rgba(241, 196, 15, 0.55), 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+.reveal-pole {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: clamp(16px, 2.6vw, 34px);
+    font-weight: 900; letter-spacing: 0.36em;
     text-transform: uppercase;
-    text-shadow: 4px 4px 10px rgba(0,0,0,0.5);
+    color: #f1c40f;
+    opacity: 0;
+}
+/* Anello d'urto: un cerchio che si espande e svanisce nell'istante in cui il
+   conteggio si ferma. Vale per tutti, ma sulla pole è dorato e più ampio. */
+.reveal-anello {
+    position: absolute;
+    width: 40vmin; height: 40vmin;
+    border-radius: 50%;
+    border: 3px solid var(--f1-telemetry);
+    opacity: 0; transform: scale(0.2);
+    z-index: 1;
+}
+.reveal-anello.e-pole { border-color: #f1c40f; }
+/* Raggi: solo per la pole. Un ventaglio di linee dorate dietro il numero,
+   costruito con un gradiente ripetuto invece che con N elementi. */
+.reveal-raggi {
+    position: absolute;
+    width: 150vmax; height: 150vmax;
+    background: repeating-conic-gradient(
+        rgba(241, 196, 15, 0.16) 0deg 4deg,
+        transparent 4deg 14deg);
+    opacity: 0;
+    z-index: 0;
+    pointer-events: none;
+    -webkit-mask-image: radial-gradient(circle, #000 8%, transparent 46%);
+    mask-image: radial-gradient(circle, #000 8%, transparent 46%);
 }
 
 /* Overlay/pannelli a schermo intero in stile neumorfico scuro — stesso

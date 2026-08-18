@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260817i">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260818a">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -325,10 +325,32 @@
     </div>
 
     <!-- Overlay animazione POLE -->
-    <div id="pole-overlay" class="menu-overlay-bg" style="display:none; position:fixed; inset:0; z-index:60;
+    <!-- SIPARIO DELLA TRANSIZIONE QUALIFICA -> GARA
+         Sale nell'istante in cui la qualifica chiude e resta su per tutto lo
+         stacco e la scoperta della posizione. Serve perche' il server
+         riposiziona le auto in griglia in quello stesso istante: senza, fra
+         un momento e l'altro della sequenza si rivede la scena di gioco (in
+         playtest: "si vede per un secondo la macchina in griglia di partenza,
+         poi spunta l'animazione POLE"). Cala solo quando il riepilogo prende
+         il suo posto, che ha la panoramica del circuito come sfondo. -->
+    <div id="transizione-sipario" style="display:none; position:fixed; inset:0; z-index:58;
+         background:var(--hud-screen-bg); opacity:0; pointer-events:none;"></div>
+
+    <!-- SCOPERTA DELLA POSIZIONE IN GRIGLIA
+         Il conteggio parte dall'ULTIMA posizione e risale fermandosi sulla
+         propria: piu' a lungo scorre, meglio sei andato, e chi fa la pole se
+         lo vede correre fino in fondo. Sostituisce la rivelazione lettera per
+         lettera di prima, che dava lo stesso peso a tutti. -->
+    <div id="grid-reveal" style="display:none; position:fixed; inset:0; z-index:60;
          align-items:center; justify-content:center; overflow:hidden;
          pointer-events:none;">
-        <span id="pole-text" class="pole-text"></span>
+        <div class="reveal-raggi" id="reveal-raggi"></div>
+        <div class="reveal-anello" id="reveal-anello"></div>
+        <div class="reveal-corpo">
+            <span class="reveal-etichetta" id="reveal-etichetta">La tua posizione in griglia</span>
+            <span class="reveal-numero" id="reveal-numero">&nbsp;</span>
+            <span class="reveal-pole" id="reveal-pole">Pole position</span>
+        </div>
     </div>
 
     <!-- Overlay "in attesa degli altri piloti" — dopo il proprio traguardo in
@@ -429,7 +451,7 @@
     <script src="shared/voxelizer.js?v=20260730a"></script>
     <script src="/shared/firebaseConfig.js" defer></script>
     <script src="shared/f1Segnalazioni.js?v=20260812a"></script>
-    <script src="f1.js?v=20260818e"></script>
+    <script src="f1.js?v=20260818f"></script>
 </body>
 
 </html>

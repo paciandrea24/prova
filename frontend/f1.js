@@ -2354,7 +2354,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // a schermo: evita di dover sincronizzare a mano un timeout lato client
         // con GRID_DISPLAY_MS/TYRE_SELECT_MS del server.
         document.getElementById('podium-modal').style.display = 'none';
-        document.getElementById('pole-overlay').style.display = 'none';
+        document.getElementById('grid-reveal').style.display = 'none';
         // Annulla la transizione qualifica→gara se è ancora in corso: lo
         // stacco dura secondi, e questo countdown può arrivare mentre uno dei
         // suoi pezzi è ancora in coda. Il numero di sequenza li ferma tutti
@@ -2362,6 +2362,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         sequenzaCorrente++;
         if (window.F1Sting) F1Sting.stop();
         silenzioTransizione(false);
+        // Il sipario cala QUI e non alla fine della sequenza: è l'ultimo
+        // strato davanti alla pista, e questo countdown è l'unico momento in
+        // cui si è sicuri che la pista vada rivista.
+        sipario(false);
         // true solo per il countdown che apre una qualifica; il countdown di
         // gara (data.phase==='race') la chiude anche come rete di sicurezza,
         // ridondante con f1QualiEnded qui sotto ma innocuo.
@@ -2499,27 +2503,146 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
     });
 
-    // Animazione di rivelazione: rivela il TESTO lettera per lettera via
-    // anime.stagger (ogni lettera è un <span> che entra con dissolvenza +
-    // scorrimento, in sequenza). Personale: chi fa pole vede
-    // "POOOOOOOOOOLE" in oro, tutti gli altri vedono solo la PROPRIA
-    // posizione (es. "P4") in un colore neutro — vedi f1QualiEnded.
-    function playRevealAnimation(fullText, isPole) {
-        const overlay = document.getElementById('pole-overlay');
-        const textEl = document.getElementById('pole-text');
-        overlay.style.display = 'flex';
-        textEl.style.color = isPole ? '#f1c40f' : 'var(--hud-text)';
-        textEl.innerHTML = fullText.split('').map(ch =>
-            `<span style="display:inline-block; opacity:0;">${ch}</span>`
-        ).join('');
+    // ── SIPARIO DELLA TRANSIZIONE ──────────────────────────────────────
+    // La sequenza qualifica→gara deve possedere lo schermo dall'inizio alla
+    // fine. Il server riposiziona le auto in griglia nell'istante in cui la
+    // qualifica chiude, quindi ogni frame in cui la sequenza non copre niente
+    // mostra la scena di gioco: in playtest si vedeva "per un secondo la
+    // macchina in griglia di partenza, poi spunta l'animazione POLE".
+    // Il sipario sale subito e resta su fino al riepilogo, che ha la
+    // panoramica del circuito come sfondo e quindi se lo prende lui.
+    function sipario(su, durataMs) {
+        const el = document.getElementById('transizione-sipario');
+        if (!el) return;
+        if (su) el.style.display = 'block';
+        if (typeof anime !== 'function') {
+            el.style.opacity = su ? '1' : '0';
+            if (!su) el.style.display = 'none';
+            return;
+        }
+        anime.remove(el);
         anime({
-            targets: textEl.querySelectorAll('span'),
-            opacity: [0, 1],
-            translateX: [42, 0],
-            delay: anime.stagger(85),
-            duration: 220,
-            easing: 'easeOutQuad',
-            complete: () => setTimeout(() => { overlay.style.display = 'none'; }, 1800),
+            targets: el,
+            opacity: su ? 1 : 0,
+            duration: durataMs != null ? durataMs : (su ? 100 : 420),
+            easing: 'linear',
+            complete: () => { if (!su) el.style.display = 'none'; },
+        });
+    }
+
+    // ── SCOPERTA DELLA POSIZIONE IN GRIGLIA ────────────────────────────
+    // Il conteggio parte dall'ULTIMA posizione e risale, rallentando, fino a
+    // fermarsi sulla propria: più a lungo scorre, meglio sei andato, e chi fa
+    // la pole se lo vede correre fino in fondo. Sostituisce la rivelazione
+    // lettera per lettera, che dava lo stesso peso a chiunque.
+    //
+    // Nessun colore né nome di altri piloti: si vedono solo numeri, quindi non
+    // anticipa niente della griglia altrui (lo stesso vincolo che vale per il
+    // pannello di attesa in qualifica).
+    function scopriPosizione(miaPosizione, totale, durataMs, isPole) {
+        const overlay = document.getElementById('grid-reveal');
+        if (!overlay) return Promise.resolve();
+        const numero = document.getElementById('reveal-numero');
+        const etichetta = document.getElementById('reveal-etichetta');
+        const pole = document.getElementById('reveal-pole');
+        const anello = document.getElementById('reveal-anello');
+        const raggi = document.getElementById('reveal-raggi');
+
+        // Stato di partenza: tutto spento, nessun residuo del giro prima.
+        overlay.style.display = 'flex';
+        numero.classList.toggle('e-pole', !!isPole);
+        anello.classList.toggle('e-pole', !!isPole);
+        etichetta.style.opacity = 0;
+        pole.style.opacity = 0;
+        anello.style.opacity = 0;
+        raggi.style.opacity = 0;
+        numero.textContent = ' ';
+
+        const durata = Math.max(1200, durataMs || 3400);
+        if (typeof anime !== 'function') {
+            numero.textContent = 'P' + miaPosizione;
+            etichetta.style.opacity = 1;
+            if (isPole) pole.style.opacity = 1;
+            return new Promise(r => setTimeout(() => {
+                overlay.style.display = 'none';
+                r();
+            }, durata));
+        }
+
+        // Quanti scatti: dall'ultima posizione fino alla propria. Chi è ultimo
+        // ne vede uno solo, chi è in pole li vede tutti — ed è il punto.
+        const scatti = Math.max(1, (totale - miaPosizione) + 1);
+        const tEtichetta = durata * 0.14;
+        const tConteggio = durata * 0.44;
+        const tArrivo = durata - tEtichetta - tConteggio;
+
+        return new Promise(risolvi => {
+            const linea = anime.timeline({
+                complete: () => { overlay.style.display = 'none'; risolvi(); },
+            });
+
+            linea.add({
+                targets: etichetta,
+                opacity: [0, 1], letterSpacing: ['0.6em', '0.42em'],
+                duration: tEtichetta, easing: 'easeOutQuad',
+            }, 0);
+
+            // Il conteggio. Una sola animazione con `update`, non N animazioni
+            // incatenate: il numero mostrato si ricava dal progresso, con una
+            // curva che decelera — così gli ultimi scatti si leggono uno per
+            // uno mentre i primi sfrecciano.
+            const stato = { t: 0 };
+            let ultimoMostrato = null;
+            linea.add({
+                targets: stato,
+                t: 1,
+                duration: tConteggio,
+                easing: 'easeOutQuart',
+                update: () => {
+                    const passo = Math.min(scatti - 1, Math.floor(stato.t * scatti));
+                    const valore = totale - passo;
+                    if (valore !== ultimoMostrato) {
+                        ultimoMostrato = valore;
+                        numero.textContent = 'P' + valore;
+                    }
+                },
+            }, tEtichetta);
+
+            // L'arrivo: il numero si pianta, l'anello parte dal centro.
+            const arrivo = tEtichetta + tConteggio;
+            linea.add({
+                targets: numero,
+                scale: [1.35, 1],
+                duration: tArrivo * 0.34, easing: 'easeOutBack',
+            }, arrivo);
+            linea.add({
+                targets: anello,
+                opacity: [0.85, 0], scale: [0.2, isPole ? 2.6 : 1.9],
+                duration: tArrivo * 0.6, easing: 'easeOutQuad',
+            }, arrivo);
+
+            // Solo la pole si prende raggi e scritta: è l'unica differenza di
+            // trattamento, richiesta esplicitamente.
+            if (isPole) {
+                linea.add({
+                    targets: raggi,
+                    opacity: [0, 1], rotate: ['0deg', '14deg'],
+                    duration: tArrivo * 0.5, easing: 'easeOutQuad',
+                }, arrivo);
+                linea.add({
+                    targets: pole,
+                    opacity: [0, 1], translateY: [16, 0], letterSpacing: ['0.6em', '0.36em'],
+                    duration: tArrivo * 0.42, easing: 'easeOutExpo',
+                }, arrivo + tArrivo * 0.12);
+            }
+
+            // Uscita: tutto svanisce insieme. Il sipario dietro resta su, così
+            // fra questo momento e il prossimo non si rivede la pista.
+            linea.add({
+                targets: [numero, etichetta, pole, raggi],
+                opacity: 0,
+                duration: tArrivo * 0.26, easing: 'easeInQuad',
+            }, durata - tArrivo * 0.26);
         });
     }
 
@@ -2571,8 +2694,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('quali-waiting-overlay').style.display = 'none';
         const mia = ++sequenzaCorrente;
         silenzioTransizione(true);
+        // Il sipario PRIMA di qualunque animazione: da qui in poi la sequenza
+        // possiede lo schermo, e fra un momento e l'altro non si rivede mai la
+        // pista con le auto già riposizionate in griglia.
+        sipario(true);
         const seq = sequenza || {};
         const myPos = (grid || []).findIndex(e => e.color === myColor) + 1;
+        const isPole = myPos === 1;
 
         // ── 1. STACCO ──────────────────────────────────────────────────
         // Copre il salto dalla pista alla schermata di griglia, che era la
@@ -2586,8 +2714,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (mia !== sequenzaCorrente) return;
 
         // ── 2. SCOPERTA DELLA PROPRIA POSIZIONE ────────────────────────
-        if (myPos === 1) playRevealAnimation('POOOOOOOOOOLE', true);
-        else if (myPos > 1) playRevealAnimation(`P${myPos}`, false);
+        // Il tempo in più della pole viene da qui: stesso monte totale per
+        // tutti, distribuito diverso (vedi SEQ_POLE_EXTRA_MS lato server).
+        if (myPos > 0) {
+            const durataScoperta = (seq.posizioneMs || 0) + (isPole ? (seq.poleExtraMs || 0) : 0);
+            await scopriPosizione(myPos, (grid || []).length, durataScoperta, isPole);
+            if (mia !== sequenzaCorrente) return;
+        }
 
         // ── 3. RIEPILOGO CON LA GRIGLIA COMPLETA ───────────────────────
         const modal = document.getElementById('podium-modal');
