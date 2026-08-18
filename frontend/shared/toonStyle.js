@@ -130,12 +130,11 @@
                 : new THREE.Color(hex);
             shared = {
                 uOn: { value: 1 },
-                // Notturno: 0 di giorno, 1 di notte. La tinta MOLTIPLICA il
-                // colore della superficie prima che la luce la tocchi — vedi
-                // il blocco ORARI in toonPalette.js per il perché non si
-                // abbassano invece le luci.
+                // Notturno: 0 di giorno, 1 di notte. Condivisa, perché
+                // l'ora del giorno è una sola per tutta la scena. La TINTA
+                // invece è per materiale (vedi buildPatch): l'asfalto sotto
+                // le torri faro non è buio come il prato dietro le tribune.
                 uNotte: { value: 0 },
-                uTintaNotte: { value: colore(P.ORARI.notte.tinta) },
                 uShadowTint: { value: colore(P.SHADOW_TINT) },
                 uGrassDark: { value: colore(P.SURFACES.grassDark) },
                 uGrassLight: { value: colore(P.SURFACES.grassLight) },
@@ -168,6 +167,15 @@
         // scenografia e auto, il flag terreno vale per le sole mesh del prato.
         shader.uniforms.uSat = { value: o.saturation || 0 };
         shader.uniforms.uIsGround = { value: o.isGround ? 1 : 0 };
+        // Quanto questa superficie resta chiara di notte. Il valore sta
+        // qui e non nel codice dello shader apposta: cambiare una uniform
+        // non fa ricompilare il programma, quindi tutti i materiali
+        // continuano a condividerne uno solo.
+        shader.uniforms.uTintaNotte = {
+            value: (typeof THREE === 'undefined')
+                ? { r: 0, g: 0, b: 0, set() {}, setRGB() {} }
+                : new THREE.Color(o.tintaNotte !== undefined ? o.tintaNotte : palette().ORARI.notte.tinta)
+        };
 
         // ── vertex: posizione e normale in coordinate MONDO ───────────
         // Serve l'instanceMatrix: la scenografia è tutta InstancedMesh e

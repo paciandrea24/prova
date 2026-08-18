@@ -30,14 +30,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Giorno o notte è una proprietà del CIRCUITO, non della partita:
     // qualifica e gara dello stesso circuito sono sempre tutte e due
     // uguali, per costruzione, perché la fonte è una sola.
-    // `?notte=on` / `?notte=off` forzano l'orario senza toccare il file del
-    // circuito: e' l'interruttore che serve per guardare la stessa curva di
-    // giorno e di notte una dietro l'altra, come gia' si fa con toon/ombre.
-    // Senza il parametro decide il circuito, che e' il comportamento vero.
-    const _notteForzata = urlParams.get('notte');
-    const NOTTURNO = _notteForzata === 'on' ? true
-        : _notteForzata === 'off' ? false
-        : trackData.notturno === true;
+    // Giorno o notte lo decide il circuito, e basta. E' vissuto qui per
+    // qualche ora un `?notte=on` per il confronto rapido: tolto su richiesta
+    // dell'utente, che non vuole impostazioni nell'indirizzo - la stessa
+    // ragione per cui ci sono usciti prima le impostazioni di gara e poi il
+    // colore del giocatore. Per il confronto si usa la spunta nell'editor.
+    const NOTTURNO = trackData.notturno === true;
     ToonPalette.impostaOrario(NOTTURNO ? 'notte' : 'giorno');
     document.body.classList.toggle('notturno', NOTTURNO);
 
@@ -175,6 +173,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // accende una volta e vale per la pista generata in JS come per i
     // modelli che arrivano dai GLB. Vedi ToonStyle.impostaNotturno.
     if (TOON_ON) ToonStyle.impostaNotturno(NOTTURNO);
+    if (TOON_ON) toonSky.setStelle(NOTTURNO);
 
     // Unico punto da cui passa la conversione dei materiali: con il look
     // spento non tocca nulla.
@@ -506,6 +505,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     caricamento.passo('Asfalto, cordoli e barriere…', 0.30);
     await caricamento.respira();
 
+    // Da qui in avanti nascono le superfici che di notte stanno SOTTO le
+    // torri faro — asfalto, cordoli, ghiaia. Si segna dove comincia la
+    // lista per poterle stilizzare a parte, con la tinta notturna dei
+    // tratti illuminati invece di quella del buio: è il nastro chiaro che
+    // taglia la notte, e senza il circuito è solo una scena scura.
+    const _primaDellAsfalto = scene.children.length;
+
     // DoubleSide evita artefatti di culling nelle zone ad alta curvatura
     TrackMeshBuilder.buildRibbon(scene, trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: ToonPalette.SURFACES.asphalt, roughness: 0.95, side: THREE.DoubleSide }));
     TrackMeshBuilder.buildCurbs(scene, trackPts, ROAD_HALF, CURB_W, PIT_MERGE_SAMPLES);
@@ -513,6 +519,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // delle chiamate riflette la sezione reale della pista. La banda parte dal
     // bordo esterno del cordolo, quindi non si sovrappone a nessuno dei due.
     TrackMeshBuilder.buildGravel(scene, trackPts, ROAD_HALF, CURB_W, BARRIER_PROFILE.gravel);
+    // …e qui finiscono. La passata generale più sotto le salterà: convert()
+    // converte solo i MeshStandardMaterial, e questi sono già toon.
+    for (const m of scene.children.slice(_primaDellAsfalto)) {
+        applicaStile(m, {
+            saturation: ToonPalette.SATURATION.world,
+            tintaNotte: ToonPalette.orario().tintaPista,
+        });
+    }
     // La barriera sta dove dice il profilo: arretrata della via di fuga
     // minima quasi ovunque, di più dove c'è la ghiaia, ferma dov'era nel
     // tratto del traguardo e dei box, a bordo strada sui ponti.
@@ -888,10 +902,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                         im.frustumCulled = true;
 
                         applicaStile(im);
-                        // Dopo applicaStile: registraSemaforo sostituisce il
-                        // materiale toon con uno base, e farlo prima
-                        // significherebbe farselo riconvertire subito dopo.
+                        // Dopo applicaStile: registraSemaforo e
+                        // accendiTorreFaro sostituiscono il materiale toon
+                        // con uno base, e farlo prima significherebbe
+                        // farselo riconvertire subito dopo.
                         registraSemaforo(im, container);
+                        // `centri` sono già le posizioni in coordinate
+                        // mondo di questa mesh, istanza per istanza: per
+                        // il pannello lampade sono esattamente i punti in
+                        // cui accendere l'alone.
+                        accendiTorreFaro(im, container, centri);
                         container.add(im);
                     }
                 }
@@ -1065,6 +1085,55 @@ document.addEventListener('DOMContentLoaded', async () => {
         return new THREE.CanvasTexture(c);
     }
     let _texBagliore = null;
+
+    // Torri faro accese.
+    //
+    // Il pannello di lampade è un nodo suo dentro il modello
+    // (`floodlightTower_white`, x da -3.22 a 3.23 e y da 28.67 a 31.33:
+    // misurato sul .glb, non indovinato). Di notte smette di essere una
+    // superficie ILLUMINATA e diventa una superficie che ILLUMINA: il
+    // materiale toon lascia il posto a un MeshBasicMaterial, che non
+    // ascolta nessuna luce e resta bianco anche in mezzo al buio.
+    //
+    // È lo stesso trucco dei semafori del ponte di partenza, qui sotto —
+    // e non costa una draw call in più, perché il materiale sostituito è
+    // quello di una mesh che veniva disegnata comunque.
+    //
+    // L'alone invece SÌ: uno sprite additivo per torre. Il gioco è
+    // GPU-bound sui pixel (vedi il pannello F9), quindi resta piccolo —
+    // 2.6 volte il raggio del pannello e non 3.2 come i semafori, che si
+    // guardano da vicino e sono cinque in tutto.
+    function accendiTorreFaro(im, container, centri) {
+        if (!NOTTURNO) return;
+        if (im.userData.sceneryMesh !== 'floodlightTower_white') return;
+
+        // Il colore sta dentro la funzione e non accanto: la chiamata arriva
+        // da una callback di caricamento, e una const dichiarata piu' sotto
+        // nel file non e' ancora inizializzata quando quella callback parte.
+        // Le funzioni si possono usare prima, le const no.
+        im.material = new THREE.MeshBasicMaterial({ color: 0xfff6e0 });
+        // Senza questo il passaggio dei contorni disegna un bordo nero
+        // attorno alla lampada: una luce con il contorno non è una luce.
+        ToonStyle.excludeFromOutline(im);
+
+        const sfera = im.geometry.boundingSphere;
+        if (!sfera) return;
+        if (!_texBagliore) _texBagliore = texturaBagliore();
+        for (const c of centri) {
+            const alone = new THREE.Sprite(new THREE.SpriteMaterial({
+                map: _texBagliore,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                transparent: true,
+                opacity: 0.5,
+            }));
+            alone.position.set(c.x, c.y, c.z);
+            alone.scale.setScalar(sfera.radius * 2.6);
+            alone.renderOrder = 2;
+            ToonStyle.excludeFromOutline(alone);
+            container.add(alone);
+        }
+    }
 
     function registraSemaforo(im, container) {
         const n = /^gantry_light_(\d+)$/.exec(im.userData.sceneryMesh || '');

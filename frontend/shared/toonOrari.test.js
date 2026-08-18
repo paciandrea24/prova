@@ -72,6 +72,19 @@ test('la nebbia è il cielo all\'orizzonte, di notte come di giorno', () => {
     }
 });
 
+test('il nastro d\'asfalto resta chiaro anche di notte: è quello a fare la gara in notturno', () => {
+    // Senza questa differenza il risultato è «una scena scura», non «una gara
+    // in notturno». Bocciato al playtest del 2026-08-18 esattamente così.
+    const buio = P.hexToRgb(P.ORARI.notte.tinta);
+    const pista = P.hexToRgb(P.ORARI.notte.tintaPista);
+    const luma = (c) => 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+
+    assert.ok(luma(pista) > luma(buio) * 1.8,
+        `l'asfalto illuminato deve staccare nettamente dal buio: ${luma(pista).toFixed(2)} contro ${luma(buio).toFixed(2)}`);
+    assert.ok(luma(pista) < 0.95, 'ma non essere bianco: è asfalto illuminato, non una lampadina');
+    assert.equal(P.ORARI.giorno.tintaPista, 0xffffff, 'di giorno nessuna delle due tinte tinge niente');
+});
+
 test('di notte si vede meno lontano', () => {
     P.impostaOrario('giorno');
     const giorno = P.fogDensity();

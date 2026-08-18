@@ -25,6 +25,10 @@
             uStops: { value: stops.map((s) => s.t) },
             uOn: { value: 1 },
             uFlat: { value: new THREE.Color(FLAT_SKY) },
+            // Stelle: accese solo di notte. Costano qualche istruzione sui
+            // pixel della SOLA cupola, che è già disegnata comunque, e
+            // stanno dentro un ramo — di giorno il ramo non si prende.
+            uStelle: { value: 0 },
         };
 
         const material = new THREE.ShaderMaterial({
@@ -44,7 +48,13 @@
                 'uniform float uStops[' + stops.length + '];',
                 'uniform float uOn;',
                 'uniform vec3 uFlat;',
+                'uniform float uStelle;',
                 'varying vec3 vDir;',
+                'float stellaHash( vec2 p ) {',
+                '    p = fract( p * vec2( 127.1, 311.7 ) );',
+                '    p += dot( p, p + 45.32 );',
+                '    return fract( p.x * p.y );',
+                '}',
                 'void main() {',
                 // t = 0 all'orizzonte, 1 allo zenit. Sotto l'orizzonte resta
                 // il colore dell'orizzonte: là c'è comunque il terreno, e
@@ -55,6 +65,18 @@
                 '        float k = clamp( ( t - uStops[i - 1] ) / ( uStops[i] - uStops[i - 1] ), 0.0, 1.0 );',
                 '        k = k * k * ( 3.0 - 2.0 * k );',
                 '        col = mix( col, uColors[i], k );',
+                '    }',
+                '    if ( uStelle > 0.5 ) {',
+                '        vec3 d = normalize( vDir );',
+                '        vec2 g = vec2( atan( d.z, d.x ) * 14.0, asin( clamp( d.y, -1.0, 1.0 ) ) * 26.0 );',
+                '        vec2 cella = floor( g );',
+                '        float h = stellaHash( cella );',
+                '        if ( h > 0.875 ) {',
+                '            vec2 centro = cella + vec2( stellaHash( cella + 1.7 ), stellaHash( cella + 3.1 ) );',
+                '            float dist = length( g - centro );',
+                '            float lum = smoothstep( 0.40, 0.0, dist ) * ( 0.35 + 0.65 * stellaHash( cella + 7.3 ) );',
+            '            col += vec3( 0.86, 0.90, 1.0 ) * lum * smoothstep( 0.04, 0.34, d.y );',
+                '        }',
                 '    }',
                 '    gl_FragColor = vec4( mix( uFlat, col, uOn ), 1.0 );',
                 '}',
@@ -82,6 +104,8 @@
             update(camera) {
                 dome.position.copy(camera.position);
             },
+            // Le stelle si accendono con la notte, e solo con la notte.
+            setStelle(on) { uniforms.uStelle.value = on ? 1 : 0; },
             setEnabled(on) {
                 uniforms.uOn.value = on ? 1 : 0;
                 dome.visible = true;   // resta visibile: da spenta disegna il colore piatto

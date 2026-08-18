@@ -98,6 +98,7 @@
             fogDensity: FOG_DENSITY,
             // Moltiplicatore sul colore delle superfici: di giorno, nessuno.
             tinta: 0xffffff,
+            tintaPista: 0xffffff,
             hemi: { cielo: 0x9ec8f0, terra: 0x3f7a52, intensita: 0.30 },
             sole: { colore: 0xfff6e2, intensita: 0.72 },
         },
@@ -108,19 +109,36 @@
             // cielo sopra uno stadio acceso, ed e' anche il colore della
             // nebbia — su un orizzonte nero il circuito lontano sparirebbe
             // in un muro invece di sfumare.
+            // Il primo giro era GRIGIO, non nero, «come se ci fosse
+            // nebbia» (playtest 2026-08-18). Due cause, e la seconda è
+            // quella che contava: l'orizzonte era 0x39456b, cioè luma
+            // 0.27 — e l'orizzonte È ANCHE il colore della nebbia, per
+            // costruzione (vedi fogColor). Quindi ogni cosa lontana non
+            // spariva nel buio: sbiadiva verso quel grigio-azzurro.
             skyStops: [
-                { t: 0.00, color: 0x39456b },
-                { t: 0.06, color: 0x2b3557 },
-                { t: 0.30, color: 0x161d35 },
-                { t: 1.00, color: 0x080b16 },
+                { t: 0.00, color: 0x1a2338 },
+                { t: 0.06, color: 0x141b2e },
+                { t: 0.30, color: 0x0b0f1c },
+                { t: 1.00, color: 0x05070e },
             ],
-            // Piu' densa che di giorno: di notte il fondo si perde prima, e
-            // per noi e' anche meno da disegnare.
-            fogDensity: 0.0016,
-            // Il colore che moltiplica ogni superficie. Non e' un grigio: e'
-            // freddo e vira al blu, perche' quel che resta a illuminare e'
-            // il cielo, non il sole.
-            tinta: 0x5a6b93,
+            // Appena più densa che di giorno, non molto: era 0.0016 e
+            // insieme all'orizzonte chiaro faceva il velo lattiginoso. Di
+            // notte a nascondere il fondo deve essere il BUIO — cioè il
+            // colore della nebbia — non la sua quantità.
+            fogDensity: 0.0011,
+            // Il colore che moltiplica ogni superficie. Non è un grigio: è
+            // freddo e vira al blu, perché quel che resta a illuminare è il
+            // cielo, non il sole.
+            tinta: 0x4a5878,
+            // …ma non tutto è al buio allo stesso modo, ed è questa riga a
+            // fare la differenza fra «una scena scura» e «una gara in
+            // notturno»: l'asfalto, i cordoli e la ghiaia stanno sotto le
+            // torri faro, e restano QUASI chiari. È il nastro luminoso che
+            // taglia il buio — la cosa che si riconosce in una foto di
+            // Singapore prima ancora di capire cosa si sta guardando.
+            //
+            // Costa zero: è una uniform per materiale, non una luce.
+            tintaPista: 0xbac6da,
             hemi: { cielo: 0x3b4a72, terra: 0x141821, intensita: 0.30 },
             // Bianco freddo da torre faro al posto del bianco caldo del
             // sole. Stessa intensita': vedi sopra il perche'.
