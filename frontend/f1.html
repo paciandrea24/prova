@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260818c">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260818d">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -397,6 +397,27 @@
         </div>
     </div>
 
+    <!-- PREMIAZIONE DI FINE GARA
+         Lo spettacolo è la scena 3D dietro — podio e le tre auto sul
+         rettilineo del traguardo — quindi qui c'è solo ciò che la scena non
+         può dire: i numeri. Fascia in basso, come una grafica televisiva,
+         invece di un modale centrato che coprirebbe proprio il podio. -->
+    <div id="race-ceremony" style="display:none; position:fixed; inset:0; z-index:59;
+         pointer-events:none;">
+        <div class="rc-testata">
+            <span class="eyebrow" id="rc-circuito"></span>
+            <span class="rc-titolo" id="rc-titolo">Gara conclusa</span>
+        </div>
+        <div class="rc-fascia">
+            <ol class="rc-lista" id="rc-lista"></ol>
+            <div class="rc-comandi">
+                <button type="button" class="rc-btn" id="rc-riprova">Riprova</button>
+                <button type="button" class="rc-btn rc-btn-primario" id="rc-lobby">Torna alla lobby</button>
+                <span class="rc-conto" id="rc-conto"></span>
+            </div>
+        </div>
+    </div>
+
     <!-- Modale podio -->
     <div id="podium-modal" class="modal" style="display:none;">
         <div class="modal-content menu-panel-neu">
@@ -476,7 +497,7 @@
     <script src="shared/voxelizer.js?v=20260730a"></script>
     <script src="/shared/firebaseConfig.js" defer></script>
     <script src="shared/f1Segnalazioni.js?v=20260812a"></script>
-    <script src="f1.js?v=20260818n"></script>
+    <script src="f1.js?v=20260818o"></script>
 </body>
 
 </html>

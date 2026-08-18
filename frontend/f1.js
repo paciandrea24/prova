@@ -2509,6 +2509,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // cui si è sicuri che la pista vada rivista.
         sipario(false);
         nascondiRiepilogoGriglia();
+        // "Riprova" riparte dalla premiazione: la scena col podio va tolta di
+        // mezzo, o resterebbe piantata sul traguardo per tutta la gara nuova.
+        nascondiCerimonia();
+        fermaCerimonia();
         // Prima della camera: l'auto della vetrina e' appesa a lei, e
         // lasciarla li' vorrebbe dire correre con un modello incollato
         // davanti all'obiettivo.
@@ -3167,6 +3171,158 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // ── PREMIAZIONE DI FINE GARA ────────────────────────────────────────
+    // Podio e le tre auto sul rettilineo del traguardo, con tribune e ponte
+    // semafori dietro.
+    //
+    // Perché NON si usa il podio della scenografia, che pure c'è ed è lì
+    // apposta: misurato, un'auto è 3.46 larga per 7.17 LUNGA e un gradino è
+    // 4.00 x 4.00 — l'auto è quasi il doppio più lunga del gradino. Perché ci
+    // stia sopra il podio va ingrandito almeno 1.6 volte, e attorno a quello
+    // della scenografia non c'è spazio: 7.9 unità libere su monte-rosso
+    // (poi c'è una tenda del paddock), 8.8 su prova (una barriera), cioè al
+    // massimo x1.13 e x1.26. Ingrandirlo lì dentro vorrebbe dire sfondare la
+    // scenografia su due circuiti su tre.
+    //
+    // La premiazione istanzia quindi un podio suo, e quello sul circuito
+    // resta intatto dov'è. Il rettilineo del traguardo è il posto giusto: è
+    // piatto, è largo 22-28 contro i 19.2 del podio ingrandito, ed è libero
+    // da scenografia per costruzione — nulla viene mai piazzato sull'asfalto.
+    const CER_SCALA = 1.6;
+    // Piani di calpestio dei tre gradini, misurati sul modello (unità non
+    // scalate): x, quota, z. L'origine del podio sta a terra, il fronte è +Z.
+    const CER_GRADINI = [
+        { x: 0.0, y: 3.00, z: 1.50 },   // 1° — quello alto, al centro
+        { x: -4.0, y: 2.20, z: 1.50 },  // 2° — a sinistra guardando il podio
+        { x: 4.0, y: 1.60, z: 1.50 },   // 3° — a destra
+    ];
+    // Da quanto lontano la si guarda. Il vincolo è l'ALTEZZA del podio (14.4
+    // unità una volta ingrandito): a 24 unità occupa il 47% dello schermo in
+    // verticale, che lascia aria sopra e sotto per la fascia dei risultati.
+    // La larghezza non è mai il vincolo, ci sta con metà campo visivo.
+    const CER_DISTANZA = 24;
+    const CER_QUOTA_CAMERA = 7;
+    const CER_MIRA_Y = 5;        // fra le auto e la base del fondale
+    const CER_AVVICINAMENTO = 4; // di quanto la camera si avvicina durante la scena
+
+    let cerimoniaGruppo = null;
+    let cerimoniaPronta = null;
+    let cerimoniaAttiva = false;
+    let cerimoniaDa = 0;
+    let cerimoniaDurata = 1;
+    let cerimoniaCam = null;     // { da:{x,y,z}, a:{x,y,z}, mira:{x,y,z} }
+
+    // Direzione di marcia sul traguardo: da lì si ricava tutto il resto.
+    function assiDelTraguardo() {
+        const n = trackPts.length;
+        const i = START_FINISH_INDEX;
+        const p = trackPts[i];
+        const q = trackPts[(i + 1) % n];
+        const dx = q.x - p.x, dz = q.z - p.z;
+        const len = Math.hypot(dx, dz) || 1;
+        return { p, avanti: { x: dx / len, z: dz / len } };
+    }
+
+    function costruisciCerimonia(podio) {
+        const primi = (podio || []).slice(0, 3);
+        if (!primi.length) return Promise.resolve(null);
+        const miaSequenza = sequenzaCorrente;
+
+        const caricaPodio = new Promise((risolvi, rifiuta) => {
+            new THREE.GLTFLoader().load(SCENERY_ASSET_PATHS.podium,
+                (gltf) => risolvi(gltf.scene), undefined, rifiuta);
+        });
+        const caricaAuto = primi.map((riga) =>
+            fetchLiveryForUid(riga.isBot ? null : riga.uid).then((livrea) =>
+                new Promise((risolvi) => loadCarModel(riga.color, risolvi, livrea))));
+
+        return Promise.all([caricaPodio, ...caricaAuto]).then(([podioMesh, ...auto]) => {
+            const gruppo = new THREE.Group();
+            gruppo.visible = false;
+
+            podioMesh.scale.setScalar(CER_SCALA);
+            applicaStile(podioMesh, { saturation: ToonPalette.SATURATION.scenery });
+            gruppo.add(podioMesh);
+
+            auto.forEach((car, k) => {
+                // Il motore no: qui le auto sono ferme e in mostra.
+                if (car.userData.engineSound) {
+                    try { car.userData.engineSound.stop(); } catch (e) { /* mai partito */ }
+                    car.remove(car.userData.engineSound);
+                    delete car.userData.engineSound;
+                }
+                const g = CER_GRADINI[k];
+                car.position.set(g.x * CER_SCALA, g.y * CER_SCALA, g.z * CER_SCALA);
+                // Muso verso chi guarda: l'avanti dell'auto è +Z locale, ed è
+                // anche il fronte del podio. Nessuna rotazione, come per
+                // l'auto in pole del riepilogo griglia.
+                car.rotation.set(0, 0, 0);
+                gruppo.add(car);
+            });
+
+            // Posa sul traguardo, col fronte rivolto a chi arriva: le auto
+            // guardano indietro lungo il rettilineo, verso la camera.
+            const { p, avanti } = assiDelTraguardo();
+            gruppo.position.set(p.x, p.y || 0, p.z);
+            gruppo.rotation.set(0, Math.atan2(-avanti.x, -avanti.z), 0);
+
+            // L'inquadratura si calcola qui, dove gli assi del traguardo sono
+            // già in mano: la camera sta indietro sull'asse della pista e si
+            // avvicina piano per tutta la scena.
+            const quotaBase = p.y || 0;
+            cerimoniaCam = {
+                da: { x: p.x - avanti.x * CER_DISTANZA, y: quotaBase + CER_QUOTA_CAMERA, z: p.z - avanti.z * CER_DISTANZA },
+                a: {
+                    x: p.x - avanti.x * (CER_DISTANZA - CER_AVVICINAMENTO),
+                    y: quotaBase + CER_QUOTA_CAMERA - 0.6,
+                    z: p.z - avanti.z * (CER_DISTANZA - CER_AVVICINAMENTO),
+                },
+                mira: { x: p.x, y: quotaBase + CER_MIRA_Y, z: p.z },
+            };
+
+            if (miaSequenza !== sequenzaCorrente) { smaltisciAuto(gruppo); return null; }
+            scene.add(gruppo);
+            cerimoniaGruppo = gruppo;
+            return gruppo;
+        }).catch(() => null);
+    }
+
+    function avviaCerimonia(durataMs) {
+        if (!cerimoniaGruppo || !cerimoniaCam) return;
+        cerimoniaGruppo.visible = true;
+        cerimoniaDa = performance.now();
+        cerimoniaDurata = Math.max(1, durataMs || 1);
+        cerimoniaAttiva = true;
+        // Stesso piano vicino della panoramica: anche qui si guarda da
+        // ventiquattro unità, e col near di gioco l'asfalto sfarfalla.
+        camera.near = PANORAMICA_NEAR;
+        camera.updateProjectionMatrix();
+    }
+
+    function aggiornaCameraCerimonia() {
+        if (!cerimoniaCam) return;
+        const t = Math.min(1, (performance.now() - cerimoniaDa) / cerimoniaDurata);
+        const e = t * t * (3 - 2 * t);
+        const c = cerimoniaCam;
+        camera.position.set(misto(c.da.x, c.a.x, e), misto(c.da.y, c.a.y, e), misto(c.da.z, c.a.z, e));
+        camera.lookAt(c.mira.x, c.mira.y, c.mira.z);
+    }
+
+    function fermaCerimonia() {
+        cerimoniaPronta = null;
+        if (cerimoniaAttiva) {
+            cerimoniaAttiva = false;
+            camera.near = nearDiGioco;
+            camera.updateProjectionMatrix();
+        }
+        if (cerimoniaGruppo) {
+            scene.remove(cerimoniaGruppo);
+            smaltisciAuto(cerimoniaGruppo);
+            cerimoniaGruppo = null;
+        }
+        cerimoniaCam = null;
+    }
+
     function nascondiAutoInPole() {
         // Anche il precaricamento eventualmente in corso: chi lo sta
         // aspettando si accorge del cambio di sequenza e smaltisce il modello
@@ -3178,85 +3334,116 @@ document.addEventListener('DOMContentLoaded', async () => {
         autoInPole = null;
     }
 
-    socket.on('f1RaceEnded', (data) => {
+    socket.on('f1RaceEnded', async (data) => {
         fineGaraScadeA = null;
         isRacing = false;
-        const modal = document.getElementById('podium-modal');
-        const list = document.getElementById('podium-list');
-        // Ripristina il titolo statico (f1QualiEnded lo sovrascrive con "GRIGLIA
-        // DI PARTENZA" per la schermata di qualifica).
-        document.getElementById('podium-title').textContent = '🏁 RACE FINISHED 🏁';
-        list.innerHTML = '';
+        const mia = ++sequenzaCorrente;
+        silenzioTransizione(true);
+        sipario(true);
+        const cer = data.cerimonia || {};
 
-        const title = document.createElement('h2');
-        title.style.color = data.isFinal ? '#2ecc71' : '#f1c40f';
-        title.style.marginTop = '-10px';
-        title.textContent = data.isFinal
-            ? '🏆 CHAMPIONSHIP CONCLUDED 🏆'
-            : `Finished ${data.trackName} — Next race starting soon…`;
-        list.appendChild(title);
+        // La scena si costruisce SUBITO, mentre lo stacco copre lo schermo:
+        // un podio e tre auto con le loro livree sono più lavoro dell'auto in
+        // pole del riepilogo griglia, e i quattro secondi di stacco servono
+        // esattamente a questo (stessa lezione di preparaAutoInPole).
+        const scenaPronta = costruisciCerimonia(data.podium || []);
 
-        (data.podium || []).forEach((entry, i) => {
-            const t = entry.totalTime;
-            // Nessuno resta senza tempo: chi non era ancora arrivato quando la
-            // gara ha chiuso riceve il tempo PROIETTATO dal ritmo che ha
-            // tenuto davvero (vedi endRace). Il "≈" dice che è una proiezione
-            // e non un tempo cronometrato — serve a chi rileggerà la
-            // classifica di campionato fra dieci gare.
-            const timeStr = (t === null || t === undefined)
-                ? '—'
-                : (entry.stimato ? '≈ ' : '') +
-                  `${Math.floor(t / 60000)}:${String(Math.floor((t % 60000) / 1000)).padStart(2, '0')}.${String(t % 1000).padStart(3, '0')}`;
-            const li = document.createElement('li');
-            li.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px 5px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:18px;';
-            li.innerHTML = `
-                <div style="display:flex;align-items:center;gap:12px;">
-                    <span style="font-weight:900;width:26px;color:${i === 0 ? '#f1c40f' : i === 1 ? '#95a5a6' : i === 2 ? '#d35400' : 'var(--hud-text)'}">${i + 1}°</span>
-                    <span style="display:inline-block;width:20px;height:20px;background:${entry.color};border-radius:50%;border:2px solid var(--hud-surface);"></span>
-                    <span style="font-size:13px;font-weight:bold;">${entry.color === myColor ? '(YOU)' : ''}</span>
-                    ${entry.pitPenalty ? '<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+30s NO PIT</span>' : ''}
-                    ${entry.falseStart ? '<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+5s FALSE START</span>' : ''}
-                    ${entry.collisionPenaltyMs > 0 ? `<span style="font-size:11px;font-weight:bold;color:#e74c3c;border:1px solid #e74c3c;border-radius:6px;padding:1px 6px;">+${(entry.collisionPenaltyMs / 1000).toFixed(1)}s COLLISIONI</span>` : ''}
-                </div>
-                <span style="font-family:monospace;font-weight:bold;${entry.stimato ? 'opacity:0.72;' : ''}" ${entry.stimato ? 'title="Tempo proiettato dal ritmo tenuto in gara: non era ancora arrivato alla chiusura"' : ''}>${timeStr}</span>`;
-            list.appendChild(li);
+        await F1Sting.play({
+            durataMs: cer.staccoMs,
+            titolo: 'Gara conclusa',
+            sottotitolo: data.trackName || '',
         });
+        if (mia !== sequenzaCorrente) return;
+        await scenaPronta;
+        if (mia !== sequenzaCorrente) return;
 
-        modal.style.display = 'flex';
-        const single = document.getElementById('single-mode-controls');
-        const autoText = document.getElementById('auto-return-text');
-        if (data.isSingleMode) {
-            autoText.style.display = 'none';
-            single.style.display = 'flex';
-            document.getElementById('restart-race-btn').onclick = () => socket.emit('f1RestartRace', lobbyId);
-            document.getElementById('back-to-lobby-btn').onclick = () => socket.emit('f1ReturnToLobby', lobbyId);
-            if (myColor !== hostColor) {
-                document.getElementById('restart-race-btn').style.display = 'none';
-                document.getElementById('back-to-lobby-btn').textContent = 'Torna alla Lobby';
-            }
-        } else {
-            single.style.display = 'none';
-            autoText.style.display = 'block';
-            if (data.isFinal) {
-                // Durata decisa dal server (RACE_END_RETURN_MS): è lo stesso
-                // valore su cui il server programma lo smontaggio della
-                // partita, quindi non può divergere da quello che vedi qui.
-                let secs = Math.round((data.returnMs || 8000) / 1000);
-                autoText.textContent = `Ritorno alla lobby tra ${secs}s…`;
-                const t = setInterval(() => {
-                    secs--;
-                    if (secs <= 0) {
-                        clearInterval(t);
-                        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(myColor)}`;
-                    } else {
-                        autoText.textContent = `Ritorno alla lobby tra ${secs}s…`;
-                    }
-                }, 1000);
-            } else {
-                autoText.textContent = 'Caricamento prossima pista…';
-            }
-        }
+        avviaCerimonia(cer.scenaMs);
+        mostraCerimonia(data, cer.scenaMs);
+        sipario(false, 520);
     });
+
+    // Fascia dei risultati sopra la scena della premiazione, più i comandi per
+    // uscire: pulsante o scadenza del tempo, come chiesto.
+    function mostraCerimonia(data, durataMs) {
+        const box = document.getElementById('race-ceremony');
+        const lista = document.getElementById('rc-lista');
+        if (!box || !lista) return;
+        const mia = sequenzaCorrente;
+
+        document.getElementById('rc-circuito').textContent = data.trackName || '';
+        document.getElementById('rc-titolo').textContent = data.isFinal ? 'Gara conclusa' : 'Fine gara';
+
+        lista.innerHTML = (data.podium || []).map((e, i) => {
+            const t = e.totalTime;
+            // Nessuno resta senza tempo: chi non era ancora arrivato quando la
+            // gara ha chiuso riceve il tempo PROIETTATO dal ritmo che ha tenuto
+            // davvero (vedi endRace). Il "≈" dice che è una proiezione e non un
+            // tempo cronometrato.
+            const tempo = (t === null || t === undefined) ? '—'
+                : (e.stimato ? '≈ ' : '') + formattaTempoGiro(t);
+            const pene = [];
+            if (e.pitPenalty) pene.push(['+30', 'Sosta obbligatoria non effettuata']);
+            if (e.falseStart) pene.push(['+5', 'Falsa partenza']);
+            if (e.collisionPenaltyMs > 0) pene.push(['+' + (e.collisionPenaltyMs / 1000).toFixed(1), 'Collisioni causate']);
+            const classi = ['rc-riga'];
+            if (i < 3) classi.push('p' + (i + 1));
+            if (e.color === myColor) classi.push('sono-io');
+            return `<li class="${classi.join(' ')}">
+                <span class="rc-pos">${i + 1}</span>
+                <span class="rc-barra" style="background:${e.color}"></span>
+                <span class="rc-chi">${e.color === myColor ? 'Tu' : (e.isBot ? 'Bot' : 'Pilota')}</span>
+                <span class="rc-tempo${e.stimato ? ' stimato' : ''}"${e.stimato ? ' title="Tempo proiettato dal ritmo tenuto in gara: non era ancora arrivato alla chiusura"' : ''}>${tempo}${pene.map(([n, t2]) => `<span class="rc-pen" title="${t2}">${n}s</span>`).join('')}</span>
+            </li>`;
+        }).join('');
+
+        box.style.display = 'block';
+        const righe = lista.querySelectorAll('.rc-riga');
+        if (typeof anime === 'function') {
+            anime({
+                targets: righe, opacity: [0, 1], translateY: [10, 0],
+                delay: anime.stagger(40), duration: 320, easing: 'easeOutQuad',
+            });
+        } else {
+            righe.forEach(r => { r.style.opacity = 1; });
+        }
+
+        // ── Uscita ──────────────────────────────────────────────────────
+        const riprova = document.getElementById('rc-riprova');
+        const inLobby = document.getElementById('rc-lobby');
+        const conto = document.getElementById('rc-conto');
+
+        // "Riprova" rilancia la gara con la stessa griglia: ha senso solo in
+        // modalità singola e solo per chi ospita.
+        const puoiRiprovare = !!data.isSingleMode && myColor === hostColor;
+        riprova.style.display = puoiRiprovare ? '' : 'none';
+        riprova.onclick = () => { sequenzaCorrente++; socket.emit('f1RestartRace', lobbyId); };
+
+        // Il pulsante porta in lobby CHI LO PREME. Solo chi ospita chiude la
+        // partita per tutti: un giocatore qualunque non deve poter strappare
+        // gli altri dalla premiazione.
+        inLobby.onclick = () => {
+            if (myColor === hostColor) socket.emit('f1ReturnToLobby', lobbyId);
+            else window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(myColor)}`;
+        };
+
+        // Il tempo lo decide il server, ed è lo stesso su cui programma lo
+        // smontaggio della partita: non possono divergere.
+        let resta = Math.max(1000, durataMs || 15000);
+        conto.textContent = `Rientro fra ${Math.ceil(resta / 1000)}s`;
+        const passo = setInterval(() => {
+            if (mia !== sequenzaCorrente) { clearInterval(passo); return; }
+            resta -= 1000;
+            if (resta > 0) { conto.textContent = `Rientro fra ${Math.ceil(resta / 1000)}s`; return; }
+            clearInterval(passo);
+            conto.textContent = 'Rientro in lobby…';
+            window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(myColor)}`;
+        }, 1000);
+    }
+
+    function nascondiCerimonia() {
+        const box = document.getElementById('race-ceremony');
+        if (box) box.style.display = 'none';
+    }
 
     // Dissolvenza a nero durante la pausa "Riprova" (RESTART_GRACE_MS lato
     // server, vedi backend): copre il riposizionamento dell'auto alla
@@ -3608,6 +3795,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (panoramicaAttiva) {
             const s = scattoPanoramica();
             if (s) puntaOmbre(s.target.x, s.target.z);
+            return;
+        }
+        if (cerimoniaAttiva && cerimoniaCam) {
+            puntaOmbre(cerimoniaCam.mira.x, cerimoniaCam.mira.z);
             return;
         }
         if (!myCarGroup) return;
@@ -4047,6 +4238,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (tyreSelectActive) updateTyreSelectCamera();
         else if (panoramicaAttiva) aggiornaCameraPanoramica();
+        else if (cerimoniaAttiva) aggiornaCameraCerimonia();
         else updateCamera();
         seguiConLeOmbre();
         toonSky.update(camera);
