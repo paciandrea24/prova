@@ -505,14 +505,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         : 0;
     TrackMeshBuilder.buildStartingGrid(scene, trackPts, START_FINISH_INDEX, gridSize);
 
-    // Inquadrature dell'anteprima mostrata durante la scelta mescola. Si
-    // calcolano qui, una volta sola: dipendono solo dalla forma del
-    // tracciato, che da qui in poi non cambia più.
-    const anteprimaScatti = TrackPreviewShots.buildShots(trackPts, PIT_PTS, {
-        startFinishIndex: START_FINISH_INDEX,
-        barrierDist: BARRIER_D,
-    });
-
     // ====================================================
     // STILE CEL-SHADED — conversione dei materiali generati qui
     // (Rif. spec 2026-08-10-f1-art-direction-cel-shading-design.md)
@@ -1097,6 +1089,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     await caricamento.respira();
     const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, BARRIER_PROFILE, terraceAnchors, { gridSize });
     const scenografiaPronta = loadScenery(scene, sceneryLayout);
+
+    // Inquadrature dell'anteprima mostrata durante la scelta mescola. Si
+    // calcolano una volta sola: dipendono dalla forma del tracciato e dalla
+    // scenografia, che da qui in poi non cambiano più.
+    //
+    // DOPO generateLayout, non prima: senza la scenografia le camere non
+    // sanno cosa hanno intorno e finiscono dentro i cartelloni sponsor —
+    // che stanno esattamente all'offset dove si mettevano loro (vedi
+    // trackPreviewShots.js).
+    const anteprimaScatti = TrackPreviewShots.buildShots(trackPts, PIT_PTS, {
+        startFinishIndex: START_FINISH_INDEX,
+        barrierDist: BARRIER_D,
+        layout: sceneryLayout,
+    });
 
     // ====================================================
     // LOADER GLB (macchina colorata per team)

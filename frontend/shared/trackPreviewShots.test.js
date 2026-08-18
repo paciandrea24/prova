@@ -158,3 +158,107 @@ test('"prova" ha un dislivello e quindi ottiene lo scatto in quota', () => {
 test('un tracciato vuoto non fa esplodere il carosello', () => {
     assert.deepEqual(TrackPreviewShots.buildShots([], [], {}), []);
 });
+
+// ────────────────────────────────────────────────────────────────────────
+// LA CAMERA NON DEVE FINIRE DENTRO LA SCENOGRAFIA
+//
+// Il difetto che questi test proteggono (segnalato in playtest):
+// "l'inquadratura del traguardo entra dentro un cartellone pubblicitario, la
+// camera entra tipo in uno dei tubi che lo sostengono e gli passa
+// all'interno". La causa non era un numero sbagliato: gli scatti si ricavano
+// dalla forma della pista, gli oggetti li piazza trackScenery.js, e i due
+// moduli usavano lo stesso offset dalla barriera senza sapersi. I cartelloni
+// sponsor stanno a barrierDist+6, e lì si metteva la camera del traguardo.
+//
+// Misurato prima del controllo: su "prova" la camera del traguardo era dentro
+// un cartellone per 0.3 unità e quella del punto alto dentro due tribune (4.3
+// e 0.3); su monte-rosso il cartellone era sfiorato a 0.3.
+// ────────────────────────────────────────────────────────────────────────
+const TrackScenery = require('./trackScenery.js');
+const seatAnchors = require(path.join(__dirname, '..', 'assets/custom/circuit/grandStandSeats.json')).seats;
+const terraceAnchors = require(path.join(__dirname, '..', 'assets/custom/circuit/terraceAnchors.json')).anchors;
+
+function scattiConScenografia(id) {
+    const grezzo = JSON.parse(require('fs').readFileSync(
+        path.join(__dirname, '..', 'tracks', id + '.json'), 'utf8'));
+    const t = loadTrack(id);
+    const barrierDist = t.roadHalf + 2.8 + 1.2;
+    const layout = TrackScenery.generateLayout(grezzo, t.points, t.pitLanePts,
+        barrierDist, 45, seatAnchors, t.barrierProfile, terraceAnchors, { gridSize: 6 });
+    return {
+        layout,
+        solidi: TrackPreviewShots.oggettiSolidi(layout),
+        scatti: TrackPreviewShots.buildShots(t.points, t.pitLanePts, {
+            startFinishIndex: t.startFinishIndex || 0,
+            barrierDist,
+            layout,
+        }),
+    };
+}
+
+// Campiona TUTTA la corsa della camera, non i soli estremi: sul punto alto di
+// "prova" la camera partiva e arrivava all'aperto ma attraversava due tribune
+// a metà strada, perché a offset costante lungo una pista che curva la
+// traiettoria non è un segmento.
+// Campiona molto piu' fitto di quanto faccia la produzione (~0.5 unita'
+// contro 2): cosi' il test e' strettamente piu' severo del controllo che
+// verifica, e un buco di campionamento in produzione si vede da qui. E' gia'
+// successo: la camera della curva su "prova" scavalcava una rete di sicurezza
+// infilandosi fra due campioni consecutivi.
+function oggettiSullaCorsa(scatto, solidi) {
+    const dentro = [];
+    const lunghezza = Math.hypot(scatto.camFine.x - scatto.cam.x,
+        scatto.camFine.y - scatto.cam.y, scatto.camFine.z - scatto.cam.z);
+    const campioni = Math.max(24, Math.ceil(lunghezza / 0.5));
+    for (let k = 0; k <= campioni; k++) {
+        const u = k / campioni;
+        const p = {
+            x: scatto.cam.x + (scatto.camFine.x - scatto.cam.x) * u,
+            y: scatto.cam.y + (scatto.camFine.y - scatto.cam.y) * u,
+            z: scatto.cam.z + (scatto.camFine.z - scatto.cam.z) * u,
+        };
+        for (const item of solidi) {
+            if (TrackPreviewShots.ostruisce(item, p) && !dentro.includes(item)) dentro.push(item);
+        }
+    }
+    return dentro;
+}
+
+for (const id of TRACCIATI) {
+    test(`${id}: nessuna inquadratura passa dentro la scenografia`, () => {
+        const { scatti, solidi } = scattiConScenografia(id);
+        for (const s of scatti) {
+            // `suAsse`: lo scatto del rettilineo sta sopra l'asfalto per
+            // scelta (vedi trackPreviewShots.js) ed e' l'unico che la
+            // produzione non scansa. Passa sotto le passerelle esattamente
+            // come le auto, e la scatola d'ingombro di una campata comprende
+            // il vuoto sotto: contarlo come compenetrazione sarebbe falso.
+            if (s.suAsse) continue;
+            const dentro = oggettiSullaCorsa(s, solidi);
+            assert.equal(dentro.length, 0,
+                `lo scatto "${s.id}" attraversa ${dentro.map(v => `${v.asset}@(${v.x.toFixed(0)},${v.z.toFixed(0)})`).join(', ')}`);
+        }
+    });
+}
+
+test('senza scenografia gli scatti restano quelli nominali', () => {
+    // La scenografia e' facoltativa: chi non la passa (strumenti offline,
+    // test piu' vecchi) deve ottenere le stesse inquadrature di sempre.
+    const t = loadTrack('prova');
+    const opzioni = { startFinishIndex: t.startFinishIndex || 0, barrierDist: t.roadHalf + 2.8 + 1.2 };
+    const senza = TrackPreviewShots.buildShots(t.points, t.pitLanePts, opzioni);
+    const vuota = TrackPreviewShots.buildShots(t.points, t.pitLanePts, Object.assign({ layout: [] }, opzioni));
+    assert.deepEqual(vuota.map(s => s.cam), senza.map(s => s.cam));
+});
+
+test('con la scenografia la camera del traguardo si sposta davvero', () => {
+    // Il controllo non e' decorativo: su "prova" cambia la posizione.
+    const t = loadTrack('prova');
+    const opzioni = { startFinishIndex: t.startFinishIndex || 0, barrierDist: t.roadHalf + 2.8 + 1.2 };
+    const senza = TrackPreviewShots.buildShots(t.points, t.pitLanePts, opzioni)
+        .find(s => s.id === 'traguardo');
+    const con = scattiConScenografia('prova').scatti.find(s => s.id === 'traguardo');
+    const spostamento = Math.hypot(con.cam.x - senza.cam.x, con.cam.z - senza.cam.z);
+    assert.ok(spostamento > 0.5,
+        `la camera del traguardo non si e' spostata (${spostamento.toFixed(2)} unita): il cartellone e' ancora addosso`);
+});

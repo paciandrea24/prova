@@ -18,11 +18,11 @@
 // 150. Era il motivo per cui l'anteprima non mostrava niente.
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
-        module.exports = factory(require('./trackGeometry.js'));
+        module.exports = factory(require('./trackGeometry.js'), require('./sceneryAssetSizes.js'));
     } else {
-        root.TrackPreviewShots = factory(root.TrackGeometry);
+        root.TrackPreviewShots = factory(root.TrackGeometry, root.SceneryAssetSizes);
     }
-})(typeof self !== 'undefined' ? self : this, function (TrackGeometry) {
+})(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryAssetSizes) {
 
     // Quanto dura ogni inquadratura prima dello stacco.
     const DURATA_MS = 5200;
@@ -51,6 +51,151 @@
     // comunque). La forma del giro la racconta la mappa a fianco, questi
     // scatti raccontano l'ambiente.
     const DISTANZA_UTILE = 320;
+
+    // ────────────────────────────────────────────────────────────────────
+    // SCANSARE LA SCENOGRAFIA
+    //
+    // Gli scatti nascono dalla forma della pista, gli oggetti li piazza
+    // trackScenery.js, e i due moduli non si conoscono: usano gli stessi
+    // offset dalla barriera e prima o poi si incontrano. Misurato sui
+    // tracciati reali, prima di questo controllo:
+    //
+    //   prova        traguardo  DENTRO un cartellone sponsor per 0.3 unità
+    //   prova        quota      DENTRO due tribune, per 4.3 e 0.3
+    //   monte-rosso  traguardo  cartellone sfiorato a 0.3
+    //
+    // I cartelloni sponsor stanno a barrierDist+6 (BANNER_OFFSET in
+    // sceneryPaddock.js) e la camera del traguardo si metteva a barrierDist+6:
+    // lo stesso numero scritto in due file che non si parlano. Segnalato in
+    // playtest come "l'inquadratura entra dentro un cartellone e passa dentro
+    // uno dei tubi che lo sostengono".
+    // ────────────────────────────────────────────────────────────────────
+
+    // Nota su ponte semafori e passerella, che scavalcano la pista: la loro
+    // scatola d'ingombro comprende il vuoto sotto la campata, quindi una
+    // camera che ci passasse sotto risulta "dentro" senza esserlo. Qui si
+    // accetta comunque di scansarli, per due motivi. Primo: l'intradosso
+    // reale non è misurabile dall'asset — i GLB voxel raggruppano le mesh per
+    // materiale, quindi un nodo copre insieme i piloni e l'impalcato
+    // (misurato: `footbridge_concrete` va da 0 a 12.9 su tutta la campata), e
+    // non esiste un numero verificabile sotto cui ci sia solo aria. Secondo:
+    // scansarli non toglie nessuna inquadratura sulle piste attuali, mentre
+    // un intradosso indovinato metterebbe la camera dentro un pilone.
+
+    // Aria richiesta attorno alla camera. Non basta "non compenetrare": una
+    // superficie a mezzo metro dall'obiettivo riempie comunque l'inquadratura.
+    const ARIA_CAMERA = 2.5;
+
+    // Alternative provate, in ordine di preferenza: prima ci si sposta di
+    // lato, così l'inquadratura resta quella pensata; solo se non basta si
+    // sale sopra l'ostacolo. [scostamento laterale, scostamento in quota]
+    const ALTERNATIVE = [
+        [0, 0], [3, 0], [-3, 0], [6, 0], [-5, 0], [9, 0], [12, 0], [16, 0], [20, 0],
+        [0, 9], [6, 9], [-5, 9], [0, 16], [12, 16],
+    ];
+
+    // Distanza di un punto dal bordo di un rettangolo orientato, negativa se
+    // il punto è dentro.
+    function distanzaDalPoligono(px, pz, poly) {
+        let minima = Infinity, segno = 0, dentro = true;
+        for (let i = 0; i < poly.length; i++) {
+            const a = poly[i], b = poly[(i + 1) % poly.length];
+            const dx = b.x - a.x, dz = b.z - a.z;
+            const t = Math.max(0, Math.min(1, ((px - a.x) * dx + (pz - a.z) * dz) / (dx * dx + dz * dz || 1)));
+            const d = Math.hypot(px - (a.x + t * dx), pz - (a.z + t * dz));
+            if (d < minima) minima = d;
+            const cross = dx * (pz - a.z) - dz * (px - a.x);
+            if (cross !== 0) {
+                const s = cross > 0 ? 1 : -1;
+                if (segno === 0) segno = s; else if (s !== segno) dentro = false;
+            }
+        }
+        return dentro ? -minima : minima;
+    }
+
+    function ostruisce(item, p) {
+        const scala = item.scale > 1 ? item.scale : 1;
+        const dim = SceneryAssetSizes.sizeOf(item.asset);
+        const base = item.y || 0;
+        const cima = base + dim.h * scala;
+        if (p.y < base - ARIA_CAMERA || p.y > cima + ARIA_CAMERA) return false;
+        return distanzaDalPoligono(p.x, p.z, SceneryAssetSizes.footprintCorners(item)) < ARIA_CAMERA;
+    }
+
+    // Solo ciò che ha davvero un volume: folla, laghetti e asfalto del
+    // parcheggio sono superfici o figurine, non ostacoli per una camera.
+    function oggettiSolidi(layout) {
+        return (layout || []).filter(v => v.category !== 'pond' && v.category !== 'parkingLot'
+            && v.category !== 'crowd' && v.category !== 'terraceCrowd');
+    }
+
+    // Passo di campionamento lungo la corsa della camera, in unità di gioco.
+    //
+    // Controllare i soli estremi non basta: sul punto alto di "prova" la
+    // camera partiva e arrivava all'aperto ma attraversava due tribune a metà
+    // strada, perché a offset costante lungo una pista che curva la
+    // traiettoria non è un segmento.
+    //
+    // E il passo va in DISTANZA, non in "N campioni": con un numero fisso di
+    // campioni il passo cambia con la lunghezza della corsa, e su "prova" la
+    // camera della curva scavalcava una rete di sicurezza infilandosi fra due
+    // campioni consecutivi. Sotto ARIA_CAMERA il campionamento non ha buchi,
+    // perché ogni campione controlla un intorno di quel raggio.
+    const PASSO_CORSA = 2;
+    const CAMPIONI_MAX = 200;   // rete di sicurezza contro corse anomale
+
+    // Quanto lontano cercare la scenografia attorno alla corsa nominale: il
+    // massimo scostamento laterale previsto dalle ALTERNATIVE, più aria.
+    const RAGGIO_RICERCA = 60;
+
+    function campioniDellaCorsa(c) {
+        const lunghezza = Math.hypot(c.camFine.x - c.cam.x, c.camFine.y - c.cam.y, c.camFine.z - c.cam.z);
+        return Math.min(CAMPIONI_MAX, Math.max(1, Math.ceil(lunghezza / PASSO_CORSA)));
+    }
+
+    function corsaLibera(c, solidi) {
+        const campioni = campioniDellaCorsa(c);
+        for (let k = 0; k <= campioni; k++) {
+            const u = k / campioni;
+            const p = {
+                x: c.cam.x + (c.camFine.x - c.cam.x) * u,
+                y: c.cam.y + (c.camFine.y - c.cam.y) * u,
+                z: c.cam.z + (c.camFine.z - c.cam.z) * u,
+            };
+            for (const item of solidi) if (ostruisce(item, p)) return false;
+        }
+        return true;
+    }
+
+    // Sceglie fra le ALTERNATIVE la prima che libera TUTTA la corsa della
+    // camera. `costruisci(dLato, dQuota)` deve restituire { cam, camFine }.
+    // Se nessuna libera, torna la nominale: un'inquadratura imperfetta è
+    // comunque meglio di una mancante.
+    function scansa(costruisci, solidi) {
+        if (!solidi || !solidi.length) return costruisci(0, 0);
+        const nominale = costruisci(0, 0);
+
+        // Solo la scenografia nei paraggi: il resto del circuito non può
+        // ostruire una camera che si sposta di poche decine di unità, e
+        // filtrarlo qui evita di ripassare ~1200 oggetti per ogni campione di
+        // ogni alternativa.
+        const cx = (nominale.cam.x + nominale.camFine.x) / 2;
+        const cz = (nominale.cam.z + nominale.camFine.z) / 2;
+        const mezzaCorsa = Math.hypot(nominale.camFine.x - nominale.cam.x,
+            nominale.camFine.z - nominale.cam.z) / 2;
+        const vicini = solidi.filter(function (v) {
+            const sc = v.scale > 1 ? v.scale : 1;
+            return Math.hypot(v.x - cx, v.z - cz)
+                <= mezzaCorsa + RAGGIO_RICERCA + SceneryAssetSizes.footprintRadius(v.asset) * sc;
+        });
+
+        for (const alternativa of ALTERNATIVE) {
+            const dLato = alternativa[0], dQuota = alternativa[1];
+            const c = (dLato === 0 && dQuota === 0) ? nominale : costruisci(dLato, dQuota);
+            if (corsaLibera(c, vicini)) return c;
+        }
+        return nominale;
+    }
 
     function puntoLaterale(trackPts, idx, offset, side, quota) {
         const p = trackPts[idx];
@@ -166,6 +311,19 @@
         const barriera = o.barrierDist || 15;
         const traguardo = o.startFinishIndex || 0;
         const scatti = [];
+        // Scenografia già generata (TrackScenery.generateLayout). Facoltativa:
+        // senza, gli scatti restano quelli nominali e possono finire dentro un
+        // cartellone — è quello che succedeva prima che questo esistesse.
+        const solidi = oggettiSolidi(o.layout);
+
+        // Costruttore di una coppia cam/camFine laterale, scostabile: è quello
+        // che `scansa` chiama con le varie alternative.
+        function coppiaLaterale(idxA, idxB, offset, side, quota) {
+            return (dLato, dQuota) => ({
+                cam: puntoLaterale(trackPts, idxA, offset + dLato, side, quota + dQuota),
+                camFine: puntoLaterale(trackPts, idxB, offset + dLato, side, quota + dQuota),
+            });
+        }
 
         // Lato opposto alla corsia box: di là ci sono tribuna principale e
         // ponte semafori, ancorati proprio al traguardo.
@@ -206,16 +364,17 @@
         //    fronte a ~7 unità oltre la barriera, cioè esattamente dove stava
         //    la camera, e l'inquadratura finiva DENTRO i gradoni senza far
         //    vedere la linea (segnalato in playtest).
-        scatti.push({
+        scatti.push(Object.assign({
             id: 'traguardo',
             etichetta: 'IL TRAGUARDO',
             idx: traguardo,
             durata: DURATA_MS,
-            cam: puntoLaterale(trackPts, avanti(n, traguardo, -campioniPer(trackPts, 55)), barriera + 6, -latoTrib, 6),
-            camFine: puntoLaterale(trackPts, avanti(n, traguardo, -campioniPer(trackPts, 18)), barriera + 6, -latoTrib, 6),
             target: puntoPista(trackPts, avanti(n, traguardo, campioniPer(trackPts, 60)), 2),
             targetFine: puntoPista(trackPts, avanti(n, traguardo, campioniPer(trackPts, 130)), 2),
-        });
+        }, scansa(coppiaLaterale(
+            avanti(n, traguardo, -campioniPer(trackPts, 55)),
+            avanti(n, traguardo, -campioniPer(trackPts, 18)),
+            barriera + 6, -latoTrib, 6), solidi)));
 
         // 3. LA CURVA PIÙ STRETTA — camera all'ESTERNO (findCorners.side è già
         //    il lato esterno) e in alto, come una telecamera da bordo pista:
@@ -228,16 +387,16 @@
                 if (curve[k].minRadius < curve[piuStretta].minRadius) piuStretta = k;
             }
             const c = curve[piuStretta];
-            scatti.push({
+            scatti.push(Object.assign({
                 id: 'curva',
                 etichetta: `CURVA ${piuStretta + 1}`,
                 idx: c.midIdx,
                 durata: DURATA_MS,
-                cam: puntoLaterale(trackPts, avanti(n, c.midIdx, -12), barriera + 20, c.side, 16),
-                camFine: puntoLaterale(trackPts, avanti(n, c.midIdx, 14), barriera + 20, c.side, 16),
                 target: puntoPista(trackPts, c.midIdx, 1),
                 targetFine: puntoPista(trackPts, c.midIdx, 1),
-            });
+            }, scansa(coppiaLaterale(
+                avanti(n, c.midIdx, -12), avanti(n, c.midIdx, 14),
+                barriera + 20, c.side, 16), solidi)));
         }
 
         // 4. IL RETTILINEO — sull'asse della pista e basso, così la
@@ -259,6 +418,14 @@
                 etichetta: 'IL RETTILINEO',
                 idx: inizio,
                 durata: DURATA_MS,
+                // Unico scatto che NON viene scansato dalla scenografia: sta
+                // sull'asse della pista per scelta, e spostarlo di lato lo
+                // annullerebbe. Non ce n'è bisogno — è dove passano le auto,
+                // quindi ciò che scavalca la pista (passerelle, ponte
+                // semafori) le passa sopra anche qui. Su monte-rosso la corsa
+                // finisce proprio sotto una passerella: è l'inquadratura
+                // giusta, non una compenetrazione.
+                suAsse: true,
                 cam: puntoPista(trackPts, inizio, 6),
                 camFine: puntoPista(trackPts, avanti(n, inizio, Math.round(avanzamento * 0.35)), 6),
                 target: puntoPista(trackPts, avanti(n, inizio, avanzamento), 2),
@@ -272,21 +439,23 @@
         if (alto.dislivello >= DISLIVELLO_MIN) {
             const p = trackPts[alto.idx];
             const lato = latoPiuLibero(trackPts, alto.idx, barriera + 34);
-            const cam = puntoLaterale(trackPts, alto.idx, barriera + 34, lato, 0);
-            const camB = puntoLaterale(trackPts, avanti(n, alto.idx, 18), barriera + 34, lato, 0);
             // Quota indipendente da quella della pista: la camera sta a terra,
             // il ponte le passa sopra.
-            cam.y = Math.max(0, (p.y || 0) - alto.dislivello * 0.55) + 3;
-            camB.y = cam.y;
-            scatti.push({
+            const quotaCam = Math.max(0, (p.y || 0) - alto.dislivello * 0.55) + 3;
+            scatti.push(Object.assign({
                 id: 'quota',
                 etichetta: p.bridge ? 'IL PONTE' : 'IL DISLIVELLO',
                 idx: alto.idx,
                 durata: DURATA_MS,
-                cam, camFine: camB,
                 target: puntoPista(trackPts, alto.idx, 2),
                 targetFine: puntoPista(trackPts, avanti(n, alto.idx, 12), 2),
-            });
+            }, scansa(function (dLato, dQuota) {
+                const cam = puntoLaterale(trackPts, alto.idx, barriera + 34 + dLato, lato, 0);
+                const camB = puntoLaterale(trackPts, avanti(n, alto.idx, 18), barriera + 34 + dLato, lato, 0);
+                cam.y = quotaCam + dQuota;
+                camB.y = cam.y;
+                return { cam: cam, camFine: camB };
+            }, solidi)));
         }
 
         // 6. LA CORSIA BOX — dall'alto, in asse con la corsia: è la fila dei
@@ -326,6 +495,7 @@
 
     return {
         buildShots, ingombro, rettilineoPiuLungo,
+        ostruisce, oggettiSolidi, ARIA_CAMERA,
         DURATA_MS, DISLIVELLO_MIN, RETTILINEO_MIN, DISTANZA_UTILE,
     };
 });
