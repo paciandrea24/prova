@@ -157,3 +157,60 @@ test('la scoperta della pole ci sta dentro, e resta tempo per il riepilogo', (t)
     assert.ok(riepilogoPole >= 2000,
         `al pilota in pole restano ${riepilogoPole} ms di riepilogo: troppo pochi per leggere la griglia`);
 });
+
+// ────────────────────────────────────────────────────────────────────────
+// PREMIAZIONE DI FINE GARA
+// Stesso schema della sequenza di griglia, e per lo stesso motivo: le durate
+// hanno un proprietario solo e la partita non deve chiudersi mentre la
+// premiazione e' ancora a schermo.
+// ────────────────────────────────────────────────────────────────────────
+function chiudiGara(io, game) {
+    game.phase = 'race';
+    let t = 300000;
+    for (const p of Object.values(game.players)) {
+        p.finished = true; p.time = (t += 900); p.lap = game.track.totalLaps;
+    }
+    f1.endRace(io, LOBBY, game);
+}
+
+test('f1RaceEnded porta le durate della premiazione, e il totale e la loro somma', (t) => {
+    t.after(pulisci);
+    const emessi = [];
+    const { io, game } = prepara(emessi);
+    chiudiGara(io, game);
+
+    const dati = emessi.filter(e => e.ev === 'f1RaceEnded').pop().dati;
+    assert.ok(dati.cerimonia, 'senza le durate il client dovrebbe tenerne una copia propria');
+    assert.equal(dati.cerimonia.totaleMs, dati.cerimonia.staccoMs + dati.cerimonia.scenaMs);
+    assert.equal(dati.returnMs, dati.cerimonia.totaleMs,
+        'il conto alla rovescia del rientro e la premiazione devono finire insieme');
+});
+
+test('i primi tre portano uid e isBot: servono ai loro modelli sul podio', (t) => {
+    t.after(pulisci);
+    const emessi = [];
+    const { io, game } = prepara(emessi);
+    chiudiGara(io, game);
+
+    const podio = emessi.filter(e => e.ev === 'f1RaceEnded').pop().dati.podium;
+    assert.ok(podio.length >= 3, 'servono almeno tre classificati per questo test');
+    for (const riga of podio.slice(0, 3)) {
+        assert.ok('uid' in riga && 'isBot' in riga,
+            `riga incompleta: ${JSON.stringify(riga)}`);
+    }
+    const umano = podio.find(r => r.color === 'red');
+    assert.equal(umano.uid, 'uid-di-red', 'senza uid la premiazione non puo chiedere la livrea');
+});
+
+test('la partita non si chiude mentre la premiazione e ancora a schermo', (t) => {
+    t.after(pulisci);
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const emessi = [];
+    const { io, game } = prepara(emessi);
+    chiudiGara(io, game);
+    const c = emessi.filter(e => e.ev === 'f1RaceEnded').pop().dati.cerimonia;
+
+    t.mock.timers.tick(c.totaleMs - 100);
+    assert.equal(activeGames.has(LOBBY), true,
+        'la partita e stata smontata mentre la premiazione era ancora in corso');
+});

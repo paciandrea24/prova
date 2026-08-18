@@ -178,7 +178,19 @@ const RESTART_GRACE_MS = 1500;
 // client torni da solo in lobby. Il numero sta QUI e viaggia dentro l'evento
 // f1RaceEnded: il conto alla rovescia del client lo legge da lì, così non
 // esistono due copie che possono divergere.
-const RACE_END_RETURN_MS = 8000;
+// ── Premiazione di fine gara ────────────────────────────────────────────
+// Stesso schema della sequenza qualifica→gara: le durate stanno qui, il
+// client le riceve dentro f1RaceEnded e non ne tiene una copia.
+//
+// Lo stacco è lo stesso della transizione in griglia (F1Sting): copre il
+// salto dalla pista alla premiazione, che altrimenti sarebbe brusco esattamente
+// come lo era quello di prima della gara.
+const CER_STACCO_MS = 4200;
+// Quanto resta a schermo la premiazione vera: podio, le tre auto e la
+// classifica finale. Da qui si torna in lobby, col pulsante o lasciando
+// scadere il tempo.
+const CER_SCENA_MS = 15000;
+const RACE_END_RETURN_MS = CER_STACCO_MS + CER_SCENA_MS;
 // Margine oltre il rientro prima che il server smonti la partita: al client
 // serve il tempo di navigare via, non di essere sfrattato mentre guarda il
 // podio.
@@ -2281,6 +2293,11 @@ function endRace(io, lobbyId, game) {
         stimato: p.time === null,
         pitPenalty: !!p.pitPenalty, falseStart: !!p.falseStart,
         collisionPenaltyMs: p.collisionPenaltyMs || 0,
+        // Servono alla premiazione: i primi tre vengono costruiti col loro
+        // modello vero e la livrea personalizzata, chiesta per uid come nel
+        // riepilogo della griglia.
+        uid: p.uid || null,
+        isBot: !!p.isBot,
     }));
     // isFinal = questa era l'ultima gara della sessione. Resta fisso a true
     // finché non arriva il campionato, dove una gara intermedia dovrà valere
@@ -2295,6 +2312,12 @@ function endRace(io, lobbyId, game) {
         // Il client ci fa il conto alla rovescia del rientro automatico:
         // il valore ha un proprietario solo, ed è questo.
         returnMs: RACE_END_RETURN_MS,
+        // Scansione della premiazione, come per la sequenza di griglia.
+        cerimonia: {
+            staccoMs: CER_STACCO_MS,
+            scenaMs: CER_SCENA_MS,
+            totaleMs: RACE_END_RETURN_MS,
+        },
         trackName: game.track.name
     });
 
