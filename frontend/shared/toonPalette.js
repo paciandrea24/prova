@@ -99,6 +99,8 @@
             // Moltiplicatore sul colore delle superfici: di giorno, nessuno.
             tinta: 0xffffff,
             tintaPista: 0xffffff,
+            guadagno: 1,
+            guadagnoPista: 1,
             hemi: { cielo: 0x9ec8f0, terra: 0x3f7a52, intensita: 0.30 },
             sole: { colore: 0xfff6e2, intensita: 0.72 },
         },
@@ -145,6 +147,32 @@
             //
             // Costa zero: è una uniform per materiale, non una luce.
             tintaPista: 0xd8e2f2,
+
+            // ── I due guadagni ──────────────────────────────────────
+            //
+            // Un colore esadecimale non può superare 0xffffff, cioè 1.0:
+            // come moltiplicatore può solo SCURIRE. Ed è il muro contro cui
+            // si è fermato il primo tentativo di illuminare la pista.
+            //
+            // L'asfalto parte da 0x5e6b75, luma 0.41 — un grigio medio.
+            // Anche con la tinta a bianco pieno resterebbe a 0.41, che a
+            // schermo è scuro: «l'illuminazione è ancora troppo scarsa»
+            // (playtest 2026-08-18) non era una questione di quale grigio
+            // scegliere, era che nessun grigio poteva bastare.
+            //
+            // Il guadagno rompe quel tetto: la tinta viene moltiplicata per
+            // un numero che può stare sopra 1, e THREE.Color regge
+            // componenti maggiori di uno senza batter ciglio. Con 2.2
+            // l'asfalto illuminato arriva a ~0.79 di luma — un nastro
+            // bianco sotto le torri faro, non un grigio un po' meno grigio.
+            //
+            // Perché non si perde il cel shading: le tre fasce moltiplicano
+            // DOPO, quindi restano 0.36 / 0.57 / 0.79 — tre livelli ben
+            // separati. Con un guadagno molto più alto si schiaccerebbero
+            // contro il tetto del bianco, ed è lo stesso difetto delle luci
+            // troppo forti descritto in cima a questo blocco.
+            guadagno: 1,
+            guadagnoPista: 2.2,
             hemi: { cielo: 0x3b4a72, terra: 0x141821, intensita: 0.30 },
             // Bianco freddo da torre faro al posto del bianco caldo del
             // sole. Stessa intensita': vedi sopra il perche'.

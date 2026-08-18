@@ -79,10 +79,28 @@ test('il nastro d\'asfalto resta chiaro anche di notte: è quello a fare la gara
     const pista = P.hexToRgb(P.ORARI.notte.tintaPista);
     const luma = (c) => 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
 
-    assert.ok(luma(pista) > luma(buio) * 1.8,
-        `l'asfalto illuminato deve staccare nettamente dal buio: ${luma(pista).toFixed(2)} contro ${luma(buio).toFixed(2)}`);
-    assert.ok(luma(pista) < 0.95, 'ma non essere bianco: è asfalto illuminato, non una lampadina');
-    assert.equal(P.ORARI.giorno.tintaPista, 0xffffff, 'di giorno nessuna delle due tinte tinge niente');
+    // Il numero che conta non è la tinta ma la tinta PER IL GUADAGNO: un
+    // esadecimale si ferma a 1.0 e può solo scurire, ed è esattamente il muro
+    // contro cui si è fermato il primo tentativo («l'illuminazione è ancora
+    // troppo scarsa», playtest 2026-08-18). Il guadagno lo supera.
+    const forzaBuio = luma(buio) * P.ORARI.notte.guadagno;
+    const forzaPista = luma(pista) * P.ORARI.notte.guadagnoPista;
+
+    assert.ok(forzaPista > forzaBuio * 3,
+        `l'asfalto illuminato deve staccare NETTAMENTE dal buio: ${forzaPista.toFixed(2)} contro ${forzaBuio.toFixed(2)}`);
+    assert.ok(forzaPista > 1,
+        'sotto 1 la tinta può solo scurire, e nessun grigio basta a leggersi come illuminato');
+
+    // Il tetto: l'asfalto parte da luma 0.41, quindi oltre ~2.4 di forza
+    // finisce contro il bianco pieno e le tre fasce del cel shading si
+    // schiacciano lassù — lo stesso difetto delle luci troppo forti.
+    const asfalto = P.hexToRgb(P.SURFACES.asphalt);
+    const asfaltoIlluminato = (0.299 * asfalto.r + 0.587 * asfalto.g + 0.114 * asfalto.b) * forzaPista;
+    assert.ok(asfaltoIlluminato > 0.6 && asfaltoIlluminato < 1,
+        `l'asfalto illuminato deve essere chiaro ma non bruciato: ${asfaltoIlluminato.toFixed(2)}`);
+
+    assert.equal(P.ORARI.giorno.tintaPista, 0xffffff, 'di giorno nessuna tinta tinge niente');
+    assert.equal(P.ORARI.giorno.guadagnoPista, 1, 'e nessun guadagno schiarisce niente');
 });
 
 test('di notte si vede meno lontano', () => {

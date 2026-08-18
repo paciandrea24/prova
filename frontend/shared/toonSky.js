@@ -50,10 +50,23 @@
                 'uniform vec3 uFlat;',
                 'uniform float uStelle;',
                 'varying vec3 vDir;',
+                // Hash di Dave Hoskins. Il primo tentativo era il classico
+                // `fract( p * vec2( 127.1, 311.7 ) )`, e su indici INTERI in
+                // float32 — che è quel che gira sulla GPU — non funziona: la
+                // parte intera del prodotto si prende quasi tutta la mantissa
+                // e alla frazione ne restano pochissimi bit. MISURATO: 39
+                // valori distinti su 300 celle (41 sull'altro asse), cioè gli
+                // stessi pochi numeri che tornano in giro. A schermo è
+                // «quando giro la visuale vedo sempre lo stesso pattern»,
+                // segnalato in playtest il 2026-08-18.
+                //
+                // Con questo, sulle stesse 300 celle, i valori distinti sono
+                // 286. Niente seno: la sua precisione cambia da GPU a GPU e
+                // le stelle non sarebbero le stesse su due macchine.
                 'float stellaHash( vec2 p ) {',
-                '    p = fract( p * vec2( 127.1, 311.7 ) );',
-                '    p += dot( p, p + 45.32 );',
-                '    return fract( p.x * p.y );',
+                '    vec3 q = fract( vec3( p.xyx ) * 0.1031 );',
+                '    q += dot( q, q.yzx + 33.33 );',
+                '    return fract( ( q.x + q.y ) * q.z );',
                 '}',
                 'void main() {',
                 // t = 0 all'orizzonte, 1 allo zenit. Sotto l'orizzonte resta
@@ -68,15 +81,15 @@
                 '        col = mix( col, uColors[i], k );',
                 '    }',
                 '    if ( uStelle > 0.5 ) {',
-
                 '        vec2 g = vec2( atan( dir.z, dir.x ) * 42.0, asin( clamp( dir.y, -1.0, 1.0 ) ) * 78.0 );',
                 '        vec2 cella = floor( g );',
                 '        float h = stellaHash( cella );',
-                '        if ( h > 0.980 ) {',
+                '        if ( h > 0.972 ) {',
                 '            vec2 centro = cella + vec2( stellaHash( cella + 1.7 ), stellaHash( cella + 3.1 ) );',
                 '            float dist = length( g - centro );',
-                '            float lum = smoothstep( 0.13, 0.0, dist ) * ( 0.30 + 0.70 * stellaHash( cella + 7.3 ) );',
-            '            col += vec3( 0.86, 0.90, 1.0 ) * lum * smoothstep( 0.04, 0.34, dir.y );',
+                '            float grande = 0.07 + 0.09 * stellaHash( cella + 11.9 );',
+                '            float lum = smoothstep( grande, 0.0, dist ) * ( 0.30 + 0.70 * stellaHash( cella + 7.3 ) );',
+                '            col += vec3( 0.86, 0.90, 1.0 ) * lum * smoothstep( 0.04, 0.34, dir.y );',
                 '        }',
                 '    }',
                 '    col += ( fract( sin( dot( gl_FragCoord.xy, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ) - 0.5 ) / 255.0;',

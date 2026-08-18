@@ -525,6 +525,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         applicaStile(m, {
             saturation: ToonPalette.SATURATION.world,
             tintaNotte: ToonPalette.orario().tintaPista,
+            guadagnoNotte: ToonPalette.orario().guadagnoPista,
         });
     }
     // La barriera sta dove dice il profilo: arretrata della via di fuga

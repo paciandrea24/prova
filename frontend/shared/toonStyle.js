@@ -171,10 +171,17 @@
         // qui e non nel codice dello shader apposta: cambiare una uniform
         // non fa ricompilare il programma, quindi tutti i materiali
         // continuano a condividerne uno solo.
+        // Il guadagno può portare le componenti SOPRA 1: è così che una
+        // superficie illuminata diventa più chiara del proprio colore
+        // invece di limitarsi a non scurire. Vedi il blocco ORARI in
+        // toonPalette.js.
+        const _notte = palette().ORARI.notte;
+        const _tinta = o.tintaNotte !== undefined ? o.tintaNotte : _notte.tinta;
+        const _guadagno = o.guadagnoNotte !== undefined ? o.guadagnoNotte : _notte.guadagno;
         shader.uniforms.uTintaNotte = {
             value: (typeof THREE === 'undefined')
-                ? { r: 0, g: 0, b: 0, set() {}, setRGB() {} }
-                : new THREE.Color(o.tintaNotte !== undefined ? o.tintaNotte : palette().ORARI.notte.tinta)
+                ? { r: 0, g: 0, b: 0, set() {}, setRGB() {}, multiplyScalar() { return this; } }
+                : new THREE.Color(_tinta).multiplyScalar(_guadagno)
         };
 
         // ── vertex: posizione e normale in coordinate MONDO ───────────
