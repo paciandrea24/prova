@@ -2883,6 +2883,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const seq = sequenza || {};
         const myPos = (grid || []).findIndex(e => e.color === myColor) + 1;
         const isPole = myPos === 1;
+        // Subito, non al riepilogo: davanti ci sono otto secondi di schermo
+        // coperto in cui il modello puo' arrivare con calma (vedi
+        // preparaAutoInPole).
+        nascondiAutoInPole();
+        preparaAutoInPole((grid || [])[0]);
 
         // ── 1. STACCO ──────────────────────────────────────────────────
         // Copre il salto dalla pista alla schermata di griglia, che era la
@@ -2913,7 +2918,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             - (seq.posizioneMs || 0) - (isPole ? (seq.poleExtraMs || 0) : 0));
         avviaPanoramica(restaAlRiepilogo);
         mostraRiepilogoGriglia(grid || [], trackName, restaAlRiepilogo);
-        mostraAutoInPole((grid || [])[0]);
+        mostraAutoInPole();
         sipario(false, 520);
     });
 
@@ -2999,8 +3004,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // schermo. 0 sarebbe un frontale puro, π/2 un fianco: 0.68 rad (39°) è il
     // tre quarti anteriore classico.
     const VETRINA_TRE_QUARTI = 0.68;
+    // Di quanto la si guarda DALL'ALTO, misurato sul centro dell'auto. Stesso
+    // criterio dell'angolo di tre quarti: si fissa ciò che si vede, non un
+    // offset che poi dipende da schermo e dimensioni del modello. 0.22 rad
+    // sono 12.6°, quanto basta a scoprire l'abitacolo senza che diventi una
+    // vista a volo d'uccello.
+    const VETRINA_ELEVAZIONE = 0.22;
     const VETRINA_LARGHEZZA_MIN = 900;   // sotto, la colonna non c'è (vedi f1.css)
     let autoInPole = null;
+    let autoInPoleAltezza = 1.8;   // misurata sul modello vero appena caricato
 
     function posizionaAutoInPole() {
         if (!autoInPole) return;
@@ -3009,7 +3021,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const mezzaAltezza = Math.tan((camera.fov / 2) * Math.PI / 180) * VETRINA_DISTANZA;
         const mezzaLarghezza = mezzaAltezza * camera.aspect;
         const x = (VETRINA_FRAZIONE_X - 0.5) * 2 * mezzaLarghezza;
-        autoInPole.position.set(x, -mezzaAltezza * 0.30, -VETRINA_DISTANZA);
+        // L'origine del modello sta a terra, fra le ruote: per avere il CENTRO
+        // dell'auto all'elevazione voluta va abbassata di mezza altezza.
+        const y = -Math.tan(VETRINA_ELEVAZIONE) * VETRINA_DISTANZA - autoInPoleAltezza / 2;
+        autoInPole.position.set(x, y, -VETRINA_DISTANZA);
 
         // ⚠️ La rotazione NON è un numero fisso, e il motivo è la ragione per
         // cui il primo tentativo mostrava un frontale invece di un tre quarti
@@ -3028,19 +3043,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         autoInPole.rotation.set(0, -(VETRINA_TRE_QUARTI + scorcio), 0);
     }
 
-    function mostraAutoInPole(entry) {
-        nascondiAutoInPole();
+    // Il modello si prepara all'INIZIO della sequenza, non quando serve.
+    //
+    // Caricarlo al momento del riepilogo lo faceva comparire con tre o quattro
+    // secondi di ritardo rispetto al pannello (segnalato in playtest): fra
+    // richiesta della livrea, lettura del .glb e ricolorazione della palette
+    // c'è lavoro vero, e il riepilogo dura dieci secondi in tutto. Ma davanti
+    // al riepilogo ci sono lo stacco e la scoperta della posizione, cioè otto
+    // secondi di schermo coperto in cui non si sta facendo altro: il modello
+    // arriva pronto.
+    let autoInPolePronta = null;
+
+    function preparaAutoInPole(entry) {
+        autoInPolePronta = null;
         if (!entry || window.innerWidth <= VETRINA_LARGHEZZA_MIN) return;
         const miaSequenza = sequenzaCorrente;
 
         // La livrea si chiede per uid, come per gli avversari in pista. Bot e
         // ospiti non ne hanno: resta null e l'auto prende il colore di lobby.
-        fetchLiveryForUid(entry.isBot ? null : entry.uid).then((livrea) => {
-            if (miaSequenza !== sequenzaCorrente) return;
-            loadCarModel(entry.color, (car) => {
-                // Il caricamento è asincrono: nel frattempo la sequenza può
-                // essere finita o essere stata sostituita.
-                if (miaSequenza !== sequenzaCorrente) { smaltisciAuto(car); return; }
+        autoInPolePronta = fetchLiveryForUid(entry.isBot ? null : entry.uid)
+            .then((livrea) => new Promise((risolvi) => {
+                loadCarModel(entry.color, risolvi, livrea);
+            }))
+            .then((car) => {
+                // Caricata ma non ancora in scena: loadCarModel la posa nel
+                // mondo, e senza questo resterebbe all'origine del circuito
+                // finché non la si aggancia alla camera.
+                car.visible = false;
+                if (miaSequenza !== sequenzaCorrente) { smaltisciAuto(car); return null; }
 
                 // Il motore no: questa è una vetrina, non un'auto in pista.
                 if (car.userData.engineSound) {
@@ -3052,9 +3082,34 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // la sua ombra in un punto qualsiasi del circuito sotto.
                 car.traverse((o) => { o.castShadow = false; o.receiveShadow = false; });
 
+                // Altezza vera del modello: serve a metterlo all'elevazione
+                // voluta, che si misura sul suo centro (vedi posizionaAutoInPole).
+                const scatola = new THREE.Box3().setFromObject(car);
+                const h = scatola.max.y - scatola.min.y;
+                if (isFinite(h) && h > 0) autoInPoleAltezza = h;
+                return car;
+            })
+            .catch(() => null);
+    }
+
+    // Ritardo prima che l'auto entri, DOPO che il pannello è comparso. Non è
+    // attesa tecnica — a questo punto il modello è già pronto — ma la pausa
+    // che rende l'ingresso una scelta: "mi piace l'idea di far sfilare la
+    // macchina dal lato, quel secondo di suspence ci sta".
+    const VETRINA_ATTESA_MS = 600;
+
+    function mostraAutoInPole() {
+        if (!autoInPolePronta) return;
+        const miaSequenza = sequenzaCorrente;
+        autoInPolePronta.then((car) => {
+            if (!car) return;
+            if (miaSequenza !== sequenzaCorrente) { smaltisciAuto(car); return; }
+            setTimeout(() => {
+                if (miaSequenza !== sequenzaCorrente) { smaltisciAuto(car); return; }
                 camera.add(car);
                 autoInPole = car;
                 posizionaAutoInPole();
+                car.visible = true;
 
                 if (typeof anime === 'function') {
                     // Entrata di sola traslazione, da destra. Nessuna
@@ -3062,12 +3117,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const arrivo = car.position.x;
                     anime({
                         targets: car.position,
-                        x: [arrivo + mezzaLarghezzaCorrente(), arrivo],
-                        duration: 700,
+                        x: [arrivo + mezzaLarghezzaCorrente() * 1.6, arrivo],
+                        duration: 900,
                         easing: 'easeOutExpo',
                     });
                 }
-            }, livrea);
+            }, VETRINA_ATTESA_MS);
         });
     }
 
@@ -3088,6 +3143,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function nascondiAutoInPole() {
+        // Anche il precaricamento eventualmente in corso: chi lo sta
+        // aspettando si accorge del cambio di sequenza e smaltisce il modello
+        // invece di appenderlo a una schermata che non c'e' piu'.
+        autoInPolePronta = null;
         if (!autoInPole) return;
         camera.remove(autoInPole);
         smaltisciAuto(autoInPole);
