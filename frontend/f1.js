@@ -305,6 +305,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     //
     // Il sole non cambia direzione, si sposta soltanto: l'inclinazione delle
     // ombre resta identica ovunque, cambia solo dove il riquadro è puntato.
+    // Di notte la luce arriva da molto più in alto: vedi `elevazione` nel
+    // blocco ORARI di toonPalette.js. Si applica QUI, prima che _dirSole
+    // venga calcolata dalla posizione, così tutto il resto non cambia.
+    // L'azimut di partenza resta quello del giorno; da lì in poi lo
+    // comanda il faro più vicino (vedi direzioneDaiFari).
+    if (_luci.sole.elevazione != null) {
+        const _d = new THREE.Vector3().subVectors(sun.position, sun.target.position);
+        const _oriz = Math.hypot(_d.x, _d.z) || 1;
+        const _e = _luci.sole.elevazione * Math.PI / 180;
+        const _lung = _d.length();
+        sun.position.set(
+            sun.target.position.x + (_d.x / _oriz) * Math.cos(_e) * _lung,
+            sun.target.position.y + Math.sin(_e) * _lung,
+            sun.target.position.z + (_d.z / _oriz) * Math.cos(_e) * _lung);
+    }
+
     const _dirSole = new THREE.Vector3().subVectors(sun.target.position, sun.position);
     const DISTANZA_SOLE = _dirSole.length();
     _dirSole.normalize();
@@ -313,7 +329,91 @@ document.addEventListener('DOMContentLoaded', async () => {
     const ANTICIPO_OMBRA = 120;
     const _avanti = new THREE.Vector3();
 
+    // Posizioni in coordinate mondo dei pannelli lampade delle torri faro.
+    // Le riempie accendiTorreFaro mentre la scenografia si carica; di
+    // giorno resta vuoto. Su `prova` sono 21, una ogni ~246 unità.
+    const fariNotturni = [];
+
+    const _elevNotte = (_luci.sole.elevazione || 78) * Math.PI / 180;
+    let _oriFaroX = 0, _oriFaroZ = 0;
+
+    // La DIREZIONE della luce viene dai fari; l'INTENSITÀ no, resta uniforme
+    // su tutto il circuito (richiesta esplicita dell'utente: «la luce non
+    // arriva veramente dai fari, i fari sono accesi solo per estetica»).
+    //
+    // È così che si ottiene «le ombre sulle macchine che cambiano» senza
+    // aggiungere una sola luce: guidando, ogni ~245 unità l'azimut ruota e
+    // l'ombra gira attorno all'auto.
+    //
+    // Peso 1/d⁴ e non 1/d²: con ventuno fari e un peso che cala piano, si
+    // mediano tutti fra loro e la direzione non si muove più. Alla quarta
+    // potenza comanda quello vicino e gli altri fanno solo da raccordo.
+    // Costante di tempo dello smorzamento, in secondi. Senza, l'ombra SALTA:
+    // misurato con una sonda headless su un giro di "prova" a 60 fps, lo
+    // scatto peggiore era 23° in un frame, cioè 1380°/s — l'ombra che si
+    // ribalta dall'altra parte dell'auto in un lampo. La causa è geometria e
+    // non si aggira cambiando formula: la direzione orizzontale da una torre
+    // all'auto si INVERTE nell'istante in cui la si supera, ed è proprio lì
+    // che quella torre pesa più di tutte.
+    //
+    // Con 0.32 s lo scatto peggiore scende a 1.1° per frame (69°/s, una
+    // spazzata leggibile) e si conserva l'81% del movimento totale: 905° di
+    // rotazione sul giro contro i 1121 senza smorzamento. Sotto, verso 0.8 s,
+    // il movimento si perde per strada (600°, il 46% in meno) e l'ombra
+    // diventa pigra.
+    //
+    // Anche un'ombra vera ci mette un momento a girare, quindi non è solo una
+    // pezza: è il comportamento giusto.
+    const TAU_DIREZIONE = 0.32;
+    const _bersaglioSole = new THREE.Vector3();
+    let _istanteDirezione = 0;
+    let _direzioneAvviata = false;
+
+    function direzioneDaiFari(x, z) {
+        if (fariNotturni.length === 0) return false;
+        _oriFaroX = 0; _oriFaroZ = 0;
+        for (const f of fariNotturni) {
+            const dx = x - f.x, dz = z - f.z;
+            const d = Math.max(Math.hypot(dx, dz), 0.001);
+            // 1/d² e non 1/d⁴: alla quarta la torre vicina schiaccia tutte le
+            // altre e il bersaglio si muove a strappi fra un faro e il
+            // successivo. Al quadrato le vicine si contendono la direzione e
+            // il passaggio è graduale. Misurate entrambe: dopo lo smorzamento
+            // danno lo stesso movimento totale, ma al quadrato il bersaglio
+            // parte già più docile (su monte-rosso 4.6° di scatto grezzo
+            // contro 12.8°).
+            const peso = 1 / (d * d);
+            _oriFaroX += (dx / d) * peso;
+            _oriFaroZ += (dz / d) * peso;
+        }
+        const lung = Math.hypot(_oriFaroX, _oriFaroZ);
+        // Fari opposti che si annullano: si tiene la direzione di prima.
+        if (!(lung > 1e-12)) return false;
+
+        const co = Math.cos(_elevNotte), si = Math.sin(_elevNotte);
+        _bersaglioSole.set((_oriFaroX / lung) * co, -si, (_oriFaroZ / lung) * co);
+
+        if (!_direzioneAvviata) {
+            _dirSole.copy(_bersaglioSole);
+            _direzioneAvviata = true;
+            _istanteDirezione = performance.now();
+            return true;
+        }
+
+        const ora = performance.now();
+        // Il tetto sul passo serve al rientro da una scheda lasciata in
+        // secondo piano: là il tempo passa e i frame no, e senza tetto
+        // l'ombra si ritroverebbe di colpo dall'altra parte.
+        const dt = Math.min((ora - _istanteDirezione) / 1000, 0.25);
+        _istanteDirezione = ora;
+        // Smorzamento legato al TEMPO e non al frame: a 30 fps l'ombra deve
+        // girare alla stessa velocità che a 60.
+        _dirSole.lerp(_bersaglioSole, 1 - Math.exp(-dt / TAU_DIREZIONE)).normalize();
+        return true;
+    }
+
     function puntaOmbre(x, z) {
+        if (NOTTURNO) direzioneDaiFari(x, z);
         // Il centro si arrotonda al passo dei texel della mappa. Senza,
         // muovendo il riquadro le ombre "nuotano": i bordi si ricampionano su
         // texel diversi ad ogni frame e sfarfallano. Arrotondando, il
@@ -1138,6 +1238,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             alone.renderOrder = 2;
             ToonStyle.excludeFromOutline(alone);
             container.add(alone);
+            // Da qui la direzione della luce: vedi direzioneDaiFari.
+            fariNotturni.push({ x: c.x, z: c.z });
         }
     }
 

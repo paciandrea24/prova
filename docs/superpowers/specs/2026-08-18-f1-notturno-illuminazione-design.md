@@ -135,9 +135,51 @@ macchina e cambia lato passando da un faro all'altro. È il requisito «le
 ombre sulle macchine che cambiano», e **costa zero**: quella luce e quella
 mappa d'ombra si pagano già oggi.
 
-Il mescolamento è a somma pesata dei versori orizzontali, normalizzata. Se
-degenera (due fari opposti che si annullano) si tiene la direzione
-precedente invece di far saltare l'ombra.
+#### Quello che la misura ha cambiato
+
+La prima stesura di questo punto era «somma pesata dei versori orizzontali,
+peso 1/d⁴, elevazione fissa». Una sonda headless che percorre un giro di
+`prova` con le 21 torri vere l'ha bocciata **prima del playtest**: lo scatto
+peggiore fra due campioni era **170°**, cioè l'ombra che si ribalta
+dall'altra parte dell'auto in un lampo.
+
+La causa è geometria, non taratura: la direzione orizzontale da una torre
+all'auto **si inverte** nell'istante in cui la si supera, ed è esattamente
+lì che quella torre pesa più di tutte. Nessuna scelta di pesi la evita.
+
+Sono state misurate due vie d'uscita.
+
+**Modello fisico** (direzione vera in 3D dal pannello lampade all'auto,
+quota 30): risolve lo scatto — sotto la torre la luce punta a picco e la
+componente orizzontale va a zero da sola — ma **è stato scartato**, perché
+con torri alte 30 e distanti 246 l'elevazione risultante sta fra **4° e
+16°** quasi ovunque: luce radente e ombre lunghissime, l'opposto del punto
+3. Del resto la luce non arriva davvero dai fari, quindi non c'è ragione di
+essere fedeli alla loro geometria.
+
+**Smorzamento nel tempo** (scelto): il bersaglio resta l'azimut pesato
+1/d² con elevazione fissa, ma la direzione vera lo insegue con una costante
+di tempo di **0.32 s**. Misurato su un giro a 70 unità/s e 60 fps:
+
+| | senza smorzamento | τ = 0.32 s | τ = 0.8 s |
+|---|---|---|---|
+| scatto peggiore in un frame | 23.0° | **1.1°** | 0.4° |
+| in gradi al secondo | 1380 | **69** | 25 |
+| rotazione totale sul giro | 1121° | **905°** | 600° |
+
+A 0.32 s lo scatto diventa una spazzata leggibile e si conserva l'81% del
+movimento; a 0.8 s l'ombra diventa pigra e si perde quasi metà del
+movimento. Lo smorzamento è legato al **tempo** e non al frame, così a 30
+fps l'ombra gira alla stessa velocità che a 60, con un tetto sul passo per
+il rientro da una scheda lasciata in secondo piano.
+
+Il peso è 1/d² e non 1/d⁴: alla quarta la torre vicina schiaccia tutte le
+altre e il bersaglio si muove a strappi. Dopo lo smorzamento le due danno lo
+stesso movimento totale, ma al quadrato il bersaglio parte già più docile
+(su `monte-rosso`, 4.6° di scatto grezzo contro 12.8°).
+
+Se la somma degenera (fari opposti che si annullano) si tiene la direzione
+precedente.
 
 ## Costo
 

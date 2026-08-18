@@ -36,15 +36,29 @@ test('la notte NON abbassa le luci: la somma delle intensità resta quella del g
         `la somma deve restare intorno a 1, è ${sommaNotte}`);
 });
 
-test('a scurire è la tinta delle superfici, e di giorno non tinge niente', () => {
+test('il notturno NON spegne il mondo: le superfici restano illuminate', () => {
+    // È l'errore che è costato due stesure e tre playtest. Facevo «notte =
+    // tutto scuro» — la tinta stava a luma 0.28 — e ogni volta la correzione
+    // era «schiarisci un po' di più»: cercare la risposta dentro un
+    // intervallo che non la conteneva.
+    //
+    // Una gara in notturno vera è tutto ILLUMINATO sotto un cielo NERO. A
+    // dire «è notte» sono il cielo, le sorgenti accese e il fondo che
+    // sparisce nel nero — non la luminosità delle superfici. E c'è una
+    // conseguenza che spiega il difetto peggiore: un'ombra ha bisogno di luce
+    // per esistere, quindi scurendo tutto si spengono anche le ombre.
     assert.equal(P.ORARI.giorno.tinta, 0xffffff, 'di giorno il moltiplicatore è neutro');
 
     const notte = P.hexToRgb(P.ORARI.notte.tinta);
     const luma = 0.299 * notte.r + 0.587 * notte.g + 0.114 * notte.b;
-    assert.ok(luma > 0.2 && luma < 0.55,
-        `la tinta notturna deve scurire ma non spegnere, luma = ${luma.toFixed(2)}`);
+    const forza = luma * P.ORARI.notte.guadagno;
+
+    assert.ok(forza > 0.7,
+        `di notte il mondo resta illuminato: le superfici devono restare almeno al 70% del giorno, sono al ${(forza * 100).toFixed(0)}%`);
+    assert.ok(forza < 1,
+        'ma qualcosa deve pur distinguere la notte dal giorno');
     assert.ok(notte.b > notte.r,
-        'di notte quel che resta a illuminare è il cielo: la tinta vira al freddo');
+        'a raffreddare la tinta è la luce artificiale: vira al blu, non al grigio');
 });
 
 test('il cielo notturno è scuro, e l\'orizzonte resta più chiaro dello zenit', () => {
@@ -72,35 +86,59 @@ test('la nebbia è il cielo all\'orizzonte, di notte come di giorno', () => {
     }
 });
 
-test('il nastro d\'asfalto resta chiaro anche di notte: è quello a fare la gara in notturno', () => {
-    // Senza questa differenza il risultato è «una scena scura», non «una gara
-    // in notturno». Bocciato al playtest del 2026-08-18 esattamente così.
-    const buio = P.hexToRgb(P.ORARI.notte.tinta);
-    const pista = P.hexToRgb(P.ORARI.notte.tintaPista);
-    const luma = (c) => 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+test('di notte l\'asfalto è più chiaro che di giorno, e le fasce restano separate', () => {
+    const luma = (hex) => {
+        const c = P.hexToRgb(hex);
+        return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+    };
 
     // Il numero che conta non è la tinta ma la tinta PER IL GUADAGNO: un
-    // esadecimale si ferma a 1.0 e può solo scurire, ed è esattamente il muro
-    // contro cui si è fermato il primo tentativo («l'illuminazione è ancora
-    // troppo scarsa», playtest 2026-08-18). Il guadagno lo supera.
-    const forzaBuio = luma(buio) * P.ORARI.notte.guadagno;
-    const forzaPista = luma(pista) * P.ORARI.notte.guadagnoPista;
+    // esadecimale si ferma a 1.0 e può solo scurire. Il guadagno rompe quel
+    // tetto, ed è l'unico modo perché una superficie diventi più chiara del
+    // proprio colore invece di limitarsi a non scurire.
+    const forzaPista = luma(P.ORARI.notte.tintaPista) * P.ORARI.notte.guadagnoPista;
+    const asfaltoGiorno = luma(P.SURFACES.asphalt);
+    const asfaltoNotte = asfaltoGiorno * forzaPista;
 
-    assert.ok(forzaPista > forzaBuio * 3,
-        `l'asfalto illuminato deve staccare NETTAMENTE dal buio: ${forzaPista.toFixed(2)} contro ${forzaBuio.toFixed(2)}`);
-    assert.ok(forzaPista > 1,
-        'sotto 1 la tinta può solo scurire, e nessun grigio basta a leggersi come illuminato');
+    // L'asfalto è la superficie su cui le torri faro sono puntate: di notte è
+    // il punto più illuminato del circuito, più di quanto lo sia di giorno.
+    assert.ok(asfaltoNotte > asfaltoGiorno,
+        `l'asfalto illuminato deve battere quello diurno: ${asfaltoNotte.toFixed(2)} contro ${asfaltoGiorno.toFixed(2)}`);
 
-    // Il tetto: l'asfalto parte da luma 0.41, quindi oltre ~2.4 di forza
-    // finisce contro il bianco pieno e le tre fasce del cel shading si
-    // schiacciano lassù — lo stesso difetto delle luci troppo forti.
-    const asfalto = P.hexToRgb(P.SURFACES.asphalt);
-    const asfaltoIlluminato = (0.299 * asfalto.r + 0.587 * asfalto.g + 0.114 * asfalto.b) * forzaPista;
-    assert.ok(asfaltoIlluminato > 0.6 && asfaltoIlluminato < 1,
-        `l'asfalto illuminato deve essere chiaro ma non bruciato: ${asfaltoIlluminato.toFixed(2)}`);
+    // Ma non deve sfondare: oltre il bianco pieno le tre fasce del cel
+    // shading si schiacciano lassù, ed è lo stesso difetto delle luci troppo
+    // forti misurato il 2026-08-10, preso dall'altro lato.
+    const fasce = P.BANDS.map((b) => asfaltoNotte * b);
+    assert.ok(fasce[2] < 1, `la fascia più chiara non deve bruciare: ${fasce[2].toFixed(2)}`);
+    assert.ok(fasce[1] - fasce[0] > 0.05 && fasce[2] - fasce[1] > 0.05,
+        `le tre fasce devono restare distinguibili: ${fasce.map((f) => f.toFixed(2)).join(' / ')}`);
+
+    // L'illuminazione è UNIFORME (richiesta dell'utente: la luce non arriva
+    // davvero dai fari): fra pista e dintorni ci deve essere una differenza,
+    // ma piccola. Un rapporto grande vorrebbe dire il nastro dentro il buio
+    // della stesura precedente, che è stata bocciata.
+    const forzaBuio = luma(P.ORARI.notte.tinta) * P.ORARI.notte.guadagno;
+    const rapporto = forzaPista / forzaBuio;
+    assert.ok(rapporto > 1.2 && rapporto < 2.5,
+        `pista e dintorni devono essere illuminati in modo simile, rapporto = ${rapporto.toFixed(2)}`);
 
     assert.equal(P.ORARI.giorno.tintaPista, 0xffffff, 'di giorno nessuna tinta tinge niente');
     assert.equal(P.ORARI.giorno.guadagnoPista, 1, 'e nessun guadagno schiarisce niente');
+});
+
+test('di notte la luce viene dall\'alto: l\'ombra è corta, non allungata', () => {
+    // Una torre faro illumina da trenta metri sopra la pista, non di taglio
+    // come un sole di pomeriggio. È una delle cose che si riconoscono subito
+    // in una gara notturna, e si misura sulla lunghezza dell'ombra di un
+    // oggetto alto 1: 1 / tan(elevazione).
+    const notte = P.ORARI.notte.sole.elevazione;
+    assert.ok(notte > 70, `la luce notturna deve venire quasi da sopra, è a ${notte} gradi`);
+
+    const ombra = 1 / Math.tan(notte * Math.PI / 180);
+    assert.ok(ombra < 0.35, `l'ombra deve essere corta, è lunga ${ombra.toFixed(2)}`);
+
+    assert.equal(P.ORARI.giorno.sole.elevazione, null,
+        'di giorno l\'inclinazione resta quella scritta nella posizione della luce, invariata');
 });
 
 test('di notte si vede meno lontano', () => {

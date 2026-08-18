@@ -102,7 +102,9 @@
             guadagno: 1,
             guadagnoPista: 1,
             hemi: { cielo: 0x9ec8f0, terra: 0x3f7a52, intensita: 0.30 },
-            sole: { colore: 0xfff6e2, intensita: 0.72 },
+            // Nessuna `elevazione`: di giorno l'inclinazione resta quella
+            // scritta nella posizione della luce in f1.js, invariata.
+            sole: { colore: 0xfff6e2, intensita: 0.72, elevazione: null },
         },
         notte: {
             // Quattro tappe come di giorno (la cupola compila lo shader su
@@ -129,15 +131,31 @@
                 { t: 0.30, color: 0x050813 },
                 { t: 1.00, color: 0x01020a },
             ],
-            // Appena più densa che di giorno, non molto: era 0.0016 e
-            // insieme all'orizzonte chiaro faceva il velo lattiginoso. Di
-            // notte a nascondere il fondo deve essere il BUIO — cioè il
-            // colore della nebbia — non la sua quantità.
-            fogDensity: 0.0011,
-            // Il colore che moltiplica ogni superficie. Non è un grigio: è
-            // freddo e vira al blu, perché quel che resta a illuminare è il
-            // cielo, non il sole.
-            tinta: 0x3c4866,
+            // Più densa del giorno, ma il velo lattiginoso del primo giro
+            // dipendeva dal COLORE chiaro della nebbia, non dalla quantità.
+            // Ora che l'orizzonte è quasi nero (luma 0.085) la densità è
+            // proprio ciò che fa sparire il fondo NEL NERO mentre la pista
+            // sotto l'auto resta illuminata: è il punto che vende il
+            // notturno tenendo tutto visibile.
+            fogDensity: 0.0018,
+            // Il colore che moltiplica ogni superficie. TERZA stesura, e le
+            // prime due sbagliavano di impostazione, non di taratura:
+            // facevano «notte = tutto scuro» (questa tinta stava a luma
+            // 0.28) e sono state bocciate tre volte, ogni volta con
+            // «schiarisci un po' di più».
+            //
+            // Una gara in notturno vera è tutto ILLUMINATO sotto un cielo
+            // NERO: a dire «è notte» sono il cielo, le sorgenti accese e il
+            // fondo che sparisce nel nero — non la luminosità delle
+            // superfici. E un'ombra ha bisogno di luce per esistere:
+            // scurendo tutto si spengono anche le ombre, che era il difetto
+            // più grave delle prime due stesure.
+            //
+            // Quindi ora la tinta non scurisce quasi più: RAFFREDDA. Il
+            // prato passa da 0.51 di giorno a ~0.42 di notte, cioè resta
+            // ben visibile. Vedi
+            // docs/superpowers/specs/2026-08-18-f1-notturno-illuminazione-design.md
+            tinta: 0xc6d2ea,
             // …ma non tutto è al buio allo stesso modo, ed è questa riga a
             // fare la differenza fra «una scena scura» e «una gara in
             // notturno»: l'asfalto, i cordoli e la ghiaia stanno sotto le
@@ -146,7 +164,7 @@
             // Singapore prima ancora di capire cosa si sta guardando.
             //
             // Costa zero: è una uniform per materiale, non una luce.
-            tintaPista: 0xd8e2f2,
+            tintaPista: 0xdce6f8,
 
             // ── I due guadagni ──────────────────────────────────────
             //
@@ -172,11 +190,24 @@
             // contro il tetto del bianco, ed è lo stesso difetto delle luci
             // troppo forti descritto in cima a questo blocco.
             guadagno: 1,
-            guadagnoPista: 2.2,
+            // 1.63 e non più 2.2: l'illuminazione è UNIFORME su tutto il
+            // circuito (richiesta esplicita dell'utente), quindi l'asfalto
+            // non è più un nastro chiaro dentro il buio. Resta comunque il
+            // punto più illuminato — è la superficie su cui le torri faro
+            // sono puntate — e arriva a ~0.60 di luma contro lo 0.41 che ha
+            // di giorno: di notte l'asfalto è più chiaro che di giorno.
+            guadagnoPista: 1.63,
             hemi: { cielo: 0x3b4a72, terra: 0x141821, intensita: 0.30 },
             // Bianco freddo da torre faro al posto del bianco caldo del
             // sole. Stessa intensita': vedi sopra il perche'.
-            sole: { colore: 0xdde7ff, intensita: 0.72 },
+            //
+            // `elevazione` in gradi: una torre faro illumina da trenta metri
+            // sopra la pista, non di taglio come un sole di pomeriggio. A
+            // 60.8 gradi (il valore del giorno) l'ombra di un oggetto alto 1
+            // è lunga 0.56; a 78 gradi scende a 0.21 — corta e appiccicata
+            // sotto l'auto, che è una delle cose che si riconoscono subito
+            // in una gara notturna.
+            sole: { colore: 0xdde7ff, intensita: 0.72, elevazione: 78 },
         },
     };
 
