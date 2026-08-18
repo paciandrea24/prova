@@ -555,6 +555,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ====================================================
     const listener = new THREE.AudioListener();
     camera.add(listener);
+    // La camera nel grafo della scena. Non serve a lei — una camera funziona
+    // anche staccata — ma a ciò che le si appende: il renderer disegna solo
+    // quello che raggiunge partendo da `scene`, quindi un oggetto figlio di
+    // una camera fuori dal grafo non comparirebbe mai. Serve al modello
+    // dell'auto in pole nel riepilogo di fine qualifica, che sta appeso alla
+    // camera per restare fermo sullo schermo mentre dietro scorre la
+    // panoramica del circuito.
+    scene.add(camera);
     // Politica autoplay dei browser: il contesto audio nasce sospeso finché
     // non c'è un gesto dell'utente sulla pagina.
     function resumeAudioContext() {
@@ -2501,6 +2509,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // cui si è sicuri che la pista vada rivista.
         sipario(false);
         nascondiRiepilogoGriglia();
+        // Prima della camera: l'auto della vetrina e' appesa a lei, e
+        // lasciarla li' vorrebbe dire correre con un modello incollato
+        // davanti all'obiettivo.
+        nascondiAutoInPole();
         // La camera torna all'auto: senza, la gara partirebbe con la veduta
         // aerea ancora in corso.
         fermaPanoramica();
@@ -2901,6 +2913,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             - (seq.posizioneMs || 0) - (isPole ? (seq.poleExtraMs || 0) : 0));
         avviaPanoramica(restaAlRiepilogo);
         mostraRiepilogoGriglia(grid || [], trackName, restaAlRiepilogo);
+        mostraAutoInPole((grid || [])[0]);
         sipario(false, 520);
     });
 
@@ -2967,6 +2980,102 @@ document.addEventListener('DOMContentLoaded', async () => {
     function nascondiRiepilogoGriglia() {
         const box = document.getElementById('grid-summary');
         if (box) box.style.display = 'none';
+    }
+
+    // ── L'AUTO IN POLE NEL RIEPILOGO ────────────────────────────────────
+    // Il modello vero di chi ha fatto la pole, con la SUA livrea, nella metà
+    // destra dello schermo mentre il pannello elenca la griglia.
+    //
+    // È appeso alla CAMERA, non alla scena: la camera intanto sta facendo la
+    // panoramica del circuito, e un'auto posata nel mondo scorrerebbe via
+    // insieme al paesaggio. Appesa alla camera resta ferma sullo schermo
+    // mentre dietro il circuito scorre — che è esattamente l'effetto voluto.
+    //
+    // Nessuna rotazione, solo un orientamento fisso di tre quarti col muso
+    // verso il centro dello schermo (richiesta esplicita dell'utente).
+    const VETRINA_DISTANZA = 10;    // unità davanti alla camera
+    const VETRINA_FRAZIONE_X = 0.72; // centro della colonna destra, in frazione di schermo
+    const VETRINA_ANGOLO = -0.55;    // rad: tre quarti anteriore, muso verso il centro
+    const VETRINA_LARGHEZZA_MIN = 900;   // sotto, la colonna non c'è (vedi f1.css)
+    let autoInPole = null;
+
+    function posizionaAutoInPole() {
+        if (!autoInPole) return;
+        // Ricavata dal campo visivo invece che scritta a mano: così l'auto sta
+        // nella colonna destra su qualunque proporzione di schermo.
+        const mezzaAltezza = Math.tan((camera.fov / 2) * Math.PI / 180) * VETRINA_DISTANZA;
+        const mezzaLarghezza = mezzaAltezza * camera.aspect;
+        autoInPole.position.set(
+            (VETRINA_FRAZIONE_X - 0.5) * 2 * mezzaLarghezza,
+            -mezzaAltezza * 0.30,
+            -VETRINA_DISTANZA);
+        autoInPole.rotation.set(0, VETRINA_ANGOLO, 0);
+    }
+
+    function mostraAutoInPole(entry) {
+        nascondiAutoInPole();
+        if (!entry || window.innerWidth <= VETRINA_LARGHEZZA_MIN) return;
+        const miaSequenza = sequenzaCorrente;
+
+        // La livrea si chiede per uid, come per gli avversari in pista. Bot e
+        // ospiti non ne hanno: resta null e l'auto prende il colore di lobby.
+        fetchLiveryForUid(entry.isBot ? null : entry.uid).then((livrea) => {
+            if (miaSequenza !== sequenzaCorrente) return;
+            loadCarModel(entry.color, (car) => {
+                // Il caricamento è asincrono: nel frattempo la sequenza può
+                // essere finita o essere stata sostituita.
+                if (miaSequenza !== sequenzaCorrente) { smaltisciAuto(car); return; }
+
+                // Il motore no: questa è una vetrina, non un'auto in pista.
+                if (car.userData.engineSound) {
+                    try { car.userData.engineSound.stop(); } catch (e) { /* mai partito */ }
+                    car.remove(car.userData.engineSound);
+                    delete car.userData.engineSound;
+                }
+                // Nemmeno le ombre: un'auto appesa alla camera proietterebbe
+                // la sua ombra in un punto qualsiasi del circuito sotto.
+                car.traverse((o) => { o.castShadow = false; o.receiveShadow = false; });
+
+                camera.add(car);
+                autoInPole = car;
+                posizionaAutoInPole();
+
+                if (typeof anime === 'function') {
+                    // Entrata di sola traslazione, da destra. Nessuna
+                    // rotazione: l'orientamento è quello e resta quello.
+                    const arrivo = car.position.x;
+                    anime({
+                        targets: car.position,
+                        x: [arrivo + mezzaLarghezzaCorrente(), arrivo],
+                        duration: 700,
+                        easing: 'easeOutExpo',
+                    });
+                }
+            }, livrea);
+        });
+    }
+
+    function mezzaLarghezzaCorrente() {
+        const mezzaAltezza = Math.tan((camera.fov / 2) * Math.PI / 180) * VETRINA_DISTANZA;
+        return mezzaAltezza * camera.aspect;
+    }
+
+    function smaltisciAuto(car) {
+        car.traverse((o) => {
+            if (o.geometry) o.geometry.dispose();
+            const materiali = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+            for (const m of materiali) {
+                if (m.map) m.map.dispose();
+                m.dispose();
+            }
+        });
+    }
+
+    function nascondiAutoInPole() {
+        if (!autoInPole) return;
+        camera.remove(autoInPole);
+        smaltisciAuto(autoInPole);
+        autoInPole = null;
     }
 
     socket.on('f1RaceEnded', (data) => {
@@ -3884,6 +3993,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
+        // L'auto della vetrina sta in una frazione di schermo, non a una
+        // coordinata fissa: cambiando proporzioni va rimessa dov'e' la colonna.
+        posizionaAutoInPole();
         // Fuori dall'if: il buffer dei contorni va ridimensionato in entrambi
         // i rami, altrimenti resta della misura precedente e il tratto si
         // sposta rispetto all'immagine.
