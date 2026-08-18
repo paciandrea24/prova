@@ -111,7 +111,28 @@ function computeSlipstreamMult(gapM) {
         : 1 + (1 - gapM / SLIPSTREAM_RANGE_M) * SLIPSTREAM_MAX_BOOST;
 }
 const REJOIN_GRACE = 60000;   // finestra di riconnessione dopo un drop (scheda in background, refresh, rete)
-const GRID_DISPLAY_MS = 8000; // quanto resta a schermo l'animazione POLE + la griglia prima del countdown di gara
+// ── Sequenza fra la fine della qualifica e il semaforo ──────────────────
+// Tre momenti, nell'ordine: stacco a tutto schermo (stile sigla TV) →
+// scoperta della propria posizione in griglia → riepilogo con la griglia
+// completa e il modello dell'auto in pole. Poi il posizionamento sulla
+// griglia vera, il semaforo, il via.
+//
+// Le durate stanno QUI e viaggiano dentro f1QualiEnded: il client le usa per
+// i propri tempi invece di tenerne una copia, così non possono divergere
+// (stesso criterio di RACE_END_RETURN_MS).
+//
+// Il totale è lo stesso per tutti — il semaforo scatta insieme per tutti, non
+// si può fare altrimenti. Chi fa la pole si prende più tempo sulla scoperta e
+// altrettanto meno sul riepilogo: è lo stesso monte, distribuito diverso.
+//
+// Il passaggio era brusco (richiesta utente 2026-08-18: "appena tutti hanno
+// finito la qualifica si viene subito catapultati sulla griglia"). Ora dura
+// più del doppio, ed è voluto: serve anche a dare tempo al caricamento.
+const SEQ_STACCO_MS = 2600;
+const SEQ_POSIZIONE_MS = 3400;
+const SEQ_POLE_EXTRA_MS = 1000;   // quanto in più resta a schermo la scoperta della pole
+const SEQ_GRIGLIA_MS = 7000;
+const GRID_DISPLAY_MS = SEQ_STACCO_MS + SEQ_POSIZIONE_MS + SEQ_POLE_EXTRA_MS + SEQ_GRIGLIA_MS;
 // Finestra di grazia di fine qualifica (Rif. design 2026-08-07): quando
 // tutti gli umani connessi finiscono, la sessione NON chiude subito — resta
 // aperta fino a QUALI_GRACE_MS in più (o finché anche i bot finiscono,
@@ -955,7 +976,12 @@ function endQualifying(io, lobbyId, game) {
     // azzera p.time in preparazione della gara (stessi oggetti giocatore
     // referenziati da `ranked`), quindi leggerlo dopo restituirebbe sempre
     // null nel pannello griglia.
-    const qualiTimes = ranked.map(p => ({ color: p.color, time: p.time }));
+    // `uid` serve al riepilogo: il client lo usa per chiedere la livrea
+    // personalizzata di chi ha fatto la pole e mostrarne il modello vero.
+    // null per bot e ospiti, come ovunque.
+    const qualiTimes = ranked.map(p => ({
+        color: p.color, time: p.time, uid: p.uid || null, isBot: !!p.isBot,
+    }));
 
     game.phase = 'grid_display';
     game.raceStarted = false;
@@ -968,7 +994,20 @@ function endQualifying(io, lobbyId, game) {
     assignGridSpawns(game);
 
     console.log(`🏁 [F1] Qualifica conclusa (lobby ${lobbyId}) — griglia: ${game.grid.join(', ')}`);
-    io.to(lobbyId).emit('f1QualiEnded', { grid: qualiTimes });
+    io.to(lobbyId).emit('f1QualiEnded', {
+        grid: qualiTimes,
+        trackName: game.track.name,
+        // Tempi della sequenza, decisi dal server (vedi le costanti SEQ_*):
+        // il client ci scandisce stacco, scoperta e riepilogo invece di
+        // tenerne una copia propria.
+        sequenza: {
+            staccoMs: SEQ_STACCO_MS,
+            posizioneMs: SEQ_POSIZIONE_MS,
+            poleExtraMs: SEQ_POLE_EXTRA_MS,
+            grigliaMs: SEQ_GRIGLIA_MS,
+            totaleMs: GRID_DISPLAY_MS,
+        },
+    });
 
     setTimeout(() => {
         if (!ancoraViva(lobbyId, game)) return;
@@ -2441,5 +2480,6 @@ module.exports.tickGame = tickGame;
 module.exports.TYRE_COMPOUNDS = TYRE_COMPOUNDS;
 // Ciclo di vita della partita, esposto ai test del rientro in lobby.
 module.exports.endRace = endRace;
+module.exports.endQualifying = endQualifying;
 module.exports.chiudiPartita = chiudiPartita;
 module.exports.RACE_END_RETURN_MS = RACE_END_RETURN_MS;
