@@ -3,15 +3,14 @@
 document.addEventListener('DOMContentLoaded', () => {
     console.log("💣 Bomb Game Script Caricato");
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const lobbyId = urlParams.get('lobby');
-    const playerColor = urlParams.get('color');
-    const gameId = urlParams.get('game');
-
-    if (!lobbyId || !playerColor) {
-        window.location.href = '/';
-        return;
-    }
+    // Chi sono e a cosa sto giocando arrivano dalla sessione della scheda,
+    // non dall'indirizzo: nell'URL resta solo il numero della stanza.
+    // Vedi shared/sessioneGiocatore.js.
+    const sessione = SessioneGiocatore.richiedi();
+    if (!sessione) return;
+    const lobbyId = sessione.lobbyId;
+    const playerColor = sessione.color;
+    const gameId = sessione.gameId;
 
     // Elementi DOM
     const playersUl = document.getElementById('players-ul');
@@ -37,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Socket Setup
     const socket = io();
-    socket.emit('joinLobby', { lobbyId: lobbyId, color: playerColor });
+    socket.emit('joinLobby', { lobbyId: lobbyId, color: playerColor, token: sessione.token });
     socket.emit('joinGame', { lobbyId, gameId, playerColor });
 
     // --- RICEZIONE STATO DI GIOCO ---
@@ -130,7 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ASCOLTATORE RIENTRO FORZATO
     socket.on('redirectAllToLobby', () => {
-        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
+        window.location.href = `/lobby.html?lobby=${lobbyId}`;
     });
 
     // Cerca socket.on('gameEnd', ...) e sostituiscilo TUTTO con questo:

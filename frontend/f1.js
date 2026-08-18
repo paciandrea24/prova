@@ -1,7 +1,12 @@
 document.addEventListener('DOMContentLoaded', async () => {
+    // urlParams resta solo per gli interruttori di sviluppo (toon, aa, ratio,
+    // ombre) che si leggono piu' sotto: chi sono e in che stanza sono stanno
+    // nella sessione della scheda. Vedi shared/sessioneGiocatore.js.
     const urlParams = new URLSearchParams(window.location.search);
-    const lobbyId = urlParams.get('lobby');
-    const myColor = urlParams.get('color') ? decodeURIComponent(urlParams.get('color')) : null;
+    const sessione = SessioneGiocatore.richiedi();
+    if (!sessione) return;
+    const lobbyId = sessione.lobbyId;
+    const myColor = sessione.color;
     // Chieste al SERVER, non lette dall'indirizzo: e' lui a possederle, ed e'
     // sulla SUA copia che gira la partita. Vedi shared/impostazioniGara.js per
     // il perche' — in breve, client e server potevano credere a due piste
@@ -120,7 +125,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Riconnessione
     socket.io.on('reconnect', () => {
-        socket.emit('joinLobby', { lobbyId, color: myColor });
+        socket.emit('joinLobby', { lobbyId, color: myColor, token: sessione.token });
         socket.emit('joinF1Game', { lobbyId, playerColor: myColor, uid: user ? user.uid : null });
     });
 
@@ -3443,7 +3448,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // gli altri dalla premiazione.
         inLobby.onclick = () => {
             if (myColor === hostColor) socket.emit('f1ReturnToLobby', lobbyId);
-            else window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(myColor)}`;
+            else window.location.href = `/lobby.html?lobby=${lobbyId}`;
         };
 
         // Il tempo lo decide il server, ed è lo stesso su cui programma lo
@@ -3456,7 +3461,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (resta > 0) { conto.textContent = `Rientro fra ${Math.ceil(resta / 1000)}s`; return; }
             clearInterval(passo);
             conto.textContent = 'Rientro in lobby…';
-            window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(myColor)}`;
+            window.location.href = `/lobby.html?lobby=${lobbyId}`;
         }, 1000);
     }
 
@@ -3486,7 +3491,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     socket.on('f1RedirectToLobby', () => {
-        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(myColor)}`;
+        window.location.href = `/lobby.html?lobby=${lobbyId}`;
     });
 
     // ====================================================
@@ -3715,7 +3720,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // asincrono, quindi f1Setup poteva arrivare dal server prima che il
     // listener fosse registrato ed essere perso (schermata bloccata sul cielo
     // blu, "certe volte" — bug segnalato dall'utente).
-    socket.emit('joinLobby', { lobbyId, color: myColor });
+    socket.emit('joinLobby', { lobbyId, color: myColor, token: sessione.token });
     socket.emit('joinF1Game', { lobbyId, playerColor: myColor, uid: user ? user.uid : null });
 
     // ====================================================

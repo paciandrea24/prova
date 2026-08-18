@@ -1,17 +1,53 @@
 const express = require('express');
 const router = express.Router();
-const { lobbies, users, generateLobbyId } = require('../store/lobbies');
+const { lobbies, users, generateLobbyId, creaGettone } = require('../store/lobbies');
 const leaderboard = require('../store/leaderboard');
 const { listTracks, saveTrack, deleteTrack } = require('../sockets/games/trackLoader');
+const { COLORI, normalizzaColore } = require('../config/coloriGiocatore');
+const { strumentiDiSviluppoAttivi } = require('../config/ambiente');
+const { creaLimite } = require('../middleware/limiteRichieste');
+
+// Gli identificativi di lobby li genera generateLobbyId(): sei caratteri fra
+// cifre e lettere maiuscole. Chi ne manda uno di forma diversa non sta
+// cercando una stanza esistente, e non ha senso farlo arrivare fino alla Map.
+const ID_LOBBY = /^[A-Z0-9]{6}$/;
+
+// Aprire stanze è l'unica operazione che fa CRESCERE lo stato in memoria senza
+// che nessuno debba prima entrare da qualche parte: è il primo posto da cui il
+// server si spegne da solo. Venti al minuto sono molte più di quante ne apra
+// una persona vera.
+const limiteCreazione = creaLimite({
+    maxRichieste: 20,
+    finestraMs: 60 * 1000,
+    messaggio: 'Hai aperto troppe stanze di fila, aspetta un minuto'
+});
+
+// Le rotte che scrivono su disco (editor piste) restano chiuse quando il
+// server è pubblico: rispondono 403 invece di 404, così se un giorno l'editor
+// smette di funzionare online il motivo si legge nella risposta.
+function soloStrumentiDiSviluppo(req, res, next) {
+    if (strumentiDiSviluppoAttivi()) return next();
+    res.status(403).json({ error: 'Editor piste disponibile solo in locale' });
+}
 
 // GET root
 router.get('/', (req, res) => {
     res.json({ messaggio: 'Tutto ok da index!' });
 });
 
+// GET /api/colors — la tavolozza con cui ci si presenta in lobby.
+// La pagina la chiede qui invece di tenerne una copia propria: il server
+// rifiuta i colori che non sono in elenco, e due elenchi diversi vorrebbero
+// dire un cerchietto che si può cliccare e che poi non funziona.
+router.get('/api/colors', (req, res) => {
+    res.json({ colors: COLORI });
+});
+
 // POST /create-lobby
-router.post('/create-lobby', (req, res) => {
-    const { color } = req.body;
+router.post('/create-lobby', limiteCreazione, (req, res) => {
+    const color = normalizzaColore((req.body || {}).color);
+    if (!color) return res.status(400).json({ error: 'Colore non valido' });
+
     const lobbyId = generateLobbyId();
     const lobby = {
         id: lobbyId,
@@ -24,9 +60,15 @@ router.post('/create-lobby', (req, res) => {
     lobbies.set(lobbyId, lobby);
     users.set(color, lobbyId);
 
+    // L'indirizzo porta solo il numero della stanza. Chi sei lo sa la scheda
+    // del browser (sessionStorage, vedi frontend/shared/sessioneGiocatore.js)
+    // e lo dimostra al server col gettone qui sotto.
     res.status(200).json({
         success: true,
-        redirect: `/lobby.html?lobby=${lobbyId}&color=${color}`
+        lobbyId,
+        color,
+        token: creaGettone(lobbyId, color),
+        redirect: `/lobby.html?lobby=${lobbyId}`
     });
 });
 
@@ -51,8 +93,13 @@ router.get('/api/lobby/:id/settings', (req, res) => {
 
 // POST /join-lobby
 router.post('/join-lobby', (req, res) => {
-    const { color, lobbyId } = req.body;
+    const { lobbyId } = req.body || {};
+    const color = normalizzaColore((req.body || {}).color);
 
+    if (!color) return res.status(400).json({ error: 'Colore non valido' });
+    if (typeof lobbyId !== 'string' || !ID_LOBBY.test(lobbyId)) {
+        return res.status(404).json({ error: 'Lobby not found' });
+    }
     if (!lobbies.has(lobbyId)) {
         return res.status(404).json({ error: 'Lobby not found' });
     }
@@ -66,7 +113,7 @@ router.post('/join-lobby', (req, res) => {
     lobby.players.push(color);
     users.set(color, lobbyId);
 
-    res.json({ success: true, lobby });
+    res.json({ success: true, lobby, lobbyId, color, token: creaGettone(lobbyId, color) });
 });
 
 // GET /api/invite/:lobbyId
@@ -131,9 +178,14 @@ router.get('/api/f1/tracks', (req, res) => {
 
 // ---------------------------------------------------------
 // API per salvare una pista disegnata nell'editor direttamente in
-// frontend/tracks/, senza passare per il download manuale del file
+// frontend/tracks/, senza passare per il download manuale del file.
+//
+// Scrive un file sul disco del server: è uno strumento di sviluppo, e resta
+// chiusa quando il server è pubblico. Senza quel controllo bastava una
+// richiesta per riscrivere una pista esistente con qualunque contenuto, e una
+// DELETE dentro un ciclo per cancellarle quasi tutte.
 // ---------------------------------------------------------
-router.post('/api/f1/tracks', (req, res) => {
+router.post('/api/f1/tracks', soloStrumentiDiSviluppo, (req, res) => {
     try {
         const id = saveTrack(req.body);
         res.json({ success: true, id });
@@ -145,7 +197,7 @@ router.post('/api/f1/tracks', (req, res) => {
 // ---------------------------------------------------------
 // API per eliminare una pista salvata (dall'editor, dev-only)
 // ---------------------------------------------------------
-router.delete('/api/f1/tracks/:id', (req, res) => {
+router.delete('/api/f1/tracks/:id', soloStrumentiDiSviluppo, (req, res) => {
     try {
         deleteTrack(req.params.id);
         res.json({ success: true });

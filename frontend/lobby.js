@@ -2,16 +2,16 @@
 
 document.addEventListener('DOMContentLoaded', () => {
     // 1. Inizializzazione Base
-    const urlParams = new URLSearchParams(window.location.search);
-    const lobbyId = urlParams.get('lobby');
-    const selectedColor = urlParams.get('color');
+    // Chi sono in questa stanza non sta piu' nell'indirizzo: il colore e il
+    // gettone che lo dimostra vivono in sessionStorage, per scheda. Chi apre
+    // il link della stanza senza esserci mai entrato viene mandato a
+    // scegliersi un colore. Vedi shared/sessioneGiocatore.js.
+    const sessione = SessioneGiocatore.richiedi();
+    if (!sessione) return;
+    const lobbyId = sessione.lobbyId;
+    const selectedColor = sessione.color;
 
-    if (!lobbyId || !selectedColor) {
-        window.location.href = '/';
-        return;
-    }
-
-    document.documentElement.style.setProperty('--my-color', decodeURIComponent(selectedColor));
+    document.documentElement.style.setProperty('--my-color', selectedColor);
 
     let currentSelectedGame = null;
     let isSetup = false; // <--- FLAG PER EVITARE CHE IL MENU SI RESETTI OGNI 3 SECONDI
@@ -100,7 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 3. Setup Socket.io
     const socket = io();
-    socket.emit('joinLobby', { lobbyId: lobbyId, color: selectedColor });
+    socket.emit('joinLobby', { lobbyId: lobbyId, color: selectedColor, token: sessione.token });
 
     // Copre il tratto fra il clic di avvio e la comparsa della pagina di
     // gioco: la lobby resta visibile finché il browser non ha la nuova
@@ -151,7 +151,10 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (gameId === 'fps') targetPage = '/fps.html';
         else if (gameId === 'f1') targetPage = '/f1.html';
 
-        const url = `${targetPage}?lobby=${lobbyId}&color=${encodeURIComponent(selectedColor)}&game=${gameId}`;
+        // Nell'indirizzo del gioco resta il solo numero di stanza: chi sono
+        // e a cosa sto giocando viaggiano nella sessione della scheda.
+        SessioneGiocatore.aggiorna({ gameId });
+        const url = `${targetPage}?lobby=${encodeURIComponent(lobbyId)}`;
         showLaunchOverlay();
         // Due frame prima di navigare: l'overlay è appena entrato nel DOM e
         // navigando subito il browser potrebbe non arrivare mai a dipingerlo.
@@ -254,7 +257,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 kickBtn.addEventListener('click', () => {
                     if (confirm('Are you sure you want to kick this player?')) {
-                        socket.emit('kickPlayer', { lobbyId, hostColor: currentPlayerColor, targetColor: pColor });
+                        socket.emit('kickPlayer', { lobbyId, targetColor: pColor });
                     }
                 });
                 row.appendChild(kickBtn);
@@ -425,7 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function sendChat() {
         const text = chatInput.value.trim();
         if (text && lobbyId && selectedColor) {
-            socket.emit('sendChatMessage', { lobbyId, playerColor: selectedColor, message: text });
+            socket.emit('sendChatMessage', { lobbyId, message: text });
             chatInput.value = '';
             chatInput.focus();
         }
@@ -463,6 +466,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         chatMessages.appendChild(msgDiv);
         chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+
+// Il server rifiuta un ingresso quando il gettone di sessione non e' piu'
+    // valido (lobby chiusa e ricreata, giocatore espulso, sessione di
+    // un'altra stanza). Senza questo la pagina resterebbe li' a fissare una
+    // lista che non arriva mai.
+    socket.on('sessioneNonValida', (dati) => {
+        SessioneGiocatore.dimentica();
+        alert((dati && dati.motivo) || 'Sessione non valida.');
+        window.location.href = '/';
     });
 
     socket.on('playerKicked', (kickedColor) => {
@@ -524,9 +537,11 @@ document.addEventListener('DOMContentLoaded', () => {
         confirmTransferBtn.addEventListener('click', () => {
             // Ora socket, lobbyId e selectedColor esistono e sono accessibili!
             if (pendingNewHost && lobbyId && selectedColor) {
+                // Chi sta chiedendo il passaggio lo sa il server dal socket:
+                // mandare `currentHost` non serviva a nulla se non a farsi
+                // credere host da chiunque lo scrivesse.
                 socket.emit('transferHost', {
                     lobbyId: lobbyId,
-                    currentHost: selectedColor,
                     newHost: pendingNewHost
                 });
                 closeTransferModal();
@@ -561,7 +576,7 @@ document.addEventListener('click', async (e) => {
 
             for (const [trackName, records] of Object.entries(data)) {
                 let html = `<div style="margin-bottom: 20px; background: #ecf0f1; border: 3px solid #2C3E50; padding: 15px; border-radius: 12px; box-shadow: 2px 2px 0px #2C3E50;">`;
-                html += `<h3 style="color: #3498DB; margin-top: 0; border-bottom: 3px dashed #bdc3c7; padding-bottom: 10px; margin-bottom: 10px;">📍 ${trackName}</h3>`;
+                html += `<h3 style="color: #3498DB; margin-top: 0; border-bottom: 3px dashed #bdc3c7; padding-bottom: 10px; margin-bottom: 10px;">📍 ${escapeHtml(trackName)}</h3>`;
 
                 if (records.length === 0) {
                     html += `<p style="color: #7f8c8d; font-weight: bold;">No times recorded.</p>`;
@@ -582,8 +597,8 @@ document.addEventListener('click', async (e) => {
                                 <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 2px solid #bdc3c7; font-size: 18px;">
                                     <span style="display: flex; align-items: center;">
                                         <strong style="color: ${color}; width: 30px; font-size: 20px; text-shadow: 1px 1px 0px rgba(0,0,0,0.1);">${index + 1}°</strong> 
-                                        <div style="width:20px; height:20px; border-radius:50%; background-color:${rec.color}; margin-right:10px; border:2px solid #2C3E50;"></div>
-                                        <strong style="color: #2C3E50;">${rec.name || 'Racer'}</strong>
+                                        <div style="width:20px; height:20px; border-radius:50%; background-color:${escapeHtml(rec.color)}; margin-right:10px; border:2px solid #2C3E50;"></div>
+                                        <strong style="color: #2C3E50;">${escapeHtml(rec.name || 'Racer')}</strong>
                                     </span>
                                     <span style="font-family: monospace; font-weight: bold; background: #2C3E50; color: white; padding: 4px 8px; border-radius: 8px;">${timeStr}</span>
                                 </li>`;

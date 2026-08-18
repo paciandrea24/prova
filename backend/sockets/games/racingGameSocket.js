@@ -129,11 +129,45 @@ module.exports = function (io, socket) {
         }, 3000);
     });
 
+    // La classifica globale è l'unica cosa di questo progetto che finisca su
+    // un database vero e che sia vista da tutti, comprese le persone che non
+    // hanno mai giocato con te. Fino a ieri ci si scriveva dentro così:
+    //
+    //     socket.emit('saveNewRecord', { trackName, playerName, playerColor, time })
+    //
+    // con il server che riportava i quattro campi su MongoDB senza guardarli.
+    // Nome della pista compreso: siccome è la CHIAVE del documento, mandarne
+    // uno nuovo ogni volta faceva crescere quel documento all'infinito. E
+    // `playerColor` finiva dritto dentro un attributo `style` della pagina
+    // classifica, che lo incolla nell'HTML — cioè chiunque poteva lasciare lì
+    // del codice che poi girava nel browser di chi apriva la classifica.
+    //
+    // Ora dal messaggio arrivano solo le due cose che il server non può
+    // sapere da sé (le tre lettere del nome e il tempo), e passano da un
+    // controllo. Pista e colore li mette il server.
     socket.on('saveNewRecord', (data) => {
-        const { lobbyId, trackName, playerName, playerColor, time } = data;
-        leaderboard.addRecord(trackName, playerName, playerColor, time);
+        const { lobbyId, playerName, time } = data || {};
+
+        if (!socket.color || !lobbyId || socket.lobbyId !== lobbyId) return;
+        const game = activeGames.get(lobbyId);
+        const pista = game && game.tracks && game.tracks[game.currentTrackIndex];
+        if (!pista || typeof pista.name !== 'string') return;
+
+        // Un giro sotto il secondo o sopra l'ora non è un giro: è un numero
+        // scritto a mano. Non impedisce di barare sul proprio tempo — quello
+        // richiederebbe che sia il server a cronometrare — ma tiene fuori i
+        // valori che rendono la classifica inservibile per tutti (zero,
+        // negativi, NaN, Infinity).
+        if (typeof time !== 'number' || !Number.isFinite(time) || time < 1000 || time > 60 * 60 * 1000) return;
+
+        // Tre caratteri in stile cabinato, e solo lettere e cifre.
+        const nome = (typeof playerName === 'string' ? playerName : '')
+            .replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
+        if (!nome) return;
+
+        leaderboard.addRecord(pista.name, nome, socket.color, time);
         io.to(lobbyId).emit('message', {
-            message: `🌟 La leggenda [${playerName}] ha scritto il suo nome nella storia di ${trackName}!`,
+            message: `🌟 La leggenda [${nome}] ha scritto il suo nome nella storia di ${pista.name}!`,
             type: 'success'
         });
     });

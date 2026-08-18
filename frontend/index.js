@@ -228,21 +228,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (response.ok) {
                 const data = await response.json();
-                let finalLobbyId = targetLobbyId;
+                const finalLobbyId = data.lobbyId || targetLobbyId;
 
-                if (!finalLobbyId && data.redirect) {
-                    const match = data.redirect.match(/lobby=([^&]+)/);
-                    if (match && match[1]) {
-                        finalLobbyId = match[1];
-                    }
-                }
+                // Il colore e il gettone che lo dimostra restano in questa
+                // scheda: nell'indirizzo va solo il numero della stanza, che e'
+                // l'unica cosa che abbia senso copiare e mandare a qualcuno.
+                // Vedi frontend/shared/sessioneGiocatore.js.
+                SessioneGiocatore.salva({
+                    lobbyId: finalLobbyId,
+                    color: data.color || color,
+                    token: data.token
+                });
 
-                if (finalLobbyId) {
-                    const cleanUrl = `/lobby.html?lobby=${finalLobbyId}&color=${encodeURIComponent(color)}`;
-                    window.location.href = cleanUrl;
-                } else {
-                    window.location.href = data.redirect;
-                }
+                window.location.href = `/lobby.html?lobby=${encodeURIComponent(finalLobbyId)}`;
 
             } else {
                 const err = await response.json();

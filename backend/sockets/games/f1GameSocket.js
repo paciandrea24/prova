@@ -1,5 +1,5 @@
 const { activeGames } = require('../../store/activeGames');
-const { lobbies } = require('../../store/lobbies');
+const { lobbies, verificaGettone } = require('../../store/lobbies');
 const { loadTrack } = require('./trackLoader');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 const { createBots, updateBotInputs, estimateFinishTime, nearestAheadPlayer, BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS } = require('./f1Bot');
@@ -301,10 +301,26 @@ module.exports = function (io, socket) {
         io.to(lobbyId).emit('gameSelected', { gameId, settings });
     });
 
-    socket.on('joinF1Game', ({ lobbyId, playerColor, uid }) => {
+    socket.on('joinF1Game', ({ lobbyId, playerColor: coloreDichiarato, uid, token }) => {
+        // Chi sei: o questo socket è già stato riconosciuto in lobby
+        // (`joinLobby` col gettone di sessione, che la pagina emette sempre
+        // subito prima di questo), oppure lo dimostra qui presentando lo
+        // stesso gettone.
+        //
+        // Il colore scritto nel messaggio, da solo, non vale più niente.
+        // Prima invece finiva dritto in `socket.color`: bastava dichiararsi
+        // del colore dell'host per scavalcare ogni controllo fatto in lobby e
+        // poi chiudere la gara a tutti.
+        if (!(socket.color && socket.lobbyId === lobbyId)) {
+            if (!verificaGettone(lobbyId, coloreDichiarato, token)) {
+                console.warn(`🚫 joinF1Game senza sessione valida (socket ${socket.id}, lobby ${lobbyId})`);
+                return;
+            }
+            socket.color = coloreDichiarato;
+            socket.lobbyId = lobbyId;
+        }
+        const playerColor = socket.color;
         socket.join(lobbyId);
-        socket.lobbyId = lobbyId;
-        socket.color = playerColor;
         // Marca QUESTO socket come partecipante reale alla gara. Serve al guard
         // del disconnect qui sotto per distinguerlo dai vecchi socket-lobby.
         socket.data.joinedF1 = true;
@@ -542,7 +558,11 @@ module.exports = function (io, socket) {
 
     // Scelta mescola (fase tyre_select). Se tutti hanno confermato si passa
     // subito alla qualifica, senza aspettare il timeout.
-    socket.on('f1TyreChoice', ({ lobbyId, playerColor, compound }) => {
+    socket.on('f1TyreChoice', ({ lobbyId, compound }) => {
+        // Il colore non arriva dal messaggio: e' quello che il server ha
+        // gia' verificato col gettone di sessione in joinLobby. Vedi il
+        // commento in joinF1Game.
+        const playerColor = socket.color;
         const game = activeGames.get(lobbyId);
         if (!game || game.phase !== 'tyre_select') return;
         if (!TYRE_COMPOUNDS[compound]) return;
@@ -565,7 +585,11 @@ module.exports = function (io, socket) {
     // Pressione del minigioco di reazione al pit stop. Il server è
     // autoritativo sul tempo (vedi handlePitReactionPress): il client si
     // limita a inoltrare l'evento appena l'utente preme.
-    socket.on('f1PitReactionPress', ({ lobbyId, playerColor }) => {
+    socket.on('f1PitReactionPress', ({ lobbyId }) => {
+        // Il colore non arriva dal messaggio: e' quello che il server ha
+        // gia' verificato col gettone di sessione in joinLobby. Vedi il
+        // commento in joinF1Game.
+        const playerColor = socket.color;
         const game = activeGames.get(lobbyId);
         if (!game) return;
         const p = game.players[playerColor];
@@ -576,7 +600,11 @@ module.exports = function (io, socket) {
     // Cambio mescola durante la sosta ai box: applicata a fine sosta
     // (completePitStop), non subito — non ha senso montare gomme diverse
     // mentre l'auto è ancora sollevata dal cric.
-    socket.on('f1PitCompoundChoice', ({ lobbyId, playerColor, compound }) => {
+    socket.on('f1PitCompoundChoice', ({ lobbyId, compound }) => {
+        // Il colore non arriva dal messaggio: e' quello che il server ha
+        // gia' verificato col gettone di sessione in joinLobby. Vedi il
+        // commento in joinF1Game.
+        const playerColor = socket.color;
         const game = activeGames.get(lobbyId);
         if (!game) return;
         if (!TYRE_COMPOUNDS[compound]) return;
@@ -592,7 +620,11 @@ module.exports = function (io, socket) {
     // Scelta riparazione danni durante la sosta ai box: applicata a fine
     // sosta (completePitStop), non subito — stesso pattern di
     // f1PitCompoundChoice. Default se non si sceglie mai: NON riparare.
-    socket.on('f1PitRepairChoice', ({ lobbyId, playerColor, repair }) => {
+    socket.on('f1PitRepairChoice', ({ lobbyId, repair }) => {
+        // Il colore non arriva dal messaggio: e' quello che il server ha
+        // gia' verificato col gettone di sessione in joinLobby. Vedi il
+        // commento in joinF1Game.
+        const playerColor = socket.color;
         const game = activeGames.get(lobbyId);
         if (!game) return;
         const p = game.players[playerColor];
@@ -600,7 +632,11 @@ module.exports = function (io, socket) {
         p.pendingRepair = !!repair;
     });
 
-    socket.on('f1Input', ({ lobbyId, playerColor, inputs }) => {
+    socket.on('f1Input', ({ lobbyId, inputs }) => {
+        // Il colore non arriva dal messaggio: e' quello che il server ha
+        // gia' verificato col gettone di sessione in joinLobby. Vedi il
+        // commento in joinF1Game.
+        const playerColor = socket.color;
         const game = activeGames.get(lobbyId);
         if (!game || !game.players[playerColor] || !inputs) return;
         // Un giocatore già "finished" (giro di qualifica o gara completati)

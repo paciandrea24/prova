@@ -4,10 +4,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log("🧠 Quiz Game Script (Gartic Style & English)");
 
     // 1. SETUP INIZIALE
-    const urlParams = new URLSearchParams(window.location.search);
-    const lobbyId = urlParams.get('lobby');
-    const playerColor = urlParams.get('color');
-    const gameId = urlParams.get('game');
+    // Chi sono e a cosa sto giocando arrivano dalla sessione della scheda,
+    // non dall'indirizzo: nell'URL resta solo il numero della stanza.
+    // Vedi shared/sessioneGiocatore.js.
+    const sessione = SessioneGiocatore.richiedi();
+    if (!sessione) return;
+    const lobbyId = sessione.lobbyId;
+    const playerColor = sessione.color;
+    const gameId = sessione.gameId;
 
     // Chieste al server invece che lette dall'indirizzo: vedi
     // shared/impostazioniGara.js.
@@ -43,7 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 2. SOCKET IO
     const socket = io();
-    socket.emit('joinLobby', { lobbyId: lobbyId, color: playerColor });
+    socket.emit('joinLobby', { lobbyId: lobbyId, color: playerColor, token: sessione.token });
     socket.emit('joinGame', { lobbyId, gameId, playerColor, settings: gameSettings });
     socket.emit('requestGameState', { lobbyId });
 
@@ -52,7 +56,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         e.preventDefault();
         const text = chatInput.value.trim();
         if (!text) return;
-        socket.emit('sendChatMessage', { lobbyId, playerColor, message: text });
+        socket.emit('sendChatMessage', { lobbyId, message: text });
         chatInput.value = '';
     });
 
@@ -148,7 +152,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Aggiungi questo in un punto globale del file (es. sotto le altre socket.on)
     socket.on('redirectAllToLobby', () => {
-        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
+        window.location.href = `/lobby.html?lobby=${lobbyId}`;
     });
 
     socket.on('gameOver', (data) => {
@@ -274,7 +278,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (backToLobbyBtn) {
         backToLobbyBtn.onclick = () => {
-            window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
+            window.location.href = `/lobby.html?lobby=${lobbyId}`;
         };
     }
 });

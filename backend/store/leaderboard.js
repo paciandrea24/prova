@@ -81,7 +81,17 @@ function isTop10Record(trackName, timeMs) {
     return timeMs < worstRecord.time;
 }
 
+// Ultima linea prima di MongoDB: qui si arriva da un messaggio di rete, e
+// `playerName.toUpperCase()` su un numero non è un dato sbagliato, è il
+// processo che muore portandosi dietro tutte le partite in corso.
+// Chi chiama ha già validato (vedi racingGameSocket): questo controllo c'è
+// perché il prossimo che chiamerà potrebbe non farlo.
 function addRecord(trackName, playerName, playerColor, timeMs) {
+    if (typeof trackName !== 'string' || !trackName.trim()) return null;
+    if (typeof playerName !== 'string' || !playerName.trim()) return null;
+    if (typeof playerColor !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(playerColor)) return null;
+    if (typeof timeMs !== 'number' || !Number.isFinite(timeMs) || timeMs <= 0) return null;
+
     if (!leaderboardData[trackName]) leaderboardData[trackName] = [];
 
     const newRecord = {

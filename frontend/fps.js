@@ -5,10 +5,12 @@
 //  PARAMETRI URL
 // ══════════════════════════════════════════════════════
 const urlParams = new URLSearchParams(window.location.search);
-const LOBBY_ID = urlParams.get('lobby');
-const MY_COLOR = decodeURIComponent(urlParams.get('color') || '#ffffff');
-
-if (!LOBBY_ID || !MY_COLOR) { window.location.href = '/'; }
+// Chi sono lo dice la sessione della scheda, non l'indirizzo (vedi
+// shared/sessioneGiocatore.js). richiedi() rimanda alla home da solo se
+// questa scheda non e' mai entrata in questa stanza.
+const SESSIONE = SessioneGiocatore.richiedi() || {};
+const LOBBY_ID = SESSIONE.lobbyId || null;
+const MY_COLOR = SESSIONE.color || '#ffffff';
 
 // ══════════════════════════════════════════════════════
 //  COSTANTI GIOCO
@@ -3686,6 +3688,7 @@ _boot.then(() => {
     if (_loadingEl) _loadingEl.style.display = 'none';
     addWorldGround();       // prato sotto il mondo (dopo che le zone hanno definito l'AABB)
     toggleJazzOutlines();   // china sugli edifici ACCESA di default (prima chiamata = build+on)
+    socket.emit('joinLobby', { lobbyId: LOBBY_ID, color: MY_COLOR, token: SESSIONE.token });
     socket.emit('joinFPS', { lobbyId: LOBBY_ID, playerColor: MY_COLOR });
 }).catch(err => {
     console.error('Caricamento scenario fallito', err);
@@ -3700,6 +3703,7 @@ _boot.then(() => {
 // ogni reportHit su di lui) e la partita si corrompe per tutti.
 // Il re-join fa rispondere il server con fpsInit, che risincronizza fase/round.
 socket.io.on('reconnect', () => {
+    socket.emit('joinLobby', { lobbyId: LOBBY_ID, color: MY_COLOR, token: SESSIONE.token });
     socket.emit('joinFPS', { lobbyId: LOBBY_ID, playerColor: MY_COLOR });
 });
 
@@ -4190,7 +4194,7 @@ socket.on('gameOver', (data) => {
 });
 
 socket.on('redirectAllToLobby', () => {
-    window.location.href = `/lobby.html?lobby=${LOBBY_ID}&color=${encodeURIComponent(MY_COLOR)}`;
+    window.location.href = `/lobby.html?lobby=${LOBBY_ID}`;
 });
 
 socket.on('fpsChat', ({ playerColor, message }) => {

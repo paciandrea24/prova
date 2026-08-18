@@ -6,10 +6,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // =========================================================
     // 1. SETUP INIZIALE
     // =========================================================
-    const urlParams = new URLSearchParams(window.location.search);
-    const lobbyId = urlParams.get('lobby');
-    const playerColor = urlParams.get('color');
-    const gameId = urlParams.get('game');
+    // Chi sono e a cosa sto giocando arrivano dalla sessione della scheda,
+    // non dall'indirizzo: nell'URL resta solo il numero della stanza.
+    // Vedi shared/sessioneGiocatore.js.
+    const sessione = SessioneGiocatore.richiedi();
+    if (!sessione) return;
+    const lobbyId = sessione.lobbyId;
+    const playerColor = sessione.color;
+    const gameId = sessione.gameId;
 
     // Chieste al server invece che lette dall'indirizzo: vedi
     // shared/impostazioniGara.js.
@@ -77,7 +81,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // =========================================================
     const socket = io();
 
-    socket.emit('joinLobby', { lobbyId: lobbyId, color: playerColor });
+    socket.emit('joinLobby', { lobbyId: lobbyId, color: playerColor, token: sessione.token });
     socket.emit('joinGame', { lobbyId, gameId, playerColor, settings: gameSettings });
     socket.emit('requestGameState', { lobbyId });
 
@@ -536,7 +540,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Aggiungi questo listener in game.js
     socket.on('redirectAllToLobby', () => {
-        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
+        window.location.href = `/lobby.html?lobby=${lobbyId}`;
     });
 
     if (backToLobbyBtn) {

@@ -14,7 +14,7 @@
 // posizione solo all'altro (scelta dell'utente).
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { lobbies } = require('../../store/lobbies.js');
+const { lobbies, creaGettone } = require('../../store/lobbies.js');
 const { activeGames } = require('../../store/activeGames.js');
 const f1 = require('./f1GameSocket.js');
 
@@ -28,7 +28,7 @@ function partita(trackId = 'prova') {
     });
     const handlers = {};
     f1(ioFinto, { id: 's', data: {}, on: (e, cb) => handlers[e] = cb, emit() { }, join() { } });
-    handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     const g = activeGames.get(LOBBY);
     clearInterval(g.tick);
     clearTimeout(g.tyreSelectTimeout);

@@ -23,7 +23,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
-const { lobbies } = require('../../store/lobbies.js');
+const { lobbies, creaGettone } = require('../../store/lobbies.js');
 const { activeGames } = require('../../store/activeGames.js');
 const f1 = require('./f1GameSocket.js');
 
@@ -45,7 +45,7 @@ function garaDiSoliBot(lobbyId, trackId, quanti) {
     });
     const handlers = {};
     f1(ioFinto, { id: 's', data: {}, on: (e, cb) => handlers[e] = cb, emit() { }, join() { } });
-    handlers.joinF1Game({ lobbyId, playerColor: 'red' });
+    handlers.joinF1Game({ lobbyId, playerColor: 'red', token: creaGettone(lobbyId, 'red') });
     const g = activeGames.get(lobbyId);
     clearInterval(g.tick);
 

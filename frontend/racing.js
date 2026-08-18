@@ -1,20 +1,19 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const lobbyId = urlParams.get('lobby');
-    const myColor = urlParams.get('color');
-
-    if (!lobbyId || !myColor) {
-        window.location.href = '/';
-        return;
-    }
+    // Chi sono e a cosa sto giocando arrivano dalla sessione della scheda,
+    // non dall'indirizzo: nell'URL resta solo il numero della stanza.
+    // Vedi shared/sessioneGiocatore.js.
+    const sessione = SessioneGiocatore.richiedi();
+    if (!sessione) return;
+    const lobbyId = sessione.lobbyId;
+    const myColor = sessione.color;
 
     const socket = io({
         transports: ['websocket'],
         upgrade: false
     });
 
-    socket.emit('joinLobby', { lobbyId: lobbyId, color: myColor });
-    socket.emit('joinRacing', { lobbyId, playerColor: decodeURIComponent(myColor) });
+    socket.emit('joinLobby', { lobbyId: lobbyId, color: myColor, token: sessione.token });
+    socket.emit('joinRacing', { lobbyId, playerColor: myColor });
 
     const arena = document.getElementById('arena');
     let isRacing = false;
@@ -609,7 +608,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('redirectAllToLobby', () => {
-        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(myColor)}`;
+        window.location.href = `/lobby.html?lobby=${lobbyId}`;
     });
 
     // --- GESTIONE INPUT (W A S D) ---

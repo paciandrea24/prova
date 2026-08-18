@@ -21,7 +21,7 @@
 // lista e riassegnando l'host.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { lobbies } = require('../../store/lobbies.js');
+const { lobbies, creaGettone } = require('../../store/lobbies.js');
 const { activeGames } = require('../../store/activeGames.js');
 const registraHandlerF1 = require('./f1GameSocket.js');
 
@@ -90,8 +90,8 @@ test('finita una gara multiplayer il server chiude la partita da solo', (t) => {
     preparaLobby(['red', 'blue']);
     const io = ioFinto();
 
-    const a = collega(io); a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
-    const b = collega(io); b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue' });
+    const a = collega(io); a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
+    const b = collega(io); b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue', token: creaGettone(LOBBY, 'blue') });
     faiFinireLaGara(io, ['red', 'blue']);
 
     // Il client naviga verso la lobby a fine conto alla rovescia: il socket
@@ -110,8 +110,8 @@ test('riavviare una gara dopo il rientro in lobby parte da zero, sulla pista sce
     preparaLobby(['red', 'blue']);
     const io = ioFinto();
 
-    const a = collega(io); a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
-    const b = collega(io); b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue' });
+    const a = collega(io); a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
+    const b = collega(io); b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue', token: creaGettone(LOBBY, 'blue') });
     faiFinireLaGara(io, ['red', 'blue']);
     a.handlers.disconnect();
     b.handlers.disconnect();
@@ -119,8 +119,8 @@ test('riavviare una gara dopo il rientro in lobby parte da zero, sulla pista sce
 
     // In lobby l'host cambia pista e riavvia.
     lobbies.get(LOBBY).gameSettings.trackId = 'monte-rosso';
-    const a2 = collega(io); a2.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
-    const b2 = collega(io); b2.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue' });
+    const a2 = collega(io); a2.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
+    const b2 = collega(io); b2.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue', token: creaGettone(LOBBY, 'blue') });
 
     const g = activeGames.get(LOBBY);
     assert.equal(g.phase, 'tyre_select', 'la nuova gara deve ripartire dalla scelta mescola');
@@ -138,8 +138,8 @@ test('la partita chiusa non svuota la lobby un minuto dopo', (t) => {
     preparaLobby(['red', 'blue']);
     const io = ioFinto();
 
-    const a = collega(io); a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
-    const b = collega(io); b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue' });
+    const a = collega(io); a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
+    const b = collega(io); b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue', token: creaGettone(LOBBY, 'blue') });
     faiFinireLaGara(io, ['red', 'blue']);
     a.handlers.disconnect();
     b.handlers.disconnect();
@@ -159,9 +159,9 @@ test('chi abbandona DURANTE la gara viene comunque tolto dalla lobby', (t) => {
     preparaLobby(['red', 'blue', 'green']);
     const io = ioFinto();
 
-    const a = collega(io); a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
-    const b = collega(io); b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue' });
-    const c = collega(io); c.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'green' });
+    const a = collega(io); a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
+    const b = collega(io); b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue', token: creaGettone(LOBBY, 'blue') });
+    const c = collega(io); c.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'green', token: creaGettone(LOBBY, 'green') });
 
     // "green" chiude il browser a meta gara: non tornera in lobby.
     c.handlers.disconnect();
@@ -181,7 +181,7 @@ test('in modalita singolo la partita resta viva dopo il podio (serve a "Riprova"
     preparaLobby(['red'], { mode: 'single' });
     const io = ioFinto();
 
-    const a = collega(io); a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    const a = collega(io); a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     faiFinireLaGara(io, ['red']);
 
     t.mock.timers.tick(60000);
@@ -236,7 +236,7 @@ test('una gara avviata dalla lobby non rientra in quella abbandonata a meta', (t
 
     const a = collega(io);
     avvia(a, 'monte-rosso');
-    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
 
     // Sessione in corso, poi abbandonata a meta'.
     const vecchia = activeGames.get(LOBBY);
@@ -251,7 +251,7 @@ test('una gara avviata dalla lobby non rientra in quella abbandonata a meta', (t
     // Dalla lobby si avvia una gara nuova, su un'altra pista.
     const b = collega(io);
     avvia(b, 'prova');
-    b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
 
     const g = activeGames.get(LOBBY);
     assert.notEqual(g, vecchia, 'deve essere una partita nuova, non quella di prima');
@@ -271,7 +271,7 @@ test('dentro la stessa sessione un refresh resta un rientro, non una gara nuova'
 
     const a = collega(io);
     avvia(a, 'prova');
-    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     const g0 = activeGames.get(LOBBY);
     g0.phase = 'race';
     g0.players.red.lap = 2;
@@ -279,7 +279,7 @@ test('dentro la stessa sessione un refresh resta un rientro, non una gara nuova'
     // F5 in mezzo alla gara: nessun startGame, quindi la sessione e' la stessa.
     a.handlers.disconnect();
     const b = collega(io);
-    b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
 
     assert.equal(activeGames.get(LOBBY), g0, 'deve rientrare nella partita in corso');
     assert.equal(activeGames.get(LOBBY).players.red.lap, 2, 'senza perdere il giro');
@@ -298,7 +298,7 @@ test('un timer della sessione precedente non spinge in gara quella nuova', (t) =
 
     const a = collega(io);
     avvia(a, 'monte-rosso');
-    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     const vecchia = activeGames.get(LOBBY);
     vecchia.phase = 'race_end';
     vecchia.grid = ['red'];
@@ -308,7 +308,7 @@ test('un timer della sessione precedente non spinge in gara quella nuova', (t) =
     // Nel frattempo si riparte dalla lobby, su un'altra pista.
     const b = collega(io);
     avvia(b, 'prova');
-    b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     const nuova = activeGames.get(LOBBY);
     assert.notEqual(nuova, vecchia, 'la sessione dev\'essere stata sostituita');
 
@@ -338,13 +338,13 @@ test('il socket della sessione precedente non tocca il pilota di quella nuova', 
 
     const vecchio = collega(io);
     avvia(vecchio, 'monte-rosso');
-    vecchio.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    vecchio.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
 
     // Rientro in lobby e avvio della gara nuova, PRIMA che il socket vecchio
     // sia dichiarato morto.
     const nuovo = collega(io);
     avvia(nuovo, 'new-monza');
-    nuovo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    nuovo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     const g = activeGames.get(LOBBY);
     assert.equal(g.track.id, 'new-monza');
 
@@ -391,7 +391,7 @@ test('premiazione, scadenza del tempo, e la gara dopo parte pulita', (t) => {
 
     const a = collega(io);
     avvia(a, 'monte-rosso');
-    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     const vecchia = faiFinireLaGaraVera(io, a);
 
     // Il tempo scade: il client naviga da solo e il suo socket muore.
@@ -404,7 +404,7 @@ test('premiazione, scadenza del tempo, e la gara dopo parte pulita', (t) => {
     // Nuova gara, altra pista.
     const b = collega(io);
     avvia(b, 'prova');
-    b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     const g = activeGames.get(LOBBY);
     assert.notEqual(g, vecchia);
     assert.equal(g.track.id, 'prova');
@@ -420,7 +420,7 @@ test('il pulsante di chi ospita chiude la partita e riporta tutti in lobby', (t)
 
     const a = collega(io);
     avvia(a, 'monte-rosso');
-    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     faiFinireLaGaraVera(io, a);
 
     // Premuto a meta' premiazione, senza aspettare la scadenza.
@@ -444,7 +444,7 @@ test('"Riprova" durante la premiazione rilancia la stessa partita', (t) => {
 
     const a = collega(io);
     avvia(a, 'monte-rosso', { mode: 'single' });
-    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     const g = faiFinireLaGaraVera(io, a);
     g.grid = ['red'];
 

@@ -13,7 +13,7 @@
 // bot servono, non una fonte nuova.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { lobbies } = require('../../store/lobbies.js');
+const { lobbies, creaGettone } = require('../../store/lobbies.js');
 const { activeGames } = require('../../store/activeGames.js');
 const registraHandlerF1 = require('./f1GameSocket.js');
 
@@ -71,7 +71,7 @@ test('la qualifica NON parte finché un pilota della lobby sta ancora caricando'
     const io = ioFinto();
 
     const primo = collega(io);
-    primo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    primo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     primo.handlers.f1TyreChoice({ lobbyId: LOBBY, playerColor: 'red', compound: 'soft' });
 
     assert.equal(activeGames.get(LOBBY).phase, 'tyre_select',
@@ -84,11 +84,11 @@ test('la qualifica parte quando il pilota in ritardo arriva e sceglie', (t) => {
     const io = ioFinto();
 
     const primo = collega(io);
-    primo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    primo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     primo.handlers.f1TyreChoice({ lobbyId: LOBBY, playerColor: 'red', compound: 'soft' });
 
     const secondo = collega(io);
-    secondo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue' });
+    secondo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue', token: creaGettone(LOBBY, 'blue') });
     assert.equal(activeGames.get(LOBBY).phase, 'tyre_select',
         'appena arrivato deve poter ancora scegliere');
 
@@ -103,11 +103,11 @@ test('il pilota in ritardo riceve la fase di scelta mescola, non la qualifica', 
     const io = ioFinto();
 
     const primo = collega(io);
-    primo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    primo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     primo.handlers.f1TyreChoice({ lobbyId: LOBBY, playerColor: 'red', compound: 'soft' });
 
     const secondo = collega(io);
-    secondo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue' });
+    secondo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue', token: creaGettone(LOBBY, 'blue') });
 
     const setup = secondo.emessi.find(e => e.evento === 'f1Setup');
     assert.ok(setup, 'il secondo client deve ricevere f1Setup');
@@ -120,7 +120,7 @@ test('f1Setup elenca chi è atteso e chi è già arrivato, per mostrare gli asse
     const io = ioFinto();
 
     const primo = collega(io);
-    primo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    primo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
 
     const setup = primo.emessi.find(e => e.evento === 'f1Setup');
     assert.deepEqual(setup.dati.tyreAttesi, ['red', 'blue']);
@@ -133,7 +133,7 @@ test('f1Setup dice quanto tempo resta per scegliere, e il tempo si rinnova a ogn
     const io = ioFinto();
 
     const primo = collega(io);
-    primo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    primo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     const restaPrimo = primo.emessi.find(e => e.evento === 'f1Setup').dati.tyreRestaMs;
     assert.ok(restaPrimo > 30000, `atteso un tetto ampio per il carosello, ricevuto ${restaPrimo}ms`);
 
@@ -141,7 +141,7 @@ test('f1Setup dice quanto tempo resta per scegliere, e il tempo si rinnova a ogn
     // mentre lui caricava: la scadenza si ri-arma al suo arrivo.
     const scadenzaPrima = activeGames.get(LOBBY).tyreSelectScadeA;
     const secondo = collega(io);
-    secondo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue' });
+    secondo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue', token: creaGettone(LOBBY, 'blue') });
     assert.ok(activeGames.get(LOBBY).tyreSelectScadeA >= scadenzaPrima,
         'la scadenza deve spostarsi in avanti, non restare quella di prima');
 });
@@ -153,7 +153,7 @@ test('rete di sicurezza: chi non arriva mai non blocca la gara per sempre', (t) 
     const io = ioFinto();
 
     const primo = collega(io);
-    primo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    primo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     primo.handlers.f1TyreChoice({ lobbyId: LOBBY, playerColor: 'red', compound: 'soft' });
     assert.equal(activeGames.get(LOBBY).phase, 'tyre_select');
 

@@ -12,6 +12,8 @@ const fs = require('fs');
 const lobbyRoutes = require('./routes/lobbyRoutes');
 const liveryRoutes = require('./routes/livery');
 const socketManager = require('./sockets/socketManager');
+const { strumentiDiSviluppoAttivi } = require('./config/ambiente');
+const { intestazioniDiSicurezza, corsRistretto } = require('./middleware/sicurezzaHttp');
 
 
 const app = express();
@@ -22,7 +24,7 @@ const io = require('socket.io')(server);
 // ── Route DEV: salvataggio texture minimappa generata da minimap-gen.html ──
 // Registrata PRIMA dei body-parser globali: il parser JSON di default (100kb)
 // respingerebbe il PNG (~1-4 MB). Solo in locale: mai attiva in produzione.
-if (process.env.NODE_ENV !== 'production') {
+if (strumentiDiSviluppoAttivi()) {
     const MM_PREFIX = 'data:image/png;base64,';
     app.post('/dev/minimap', express.json({ limit: '25mb' }), (req, res) => {
         const { png, meta } = req.body || {};
@@ -56,7 +58,8 @@ app.use('/api/livery', express.json({ limit: '5mb' }));
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(cors());
+app.use(corsRistretto(cors));
+app.use(intestazioniDiSicurezza);
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 // Usa le route modulari
 app.use('/', lobbyRoutes);

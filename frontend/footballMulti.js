@@ -1,12 +1,14 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const lobbyId = urlParams.get('lobby');
-    const playerColor = urlParams.get('color');
-
-    if (!lobbyId || !playerColor) return window.location.href = '/';
+    // Chi sono e a cosa sto giocando arrivano dalla sessione della scheda,
+    // non dall'indirizzo: nell'URL resta solo il numero della stanza.
+    // Vedi shared/sessioneGiocatore.js.
+    const sessione = SessioneGiocatore.richiedi();
+    if (!sessione) return;
+    const lobbyId = sessione.lobbyId;
+    const playerColor = sessione.color;
 
     const socket = io();
-    socket.emit('joinLobby', { lobbyId, color: playerColor });
+    socket.emit('joinLobby', { lobbyId, color: playerColor, token: sessione.token });
     socket.emit('joinGame', { lobbyId, gameId: 'footballMulti', playerColor });
 
     const canvas = document.getElementById('game-canvas');
@@ -180,12 +182,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('redirectAllToLobby', () => {
-        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
+        window.location.href = `/lobby.html?lobby=${lobbyId}`;
     });
 
     // Funzione per tornare alla lobby (collegata a entrambi i bottoni)
     const goBackToLobby = () => {
-        window.location.href = `/lobby.html?lobby=${lobbyId}&color=${encodeURIComponent(playerColor)}`;
+        window.location.href = `/lobby.html?lobby=${lobbyId}`;
     };
 
     document.getElementById('btn-leave').onclick = goBackToLobby;

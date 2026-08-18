@@ -14,7 +14,7 @@
 // alla fine del totale — non prima, o l'ultima animazione verrebbe troncata.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { lobbies } = require('../../store/lobbies.js');
+const { lobbies, creaGettone } = require('../../store/lobbies.js');
 const { activeGames } = require('../../store/activeGames.js');
 const f1 = require('./f1GameSocket.js');
 
@@ -41,7 +41,7 @@ function prepara(emessi) {
     const io = { to: () => ({ emit: (ev, dati) => emessi.push({ ev, dati }) }) };
     const s = collega(io, emessi);
     s.handlers.startGame({ lobbyId: LOBBY, gameId: 'f1', settings: lobbies.get(LOBBY).gameSettings });
-    s.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', uid: 'uid-di-red' });
+    s.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red'), uid: 'uid-di-red' });
     return { io, socket: s, game: activeGames.get(LOBBY) };
 }
 
