@@ -911,7 +911,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         // mondo di questa mesh, istanza per istanza: per
                         // il pannello lampade sono esattamente i punti in
                         // cui accendere l'alone.
-                        accendiTorreFaro(im, container, centri);
+                        accendiTorreFaro(im, container, centri, sferaBase.radius);
                         container.add(im);
                     }
                 }
@@ -1103,7 +1103,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // GPU-bound sui pixel (vedi il pannello F9), quindi resta piccolo —
     // 2.6 volte il raggio del pannello e non 3.2 come i semafori, che si
     // guardano da vicino e sono cinque in tutto.
-    function accendiTorreFaro(im, container, centri) {
+    function accendiTorreFaro(im, container, centri, raggioPannello) {
         if (!NOTTURNO) return;
         if (im.userData.sceneryMesh !== 'floodlightTower_white') return;
 
@@ -1116,8 +1116,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         // attorno alla lampada: una luce con il contorno non è una luce.
         ToonStyle.excludeFromOutline(im);
 
-        const sfera = im.geometry.boundingSphere;
-        if (!sfera) return;
+        // Il raggio arriva da fuori e NON da im.geometry.boundingSphere:
+        // quella, poche righe prima della chiamata, e' stata riscritta con
+        // l'ingombro dell'INTERO gruppo di torri della cella (serve al
+        // frustum culling). Usarla qui darebbe un alone grande quanto mezzo
+        // circuito. Ai semafori del ponte non succede perche' li' il gruppo
+        // e' una lampada sola.
+        if (!(raggioPannello > 0)) return;
         if (!_texBagliore) _texBagliore = texturaBagliore();
         for (const c of centri) {
             const alone = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -1128,7 +1133,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 opacity: 0.5,
             }));
             alone.position.set(c.x, c.y, c.z);
-            alone.scale.setScalar(sfera.radius * 2.6);
+            alone.scale.setScalar(raggioPannello * 2.6);
             alone.renderOrder = 2;
             ToonStyle.excludeFromOutline(alone);
             container.add(alone);
