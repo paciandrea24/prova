@@ -82,3 +82,34 @@ test('stop non esplode se non c e niente a schermo', () => {
         delete globalThis.document;
     }
 });
+
+test('il taglio e istantaneo e NON dipende dalla durata', () => {
+    // Segnalato in playtest: "ho visto per un secondo il riposizionamento in
+    // griglia e anche un rumore di motori, e poi e' partita l'animazione".
+    // Una versione dello stacco faceva entrare le lastre da fuori schermo
+    // senza niente sotto: finche' non arrivavano, la scena restava visibile -
+    // e il server riposiziona le auto in griglia nello stesso istante in cui
+    // la qualifica chiude.
+    //
+    // Coprire e animare sono due lavori diversi. Il fondo va opaco in un
+    // tempo FISSO e piccolo; se qualcuno lo rendesse una frazione della
+    // durata, uno stacco piu' lungo tornerebbe a lasciare la scena scoperta
+    // piu' a lungo - il contrario di quello che serve.
+    assert.equal(typeof F1Sting.COPERTURA_MS, 'number');
+    assert.ok(F1Sting.COPERTURA_MS <= 200,
+        `il taglio dura ${F1Sting.COPERTURA_MS} ms: si vede cosa c'e sotto`);
+    assert.ok(F1Sting.COPERTURA_MS < F1Sting.DURATA_MINIMA * F1Sting.F_ENTRATA,
+        'il taglio non e piu istantaneo rispetto all entrata: e diventato parte dello spettacolo');
+});
+
+test('la sosta e il momento piu lungo dei tre', () => {
+    // "La velocita' mi e' sembrata un po' troppa, non ci ho capito niente":
+    // il testo e' l'unica informazione dello stacco e va letto a schermo
+    // fermo. Se entrata o uscita tornassero a superare la sosta, si
+    // ritornerebbe li'.
+    const uscita = 1 - F1Sting.F_ENTRATA - F1Sting.F_SOSTA;
+    assert.ok(F1Sting.F_SOSTA > F1Sting.F_ENTRATA,
+        'l entrata dura piu della sosta: il testo non fa in tempo a essere letto');
+    assert.ok(F1Sting.F_SOSTA > uscita,
+        'l uscita dura piu della sosta: il testo non fa in tempo a essere letto');
+});

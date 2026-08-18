@@ -2361,6 +2361,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // (vedi f1QualiEnded), F1Sting.stop toglie subito quello a schermo.
         sequenzaCorrente++;
         if (window.F1Sting) F1Sting.stop();
+        silenzioTransizione(false);
         // true solo per il countdown che apre una qualifica; il countdown di
         // gara (data.phase==='race') la chiude anche come rete di sicurezza,
         // ridondante con f1QualiEnded qui sotto ma innocuo.
@@ -2548,6 +2549,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ancora quello corrente prima di mettersi a schermo.
     let sequenzaCorrente = 0;
 
+    // Silenzio durante la transizione qualifica→gara. Le auto vengono
+    // riposizionate in griglia nell'istante stesso in cui la qualifica
+    // chiude, e i loro motori continuano a suonare dietro le schermate: al
+    // playtest si sentiva "un rumore di motori" proprio mentre partiva lo
+    // stacco. Un solo interruttore sul listener invece di inseguire il suono
+    // di ogni singola auto.
+    function silenzioTransizione(attivo) {
+        if (listener && typeof listener.setMasterVolume === 'function') {
+            listener.setMasterVolume(attivo ? 0 : 1);
+        }
+    }
+
     socket.on('f1QualiEnded', async ({ grid, trackName, sequenza }) => {
         // Chiusura DEFINITIVA (non lo stato del giocatore, vedi dichiarazione
         // di qualiSessionOpen sopra): da qui in poi, per tutta 'grid_display'
@@ -2557,6 +2570,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         qualiSessionOpen = false;
         document.getElementById('quali-waiting-overlay').style.display = 'none';
         const mia = ++sequenzaCorrente;
+        silenzioTransizione(true);
         const seq = sequenza || {};
         const myPos = (grid || []).findIndex(e => e.color === myColor) + 1;
 
