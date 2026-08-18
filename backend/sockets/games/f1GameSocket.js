@@ -134,7 +134,10 @@ const REJOIN_GRACE = 60000;   // finestra di riconnessione dopo un drop (scheda 
 // questi millisecondi ci sta una SOSTA vera in cui lo schermo e' fermo e si
 // legge il nome del circuito, che prima non esisteva.
 const SEQ_STACCO_MS = 4200;
-const SEQ_POSIZIONE_MS = 3400;
+// 3900 e non 3400: con sei piloti il conteggio delle posizioni risultava
+// "leggermente veloce" al playtest. Gli scatti sono pochi e la curva li
+// comprime tutti all'inizio, quindi serve piu' corsa per farli leggere.
+const SEQ_POSIZIONE_MS = 3900;
 const SEQ_POLE_EXTRA_MS = 1000;   // quanto in più resta a schermo la scoperta della pole
 const SEQ_GRIGLIA_MS = 7000;
 const GRID_DISPLAY_MS = SEQ_STACCO_MS + SEQ_POSIZIONE_MS + SEQ_POLE_EXTRA_MS + SEQ_GRIGLIA_MS;

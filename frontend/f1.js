@@ -2573,7 +2573,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         // ne vede uno solo, chi è in pole li vede tutti — ed è il punto.
         const scatti = Math.max(1, (totale - miaPosizione) + 1);
         const tEtichetta = durata * 0.14;
-        const tConteggio = durata * 0.44;
+        // Il conteggio si prende la fetta maggiore: con pochi piloti gli
+        // scatti sono pochi e la curva li comprime tutti all'inizio, quindi il
+        // problema non è quanti sono ma quanta corsa hanno (in playtest, con
+        // sei piloti: "leggermente veloce").
+        const tConteggio = durata * 0.52;
         const tArrivo = durata - tEtichetta - tConteggio;
 
         return new Promise(risolvi => {
@@ -2597,7 +2601,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 targets: stato,
                 t: 1,
                 duration: tConteggio,
-                easing: 'easeOutQuart',
+                // easeOutCubic e non easeOutQuart: la quarta potenza fa
+                // sfrecciare i primi scatti al punto che con pochi piloti se
+                // ne leggono solo gli ultimi due.
+                easing: 'easeOutCubic',
                 update: () => {
                     const passo = Math.min(scatti - 1, Math.floor(stato.t * scatti));
                     const valore = totale - passo;
@@ -2615,11 +2622,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 scale: [1.35, 1],
                 duration: tArrivo * 0.34, easing: 'easeOutBack',
             }, arrivo);
+            // L'anello parte DOPO che il numero si e' piantato, non
+            // insieme: partendo nello stesso istante si sovrappone agli
+            // ultimi scatti del conteggio e si legge come un cerchietto fermo
+            // dietro i numeri invece che come un colpo all'arrivo.
             linea.add({
                 targets: anello,
                 opacity: [0.85, 0], scale: [0.2, isPole ? 2.6 : 1.9],
-                duration: tArrivo * 0.6, easing: 'easeOutQuad',
-            }, arrivo);
+                duration: tArrivo * 0.55, easing: 'easeOutQuad',
+            }, arrivo + tArrivo * 0.12);
 
             // Solo la pole si prende raggi e scritta: è l'unica differenza di
             // trattamento, richiesta esplicitamente.
