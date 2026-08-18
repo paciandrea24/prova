@@ -72,6 +72,81 @@
 
     const FOG_DENSITY = 0.001;
 
+    // ── Giorno e notte ────────────────────────────────────────────────
+    //
+    // Un circuito si corre di giorno o in notturno, e la scelta e' sua: sta
+    // nel suo file (campo `notturno`, si mette dal track editor) e vale
+    // uguale per la qualifica e per la gara.
+    //
+    // COME si fa notte, qui, e' una decisione presa contro la tentazione
+    // ovvia. La tentazione era abbassare le luci. Non si puo': il cel
+    // shading aggancia la luce a tre fasce fisse (BANDS) e la somma delle
+    // intensita' deve restare intorno a 1 — sotto, le fasce si schiacciano
+    // e ogni superficie diventa una macchia piatta. E' lo stesso difetto,
+    // al contrario, gia' misurato il 2026-08-10 con la somma a 1.9.
+    //
+    // Quindi la notte si fa sul COLORE delle superfici, non sulla luce: la
+    // stessa quantita' di luce cade su materiali scuri e freddi. Le fasce
+    // restano dove sono, il disegno del cel shading resta leggibile, e a
+    // scurire e' il mondo — che e' quello che succede davvero.
+    const ORARI = {
+        giorno: {
+            // Una COPIA, non SKY_STOPS stesso: impostaOrario riscrive quello
+            // in posto, e un riferimento condiviso si svuoterebbe da solo al
+            // primo passaggio al notturno.
+            skyStops: SKY_STOPS.map((t) => ({ t: t.t, color: t.color })),
+            fogDensity: FOG_DENSITY,
+            // Moltiplicatore sul colore delle superfici: di giorno, nessuno.
+            tinta: 0xffffff,
+            hemi: { cielo: 0x9ec8f0, terra: 0x3f7a52, intensita: 0.30 },
+            sole: { colore: 0xfff6e2, intensita: 0.72 },
+        },
+        notte: {
+            // Quattro tappe come di giorno (la cupola compila lo shader su
+            // quel numero: cambiarlo vorrebbe dire ricompilare, non
+            // aggiornare). L'orizzonte NON e' nero: e' il blu sporco del
+            // cielo sopra uno stadio acceso, ed e' anche il colore della
+            // nebbia — su un orizzonte nero il circuito lontano sparirebbe
+            // in un muro invece di sfumare.
+            skyStops: [
+                { t: 0.00, color: 0x39456b },
+                { t: 0.06, color: 0x2b3557 },
+                { t: 0.30, color: 0x161d35 },
+                { t: 1.00, color: 0x080b16 },
+            ],
+            // Piu' densa che di giorno: di notte il fondo si perde prima, e
+            // per noi e' anche meno da disegnare.
+            fogDensity: 0.0016,
+            // Il colore che moltiplica ogni superficie. Non e' un grigio: e'
+            // freddo e vira al blu, perche' quel che resta a illuminare e'
+            // il cielo, non il sole.
+            tinta: 0x5a6b93,
+            hemi: { cielo: 0x3b4a72, terra: 0x141821, intensita: 0.30 },
+            // Bianco freddo da torre faro al posto del bianco caldo del
+            // sole. Stessa intensita': vedi sopra il perche'.
+            sole: { colore: 0xdde7ff, intensita: 0.72 },
+        },
+    };
+
+    let orarioCorrente = 'giorno';
+
+    // Cambia l'ora del giorno. Va chiamata PRIMA di costruire la scena:
+    // cielo e luci leggono questi valori una volta sola, quando nascono.
+    function impostaOrario(nome) {
+        if (!ORARI[nome]) throw new Error(`Orario sconosciuto: "${nome}"`);
+        orarioCorrente = nome;
+        // SKY_STOPS e' un array esportato per riferimento: chi lo ha gia' in
+        // mano deve vedere il cambio, quindi si riscrive in posto e non si
+        // sostituisce.
+        SKY_STOPS.length = 0;
+        for (const s of ORARI[nome].skyStops) SKY_STOPS.push(s);
+        return ORARI[nome];
+    }
+
+    function orario() { return ORARI[orarioCorrente]; }
+    function eNotte() { return orarioCorrente === 'notte'; }
+    function fogDensity() { return orario().fogDensity; }
+
     function skyColorAt(t) {
         const x = Math.max(0, Math.min(1, t));
         for (let i = 1; i < SKY_STOPS.length; i++) {
@@ -139,6 +214,7 @@
 
     return {
         SURFACES, SKY_STOPS, FOG_DENSITY, SHADOW_TINT, BANDS, SATURATION,
+        ORARI, impostaOrario, orario, eNotte, fogDensity,
         skyColorAt, fogColor, saturate, hexToRgb, rgbToHex,
     };
 });

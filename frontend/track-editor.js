@@ -717,6 +717,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('trackName').value = data.name || '';
         document.getElementById('targetKm').value = data.targetKm ?? 5;
         document.getElementById('roadHalfWidth').value = data.roadHalfWidth ?? 11;
+        // Giorno o notte e' una proprieta' del circuito e sta nel suo file:
+        // qualifica e gara la leggono dalla stessa fonte, quindi non possono
+        // finire una di giorno e una di notte.
+        document.getElementById('notturno').checked = data.notturno === true;
         const pit = data.pit || {};
         document.getElementById('pitRoadHalfWidth').value = pit.roadHalfWidth ?? 5;
         document.getElementById('pitBoxIndex').value = pit.boxIndex ?? 0;
@@ -844,6 +848,7 @@ document.addEventListener('DOMContentLoaded', () => {
             name: document.getElementById('trackName').value.trim(),
             targetKm: parseFloat(document.getElementById('targetKm').value) || 1,
             roadHalfWidth: parseFloat(document.getElementById('roadHalfWidth').value) || 11,
+            notturno: document.getElementById('notturno').checked,
             startFinish: startFinish ? { x: startFinish.x, z: startFinish.z, angle: startFinish.angle } : undefined,
             controlPoints: mainPoints,
             pit: {

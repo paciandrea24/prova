@@ -246,6 +246,11 @@ function buildTrack(id, raw) {
     return {
         id,
         name: raw.name,
+        // Giorno o notte. Sta nel file del circuito e non nelle
+        // impostazioni della partita apposta: cosi' la qualifica e la
+        // gara dello stesso circuito NON possono finire una di giorno e
+        // una di notte, perche' leggono la stessa riga.
+        notturno: raw.notturno === true,
         points,
         roadHalf: raw.roadHalfWidth,
         barrierProfile,
@@ -302,7 +307,7 @@ function listTracks() {
                 const t = loadTrack(id);
                 const posti = TrackGeometry.pitLaneSlots(
                     t.pitPath, t.pitBoxIndex, t.points, t.pitRoadHalf).length;
-                return { id, name: raw.name, maxDrivers: Math.min(MAX_DRIVERS, posti) };
+                return { id, name: raw.name, notturno: raw.notturno === true, maxDrivers: Math.min(MAX_DRIVERS, posti) };
             } catch (err) {
                 console.warn(`listTracks: file pista malformato ignorato "${f}": ${err.message}`);
                 return null;
@@ -319,6 +324,9 @@ function validateTrackData(data) {
     if (typeof data.name !== 'string' || !data.name.trim()) return 'Nome pista mancante';
     if (typeof data.targetKm !== 'number' || !(data.targetKm > 0)) return 'targetKm non valido';
     if (typeof data.roadHalfWidth !== 'number' || !(data.roadHalfWidth > 0)) return 'roadHalfWidth non valido';
+    // Facoltativo: una pista senza il campo si corre di giorno, come tutte
+    // quelle disegnate prima che il notturno esistesse.
+    if (data.notturno !== undefined && typeof data.notturno !== 'boolean') return 'notturno deve essere vero o falso';
     if (!Array.isArray(data.controlPoints) || data.controlPoints.length < 3) return 'Servono almeno 3 punti di controllo';
     if (!data.controlPoints.every(p => p && typeof p.x === 'number' && typeof p.z === 'number')) return 'Punti di controllo malformati';
     if (!data.pit || typeof data.pit !== 'object') return 'Dati corsia box mancanti';

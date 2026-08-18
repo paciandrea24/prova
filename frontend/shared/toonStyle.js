@@ -130,6 +130,12 @@
                 : new THREE.Color(hex);
             shared = {
                 uOn: { value: 1 },
+                // Notturno: 0 di giorno, 1 di notte. La tinta MOLTIPLICA il
+                // colore della superficie prima che la luce la tocchi — vedi
+                // il blocco ORARI in toonPalette.js per il perché non si
+                // abbassano invece le luci.
+                uNotte: { value: 0 },
+                uTintaNotte: { value: colore(P.ORARI.notte.tinta) },
                 uShadowTint: { value: colore(P.SHADOW_TINT) },
                 uGrassDark: { value: colore(P.SURFACES.grassDark) },
                 uGrassLight: { value: colore(P.SURFACES.grassLight) },
@@ -186,6 +192,7 @@
             'uniform float uPatchScale;\nuniform float uPatchAmount;\n' +
             'uniform float uTuftAmount;\nuniform float uTuftScale;\n' +
             'uniform sampler2D uNoiseTex;\nuniform sampler2D uTuftTex;\n' +
+            'uniform float uNotte;\nuniform vec3 uTintaNotte;\n' +
             'varying vec3 vToonPos;\nvarying vec3 vToonNorm;\n' + shader.fragmentShader;
 
         // Fascia in ombra COLORATA: la funzione che mappa l'angolo di luce
@@ -238,6 +245,11 @@
             '        float tratto = ( 1.0 - texture2D( uTuftTex, vToonPos.xz * uTuftScale ).r ) * uTuftAmount;',
             '        diffuseColor.rgb *= 1.0 - tratto * 0.45;',
             '    }',
+            // Ultimo passaggio, dopo le chiazze del prato: così il notturno
+            // prende TUTTO — superfici generate in JS e modelli che arrivano
+            // dai GLB con i colori già cotti dentro, che altrimenti
+            // resterebbero luminosi in mezzo a un mondo spento.
+            '    diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * uTintaNotte, uNotte );',
             '}',
         ].join('\n'));
 
@@ -338,6 +350,14 @@
         sharedUniforms().uOn.value = on ? 1 : 0;
     }
 
+    // Accende o spegne il notturno su TUTTI i materiali in una volta: è una
+    // uniform condivisa, non una proprietà per materiale. Costa un numero e
+    // non una ricompilazione, quindi si potrà anche animare (un tramonto, un
+    // giro che finisce col buio) senza scatti.
+    function impostaNotturno(on) {
+        sharedUniforms().uNotte.value = on ? 1 : 0;
+    }
+
     // Rete di sicurezza contro l'errore più probabile: un punto di
     // caricamento dimenticato lascia un oggetto col materiale vecchio, che
     // stona senza motivo apparente.
@@ -361,7 +381,7 @@
     }
 
     return {
-        buildPatch, convert, setEnabled, audit, excludeFromOutline,
+        buildPatch, convert, setEnabled, impostaNotturno, audit, excludeFromOutline,
         copyMaterialState, MATERIAL_STATE,
         OUTLINE_EXCLUDE_LAYER, BUILD,
         get uniforms() { return sharedUniforms(); },

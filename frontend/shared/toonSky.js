@@ -69,7 +69,7 @@
         // Il colore piatto di prima resta come background: si vede solo se la
         // cupola viene spenta, e non costa nulla tenerlo.
         scene.background = new THREE.Color(FLAT_SKY);
-        scene.fog = new THREE.FogExp2(ToonPalette.fogColor(), ToonPalette.FOG_DENSITY);
+        scene.fog = new THREE.FogExp2(ToonPalette.fogColor(), ToonPalette.fogDensity());
 
         // Colore d'origine dell'orizzonte e della banda calda: servono per
         // rimescolarli con setHorizonWarmth senza perdere il riferimento.

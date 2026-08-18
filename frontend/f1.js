@@ -19,6 +19,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     // il caso peggiore — vedi la spec 2026-08-17-f1-piloti-configurabili.
     const gridSize = Math.min(20, Math.max(1, parseInt(clientSettings.gridSize, 10) || 6));
 
+    // Il file del circuito si legge QUI, prima di ogni altra cosa, e non
+    // più giù insieme alla costruzione della pista: dentro c'è scritto se
+    // questo circuito si corre in notturno, e cielo, nebbia e luci nascono
+    // una volta sola — leggerlo dopo vorrebbe dire costruirli di giorno e
+    // poi rifarli.
+    const trackRes = await fetch(`/tracks/${trackId}.json`);
+    const trackData = await trackRes.json();
+
+    // Giorno o notte è una proprietà del CIRCUITO, non della partita:
+    // qualifica e gara dello stesso circuito sono sempre tutte e due
+    // uguali, per costruzione, perché la fonte è una sola.
+    // `?notte=on` / `?notte=off` forzano l'orario senza toccare il file del
+    // circuito: e' l'interruttore che serve per guardare la stessa curva di
+    // giorno e di notte una dietro l'altra, come gia' si fa con toon/ombre.
+    // Senza il parametro decide il circuito, che e' il comportamento vero.
+    const _notteForzata = urlParams.get('notte');
+    const NOTTURNO = _notteForzata === 'on' ? true
+        : _notteForzata === 'off' ? false
+        : trackData.notturno === true;
+    ToonPalette.impostaOrario(NOTTURNO ? 'notte' : 'giorno');
+    document.body.classList.toggle('notturno', NOTTURNO);
+
     if (!lobbyId || !myColor) {
         window.location.href = '/';
         return;
@@ -149,6 +171,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // domanda senza risposta.
     const TOON_ON = urlParams.get('toon') !== 'off';
     const toonSky = TOON_ON ? ToonSky.install(scene) : ToonSky.installFlat(scene);
+    // Il notturno e' una uniform condivisa da tutti i materiali toon: si
+    // accende una volta e vale per la pista generata in JS come per i
+    // modelli che arrivano dai GLB. Vedi ToonStyle.impostaNotturno.
+    if (TOON_ON) ToonStyle.impostaNotturno(NOTTURNO);
 
     // Unico punto da cui passa la conversione dei materiali: con il look
     // spento non tocca nulla.
@@ -229,12 +255,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     //
     // È anche il rapporto fra le due a decidere il contrasto: più sole e meno
     // ambiente = fasce marcate; il contrario = look slavato.
+    // I due colori e le due intensità arrivano dall'orario del circuito
+    // (ToonPalette.ORARI): di notte cambiano le TINTE, non le intensità —
+    // il perché sta scritto lì, in breve è che le fasce del cel shading
+    // sono agganciate a una somma di luce che deve restare intorno a 1.
+    const _luci = ToonPalette.orario();
     const hemi = TOON_ON
-        ? new THREE.HemisphereLight(0x9ec8f0, 0x3f7a52, 0.30)
+        ? new THREE.HemisphereLight(_luci.hemi.cielo, _luci.hemi.terra, _luci.hemi.intensita)
         : new THREE.HemisphereLight(0xb0d8f5, 0x2d7a2d, 0.7);   // com'era prima del cel shading
     scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(TOON_ON ? 0xfff6e2 : 0xfff4e0, TOON_ON ? 0.72 : 1.3);
+    const sun = new THREE.DirectionalLight(TOON_ON ? _luci.sole.colore : 0xfff4e0, TOON_ON ? _luci.sole.intensita : 1.3);
     sun.position.set(150, 200, 50);
     sun.target.position.set(50, 0, 100);  // punta al centro del circuito
     scene.add(sun.target);
@@ -305,8 +336,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // backend/sockets/games/trackLoader.js.
     // ====================================================
     caricamento.passo('Dati del circuito…', 0.12);
-    const trackRes = await fetch(`/tracks/${trackId}.json`);
-    const trackData = await trackRes.json();
+    // trackData è già stato letto in cima (serviva a sapere se si corre in
+    // notturno prima di accendere le luci): qui non si rilegge.
     caricamento.pista(trackData.name || trackId);
     // Il nome del circuito è il titolo della schermata mescole: è la cosa che
     // il giocatore vuole sapere per prima ("dove corro?"), e l'anteprima di
