@@ -140,6 +140,15 @@ const RACE_GRACE_TICKS = Math.round(RACE_GRACE_MS / PHYSICS_TICK_MS);
 // partenza "vera" secondo la regola, ma percepita come un bug perché non
 // c'era mai stato un momento naturale per rilasciare il tasto.
 const RESTART_GRACE_MS = 1500;
+// Quanto resta a schermo il podio di fine gara in multiplayer prima che il
+// client torni da solo in lobby. Il numero sta QUI e viaggia dentro l'evento
+// f1RaceEnded: il conto alla rovescia del client lo legge da lì, così non
+// esistono due copie che possono divergere.
+const RACE_END_RETURN_MS = 8000;
+// Margine oltre il rientro prima che il server smonti la partita: al client
+// serve il tempo di navigare via, non di essere sfrattato mentre guarda il
+// podio.
+const RACE_END_TEARDOWN_MS = 2000;
 
 const PIT_AUTO_SPEED = 1.55;   // unità/tick dell'autopilota lungo il percorso box (25% di MAX_SPEED)
 const PIT_AUTO_ARRIVE_DIST = 1.0;   // sotto questa distanza dal waypoint, "arrivato"
@@ -569,15 +578,7 @@ module.exports = function (io, socket) {
     socket.on('f1ReturnToLobby', (lobbyId) => {
         const game = activeGames.get(lobbyId);
         if (game && game.gameId !== 'f1') return;   // la partita attiva è di un altro gioco
-        if (game) {
-            clearInterval(game.tick);
-            if (game.endTimeout) clearTimeout(game.endTimeout);
-            if (game.qualiEndTimeout) clearTimeout(game.qualiEndTimeout);
-            if (game.tyreSelectTimeout) clearTimeout(game.tyreSelectTimeout);
-            if (game.rejoinTimers) Object.values(game.rejoinTimers).forEach(clearTimeout);
-            activeGames.delete(lobbyId);
-            tickPerfStats.delete(lobbyId);
-        }
+        chiudiPartita(io, lobbyId);
         io.to(lobbyId).emit('f1RedirectToLobby');
     });
 
@@ -608,7 +609,7 @@ module.exports = function (io, socket) {
         p.inputs = { throttle: 0, brake: 0, steer: 0 };
 
         if (!game.rejoinTimers) game.rejoinTimers = {};
-        clearTimeout(game.rejoinTimers[color]);
+        if (game.rejoinTimers[color]) clearTimeout(game.rejoinTimers[color]);
         console.log(`🔌 [F1] ${color} disconnesso (lobby ${lobbyId}) — grazia ${REJOIN_GRACE / 1000}s`);
         game.rejoinTimers[color] = setTimeout(() => {
             delete game.rejoinTimers[color];
@@ -617,6 +618,47 @@ module.exports = function (io, socket) {
         }, REJOIN_GRACE);
     });
 };
+
+// ====================================================
+// CHIUSURA DELLA PARTITA
+// ====================================================
+// Unico punto in cui una partita F1 viene smontata: ferma il tick, disarma
+// ogni timer e la toglie dagli store. Ci passano sia il pulsante "Torna alla
+// Lobby" (modalità singola) sia la chiusura automatica di fine gara. È
+// idempotente: chiamarla su una lobby senza partita non fa nulla.
+//
+// Perché serve una chiusura automatica: in multiplayer il podio riporta in
+// lobby da solo con un window.location.href, e il client non dice niente al
+// server. Senza questa chiamata la partita conclusa restava in activeGames,
+// e il joinF1Game della gara successiva la ritrovava lì invece di crearne
+// una nuova — tutti rientravano nella gara finita, sulla pista vecchia.
+function chiudiPartita(io, lobbyId) {
+    const game = activeGames.get(lobbyId);
+    if (!game) return;
+
+    // Chi se n'era già andato PRIMA della bandiera a scacchi non tornerà in
+    // lobby: va tolto dalla lista, altrimenti resta come fantasma fra i
+    // partecipanti della gara dopo. Finora ci pensava il timer di grazia, che
+    // qui sotto viene disarmato. Chi invece si è disconnesso DOPO la fine non
+    // va toccato: quello è il rientro in lobby, il client naviga via e il
+    // socket muore, ma la persona è seduta in lobby proprio adesso.
+    for (const color of game.abbandoniPrimaDellaFine || []) {
+        if (game.rejoinTimers && game.rejoinTimers[color]) {
+            clearTimeout(game.rejoinTimers[color]);
+            delete game.rejoinTimers[color];
+        }
+        hardRemoveF1Player(io, lobbyId, color);
+    }
+
+    clearInterval(game.tick);
+    if (game.endTimeout) clearTimeout(game.endTimeout);
+    if (game.qualiEndTimeout) clearTimeout(game.qualiEndTimeout);
+    if (game.tyreSelectTimeout) clearTimeout(game.tyreSelectTimeout);
+    if (game.chiusuraTimeout) clearTimeout(game.chiusuraTimeout);
+    if (game.rejoinTimers) Object.values(game.rejoinTimers).forEach(clearTimeout);
+    activeGames.delete(lobbyId);
+    tickPerfStats.delete(lobbyId);
+}
 
 // ====================================================
 // RIMOZIONE DEFINITIVA (grazia scaduta)
@@ -2070,6 +2112,15 @@ function checkLap(p, totalLaps, io, lobbyId, game) {
 function endRace(io, lobbyId, game) {
     game.raceEnded = true;
     if (game.endTimeout) { clearTimeout(game.endTimeout); game.endTimeout = null; }
+
+    // Chi era già disconnesso quando è caduta la bandiera a scacchi ha
+    // davvero abbandonato. Va fotografato ORA: fra pochi secondi si
+    // disconnetteranno anche tutti gli altri, ma quelli staranno solo
+    // tornando in lobby col podio (vedi chiudiPartita, che usa questa lista
+    // per distinguere i due casi).
+    game.abbandoniPrimaDellaFine = Object.values(game.players)
+        .filter(p => !p.isBot && p.disconnected)
+        .map(p => p.color);
     // La gara chiude non appena tutti gli UMANI connessi hanno finito (vedi
     // il gate in tickGame): un bot ancora in pista in quel momento NON va
     // omesso dal podio (a differenza di prima) — mantiene la sua posizione
@@ -2115,12 +2166,38 @@ function endRace(io, lobbyId, game) {
         pitPenalty: !!p.pitPenalty, falseStart: !!p.falseStart,
         collisionPenaltyMs: p.collisionPenaltyMs || 0,
     }));
+    // isFinal = questa era l'ultima gara della sessione. Resta fisso a true
+    // finché non arriva il campionato, dove una gara intermedia dovrà valere
+    // false: lì la partita NON va chiusa, si prosegue verso la pista dopo.
+    const isFinal = true;
+    const isSingleMode = (game.settings || {}).mode === 'single';
+
     io.to(lobbyId).emit('f1RaceEnded', {
         podium,
-        isFinal: true,
-        isSingleMode: (game.settings || {}).mode === 'single',
+        isFinal,
+        isSingleMode,
+        // Il client ci fa il conto alla rovescia del rientro automatico:
+        // il valore ha un proprietario solo, ed è questo.
+        returnMs: RACE_END_RETURN_MS,
         trackName: game.track.name
     });
+
+    // In multiplayer il podio riporta in lobby da solo, e il client non dice
+    // niente al server: la sessione la chiude il server allo scadere di
+    // quella finestra, senza dipendere da un messaggio che non arriverebbe
+    // comunque se la scheda venisse chiusa. In modalità singola no — lì il
+    // podio resta a schermo e "Riprova" riusa questa stessa partita, che
+    // viene smontata dal pulsante "Torna alla Lobby".
+    if (isFinal && !isSingleMode) {
+        game.chiusuraTimeout = setTimeout(() => {
+            // Identità, non presenza: se nel frattempo la lobby ha già
+            // avviato un'altra gara, quella è una partita NUOVA e questo
+            // timer non deve toccarla.
+            if (activeGames.get(lobbyId) !== game) return;
+            console.log(`🧹 [F1] Sessione conclusa, partita smontata (lobby ${lobbyId})`);
+            chiudiPartita(io, lobbyId);
+        }, RACE_END_RETURN_MS + RACE_END_TEARDOWN_MS);
+    }
 }
 
 // ====================================================
@@ -2298,3 +2375,7 @@ module.exports.physics = {
 
 module.exports.tickGame = tickGame;
 module.exports.TYRE_COMPOUNDS = TYRE_COMPOUNDS;
+// Ciclo di vita della partita, esposto ai test del rientro in lobby.
+module.exports.endRace = endRace;
+module.exports.chiudiPartita = chiudiPartita;
+module.exports.RACE_END_RETURN_MS = RACE_END_RETURN_MS;

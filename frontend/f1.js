@@ -2621,7 +2621,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             single.style.display = 'none';
             autoText.style.display = 'block';
             if (data.isFinal) {
-                let secs = 8;
+                // Durata decisa dal server (RACE_END_RETURN_MS): è lo stesso
+                // valore su cui il server programma lo smontaggio della
+                // partita, quindi non può divergere da quello che vedi qui.
+                let secs = Math.round((data.returnMs || 8000) / 1000);
                 autoText.textContent = `Ritorno alla lobby tra ${secs}s…`;
                 const t = setInterval(() => {
                     secs--;
