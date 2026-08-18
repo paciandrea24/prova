@@ -293,6 +293,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     sun.shadow.camera.top = OMBRA_SEMILATO;
     sun.shadow.camera.bottom = -OMBRA_SEMILATO;
     sun.shadow.bias = -0.0005;
+    // I triangoli che si muovevano sulle barriere (playtest 2026-08-18).
+    //
+    // Non è un difetto del notturno in sé, è l'inclinazione della luce: a
+    // 78 gradi una barriera VERTICALE sta quasi a 90 gradi dalla luce, e
+    // una superficie in quella posizione occupa moltissima profondità
+    // dentro un solo texel della mappa d'ombra. Il confronto di profondità
+    // cade allora ora da una parte ora dall'altra, e disegna il motivo a
+    // scaglie che l'occhio legge come triangoli — e che nuota, perché il
+    // riquadro si sposta con l'auto.
+    //
+    // `bias` da solo non basta: è uno scostamento costante in profondità,
+    // e il problema qui cresce con l'inclinazione. `normalBias` sposta il
+    // punto campionato lungo la NORMALE della superficie, quindi corregge
+    // tanto quanto la superficie è di taglio: è lo strumento giusto.
+    // 0.4 unità di mondo su texel da 0.215: sposta di due texel scarsi,
+    // abbastanza da uscire dal proprio errore e poco da staccare l'ombra
+    // dagli oggetti.
+    sun.shadow.normalBias = 0.4;
     scene.add(sun);
 
     // ── La mappa delle ombre segue l'auto ──

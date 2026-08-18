@@ -58,7 +58,37 @@ test('il notturno NON spegne il mondo: le superfici restano illuminate', () => {
     assert.ok(forza < 1,
         'ma qualcosa deve pur distinguere la notte dal giorno');
     assert.ok(notte.b > notte.r,
-        'a raffreddare la tinta è la luce artificiale: vira al blu, non al grigio');
+        'a raffreddare la tinta è la luce artificiale: vira al freddo, non al grigio');
+});
+
+test('il notturno è uno STADIO acceso, non un chiaro di luna', () => {
+    // Quarta bocciatura di fila, e stavolta per il colore: «sembra che c'è la
+    // luce della luna ad illuminare, niente di più».
+    //
+    // Il codice visivo del chiaro di luna è una dominante AZZURRA. Un
+    // proiettore da stadio è bianco — metallo-alogenuri o LED intorno ai
+    // 5000 K — che a schermo si legge neutro, appena freddo. La differenza
+    // fra le due cose non è quanta luce c'è: è di che colore è.
+    const dominante = (hex) => {
+        const c = P.hexToRgb(hex);
+        return (c.b - c.r) * 255;
+    };
+
+    // Soglia: sopra i ~20 punti su 255 l'occhio legge «azzurro», e siamo di
+    // nuovo sulla luna. I valori bocciati erano 36 (tinta), 34 (luce) e 23
+    // (nebbia).
+    const LIMITE = 20;
+
+    assert.ok(dominante(P.ORARI.notte.tinta) < LIMITE,
+        `la tinta delle superfici non deve essere azzurra: ${dominante(P.ORARI.notte.tinta).toFixed(0)} punti`);
+    assert.ok(dominante(P.ORARI.notte.sole.colore) < LIMITE,
+        `la luce non deve essere azzurra: ${dominante(P.ORARI.notte.sole.colore).toFixed(0)} punti`);
+
+    // La nebbia è il colore in cui sprofonda tutto ciò che è lontano: se è
+    // azzurra, è azzurro metà di quel che si vede.
+    P.impostaOrario('notte');
+    assert.ok(dominante(P.fogColor()) < LIMITE,
+        `la nebbia non deve essere azzurra: ${dominante(P.fogColor()).toFixed(0)} punti`);
 });
 
 test('il cielo notturno è scuro, e l\'orizzonte resta più chiaro dello zenit', () => {

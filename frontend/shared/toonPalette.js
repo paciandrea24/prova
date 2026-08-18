@@ -126,7 +126,11 @@
             // a zero, il circuito lontano finirebbe di colpo contro un muro
             // invece di sfumare.
             skyStops: [
-                { t: 0.00, color: 0x0f1626 },
+                // Neutro e non blu: questo colore è anche quello della
+                // nebbia (fogColor === skyColorAt(0)), quindi tingeva di
+                // azzurro tutto ciò che era lontano - l'ultima dominante da
+                // chiaro di luna rimasta in scena.
+                { t: 0.00, color: 0x14161e },
                 { t: 0.06, color: 0x0a1020 },
                 { t: 0.30, color: 0x050813 },
                 { t: 1.00, color: 0x01020a },
@@ -155,7 +159,22 @@
             // prato passa da 0.51 di giorno a ~0.42 di notte, cioè resta
             // ben visibile. Vedi
             // docs/superpowers/specs/2026-08-18-f1-notturno-illuminazione-design.md
-            tinta: 0xc6d2ea,
+            // QUARTA taratura, dopo «sembra che c'è la luce della luna ad
+            // illuminare, niente di più» (playtest 2026-08-18).
+            //
+            // Il difetto era il BLU. Era 0xc6d2ea, con l'azzurro il 18% più
+            // forte del rosso — e una dominante azzurra è esattamente il
+            // codice visivo del chiaro di luna. Un proiettore da stadio è
+            // bianco: metallo-alogenuri o LED intorno ai 5000 K, che a
+            // schermo si legge neutro, appena freddo. Non azzurro.
+            //
+            // E sale ancora: luma 0.92 contro 0.82. Il prato arriva a 0.47
+            // contro lo 0.51 che ha di giorno — cioè il mondo è illuminato
+            // quanto di giorno. È quello che vuol dire «circuito
+            // completamente illuminato artificialmente»: a dire che è notte
+            // restano il cielo nero, il fondo che sparisce e le lampade
+            // accese, non la penombra.
+            tinta: 0xe8ecf2,
             // …ma non tutto è al buio allo stesso modo, ed è questa riga a
             // fare la differenza fra «una scena scura» e «una gara in
             // notturno»: l'asfalto, i cordoli e la ghiaia stanno sotto le
@@ -164,7 +183,7 @@
             // Singapore prima ancora di capire cosa si sta guardando.
             //
             // Costa zero: è una uniform per materiale, non una luce.
-            tintaPista: 0xdce6f8,
+            tintaPista: 0xf2f5fb,
 
             // ── I due guadagni ──────────────────────────────────────
             //
@@ -196,8 +215,12 @@
             // punto più illuminato — è la superficie su cui le torri faro
             // sono puntate — e arriva a ~0.60 di luma contro lo 0.41 che ha
             // di giorno: di notte l'asfalto è più chiaro che di giorno.
-            guadagnoPista: 1.63,
-            hemi: { cielo: 0x3b4a72, terra: 0x141821, intensita: 0.30 },
+            guadagnoPista: 1.73,
+            // La luce d'ambiente era un blu profondo: sotto uno stadio
+            // acceso non esiste: la luce rimbalza da tribune, asfalto e
+            // strutture, e le ombre restano riempite invece di andare al
+            // nero. Grigio neutro, quindi, e più chiaro.
+            hemi: { cielo: 0x9aa2b4, terra: 0x4a4e58, intensita: 0.30 },
             // Bianco freddo da torre faro al posto del bianco caldo del
             // sole. Stessa intensita': vedi sopra il perche'.
             //
@@ -207,7 +230,17 @@
             // è lunga 0.56; a 78 gradi scende a 0.21 — corta e appiccicata
             // sotto l'auto, che è una delle cose che si riconoscono subito
             // in una gara notturna.
-            sole: { colore: 0xdde7ff, intensita: 0.72, elevazione: 78 },
+            // Bianco, non azzurro: 0xdde7ff aveva 34 punti di azzurro in
+            // più del rosso e tingeva di luna tutto quello che toccava.
+            //
+            // L'elevazione scende da 78 a 74 gradi. A 78 le facce
+            // VERTICALI - le barriere - stavano quasi a 90 gradi dalla
+            // luce, che è la condizione peggiore per una mappa d'ombra:
+            // da lì i triangoli che si muovevano sulle barriere
+            // (segnalati in playtest). Il resto lo fa normalBias in
+            // f1.js. L'ombra resta corta: 0.29 contro lo 0.21 di prima e
+            // lo 0.56 del giorno.
+            sole: { colore: 0xfbfaff, intensita: 0.72, elevazione: 74 },
         },
     };
 
