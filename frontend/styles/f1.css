@@ -1456,3 +1456,9 @@ canvas.tyre-preview-canvas {
     font-variant-numeric: tabular-nums;
     min-width: 5.5em;
 }
+
+/* Durante la premiazione lo schermo è della scena: niente pannelli di gioco
+   davanti al podio. `!important` è necessario e non pigrizia — questi
+   pannelli sono accesi e spenti da JavaScript con `style.display`, che
+   vincerebbe su qualunque regola di foglio senza di esso. */
+body.in-cerimonia .hud { display: none !important; }

@@ -3287,9 +3287,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         }).catch(() => null);
     }
 
+    // Durante la premiazione la pista resta viva dietro le quinte: il server
+    // continua a simulare finché non smonta la partita, quindi i bot che non
+    // hanno ancora finito continuano a girare. Sul traguardo, dove sta il
+    // podio, passavano proprio in mezzo alla scena (segnalato in playtest,
+    // insieme all'HUD di gioco rimasto acceso davanti al podio).
+    //
+    // Si nascondono le auto invece di fermare la simulazione: la gara deve
+    // poter chiudersi normalmente per chi è ancora in pista, e "Riprova"
+    // riparte da quella stessa partita.
+    function mostraAutoDiGara(visibili) {
+        if (myCarGroup) myCarGroup.visible = visibili;
+        for (const g of Object.values(otherCars)) if (g) g.visible = visibili;
+        document.body.classList.toggle('in-cerimonia', !visibili);
+    }
+
     function avviaCerimonia(durataMs) {
         if (!cerimoniaGruppo || !cerimoniaCam) return;
         cerimoniaGruppo.visible = true;
+        mostraAutoDiGara(false);
         cerimoniaDa = performance.now();
         cerimoniaDurata = Math.max(1, durataMs || 1);
         cerimoniaAttiva = true;
@@ -3312,6 +3328,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         cerimoniaPronta = null;
         if (cerimoniaAttiva) {
             cerimoniaAttiva = false;
+            mostraAutoDiGara(true);
             camera.near = nearDiGioco;
             camera.updateProjectionMatrix();
         }
