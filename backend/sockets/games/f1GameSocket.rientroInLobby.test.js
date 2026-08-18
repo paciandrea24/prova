@@ -313,3 +313,47 @@ test('un timer della sessione precedente non spinge in gara quella nuova', (t) =
     assert.equal(nuova.phase, 'tyre_select',
         `la gara nuova e' finita in fase "${nuova.phase}" per colpa di un timer della sessione precedente`);
 });
+
+test('il socket della sessione precedente non tocca il pilota di quella nuova', (t) => {
+    // Segnalato in playtest: gara su monte-rosso, rientro in lobby SUBITO
+    // (tasto invio, senza aspettare la fine della finestra di cortesia), gara
+    // su new-monza. Finito il giro di qualifica il pannello "in attesa degli
+    // altri piloti" non spariva piu', e circa un minuto dopo il terminale
+    // stampava "grazia scaduta" e l'auto si bloccava del tutto.
+    //
+    // Tornare SUBITO e' esattamente cio' che innesca la corsa: la
+    // disconnessione del vecchio socket arriva al server DOPO che la partita
+    // nuova e' gia' nata. Il gestore leggeva "la partita di questa lobby" e
+    // trovava quella nuova: marcava disconnesso il pilota VIVO (che cosi' non
+    // contava piu' per la chiusura della qualifica) e gli armava addosso il
+    // timer di rimozione definitiva. Sessanta secondi dopo lo cancellava dalla
+    // partita in corso - da cui il blocco.
+    t.after(pulisci);
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    preparaLobby(['red']);
+    const io = ioFinto();
+
+    const vecchio = collega(io);
+    avvia(vecchio, 'monte-rosso');
+    vecchio.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+
+    // Rientro in lobby e avvio della gara nuova, PRIMA che il socket vecchio
+    // sia dichiarato morto.
+    const nuovo = collega(io);
+    avvia(nuovo, 'new-monza');
+    nuovo.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    const g = activeGames.get(LOBBY);
+    assert.equal(g.track.id, 'new-monza');
+
+    // Solo ORA il server si accorge che il vecchio socket e' caduto.
+    vecchio.handlers.disconnect();
+
+    assert.equal(g.players.red.disconnected, false,
+        'il pilota vivo e stato marcato disconnesso: non conta piu per la chiusura della qualifica');
+    assert.equal(Object.keys(g.rejoinTimers || {}).length, 0,
+        'e gli e stato armato addosso il timer di rimozione della sessione precedente');
+
+    t.mock.timers.tick(120000);
+    assert.ok(g.players.red, 'il pilota e stato cancellato dalla partita in corso: da li in poi non si muove piu');
+    assert.deepEqual(lobbies.get(LOBBY).players, ['red'], 'e tolto anche dalla lobby');
+});

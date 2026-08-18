@@ -361,6 +361,11 @@ module.exports = function (io, socket) {
         }
 
         const game = activeGames.get(lobbyId);
+        // In QUALE partita è entrato questo socket. Serve al disconnect qui
+        // sotto: quando il socket muore, "la partita di questa lobby" può già
+        // essere un'altra, e agire su quella significa agire su un pilota che
+        // non è mai stato di questo socket.
+        socket.data.f1Partita = game;
         const totalLaps = game.track.totalLaps;
         const isRejoin = !!game.players[playerColor];
 
@@ -635,6 +640,17 @@ module.exports = function (io, socket) {
         if (!lobbyId || !color) return;
         const game = activeGames.get(lobbyId);
         if (!game || game.gameId !== 'f1') return;
+        // Guard 3 (identità): la partita di questa lobby dev'essere ANCORA
+        // quella in cui il socket era entrato. Tornare in lobby e ripartire
+        // subito — col tasto invio, senza aspettare la finestra di cortesia —
+        // fa arrivare questa disconnessione DOPO che la gara nuova è già
+        // nata. Senza il controllo, il gestore marcava disconnesso il pilota
+        // VIVO (che così smetteva di contare per la chiusura della qualifica:
+        // il pannello "in attesa degli altri piloti" non spariva più) e gli
+        // armava addosso il timer di rimozione definitiva, che un minuto dopo
+        // lo cancellava dalla partita in corso — l'auto si bloccava e il
+        // terminale stampava "grazia scaduta". Segnalato in playtest.
+        if (socket.data.f1Partita && socket.data.f1Partita !== game) return;
         const p = game.players[color];
         if (!p) return;   // già rimosso definitivamente
 
