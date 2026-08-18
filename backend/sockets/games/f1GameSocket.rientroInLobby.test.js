@@ -188,3 +188,128 @@ test('in modalita singolo la partita resta viva dopo il podio (serve a "Riprova"
     assert.equal(activeGames.has(LOBBY), true,
         'in singolo il podio resta a schermo e "Riprova" deve poter riusare la partita');
 });
+
+// ────────────────────────────────────────────────────────────────────────
+// AVVIARE UNA GARA DALLA LOBBY COMINCIA SEMPRE UNA SESSIONE NUOVA
+//
+// Il difetto che questi test proteggono (playtest 2026-08-18, dopo il primo
+// giro di correzioni). La chiusura automatica di fine gara copre solo le
+// sessioni che FINISCONO. Chi abbandona a meta' - F5, tasto indietro, torna
+// in lobby a mano - lascia la partita viva per tutta la grazia di
+// riconnessione (60 s), ed e' giusto che sia cosi': serve a rientrare senza
+// perdere posizione e giro.
+//
+// Ma il `joinF1Game` della gara SUCCESSIVA non sa distinguere i due casi, e
+// quella partita se la ritrovava davanti: rientrava dentro la sessione
+// vecchia invece di crearne una nuova. Riprodotto headless, con la sequenza
+// segnalata (gara su monte-rosso abbandonata, poi gara su prova):
+//
+//   il client carica   prova       (dalle impostazioni nell'indirizzo)
+//   il server simula   monte-rosso
+//
+// Da cui i tre sintomi visti in playtest: l'auto "nel verde, immersa nello
+// sfondo" (coordinate di un'altra pista), il pannello "qualifica completata,
+// in attesa degli altri piloti" che non spariva piu' (qualiGraceEndTick della
+// sessione precedente) e l'impossibilita' di muoversi (lato server il
+// giocatore era gia' arrivato).
+//
+// La soluzione non guarda come e' finita la sessione precedente - non puo',
+// i modi di abbandonare sono infiniti - ma da che sessione arriva chi entra:
+// `startGame` timbra la lobby, e una partita con un altro timbro viene
+// chiusa e rifatta.
+// ────────────────────────────────────────────────────────────────────────
+
+function avvia(socket, trackId) {
+    socket.handlers.startGame({
+        lobbyId: LOBBY, gameId: 'f1',
+        settings: { trackId, botsEnabled: 'false', gridSize: '4' },
+    });
+}
+
+test('una gara avviata dalla lobby non rientra in quella abbandonata a meta', (t) => {
+    t.after(pulisci);
+    preparaLobby(['red']);
+    const io = ioFinto();
+
+    const a = collega(io);
+    avvia(a, 'monte-rosso');
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+
+    // Sessione in corso, poi abbandonata a meta'.
+    const vecchia = activeGames.get(LOBBY);
+    vecchia.phase = 'qualifying';
+    vecchia.raceTick = 900;
+    vecchia.qualiGraceEndTick = 1060;
+    vecchia.players.red.finished = true;
+    a.handlers.disconnect();
+    assert.equal(activeGames.has(LOBBY), true,
+        'la grazia di riconnessione deve tenere viva la partita: serve a rientrare dopo un F5');
+
+    // Dalla lobby si avvia una gara nuova, su un'altra pista.
+    const b = collega(io);
+    avvia(b, 'prova');
+    b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+
+    const g = activeGames.get(LOBBY);
+    assert.notEqual(g, vecchia, 'deve essere una partita nuova, non quella di prima');
+    assert.equal(g.track.id, 'prova',
+        'il server deve simulare la pista che il client ha caricato, altrimenti l\'auto finisce nel verde');
+    assert.equal(g.phase, 'tyre_select', 'si riparte dalla scelta mescola');
+    assert.equal(g.raceTick, 0);
+    assert.equal(g.qualiGraceEndTick, undefined,
+        'con la grazia della qualifica precedente il pannello "in attesa degli altri" non sparisce piu');
+    assert.equal(g.players.red.finished, false, 'lato server il pilota non puo ripartire gia arrivato');
+});
+
+test('dentro la stessa sessione un refresh resta un rientro, non una gara nuova', (t) => {
+    t.after(pulisci);
+    preparaLobby(['red']);
+    const io = ioFinto();
+
+    const a = collega(io);
+    avvia(a, 'prova');
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    const g0 = activeGames.get(LOBBY);
+    g0.phase = 'race';
+    g0.players.red.lap = 2;
+
+    // F5 in mezzo alla gara: nessun startGame, quindi la sessione e' la stessa.
+    a.handlers.disconnect();
+    const b = collega(io);
+    b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+
+    assert.equal(activeGames.get(LOBBY), g0, 'deve rientrare nella partita in corso');
+    assert.equal(activeGames.get(LOBBY).players.red.lap, 2, 'senza perdere il giro');
+});
+
+test('un timer della sessione precedente non spinge in gara quella nuova', (t) => {
+    // Tutti i timer di fase controllavano solo che una partita ESISTESSE, non
+    // che fosse la stessa. Ora che avviare una gara dalla lobby chiude e rifa'
+    // la partita, quel controllo non basta piu': il timer della sessione morta
+    // trovava la partita NUOVA e la spingeva in fase 'race' mentre i piloti
+    // stavano ancora scegliendo le gomme.
+    t.after(pulisci);
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    preparaLobby(['red']);
+    const io = ioFinto();
+
+    const a = collega(io);
+    avvia(a, 'monte-rosso');
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    const vecchia = activeGames.get(LOBBY);
+    vecchia.phase = 'race_end';
+    vecchia.grid = ['red'];
+    // "Riprova": programma il semaforo fra RESTART_GRACE_MS.
+    a.handlers.f1RestartRace(LOBBY);
+
+    // Nel frattempo si riparte dalla lobby, su un'altra pista.
+    const b = collega(io);
+    avvia(b, 'prova');
+    b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red' });
+    const nuova = activeGames.get(LOBBY);
+    assert.notEqual(nuova, vecchia, 'la sessione dev\'essere stata sostituita');
+
+    t.mock.timers.tick(30000);
+    assert.equal(nuova.phase, 'tyre_select',
+        `la gara nuova e' finita in fase "${nuova.phase}" per colpa di un timer della sessione precedente`);
+});

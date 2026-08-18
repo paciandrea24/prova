@@ -245,6 +245,12 @@ module.exports = function (io, socket) {
         if (lobby) {
             lobby.gameSettings = settings;
             lobby.lockedPlayers = [...lobby.players];
+            // Timbro della sessione: cambia ad OGNI avvio dalla lobby. È ciò
+            // che permette a joinF1Game di distinguere "sto rientrando nella
+            // partita in corso dopo un F5" da "sto cominciando la gara nuova
+            // che l'host ha appena avviato" — due casi che arrivano come lo
+            // stesso identico evento (vedi il commento là).
+            lobby.sessioneF1 = (lobby.sessioneF1 || 0) + 1;
         }
         io.to(lobbyId).emit('gameSelected', { gameId, settings });
     });
@@ -256,6 +262,32 @@ module.exports = function (io, socket) {
         // Marca QUESTO socket come partecipante reale alla gara. Serve al guard
         // del disconnect qui sotto per distinguerlo dai vecchi socket-lobby.
         socket.data.joinedF1 = true;
+
+        // Una partita di una sessione PRECEDENTE non si riusa mai.
+        //
+        // La chiusura automatica di fine gara copre solo le sessioni che
+        // finiscono. Chi abbandona a metà — F5, tasto indietro, torna in
+        // lobby a mano — lascia la partita viva per tutta la grazia di
+        // riconnessione (60 s), ed è giusto: serve proprio a rientrare senza
+        // perdere posizione e giro. Ma la gara SUCCESSIVA se la ritrovava
+        // davanti e ci rientrava dentro invece di crearne una nuova.
+        // Segnalato in playtest: il client caricava "prova" e il server
+        // continuava a simulare "monte-rosso" — l'auto compariva nel verde,
+        // il pannello "qualifica completata, in attesa degli altri piloti"
+        // non spariva più (era la grazia della qualifica precedente) e non ci
+        // si poteva muovere, perché lato server quel pilota era già arrivato.
+        //
+        // Il criterio non è come è finita la sessione prima (i modi di
+        // abbandonare sono infiniti), ma da quale sessione arriva chi entra.
+        {
+            const lobby = lobbies.get(lobbyId);
+            const sessione = lobby ? (lobby.sessioneF1 || 0) : 0;
+            const precedente = activeGames.get(lobbyId);
+            if (precedente && precedente.gameId === 'f1' && precedente.sessione !== sessione) {
+                console.log(`♻️ [F1] Sessione ${precedente.sessione} sostituita dalla ${sessione} (lobby ${lobbyId})`);
+                chiudiPartita(io, lobbyId);
+            }
+        }
 
         if (!activeGames.has(lobbyId)) {
             const lobby = lobbies.get(lobbyId);
@@ -269,6 +301,8 @@ module.exports = function (io, socket) {
             }
             activeGames.set(lobbyId, {
                 gameId: 'f1',   // marca il tipo: gli handler condivisi (disconnect) NON devono toccare partite di altri giochi
+                // Da quale avvio dalla lobby nasce questa partita (vedi sopra).
+                sessione: lobby ? (lobby.sessioneF1 || 0) : 0,
                 track: track,
                 phase: 'tyre_select',   // tyre_select -> qualifying -> grid_display -> race -> race_end
                 players: {},
@@ -569,9 +603,8 @@ module.exports = function (io, socket) {
         // schermo fino all'ultimo istante (vedi f1RestartTransition in f1.js).
         io.to(lobbyId).emit('f1RestartTransition', { graceMs: RESTART_GRACE_MS });
         setTimeout(() => {
-            const g = activeGames.get(lobbyId);
-            if (!g) return;
-            startRaceCountdown(io, lobbyId, g);
+            if (!ancoraViva(lobbyId, game)) return;
+            startRaceCountdown(io, lobbyId, game);
         }, RESTART_GRACE_MS);
     });
 
@@ -618,6 +651,17 @@ module.exports = function (io, socket) {
         }, REJOIN_GRACE);
     });
 };
+
+// Un callback differito deve ritrovare LA STESSA partita, non una qualsiasi.
+//
+// Tutti i timer di fase controllavano solo che una partita esistesse. Ora che
+// avviare una gara dalla lobby chiude e rifà la partita, quel controllo non
+// basta più: bastava che l'host riavviasse entro la finestra della griglia
+// (8 s) e il timer della sessione morta spingeva in fase 'race' la partita
+// NUOVA, mentre i piloti stavano ancora scegliendo le gomme.
+function ancoraViva(lobbyId, game) {
+    return activeGames.get(lobbyId) === game;
+}
 
 // ====================================================
 // CHIUSURA DELLA PARTITA
@@ -752,8 +796,8 @@ function armaScadenzaMescola(io, lobbyId, game) {
     if (game.tyreSelectTimeout) clearTimeout(game.tyreSelectTimeout);
     game.tyreSelectScadeA = Date.now() + TYRE_SELECT_MS;
     game.tyreSelectTimeout = setTimeout(() => {
-        const g = activeGames.get(lobbyId);
-        if (!g || g.phase !== 'tyre_select') return;
+        if (!ancoraViva(lobbyId, game) || game.phase !== 'tyre_select') return;
+        const g = game;
         for (const p of Object.values(g.players)) {
             if (!p.compound) p.compound = DEFAULT_COMPOUND;
         }
@@ -850,8 +894,8 @@ function startQualifying(io, lobbyId, game) {
     }
     io.to(lobbyId).emit('f1Countdown', { trackName: game.track.name, label: 'QUALIFICA — 1 GIRO', phase: 'qualifying' });
     setTimeout(() => {
-        const g = activeGames.get(lobbyId);
-        if (!g) return;
+        if (!ancoraViva(lobbyId, game)) return;
+        const g = game;
         g.raceStarted = true;
         g.raceStartTime = Date.now();
         g.raceTick = 0;
@@ -911,9 +955,8 @@ function endQualifying(io, lobbyId, game) {
     io.to(lobbyId).emit('f1QualiEnded', { grid: qualiTimes });
 
     setTimeout(() => {
-        const g = activeGames.get(lobbyId);
-        if (!g) return;
-        startRaceCountdown(io, lobbyId, g);
+        if (!ancoraViva(lobbyId, game)) return;
+        startRaceCountdown(io, lobbyId, game);
     }, GRID_DISPLAY_MS);
 }
 
@@ -944,8 +987,8 @@ function startRaceCountdown(io, lobbyId, game) {
     io.to(lobbyId).emit('f1Countdown', { trackName: game.track.name, label: 'GARA', phase: 'race' });
 
     setTimeout(() => {
-        const g = activeGames.get(lobbyId);
-        if (!g) return;
+        if (!ancoraViva(lobbyId, game)) return;
+        const g = game;
         g.lightsSequenceActive = false;
         g.raceStarted = true;
         g.raceStartTime = Date.now();
@@ -1289,7 +1332,12 @@ function handlePitReactionPress(io, lobbyId, game, p) {
     const sid = game.socketByColor[p.color];
     if (sid) io.to(sid).emit('f1PitStopTiming', { durationMs });
 
-    setTimeout(() => completePitStop(io, lobbyId, game, p), durationMs);
+    setTimeout(() => {
+        // Anche qui l'identita': senza, la fine di una sosta della sessione
+        // precedente annunciava un pit stop ai client di quella nuova.
+        if (!ancoraViva(lobbyId, game)) return;
+        completePitStop(io, lobbyId, game, p);
+    }, durationMs);
 }
 
 // Fine sosta: gomme cambiate, poi l'autopilota riprende per l'uscita (non
