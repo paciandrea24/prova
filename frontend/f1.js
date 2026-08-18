@@ -2943,7 +2943,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const pole = griglia.length ? griglia[0].time : null;
         lista.innerHTML = griglia.map((riga, i) => {
             const mio = riga.color === myColor;
-            const classi = ['gs-riga'];
+            // Le caselle si alternano ai due lati del nastro, come lo
+            // schieramento dipinto in pista: dispari a sinistra, pari a
+            // destra e sfalsate indietro.
+            const classi = ['gs-casella', i % 2 ? 'a-destra' : 'a-sinistra'];
             if (i === 0) classi.push('e-pole');
             if (mio) classi.push('sono-io');
             // Dalla seconda posizione in giù si mostra il DISTACCO dalla pole
@@ -2956,14 +2959,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const etichetta = mio ? 'Tu' : (riga.isBot ? 'Bot' : 'Pilota');
             return `<li class="${classi.join(' ')}">
                 <span class="gs-pos">${i + 1}</span>
-                <span class="gs-pallino" style="background:${riga.color}"></span>
-                <span class="gs-nome">${etichetta}</span>
+                <span class="gs-barra" style="background:${riga.color}"></span>
+                <span class="gs-chi">${etichetta}</span>
                 <span class="gs-tempo">${tempo}</span>
             </li>`;
         }).join('');
 
         box.style.display = 'block';
-        const righe = lista.querySelectorAll('.gs-riga');
+        const righe = lista.querySelectorAll('.gs-casella');
         if (typeof anime !== 'function') {
             righe.forEach(r => { r.style.opacity = 1; });
             return;
@@ -2973,7 +2976,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         anime({
             targets: righe,
             opacity: [0, 1],
-            translateX: [46, 0],
+            // Ognuna entra dal PROPRIO lato del nastro, non tutte da destra:
+            // così il movimento racconta lo schieramento invece di
+            // attraversarlo.
+            translateX: (el) => (el.classList.contains('a-destra') ? [54, 0] : [-54, 0]),
             // `from: 'last'` fa entrare prima l'ultimo classificato: si risale
             // la griglia, come nel conteggio della scoperta.
             delay: anime.stagger(Math.min(90, (durataMs * 0.34) / Math.max(1, righe.length)), { from: 'last' }),
@@ -3004,12 +3010,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     // schermo. 0 sarebbe un frontale puro, π/2 un fianco: 0.68 rad (39°) è il
     // tre quarti anteriore classico.
     const VETRINA_TRE_QUARTI = 0.68;
-    // Di quanto la si guarda DALL'ALTO, misurato sul centro dell'auto. Stesso
-    // criterio dell'angolo di tre quarti: si fissa ciò che si vede, non un
-    // offset che poi dipende da schermo e dimensioni del modello. 0.22 rad
-    // sono 12.6°, quanto basta a scoprire l'abitacolo senza che diventi una
-    // vista a volo d'uccello.
-    const VETRINA_ELEVAZIONE = 0.22;
+    // Vedere l'auto dall'alto e tenerla al centro dello schermo sono due cose
+    // che si escludono, se la si abbassa e basta: la camera guarda in
+    // orizzontale, quindi più la si scopre dall'alto più scende nel quadro. Il
+    // primo tentativo faceva così e l'auto finiva col fondo allineato al
+    // fondo del pannello (segnalato in playtest).
+    //
+    // Si separano: la POSIZIONE la decide l'inquadratura, l'INCLINAZIONE
+    // decide quanto se ne vede il dorso. L'auto viene coricata verso chi
+    // guarda di 0.20 rad (11.5°) — la posa da vetrina, non una macchina in
+    // salita: sotto non c'è terreno con cui confrontarla, galleggia sulla
+    // panoramica del circuito.
+    const VETRINA_INCLINAZIONE = 0.20;
+    // Altezza del CENTRO dell'auto nel quadro, in frazione di mezza altezza:
+    // 0 è il centro esatto, negativo sotto. Appena sotto la metà, che è dove
+    // sta comodo un soggetto con del testo a fianco.
+    const VETRINA_FRAZIONE_Y = -0.08;
     const VETRINA_LARGHEZZA_MIN = 900;   // sotto, la colonna non c'è (vedi f1.css)
     let autoInPole = null;
     let autoInPoleAltezza = 1.8;   // misurata sul modello vero appena caricato
@@ -3022,8 +3038,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const mezzaLarghezza = mezzaAltezza * camera.aspect;
         const x = (VETRINA_FRAZIONE_X - 0.5) * 2 * mezzaLarghezza;
         // L'origine del modello sta a terra, fra le ruote: per avere il CENTRO
-        // dell'auto all'elevazione voluta va abbassata di mezza altezza.
-        const y = -Math.tan(VETRINA_ELEVAZIONE) * VETRINA_DISTANZA - autoInPoleAltezza / 2;
+        // dell'auto all'altezza voluta nel quadro va abbassata di mezza altezza.
+        const y = VETRINA_FRAZIONE_Y * mezzaAltezza - autoInPoleAltezza / 2;
         autoInPole.position.set(x, y, -VETRINA_DISTANZA);
 
         // ⚠️ La rotazione NON è un numero fisso, e il motivo è la ragione per
@@ -3040,7 +3056,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Il segno negativo tiene il muso rivolto verso il centro, cioè verso
         // il pannello della griglia.
         const scorcio = Math.atan2(x, VETRINA_DISTANZA);
-        autoInPole.rotation.set(0, -(VETRINA_TRE_QUARTI + scorcio), 0);
+        // Prima l'imbardata nel sistema dell'auto, poi l'inclinazione in
+        // quello della camera: nell'ordine opposto l'auto risulterebbe
+        // coricata di lato invece che verso chi guarda. Un quaternione e non
+        // gli angoli di Eulero, che qui sarebbero solo un modo più oscuro di
+        // scrivere la stessa composizione.
+        const imbardata = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0), -(VETRINA_TRE_QUARTI + scorcio));
+        const inclinazione = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(1, 0, 0), VETRINA_INCLINAZIONE);
+        autoInPole.quaternion.copy(inclinazione).multiply(imbardata);
     }
 
     // Il modello si prepara all'INIZIO della sequenza, non quando serve.

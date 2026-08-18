@@ -1227,61 +1227,103 @@ canvas.tyre-preview-canvas {
     text-transform: uppercase;
     color: var(--hud-text);
 }
+/* Le caselle della griglia, disegnate come una GRIGLIA e non come una lista.
+   Questa schermata descrive lo schieramento di partenza: un elenco con
+   pallino e tempo a destra è il layout più prevedibile possibile, e non dice
+   niente di ciò che rappresenta. Qui le caselle si alternano ai due lati di
+   un nastro d'asfalto, esattamente come le posizioni dipinte in pista, con la
+   linea del traguardo in cima. Si legge la classifica E si vede lo
+   schieramento. */
 .gs-lista {
-    list-style: none; margin: 0; padding: 0;
+    position: relative;
+    list-style: none; margin: 0; padding: 26px 5% 10px;
     display: flex; flex-direction: column;
+    gap: 7px;
     overflow: hidden;
 }
-.gs-riga {
+/* Il nastro d'asfalto dietro le caselle: è ciò che fa leggere l'insieme come
+   uno schieramento visto dall'alto. */
+.gs-lista::before {
+    content: '';
+    position: absolute; inset: 0 2% 0 2%;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.012));
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+/* La linea del traguardo, davanti alla prima casella. */
+.gs-lista::after {
+    content: '';
+    position: absolute; top: 11px; left: 2%; right: 2%;
+    height: 7px;
+    background:
+        repeating-linear-gradient(90deg,
+            rgba(238, 242, 246, 0.72) 0 9px, transparent 9px 18px);
+}
+.gs-casella {
+    position: relative;
+    width: 66%;
     display: grid;
-    grid-template-columns: 2.6em 22px 1fr auto;
+    grid-template-columns: 1.9em 5px 1fr auto;
     align-items: center;
-    gap: 12px;
-    padding: 9px 6px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-    /* Ogni riga entra da destra sfalsata, vedi f1.js: qui solo lo stato di
-       partenza, perché senza il pannello lampeggerebbe completo per un frame
-       prima che l'animazione lo prenda in mano. */
+    gap: 11px;
+    padding: 8px 13px 8px 9px;
+    background: rgba(20, 24, 31, 0.92);
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
     opacity: 0;
 }
-.gs-riga:last-child { border-bottom: none; }
+/* Le posizioni pari stanno dall'altra parte del nastro, sfalsate indietro
+   come sulla griglia vera. */
+.gs-casella.a-destra { align-self: flex-end; }
+/* La riga bianca dipinta davanti a ogni casella. È il dettaglio che fa la
+   differenza fra "un rettangolo scuro" e "una piazzola di partenza". */
+.gs-casella::before {
+    content: '';
+    position: absolute; left: 9px; right: 13px; top: 0;
+    height: 2px;
+    background: rgba(238, 242, 246, 0.22);
+}
 .gs-pos {
     font-family: 'Fredoka', sans-serif;
     font-weight: 900;
-    font-size: clamp(16px, 1.7vw, 24px);
+    font-size: clamp(17px, 1.9vw, 27px);
+    line-height: 1;
     color: var(--f1-text-dim);
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
-.gs-pallino {
-    width: 18px; height: 18px; border-radius: 50%;
-    border: 2px solid var(--hud-surface);
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+/* Il colore del pilota è una barra verticale sul fianco della casella, non un
+   pallino: sulla griglia vera è la vettura a occupare la piazzola. */
+.gs-barra {
+    align-self: stretch;
+    border-radius: 1px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
 }
-.gs-nome {
+.gs-chi {
     font-family: 'Segoe UI', system-ui, sans-serif;
-    font-size: clamp(12px, 1.2vw, 16px);
-    font-weight: 700; letter-spacing: 0.12em;
+    font-size: clamp(11px, 1.05vw, 14px);
+    font-weight: 700; letter-spacing: 0.22em;
     text-transform: uppercase;
     color: var(--f1-text-dim);
 }
 .gs-tempo {
     font-family: monospace;
-    font-size: clamp(12px, 1.25vw, 17px);
+    font-size: clamp(11px, 1.15vw, 16px);
     font-weight: 700;
     color: var(--hud-text);
     font-variant-numeric: tabular-nums;
 }
-/* La pole: oro, e l'unica riga con un fondo. Le altre si distinguono per
-   posizione, non per decorazione. */
-.gs-riga.e-pole { background: linear-gradient(90deg, rgba(241, 196, 15, 0.16), transparent 70%); }
-.gs-riga.e-pole .gs-pos,
-.gs-riga.e-pole .gs-nome,
-.gs-riga.e-pole .gs-tempo { color: #f1c40f; }
-/* La propria riga: bordo a sinistra, così la si trova senza leggere. */
-.gs-riga.sono-io { box-shadow: inset 3px 0 0 var(--f1-telemetry); }
-.gs-riga.sono-io .gs-nome { color: var(--hud-text); }
-/* Colonna destra: la tiene libera il modello dell'auto in pole. */
+/* La pole: l'unica casella con un fondo suo e la riga d'asfalto dorata. */
+.gs-casella.e-pole {
+    background: linear-gradient(90deg, rgba(241, 196, 15, 0.2), rgba(20, 24, 31, 0.92) 72%);
+}
+.gs-casella.e-pole::before { background: rgba(241, 196, 15, 0.75); }
+.gs-casella.e-pole .gs-pos,
+.gs-casella.e-pole .gs-chi,
+.gs-casella.e-pole .gs-tempo { color: #f1c40f; }
+/* La propria casella: si trova senza leggere. */
+.gs-casella.sono-io { box-shadow: 0 2px 0 rgba(0, 0, 0, 0.5), inset 0 0 0 1px var(--f1-telemetry); }
+.gs-casella.sono-io .gs-chi { color: var(--hud-text); }
+
 .gs-vetrina { position: relative; height: 100%; }
 
 @media (max-width: 900px) {
