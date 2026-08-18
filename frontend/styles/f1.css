@@ -1359,10 +1359,24 @@ canvas.tyre-preview-canvas {
     display: flex; align-items: flex-end; justify-content: space-between;
     gap: 3vw;
     padding: 18px clamp(18px, 4vw, 54px) 22px;
-    /* Sfuma verso l'alto invece di avere un bordo: una fascia con lo stacco
-       netto taglierebbe il podio in due. */
-    background: linear-gradient(0deg, rgba(6, 8, 11, 0.95) 0%, rgba(6, 8, 11, 0.82) 55%, transparent 100%);
+    /* Base piena sotto TUTTO il contenuto, e la sfumatura sopra di essa e non
+       dentro. Prima la sfumatura partiva dal fondo della fascia e a meta'
+       altezza era gia' quasi trasparente: le righe in alto cadevano sulla
+       scena illuminata e non si leggevano (segnalato in playtest). Con la
+       base separata il contrasto non dipende piu' da quanto e' alto
+       l'elenco - e cambia con venti piloti invece che con sei. */
+    background: rgba(6, 8, 11, 0.94);
     pointer-events: auto;
+}
+/* La sfumatura verso il podio, subito SOPRA la fascia: serve a non tagliare
+   la scena con uno stacco netto, che era il motivo del gradiente. */
+.rc-fascia::before {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: 100%;
+    height: 13vh;
+    background: linear-gradient(0deg, rgba(6, 8, 11, 0.94), rgba(6, 8, 11, 0.55) 42%, transparent);
+    pointer-events: none;
 }
 .rc-lista {
     list-style: none; margin: 0; padding: 0;
