@@ -2,8 +2,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const urlParams = new URLSearchParams(window.location.search);
     const lobbyId = urlParams.get('lobby');
     const myColor = urlParams.get('color') ? decodeURIComponent(urlParams.get('color')) : null;
-    const rawSettings = urlParams.get('settings');
-    const clientSettings = rawSettings ? JSON.parse(decodeURIComponent(rawSettings)) : {};
+    // Chieste al SERVER, non lette dall'indirizzo: e' lui a possederle, ed e'
+    // sulla SUA copia che gira la partita. Vedi shared/impostazioniGara.js per
+    // il perche' — in breve, client e server potevano credere a due piste
+    // diverse, ed e' successo davvero.
+    const clientSettings = await ImpostazioniGara.carica(lobbyId);
     const trackId = clientSettings.trackId || 'monte-rosso';
     // Numero di piloti della gara: scelto in lobby, viaggia nell'indirizzo e
     // arriva qui PRIMA che si generi la scenografia. È ciò che permette di

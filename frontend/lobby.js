@@ -137,8 +137,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     socket.on('gameSelected', (data) => {
-        const { gameId, settings } = data;
-        const settingsParam = settings ? `&settings=${encodeURIComponent(JSON.stringify(settings))}` : '';
+        const { gameId } = data;
+        // Le impostazioni NON viaggiano piu' nell'indirizzo: le pagine di
+        // gioco le chiedono al server (vedi shared/impostazioniGara.js).
+        // Restano solo i tre dati che identificano chi sta entrando dove.
 
         let targetPage = '/game.html';
         if (gameId === 'trivia') targetPage = '/quiz.html';
@@ -149,7 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (gameId === 'fps') targetPage = '/fps.html';
         else if (gameId === 'f1') targetPage = '/f1.html';
 
-        const url = `${targetPage}?lobby=${lobbyId}&color=${encodeURIComponent(selectedColor)}&game=${gameId}${settingsParam}`;
+        const url = `${targetPage}?lobby=${lobbyId}&color=${encodeURIComponent(selectedColor)}&game=${gameId}`;
         showLaunchOverlay();
         // Due frame prima di navigare: l'overlay è appena entrato nel DOM e
         // navigando subito il browser potrebbe non arrivare mai a dipingerlo.

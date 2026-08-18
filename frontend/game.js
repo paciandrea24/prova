@@ -1,6 +1,6 @@
 // frontend/game.js
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     console.log("🎨 Drawing Game Script Caricato (Stile Gartic - Advanced)");
 
     // =========================================================
@@ -11,11 +11,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const playerColor = urlParams.get('color');
     const gameId = urlParams.get('game');
 
-    let gameSettings = null;
-    try {
-        const settingsParam = urlParams.get('settings');
-        if (settingsParam) gameSettings = JSON.parse(decodeURIComponent(settingsParam));
-    } catch (e) { console.error(e); }
+    // Chieste al server invece che lette dall'indirizzo: vedi
+    // shared/impostazioniGara.js.
+    let gameSettings = await ImpostazioniGara.carica(lobbyId);
 
     if (!lobbyId || !playerColor) {
         window.location.href = '/';

@@ -53,6 +53,9 @@ module.exports = function (io, socket) {
         if (!lobby) return;
 
         lobby.lastGameSettings = settings;
+        // Anche nel campo che legge la rotta /api/lobby/:id/settings: da li'
+        // le prende la pagina del quiz, che prima se le trovava nell'indirizzo.
+        lobby.gameSettings = settings;
 
         const rounds = (settings && settings.questions) || 5;
         let questions = await fetchTriviaQuestions(rounds);

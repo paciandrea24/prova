@@ -37,6 +37,18 @@ router.get('/api/lobby/:id', (req, res) => {
     res.json(lobby);
 });
 
+// GET /api/lobby/:id/settings
+// Le impostazioni della partita in corso, e SOLO quelle. Le pagine di gioco
+// le chiedono qui invece di leggerle dall'indirizzo (vedi
+// frontend/shared/impostazioniGara.js). Rotta dedicata e non /api/lobby/:id,
+// che restituisce l'intero oggetto lobby: a chi deve disegnare una pista non
+// serve sapere chi ospita, chi c'e' dentro o a che sessione siamo.
+router.get('/api/lobby/:id/settings', (req, res) => {
+    const lobby = lobbies.get(req.params.id);
+    if (!lobby) return res.status(404).json({ error: 'Lobby not found' });
+    res.json({ settings: lobby.gameSettings || {} });
+});
+
 // POST /join-lobby
 router.post('/join-lobby', (req, res) => {
     const { color, lobbyId } = req.body;
