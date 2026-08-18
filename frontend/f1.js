@@ -2355,6 +2355,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         // con GRID_DISPLAY_MS/TYRE_SELECT_MS del server.
         document.getElementById('podium-modal').style.display = 'none';
         document.getElementById('pole-overlay').style.display = 'none';
+        // Annulla la transizione qualifica→gara se è ancora in corso: lo
+        // stacco dura secondi, e questo countdown può arrivare mentre uno dei
+        // suoi pezzi è ancora in coda. Il numero di sequenza li ferma tutti
+        // (vedi f1QualiEnded), F1Sting.stop toglie subito quello a schermo.
+        sequenzaCorrente++;
+        if (window.F1Sting) F1Sting.stop();
         // true solo per il countdown che apre una qualifica; il countdown di
         // gara (data.phase==='race') la chiude anche come rete di sicurezza,
         // ridondante con f1QualiEnded qui sotto ma innocuo.
@@ -2536,7 +2542,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    socket.on('f1QualiEnded', ({ grid }) => {
+    // Numero di sequenza della transizione in corso. Serve a fermare i pezzi
+    // ancora in coda (lo stacco dura secondi, e nel frattempo può arrivare un
+    // f1Countdown o un rientro in lobby): ogni passo controlla di essere
+    // ancora quello corrente prima di mettersi a schermo.
+    let sequenzaCorrente = 0;
+
+    socket.on('f1QualiEnded', async ({ grid, trackName, sequenza }) => {
         // Chiusura DEFINITIVA (non lo stato del giocatore, vedi dichiarazione
         // di qualiSessionOpen sopra): da qui in poi, per tutta 'grid_display'
         // (il pannello coi tempi che sta per aprirsi qui sotto), il server
@@ -2544,10 +2556,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         // "in attesa" resterebbe sovrapposto alla griglia per l'intera durata.
         qualiSessionOpen = false;
         document.getElementById('quali-waiting-overlay').style.display = 'none';
+        const mia = ++sequenzaCorrente;
+        const seq = sequenza || {};
         const myPos = (grid || []).findIndex(e => e.color === myColor) + 1;
+
+        // ── 1. STACCO ──────────────────────────────────────────────────
+        // Copre il salto dalla pista alla schermata di griglia, che era la
+        // parte brusca. Le durate le decide il server (vedi le costanti SEQ_*
+        // in f1GameSocket.js): qui non se ne tiene una copia.
+        await F1Sting.play({
+            durataMs: seq.staccoMs,
+            titolo: trackName || '',
+            sottotitolo: 'GRIGLIA DI PARTENZA',
+        });
+        if (mia !== sequenzaCorrente) return;
+
+        // ── 2. SCOPERTA DELLA PROPRIA POSIZIONE ────────────────────────
         if (myPos === 1) playRevealAnimation('POOOOOOOOOOLE', true);
         else if (myPos > 1) playRevealAnimation(`P${myPos}`, false);
 
+        // ── 3. RIEPILOGO CON LA GRIGLIA COMPLETA ───────────────────────
         const modal = document.getElementById('podium-modal');
         const title = document.getElementById('podium-title');
         const list = document.getElementById('podium-list');
