@@ -3,6 +3,7 @@
     "name": "prova",
     "targetKm": 24,
     "roadHalfWidth": 11,
+    "notturno": true,
     "startFinish": {
         "x": -424.95,
         "z": -138.77,
@@ -112,8 +113,7 @@
         },
         {
             "x": -729.99,
-            "z": -739.17,
-            "bridge": false
+            "z": -739.17
         },
         {
             "x": -868.3,

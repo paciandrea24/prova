@@ -99,6 +99,7 @@
             // Moltiplicatore sul colore delle superfici: di giorno, nessuno.
             tinta: 0xffffff,
             tintaPista: 0xffffff,
+            tintaTerreno: 0xffffff,
             guadagno: 1,
             guadagnoPista: 1,
             hemi: { cielo: 0x9ec8f0, terra: 0x3f7a52, intensita: 0.30 },
@@ -216,6 +217,24 @@
             // sono puntate — e arriva a ~0.60 di luma contro lo 0.41 che ha
             // di giorno: di notte l'asfalto è più chiaro che di giorno.
             guadagnoPista: 1.73,
+
+            // Il terreno e la vegetazione hanno una tinta LORO, più scura.
+            //
+            // Guardando le foto di Singapore: l'asfalto è la cosa più chiara
+            // dell'inquadratura, il prato e le palme ai lati sono nettamente
+            // più scuri, e le strutture (barriere, reti, tribune) stanno in
+            // mezzo. Non è illuminazione uniforme al millimetro: è che i
+            // proiettori sono puntati SULLA PISTA, e il verde attorno prende
+            // solo quel che avanza.
+            //
+            // Il prato passa da 0.34 di notte contro lo 0.68 dell'asfalto,
+            // cioè metà. Resta ben visibile — non si torna al buio delle
+            // prime stesure — ma smette di competere con la pista.
+            //
+            // Vale solo per terreno e vegetazione: barriere, tribune, auto e
+            // costruzioni tengono `tinta`, altrimenti si spegnerebbe tutto
+            // di nuovo.
+            tintaTerreno: 0xa3aab6,
             // La luce d'ambiente era un blu profondo: sotto uno stadio
             // acceso non esiste: la luce rimbalza da tribune, asfalto e
             // strutture, e le ombre restano riempite invece di andare al

@@ -156,6 +156,36 @@ test('di notte l\'asfalto è più chiaro che di giorno, e le fasce restano separ
     assert.equal(P.ORARI.giorno.guadagnoPista, 1, 'e nessun guadagno schiarisce niente');
 });
 
+test('il verde attorno alla pista è più scuro dell\'asfalto, ma non spento', () => {
+    // Dalle foto di Singapore: i proiettori sono puntati SULLA PISTA, e il
+    // prato con le palme ai lati prende solo quel che avanza. L'asfalto è la
+    // cosa più chiara dell'inquadratura, il verde è nettamente sotto, e le
+    // strutture — barriere, reti, tribune — stanno in mezzo.
+    const luma = (hex) => {
+        const c = P.hexToRgb(hex);
+        return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+    };
+    const n = P.ORARI.notte;
+
+    const asfalto = luma(P.SURFACES.asphalt) * luma(n.tintaPista) * n.guadagnoPista;
+    const prato = luma(P.SURFACES.grass) * luma(n.tintaTerreno);
+
+    assert.ok(asfalto / prato > 1.7,
+        `l'asfalto deve staccare dal verde: ${(asfalto / prato).toFixed(1)}x`);
+
+    // Il limite dall'altra parte, che è l'errore delle prime due stesure: il
+    // verde deve restare VISIBILE. A 0.14 di luma era buio e il playtest l'ha
+    // bocciato tre volte.
+    assert.ok(prato > 0.25,
+        `il verde deve restare visibile, non tornare al buio: ${prato.toFixed(2)}`);
+
+    // E la tinta del terreno vale SOLO per terreno e vegetazione: se la
+    // prendessero anche barriere e tribune si spegnerebbe di nuovo tutto.
+    assert.ok(luma(n.tintaTerreno) < luma(n.tinta),
+        'il terreno deve essere più scuro delle costruzioni');
+    assert.equal(P.ORARI.giorno.tintaTerreno, 0xffffff, 'di giorno non tinge niente');
+});
+
 test('di notte la luce viene dall\'alto: l\'ombra è corta, non allungata', () => {
     // Una torre faro illumina da trenta metri sopra la pista, non di taglio
     // come un sole di pomeriggio. È una delle cose che si riconoscono subito

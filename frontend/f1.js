@@ -697,7 +697,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     await caricamento.respira();
 
     for (const mesh of mesheTerreno) {
-        applicaStile(mesh, { saturation: ToonPalette.SATURATION.world, isGround: true });
+        applicaStile(mesh, {
+            saturation: ToonPalette.SATURATION.world,
+            isGround: true,
+            // Di notte il verde attorno alla pista prende solo la luce
+            // che avanza dai proiettori: vedi tintaTerreno in
+            // toonPalette.js.
+            tintaNotte: ToonPalette.orario().tintaTerreno,
+        });
     }
     // Le mesh di TrackMeshBuilder sono aggiunte alla scena in modo sincrono:
     // una sola conversione qui le copre tutte. A questo punto dell'esecuzione
@@ -854,6 +861,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     // iniziava a scattare anche in localhost. Sono anche i casi in cui
     // l'ombra si nota meno — figure piccole e vegetazione lontana — mentre
     // tribune, edifici e strutture continuano a proiettarla.
+    // Assets che di notte seguono la tinta del TERRENO invece di quella
+    // delle costruzioni.
+    const VEGETAZIONE = new Set([
+        'treeLarge', 'treeSmall', 'treeBroad', 'treeYoung', 'treePine',
+        'treeRound', 'bushLow', 'bushTall', 'woodMass',
+    ]);
+
+    // Finestre accese.
+    //
+    // In tutte e tre le foto di riferimento lo skyline è pieno di finestre
+    // arancioni, e il contrasto fra quel caldo e il bianco freddo dei
+    // proiettori è metà dell'atmosfera. Da noi gli edifici di notte erano
+    // spenti.
+    //
+    // I vetri sono già un nodo a sé dentro ogni modello (`*_glass`), quindi
+    // non serve geometria nuova: come per le lampade delle torri faro, il
+    // materiale toon lascia il posto a un MeshBasicMaterial che non ascolta
+    // nessuna luce. Zero draw call in più.
+    const FINESTRE_CALDE = new Set([
+        'motorhome_glass', 'pitsOffice_glass', 'pitsGarageClosed_glass',
+        'raceControlTower_glass', 'serviceBuilding_glass', 'tvTower_glass',
+        'vipSuite_glass',
+    ]);
+
+    // Gli schermi no: sono azzurrini, non arancioni.
+    const SCHERMI_ACCESI = new Set(['giantScreen_glass']);
+
+    // ⚠️ NON compaiono in nessuno dei due elenchi i vetri dei VEICOLI
+    // (parkedCar*_glass, truck_glass, recoveryCrane_glass): un parabrezza
+    // non è una finestra illuminata, e accenderlo darebbe un parcheggio di
+    // auto coi fari interni accesi.
+
     const NO_SHADOW_ASSETS = new Set([
         'treeLarge', 'treeSmall', 'treeBroad', 'treeYoung', 'treePine', 'treeRound',
         'bushLow', 'bushTall', 'rockSingle', 'rockCluster',
@@ -1020,7 +1059,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                         // prende due volte.
                         im.frustumCulled = true;
 
-                        applicaStile(im);
+                        // La vegetazione segue il terreno e non le
+                        // costruzioni: nelle foto le palme ai lati della
+                        // pista sono scure quanto il prato.
+                        applicaStile(im, VEGETAZIONE.has(asset)
+                            ? { tintaNotte: ToonPalette.orario().tintaTerreno }
+                            : undefined);
                         // Dopo applicaStile: registraSemaforo e
                         // accendiTorreFaro sostituiscono il materiale toon
                         // con uno base, e farlo prima significherebbe
@@ -1031,6 +1075,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         // il pannello lampade sono esattamente i punti in
                         // cui accendere l'alone.
                         accendiTorreFaro(im, container, centri, sferaBase.radius);
+                        accendiFinestre(im);
                         container.add(im);
                     }
                 }
@@ -1222,6 +1267,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     // GPU-bound sui pixel (vedi il pannello F9), quindi resta piccolo —
     // 2.6 volte il raggio del pannello e non 3.2 come i semafori, che si
     // guardano da vicino e sono cinque in tutto.
+    function accendiFinestre(im) {
+        if (!NOTTURNO) return;
+        const nome = im.userData.sceneryMesh || '';
+        const caldo = FINESTRE_CALDE.has(nome);
+        if (!caldo && !SCHERMI_ACCESI.has(nome)) return;
+        im.material = new THREE.MeshBasicMaterial({ color: caldo ? 0xffcf8c : 0xcfe0ff });
+        // Senza, il passaggio dei contorni disegna un bordo nero attorno a
+        // ogni finestra: una luce con il contorno non è una luce.
+        ToonStyle.excludeFromOutline(im);
+    }
+
     function accendiTorreFaro(im, container, centri, raggioPannello) {
         if (!NOTTURNO) return;
         if (im.userData.sceneryMesh !== 'floodlightTower_white') return;
