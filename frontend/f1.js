@@ -1111,7 +1111,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // da una callback di caricamento, e una const dichiarata piu' sotto
         // nel file non e' ancora inizializzata quando quella callback parte.
         // Le funzioni si possono usare prima, le const no.
-        im.material = new THREE.MeshBasicMaterial({ color: 0xfff6e0 });
+        im.material = new THREE.MeshBasicMaterial({ color: 0xfffdf2 });
         // Senza questo il passaggio dei contorni disegna un bordo nero
         // attorno alla lampada: una luce con il contorno non è una luce.
         ToonStyle.excludeFromOutline(im);
@@ -1130,10 +1130,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 blending: THREE.AdditiveBlending,
                 depthWrite: false,
                 transparent: true,
-                opacity: 0.5,
+                opacity: 0.75,
             }));
             alone.position.set(c.x, c.y, c.z);
-            alone.scale.setScalar(raggioPannello * 2.6);
+            alone.scale.setScalar(raggioPannello * 4.0);
             alone.renderOrder = 2;
             ToonStyle.excludeFromOutline(alone);
             container.add(alone);

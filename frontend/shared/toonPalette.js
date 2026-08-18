@@ -115,11 +115,17 @@
             // 0.27 — e l'orizzonte È ANCHE il colore della nebbia, per
             // costruzione (vedi fogColor). Quindi ogni cosa lontana non
             // spariva nel buio: sbiadiva verso quel grigio-azzurro.
+            // Secondo giro, dopo «non è nero notte» (playtest 2026-08-18).
+            // Lo zenit è praticamente nero (luma 0.010) e l'orizzonte
+            // conserva solo un accenno del bagliore che sale dalle torri
+            // faro — quel poco serve alla nebbia, che PRENDE questo colore:
+            // a zero, il circuito lontano finirebbe di colpo contro un muro
+            // invece di sfumare.
             skyStops: [
-                { t: 0.00, color: 0x1a2338 },
-                { t: 0.06, color: 0x141b2e },
-                { t: 0.30, color: 0x0b0f1c },
-                { t: 1.00, color: 0x05070e },
+                { t: 0.00, color: 0x0f1626 },
+                { t: 0.06, color: 0x0a1020 },
+                { t: 0.30, color: 0x050813 },
+                { t: 1.00, color: 0x01020a },
             ],
             // Appena più densa che di giorno, non molto: era 0.0016 e
             // insieme all'orizzonte chiaro faceva il velo lattiginoso. Di
@@ -129,7 +135,7 @@
             // Il colore che moltiplica ogni superficie. Non è un grigio: è
             // freddo e vira al blu, perché quel che resta a illuminare è il
             // cielo, non il sole.
-            tinta: 0x4a5878,
+            tinta: 0x3c4866,
             // …ma non tutto è al buio allo stesso modo, ed è questa riga a
             // fare la differenza fra «una scena scura» e «una gara in
             // notturno»: l'asfalto, i cordoli e la ghiaia stanno sotto le
@@ -138,7 +144,7 @@
             // Singapore prima ancora di capire cosa si sta guardando.
             //
             // Costa zero: è una uniform per materiale, non una luce.
-            tintaPista: 0xbac6da,
+            tintaPista: 0xd8e2f2,
             hemi: { cielo: 0x3b4a72, terra: 0x141821, intensita: 0.30 },
             // Bianco freddo da torre faro al posto del bianco caldo del
             // sole. Stessa intensita': vedi sopra il perche'.

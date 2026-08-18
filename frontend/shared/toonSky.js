@@ -59,7 +59,8 @@
                 // t = 0 all'orizzonte, 1 allo zenit. Sotto l'orizzonte resta
                 // il colore dell'orizzonte: là c'è comunque il terreno, e
                 // così la cupola non stacca mai dalla nebbia.
-                '    float t = clamp( vDir.y, 0.0, 1.0 );',
+                '    vec3 dir = normalize( vDir );',
+                '    float t = clamp( dir.y, 0.0, 1.0 );',
                 '    vec3 col = uColors[0];',
                 '    for ( int i = 1; i < ' + stops.length + '; i++ ) {',
                 '        float k = clamp( ( t - uStops[i - 1] ) / ( uStops[i] - uStops[i - 1] ), 0.0, 1.0 );',
@@ -67,23 +68,31 @@
                 '        col = mix( col, uColors[i], k );',
                 '    }',
                 '    if ( uStelle > 0.5 ) {',
-                '        vec3 d = normalize( vDir );',
-                '        vec2 g = vec2( atan( d.z, d.x ) * 14.0, asin( clamp( d.y, -1.0, 1.0 ) ) * 26.0 );',
+
+                '        vec2 g = vec2( atan( dir.z, dir.x ) * 42.0, asin( clamp( dir.y, -1.0, 1.0 ) ) * 78.0 );',
                 '        vec2 cella = floor( g );',
                 '        float h = stellaHash( cella );',
-                '        if ( h > 0.875 ) {',
+                '        if ( h > 0.980 ) {',
                 '            vec2 centro = cella + vec2( stellaHash( cella + 1.7 ), stellaHash( cella + 3.1 ) );',
                 '            float dist = length( g - centro );',
-                '            float lum = smoothstep( 0.40, 0.0, dist ) * ( 0.35 + 0.65 * stellaHash( cella + 7.3 ) );',
-            '            col += vec3( 0.86, 0.90, 1.0 ) * lum * smoothstep( 0.04, 0.34, d.y );',
+                '            float lum = smoothstep( 0.13, 0.0, dist ) * ( 0.30 + 0.70 * stellaHash( cella + 7.3 ) );',
+            '            col += vec3( 0.86, 0.90, 1.0 ) * lum * smoothstep( 0.04, 0.34, dir.y );',
                 '        }',
                 '    }',
+                '    col += ( fract( sin( dot( gl_FragCoord.xy, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ) - 0.5 ) / 255.0;',
                 '    gl_FragColor = vec4( mix( uFlat, col, uOn ), 1.0 );',
                 '}',
             ].join('\n'),
         });
 
-        const dome = new THREE.Mesh(new THREE.SphereGeometry(DOME_RADIUS, 32, 16), material);
+        // 64x32 e non 32x16. Con i triangoli larghi di prima si vedevano gli
+        // SPIGOLI della sfera (segnalato in playtest: «il cielo è fatto a
+        // blocchi spigolosi»): la direzione interpolata fra due vertici non è
+        // la direzione vera, e il gradiente ne segue l'errore. Raddoppiare i
+        // segmenti costa 2048 triangoli in croce su una mesh sola; la
+        // correzione VERA però è la normalize() nel fragment, qui sotto — i
+        // segmenti da soli ridurrebbero l'errore senza toglierlo.
+        const dome = new THREE.Mesh(new THREE.SphereGeometry(DOME_RADIUS, 64, 32), material);
         dome.frustumCulled = false;
         dome.renderOrder = -1;
         scene.add(dome);

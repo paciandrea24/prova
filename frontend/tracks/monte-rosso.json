@@ -3,6 +3,7 @@
     "name": "Monte Rosso",
     "targetKm": 5,
     "roadHalfWidth": 11,
+    "notturno": true,
     "controlPoints": [
         {
             "x": 36.14,
