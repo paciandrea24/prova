@@ -1083,6 +1083,61 @@ document.addEventListener('DOMContentLoaded', async () => {
         osc.stop(t0 + durata + 0.03);
     }
 
+    // Scatto del conteggio delle posizioni in griglia: il "clic" secco di un
+    // display che cambia cifra. Sintetizzato come il bip del semaforo, per lo
+    // stesso motivo (mezzo secondo di suono non vale un asset e una licenza).
+    //
+    // La frequenza SALE man mano che si risale la griglia: il suono racconta
+    // la stessa cosa che raccontano i numeri, cioè che stai migliorando, e
+    // sulla pole arriva in cima. Non è decorazione, è la stessa informazione
+    // per un altro senso.
+    //
+    // ⚠️ Va a `ctx.destination`, NON al listener come bipSemaforo: durante la
+    // transizione il mondo è muto (silenzioTransizione azzera il volume del
+    // listener, altrimenti si sentirebbero i motori delle auto già ferme in
+    // griglia) e questo è un suono d'interfaccia, non un suono del mondo.
+    function ticPosizione(progresso) {
+        const ctx = listener.context;
+        if (!ctx || ctx.state !== 'running') return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        // 520 → 980 Hz dall'ultima posizione alla pole.
+        osc.frequency.value = 520 + 460 * Math.max(0, Math.min(1, progresso));
+        const t0 = ctx.currentTime;
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.05, t0 + 0.004);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.045);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(t0);
+        osc.stop(t0 + 0.07);
+    }
+
+    // Il colpo con cui il conteggio si pianta sulla propria posizione. Più
+    // pieno e più lungo degli scatti, così l'arrivo si sente e non si deduce
+    // dal fatto che i clic sono finiti. La pole prende la nota più alta.
+    function colpoArrivo(isPole) {
+        const ctx = listener.context;
+        if (!ctx || ctx.state !== 'running') return;
+        const t0 = ctx.currentTime;
+        const note = isPole ? [523, 784, 1047] : [392, 523];
+        note.forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.value = freq;
+            const inizio = t0 + i * 0.075;
+            gain.gain.setValueAtTime(0.0001, inizio);
+            gain.gain.exponentialRampToValueAtTime(0.06, inizio + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.0001, inizio + 0.42);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(inizio);
+            osc.stop(inizio + 0.46);
+        });
+    }
+
     // Indicatore a schermo: il via lo danno i semafori sul ponte, questo è un
     // aiuto facoltativo per chi parte in fondo alla griglia (da lì le luci
     // occupano metà dello spazio che occupano dalla pole) o sta guardando
@@ -2611,26 +2666,47 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (valore !== ultimoMostrato) {
                         ultimoMostrato = valore;
                         numero.textContent = 'P' + valore;
+                        // Uno scatto, un clic. La frequenza sale con la
+                        // posizione: il suono dice la stessa cosa del numero.
+                        ticPosizione(totale > 1 ? (totale - valore) / (totale - 1) : 1);
                     }
                 },
+                // Il colpo d'arrivo si aggancia alla FINE del conteggio, che
+                // è l'istante esatto in cui il numero si pianta. Legarlo al
+                // `begin` dell'animazione successiva sarebbe la stessa cosa
+                // solo se i callback dei figli di una timeline scattassero
+                // sempre al loro turno — e in questo file abbiamo appena
+                // scoperto che sui VALORI non è così.
+                complete: () => colpoArrivo(isPole),
             }, tEtichetta);
 
             // L'arrivo: il numero si pianta, l'anello parte dal centro.
+            //
+            // ⚠️ `keyframes` e non una coppia [da, a]. In una timeline di
+            // anime.js una proprietà animata UNA SOLA VOLTA applica il proprio
+            // valore di partenza già da t=0, non quando arriva il suo turno:
+            // l'anello scritto come `opacity: [0.85, 0]` stava a 0.85 fin
+            // dall'inizio, cioè un cerchietto fermo dietro i numeri che
+            // scorrevano, e solo dopo si allargava (segnalato in playtest).
+            // Col primo fotogramma a opacità 0 il valore applicato prima del
+            // turno è quello invisibile, che è ciò che serve.
             const arrivo = tEtichetta + tConteggio;
             linea.add({
                 targets: numero,
-                scale: [1.35, 1],
-                duration: tArrivo * 0.34, easing: 'easeOutBack',
+                keyframes: [
+                    { scale: 1, duration: 1 },
+                    { scale: 1.35, duration: tArrivo * 0.12, easing: 'easeOutQuad' },
+                    { scale: 1, duration: tArrivo * 0.26, easing: 'easeOutBack' },
+                ],
             }, arrivo);
-            // L'anello parte DOPO che il numero si e' piantato, non
-            // insieme: partendo nello stesso istante si sovrappone agli
-            // ultimi scatti del conteggio e si legge come un cerchietto fermo
-            // dietro i numeri invece che come un colpo all'arrivo.
             linea.add({
                 targets: anello,
-                opacity: [0.85, 0], scale: [0.2, isPole ? 2.6 : 1.9],
-                duration: tArrivo * 0.55, easing: 'easeOutQuad',
-            }, arrivo + tArrivo * 0.12);
+                keyframes: [
+                    { opacity: 0, scale: 0.2, duration: 1 },
+                    { opacity: 0.85, duration: 40, easing: 'linear' },
+                    { opacity: 0, scale: isPole ? 2.6 : 1.9, duration: tArrivo * 0.55, easing: 'easeOutQuad' },
+                ],
+            }, arrivo + tArrivo * 0.1);
 
             // Solo la pole si prende raggi e scritta: è l'unica differenza di
             // trattamento, richiesta esplicitamente.
