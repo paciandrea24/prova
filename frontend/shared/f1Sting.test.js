@@ -113,3 +113,36 @@ test('la sosta e il momento piu lungo dei tre', () => {
     assert.ok(F1Sting.F_SOSTA > uscita,
         'l uscita dura piu della sosta: il testo non fa in tempo a essere letto');
 });
+
+// ────────────────────────────────────────────────────────────────────────
+// LA BANDA NON DEVE MAI FERMARSI CON UN BORDO DENTRO LO SCHERMO
+//
+// Segnalato in playtest: "sembra che si bloccano come se ci fosse una linea
+// verticale e poi inizia la gara". Le bande sono larghe 220vw a partire da
+// -60vw, ma l'uscita le portava solo a +120vw: il loro bordo sinistro si
+// fermava a 60vw, cioe' in mezzo allo schermo, e restava li' fermo finche' il
+// fondo non sfumava. Stesso difetto in entrata, dove partivano gia' a coprire
+// il 40% sinistro invece che da fuori quadro.
+//
+// Sono tre disuguaglianze fra numeri noti: si verificano qui una volta per
+// tutte, invece di riguardare l'animazione al rallentatore.
+// ────────────────────────────────────────────────────────────────────────
+const bordoSx = (tx) => F1Sting.BANDA_SX_VW + tx;
+const bordoDx = (tx) => F1Sting.BANDA_SX_VW + tx + F1Sting.BANDA_LARG_VW;
+
+test('a inizio corsa la banda e tutta fuori schermo a sinistra', () => {
+    assert.ok(bordoDx(F1Sting.FUORI_SX) <= 0,
+        `il bordo destro parte da ${bordoDx(F1Sting.FUORI_SX)}vw: la banda copre gia parte dello schermo prima di muoversi`);
+});
+
+test('a meta corsa la banda copre tutto lo schermo, bordi compresi', () => {
+    assert.ok(bordoSx(F1Sting.COPERTO) <= 0,
+        `resta scoperta una striscia a sinistra: bordo a ${bordoSx(F1Sting.COPERTO)}vw`);
+    assert.ok(bordoDx(F1Sting.COPERTO) >= 100,
+        `resta scoperta una striscia a destra: bordo a ${bordoDx(F1Sting.COPERTO)}vw`);
+});
+
+test('a fine corsa la banda e tutta fuori schermo a destra', () => {
+    assert.ok(bordoSx(F1Sting.FUORI_DX) >= 100,
+        `il bordo sinistro si ferma a ${bordoSx(F1Sting.FUORI_DX)}vw, dentro lo schermo: e la "linea verticale" del playtest`);
+});

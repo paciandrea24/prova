@@ -58,6 +58,32 @@
     const F_ENTRATA = 0.30;
     const F_SOSTA = 0.42;
 
+    // Geometria della banda, in vw. Sta qui e non nel CSS perché le tre
+    // posizioni della corsa si RICAVANO da questi due numeri: tenerli in due
+    // posti diverse è il modo in cui si finisce con una banda che si ferma a
+    // metà schermo.
+    const BANDA_SX_VW = -60;
+    const BANDA_LARG_VW = 220;
+
+    // Le tre posizioni della banda lungo la sua corsa, in vw. NON sono valori
+    // a occhio: escono dalla geometria qui sopra, e sbagliarli si vede.
+    //
+    //   bordo sinistro = BANDA_SX_VW + tx
+    //   bordo destro   = BANDA_SX_VW + tx + BANDA_LARG_VW
+    //
+    // fuori a sinistra  →  bordo destro   ≤ 0     →  tx ≤ -160
+    // schermo coperto   →  sx ≤ 0 e dx ≥ 100      →  -60 ≤ tx ≤ 60
+    // fuori a destra    →  bordo sinistro ≥ 100   →  tx ≥ 160
+    //
+    // Una versione precedente usava -120 e +120: in entrata le bande erano
+    // già a coprire il 40% sinistro dello schermo prima ancora di muoversi, e
+    // in uscita si fermavano col bordo sinistro a metà schermo, dove restava
+    // una linea verticale ferma finché il fondo non sfumava. Segnalato in
+    // playtest: "sembra che si bloccano come se ci fosse una linea verticale".
+    const FUORI_SX = -200;
+    const COPERTO = 0;
+    const FUORI_DX = 200;
+
     function iniettaStile() {
         if (document.getElementById(ID_STILE)) return;
         const st = document.createElement('style');
@@ -73,10 +99,13 @@
                 opacity: 0;
             }
             /* Le bande sono più larghe dello schermo e ruotate: così i bordi
-               obliqui non lasciano mai scoperti gli angoli mentre spazzano. */
+               obliqui non lasciano mai scoperti gli angoli mentre spazzano.
+               Posizione e larghezza vengono da BANDA_SX_VW/BANDA_LARG_VW: da
+               lì si ricavano FUORI_SX/COPERTO/FUORI_DX, non sono numeri a
+               piacere. */
             #${ID_NODO} .sting-banda {
                 position: absolute;
-                left: -60vw; width: 220vw;
+                left: ${BANDA_SX_VW}vw; width: ${BANDA_LARG_VW}vw;
                 transform-origin: center center;
                 will-change: transform, opacity;
             }
@@ -153,7 +182,7 @@
             b.style.background = coloreBanda(i);
             // Inclinazione alternata leggerissima: perfettamente orizzontali
             // sembrerebbero una serranda.
-            b.style.transform = `translateX(-120vw) rotate(${i % 2 ? -3.5 : -2.2}deg)`;
+            b.style.transform = `translateX(${FUORI_SX}vw) rotate(${i % 2 ? -3.5 : -2.2}deg)`;
             box.appendChild(b);
             bande.push(b);
         }
@@ -233,7 +262,7 @@
             // Le bande spazzano da sinistra, sfalsate.
             linea.add({
                 targets: el.bande,
-                translateX: ['-120vw', '-10vw'],
+                translateX: [`${FUORI_SX}vw`, `${COPERTO}vw`],
                 delay: anime.stagger(tEntrata * 0.075),
                 duration: tEntrata * 0.62,
                 easing: 'easeOutExpo',
@@ -289,7 +318,7 @@
             }, inizioUscita + tUscita * 0.06);
             linea.add({
                 targets: el.bande,
-                translateX: ['-10vw', '120vw'],
+                translateX: [`${COPERTO}vw`, `${FUORI_DX}vw`],
                 scaleY: [0.02, 1],
                 opacity: [0.22, 1],
                 delay: anime.stagger(tUscita * 0.06, { from: 'last' }),
@@ -314,6 +343,10 @@
         if (n) n.remove();
     }
 
-    return { play, stop, DURATA_DEFAULT, DURATA_MINIMA, COPERTURA_MS, BANDE, F_ENTRATA, F_SOSTA };
+    return {
+        play, stop,
+        DURATA_DEFAULT, DURATA_MINIMA, COPERTURA_MS, BANDE, F_ENTRATA, F_SOSTA,
+        BANDA_SX_VW, BANDA_LARG_VW, FUORI_SX, COPERTO, FUORI_DX,
+    };
 
 });
