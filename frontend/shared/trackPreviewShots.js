@@ -356,25 +356,46 @@
             targetFine: centro,
         });
 
-        // 2. TRAGUARDO — camera bassa a bordo pista, dal lato OPPOSTO alle
-        //    tribune, che diventano così lo sfondo dell'inquadratura: è la
-        //    posizione della telecamera televisiva al traguardo.
+        // 2. LA GRIGLIA DI PARTENZA — in asse alla pista, dietro l'ultima
+        //    casella e in alto, che avanza lentamente verso la linea. È lo
+        //    stacco di partenza classico: le caselle dipinte scorrono sotto,
+        //    il ponte semafori scavalca al centro dell'inquadratura, le
+        //    tribune fanno da fondale ai due lati.
         //
-        //    Dal lato delle tribune non funzionava: la fila principale ha il
-        //    fronte a ~7 unità oltre la barriera, cioè esattamente dove stava
-        //    la camera, e l'inquadratura finiva DENTRO i gradoni senza far
-        //    vedere la linea (segnalato in playtest).
-        scatti.push(Object.assign({
+        //    Misurato su "prova" e monte-rosso, tutto in asse: la linea del
+        //    traguardo a 0, le caselle da +10 a +47, il ponte semafori a +72.
+        //    Il bersaglio è quindi il ponte, e la corsa della camera si ferma
+        //    prima della prima casella per non attraversarle.
+        //
+        //    Le due versioni precedenti stavano DI LATO e non funzionavano.
+        //    Dalla parte delle tribune la camera finiva dentro i gradoni (il
+        //    fronte della fila principale sta a ~7 unità oltre la barriera).
+        //    Dalla parte opposta finiva dentro la fila dei cartelloni sponsor,
+        //    che sta esattamente allo stesso scostamento: guardando avanti
+        //    quella fila tagliava per lungo tutta l'inquadratura — «si vedono
+        //    più i cartelloni che il traguardo» (playtest). In asse non c'è
+        //    niente da scansare: è dove passano le auto.
+        const gantryAvanti = campioniPer(trackPts, 72);
+        scatti.push({
             id: 'traguardo',
-            etichetta: 'IL TRAGUARDO',
+            etichetta: 'LA GRIGLIA DI PARTENZA',
             idx: traguardo,
             durata: DURATA_MS,
-            target: puntoPista(trackPts, avanti(n, traguardo, campioniPer(trackPts, 60)), 2),
-            targetFine: puntoPista(trackPts, avanti(n, traguardo, campioniPer(trackPts, 130)), 2),
-        }, scansa(coppiaLaterale(
-            avanti(n, traguardo, -campioniPer(trackPts, 55)),
-            avanti(n, traguardo, -campioniPer(trackPts, 18)),
-            barriera + 6, -latoTrib, 6), solidi)));
+            // In asse per scelta, come lo scatto del rettilineo: vedi `suAsse`.
+            suAsse: true,
+            // Vicino e basso, non lontano e alto: col campo visivo da 65° una
+            // camera a 45 unità dalla linea lascia caselle e ponte dentro una
+            // fascia di 13° in mezzo allo schermo, cioè lontani e piccoli. Da
+            // 22 unità la prima casella entra a 32 di distanza e riempie il
+            // terzo basso dell'inquadratura.
+            cam: puntoPista(trackPts, avanti(n, traguardo, -campioniPer(trackPts, 22)), 6.5),
+            camFine: puntoPista(trackPts, avanti(n, traguardo, -campioniPer(trackPts, 4)), 6.5),
+            // Il ponte semafori, tenuto fermo mentre la camera si avvicina:
+            // l'inquadratura si stringe su di lui invece di scorrere via, e le
+            // caselle scorrono sotto.
+            target: puntoPista(trackPts, avanti(n, traguardo, gantryAvanti), 8),
+            targetFine: puntoPista(trackPts, avanti(n, traguardo, gantryAvanti), 8),
+        });
 
         // 3. LA CURVA PIÙ STRETTA — camera all'ESTERNO (findCorners.side è già
         //    il lato esterno) e in alto, come una telecamera da bordo pista:

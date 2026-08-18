@@ -98,9 +98,11 @@ for (const id of TRACCIATI) {
         const { scatti, track } = scattiDi(id);
         const mezzaPista = track.roadHalf;
         for (const s of scatti) {
-            // 'rettilineo' è deliberatamente sull'asse della pista (serve la
-            // prospettiva in fuga) e 'panoramica' è lontanissima da tutto.
-            if (s.id === 'rettilineo' || s.id === 'panoramica') continue;
+            // `suAsse` marca gli scatti messi sopra l'asfalto per scelta: il
+            // rettilineo (prospettiva in fuga) e la griglia di partenza (deve
+            // inquadrare caselle e ponte semafori, che stanno entrambi in
+            // asse). 'panoramica' è lontanissima da tutto.
+            if (s.suAsse || s.id === 'panoramica') continue;
             const d = TrackGeometry.nearestPoint(track.points, s.cam.x, s.cam.z).dist;
             assert.ok(d > mezzaPista, `${s.id}: camera a ${d.toFixed(1)} dall'asse, dentro la pista`);
         }
@@ -251,14 +253,17 @@ test('senza scenografia gli scatti restano quelli nominali', () => {
     assert.deepEqual(vuota.map(s => s.cam), senza.map(s => s.cam));
 });
 
-test('con la scenografia la camera del traguardo si sposta davvero', () => {
-    // Il controllo non e' decorativo: su "prova" cambia la posizione.
+test('con la scenografia le camere laterali si spostano davvero', () => {
+    // Il controllo non e' decorativo: su "prova" cambia la posizione di
+    // almeno uno scatto. (Lo scatto della griglia di partenza non conta: sta
+    // in asse per scelta e non viene scansato — vedi `suAsse`.)
     const t = loadTrack('prova');
     const opzioni = { startFinishIndex: t.startFinishIndex || 0, barrierDist: t.roadHalf + 2.8 + 1.2 };
-    const senza = TrackPreviewShots.buildShots(t.points, t.pitLanePts, opzioni)
-        .find(s => s.id === 'traguardo');
-    const con = scattiConScenografia('prova').scatti.find(s => s.id === 'traguardo');
-    const spostamento = Math.hypot(con.cam.x - senza.cam.x, con.cam.z - senza.cam.z);
-    assert.ok(spostamento > 0.5,
-        `la camera del traguardo non si e' spostata (${spostamento.toFixed(2)} unita): il cartellone e' ancora addosso`);
+    const senza = TrackPreviewShots.buildShots(t.points, t.pitLanePts, opzioni);
+    const con = scattiConScenografia('prova').scatti;
+    const spostati = con.filter((s, i) => !s.suAsse &&
+        Math.hypot(s.cam.x - senza[i].cam.x, s.cam.z - senza[i].cam.z) +
+        Math.abs(s.cam.y - senza[i].cam.y) > 0.5);
+    assert.ok(spostati.length > 0,
+        'nessuna camera si e spostata: il controllo sulla scenografia non sta facendo niente');
 });
