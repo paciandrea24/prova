@@ -1270,7 +1270,13 @@
     // vero sotto il pilone. Sono scopi diversi e vanno tenuti separati: usare
     // il pianoro allargato anche per la distanza di rispetto farebbe sparire
     // piloni legittimi.
-    function buildBridgeDecks(container, trackPts, groundPts, deckHalfWidth, innerEdge, plateauEnd, embankOuter) {
+    // `barrieraA(idx, lato)` — distanza della barriera dall'asse pista in quel
+    // campione e da quel lato, cioè il bordo vero della carreggiata. Arriva
+    // come funzione dal chiamante (stesso schema di buildBarriers) invece che
+    // importando TrackGravel: in f1-testbench.html trackGravel.js è caricato
+    // DOPO questo modulo, e una dipendenza diretta sarebbe undefined lì.
+    // Facoltativa: senza, resta il vecchio criterio a distanza costante.
+    function buildBridgeDecks(container, trackPts, groundPts, deckHalfWidth, innerEdge, plateauEnd, embankOuter, barrieraA) {
         const { bridgeRuns } = TrackGeometry.splitByBridge(trackPts);
         if (!bridgeRuns.length) return;
 
@@ -1279,22 +1285,85 @@
         const stepLen = TrackGeometry.lapLength(trackPts) / trackPts.length;
         const pillarStepSamples = Math.max(1, Math.round(BRIDGE_PILLAR_SPACING / stepLen));
 
+        // Il pilone in `i` sta tutto fuori dalla carreggiata di ciò che passa
+        // sotto?
+        //
+        // Il criterio storico confrontava con `innerEdge + CLEARANCE`, una
+        // distanza COSTANTE. Da quando le vie di fuga hanno allargato le
+        // barriere quella costante non descrive più il bordo della
+        // carreggiata: misurato su "prova", dove la costante prevedeva 17.8
+        // il muro vero sta a 29.8, e quattro piloni finivano piantati in
+        // mezzo alla pista — sconfinando fino a 10.7 unità (segnalato
+        // dall'utente: "non è un problema di gameplay, le macchine ci passano
+        // attraverso, però nella realtà sarebbe un grosso problema di
+        // sicurezza"). La costante resta come pavimento minimo, per i punti
+        // senza profilo.
+        function fuoriDallaCarreggiata(i) {
+            const p = trackPts[i];
+            const sotto = TrackGeometry.nearestPoint(groundPts, p.x, p.z);
+            let minima = innerEdge + BRIDGE_PILLAR_CLEARANCE;
+            if (barrieraA) {
+                const idxSotto = TrackGeometry.nearestPoint(trackPts, sotto.x, sotto.z).index;
+                const { nx, nz } = TrackGeometry.normalAt(trackPts, idxSotto, true);
+                // Da che lato della pista sottostante cade il pilone: la
+                // barriera può stare a distanze diverse sui due lati.
+                const lato = Math.sign((p.x - sotto.x) * nx + (p.z - sotto.z) * nz) || 1;
+                const muro = barrieraA(idxSotto, lato);
+                if (muro) minima = Math.max(minima, muro + BRIDGE_PILLAR_RADIUS);
+            }
+            return sotto.dist >= minima;
+        }
+
+        // Posizioni dei piloni lungo un viadotto: passo regolare, più un
+        // appoggio a ciascun bordo di ogni tratto vietato.
+        //
+        // Togliere e basta i piloni vietati lasciava il ponte scoperto proprio
+        // dove attraversa: su "prova" la corsia sottostante con le sue vie di
+        // fuga occupa una sessantina di unità, e senza gli appoggi di bordo la
+        // lastra restava sospesa da molto prima a molto dopo. Un viadotto vero
+        // fa il contrario: una campata unica e lunga SOPRA la strada, e due
+        // piloni piantati subito ai lati.
+        function posizioniPiloni(indices) {
+            const ammesso = indices.map(fuoriDallaCarreggiata);
+            const scelti = new Set();
+
+            for (let k = 0; k < indices.length; k += pillarStepSamples) {
+                if (ammesso[k]) scelti.add(k);
+            }
+            for (let k = 0; k < indices.length; k++) {
+                if (!ammesso[k]) continue;
+                const bordo = (k > 0 && !ammesso[k - 1]) ||
+                              (k < indices.length - 1 && !ammesso[k + 1]);
+                if (bordo) scelti.add(k);
+            }
+
+            // Due piloni quasi appaiati si leggono come un errore di
+            // costruzione: fra un appoggio di bordo e il pilone regolare
+            // accanto ne resta uno solo, e ha la precedenza quello di bordo —
+            // è lì che la campata lunga ha bisogno di appoggiarsi.
+            const minimo = Math.max(1, Math.round(pillarStepSamples / 2));
+            const finali = [];
+            for (const k of [...scelti].sort((a, b) => a - b)) {
+                const ultimo = finali.length ? finali[finali.length - 1] : null;
+                if (ultimo !== null && k - ultimo < minimo) {
+                    const diBordo = (k > 0 && !ammesso[k - 1]) ||
+                                    (k < indices.length - 1 && !ammesso[k + 1]);
+                    if (diBordo) finali[finali.length - 1] = k;
+                    continue;
+                }
+                finali.push(k);
+            }
+            return finali.map(k => indices[k]);
+        }
+
         for (const indices of bridgeRuns) {
             if (indices.length < 2) continue;
 
             const deckPts = indices.map(i => trackPts[i]);
             buildBridgeSlab(container, deckPts, deckHalfWidth, BRIDGE_DECK_THICK, deckMaterial);
 
-            for (let k = 0; k < indices.length; k += pillarStepSamples) {
-                const i = indices[k];
+            for (const i of posizioniPiloni(indices)) {
                 const p = trackPts[i];
-                // Se il punto a terra più vicino è proprio la pista che passa
-                // sotto (entro cordolo+barriera, imbankStart), un pilone qui
-                // finirebbe piantato sulla carreggiata invece che a lato:
-                // salta questo pilone (segnalato dall'utente su un vero
-                // sovrappasso).
-                const nearestGround = TrackGeometry.nearestPoint(groundPts, p.x, p.z);
-                if (nearestGround.dist < innerEdge + BRIDGE_PILLAR_CLEARANCE) continue;
                 const groundY = TrackGeometry.terrainHeightAt(groundPts, p.x, p.z, plateauEnd, embankOuter);
                 // La sommità del pilone coincide con il sotto della lastra:
                 // stessa espressione usata da buildBridgeSlab, così le due non

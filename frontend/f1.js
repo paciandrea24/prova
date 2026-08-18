@@ -428,7 +428,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // un ponte) sia per la quota visiva dell'auto fuori pista più sotto —
     // calcolato una sola volta qui, non ad ogni frame.
     const groundPts = trackPts.filter(p => !p.bridge);
-    TrackMeshBuilder.buildBridgeDecks(scene, trackPts, groundPts, ROAD_HALF + CURB_W, EMBANKMENT_START, EMBANK_PLATEAU, EMBANK_OUTER);
+    // Ultimo argomento: la barriera VERA del tratto che passa sotto il
+    // viadotto. Senza, i piloni si tenevano alla larga da una distanza
+    // costante che le vie di fuga hanno reso obsoleta, e su "prova" quattro
+    // finivano dentro la carreggiata (vedi buildBridgeDecks).
+    TrackMeshBuilder.buildBridgeDecks(scene, trackPts, groundPts, ROAD_HALF + CURB_W, EMBANKMENT_START, EMBANK_PLATEAU, EMBANK_OUTER,
+        (i, lato) => TrackGravel.barrierAt(BARRIER_PROFILE, i, lato));
 
     // Beccheggio (pitch) visivo dell'auto sui dislivelli: pendenza locale tra
     // il campione precedente e successivo lungo il giro, applicata come

@@ -556,3 +556,95 @@ test('le barriere sul ponte hanno gli stessi colori di tutte le altre', () => {
     // di diverso da segnalare.
     assert.equal(tinte.size, 2, `attese 2 tinte, trovate ${tinte.size}: ${[...tinte].join(' | ')}`);
 });
+
+// ────────────────────────────────────────────────────────────────────────
+// I PILONI DEL VIADOTTO NON DEVONO CADERE DENTRO LA CARREGGIATA
+//
+// Il difetto che questi test proteggono (segnalato dall'utente): "da quando
+// abbiamo allargato la carreggiata totale, spostando le barriere piu' in la',
+// in alcune parti della pista i pilastri che sorreggono i ponti cadono dentro
+// la carreggiata. Non e' un problema di gameplay, le macchine ci passano
+// attraverso, pero' nella realta' sarebbe un grosso problema di sicurezza".
+//
+// La causa: buildBridgeDecks teneva i piloni alla larga da una distanza
+// COSTANTE (innerEdge + 4). Le vie di fuga hanno reso le barriere un profilo
+// variabile per campione e per lato, e quella costante ha smesso di descrivere
+// il bordo della carreggiata. Misurato su "prova": dove la costante prevedeva
+// 17.8 il muro vero sta a 29.8, e quattro piloni finivano dentro la pista,
+// sconfinando fino a 10.7 unita'.
+//
+// Il tracciato e' quello vero, non un cerchio sintetico: serve un viadotto che
+// scavalchi davvero un altro tratto, ed e' esattamente il caso segnalato.
+// ────────────────────────────────────────────────────────────────────────
+const TrackGravel = require('./trackGravel.js');
+const { loadTrack } = require(require('path').join(__dirname, '..', '..',
+    'backend/sockets/games/trackLoader.js'));
+
+const PILONE_RAGGIO = 1.2;   // BRIDGE_PILLAR_RADIUS in trackMeshBuilder.js
+
+function pilonisuProva(barrieraA) {
+    const t = loadTrack('prova');
+    const ROAD_HALF = t.roadHalf, CURB_W = 2.8;
+    const bordoInterno = ROAD_HALF + CURB_W;
+    const groundPts = t.points.filter(p => !p.bridge);
+    const c = contenitore();
+    TrackMeshBuilder.buildBridgeDecks(c, t.points, groundPts, bordoInterno,
+        bordoInterno, bordoInterno, bordoInterno + 45, barrieraA);
+    const piloni = c.children.filter(m => m.geometry && m.geometry.parameters
+        && m.geometry.parameters.height !== undefined);
+    return { piloni, track: t, groundPts };
+}
+
+// Di quanto il pilone sconfina oltre la barriera del tratto che passa sotto.
+// Positivo = dentro la carreggiata.
+function sconfinamento(p, track, groundPts, barrieraA) {
+    const sotto = TrackGeometry.nearestPoint(groundPts, p.position.x, p.position.z);
+    const idx = TrackGeometry.nearestPoint(track.points, sotto.x, sotto.z).index;
+    const { nx, nz } = TrackGeometry.normalAt(track.points, idx, true);
+    const lato = Math.sign((p.position.x - sotto.x) * nx + (p.position.z - sotto.z) * nz) || 1;
+    return barrieraA(idx, lato) - (sotto.dist - PILONE_RAGGIO);
+}
+
+test('prova: nessun pilone del viadotto cade dentro la carreggiata', () => {
+    const barrieraA = (i, lato) => TrackGravel.barrierAt(loadTrack('prova').barrierProfile, i, lato);
+    const { piloni, track, groundPts } = pilonisuProva(barrieraA);
+
+    assert.ok(piloni.length > 20,
+        `solo ${piloni.length} piloni: il viadotto e' rimasto quasi senza sostegni`);
+
+    const dentro = piloni
+        .map(p => ({ p, s: sconfinamento(p, track, groundPts, barrieraA) }))
+        .filter(r => r.s > 0);
+    assert.strictEqual(dentro.length, 0,
+        `${dentro.length} piloni dentro la carreggiata, il peggiore per ` +
+        `${Math.max(...dentro.map(r => r.s), 0).toFixed(1)} unita'`);
+});
+
+test('prova: il viadotto resta sostenuto ai due lati di cio che scavalca', () => {
+    // Non basta togliere i piloni vietati: senza gli appoggi ai bordi del
+    // tratto vietato la lastra resterebbe sospesa da molto prima a molto dopo
+    // l'attraversamento. La campata piu' lunga deve valere quanto la larghezza
+    // di cio' che scavalca, non molto di piu'.
+    const barrieraA = (i, lato) => TrackGravel.barrierAt(loadTrack('prova').barrierProfile, i, lato);
+    const { piloni } = pilonisuProva(barrieraA);
+
+    let massima = 0;
+    for (let k = 1; k < piloni.length; k++) {
+        massima = Math.max(massima, Math.hypot(
+            piloni[k].position.x - piloni[k - 1].position.x,
+            piloni[k].position.z - piloni[k - 1].position.z));
+    }
+    // La corsia sottostante con le sue vie di fuga occupa una sessantina di
+    // unita': una campata di 100 vorrebbe dire appoggi mancanti, non un
+    // attraversamento.
+    assert.ok(massima < 100,
+        `campata piu' lunga ${massima.toFixed(1)} unita': mancano gli appoggi ai bordi dell'attraversamento`);
+});
+
+test('senza profilo delle barriere resta il criterio a distanza costante', () => {
+    // Chi non passa la funzione (il banco prova, che non disegna le vie di
+    // fuga) deve continuare a ottenere dei piloni, non zero.
+    const { piloni } = pilonisuProva(null);
+    assert.ok(piloni.length > 20,
+        `senza profilo il viadotto ha solo ${piloni.length} piloni`);
+});

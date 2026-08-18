@@ -171,7 +171,11 @@
     TrackMeshBuilder.buildEmbankment(scene, trackPts, EMBANKMENT_START, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH);
         // Punti "a terra" (non-ponte): usati per la quota reale sotto un ponte.
         const groundPts = trackPts.filter(p => !p.bridge);
-        TrackMeshBuilder.buildBridgeDecks(scene, trackPts, groundPts, ROAD_HALF + CURB_W, EMBANKMENT_START, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH);
+        // Barriera costante, non il profilo delle vie di fuga: il banco prova
+        // non le disegna (vedi buildBarriers qui sotto, che usa BARRIER_D), e
+        // i piloni devono stare fuori dalla carreggiata che si vede QUI.
+        TrackMeshBuilder.buildBridgeDecks(scene, trackPts, groundPts, ROAD_HALF + CURB_W, EMBANKMENT_START, EMBANKMENT_START, BARRIER_D + EMBANKMENT_WIDTH,
+            () => BARRIER_D);
 
         // ====================================================
         // PISTA / CORDOLI / BARRIERE — copiato verbatim da frontend/f1.js:152-154
