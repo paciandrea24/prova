@@ -1599,6 +1599,55 @@ document.addEventListener('DOMContentLoaded', async () => {
         aggiornaPallinoAnteprima(s.idx);
     }
 
+    // ── Panoramica del riepilogo griglia ────────────────────────────────
+    // Riusa le inquadrature già calcolate, ma NON il carosello: qui serve un
+    // fondale, non un montaggio. Una sola inquadratura — la veduta aerea sul
+    // traguardo, che è già l'apertura del carosello — percorsa lentamente per
+    // tutta la durata del pannello, senza stacchi che distrarrebbero dalla
+    // lettura della griglia.
+    //
+    // A differenza della scelta mescole si renderizza a TUTTO SCHERMO: lì
+    // l'anteprima sta dentro un riquadro del pannello, qui il circuito è lo
+    // sfondo e il pannello ci sta sopra.
+    let panoramicaAttiva = false;
+    let panoramicaDa = 0;
+    let panoramicaDurata = 1;
+
+    function avviaPanoramica(durataMs) {
+        panoramicaDa = performance.now();
+        panoramicaDurata = Math.max(1, durataMs || 1);
+        panoramicaAttiva = true;
+    }
+
+    function fermaPanoramica() { panoramicaAttiva = false; }
+
+    function scattoPanoramica() {
+        if (!anteprimaScatti.length) return null;
+        return anteprimaScatti.find(s => s.id === 'panoramica') || anteprimaScatti[0];
+    }
+
+    function aggiornaCameraPanoramica() {
+        const s = scattoPanoramica();
+        if (!s) {
+            // Nessuna inquadratura (tracciato degenere): orbita di scorta sul
+            // centro vero del circuito, come fa la scelta mescole.
+            tyreOrbitAngle += 0.0018;
+            const c = TrackPreviewShots.ingombro(trackPts);
+            const r = Math.max(150, c.diagonale * 0.3);
+            camera.position.set(c.cx + Math.cos(tyreOrbitAngle) * r, r * 0.7, c.cz + Math.sin(tyreOrbitAngle) * r);
+            camera.lookAt(c.cx, 0, c.cz);
+            return;
+        }
+        const t = Math.min(1, (performance.now() - panoramicaDa) / panoramicaDurata);
+        const e = t * t * (3 - 2 * t);   // parte e finisce piano
+        camera.position.set(misto(s.cam.x, s.camFine.x, e),
+                            misto(s.cam.y, s.camFine.y, e),
+                            misto(s.cam.z, s.camFine.z, e));
+        camera.lookAt(misto(s.target.x, s.targetFine.x, e),
+                      misto(s.target.y, s.targetFine.y, e),
+                      misto(s.target.z, s.targetFine.z, e));
+    }
+
     function updateTyreSelectCamera() {
         // Tracciato senza inquadrature (caso degenere): orbita di scorta, ma
         // sul centro VERO del circuito, non più su un punto fisso.
@@ -2421,6 +2470,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // strato davanti alla pista, e questo countdown è l'unico momento in
         // cui si è sicuri che la pista vada rivista.
         sipario(false);
+        nascondiRiepilogoGriglia();
+        // La camera torna all'auto: senza, la gara partirebbe con la veduta
+        // aerea ancora in corso.
+        fermaPanoramica();
         // true solo per il countdown che apre una qualifica; il countdown di
         // gara (data.phase==='race') la chiude anche come rete di sicurezza,
         // ridondante con f1QualiEnded qui sotto ma innocuo.
@@ -2810,29 +2863,81 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         // ── 3. RIEPILOGO CON LA GRIGLIA COMPLETA ───────────────────────
-        const modal = document.getElementById('podium-modal');
-        const title = document.getElementById('podium-title');
-        const list = document.getElementById('podium-list');
-        title.textContent = '🏁 GRIGLIA DI PARTENZA 🏁';
-        list.innerHTML = (grid || []).map((entry, i) => {
-            const t = entry.time;
-            const timeStr = t === null
-                ? 'Nessun tempo'
-                : `${Math.floor(t / 60000)}:${String(Math.floor((t % 60000) / 1000)).padStart(2, '0')}.${String(t % 1000).padStart(3, '0')}`;
-            return `
-                <li style="display:flex;justify-content:space-between;align-items:center;padding:10px 5px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:18px;">
-                    <div style="display:flex;align-items:center;gap:12px;">
-                        <span style="font-weight:900;width:26px;color:var(--hud-text);">${i + 1}°</span>
-                        <span style="display:inline-block;width:20px;height:20px;background:${entry.color};border-radius:50%;border:2px solid var(--hud-surface);"></span>
-                        <span style="font-size:13px;font-weight:bold;">${entry.color === myColor ? '(TU)' : ''}</span>
-                    </div>
-                    <span style="font-family:monospace;font-weight:bold;">${timeStr}</span>
-                </li>`;
-        }).join('');
-        document.getElementById('single-mode-controls').style.display = 'none';
-        document.getElementById('auto-return-text').style.display = 'none';
-        modal.style.display = 'flex';
+        // Qui il sipario cede il posto al circuito vero: la camera comincia
+        // una lenta panoramica dall'alto sulla zona del traguardo e il
+        // pannello ci si posa sopra.
+        const restaAlRiepilogo = Math.max(1500,
+            (seq.totaleMs || 0) - (seq.staccoMs || 0)
+            - (seq.posizioneMs || 0) - (isPole ? (seq.poleExtraMs || 0) : 0));
+        avviaPanoramica(restaAlRiepilogo);
+        mostraRiepilogoGriglia(grid || [], trackName, restaAlRiepilogo);
+        sipario(false, 520);
     });
+
+    // m:ss.mmm — il formato dei tempi sul giro in tutto il gioco.
+    function formattaTempoGiro(ms) {
+        const m = Math.floor(ms / 60000);
+        const s = Math.floor((ms % 60000) / 1000);
+        return `${m}:${String(s).padStart(2, '0')}.${String(Math.floor(ms % 1000)).padStart(3, '0')}`;
+    }
+
+    // Pannello del riepilogo: la griglia completa coi tempi della qualifica.
+    // Le righe entrano una dopo l'altra dall'ULTIMA verso la pole, così lo
+    // sguardo risale la classifica e finisce sulla riga d'oro invece di
+    // trovarsi davanti un elenco già fatto.
+    function mostraRiepilogoGriglia(griglia, nomePista, durataMs) {
+        const box = document.getElementById('grid-summary');
+        const lista = document.getElementById('gs-lista');
+        const circuito = document.getElementById('gs-circuito');
+        if (!box || !lista) return;
+
+        if (circuito) circuito.textContent = nomePista || '';
+        const pole = griglia.length ? griglia[0].time : null;
+        lista.innerHTML = griglia.map((riga, i) => {
+            const mio = riga.color === myColor;
+            const classi = ['gs-riga'];
+            if (i === 0) classi.push('e-pole');
+            if (mio) classi.push('sono-io');
+            // Dalla seconda posizione in giù si mostra il DISTACCO dalla pole
+            // invece del tempo assoluto: è il numero che dice qualcosa a
+            // colpo d'occhio, ed è come lo si legge in televisione.
+            let tempo;
+            if (riga.time === null) tempo = '—';
+            else if (i === 0 || pole === null) tempo = formattaTempoGiro(riga.time);
+            else tempo = '+' + ((riga.time - pole) / 1000).toFixed(3);
+            const etichetta = mio ? 'Tu' : (riga.isBot ? 'Bot' : 'Pilota');
+            return `<li class="${classi.join(' ')}">
+                <span class="gs-pos">${i + 1}</span>
+                <span class="gs-pallino" style="background:${riga.color}"></span>
+                <span class="gs-nome">${etichetta}</span>
+                <span class="gs-tempo">${tempo}</span>
+            </li>`;
+        }).join('');
+
+        box.style.display = 'block';
+        const righe = lista.querySelectorAll('.gs-riga');
+        if (typeof anime !== 'function') {
+            righe.forEach(r => { r.style.opacity = 1; });
+            return;
+        }
+        // Le righe hanno opacity 0 nel CSS: senza, il pannello lampeggerebbe
+        // completo per un frame prima che l'animazione lo prenda in mano.
+        anime({
+            targets: righe,
+            opacity: [0, 1],
+            translateX: [46, 0],
+            // `from: 'last'` fa entrare prima l'ultimo classificato: si risale
+            // la griglia, come nel conteggio della scoperta.
+            delay: anime.stagger(Math.min(90, (durataMs * 0.34) / Math.max(1, righe.length)), { from: 'last' }),
+            duration: 420,
+            easing: 'easeOutQuad',
+        });
+    }
+
+    function nascondiRiepilogoGriglia() {
+        const box = document.getElementById('grid-summary');
+        if (box) box.style.display = 'none';
+    }
 
     socket.on('f1RaceEnded', (data) => {
         fineGaraScadeA = null;
@@ -3258,6 +3363,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     function seguiConLeOmbre() {
         if (tyreSelectActive) {
             const s = anteprimaScatti[scattoCorrente];
+            if (s) puntaOmbre(s.target.x, s.target.z);
+            return;
+        }
+        if (panoramicaAttiva) {
+            const s = scattoPanoramica();
             if (s) puntaOmbre(s.target.x, s.target.z);
             return;
         }
@@ -3697,6 +3807,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (tyreSelectActive) updateTyreSelectCamera();
+        else if (panoramicaAttiva) aggiornaCameraPanoramica();
         else updateCamera();
         seguiConLeOmbre();
         toonSky.update(camera);

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260818a">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260818b">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -353,6 +353,31 @@
         </div>
     </div>
 
+    <!-- RIEPILOGO DELLA GRIGLIA DI PARTENZA
+         Ultimo momento della transizione qualifica→gara. Lo sfondo NON è un
+         pannello ma il circuito vero: la camera fa una lenta panoramica dal
+         alto sulla zona del traguardo (la stessa inquadratura d'apertura del
+         carosello della scelta mescole), e questo strato ci sta sopra.
+         Il pannello sta a sinistra e lascia libera la metà destra: è lì che
+         va il modello dell'auto in pole. -->
+    <div id="grid-summary" style="display:none; position:fixed; inset:0; z-index:59;
+         pointer-events:none;">
+        <div class="gs-vignetta"></div>
+        <div class="gs-corpo">
+            <div class="gs-pannello f1-panel">
+                <div class="gs-testata">
+                    <span class="eyebrow" id="gs-circuito">Circuito</span>
+                    <span class="gs-titolo">Griglia di partenza</span>
+                </div>
+                <ol class="gs-lista" id="gs-lista"></ol>
+            </div>
+            <!-- Colonna destra: vuota qui, la riempie il modello dell'auto in
+                 pole nel pezzo successivo. Esiste già perché è lei a decidere
+                 quanto spazio resta al pannello. -->
+            <div class="gs-vetrina" id="gs-vetrina"></div>
+        </div>
+    </div>
+
     <!-- Overlay "in attesa degli altri piloti" — dopo il proprio traguardo in
          qualifica, finché non arriva f1QualiEnded. Nessun numero/conteggio
          mostrato (solo un'animazione di caricamento continua): anche un
@@ -451,7 +476,7 @@
     <script src="shared/voxelizer.js?v=20260730a"></script>
     <script src="/shared/firebaseConfig.js" defer></script>
     <script src="shared/f1Segnalazioni.js?v=20260812a"></script>
-    <script src="f1.js?v=20260818h"></script>
+    <script src="f1.js?v=20260818i"></script>
 </body>
 
 </html>

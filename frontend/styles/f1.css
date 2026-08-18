@@ -1184,3 +1184,109 @@ canvas.tyre-preview-canvas {
 .hud-segnalazione.segnalazione-errore {
     color: #ff6b6b;
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   RIEPILOGO DELLA GRIGLIA DI PARTENZA (#grid-summary)
+   Ultimo momento della transizione qualifica→gara. Lo sfondo è il circuito
+   vero, ripreso dall'alto: qui c'è solo ciò che ci sta sopra.
+   Il pannello occupa la metà sinistra e lascia libera la destra, dov'è il
+   modello dell'auto in pole — per questo la griglia è a due colonne e non un
+   modale centrato.
+   ──────────────────────────────────────────────────────────────────────── */
+.gs-vignetta {
+    position: absolute; inset: 0;
+    /* Scurisce i bordi e soprattutto la fascia sinistra: il pannello ci sta
+       sopra e senza questo il testo cadrebbe su cielo chiaro o su asfalto a
+       seconda dell'istante della panoramica. */
+    background:
+        linear-gradient(90deg, rgba(6, 8, 11, 0.86) 0%, rgba(6, 8, 11, 0.55) 46%, rgba(6, 8, 11, 0.12) 70%, transparent 100%),
+        radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(6, 8, 11, 0.55) 100%);
+}
+.gs-corpo {
+    position: absolute; inset: 0;
+    display: grid;
+    grid-template-columns: minmax(320px, 46%) 1fr;
+    align-items: center;
+    gap: 2vw;
+    padding: 3vh 4vw;
+}
+.gs-pannello {
+    display: flex; flex-direction: column;
+    gap: 14px;
+    padding: 22px 26px;
+    max-height: 88vh;
+    overflow: hidden;
+}
+.gs-testata { display: flex; flex-direction: column; gap: 4px; }
+.gs-titolo {
+    font-family: 'Fredoka', sans-serif;
+    font-weight: 900;
+    font-size: clamp(24px, 3.2vw, 44px);
+    line-height: 1;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--hud-text);
+}
+.gs-lista {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+}
+.gs-riga {
+    display: grid;
+    grid-template-columns: 2.6em 22px 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    /* Ogni riga entra da destra sfalsata, vedi f1.js: qui solo lo stato di
+       partenza, perché senza il pannello lampeggerebbe completo per un frame
+       prima che l'animazione lo prenda in mano. */
+    opacity: 0;
+}
+.gs-riga:last-child { border-bottom: none; }
+.gs-pos {
+    font-family: 'Fredoka', sans-serif;
+    font-weight: 900;
+    font-size: clamp(16px, 1.7vw, 24px);
+    color: var(--f1-text-dim);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.gs-pallino {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid var(--hud-surface);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+.gs-nome {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: clamp(12px, 1.2vw, 16px);
+    font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--f1-text-dim);
+}
+.gs-tempo {
+    font-family: monospace;
+    font-size: clamp(12px, 1.25vw, 17px);
+    font-weight: 700;
+    color: var(--hud-text);
+    font-variant-numeric: tabular-nums;
+}
+/* La pole: oro, e l'unica riga con un fondo. Le altre si distinguono per
+   posizione, non per decorazione. */
+.gs-riga.e-pole { background: linear-gradient(90deg, rgba(241, 196, 15, 0.16), transparent 70%); }
+.gs-riga.e-pole .gs-pos,
+.gs-riga.e-pole .gs-nome,
+.gs-riga.e-pole .gs-tempo { color: #f1c40f; }
+/* La propria riga: bordo a sinistra, così la si trova senza leggere. */
+.gs-riga.sono-io { box-shadow: inset 3px 0 0 var(--f1-telemetry); }
+.gs-riga.sono-io .gs-nome { color: var(--hud-text); }
+/* Colonna destra: la tiene libera il modello dell'auto in pole. */
+.gs-vetrina { position: relative; height: 100%; }
+
+@media (max-width: 900px) {
+    /* Su schermi stretti il modello dell'auto non ci sta: il pannello si
+       prende tutto invece di schiacciarsi in una colonna illeggibile. */
+    .gs-corpo { grid-template-columns: 1fr; }
+    .gs-vetrina { display: none; }
+}
