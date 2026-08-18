@@ -1609,6 +1609,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     // A differenza della scelta mescole si renderizza a TUTTO SCHERMO: lì
     // l'anteprima sta dentro un riquadro del pannello, qui il circuito è lo
     // sfondo e il pannello ci sta sopra.
+    // ── Piano vicino delle camere lontane ───────────────────────────────
+    // In gara la camera sta a pochi metri dall'auto e serve un near piccolo.
+    // Le camere che guardano il circuito da lontano (carosello della scelta
+    // mescole, panoramica del riepilogo griglia) con quel near non reggono:
+    //
+    //   near 0.1 -> risoluzione in profondità 0.037 a 250 unità, 0.061 a 320
+    //   near 2   ->                           0.0019            0.0030
+    //
+    // L'asfalto sta 0.02 sopra l'impalcato e il cordolo 0.04 sopra la pista:
+    // col near di gioco il buffer di profondità non riesce a distinguerli e
+    // le superfici si contendono il pixel — è lo "sfarfallio" segnalato in
+    // playtest, prima sulla schermata mescole e poi di nuovo sul riepilogo.
+    // Nulla di visibile sta entro 2 unità dalle camere del carosello.
+    const PREVIEW_NEAR = 2;
+    const nearDiGioco = camera.near;
+
+    // Piano vicino della panoramica. Stesso problema del carosello della
+    // scelta mescole — lo sfarfallio delle superfici di pista — e stessa
+    // cura, ma con un margine più largo perché questa camera è messa peggio:
+    // sta a 155 unità di quota e vede il circuito FINO IN FONDO, mentre le
+    // inquadrature del carosello si fermano a 320 (DISTANZA_UTILE).
+    //
+    // Risoluzione del buffer di profondità (24 bit) alla distanza z:
+    //
+    //   near 0.1 -> 0.037 a 250 unità   0.60 a 1000
+    //   near 2   -> 0.0019              0.030
+    //   near 4   -> 0.00093             0.015
+    //
+    // Le superfici da distinguere sono l'asfalto 0.02 sopra l'impalcato del
+    // ponte e il cordolo 0.04 sopra la pista: col near di gioco il buffer non
+    // ci arriva nemmeno da vicino e le due si contendono il pixel. Con 4 il
+    // margine regge anche sui tratti lontani, e sopra questa camera non c'è
+    // nulla entro 4 unità — è a 155 metri d'aria.
+    const PANORAMICA_NEAR = 4;
+
     let panoramicaAttiva = false;
     let panoramicaDa = 0;
     let panoramicaDurata = 1;
@@ -1617,9 +1652,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         panoramicaDa = performance.now();
         panoramicaDurata = Math.max(1, durataMs || 1);
         panoramicaAttiva = true;
+        camera.near = PANORAMICA_NEAR;
+        camera.updateProjectionMatrix();
     }
 
-    function fermaPanoramica() { panoramicaAttiva = false; }
+    function fermaPanoramica() {
+        if (!panoramicaAttiva) return;
+        panoramicaAttiva = false;
+        // Il near di gioco va rimesso SEMPRE: in gara la camera sta a pochi
+        // metri dall'auto e con un near di 4 le si vedrebbe dentro il muso.
+        camera.near = nearDiGioco;
+        camera.updateProjectionMatrix();
+    }
 
     function scattoPanoramica() {
         if (!anteprimaScatti.length) return null;
@@ -1699,20 +1743,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Riparenta il canvas dentro la cornice della selezione mescola e lo
     // ridimensiona a quella: un vero modellino contenuto, non la scena a
     // schermo intero vista in trasparenza dietro l'overlay.
-    // Piano vicino usato SOLO durante l'anteprima. In gara la camera sta a
-    // pochi metri dall'auto e serve un near piccolo; nell'anteprima guarda da
-    // 250-320 unità, e lì un near di 0.1 non regge:
-    //
-    //   near 0.1 -> risoluzione in profondità 0.037 a 250 unità, 0.061 a 320
-    //   near 2   ->                           0.0019            0.0030
-    //
-    // L'asfalto sta 0.02 sopra l'impalcato e il cordolo 0.04 sopra la pista:
-    // col near di gioco il buffer di profondità non riesce a distinguerli e
-    // le superfici si contendono il pixel — è lo "sfarfallio" segnalato.
-    // Nulla di visibile sta entro 2 unità dalle camere del carosello.
-    const PREVIEW_NEAR = 2;
-    const nearDiGioco = camera.near;
-
     function enterTyrePreview() {
         const frame = document.getElementById('tyre-preview-frame');
         if (renderer.domElement.parentElement !== frame) frame.appendChild(renderer.domElement);
