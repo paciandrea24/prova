@@ -7,9 +7,44 @@ Questa non è una certificazione. È l'elenco di cosa ho guardato, cosa ho
 trovato, e cosa ho chiuso — in modo che fra sei mesi si sappia da dove
 ripartire invece di rifare tutto da capo.
 
-**Riassunto in una riga:** le tre paure erano fondate, ma solo una delle tre
-per il motivo che immaginavi. Le chiavi erano già a posto; il database e i
-file del server no.
+**Riassunto in una riga:** tutte e tre le paure erano fondate. Nove cose
+chiuse qui dentro, e **una che devi chiudere tu**, perché è fuori dal codice.
+
+---
+
+## ⚠️ DA FARE TU, PRIMA DI TUTTO IL RESTO
+
+**La password del database MongoDB è pubblica su GitHub da giugno.**
+
+Il 26 giugno il file `backend/.env` è stato committato (`782fe53`) e rimosso
+tre commit dopo (`1b13f6d`). Rimuovere un file da un commit successivo non lo
+toglie dalla storia: è ancora lì, e `github.com/paciandrea24/prova` è un
+repository **pubblico**. Chiunque può leggerlo con un comando.
+
+Dentro c'era `MONGODB_URI`, che in MongoDB Atlas è una stringa del tipo
+`mongodb+srv://utente:password@...`: utente e password sono dentro
+l'indirizzo. Chi ce l'ha può leggere, riscrivere e **svuotare** il database —
+la classifica globale e tutte le livree.
+
+Oggi il `.gitignore` è corretto e non ricapiterà, ma il danno passato resta.
+
+**Cosa fare, in quest'ordine:**
+
+1. Su MongoDB Atlas → *Database Access* → cambia la password di quell'utente
+   (o cancellalo e creane uno nuovo). Da quel momento la stringa pubblicata
+   non apre più niente, ed è la cosa che conta.
+2. Aggiorna `MONGODB_URI` in `backend/.env` in locale **e** fra le variabili
+   d'ambiente del servizio su Render.
+3. Su Atlas → *Network Access*: se c'è `0.0.0.0/0` (accesso da qualunque
+   indirizzo), restringilo agli IP di Render.
+4. *Facoltativo:* riscrivere la storia del repository per cancellare il file
+   anche dal passato. Con la password già cambiata la stringa vecchia non
+   serve più a nessuno, e riscrivere la storia di un repo pubblico è
+   fastidioso: farlo solo se ti dà fastidio l'idea che resti lì.
+
+Nessun'altra chiave è mai finita nella storia: nessun service account
+Firebase, nessuna chiave Gemini, nessun file `.pem`. Ho controllato tutta la
+storia, non solo lo stato attuale.
 
 ---
 
@@ -141,11 +176,11 @@ Ora l'indirizzo è `?lobby=K3QC48` e basta, e chi sei vive nella scheda.
 
 ## Cosa NON era un problema
 
-- **Le chiavi.** `.env` non è nel repo e non lo è mai stato (è in
-  `.gitignore`). La chiave Gemini resta sul server e non viene mai spedita al
-  browser. La `apiKey` di Firebase che si vede nel frontend **è pubblica per
-  progetto**: serve a identificare il progetto, non a autorizzare — non è un
-  segreto.
+- **Le chiavi *di oggi*.** `.env` è in `.gitignore` e non è nel repo (per il
+  passato vedi il riquadro in cima). La chiave Gemini resta sul server e non
+  viene mai spedita al browser. La `apiKey` di Firebase che si vede nel
+  frontend **è pubblica per progetto**: serve a identificare il progetto, non
+  a autorizzare — non è un segreto, e va bene che si veda.
 - **Il salvataggio della livrea.** Era già fatto bene: l'uid viene dal token
   Firebase verificato, mai dal corpo della richiesta. Nessuno può salvare la
   livrea di un altro.
@@ -193,5 +228,5 @@ Controlla che nelle variabili d'ambiente del servizio ci sia:
 | `GEMINI_API_KEY` | la tua chiave | Solo per la generazione dei temi livrea. |
 | `ORIGINI_CONSENTITE` | **non impostata** | Serve solo se un giorno il gioco verrà servito da un dominio diverso dalle API. |
 
-E ricontrolla che `.env` non sia mai finito in un commit:
-`git log --all --full-history -- backend/.env` deve essere vuoto.
+E, se non l'hai ancora fatto, cambia la password di MongoDB: vedi il
+riquadro in cima a questa pagina.
