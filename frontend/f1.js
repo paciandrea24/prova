@@ -1803,10 +1803,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // davanti-destra, dietro-sinistra, dietro-destra. Sono le stesse a cui
     // puntano le linee punteggiate disegnate nell'HTML.
     const QUADRANTI_POS = [
-        { cx: 30, cy: 44 }, { cx: 214, cy: 44 },
-        { cx: 30, cy: 162 }, { cx: 214, cy: 162 },
+        { cx: 26, cy: 44 }, { cx: 210, cy: 44 },
+        { cx: 26, cy: 200 }, { cx: 210, cy: 200 },
     ];
-    const QUADRANTE_R = 24;
+    const QUADRANTE_R = 22;
 
     function costruisciQuadranti() {
         const g = document.getElementById('hud-quadranti');

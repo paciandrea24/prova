@@ -691,8 +691,8 @@ canvas.tyre-preview-canvas {
    circolari intorno, ognuno legato al suo pezzo da una linea punteggiata. */
 .hud-tyre-open {
     bottom: 14px; left: 12px;
-    width: 252px;
-    padding: 10px 12px 12px;
+    width: 224px;
+    padding: 9px 11px 11px;
     pointer-events: auto;
 }
 .hud-tyre-open-head {
@@ -755,7 +755,7 @@ canvas.tyre-preview-canvas {
 .hud-vettura .v-num {
     fill: var(--hud-text);
     font-family: 'Fredoka', sans-serif;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 700;
     text-anchor: middle;
 }

@@ -179,40 +179,47 @@
             <span class="hud-key-hint">T</span>
         </div>
 
-        <svg class="hud-vettura" id="hud-vettura" viewBox="0 0 244 214">
-            <!-- ---- le linee punteggiate quadrante -> pezzo ---- -->
+        <svg class="hud-vettura" id="hud-vettura" viewBox="0 0 236 262">
+            <!-- ---- le linee punteggiate quadrante -> pezzo ----
+                 Disegnate per prime, quindi STANNO DIETRO: quella che punta
+                 alle sospensioni passa sotto la ruota anteriore destra e
+                 riemerge sul braccio, come su un'infografica stampata. -->
             <g class="v-filo">
-                <line x1="54"  y1="40"  x2="74"  y2="26"></line>
-                <line x1="190" y1="44"  x2="150" y2="57"></line>
-                <line x1="54"  y1="158" x2="92"  y2="132"></line>
-                <line x1="190" y1="158" x2="130" y2="150"></line>
+                <line x1="47"  y1="38"  x2="78"  y2="28"></line>
+                <line x1="189" y1="50"  x2="140" y2="58"></line>
+                <line x1="47"  y1="194" x2="90"  y2="170"></line>
+                <line x1="189" y1="194" x2="126" y2="188"></line>
             </g>
 
             <!-- ---- l'auto vista dall'alto ---- -->
-            <!-- ala anteriore: due piani e i due deviatori laterali -->
+            <!-- ala anteriore (a tutta larghezza) + muso: in F1 vera sono un
+                 pezzo solo, ai box si cambiano insieme -->
             <g class="p-frontWing">
-                <polygon points="72,14 118,20 118,31 72,27"></polygon>
-                <polygon points="172,14 126,20 126,31 172,27"></polygon>
-                <rect x="66" y="9" width="8" height="24" rx="2"></rect>
-                <rect x="170" y="9" width="8" height="24" rx="2"></rect>
-                <polygon points="119,24 125,24 130,86 114,86"></polygon>
+                <rect x="77" y="17" width="82" height="13" rx="2"></rect>
+                <rect x="75" y="12" width="7" height="23" rx="2"></rect>
+                <rect x="154" y="12" width="7" height="23" rx="2"></rect>
+                <polygon points="113,26 123,26 128,88 108,88"></polygon>
             </g>
-            <!-- sospensioni: i bracci che vanno dal telaio alle quattro ruote -->
+            <!-- sospensioni: i bracci dal telaio alle quattro ruote -->
             <g class="p-suspension">
-                <line x1="117" y1="43" x2="87" y2="40"></line>
-                <line x1="117" y1="56" x2="87" y2="59"></line>
-                <line x1="127" y1="43" x2="157" y2="40"></line>
-                <line x1="127" y1="56" x2="157" y2="59"></line>
-                <line x1="116" y1="160" x2="87" y2="157"></line>
-                <line x1="116" y1="176" x2="87" y2="179"></line>
-                <line x1="128" y1="160" x2="157" y2="157"></line>
-                <line x1="128" y1="176" x2="157" y2="179"></line>
+                <line x1="112" y1="55" x2="92"  y2="52"></line>
+                <line x1="112" y1="70" x2="92"  y2="73"></line>
+                <line x1="124" y1="55" x2="144" y2="52"></line>
+                <line x1="124" y1="70" x2="144" y2="73"></line>
+                <line x1="112" y1="205" x2="95" y2="202"></line>
+                <line x1="112" y1="218" x2="95" y2="221"></line>
+                <line x1="124" y1="205" x2="141" y2="202"></line>
+                <line x1="124" y1="218" x2="141" y2="221"></line>
             </g>
-            <!-- fondo e fiancate, piu' l'estrattore dietro -->
+            <!-- fondo: fiancate ed estrattore -->
             <g class="p-floor">
-                <polygon points="98,82 118,87 118,152 94,152 88,124 92,96"></polygon>
-                <polygon points="146,82 126,87 126,152 150,152 156,124 152,96"></polygon>
-                <rect x="104" y="178" width="36" height="9" rx="2"></rect>
+                <polygon points="102,84 118,86 118,196 106,196 96,176 90,152 90,104 96,90"></polygon>
+                <polygon points="134,84 118,86 118,196 130,196 140,176 146,152 146,104 140,90"></polygon>
+                <rect x="102" y="186" width="32" height="12" rx="2"></rect>
+            </g>
+            <!-- motore: cofano e airbox -->
+            <g class="p-engine">
+                <polygon points="110,90 126,90 129,150 124,206 112,206 107,150"></polygon>
             </g>
             <!-- Ala posteriore, abitacolo e halo: nel nostro modello di danno
                  non esistono, quindi restano di un colore NEUTRO. Colorarli col
@@ -220,31 +227,29 @@
                  sembrare rotto un pezzo che non lo e'. Qui ogni colore e' un
                  numero, e dove il numero non c'e' non c'e' nemmeno il colore. -->
             <g class="p-struttura">
-                <rect x="76" y="188" width="92" height="11" rx="2"></rect>
-                <rect x="72" y="182" width="8" height="23" rx="2"></rect>
-                <rect x="164" y="182" width="8" height="23" rx="2"></rect>
-            </g>
-            <!-- motore: cofano e airbox -->
-            <g class="p-engine">
-                <polygon points="113,88 131,88 134,122 129,170 115,170 110,122"></polygon>
+                <rect x="114" y="203" width="9" height="34" rx="2"></rect>
+                <rect x="96" y="232" width="44" height="12" rx="2"></rect>
+                <rect x="92" y="227" width="7" height="22" rx="2"></rect>
+                <rect x="137" y="227" width="7" height="22" rx="2"></rect>
             </g>
             <g class="p-struttura">
-                <circle cx="122" cy="97" r="6.5"></circle>
-                <circle class="v-halo" cx="122" cy="97" r="11"></circle>
+                <circle cx="118" cy="106" r="6"></circle>
+                <circle class="v-halo" cx="118" cy="106" r="10"></circle>
             </g>
-            <!-- le quattro gomme: stesso colore su tutte e quattro perche' da
-                 noi l'usura e' UN valore, non uno per ruota -->
+            <!-- Le quattro gomme: cerchione scuro e battistrada colorato
+                 dall'usura, che da noi e' UN valore per tutte e quattro. Le
+                 posteriori sono piu' larghe delle anteriori, come sul serio. -->
             <g class="v-cerchione">
-                <rect x="68" y="36" width="19" height="31" rx="4"></rect>
-                <rect x="157" y="36" width="19" height="31" rx="4"></rect>
-                <rect x="66" y="152" width="21" height="35" rx="4"></rect>
-                <rect x="157" y="152" width="21" height="35" rx="4"></rect>
+                <rect x="78" y="47" width="13" height="30" rx="3"></rect>
+                <rect x="145" y="47" width="13" height="30" rx="3"></rect>
+                <rect x="77" y="197" width="18" height="30" rx="3"></rect>
+                <rect x="141" y="197" width="18" height="30" rx="3"></rect>
             </g>
             <g class="p-gomme">
-                <rect x="71" y="39" width="13" height="25" rx="2.5"></rect>
-                <rect x="160" y="39" width="13" height="25" rx="2.5"></rect>
-                <rect x="69" y="155" width="15" height="29" rx="2.5"></rect>
-                <rect x="160" y="155" width="15" height="29" rx="2.5"></rect>
+                <rect x="80.5" y="50" width="8" height="24" rx="2"></rect>
+                <rect x="147.5" y="50" width="8" height="24" rx="2"></rect>
+                <rect x="80" y="200" width="12" height="24" rx="2"></rect>
+                <rect x="144" y="200" width="12" height="24" rx="2"></rect>
             </g>
 
             <!-- ---- i quattro quadranti (arco + percentuale + sigla) ----
