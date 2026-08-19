@@ -2948,9 +2948,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ====================================================
     // SOCKET EVENTS
     // ====================================================
+    // ── FORMATO STAGIONE ────────────────────────────────────────────────
+    // In stagione il weekend non parte finche' non si sceglie il campionato:
+    // il server tiene la partita in fase 'stagione' e qui si montano le sue
+    // schermate. Vivono in un modulo a parte (shared/f1StagioneSchermate.js) —
+    // questo file e' gia' abbastanza grande, e quelle schermate non hanno
+    // niente a che fare con la scena 3D.
+    let schermateStagione = null;
+
+    // Il token vive qui, che l'autenticazione ce l'ha gia' (vedi `user` in
+    // cima): le schermate ne ricevono solo il modo di chiederlo, cosi' non
+    // esiste un secondo posto che sa di Firebase. getIdToken() restituisce
+    // quello in cache e lo rinnova da solo quando scade.
+    function tokenFirebaseCorrente() {
+        if (!user) return Promise.reject(new Error('Serve un account per giocare una stagione'));
+        return user.getIdToken();
+    }
+
+    function montaSchermateStagione(formato, stagioneId) {
+        if (formato !== 'stagione' || schermateStagione) return;
+        // Segnaposto immediato: senza, due f1Setup ravvicinati (rientro,
+        // riconnessione) monterebbero le schermate due volte mentre la fetch
+        // delle piste e' ancora in volo.
+        schermateStagione = { chiudi() { } };
+        fetch('/api/f1/tracks')
+            .then(r => r.json())
+            .then((piste) => {
+                schermateStagione = F1StagioneSchermate.monta({
+                    socket, lobbyId,
+                    sonoHost: myColor === hostColor,
+                    tokenDi: tokenFirebaseCorrente,
+                    piste: piste || [],
+                    mioUid: user ? user.uid : null,
+                });
+                // Rientro a campionato gia' scelto: il server lo dice in
+                // f1Setup, e la schermata deve aprirsi su quello invece che
+                // sulla lista.
+                if (stagioneId) socket.emit('f1StagioneScelta', { lobbyId, stagioneId });
+            })
+            .catch((e) => console.error('[F1] elenco piste per la stagione:', e));
+    }
+
     socket.on('f1Setup', ({ players, trackName, hostColor: hc, totalLaps, phase, raceStarted, elapsed,
         compounds, strategy, myCompound, tyreConfirmed, tyreTotal,
-        tyreAttesi, tyreArrivati, tyreConfermati, tyreRestaMs }) => {
+        tyreAttesi, tyreArrivati, tyreConfermati, tyreRestaMs, formato, stagioneId }) => {
         if (compounds) tyreCompoundsInfo = compounds;
         if (phase) currentPhase = phase;
         // Rientro a metà qualifica (reconnect): senza questo qualiSessionOpen
@@ -2960,6 +3001,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         // ricollega a sessione già in corso.
         if (phase) qualiSessionOpen = (phase === 'qualifying');
         if (hc) hostColor = hc;
+        // Dopo hostColor: le schermate della stagione devono sapere se sono io
+        // a ospitare, ed e' l'unica cosa che decide cosa mi mostrano.
+        montaSchermateStagione(formato, stagioneId);
         if (totalLaps) {
             // totalLaps qui è SEMPRE quello della gara vera (il server lo manda
             // così a prescindere dalla fase corrente): setLapDisplay lo riduce

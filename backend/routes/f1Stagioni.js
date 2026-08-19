@@ -103,7 +103,26 @@ function creaRouter(opzioni) {
             if (!stagione) return res.status(404).json({ error: 'Stagione non trovata' });
             const ciCorro = (stagione.piloti || []).some(p => p.uid === req.uid);
             if (!ciCorro) return res.status(404).json({ error: 'Stagione non trovata' });
-            res.json({ stagione });
+
+            // Se la richiesta dice da quale lobby arriva, si risponde anche se
+            // quella stagione e' ripartibile QUI e ORA. La regola e' dettata
+            // dall'utente: si riprende solo con esattamente gli stessi
+            // giocatori, ne' uno in meno ne' uno in piu' (vedi
+            // F1Stagione.siPuoRiprendere, dove sta anche la conseguenza da
+            // conoscere: se un amico non torna piu', quel salvataggio resta
+            // bloccato).
+            //
+            // Si RISPONDE lo stesso, con l'esito accanto invece di negare: una
+            // stagione che non si puo' riprendere deve comunque comparire e
+            // dire perche', se no sembra sparita.
+            let ripresa = null;
+            const game = activeGames.get(req.query.lobbyId);
+            if (game && game.gameId === 'f1') {
+                const uidPresenti = Object.values(game.players)
+                    .filter(p => !p.isBot && p.uid).map(p => p.uid);
+                ripresa = F1Stagione.siPuoRiprendere(stagione, uidPresenti);
+            }
+            res.json({ stagione, ripresa });
         } catch (err) {
             console.error('GET /api/f1/stagioni/:id:', err);
             res.status(500).json({ error: 'Impossibile leggere la stagione' });

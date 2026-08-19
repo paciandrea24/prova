@@ -1730,3 +1730,138 @@ body.in-cerimonia .hud { display: none !important; }
     .ps-coda { align-items: center; }
     #pitstop-result { text-align: center; }
 }
+
+/* ====================================================================
+   SCHERMATE DELLA STAGIONE
+   Sorelle della schermata mescole: stesso fondo, stessa testata, stessa
+   barretta rossa davanti alle sezioni. Le variabili sono le SUE (vedi
+   #tyre-select-overlay piu' su) ricopiate qui perche' le custom property
+   ereditano dall'antenato, e questi due overlay sono fratelli, non
+   annidati: due palette separate divergerebbero alla prima modifica.
+   ==================================================================== */
+#stagione-overlay {
+    --sel-fondo-a: #123138;
+    --sel-fondo-b: #08191E;
+    --sel-lavagna: #163A44;
+    --sel-rilievo: #1E4B57;
+    --sel-filo: rgba(255, 255, 255, 0.10);
+    --sel-testo: #E9F3F5;
+    --sel-tenue: #8CAEB6;
+    --sel-cordolo: #E23127;
+
+    position: fixed;
+    inset: 0;
+    z-index: 40;                 /* lo stesso di #tyre-select-overlay: mai a schermo insieme */
+    align-items: center;
+    justify-content: center;
+    padding: clamp(10px, 2.5vh, 34px);
+    color: var(--sel-testo);
+    background: radial-gradient(120% 90% at 22% 15%, var(--sel-fondo-a), var(--sel-fondo-b) 72%);
+}
+
+.stagione-foglio {
+    width: 100%;
+    max-width: 1180px;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(10px, 1.6vh, 22px);
+}
+
+.stagione-testata { display: flex; flex-direction: column; gap: 4px; }
+.stagione-eyebrow {
+    font-size: 11px; font-weight: 800; letter-spacing: 3px;
+    text-transform: uppercase; color: var(--sel-tenue);
+}
+.stagione-titolo { margin: 0; font-size: clamp(22px, 3.4vh, 38px); font-weight: 800; }
+
+.stagione-colonne { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(14px, 2vw, 32px); }
+.stagione-col { display: flex; flex-direction: column; gap: clamp(6px, 1vh, 14px); min-width: 0; }
+
+/* La stessa intestazione di sezione delle mescole: e' quello che tiene
+   insieme le due colonne come una pagina sola invece di due pannelli. */
+.stagione-sezione {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 800; letter-spacing: 3px;
+    text-transform: uppercase; color: var(--sel-testo);
+}
+.stagione-sezione::before {
+    content: ''; width: 14px; height: 3px;
+    background: var(--sel-cordolo); border-radius: 2px;
+}
+
+/* --- elenco delle proprie stagioni --- */
+.stagione-elenco { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.stagione-voce {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 14px; border-radius: 10px; cursor: pointer;
+    background: var(--sel-lavagna); border: 1px solid var(--sel-filo);
+    transition: background 120ms ease, transform 120ms ease;
+}
+.stagione-voce:hover { background: var(--sel-rilievo); transform: translateX(2px); }
+.stagione-voce-nome { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stagione-voce-stato { font-size: 12px; color: var(--sel-tenue); white-space: nowrap; }
+.stagione-vuoto { margin: 0; font-size: 13px; color: var(--sel-tenue); }
+
+/* --- il modulo di creazione --- */
+.stagione-campo { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--sel-tenue); }
+.stagione-campo input {
+    padding: 9px 12px; border-radius: 8px; font-size: 15px; font-weight: 600;
+    font-family: inherit;
+    color: var(--sel-testo); background: var(--sel-lavagna);
+    border: 1px solid var(--sel-filo); outline: none;
+}
+.stagione-campo input:focus { border-color: var(--sel-cordolo); }
+.stagione-campo small { color: var(--sel-tenue); }
+
+.stagione-btn {
+    padding: 11px 18px; border-radius: 10px; cursor: pointer;
+    font-family: inherit;
+    font-size: 13px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--sel-testo); background: var(--sel-lavagna); border: 1px solid var(--sel-filo);
+}
+.stagione-btn:hover:not(:disabled) { background: var(--sel-rilievo); }
+.stagione-btn:disabled { opacity: 0.45; cursor: default; }
+.stagione-btn-primario { background: var(--sel-cordolo); border-color: transparent; }
+.stagione-btn-primario:hover:not(:disabled) { filter: brightness(1.12); background: var(--sel-cordolo); }
+
+.stagione-errore { margin: 0; font-size: 13px; color: #FF8A80; }
+.stagione-nota, .stagione-attesa { margin: 0; font-size: 13px; color: var(--sel-tenue); }
+.stagione-attesa { text-align: center; padding: 32px 0; }
+
+/* --- calendario --- */
+.stagione-calendario { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.stagione-tappa {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: 8px;
+    background: var(--sel-lavagna); border: 1px solid transparent;
+}
+.stagione-tappa-n {
+    min-width: 22px; text-align: center; font-size: 12px; font-weight: 800;
+    color: var(--sel-tenue);
+}
+.stagione-tappa-nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stagione-tappa.corsa { opacity: 0.45; }                          /* gia' andata */
+.stagione-tappa.prossima { border-color: var(--sel-cordolo); }    /* quella che si corre adesso */
+
+/* --- classifica --- */
+.stagione-classifica { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.stagione-riga {
+    display: grid; grid-template-columns: 28px 14px 1fr auto;
+    align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: 8px; background: var(--sel-lavagna);
+}
+.stagione-pos { font-size: 12px; font-weight: 800; color: var(--sel-tenue); text-align: center; }
+.stagione-pallino { width: 12px; height: 12px; border-radius: 50%; }
+.stagione-nome { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stagione-punti { font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* Una riga sola in fondo: a sinistra cosa c'e' da sapere, a destra cosa si
+   puo' fare. Su due righe separate (com'era) i due pezzi finivano a due
+   altezze diverse e sembravano scollegati. */
+.stagione-comandi { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.stagione-comandi .stagione-nota { margin-right: auto; }
+.stagione-prossima { font-size: 13px; color: var(--sel-tenue); }
+
+@media (max-width: 900px) {
+    .stagione-colonne { grid-template-columns: 1fr; }
+}

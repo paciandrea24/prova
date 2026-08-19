@@ -196,3 +196,40 @@ test('quante gare: sotto il minimo o sopra le piste disponibili e\' un rifiuto, 
     });
     assert.equal(troppe.stato, 400);
 });
+
+test("riprendere una stagione con i giocatori sbagliati si puo' vedere ma non fare", async (t) => {
+    t.after(pulisci);
+    const server = await avviaServer();
+    t.after(() => server.close());
+    preparaPartita([{ colore: '#e74c3c', uid: 'uid-andrea' }, { colore: '#3498db', uid: 'uid-amico' }]);
+    const creata = await chiedi(server, {
+        metodo: 'POST', percorso: '/api/f1/stagioni', uid: 'uid-andrea',
+        corpo: { lobbyId: LOBBY, nome: 'In due', quanteGare: 3, gridSize: 4 },
+    });
+    const id = creata.dati.stagione._id;
+
+    // L'amico se ne va: in pista resta solo Andrea.
+    preparaPartita([{ colore: '#e74c3c', uid: 'uid-andrea' }]);
+
+    const r = await chiedi(server, { percorso: `/api/f1/stagioni/${id}?lobbyId=${LOBBY}`, uid: 'uid-andrea' });
+    assert.equal(r.stato, 200, 'la stagione si deve poter APRIRE: si vede che esiste');
+    assert.equal(r.dati.ripresa.ok, false);
+    assert.deepEqual(r.dati.ripresa.mancanti, ['uid-amico'], 'e deve dire CHI manca');
+});
+
+test('con gli stessi giocatori la stagione e ripartibile', async (t) => {
+    t.after(pulisci);
+    const server = await avviaServer();
+    t.after(() => server.close());
+    preparaPartita([{ colore: '#e74c3c', uid: 'uid-andrea' }]);
+    const creata = await chiedi(server, {
+        metodo: 'POST', percorso: '/api/f1/stagioni', uid: 'uid-andrea',
+        corpo: { lobbyId: LOBBY, nome: 'Da solo', quanteGare: 3, gridSize: 4 },
+    });
+    const id = creata.dati.stagione._id;
+
+    const r = await chiedi(server, { percorso: `/api/f1/stagioni/${id}?lobbyId=${LOBBY}`, uid: 'uid-andrea' });
+    assert.equal(r.dati.ripresa.ok, true);
+    assert.deepEqual(r.dati.ripresa.mancanti, []);
+    assert.deepEqual(r.dati.ripresa.inPiu, []);
+});
