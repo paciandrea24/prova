@@ -3034,11 +3034,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                         if (myColor === hostColor) socket.emit('f1ReturnToLobby', lobbyId);
                         else window.location.href = `/lobby.html?lobby=${lobbyId}`;
                     },
+                    // Rientro a campionato gia' scelto (il server lo dice in
+                    // f1Setup): la schermata si apre DIRETTAMENTE su quello.
+                    // Prima passava dal server per dirglielo e apriva l'elenco
+                    // nel frattempo — un paio di secondi di "crea una nuova
+                    // stagione" in faccia a chi ne stava giocando una.
+                    stagioneIniziale: stagioneId || null,
                 });
-                // Rientro a campionato gia' scelto: il server lo dice in
-                // f1Setup, e la schermata deve aprirsi su quello invece che
-                // sulla lista.
-                if (stagioneId) socket.emit('f1StagioneScelta', { lobbyId, stagioneId });
             })
             .catch((e) => console.error('[F1] elenco piste per la stagione:', e));
     }

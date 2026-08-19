@@ -90,10 +90,12 @@
      * @param {Array<{id:string,name:string}>} opzioni.piste   da GET /api/f1/tracks
      * @param {string|null} opzioni.mioUid   per riconoscersi in classifica
      * @param {() => void} opzioni.versoLobby  come si esce dalla partita
+     * @param {string|null} opzioni.stagioneIniziale  la stagione gia' in corso,
+     *        se si rientra dopo una sua gara: si apre direttamente su quella
      * @returns {{chiudi: () => void}}
      */
     function monta(opzioni) {
-        const { socket, lobbyId, sonoHost, tokenDi, piste, mioUid, versoLobby } = opzioni;
+        const { socket, lobbyId, sonoHost, tokenDi, piste, mioUid, versoLobby, stagioneIniziale } = opzioni;
         const overlay = el('stagione-overlay');
         overlay.style.display = 'flex';
         // Le due condizioni per poter scegliere un campionato: ospitare la
@@ -405,11 +407,20 @@
             mostraStagione(stagioneId);
         });
 
-        // Quale schermata si apre. Le tre condizioni sono in ordine di
-        // precedenza: senza account non si fa niente comunque, poi conta se
-        // ospiti.
+        // Quale schermata si apre. Le condizioni sono in ordine di precedenza:
+        // senza account non si fa niente comunque; poi, se si rientra da una
+        // gara, si va DIRITTI su quella stagione; infine conta se ospiti.
         if (!mioUid) {
             mostraVista('account');
+        } else if (stagioneIniziale) {
+            // Rientro dopo una gara di campionato. Aprire l'elenco e passare
+            // al calendario solo dopo la lettura faceva lampeggiare per un
+            // paio di secondi la schermata "crea una nuova stagione", che e'
+            // la cosa piu' lontana da quello che si sta facendo — segnalato in
+            // playtest. Si aspetta in silenzio, con scritto cosa si aspetta.
+            testo(el('stagione-attesa-testo'), 'Un momento…');
+            mostraVista('attesa');
+            mostraStagione(stagioneIniziale);
         } else if (sonoHost) {
             mostraVista('scelta');
             caricaElenco();
