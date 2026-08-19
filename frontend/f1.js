@@ -1484,80 +1484,60 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // ====================================================
-    // EFFETTO SCIA — piccoli voxel che simulano il vento dietro l'auto
-    // (prima erano linee tratteggiate, sostituite su richiesta esplicita
-    // dell'utente con qualcosa in stile "boxy" coerente col resto degli
-    // asset). Visibile solo quando il server segnala il bonus di velocità
-    // in scia (f1StateUpdate → slipstream), SOLO sulla propria auto (come
-    // l'effetto precedente). Pool fisso di cubetti riciclati: ognuno nasce
-    // appena dietro al paraurti, deriva all'indietro con un po' di
-    // turbolenza laterale/verticale, si rimpicciolisce fino a sparire, poi
-    // rinasce — nessuna vera trasparenza per-istanza (non supportata dai
-    // materiali base di InstancedMesh in questa versione di Three.js), la
-    // dissolvenza è resa restringendo la scala. Un'unica InstancedMesh =
-    // una sola draw call per tutti i cubetti, economico. Coordinate nello
-    // stesso spazio locale non scalato del group esterno (vedi wheels
-    // sintetiche sopra, z negativo = retro auto).
+    // EFFETTI PARTICELLARI — la scia e i detriti
+    //
+    // Il moto sta in shared/f1Particelle.js (nessun Three.js dentro, si
+    // verifica senza browser); qui c'è solo il pezzo che non può stare
+    // altrove: costruire l'InstancedMesh e copiarci dentro le matrici.
+    //
+    // Un'unica InstancedMesh per effetto = una draw call per tutti i cubetti.
+    // Niente trasparenza per istanza (i materiali base di InstancedMesh non la
+    // supportano in questa versione di Three): la dissolvenza è resa
+    // restringendo la scala, ed è la ragione per cui `scalaDi` esiste.
+    //
+    // La SCIA è il vento in slipstream: vive in coordinate locali dell'auto,
+    // appesa al suo group, e la si vede solo quando il server segnala il bonus.
+    // I DETRITI sono erba e ghiaia sollevate da sotto la vettura: vivono in
+    // coordinate MONDO, appesi alla scena, perché la terra resta dov'era e
+    // l'auto se ne va. Stesso modulo, due configurazioni.
     // ====================================================
-    const SLIPSTREAM_VOXEL_COUNT = 22;
-    const SLIPSTREAM_VOXEL_SIZE = 0.16;
-    const SLIPSTREAM_SPAWN_Z = -3.9;          // appena dietro il paraurti posteriore
-    const SLIPSTREAM_SPAWN_SPREAD_X = 1.1;    // mezza larghezza di spawn
-    const SLIPSTREAM_SPAWN_SPREAD_Y = 0.5;
-    const SLIPSTREAM_SPAWN_CENTER_Y = 0.7;
-    const SLIPSTREAM_DRIFT_Z = 0.09;          // velocità all'indietro, per frame
-    const SLIPSTREAM_TURBULENCE = 0.012;      // scarto laterale/verticale casuale, per frame
-    const SLIPSTREAM_LIFE_FRAMES = 55;        // durata di un cubetto prima di rinascere
+    const _particelleDummy = new THREE.Object3D();
+    const particelleGeometria = new THREE.BoxGeometry(1, 1, 1);
 
-    const slipstreamVoxelMaterial = new THREE.MeshBasicMaterial({
-        color: 0xdfe3e6, transparent: true, opacity: 0.55
-    });
-    const slipstreamVoxelGeometry = new THREE.BoxGeometry(1, 1, 1);
-    const _slipstreamDummy = new THREE.Object3D();
-
-    function spawnSlipstreamVoxel(state, i) {
-        state.x[i] = (Math.random() - 0.5) * SLIPSTREAM_SPAWN_SPREAD_X * 2;
-        state.y[i] = SLIPSTREAM_SPAWN_CENTER_Y + (Math.random() - 0.5) * SLIPSTREAM_SPAWN_SPREAD_Y * 2;
-        state.z[i] = SLIPSTREAM_SPAWN_Z - Math.random() * 1.5;   // sfalsati lungo la scia, non tutti insieme
-        state.age[i] = Math.random() * SLIPSTREAM_LIFE_FRAMES;   // sfalsati anche nel tempo di vita
-        state.baseScale[i] = 0.6 + Math.random() * 0.7;
-    }
-
-    function buildSlipstreamEffect() {
-        const mesh = new THREE.InstancedMesh(slipstreamVoxelGeometry, slipstreamVoxelMaterial, SLIPSTREAM_VOXEL_COUNT);
+    function costruisciEffettoParticelle(config, colore, opacita) {
+        const materiale = new THREE.MeshBasicMaterial({
+            color: colore, transparent: true, opacity: opacita
+        });
+        const mesh = new THREE.InstancedMesh(particelleGeometria, materiale, config.numero);
         mesh.visible = false;
-        const state = { x: [], y: [], z: [], age: [], baseScale: [] };
-        for (let i = 0; i < SLIPSTREAM_VOXEL_COUNT; i++) spawnSlipstreamVoxel(state, i);
-        mesh.userData.slipstreamState = state;
-        // Effetto, non oggetto solido: con il contorno i cubetti della scia
-        // diventerebbero coriandoli neri. Perde anche la proiezione d'ombra,
-        // che comunque non aveva (MeshBasicMaterial, castShadow mai attivato).
+        mesh.userData.particelle = F1Particelle.riempi(F1Particelle.creaStato(config), config, null);
+        mesh.userData.configParticelle = config;
+        // Effetto, non oggetto solido: col contorno i cubetti diventerebbero
+        // coriandoli neri. Perde anche la proiezione d'ombra, che comunque non
+        // aveva (MeshBasicMaterial, castShadow mai attivato).
         ToonStyle.excludeFromOutline(mesh);
         return mesh;
     }
 
-    function updateSlipstreamVoxels(mesh) {
-        const state = mesh.userData.slipstreamState;
-        for (let i = 0; i < SLIPSTREAM_VOXEL_COUNT; i++) {
-            state.age[i]++;
-            if (state.age[i] >= SLIPSTREAM_LIFE_FRAMES) {
-                spawnSlipstreamVoxel(state, i);
-            } else {
-                state.z[i] -= SLIPSTREAM_DRIFT_Z;
-                state.x[i] += (Math.random() - 0.5) * SLIPSTREAM_TURBULENCE;
-                state.y[i] += (Math.random() - 0.5) * SLIPSTREAM_TURBULENCE;
-            }
-            const lifeT = state.age[i] / SLIPSTREAM_LIFE_FRAMES;   // 0 appena nato -> 1 a fine vita
-            // Cresce appena nato, si restringe verso la fine (dissolvenza via scala,
-            // vedi commento sopra sul perché niente vera trasparenza per-istanza).
-            const fade = lifeT < 0.15 ? (lifeT / 0.15) : (1 - (lifeT - 0.15) / 0.85);
-            const scale = SLIPSTREAM_VOXEL_SIZE * state.baseScale[i] * Math.max(0, fade);
-            _slipstreamDummy.position.set(state.x[i], state.y[i], state.z[i]);
-            _slipstreamDummy.scale.setScalar(scale);
-            _slipstreamDummy.updateMatrix();
-            mesh.setMatrixAt(i, _slipstreamDummy.matrix);
+    function aggiornaEffettoParticelle(mesh, dtMs, { ancora = null, emissione = 1 } = {}) {
+        const config = mesh.userData.configParticelle;
+        const stato = mesh.userData.particelle;
+        F1Particelle.avanza(stato, config, dtMs, { ancora, emissione });
+        let vive = 0;
+        for (let i = 0; i < config.numero; i++) {
+            const scala = F1Particelle.scalaDi(stato, i, config);
+            if (scala > 0) vive++;
+            _particelleDummy.position.set(stato.x[i], stato.y[i], stato.z[i]);
+            _particelleDummy.scale.setScalar(scala);
+            _particelleDummy.updateMatrix();
+            mesh.setMatrixAt(i, _particelleDummy.matrix);
         }
         mesh.instanceMatrix.needsUpdate = true;
+        return vive;
+    }
+
+    function buildSlipstreamEffect() {
+        return costruisciEffettoParticelle(F1Particelle.SCIA, 0xdfe3e6, 0.55);
     }
 
     // ====================================================
@@ -4387,9 +4367,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         maybeSendInputs();
 
-        // Effetto scia: aggiorna il pool di voxel (vedi updateSlipstreamVoxels)
-        // solo quando l'effetto è attivo — nessun lavoro quando non serve.
-        if (slipstreamActive && slipstreamGroup) updateSlipstreamVoxels(slipstreamGroup);
+        // Effetto scia: il pool si muove solo quando l'effetto è attivo —
+        // nessun lavoro quando non serve.
+        if (slipstreamActive && slipstreamGroup) aggiornaEffettoParticelle(slipstreamGroup, _dt);
 
         for (const [color, target] of Object.entries(serverState)) {
             const v = visualState[color];
