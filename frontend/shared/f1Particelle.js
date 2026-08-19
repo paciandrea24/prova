@@ -46,6 +46,9 @@
         velocita: { avanti: -5.4, lato: 0, quota: 0 },
         velocitaCasuale: { avanti: 0, lato: 0, quota: 0 },
         turbolenza: 0.72,           // unità/s di scarto casuale, in tutte le direzioni
+        // Quanto la vita di una particella può scostarsi da `vitaMs`. Tiene
+        // desincronizzato il pool per sempre, non solo al primo ciclo.
+        vitaVariazione: [0.75, 1.25],
         gravita: 0,
         scalaBase: [0.6, 1.3],
         // Frazione iniziale di vita in cui la particella cresce invece di
@@ -78,6 +81,7 @@
         // Ogni zolla parte per conto suo, o sarebbe un ventaglio ordinato.
         velocitaCasuale: { avanti: 3.0, lato: 3.4, quota: 2.6 },
         turbolenza: 0.35,
+        vitaVariazione: [0.7, 1.3],
         // Ricadono. È la sola cosa che dice "questa è materia e non vapore".
         gravita: -9.5,
         scalaBase: [0.5, 1.35],
@@ -97,8 +101,12 @@
             x: new Float32Array(n), y: new Float32Array(n), z: new Float32Array(n),
             vx: new Float32Array(n), vy: new Float32Array(n), vz: new Float32Array(n),
             eta: new Float32Array(n),          // ms vissuti
+            vita: new Float32Array(n),         // ms che questa particella vivrà
             scalaBase: new Float32Array(n),
             viva: new Uint8Array(n),
+            // Nascite maturate ma non ancora emesse. È ciò che rende l'emissione
+            // un RITMO invece di un "riempi tutti i posti liberi": vedi `avanza`.
+            credito: 0,
         };
         return stato;
     }
@@ -130,6 +138,10 @@
         stato.vy[i] = config.velocita.quota + (rand() - 0.5) * config.velocitaCasuale.quota;
 
         stato.eta[i] = 0;
+        // Ogni particella vive un po' più o un po' meno delle altre. Non è
+        // varietà decorativa: particelle nate insieme e con la stessa durata
+        // muoiono insieme, e da lì in poi l'effetto pulsa invece di scorrere.
+        stato.vita[i] = config.vitaMs * fra(rand, config.vitaVariazione || [1, 1]);
         stato.scalaBase[i] = fra(rand, config.scalaBase);
         stato.viva[i] = 1;
     }
@@ -140,7 +152,7 @@
     function riempi(stato, config, ancora, rand = Math.random) {
         for (let i = 0; i < config.numero; i++) {
             rinasci(stato, i, config, ancora, rand);
-            stato.eta[i] = rand() * config.vitaMs;
+            stato.eta[i] = rand() * stato.vita[i];
         }
         return stato;
     }
@@ -160,22 +172,14 @@
         const dt = Math.max(0, dtMs) / 1000;
         const turb = config.turbolenza * dt;
         const suolo = pavimento != null ? pavimento : config.pavimento;
-        // Quante particelle possono stare in circolo adesso. Sempre almeno una
-        // se l'effetto è acceso, o a emissioni molto basse non si vedrebbe nulla.
-        const attive = emissione > 0
-            ? Math.max(1, Math.round(config.numero * Math.min(1, emissione)))
-            : 0;
+
+        // Prima si fa invecchiare chi è in vita: chi finisce la sua corsa libera
+        // il posto, e l'emettitore qui sotto può riusarlo nello stesso frame.
         for (let i = 0; i < config.numero; i++) {
-            if (!stato.viva[i]) {
-                // Posto libero: rinasce solo se l'effetto è acceso e questa
-                // particella rientra nella quota attiva.
-                if (i < attive) rinasci(stato, i, config, ancora, rand);
-                continue;
-            }
+            if (!stato.viva[i]) continue;
             stato.eta[i] += dtMs;
-            if (stato.eta[i] >= config.vitaMs) {
-                if (i < attive) rinasci(stato, i, config, ancora, rand);
-                else stato.viva[i] = 0;
+            if (stato.eta[i] >= stato.vita[i]) {
+                stato.viva[i] = 0;
                 continue;
             }
             stato.vy[i] += config.gravita * dt;
@@ -190,6 +194,31 @@
                 stato.vx[i] = 0; stato.vy[i] = 0; stato.vz[i] = 0;
             }
         }
+
+        // L'EMETTITORE. `emissione` 0..1 regola il ritmo di nascita, non quanti
+        // posti liberi riempire in un colpo. La differenza non è teorica ed è
+        // costata un playtest: rimpiazzando tutti i posti liberi, un pool che
+        // parte vuoto nasce TUTTO nello stesso frame, e da lì in poi muore tutto
+        // insieme — l'effetto pulsa una volta al secondo invece di scorrere
+        // («ad alte velocità le particelle non vengono prodotte in modo continuo
+        // ma tipo ogni secondo»). Il ritmo pieno è "tutto il pool in una vita
+        // media", che in regime stazionario tiene in aria esattamente il numero
+        // di particelle della configurazione.
+        if (emissione > 0) {
+            const ritmo = (config.numero / (config.vitaMs / 1000)) * Math.min(1, emissione);
+            stato.credito += ritmo * dt;
+            for (let i = 0; i < config.numero && stato.credito >= 1; i++) {
+                if (stato.viva[i]) continue;
+                rinasci(stato, i, config, ancora, rand);
+                stato.credito -= 1;
+            }
+            // Il credito non si accumula all'infinito quando il pool è pieno:
+            // altrimenti al primo posto libero si scaricherebbe tutto insieme,
+            // che è di nuovo lo sbuffo da cui si sta scappando.
+            if (stato.credito > 1) stato.credito = 1;
+        } else {
+            stato.credito = 0;
+        }
         return stato;
     }
 
@@ -197,7 +226,7 @@
     // restringe verso la fine. Zero significa "non disegnarla".
     function scalaDi(stato, i, config) {
         if (!stato.viva[i]) return 0;
-        const t = stato.eta[i] / config.vitaMs;
+        const t = stato.eta[i] / stato.vita[i];
         const f = t < config.crescita
             ? (config.crescita > 0 ? t / config.crescita : 1)
             : 1 - (t - config.crescita) / (1 - config.crescita);

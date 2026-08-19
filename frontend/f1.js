@@ -1548,71 +1548,133 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ── Detriti di erba e ghiaia ────────────────────────────────────────────
     // Appesi alla SCENA, non all'auto: la terra sollevata resta dov'era e la
-    // vettura se ne va. Un solo materiale, di cui si cambia il colore quando si
-    // passa dal prato alla via di fuga — due mesh separate sarebbero due draw
-    // call per un effetto che non è mai di due colori nello stesso istante.
-    const detritiMesh = costruisciEffettoParticelle(
-        F1Particelle.DETRITI, ToonPalette.SURFACES.grass, 0.95, { partiPieno: false });
-    // Senza questo l'effetto non si vedrebbe MAI. Il frustum culling di Three
-    // prova la sfera di ingombro della GEOMETRIA trasformata dalla matrice
-    // dell'oggetto, e non sa niente delle istanze: questa mesh sta nella scena
-    // con origine (0,0,0) mentre le sue zolle vivono a centinaia di unità da lì,
-    // quindi verrebbe scartata ogni volta che l'origine della mappa è fuori
-    // inquadratura — cioè quasi sempre. Su 34 cubetti il culling non vale niente.
-    detritiMesh.frustumCulled = false;
-    scene.add(detritiMesh);
-    let detritiMateriale = null;      // 'erba' | 'ghiaia' — quale colore è montato ora
-    const _detritiAncora = { x: 0, y: 0, z: 0, avantiX: 0, avantiZ: 1 };
-    const _detritiAvanti = new THREE.Vector3();
+    // vettura se ne va.
+    //
+    // UNA MESH PER VETTURA, non una sola condivisa. Il colore è una proprietà
+    // del materiale, e in pista due auto possono benissimo essere una sul prato
+    // e una nella ghiaia nello stesso istante: con una mesh sola servirebbe il
+    // colore per istanza. Il conto è presto fatto — otto draw call in più su
+    // ~800, su un gioco che è limitato dai pixel e non dalle draw call
+    // (misurato col pannello F9) — e la mesh di chi è in pista resta invisibile,
+    // quindi il caso normale non costa niente.
+    //
+    // Nascono su richiesta: chi non è mai finito fuori pista non ha nemmeno la
+    // mesh. In una gara pulita non ne esiste una.
+    const detritiPerAuto = {};
+
+    function detritiDi(color) {
+        let d = detritiPerAuto[color];
+        if (!d) {
+            // Pool VUOTO alla nascita (non `partiPieno`): le particelle vivono
+            // in coordinate mondo, e un pool precaricato sarebbe una manciata di
+            // zolle ferme all'origine della mappa pronte a comparire al primo
+            // fuoripista.
+            const mesh = costruisciEffettoParticelle(
+                F1Particelle.DETRITI, ToonPalette.SURFACES.grass, 0.95, { partiPieno: false });
+            // Senza questo l'effetto non si vedrebbe MAI. Il frustum culling di
+            // Three prova la sfera di ingombro della GEOMETRIA trasformata dalla
+            // matrice dell'oggetto e non sa niente delle istanze: questa mesh ha
+            // origine (0,0,0) mentre le zolle vivono a centinaia di unità da lì,
+            // quindi verrebbe scartata ogni volta che l'origine della mappa è
+            // fuori inquadratura, cioè quasi sempre.
+            mesh.frustumCulled = false;
+            scene.add(mesh);
+            d = detritiPerAuto[color] = {
+                mesh,
+                materiale: null,                 // 'erba' | 'ghiaia': quale colore è montato
+                ancora: { x: 0, y: 0, z: 0, avantiX: 0, avantiZ: 1 },
+            };
+        }
+        return d;
+    }
+
+    function rimuoviDetritiDi(color) {
+        const d = detritiPerAuto[color];
+        if (!d) return;
+        scene.remove(d.mesh);
+        d.mesh.material.dispose();
+        delete detritiPerAuto[color];
+    }
 
     // Sotto questa frazione di velocità non schizza niente: fermarsi nella
     // ghiaia e restarci non solleva terra, e un effetto che continua a sbuffare
     // sull'auto ferma è la cosa che si nota per prima come sbagliata.
     const DETRITI_SOGLIA = 0.08;
-    const DETRITI_PIENO = 0.5;        // frazione di velocità a cui il pool è tutto in circolo
+    const DETRITI_PIENO = 0.5;        // frazione di velocità a cui il ritmo è pieno
+    const _detritiAvanti = new THREE.Vector3();
 
-    function aggiornaDetriti(dtMs, misura) {
-        const mio = serverState[myColor];
-        const inPista = !!myCarGroup && !tyreSelectActive && !panoramicaAttiva && !cerimoniaAttiva;
+    // Aggiorna i detriti di UNA vettura. `misura` può arrivare già calcolata
+    // (per la propria auto la calcola anche la camera, e farla due volte per
+    // frame sarebbe lavoro doppio per la stessa domanda).
+    function aggiornaDetritiDi(color, carGroup, dtMs, misuraGia) {
+        const esistenti = detritiPerAuto[color];
+        const stato = serverState[color];
+        const inScena = !!carGroup && !tyreSelectActive && !panoramicaAttiva && !cerimoniaAttiva;
         let emissione = 0;
+        let misura = null;
 
-        if (inPista && misura && misura.superficie === F1SensoVelocita.FUORI) {
-            const frazione = Math.min(1, Math.abs((mio && mio.speed) || 0) / F1SensoVelocita.VEL_RIFERIMENTO);
-            emissione = Math.max(0, Math.min(1, (frazione - DETRITI_SOGLIA) / (DETRITI_PIENO - DETRITI_SOGLIA)));
-
-            // Il colore lo decide la mappa, non un valore fisso: la ghiaia
-            // esiste solo dove il profilo delle vie di fuga la disegna, e
-            // altrove il fuoripista è prato.
-            const materiale = F1SensoVelocita.materialeFuori(
-                BARRIER_PROFILE.gravel, misura.idx, misura.lat, ROAD_HALF, CURB_W);
-            if (materiale !== detritiMateriale) {
-                detritiMesh.material.color.setHex(materiale === F1SensoVelocita.GHIAIA
-                    ? ToonPalette.SURFACES.gravel
-                    : ToonPalette.SURFACES.grass);
-                detritiMateriale = materiale;
+        if (inScena && stato) {
+            misura = misuraGia !== undefined ? misuraGia : F1SensoVelocita.misuraSottoAuto(TrackGeometry, {
+                trackPts, pitPts: PIT_PTS,
+                idxPrecedente: stato.trackIndex || 0,
+                x: carGroup.position.x, z: carGroup.position.z,
+                roadHalf: ROAD_HALF, curbW: CURB_W,
+            });
+            if (misura && misura.superficie === F1SensoVelocita.FUORI) {
+                const frazione = Math.min(1, Math.abs(stato.speed || 0) / F1SensoVelocita.VEL_RIFERIMENTO);
+                emissione = Math.max(0, Math.min(1, (frazione - DETRITI_SOGLIA) / (DETRITI_PIENO - DETRITI_SOGLIA)));
             }
-
-            _detritiAvanti.set(0, 0, 1).applyQuaternion(myCarGroup.quaternion);
-            _detritiAncora.x = myCarGroup.position.x;
-            _detritiAncora.y = myCarGroup.position.y;
-            _detritiAncora.z = myCarGroup.position.z;
-            _detritiAncora.avantiX = _detritiAvanti.x;
-            _detritiAncora.avantiZ = _detritiAvanti.z;
         }
 
-        // Anche a emissione zero si continua ad aggiornare finché resta
-        // qualcosa in aria: è ciò che fa ricadere le ultime zolle dopo il
-        // rientro in pista invece di spegnerle a mezz'aria. Quando il pool è
-        // vuoto la mesh sparisce e non costa più niente.
-        if (emissione === 0 && !detritiMesh.visible) return;
-        const vive = aggiornaEffettoParticelle(detritiMesh, dtMs, {
-            ancora: _detritiAncora,
+        // Chi non è mai uscito di pista non ha una mesh, e finché non serve non
+        // se ne crea una: in una gara pulita questo ramo esce sempre di qui.
+        if (emissione === 0 && !esistenti) return;
+
+        const d = detritiDi(color);
+        if (emissione > 0) {
+            // Il colore lo decide la MAPPA, non un valore fisso: la ghiaia
+            // esiste solo dove il profilo delle vie di fuga la disegna, e altrove
+            // il fuoripista è prato.
+            const materiale = F1SensoVelocita.materialeFuori(
+                BARRIER_PROFILE.gravel, misura.idx, misura.lat, ROAD_HALF, CURB_W);
+            if (materiale !== d.materiale) {
+                d.mesh.material.color.setHex(materiale === F1SensoVelocita.GHIAIA
+                    ? ToonPalette.SURFACES.gravel
+                    : ToonPalette.SURFACES.grass);
+                d.materiale = materiale;
+            }
+
+            _detritiAvanti.set(0, 0, 1).applyQuaternion(carGroup.quaternion);
+            d.ancora.x = carGroup.position.x;
+            d.ancora.y = carGroup.position.y;
+            d.ancora.z = carGroup.position.z;
+            d.ancora.avantiX = _detritiAvanti.x;
+            d.ancora.avantiZ = _detritiAvanti.z;
+        } else if (!d.mesh.visible) {
+            // Niente da emettere e niente in aria: non c'è lavoro da fare.
+            return;
+        }
+
+        // Anche a emissione zero si continua finché resta qualcosa in volo: è ciò
+        // che fa ricadere le ultime zolle dopo il rientro in pista, invece di
+        // spegnerle a mezz'aria.
+        const vive = aggiornaEffettoParticelle(d.mesh, dtMs, {
+            ancora: d.ancora,
             emissione,
-            // Il suolo sta alla quota dell'auto: le piste hanno dislivelli, e
-            // uno zero fisso farebbe posare le zolle sotto o sopra il prato.
-            pavimento: myCarGroup ? myCarGroup.position.y : 0,
+            // Il suolo sta alla quota dell'auto: le piste hanno dislivelli, e uno
+            // zero fisso farebbe posare le zolle sotto o sopra il prato.
+            pavimento: carGroup ? carGroup.position.y : 0,
         });
-        detritiMesh.visible = vive > 0;
+        d.mesh.visible = vive > 0;
+    }
+
+    // Tutte le vetture in scena, non solo la propria: chi guarda una gara vede
+    // gli errori degli altri, ed è metà del senso di avere l'effetto.
+    function aggiornaDetriti(dtMs, misuraMia) {
+        aggiornaDetritiDi(myColor, myCarGroup, dtMs, misuraMia);
+        for (const color of Object.keys(otherCars)) {
+            aggiornaDetritiDi(color, otherCars[color], dtMs);
+        }
     }
 
     // ====================================================
@@ -2822,6 +2884,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     socket.on('f1PlayerLeft', (color) => {
         if (otherCars[color]) { scene.remove(otherCars[color]); delete otherCars[color]; }
+        // Anche le sue zolle: senza, resterebbero appese alla scena per sempre
+        // (la mesh sta nella scena, non dentro l'auto).
+        rimuoviDetritiDi(color);
         if (hitboxMeshes[color]) { scene.remove(hitboxMeshes[color]); delete hitboxMeshes[color]; }
         if (minimapDots[color]) { minimapDots[color].remove(); delete minimapDots[color]; }
         delete serverState[color]; delete visualState[color];
