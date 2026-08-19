@@ -610,7 +610,7 @@ module.exports = function (io, socket) {
     socket.on('f1ChiudiGara', ({ lobbyId }) => {
         const game = activeGames.get(lobbyId);
         if (!game || game.raceEnded || !game.raceGraceEndTick) return;
-        endRace(io, lobbyId, game);
+        chiudiGaraEDimentica(io, lobbyId, game);
     });
 
     // Scelta mescola (fase tyre_select). Se tutti hanno confermato si passa
@@ -2077,7 +2077,7 @@ function tickGame(io, lobbyId, game) {
             if (game.raceGraceEndTick) {
                 const tuttiArrivati = players.every(p => p.finished);
                 if (tuttiArrivati || game.raceTick >= game.raceGraceEndTick) {
-                    endRace(io, lobbyId, game);
+                    chiudiGaraEDimentica(io, lobbyId, game);
                     return;
                 }
             }
@@ -2418,7 +2418,7 @@ function finalizeSessionFinish(p, crossingElapsedMs, game, io, lobbyId) {
         }, 60000);
     } else if (game.phase === 'race' && !game.endTimeout) {
         game.endTimeout = setTimeout(() => {
-            if (!game.raceEnded) endRace(io, lobbyId, game);
+            if (!game.raceEnded) chiudiGaraEDimentica(io, lobbyId, game);
         }, 60000);
     }
 }
@@ -2532,7 +2532,18 @@ function checkLap(p, totalLaps, io, lobbyId, game) {
     p.inFinishZone = inFinishZone;
 }
 
-function endRace(io, lobbyId, game) {
+// Chiude la gara senza aspettarla. endRace e' async da quando registra il
+// risultato di campionato, e i suoi chiamanti (un tick, un timer, un evento
+// socket) non hanno nessuno a cui restituire una promise: senza questo
+// involucro un errore diventerebbe una rejection non gestita, che in Node 20
+// abbatte il processo — il server intero, per una gara andata storta.
+function chiudiGaraEDimentica(io, lobbyId, game) {
+    endRace(io, lobbyId, game).catch((err) => {
+        console.error(`[F1] errore chiudendo la gara (lobby ${lobbyId}):`, err);
+    });
+}
+
+async function endRace(io, lobbyId, game) {
     game.raceEnded = true;
     if (game.endTimeout) { clearTimeout(game.endTimeout); game.endTimeout = null; }
 
@@ -2630,6 +2641,38 @@ function endRace(io, lobbyId, game) {
         },
         trackName: game.track.name
     });
+
+    // GARA DI CAMPIONATO: il risultato entra nella stagione. E' l'unico punto in
+    // cui una stagione viene scritta, ed e' subito dopo la bandiera a scacchi —
+    // mai a meta' weekend. E' cosi' che "chi chiude il browser perde il
+    // weekend, non la stagione" e' vero senza doverlo programmare: non esiste
+    // nessun altro momento in cui si sarebbe potuto salvare.
+    if (game.stagioneId) {
+        // La pagina che ripartira' deve tornare al CALENDARIO, non
+        // ricominciare il weekend appena corso: si toglie il flag e si timbra
+        // la sessione, le stesse due mosse di "Corri" al contrario. Fatto PRIMA
+        // del salvataggio, perche' vale anche se il salvataggio fallisce —
+        // restare dentro un weekend gia' corso sarebbe il guaio peggiore.
+        const lobbyDiQuestaGara = lobbies.get(lobbyId);
+        if (lobbyDiQuestaGara && lobbyDiQuestaGara.gameSettings) {
+            lobbyDiQuestaGara.gameSettings.stagioneInCorso = false;
+            lobbyDiQuestaGara.sessioneF1 = (lobbyDiQuestaGara.sessioneF1 || 0) + 1;
+        }
+        try {
+            const stagione = await seasonStore.leggi(game.stagioneId);
+            if (stagione && !F1Stagione.finita(stagione)) {
+                const dopo = await Stagione.registraGara(stagione, podium);
+                console.log(`🏆 [F1] Campionato "${dopo.nome}": registrata la gara ${dopo.giro}/${dopo.calendario.length} (lobby ${lobbyId})`);
+            }
+            io.to(lobbyId).emit('f1StagioneAlCalendario', { stagioneId: game.stagioneId });
+        } catch (err) {
+            // Il podio non resta piantato: si torna al calendario lo stesso e
+            // quella gara si potra' rigiocare, che e' meglio di una schermata
+            // da cui non si esce.
+            console.error(`[F1] risultato di campionato non salvato (lobby ${lobbyId}):`, err);
+            io.to(lobbyId).emit('f1StagioneAlCalendario', { stagioneId: game.stagioneId, errore: true });
+        }
+    }
 
     // Il podio riporta in lobby da solo, e il client non dice niente al server:
     // la sessione la chiude il server allo scadere di quella finestra, senza

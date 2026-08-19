@@ -217,3 +217,106 @@ test('solo chi ospita puo lanciare la gara', async (t) => {
     await b.handlers.f1StagioneCorri({ lobbyId: LOBBY });
     assert.equal(io.inviati.filter(m => m.evento === 'f1StagioneInPista').length, 0);
 });
+
+test('finita una gara di campionato il risultato viene registrato e si torna al calendario', async (t) => {
+    t.after(pulisci);
+    const seasonStore = require('../../store/seasonStore.js');
+    t.after(() => seasonStore._svuota());
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const io = ioFinto();
+    const F1Stagione = require('../../../frontend/shared/f1Stagione.js');
+
+    const stagione = await seasonStore.salva(F1Stagione.creaStagione({
+        nome: 'Con risultato', creataDa: 'uid-andrea',
+        piloti: [{ uid: 'uid-andrea', colore: 'red', bot: false }],
+        calendario: ['prova', 'new-monza', 'monte-rosso'],
+        impostazioni: { botsEnabled: false, gridSize: 1 },
+    }));
+
+    lobbies.set(LOBBY, {
+        host: 'red', players: ['red'], lockedPlayers: ['red'],
+        gameSettings: {
+            trackId: 'prova', botsEnabled: 'false', gridSize: '1',
+            formato: 'stagione', stagioneId: stagione._id, stagioneInCorso: true,
+        },
+    });
+    const a = collega(io);
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', uid: 'uid-andrea', token: creaGettone(LOBBY, 'red') });
+
+    const g = activeGames.get(LOBBY);
+    g.phase = 'race';
+    g.grid = ['red'];
+    for (const p of Object.values(g.players)) { p.finished = true; p.time = 60000; p.lap = g.track.totalLaps; }
+
+    io.inviati.length = 0;
+    await registraHandlerF1.endRace(io, LOBBY, g);
+
+    const riletta = await seasonStore.leggi(stagione._id);
+    assert.equal(riletta.giro, 1, 'il calendario deve essere avanzato');
+    assert.equal(riletta.risultati.length, 1);
+    assert.deepEqual(riletta.risultati[0].ordine, ['p1']);
+    assert.equal(riletta.risultati[0].pista, 'prova');
+
+    assert.ok(io.inviati.some(m => m.evento === 'f1StagioneAlCalendario'),
+        'e i client devono sapere che si torna al calendario');
+    // Senza questo la pagina che riparte ricomincerebbe il weekend appena
+    // corso invece di tornare al calendario.
+    assert.equal(lobbies.get(LOBBY).gameSettings.stagioneInCorso, false);
+});
+
+test('una gara VELOCE non tocca nessuna stagione', async (t) => {
+    t.after(pulisci);
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const io = ioFinto();
+    const a = entra(io, 'veloce');
+    const g = activeGames.get(LOBBY);
+    g.phase = 'race';
+    g.grid = ['red'];
+    for (const p of Object.values(g.players)) { p.finished = true; p.time = 60000; p.lap = g.track.totalLaps; }
+
+    io.inviati.length = 0;
+    await registraHandlerF1.endRace(io, LOBBY, g);
+    assert.equal(io.inviati.filter(m => m.evento === 'f1StagioneAlCalendario').length, 0);
+});
+
+test('un weekend abbandonato a meta non conta: la stagione resta ferma', async (t) => {
+    // La regola dettata dall'utente: chi chiude il browser a meta' weekend
+    // perde il weekend, non la stagione. Si ottiene NON salvando mai a meta' —
+    // e questo test protegge proprio l'assenza di un salvataggio.
+    t.after(pulisci);
+    const seasonStore = require('../../store/seasonStore.js');
+    t.after(() => seasonStore._svuota());
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const io = ioFinto();
+    const F1Stagione = require('../../../frontend/shared/f1Stagione.js');
+
+    const stagione = await seasonStore.salva(F1Stagione.creaStagione({
+        nome: 'Abbandonata', creataDa: 'uid-andrea',
+        piloti: [{ uid: 'uid-andrea', colore: 'red', bot: false }],
+        calendario: ['prova', 'new-monza', 'monte-rosso'],
+        impostazioni: { botsEnabled: false, gridSize: 1 },
+    }));
+
+    lobbies.set(LOBBY, {
+        host: 'red', players: ['red'], lockedPlayers: ['red'],
+        gameSettings: {
+            trackId: 'prova', botsEnabled: 'false', gridSize: '1',
+            formato: 'stagione', stagioneId: stagione._id, stagioneInCorso: true,
+        },
+    });
+    const a = collega(io);
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', uid: 'uid-andrea', token: creaGettone(LOBBY, 'red') });
+
+    // Si corre a meta' e si abbandona: il socket muore, la grazia scade, la
+    // partita viene smontata. Nessuna bandiera a scacchi.
+    const g = activeGames.get(LOBBY);
+    g.phase = 'race';
+    g.raceStarted = true;
+    g.players.red.lap = 2;
+    a.handlers.disconnect();
+    t.mock.timers.tick(120000);
+
+    const riletta = await seasonStore.leggi(stagione._id);
+    assert.equal(riletta.giro, 0, 'il calendario non si muove');
+    assert.deepEqual(riletta.risultati, [], 'e non resta nessun risultato a meta');
+});
