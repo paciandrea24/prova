@@ -299,6 +299,38 @@ test('bordi: fuori dalla guida si spengono nello stesso frame', () => {
     assert.equal(stato.bordi, 0);
 });
 
+// ── La manopola del playtest ────────────────────────────────────────────────
+
+test('intensita: a zero il gioco torna esattamente com era prima', () => {
+    // Vale come interruttore di sicurezza: se l'effetto disturbasse qualcuno,
+    // a zero non deve restare NIENTE — ne mezzo grado di campo visivo.
+    try {
+        SV.impostaIntensita(0);
+        const stato = SV.creaStato();
+        for (let t = 0; t < 2000; t += 16) {
+            SV.avanza(stato, { velocita: SV.VEL_RIFERIMENTO, superficie: SV.CORDOLO }, 16);
+        }
+        assert.equal(stato.fov, SV.FOV_BASE);
+        assert.equal(stato.bordi, 0);
+        assert.equal(Math.abs(SV.scossone(stato).dy), 0);
+        assert.equal(Math.abs(SV.molla(1).dz), 0);
+    } finally {
+        SV.impostaIntensita(1);
+    }
+});
+
+test('intensita: si accetta solo un numero fra 0 e 2', () => {
+    try {
+        assert.equal(SV.impostaIntensita(1.5), 1.5);
+        assert.equal(SV.impostaIntensita(9), 2);
+        assert.equal(SV.impostaIntensita(-3), 0);
+        assert.equal(SV.impostaIntensita('niente'), 1, 'un valore non numerico torna al default');
+    } finally {
+        SV.impostaIntensita(1);
+    }
+    assert.equal(SV.getIntensita(), 1);
+});
+
 // ── Che cosa c'e sotto l'auto, sui tracciati VERI ───────────────────────────
 
 test('superficie: asfalto, cordolo e fuori su ogni campione di prova e monte-rosso', () => {

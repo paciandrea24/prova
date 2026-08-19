@@ -152,6 +152,28 @@
     const CORDOLO = 'cordolo';
     const FUORI = 'fuori';
 
+    // ── La manopola ─────────────────────────────────────────────────────────
+    //
+    // Un moltiplicatore unico su TUTTI e quattro gli effetti. Non è una
+    // preferenza di gioco: è lo strumento del playtest. Quattro effetti nuovi
+    // insieme si giudicano male a parola ("un po' meno") e bene a numero — con
+    // una manopola, un playtest solo dice dov'è il punto giusto invece di
+    // dimezzare la distanza tre volte di fila. In gioco la gira il tasto V.
+    //
+    // Non passa dall'indirizzo apposta: le impostazioni sono state tolte
+    // dall'URL su richiesta esplicita dell'utente, e questa non fa eccezione.
+    let intensita = 1;
+
+    function impostaIntensita(k) {
+        const v = Number(k);
+        intensita = Number.isFinite(v) ? Math.max(0, Math.min(2, v)) : 1;
+        return intensita;
+    }
+
+    function getIntensita() {
+        return intensita;
+    }
+
     function clamp01(v) {
         return v < 0 ? 0 : (v > 1 ? 1 : v);
     }
@@ -264,7 +286,7 @@
     // in coordinate locali dell'auto (fianchi / verticale), `rollRad` è la
     // rotazione attorno all'asse di vista.
     function scossone(stato, { halo = false } = {}) {
-        const mult = halo ? SCOSSONE_HALO_MULT : 1;
+        const mult = (halo ? SCOSSONE_HALO_MULT : 1) * intensita;
         const s1 = Math.sin(stato.fase1);
         const s2 = Math.sin(stato.fase2 * 1.61 + 1.3);
         const c1 = Math.cos(stato.fase1 * 0.87);
@@ -286,7 +308,7 @@
     // Lì lo stesso segno significa che in accelerazione l'auto si avvicina alla
     // camera — che è esattamente ciò che accade nel mondo.
     function molla(spinta) {
-        const s = clamp01(Math.abs(spinta)) * Math.sign(spinta || 0);
+        const s = clamp01(Math.abs(spinta)) * Math.sign(spinta || 0) * intensita;
         return {
             dz: -MOLLA_ARRETRAMENTO * s,
             dy: -MOLLA_ABBASSAMENTO * s,
@@ -315,7 +337,7 @@
 
     // Campo visivo desiderato a una data velocità, senza smorzamento.
     function fovObiettivo(velocita) {
-        return FOV_BASE + (FOV_MASSIMO - FOV_BASE) * frazioneVelocita(velocita);
+        return FOV_BASE + (FOV_MASSIMO - FOV_BASE) * frazioneVelocita(velocita) * intensita;
     }
 
     // Fa avanzare lo stato di un frame.
@@ -373,7 +395,7 @@
         stato.fase1 = (stato.fase1 + 2 * Math.PI * hz1 * dtS) % (2 * Math.PI * 1000);
         stato.fase2 = (stato.fase2 + 2 * Math.PI * hz2 * dtS) % (2 * Math.PI * 1000);
 
-        const bordiObiettivo = intensitaBordi(c.velocita);
+        const bordiObiettivo = intensitaBordi(c.velocita) * intensita;
         stato.bordi = passoVersoObiettivo(stato.bordi, bordiObiettivo,
             bordiObiettivo > stato.bordi ? TAU_BORDI_SU_MS : TAU_BORDI_GIU_MS, dtMs);
 
@@ -390,6 +412,7 @@
     return {
         creaStato, avanza, molla, spintaObiettivo,
         scossone, superficieDaScostamento, superficieSottoAuto, SEMI_LARGHEZZA_AUTO,
+        impostaIntensita, getIntensita,
         intensitaBordi, SOGLIA_BORDI, TAU_BORDI_SU_MS, TAU_BORDI_GIU_MS,
         frazioneVelocita, fovObiettivo, passoVersoObiettivo, morbida, clamp01,
         VEL_RIFERIMENTO, FOV_BASE, FOV_MASSIMO, SOGLIA_APERTURA,

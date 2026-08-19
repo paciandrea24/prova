@@ -3914,6 +3914,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             pannello.ombreDinamiche(accese);
             mostraAvviso(accese ? 'Ombre accese' : 'Ombre spente');
         }
+        // V gira la manopola del senso di velocità: quattro effetti nuovi
+        // insieme si giudicano male a parola ("un po' meno") e bene a numero.
+        // Zero è anche l'interruttore di sicurezza — la camera torna esattamente
+        // com'era prima che tutto questo esistesse.
+        if (k === 'v' && !e.repeat && !isTypingInField(e)) {
+            const scala = [0, 0.5, 1, 1.5];
+            const ora = F1SensoVelocita.getIntensita();
+            const prossimo = scala[(scala.findIndex(s => Math.abs(s - ora) < 0.01) + 1) % scala.length];
+            F1SensoVelocita.impostaIntensita(prossimo);
+            mostraAvviso(prossimo === 0 ? 'Senso di velocità: spento' : `Senso di velocità: ${prossimo}×`);
+        }
         // M segnala il punto in cui sei, Shift+M annulla l'ultima. `e.repeat`
         // esclude l'autorepeat: tenendo premuto si riempirebbe il file di
         // copie dello stesso punto.
