@@ -560,7 +560,14 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
     const botsNeeded = inGriglia - humanColors.length;
     if (botsNeeded <= 0) return;
 
-    const colors = pickBotColors(humanColors, botsNeeded, rng);
+    // In CAMPIONATO i bot non si sorteggiano: sono quelli fissati alla
+    // creazione della stagione, con lo stesso colore e lo stesso nome per tutte
+    // le gare. E' l'unico punto in cui la stagione parla a chi crea la griglia
+    // (Rif. docs/superpowers/specs/2026-08-19-f1-stagioni-design.md). Senza,
+    // la classifica sommerebbe i punti di piloti diversi: "Bot 3" della seconda
+    // gara non sarebbe quello della prima.
+    const daStagione = Array.isArray(game.botStagione) ? game.botStagione.slice(0, botsNeeded) : null;
+    const colors = daStagione ? daStagione.map(b => b.colore) : pickBotColors(humanColors, botsNeeded, rng);
     const compoundKeys = Object.keys(TYRE_COMPOUNDS);
 
     for (const color of colors) {
@@ -597,6 +604,11 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
             pendingCollisionPenaltyEvents: [],
             // --- campi solo-bot ---
             isBot:                  true,
+            // Il nome vale SOLO in campionato, dove serve a distinguere i bot
+            // in classifica fra una gara e l'altra. Fuori resta null e il
+            // gioco continua a identificare i piloti dal colore, come ha
+            // sempre fatto (mai nickname, solo colore).
+            nomeStagione:           daStagione ? (daStagione.find(b => b.colore === color) || {}).nome || null : null,
             botSpeedFactor:         randRange(BOT_SPEED_FACTOR_MIN, BOT_SPEED_FACTOR_MAX, rng),
             botPrecisionNoise:      randRange(BOT_PRECISION_NOISE_MIN, BOT_PRECISION_NOISE_MAX, rng),
             botPitThreshold:        randRange(BOT_PIT_THRESHOLD_MIN, BOT_PIT_THRESHOLD_MAX, rng),
