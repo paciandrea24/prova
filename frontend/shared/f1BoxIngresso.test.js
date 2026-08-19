@@ -241,36 +241,58 @@ test('l avanzamento e monotono: non si torna mai indietro', () => {
     }
 });
 
-test('l indicatore sta prima del punto in cui si sterza, e non ci si sovrappone', () => {
-    const track = loadTrack('prova');
-    const lane = track.pitLanePts;
-    for (const a of boxDi(track)) {
-        const piano = pianoDi(track, a);
-        assert.ok(piano.indicatoreFine > piano.inizioRaccordo,
-            'la zona finisce dopo l inizio della sterzata: si premerebbe mentre si sterza');
-        assert.ok(piano.indicatoreInizio > piano.indicatoreFine, 'zona rovesciata');
-        assert.equal(piano.indicatoreInizio - piano.indicatoreFine, BI.INDICATORE_LUNGHEZZA);
-
-        // I punti disegnati devono cadere sulla corsia, non nel vuoto.
-        const zona = BI.zonaIndicatore(lane, piano);
-        for (const p of [zona.inizio, zona.fine, zona.perfettoInizio, zona.perfettoFine]) {
-            const d = TG.nearestPoint(lane, p.x, p.z).dist;
-            assert.ok(d < 1.5, `punto dell indicatore a ${d.toFixed(2)} unita dalla corsia`);
+test('il muro sta prima del punto in cui si sterza, e cade sulla corsia', () => {
+    for (const id of PISTE) {
+        const track = loadTrack(id);
+        const lane = track.pitLanePts;
+        for (const a of boxDi(track)) {
+            const piano = pianoDi(track, a);
+            assert.ok(piano.muro > piano.inizioRaccordo,
+                'il muro cade dopo l inizio della sterzata: si premerebbe mentre si sterza');
+            const m = BI.muroReazione(lane, piano);
+            const d = TG.nearestPoint(lane, m.x, m.z).dist;
+            assert.ok(d < 1.5, `${id}: il muro e piantato a ${d.toFixed(2)} unita dalla corsia`);
+            // Ed e' orientato come la corsia in quel punto: il pannello ci sta
+            // perpendicolare, e una tangente sbagliata lo metterebbe di sbieco.
+            assert.ok(Math.abs(Math.hypot(m.tx, m.tz) - 1) < 1e-6, 'tangente non normalizzata');
         }
     }
 });
 
-test('i tre esiti: dove si preme decide, e fuori zona e sempre lenta', () => {
+test('i tre esiti si misurano sul MUSO, non sul centro dell auto', () => {
+    // Il difetto del playtest 2026-08-19: «mi e sembrato che stessi sulla
+    // porzione verde quando ho premuto spazio ma mi ha sempre dato buona».
+    // Chi gioca mira con la punta; il centro sta 3.58 unita piu indietro, che
+    // e' piu della fascia perfetta intera.
     const track = loadTrack('prova');
-    const lane = track.pitLanePts;
     const a = boxDi(track)[0];
     const piano = pianoDi(track, a);
-    const meta = (piano.indicatoreInizio + piano.indicatoreFine) / 2;
 
-    assert.equal(BI.esitoDaRimanente(piano, meta), BI.PERFETTA, 'in mezzo alla fascia');
-    assert.equal(BI.esitoDaRimanente(piano, meta + BI.INDICATORE_PERFETTO / 2 - 0.1), BI.PERFETTA, 'dentro la fascia per un pelo');
-    assert.equal(BI.esitoDaRimanente(piano, meta + BI.INDICATORE_PERFETTO / 2 + 0.5), BI.BUONA, 'fuori dalla fascia ma dentro la zona');
-    assert.equal(BI.esitoDaRimanente(piano, piano.indicatoreInizio + 1), BI.LENTA, 'premuto troppo presto');
-    assert.equal(BI.esitoDaRimanente(piano, piano.indicatoreFine - 1), BI.LENTA, 'premuto troppo tardi');
+    // Col MUSO esattamente sul muro: perfetta. Il centro dell'auto in quel
+    // momento e' una semilunghezza piu indietro.
+    const centroQuandoIlMusoEsulMuro = piano.muro + BI.SEMILUNGHEZZA_AUTO;
+    assert.equal(BI.esitoDaRimanente(piano, centroQuandoIlMusoEsulMuro), BI.PERFETTA);
+    assert.equal(BI.distanzaDalMuro(piano, centroQuandoIlMusoEsulMuro), 0);
+
+    // Se invece si giudicasse sul centro, lo stesso istante darebbe "buona":
+    // e' esattamente cio che succedeva.
+    const comeSeFosseIlCentro = piano.muro;
+    assert.equal(BI.esitoDaRimanente(piano, comeSeFosseIlCentro), BI.BUONA,
+        'il vecchio comportamento non e piu riproducibile: il test non prova piu niente');
+
+    // Le due tolleranze.
+    assert.equal(BI.esitoDaRimanente(piano, centroQuandoIlMusoEsulMuro + BI.MURO_PERFETTO - 0.1), BI.PERFETTA);
+    assert.equal(BI.esitoDaRimanente(piano, centroQuandoIlMusoEsulMuro + BI.MURO_PERFETTO + 0.5), BI.BUONA);
+    assert.equal(BI.esitoDaRimanente(piano, centroQuandoIlMusoEsulMuro + BI.MURO_BUONO + 1), BI.LENTA);
+    assert.equal(BI.esitoDaRimanente(piano, centroQuandoIlMusoEsulMuro - BI.MURO_BUONO - 1), BI.LENTA, 'troppo tardi');
     assert.equal(BI.esitoDaRimanente(piano, null), BI.LENTA, 'mai premuto');
+});
+
+test('il conto alla rovescia arriva a zero quando il muso tocca il muro', () => {
+    const track = loadTrack('prova');
+    const piano = pianoDi(track, boxDi(track)[2]);
+    const sulMuro = piano.muro + BI.SEMILUNGHEZZA_AUTO;
+    assert.ok(BI.distanzaDalMuro(piano, sulMuro + 10) > 0, 'prima del muro deve essere positivo');
+    assert.equal(BI.distanzaDalMuro(piano, sulMuro), 0);
+    assert.ok(BI.distanzaDalMuro(piano, sulMuro - 5) < 0, 'dopo il muro deve essere negativo');
 });

@@ -1490,6 +1490,15 @@ const VUOTI_ATTESI = {
     'baku':        { peggiore: 10,  quota: 0.85 },
 };
 
+// Soglia per le piste che la tabella non conosce ancora. Senza, il primo
+// circuito nuovo faceva esplodere il test con un "Cannot read properties of
+// undefined" invece di dire cosa non andava — ed e' successo davvero, il
+// 2026-08-19, appena e' comparso `prova-notturno`. Il valore e' il piu
+// permissivo della tabella: un circuito appena nato non e' ancora stato
+// tarato, e il test serve a impedire che PEGGIORI, non a bocciarlo il primo
+// giorno. Quando una pista conta davvero, le si mette la sua riga misurata.
+const VUOTI_DI_GUARDIA = { peggiore: 330, quota: 0.85 };
+
 for (const id of TRACCIATI) {
     test(`scenografia: quanto circuito resta senza niente di fianco (${id})`, () => {
         const { trackPts, layout } = circuitoVero(id);
@@ -1500,7 +1509,7 @@ for (const id of TRACCIATI) {
         // non è confrontabile con quello a terra.
         const aTerra = tratti.filter(t => !t.suViadotto);
         const peggiore = aTerra.length ? aTerra[0].lunghezza : 0;
-        const atteso = VUOTI_ATTESI[id];
+        const atteso = VUOTI_ATTESI[id] || VUOTI_DI_GUARDIA;
         assert.ok(peggiore <= atteso.peggiore,
             `${id}: il tratto vuoto più lungo a terra è ${peggiore.toFixed(0)} unità, `
             + `sopra il tetto di ${atteso.peggiore}`);

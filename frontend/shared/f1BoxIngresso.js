@@ -74,17 +74,34 @@
         return Math.max(RACCORDO_B_MIN, Math.min(RACCORDO_B_MAX, Math.abs(residuo || 0) * RACCORDO_B_PER_UNITA));
     }
 
-    // Quanto prima dell'inizio del raccordo finisce la zona dell'indicatore di
-    // reazione: «poco prima del punto in cui si sterza per entrare». Non zero —
-    // premere e sterzare nello stesso istante toglierebbe al gesto la sua
-    // conseguenza visibile.
-    const INDICATORE_MARGINE = 4;
-    // Lunghezza della zona in cui la pressione vale "buona", e della fascia
-    // centrale in cui vale "perfetta". A ~31 unità/s dell'autopilota sono 0.77 s
-    // e 0.19 s: il tempo di reazione umano sta intorno ai 250 ms, quindi la
-    // fascia centrale si prende solo anticipando con gli occhi, che è il punto.
-    const INDICATORE_LUNGHEZZA = 24;
-    const INDICATORE_PERFETTO = 6;
+    // ── Il muro del gioco di reazione ───────────────────────────────────────
+    //
+    // Un pannello verticale, semi-trasparente, attraverso la corsia: si preme
+    // nell'istante in cui il MUSO lo attraversa. È il modello del gioco
+    // ufficiale, ed è stato scelto dall'utente dopo aver visto la prima
+    // versione — che erano tre bande dipinte per terra.
+    //
+    // PERCHÉ IL MUSO E NON IL BARICENTRO. La prima versione giudicava sulla
+    // posizione dell'auto, cioè sul suo centro, mentre chi gioca mira con la
+    // punta: sono 3.58 unità di scarto — la semilunghezza — contro una fascia
+    // perfetta di ±3, quindi si finiva sistematicamente in "buona" pur avendo
+    // premuto sul punto giusto. Segnalato al playtest: «mi è sembrato che
+    // stessi sulla porzione verde quando ho premuto spazio ma mi ha sempre dato
+    // buona». Con un muro verticale il riferimento è inequivocabile: quello che
+    // lo attraversa è il muso, e su quello si giudica.
+    const SEMILUNGHEZZA_AUTO = 3.58;   // CollisionResolver.CAR_HALF_LENGTH
+
+    // Dove sta il muro: quanto prima del punto in cui l'autopilota comincia a
+    // sterzare. Non zero — premere e sterzare nello stesso istante toglierebbe
+    // al gesto la sua conseguenza visibile.
+    const MURO_MARGINE = 10;
+
+    // Tolleranze attorno al muro, in unità di gioco. A ~31 unità/s
+    // dell'autopilota sono ±0.10 s per la perfetta e ±0.39 s per la buona: la
+    // perfetta si prende solo anticipando con gli occhi il muro che arriva, che
+    // è esattamente il gesto del gioco vero.
+    const MURO_PERFETTO = 3;
+    const MURO_BUONO = 12;
 
     function clamp01(v) {
         return v < 0 ? 0 : (v > 1 ? 1 : v);
@@ -209,8 +226,9 @@
             // Dove comincia a sterzare, e dove sta la zona dell'indicatore:
             // distanze in unità PRIMA del proprio box, lungo la corsia.
             inizioRaccordo: L,
-            indicatoreFine: L + INDICATORE_MARGINE,
-            indicatoreInizio: L + INDICATORE_MARGINE + INDICATORE_LUNGHEZZA,
+            // Distanza del MURO dal proprio box, lungo la corsia. Il giudizio
+            // confronta con questa: `rimanente` del muso, non dell'auto.
+            muro: L + MURO_MARGINE,
         };
     }
 
@@ -239,17 +257,16 @@
         };
     }
 
-    // Dove disegnare l'indicatore di reazione: due punti sulla corsia, l'inizio
-    // e la fine della zona, più la fascia centrale che vale "perfetta".
-    function zonaIndicatore(lane, piano) {
-        const meta = (piano.indicatoreInizio + piano.indicatoreFine) / 2;
+    // Dove piantare il muro: il punto della corsia, la direzione in cui è
+    // orientata lì (il muro ci sta perpendicolare) e le tolleranze, che servono
+    // al client per disegnare la fascia più chiara al centro.
+    function muroReazione(lane, piano) {
+        const p = puntoIndietroSullaLane(lane, piano.laneIdx, piano.muro);
         return {
-            inizio: puntoIndietroSullaLane(lane, piano.laneIdx, piano.indicatoreInizio),
-            fine: puntoIndietroSullaLane(lane, piano.laneIdx, piano.indicatoreFine),
-            perfettoInizio: puntoIndietroSullaLane(lane, piano.laneIdx, meta + INDICATORE_PERFETTO / 2),
-            perfettoFine: puntoIndietroSullaLane(lane, piano.laneIdx, meta - INDICATORE_PERFETTO / 2),
-            lunghezza: INDICATORE_LUNGHEZZA,
-            lunghezzaPerfetto: INDICATORE_PERFETTO,
+            x: p.x, z: p.z, tx: p.tx, tz: p.tz,
+            distanzaDalBox: piano.muro,
+            perfetto: MURO_PERFETTO,
+            buono: MURO_BUONO,
         };
     }
 
@@ -260,22 +277,33 @@
     const BUONA = 'buona';
     const LENTA = 'lenta';
 
-    function esitoDaRimanente(piano, rimanente) {
-        if (rimanente == null) return LENTA;
-        if (rimanente > piano.indicatoreInizio || rimanente < piano.indicatoreFine) return LENTA;
-        const meta = (piano.indicatoreInizio + piano.indicatoreFine) / 2;
-        return Math.abs(rimanente - meta) <= INDICATORE_PERFETTO / 2 ? PERFETTA : BUONA;
+    // `rimanenteAuto` è quanto manca al proprio box misurato sul CENTRO
+    // dell'auto: la funzione si sposta da sola sul muso, che è ciò che
+    // attraversa il muro e ciò con cui il giocatore mira.
+    function esitoDaRimanente(piano, rimanenteAuto) {
+        if (rimanenteAuto == null) return LENTA;
+        const muso = rimanenteAuto - SEMILUNGHEZZA_AUTO;
+        const scarto = Math.abs(muso - piano.muro);
+        if (scarto <= MURO_PERFETTO) return PERFETTA;
+        if (scarto <= MURO_BUONO) return BUONA;
+        return LENTA;
+    }
+
+    // Quanto manca al muro, in unità, per il muso dell'auto. Negativo = già
+    // passato. Serve al conto alla rovescia che si legge sul pannello.
+    function distanzaDalMuro(piano, rimanenteAuto) {
+        return (rimanenteAuto - SEMILUNGHEZZA_AUTO) - piano.muro;
     }
 
     return {
         lunghezzaRaccordo, distanzaLungoLane, puntoIndietroSullaLane,
-        scostamentoStallo, pianoIngresso, posizioneIngresso, zonaIndicatore,
-        scostamentoViciniPrecedenti,
+        scostamentoStallo, pianoIngresso, posizioneIngresso, muroReazione,
+        scostamentoViciniPrecedenti, distanzaDalMuro,
         esitoDaRimanente, morbida, morbidissima, clamp01,
         PERFETTA, BUONA, LENTA,
         RACCORDO_A, RACCORDO_B_MIN, RACCORDO_B_MAX, FASCIA_SICUREZZA,
         lunghezzaSecondoTempo,
-        INDICATORE_MARGINE, INDICATORE_LUNGHEZZA, INDICATORE_PERFETTO,
+        MURO_MARGINE, MURO_PERFETTO, MURO_BUONO, SEMILUNGHEZZA_AUTO,
     };
 
 });

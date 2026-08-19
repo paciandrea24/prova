@@ -43,28 +43,43 @@ function pilotaInCorsia(trackId = 'prova', boxIndex = 2) {
     return { track, p, game, anchors };
 }
 
-test('premere al centro della zona vale perfetta, ai bordi buona, fuori lenta', () => {
+// Il valore di `pitRimanente` (misurato sul CENTRO dell'auto) nell'istante in
+// cui il MUSO si trova a `scarto` unita dal muro.
+function centroQuandoIlMusoE(piano, scarto) {
+    return piano.muro + BoxIngresso.SEMILUNGHEZZA_AUTO + scarto;
+}
+
+test('premere col muso sul muro vale perfetta, poco fuori buona, lontano lenta', () => {
     const casi = [
-        ['al centro', 0, BoxIngresso.PERFETTA],
-        ['appena dentro la fascia', BoxIngresso.INDICATORE_PERFETTO / 2 - 0.2, BoxIngresso.PERFETTA],
-        ['appena fuori dalla fascia', BoxIngresso.INDICATORE_PERFETTO / 2 + 0.5, BoxIngresso.BUONA],
-        ['al bordo della zona', BoxIngresso.INDICATORE_LUNGHEZZA / 2 - 0.3, BoxIngresso.BUONA],
-        ['troppo presto', BoxIngresso.INDICATORE_LUNGHEZZA / 2 + 2, BoxIngresso.LENTA],
-        ['troppo tardi', -(BoxIngresso.INDICATORE_LUNGHEZZA / 2 + 2), BoxIngresso.LENTA],
+        ['col muso sul muro', 0, BoxIngresso.PERFETTA],
+        ['appena dentro la tolleranza', BoxIngresso.MURO_PERFETTO - 0.2, BoxIngresso.PERFETTA],
+        ['appena fuori', BoxIngresso.MURO_PERFETTO + 0.5, BoxIngresso.BUONA],
+        ['al limite della buona', BoxIngresso.MURO_BUONO - 0.3, BoxIngresso.BUONA],
+        ['troppo presto', BoxIngresso.MURO_BUONO + 2, BoxIngresso.LENTA],
+        ['troppo tardi', -(BoxIngresso.MURO_BUONO + 2), BoxIngresso.LENTA],
     ];
     for (const [nome, scarto, atteso] of casi) {
         const { p, game } = pilotaInCorsia();
-        const centro = (p.pitPiano.indicatoreInizio + p.pitPiano.indicatoreFine) / 2;
-        p.pitRimanente = centro + scarto;
+        p.pitRimanente = centroQuandoIlMusoE(p.pitPiano, scarto);
         P.handlePitReactionPress(ioFinto(), 'L', game, p);
         assert.equal(p.pitEsito, atteso, `premendo ${nome} (scarto ${scarto}) l esito e ${p.pitEsito}`);
     }
 });
 
+test('si giudica il MUSO: col centro dell auto sul muro non e piu perfetta', () => {
+    // Il difetto del playtest 2026-08-19: chi gioca mira con la punta, e il
+    // centro sta 3.58 unita piu indietro — piu della tolleranza perfetta
+    // intera. «Mi e sembrato che stessi sulla porzione verde quando ho premuto
+    // spazio ma mi ha sempre dato buona.»
+    const { p, game } = pilotaInCorsia();
+    p.pitRimanente = p.pitPiano.muro;   // centro sul muro = muso gia oltre
+    P.handlePitReactionPress(ioFinto(), 'L', game, p);
+    assert.equal(p.pitEsito, BoxIngresso.BUONA);
+});
+
 test('l esito si decide una volta sola: premere ancora non lo cambia', () => {
     const { p, game } = pilotaInCorsia();
-    const centro = (p.pitPiano.indicatoreInizio + p.pitPiano.indicatoreFine) / 2;
-    p.pitRimanente = centro;
+    p.pitRimanente = centroQuandoIlMusoE(p.pitPiano, 0);
     P.handlePitReactionPress(ioFinto(), 'L', game, p);
     assert.equal(p.pitEsito, BoxIngresso.PERFETTA);
     // Martellare il tasto dopo aver gia' preso "perfetta" non deve poterla
@@ -76,8 +91,7 @@ test('l esito si decide una volta sola: premere ancora non lo cambia', () => {
 
 test('fuori dalla fase di ingresso la pressione non conta e non brucia nulla', () => {
     const { p, game } = pilotaInCorsia();
-    const centro = (p.pitPiano.indicatoreInizio + p.pitPiano.indicatoreFine) / 2;
-    p.pitRimanente = centro;
+    p.pitRimanente = centroQuandoIlMusoE(p.pitPiano, 0);
     p.pitAutoState = null;              // gia' fermo nello stallo, o ancora in pista
     P.handlePitReactionPress(ioFinto(), 'L', game, p);
     assert.equal(p.pitEsito, undefined, 'ha giudicato una pressione fuori tempo');
@@ -89,7 +103,7 @@ test('il ritardo di rete si compensa: si e giudicati dove si era, non dove si e 
     // compensazione il server la giudicherebbe li, e con una fascia perfetta
     // larga 6 unita basterebbe questo a trasformare una perfetta in una buona.
     const { p, game } = pilotaInCorsia();
-    const centro = (p.pitPiano.indicatoreInizio + p.pitPiano.indicatoreFine) / 2;
+    const centro = centroQuandoIlMusoE(p.pitPiano, 0);
     const ritardoMs = 100;
     const avanzamento = (ritardoMs / 50) * P.PIT_AUTO_SPEED;   // 50 ms per tick fisico
 
@@ -109,14 +123,14 @@ test('il ritardo di rete si compensa: si e giudicati dove si era, non dove si e 
 
 test('un client che dichiara un tempo assurdo non si regala una perfetta', () => {
     const { p, game } = pilotaInCorsia();
-    const centro = (p.pitPiano.indicatoreInizio + p.pitPiano.indicatoreFine) / 2;
+    const centro = centroQuandoIlMusoE(p.pitPiano, 0);
     // Preme quando e' gia' arrivatissimo, ma dichiara di aver premuto dieci
     // secondi fa: la compensazione e' tappata, quindi il recupero massimo e'
     // di PIT_LATENZA_MAX_MS e non basta a coprire la distanza.
     p.pitRimanente = 0;
     P.handlePitReactionPress(ioFinto(), 'L', game, p, { elapsedMs: game.raceTick * 50 - 10000 });
     const recuperoMassimo = (P.PIT_LATENZA_MAX_MS / 50) * P.PIT_AUTO_SPEED;
-    assert.ok(recuperoMassimo < centro - BoxIngresso.INDICATORE_PERFETTO / 2,
+    assert.ok(recuperoMassimo < centro - BoxIngresso.MURO_PERFETTO,
         'il tetto alla compensazione non protegge la fascia perfetta');
     assert.equal(p.pitEsito, BoxIngresso.LENTA);
 });
@@ -140,19 +154,16 @@ test('le tre durate sono distinte e ordinate', () => {
     assert.ok(P.PIT_DURATA_PERFETTA < P.PIT_DURATA_BUONA && P.PIT_DURATA_BUONA < P.PIT_DURATA_LENTA);
 });
 
-test('la zona sta dove la vede il giocatore: prima della sterzata, sulla corsia', () => {
+test('il muro sta dove lo vede il giocatore: prima della sterzata, sulla corsia', () => {
     // Il disegno (client) e il giudizio (server) vengono dallo STESSO piano: se
     // fossero due calcoli diversi si scosterebbero in silenzio, e si verrebbe
-    // giudicati su una banda diversa da quella dipinta.
+    // giudicati su un muro diverso da quello che si vede.
     for (const id of ['prova', 'monte-rosso']) {
         const { track, p } = pilotaInCorsia(id, 3);
-        const zona = BoxIngresso.zonaIndicatore(track.pitLanePts, p.pitPiano);
-        for (const [nome, punto] of Object.entries(zona)) {
-            if (!punto || typeof punto !== 'object') continue;
-            const d = TrackGeometry.nearestPoint(track.pitLanePts, punto.x, punto.z).dist;
-            assert.ok(d < 1.5, `${id}: il punto "${nome}" dell indicatore cade a ${d.toFixed(2)} unita dalla corsia`);
-        }
-        assert.ok(p.pitPiano.indicatoreFine > p.pitPiano.inizioRaccordo,
-            `${id}: la zona finisce dopo l inizio della sterzata`);
+        const muro = BoxIngresso.muroReazione(track.pitLanePts, p.pitPiano);
+        const d = TrackGeometry.nearestPoint(track.pitLanePts, muro.x, muro.z).dist;
+        assert.ok(d < 1.5, `${id}: il muro e piantato a ${d.toFixed(2)} unita dalla corsia`);
+        assert.ok(p.pitPiano.muro > p.pitPiano.inizioRaccordo,
+            `${id}: il muro cade dopo l inizio della sterzata`);
     }
 });

@@ -1280,11 +1280,21 @@ function startPitLaneEntry(io, lobbyId, game, p) {
     const sid = game.socketByColor[p.color];
     if (sid) {
         io.to(sid).emit('f1PitLaneEntered');
-        // Dove disegnare l'indicatore: si manda una volta sola, all'ingresso in
-        // corsia. Sono punti nel MONDO — è il client a costruirci la grafica,
-        // ma la geometria la decide il server, che è anche chi giudica.
+        // Dove piantare il muro del gioco di reazione: si manda una volta sola,
+        // all'ingresso in corsia. È nel MONDO — il client ci costruisce il
+        // pannello — ma la geometria la decide il server, che è anche chi
+        // giudica: se il disegno venisse da un altro calcolo, si verrebbe
+        // giudicati su un muro diverso da quello che si vede.
         if (p.pitPiano && game.track.pitLanePts) {
-            io.to(sid).emit('f1PitIndicatore', BoxIngresso.zonaIndicatore(game.track.pitLanePts, p.pitPiano));
+            io.to(sid).emit('f1PitIndicatore', Object.assign(
+                BoxIngresso.muroReazione(game.track.pitLanePts, p.pitPiano),
+                {
+                    larghezza: (game.track.pitRoadHalf || 5) * 2,
+                    // Il client ne ricava il conto alla rovescia: sa quanto manca
+                    // in unità e a che velocità le sta consumando.
+                    velocitaPerTick: PIT_AUTO_SPEED,
+                    tickMs: PHYSICS_TICK_MS,
+                }));
         }
     }
 }

@@ -1541,3 +1541,90 @@ body.in-cerimonia .hud { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
     .senso-bordi-linee { animation: none; opacity: 0.5; }
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+   CORSIA BOX — i tempi e la fascia della sosta
+
+   Due pannelli con lo stesso principio della grafica di premiazione: una base
+   scura con sopra una sfumatura, invece di un riquadro opaco. Il motivo non e'
+   estetico — il pannello opaco appoggiato al lato destro copriva, in uscita dai
+   box, proprio la porzione di corsia da cui arriva chi sta transitando
+   (segnalato al playtest). Qui la pista resta visibile attraverso il velo. */
+#pitlane-hud {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 44;
+    pointer-events: none;
+    min-width: 210px;
+    padding: 8px 22px 10px;
+    text-align: center;
+    background: linear-gradient(180deg, rgba(6, 8, 11, 0.86), rgba(6, 8, 11, 0.62) 70%, transparent);
+    border-radius: 0 0 12px 12px;
+}
+.pl-testata {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: #9fb4c4;
+    text-transform: uppercase;
+}
+.pl-tempi { display: flex; gap: 26px; justify-content: center; margin-top: 2px; }
+.pl-tempo { display: flex; flex-direction: column; align-items: center; }
+.pl-valore {
+    font-size: 27px;
+    font-weight: 900;
+    line-height: 1;
+    color: #eaf6ff;
+    font-variant-numeric: tabular-nums;   /* i decimi non fanno ballare la riga */
+}
+.pl-etichetta { font-size: 10px; letter-spacing: 2px; color: #8ba3b5; text-transform: uppercase; }
+
+#pitstop-panel {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 45;
+    padding: 14px clamp(14px, 4vw, 48px) 16px;
+    /* Base piena sotto il contenuto e sfumatura SOPRA di essa, non dentro: e' la
+       stessa struttura della fascia di premiazione, dove una sfumatura sola
+       lasciava illeggibili le righe alte. */
+    background: rgba(6, 8, 11, 0.88);
+    color: var(--hud-text, #eaf0f4);
+}
+#pitstop-panel::before {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: 100%;
+    height: 11vh;
+    background: linear-gradient(0deg, rgba(6, 8, 11, 0.88), rgba(6, 8, 11, 0.45) 45%, transparent);
+    pointer-events: none;
+}
+.ps-riga {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: clamp(12px, 3vw, 40px);
+}
+.ps-testi { min-width: 0; flex: 1 1 0; }
+#pitstop-status { font-size: 16px; font-weight: 900; letter-spacing: 1px; }
+#pitstop-instructions { font-size: 12px; color: #b9c7d2; margin-top: 2px; }
+#pitstop-cards { display: flex; justify-content: center; gap: 10px; flex: 0 0 auto; }
+.ps-coda { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: 1 1 0; }
+#pitstop-result { font-size: 17px; font-weight: 900; color: #f1c40f; text-align: right; }
+#pitstop-repair-toggle { display: flex; align-items: center; gap: 8px; }
+#pitstop-react-prompt {
+    margin-top: 8px;
+    text-align: center;
+    font-size: 26px;
+    font-weight: 900;
+    color: var(--green, #2ecc71);
+}
+
+@media (max-width: 720px) {
+    /* Su schermi stretti la riga unica si spezza invece di comprimere le card
+       delle mescole, che devono restare toccabili. */
+    .ps-riga { flex-direction: column; align-items: stretch; gap: 8px; }
+    .ps-coda { align-items: center; }
+    #pitstop-result { text-align: center; }
+}

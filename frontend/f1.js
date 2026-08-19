@@ -2443,65 +2443,206 @@ document.addEventListener('DOMContentLoaded', async () => {
         socket.emit('f1PitRepairChoice', { lobbyId, playerColor: myColor, repair: nowSelected });
     }
 
-    // ── L'indicatore di reazione ai box ─────────────────────────────────────
-    // Una banda dipinta sull'asfalto della corsia, poco prima del punto in cui
-    // l'autopilota comincia a sterzare verso lo stallo, con una fascia centrale
-    // più stretta: premere dentro la fascia vale "perfetta", dentro la banda
-    // "buona", fuori "lenta". È nel MONDO e non in un pannello — è il senso
-    // della richiesta: il tempismo si legge guardando la pista, non un riquadro.
+    // I due cronometri della corsia box: da quando si e' entrati, e quanto sta
+    // durando la sosta. Il secondo si ferma sul valore finale invece di
+    // continuare a correre — e' un risultato, non un orologio.
+    let pitCorsiaDa = null;
+    let pitSostaDa = null;
+    let pitSostaDurata = null;
+
+    function aggiornaTempiCorsia() {
+        if (pitCorsiaDa == null) return;
+        const ora = performance.now();
+        const totale = document.getElementById('pl-totale');
+        const sosta = document.getElementById('pl-sosta');
+        if (totale) totale.textContent = ((ora - pitCorsiaDa) / 1000).toFixed(1);
+        if (sosta) {
+            const t = pitSostaDa == null ? 0
+                : (pitSostaDurata != null
+                    ? Math.min(ora - pitSostaDa, pitSostaDurata)
+                    : ora - pitSostaDa);
+            sosta.textContent = (t / 1000).toFixed(1);
+        }
+    }
+
+    // ── Il muro del gioco di reazione ai box ────────────────────────────────
     //
-    // La geometria arriva dal server (evento f1PitIndicatore), calcolata dallo
-    // stesso modulo che disegna la traiettoria d'ingresso: se il disegno e il
-    // giudizio venissero da due calcoli diversi, potrebbero scostarsi in
-    // silenzio e il giocatore verrebbe giudicato su una banda che non è quella
-    // che vede.
-    let pitIndicatoreGruppo = null;
+    // Un pannello verticale semi-trasparente piantato di traverso nella corsia,
+    // che si attraversa: si preme nell'istante in cui il muso lo passa. Sopra ci
+    // sono il conto alla rovescia e il tasto da premere, e una freccia che
+    // indica dove sta il punto.
+    //
+    // La prima versione erano tre bande dipinte per terra, bocciate al playtest:
+    // «le bande sono tipo trasversali all'andamento della corsia» — a terra e in
+    // scorcio non si capiva dove finisse una e cominciasse l'altra, mentre un
+    // muro verticale lo si vede arrivare da lontano e attraversare è un evento
+    // netto. È il modello del gioco ufficiale.
+    //
+    // Il testo sta su una TEXTURE e non in un pannello HTML: deve essere nel
+    // mondo, in prospettiva, a quella distanza — un riquadro fisso sullo schermo
+    // racconterebbe un'altra cosa. Si ridisegna dieci volte al secondo, non a
+    // ogni frame: il conto alla rovescia ha un decimale, e oltre non cambia
+    // niente da vedere.
+    let pitMuro = null;
 
-    function bandaCorsia(da, a, larghezza, colore, quota) {
-        const lung = Math.hypot(a.x - da.x, a.z - da.z);
-        if (!(lung > 0.01)) return null;
-        const geo = new THREE.PlaneGeometry(larghezza, lung);
-        const mat = new THREE.MeshBasicMaterial({
-            color: colore, transparent: true, opacity: 0.72,
-            depthWrite: false,   // sta sopra l'asfalto, non ci combatte
-        });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.rotation.x = -Math.PI / 2;
-        mesh.rotation.z = -Math.atan2(a.x - da.x, a.z - da.z);
-        mesh.position.set((da.x + a.x) / 2, quota, (da.z + a.z) / 2);
+    const MURO_ALTEZZA = 4.6;
+    const MURO_TEXTURE_W = 512;
+    const MURO_TEXTURE_H = 236;
+
+    function disegnaTexturaMuro(ctx, { secondi, esito }) {
+        const w = MURO_TEXTURE_W, h = MURO_TEXTURE_H;
+        ctx.clearRect(0, 0, w, h);
+
+        // Fondo: più acceso in basso, dove il muro tocca l'asfalto.
+        const colore = esito
+            ? ({ perfetta: '46, 204, 113', buona: '241, 196, 15', lenta: '231, 76, 60' })[esito]
+            : '80, 210, 240';
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, `rgba(${colore}, 0.10)`);
+        grad.addColorStop(1, `rgba(${colore}, 0.42)`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Montanti e traversa: danno al pannello un bordo da cui leggere la
+        // profondità, che un rettangolo sfumato da solo non ha.
+        ctx.strokeStyle = `rgba(${colore}, 0.95)`;
+        ctx.lineWidth = 7;
+        ctx.strokeRect(4, 4, w - 8, h - 8);
+
+        if (esito) {
+            ctx.fillStyle = `rgba(${colore}, 1)`;
+            ctx.font = 'bold 74px Fredoka, Trebuchet MS, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(esito.toUpperCase(), w / 2, h / 2);
+            return;
+        }
+
+        // La freccia: indica il verso di marcia, cioè verso l'osservatore.
+        ctx.fillStyle = `rgba(${colore}, 0.9)`;
+        ctx.beginPath();
+        ctx.moveTo(w / 2, 62);
+        ctx.lineTo(w / 2 - 34, 20);
+        ctx.lineTo(w / 2 + 34, 20);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(240, 252, 255, 0.92)';
+        ctx.font = 'bold 30px Fredoka, Trebuchet MS, sans-serif';
+        ctx.fillText('INGRESSO', w / 2, 96);
+
+        ctx.font = 'bold 84px Fredoka, Trebuchet MS, sans-serif';
+        ctx.fillText(secondi != null ? secondi.toFixed(1) : '--', w / 2, 152);
+
+        // Il tasto da premere, in un riquadro come su una tastiera.
+        ctx.font = 'bold 26px Fredoka, Trebuchet MS, sans-serif';
+        const etichetta = 'SPAZIO';
+        const larghezza = ctx.measureText(etichetta).width + 34;
+        ctx.strokeStyle = 'rgba(240, 252, 255, 0.85)';
+        ctx.lineWidth = 3;
+        ctx.strokeRect((w - larghezza) / 2, h - 56, larghezza, 38);
+        ctx.fillText(etichetta, w / 2, h - 36);
+    }
+
+    function mostraMuroPit(dati) {
+        nascondiMuroPit();
+        const canvas = document.createElement('canvas');
+        canvas.width = MURO_TEXTURE_W;
+        canvas.height = MURO_TEXTURE_H;
+        const ctx = canvas.getContext('2d');
+        const texture = new THREE.CanvasTexture(canvas);
+        const larghezza = dati.larghezza || 10;
+        const mesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(larghezza, MURO_ALTEZZA),
+            new THREE.MeshBasicMaterial({
+                map: texture, transparent: true, side: THREE.DoubleSide,
+                depthWrite: false,   // è un velo: non deve nascondere ciò che ha dietro
+            }),
+        );
+        const quota = myCarGroup ? myCarGroup.position.y : 0;
+        mesh.position.set(dati.x, quota + MURO_ALTEZZA / 2, dati.z);
+        // Perpendicolare alla corsia: il piano nasce con la normale su +Z, e la
+        // normale del muro DEVE essere la direzione di marcia.
+        mesh.rotation.y = Math.atan2(dati.tx, dati.tz);
         ToonStyle.excludeFromOutline(mesh);
-        return mesh;
+        scene.add(mesh);
+
+        pitMuro = {
+            mesh, canvas, ctx, texture, dati,
+            unitaAlSecondo: (dati.velocitaPerTick || 1.55) * (1000 / (dati.tickMs || 50)),
+            ultimoTesto: null, esito: null, spegniA: null,
+        };
+        disegnaTexturaMuro(ctx, { secondi: null, esito: null });
+        texture.needsUpdate = true;
     }
 
-    function mostraIndicatorePit(zona) {
-        nascondiIndicatorePit();
-        const larghezza = (trackData.pit && trackData.pit.roadHalfWidth ? trackData.pit.roadHalfWidth : 5) * 2;
-        const quota = (trackData.pit && trackData.pit.y) || 0;
-        pitIndicatoreGruppo = new THREE.Group();
-        // Prima la banda intera, poi la fascia perfetta sopra di essa: due
-        // quote diverse di pochi centesimi, o si scannerebbero fra loro.
-        const banda = bandaCorsia(zona.inizio, zona.fine, larghezza, 0xf5f7fa, quota + 0.06);
-        const perfetta = bandaCorsia(zona.perfettoInizio, zona.perfettoFine, larghezza, 0x2ecc71, quota + 0.08);
-        if (banda) pitIndicatoreGruppo.add(banda);
-        if (perfetta) pitIndicatoreGruppo.add(perfetta);
-        scene.add(pitIndicatoreGruppo);
+    function nascondiMuroPit() {
+        if (!pitMuro) return;
+        scene.remove(pitMuro.mesh);
+        pitMuro.mesh.geometry.dispose();
+        pitMuro.mesh.material.dispose();
+        pitMuro.texture.dispose();
+        pitMuro = null;
     }
 
-    function nascondiIndicatorePit() {
-        if (!pitIndicatoreGruppo) return;
-        scene.remove(pitIndicatoreGruppo);
-        pitIndicatoreGruppo.traverse((o) => {
-            if (o.geometry) o.geometry.dispose();
-            if (o.material) o.material.dispose();
-        });
-        pitIndicatoreGruppo = null;
+    // Quanto manca al muro per il MUSO dell'auto, in unità. Negativo = passato.
+    // Si misura lungo la direzione del muro, non in linea d'aria: di traverso la
+    // corsia è larga dieci unità, e una distanza euclidea direbbe che manca
+    // ancora qualcosa anche quando lo si è già passato di lato.
+    function distanzaDalMuroPit() {
+        if (!pitMuro || !myCarGroup) return null;
+        _avanti.set(0, 0, 1).applyQuaternion(myCarGroup.quaternion);
+        const musoX = myCarGroup.position.x + _avanti.x * F1BoxIngresso.SEMILUNGHEZZA_AUTO;
+        const musoZ = myCarGroup.position.z + _avanti.z * F1BoxIngresso.SEMILUNGHEZZA_AUTO;
+        return (pitMuro.dati.x - musoX) * pitMuro.dati.tx + (pitMuro.dati.z - musoZ) * pitMuro.dati.tz;
     }
 
-    socket.on('f1PitIndicatore', (zona) => mostraIndicatorePit(zona));
+    // Chiamata da animate(): tiene aggiornato il conto alla rovescia e toglie il
+    // muro quando ha finito il suo lavoro.
+    function aggiornaMuroPit() {
+        if (!pitMuro) return;
+        if (pitMuro.spegniA != null) {
+            if (performance.now() >= pitMuro.spegniA) nascondiMuroPit();
+            return;
+        }
+        const d = distanzaDalMuroPit();
+        if (d == null) return;
+        // Superato senza premere: resta un istante col verdetto e poi sparisce.
+        if (d < -F1BoxIngresso.MURO_BUONO) {
+            segnaEsitoMuroPit('lenta');
+            return;
+        }
+        const secondi = Math.max(0, d / pitMuro.unitaAlSecondo);
+        const testo = secondi.toFixed(1);
+        if (testo === pitMuro.ultimoTesto) return;
+        pitMuro.ultimoTesto = testo;
+        disegnaTexturaMuro(pitMuro.ctx, { secondi, esito: null });
+        pitMuro.texture.needsUpdate = true;
+    }
+
+    // Il muro dà il verdetto e si spegne: il giocatore lo legge dove stava
+    // guardando, senza cercarlo in un angolo dello schermo.
+    function segnaEsitoMuroPit(esito) {
+        if (!pitMuro || pitMuro.spegniA != null) return;
+        pitMuro.esito = esito;
+        disegnaTexturaMuro(pitMuro.ctx, { secondi: null, esito });
+        pitMuro.texture.needsUpdate = true;
+        pitMuro.spegniA = performance.now() + 900;
+    }
+
+    socket.on('f1PitIndicatore', (dati) => mostraMuroPit(dati));
 
     socket.on('f1PitLaneEntered', () => {
         const panel = document.getElementById('pitstop-panel');
-        panel.style.display = 'flex';
+        panel.style.display = 'block';
+        // I due cronometri della corsia: partono da qui e li disegna
+        // aggiornaTempiCorsia(), chiamata da animate().
+        pitCorsiaDa = performance.now();
+        pitSostaDa = null;
+        pitSostaDurata = null;
+        document.getElementById('pitlane-hud').style.display = 'block';
         document.getElementById('pitstop-status').textContent = 'INGRESSO AI BOX...';
         document.getElementById('pitstop-instructions').textContent =
             'Scegli la mescola, poi premi SPAZIO quando passi sulla banda verde in corsia.';
@@ -2533,7 +2674,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     socket.on('f1PitEsito', ({ esito }) => {
-        nascondiIndicatorePit();   // il giudizio è dato: la banda ha finito il suo lavoro
+        segnaEsitoMuroPit(esito);   // il verdetto si legge sul muro, dov'era lo sguardo
         const e = ESITO_TESTO[esito] || ESITO_TESTO.lenta;
         const el = document.getElementById('pitstop-result');
         el.textContent = e.testo;
@@ -2543,7 +2684,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     socket.on('f1PitStopStarted', ({ esito, durationMs } = {}) => {
         pitting = true;
-        nascondiIndicatorePit();
+        pitSostaDa = performance.now();
+        pitSostaDurata = durationMs != null ? durationMs : null;
+        nascondiMuroPit();
         clearTyreNav();
         document.getElementById('pitstop-react-prompt').style.display = 'none';
         document.getElementById('pitstop-status').textContent = 'AI BOX...';
@@ -2563,8 +2706,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     socket.on('f1PitLaneExited', () => {
         document.getElementById('pitstop-panel').style.display = 'none';
+        document.getElementById('pitlane-hud').style.display = 'none';
+        pitCorsiaDa = null;
+        pitSostaDa = null;
         document.getElementById('pitstop-result').style.color = '';
-        nascondiIndicatorePit();
+        nascondiMuroPit();
     });
 
     // Il client inoltra la pressione ogni volta che viene premuto spazio
@@ -2589,7 +2735,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Si preme mentre si ARRIVA (l'indicatore è a schermo), non più da
         // fermi: la finestra utile è quella in cui l'autopilota sta portando
         // l'auto verso lo stallo.
-        if ((pitting || pitIndicatoreGruppo) && e.code === 'Space') {
+        if ((pitting || pitMuro) && e.code === 'Space') {
             // Senza preventDefault, se la checkbox riparazione ha il focus
             // (ce l'ha appena la clicchi) il browser la de-seleziona da solo
             // alla pressione di Spazio — comportamento nativo dell'elemento,
@@ -4226,7 +4372,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         F1GamepadInput.setCallbacks({
             onConfirm: () => {
                 if (activeTyreContainerId) tyreConfirm();
-                else if (pitting || pitIndicatoreGruppo) premiReazionePit();
+                else if (pitting || pitMuro) premiReazionePit();
             },
             onCameraToggle: () => { cameraMode = cameraMode === 'third' ? 'first' : 'third'; },
             onNavLeft: () => tyreNav(-1),
@@ -4889,6 +5035,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         // posizionare l'auto della vetrina), quindi va risolto per primo.
         aggiornaCampoVisivo(_dt, _misuraSuperficie);
         aggiornaEffettiVetture(_dt, _misuraSuperficie);
+        aggiornaMuroPit();
+        aggiornaTempiCorsia();
 
         if (tyreSelectActive) updateTyreSelectCamera();
         else if (panoramicaAttiva) aggiornaCameraPanoramica();

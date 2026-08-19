@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260819a">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260819b">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -319,20 +319,45 @@
     <!-- Pannello pit stop (visibile SOLO al pilota in visita ai box). NON a
          schermo intero apposta: l'auto guida da sola (autopilota), il
          giocatore deve poter continuare a vederla mentre sceglie la mescola. -->
-    <div id="pitstop-panel" class="menu-panel-neu" style="display:none; position:fixed; top:50%; right:20px; transform:translateY(-50%);
-         z-index:45; width:460px; max-width:90vw; text-align:center;
-         padding:18px 16px; flex-direction:column; gap:12px;">
-        <div id="pitstop-status" style="font-size:18px; font-weight:900; letter-spacing:1px;">AI BOX</div>
-        <div id="pitstop-instructions" style="font-size:13px; color:#ecf0f1;"></div>
-        <div id="pitstop-react-prompt" style="display:none; font-size:34px; font-weight:900; color:#2ecc71;">PREMI
-            SPAZIO!</div>
-        <div id="pitstop-result" style="font-size:15px; color:#f1c40f; font-weight:700;"></div>
-        <div style="font-size:12px; color:#95a5a6;">Mescola per il resto della gara:</div>
-        <div id="pitstop-cards" style="display:flex; justify-content:center; gap:10px;"></div>
-        <div id="pitstop-repair-toggle" style="display:none; margin-top:10px; align-items:center; justify-content:center; gap:8px;">
-            <div id="pitstop-repair-btn" class="repair-btn"></div>
-            <span class="hud-key-hint">R</span>
+    <!-- CORSIA BOX — i tempi, in alto al centro come una grafica televisiva.
+         Sono le due cose che in una sosta si vogliono sapere e che la scena non
+         puo' dire: da quanto si e' in corsia e quanto e' durata la sosta. -->
+    <div id="pitlane-hud" style="display:none;">
+        <div class="pl-testata">CORSIA BOX</div>
+        <div class="pl-tempi">
+            <div class="pl-tempo">
+                <span class="pl-valore" id="pl-sosta">0.0</span>
+                <span class="pl-etichetta">Sosta</span>
+            </div>
+            <div class="pl-tempo">
+                <span class="pl-valore" id="pl-totale">0.0</span>
+                <span class="pl-etichetta">In corsia</span>
+            </div>
         </div>
+    </div>
+
+    <!-- SCELTA MESCOLA E RIPARAZIONE, in corsia box.
+         Era un pannello opaco appoggiato al lato destro dello schermo: in
+         uscita dai box copriva proprio la porzione di corsia da cui arriva chi
+         sta transitando, e si rischiava di non vederlo (segnalato al playtest).
+         Ora e' una fascia bassa con la sfumatura sopra, come la grafica della
+         premiazione: si legge lo stesso e la pista resta visibile. -->
+    <div id="pitstop-panel" style="display:none;">
+        <div class="ps-riga">
+            <div class="ps-testi">
+                <div id="pitstop-status">AI BOX</div>
+                <div id="pitstop-instructions"></div>
+            </div>
+            <div id="pitstop-cards"></div>
+            <div class="ps-coda">
+                <div id="pitstop-result"></div>
+                <div id="pitstop-repair-toggle" style="display:none;">
+                    <div id="pitstop-repair-btn" class="repair-btn"></div>
+                    <span class="hud-key-hint">R</span>
+                </div>
+            </div>
+        </div>
+        <div id="pitstop-react-prompt" style="display:none;">PREMI SPAZIO!</div>
     </div>
 
     <!-- Overlay animazione POLE -->
@@ -496,7 +521,7 @@
     <script src="shared/f1Sting.js?v=20260818d"></script>
     <script src="shared/f1SensoVelocita.js?v=20260819h"></script>
     <script src="shared/f1Particelle.js?v=20260819c"></script>
-    <script src="shared/f1BoxIngresso.js?v=20260819a"></script>
+    <script src="shared/f1BoxIngresso.js?v=20260819b"></script>
     <script src="shared/sceneryLandmarks.js?v=20260817b"></script>
     <script src="shared/sceneryTrackside.js?v=20260813i"></script>
     <script src="shared/sceneryCrowd.js?v=20260814a"></script>
@@ -515,7 +540,7 @@
     <!-- nell'indirizzo. Deve precedere lo script di gioco, che le usa subito. -->
     <script src="shared/impostazioniGara.js?v=20260818a"></script>
     <script src="shared/sessioneGiocatore.js?v=20260818a"></script>
-    <script src="f1.js?v=20260819l"></script>
+    <script src="f1.js?v=20260819m"></script>
 </body>
 
 </html>
