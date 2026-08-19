@@ -259,11 +259,28 @@ const TYRE_SELECT_MS = 45000;
 // rete, limite accettato). Premere prima del segnale = falsa partenza, sosta
 // alla durata massima.
 // ====================================================
-const PIT_GO_DELAY_MIN = 1000, PIT_GO_DELAY_MAX = 3000;   // attesa casuale prima del segnale
-const PIT_REACTION_BEST = 150, PIT_REACTION_WORST = 800;   // ms: sotto/sopra questi si satura
+// Il gioco di reazione ai box è agganciato a un PUNTO DELLO SPAZIO, non più a
+// un'attesa casuale a macchina ferma: mentre l'autopilota porta l'auto verso lo
+// stallo, poco prima del punto in cui comincia a sterzare, compare un
+// indicatore sull'asfalto della corsia. Tre esiti discreti — perfetta, buona,
+// lenta — e non una scala continua: sono più facili da spiegare nel tutorial e
+// da leggere in gara (scelta dell'utente, 2026-08-19). Dove cade la zona lo
+// decide f1BoxIngresso.js, che è lo stesso modulo che disegna la traiettoria:
+// se fossero due calcoli diversi potrebbero scostarsi in silenzio.
+const PIT_DURATA_PERFETTA = 2000;
+const PIT_DURATA_BUONA = 2600;
+const PIT_DURATA_LENTA = 3400;
+
+// Quanto si compensa il ritardo di rete sulla pressione. Il giocatore preme
+// guardando DOVE È l'auto sul suo schermo; quando il messaggio arriva, qui
+// l'auto è già avanzata. A 31 unità al secondo, 100 ms sono 3 unità: metà della
+// fascia "perfetta". Si usa il tempo di gara che il client ha già (elapsedMs,
+// la stessa fonte del cronometro), non un timestamp locale che non sarebbe
+// confrontabile. Il tetto evita che un client con l'orologio sballato si
+// regali un vantaggio.
+const PIT_LATENZA_MAX_MS = 300;
 // 2.0s-3.0s: range realistico da gioco F1 (richiesto dall'utente, che
 // trovava 3.0s-7.0s troppo lento anche a reazione ottima).
-const PIT_DURATION_MIN = 2000, PIT_DURATION_MAX = 3000;  // durata sosta risultante
 const PIT_PENALTY_MS = 30000;   // penalità se non si fa MAI pit stop in gara (regola F1 vera)
 const REPAIR_MS_PER_DAMAGE_PCT = 150;   // ms extra di sosta per ogni % di danno riparato
 
@@ -469,7 +486,7 @@ module.exports = function (io, socket) {
                 compound: null,   // scelto in tyre_select (null finché non conferma)
                 tyreWear: 0,
                 pitting: false,   // true = fermo ai box, fisica congelata
-                pitPhase: null,    // waiting -> go -> done (null fuori dal pit stop)
+                pitEsito: null,    // 'perfetta' | 'buona' | 'lenta' — deciso lungo la corsia
                 pitGoTime: null,    // timestamp server di invio del segnale "vai"
                 pitGoTimer: null,
                 pendingCompound: null,    // mescola scelta ai box, applicata a fine sosta
@@ -586,7 +603,7 @@ module.exports = function (io, socket) {
     // Pressione del minigioco di reazione al pit stop. Il server è
     // autoritativo sul tempo (vedi handlePitReactionPress): il client si
     // limita a inoltrare l'evento appena l'utente preme.
-    socket.on('f1PitReactionPress', ({ lobbyId }) => {
+    socket.on('f1PitReactionPress', ({ lobbyId, elapsedMs }) => {
         // Il colore non arriva dal messaggio: e' quello che il server ha
         // gia' verificato col gettone di sessione in joinLobby. Vedi il
         // commento in joinF1Game.
@@ -1171,7 +1188,7 @@ function assignGridSpawns(game) {
         p.wallContact = false;
         p.pendingCollisionPenaltyEvents.length = 0;
         if (p.pitGoTimer) { clearTimeout(p.pitGoTimer); p.pitGoTimer = null; }
-        p.pitting = false; p.pitPhase = null; p.pitGoTime = null;
+        p.pitting = false; p.pitEsito = null;
         p.pendingCompound = null; p.hasPitted = false; p.pitPenalty = false;
         p.falseStart = false; p.falseStartServed = false;
         p.gapToLeaderMs = null;
@@ -1261,7 +1278,15 @@ function startPitLaneEntry(io, lobbyId, game, p) {
         ? Math.min(pl.length - 1, TrackGeometry.nearestPoint(pl, p.x, p.z).index + 1)
         : 1;
     const sid = game.socketByColor[p.color];
-    if (sid) io.to(sid).emit('f1PitLaneEntered');
+    if (sid) {
+        io.to(sid).emit('f1PitLaneEntered');
+        // Dove disegnare l'indicatore: si manda una volta sola, all'ingresso in
+        // corsia. Sono punti nel MONDO — è il client a costruirci la grafica,
+        // ma la geometria la decide il server, che è anche chi giudica.
+        if (p.pitPiano && game.track.pitLanePts) {
+            io.to(sid).emit('f1PitIndicatore', BoxIngresso.zonaIndicatore(game.track.pitLanePts, p.pitPiano));
+        }
+    }
 }
 
 // Sposta l'auto verso il prossimo waypoint del percorso box (track.pitPath) a velocità fissa e
@@ -1461,63 +1486,69 @@ function updatePitAutopilot(io, lobbyId, game, p) {
 function startPitStop(io, lobbyId, game, p) {
     p.pitting = true;
     p.speed = 0; p.vx = 0; p.vz = 0;
-    p.pitPhase = 'waiting';
 
-    const sid = game.socketByColor[p.color];
-    if (sid) io.to(sid).emit('f1PitStopStarted');
+    // Niente più attesa casuale a macchina ferma: quando l'auto arriva nello
+    // stallo il gioco di reazione è GIÀ stato giocato, lungo la corsia. Chi non
+    // ha premuto si prende la sosta lenta, che è anche il caso di chi non ha
+    // ancora imparato il meccanismo.
+    const esito = p.pitEsito || BoxIngresso.LENTA;
+    let durationMs = durataPerEsito(esito);
 
-    const delay = PIT_GO_DELAY_MIN + Math.random() * (PIT_GO_DELAY_MAX - PIT_GO_DELAY_MIN);
-    p.pitGoTimer = setTimeout(() => {
-        if (!p.pitting) return;   // nel frattempo la sosta è già finita/annullata
-        p.pitPhase = 'go';
-        p.pitGoTime = Date.now();
-        const s = game.socketByColor[p.color];
-        if (s) io.to(s).emit('f1PitReactionGo');
-    }, delay);
-}
-
-// Pressione ricevuta dal client: il server è autoritativo sul tempo di
-// reazione (dal proprio invio del segnale alla ricezione di questa press).
-// Una pressione PRIMA del segnale ('waiting') viene IGNORATA — niente
-// penalità, niente blocco: il giocatore può tranquillamente premere in
-// anticipo per curiosità/impazienza senza bruciarsi l'unico tentativo buono
-// (bug segnalato: qualunque pressione anticipata registrava sempre la
-// sosta massima, perché consumava il tentativo prima ancora che partisse
-// il vero segnale). Ignora anche pressioni doppie/tardive (pitPhase già 'done').
-function handlePitReactionPress(io, lobbyId, game, p) {
-    if (!p.pitting || p.pitPhase !== 'go') return;
-    p.pitPhase = 'done';
-    if (p.pitGoTimer) { clearTimeout(p.pitGoTimer); p.pitGoTimer = null; }
-
-    const reactionMs = Date.now() - p.pitGoTime;
-    const clamped = Math.min(Math.max(reactionMs, PIT_REACTION_BEST), PIT_REACTION_WORST);
-    const t = (clamped - PIT_REACTION_BEST) / (PIT_REACTION_WORST - PIT_REACTION_BEST);
-    let durationMs = PIT_DURATION_MIN + t * (PIT_DURATION_MAX - PIT_DURATION_MIN);
-
-    // Penalità falsa partenza scontata QUI, alla PRIMA sosta: stesso
-    // minigioco di reazione, sosta più lunga di 5s — nessun secondo
+    // Penalità falsa partenza scontata QUI, alla PRIMA sosta: nessun secondo
     // meccanismo da imparare per il giocatore.
     if (p.falseStart && !p.falseStartServed) {
         durationMs += FALSE_START_PENALTY_MS;
         p.falseStartServed = true;
     }
 
-    // Riparazione danni: tempo extra proporzionale al danno che c'era al
-    // momento della scelta (non al danno originale ad inizio sosta, ma è lo
-    // stesso valore: durante la sosta il danno non cambia, l'auto è ferma).
+    // Riparazione danni: tempo extra proporzionale al danno.
     if (p.pendingRepair && p.damage > 0) {
         durationMs += p.damage * REPAIR_MS_PER_DAMAGE_PCT;
     }
 
     const sid = game.socketByColor[p.color];
-    if (sid) io.to(sid).emit('f1PitStopTiming', { durationMs });
+    if (sid) io.to(sid).emit('f1PitStopStarted', { esito, durationMs });
 
     setTimeout(() => {
-        // Anche qui l'identita': senza, la fine di una sosta della sessione
+        // Anche qui l'identità: senza, la fine di una sosta della sessione
         // precedente annunciava un pit stop ai client di quella nuova.
         if (!ancoraViva(lobbyId, game)) return;
         completePitStop(io, lobbyId, game, p);
     }, durationMs);
+}
+
+function handlePitReactionPress(io, lobbyId, game, p, { elapsedMs } = {}) {
+    // Si preme MENTRE si arriva, non da fermi: fuori da quella finestra — o se
+    // l'esito è già stato deciso — la pressione non conta e non brucia nulla.
+    // Premere in anticipo per curiosità resta gratis, come prima.
+    if (p.pitAutoState !== 'entering' || !p.pitPiano || p.pitEsito) return;
+    const lane = game.track.pitLanePts;
+    if (!lane) return;
+
+    // Quanto manca al proprio box nell'istante della pressione. Durante la
+    // manovra il valore è già mantenuto tick per tick; prima, lo si misura
+    // lungo la corsia.
+    let rimanente = p.pitRimanente != null
+        ? p.pitRimanente
+        : BoxIngresso.distanzaLungoLane(lane, p.pitPathIndex, p.pitPiano.laneIdx);
+
+    // Compensazione del ritardo: quando il messaggio arriva, l'auto è già
+    // avanzata rispetto a dov'era sullo schermo di chi ha premuto.
+    if (typeof elapsedMs === 'number') {
+        const ritardo = Math.max(0, Math.min(PIT_LATENZA_MAX_MS, (game.raceTick * PHYSICS_TICK_MS) - elapsedMs));
+        rimanente += (ritardo / PHYSICS_TICK_MS) * PIT_AUTO_SPEED;
+    }
+
+    p.pitEsito = BoxIngresso.esitoDaRimanente(p.pitPiano, rimanente);
+    const sid = game.socketByColor[p.color];
+    if (sid) io.to(sid).emit('f1PitEsito', { esito: p.pitEsito });
+}
+
+// La durata della sosta che consegue all'esito del gioco di reazione.
+function durataPerEsito(esito) {
+    if (esito === BoxIngresso.PERFETTA) return PIT_DURATA_PERFETTA;
+    if (esito === BoxIngresso.BUONA) return PIT_DURATA_BUONA;
+    return PIT_DURATA_LENTA;
 }
 
 // Fine sosta: gomme cambiate, poi l'autopilota riprende per l'uscita (non
@@ -1526,8 +1557,7 @@ function handlePitReactionPress(io, lobbyId, game, p) {
 function completePitStop(io, lobbyId, game, p) {
     if (!p.pitting) return;   // difensivo (es. gara finita nel frattempo)
     p.pitting = false;
-    p.pitPhase = null;
-    p.pitGoTime = null;
+    p.pitEsito = null;
     p.tyreWear = 0;
     p.hasPitted = true;
     if (p.pendingCompound) { p.compound = p.pendingCompound; p.pendingCompound = null; }
@@ -2609,7 +2639,9 @@ module.exports.physics = {
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
     buildPublicState, playersVisibleTo, startPitLaneEntry, inPitEntryZone, checkLap, updateSectorTiming, finalizeSessionFinish, resolvePendingFinish,
     computeSlipstreamMult,
-    updatePitAutopilot, PIT_AUTO_SPEED, PIT_AUTO_ARRIVE_DIST
+    updatePitAutopilot, PIT_AUTO_SPEED, PIT_AUTO_ARRIVE_DIST,
+    handlePitReactionPress, startPitStop, durataPerEsito, addLaneIndices, pianoIngressoDi,
+    PIT_DURATA_PERFETTA, PIT_DURATA_BUONA, PIT_DURATA_LENTA, PIT_LATENZA_MAX_MS
 };
 
 module.exports.tickGame = tickGame;

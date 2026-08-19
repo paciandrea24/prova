@@ -6,6 +6,7 @@
 // pit-lane trigger, lap counting restano quelli esistenti in
 // f1GameSocket.js, invariati e riusati as-is.
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
+const BoxIngresso = require('../../../frontend/shared/f1BoxIngresso.js');
 
 // Palette colori — DEVE restare in sync con frontend/index.js →
 // availableColors: i colori sono l'identità del giocatore su tutta la
@@ -578,9 +579,7 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
             compound:        compoundKeys[Math.floor(rng() * compoundKeys.length)],
             tyreWear:        0,
             pitting:         false,
-            pitPhase:        null,
-            pitGoTime:       null,
-            pitGoTimer:      null,
+            pitEsito:        null,
             pendingCompound: null,
             hasPitted:       false,
             pitPenalty:      false,
@@ -737,8 +736,14 @@ function computeSoloRacingLineInputs(p, track, rt, maxSpeed, brakeDecel, turnRat
 // un 20% extra copre l'imprecisione del rilevamento a campioni discreti.
 const BOT_BRAKING_DISTANCE_MARGIN    = 1.2;
 const BOT_SPEED_MARGIN          = 0.03;  // isteresi throttle/brake attorno alla velocità target
-const BOT_PIT_REACTION_MIN_MS   = 150;
-const BOT_PIT_REACTION_MAX_MS   = 700;
+// Dove "preme" un bot dentro la zona dell'indicatore, in unità di scarto dal
+// punto perfetto: un bot preciso ci va vicino, uno impreciso lo manca. Sono
+// unità di SPAZIO e non millisecondi, perché adesso il gioco di reazione è
+// agganciato a un punto della corsia — e il bot passa esattamente dallo stesso
+// giudizio dei giocatori (handlePitReactionPress), invece di avere una sua
+// scala di durate: se un bot facesse soste che un umano non può fare, o
+// viceversa, non se ne accorgerebbe nessuno finché non conta.
+const BOT_PIT_SCARTO_MAX = 11;
 // Reazione al via (spegnimento semafori): senza questo, tutti i bot
 // iniziano a spingere sull'acceleratore nell'ESATTO stesso tick fisico in
 // cui game.raceStarted diventa true (tickGame ritorna subito se non è
@@ -965,12 +970,23 @@ function updateBotInputs(game, deps) {
         // reazione al segnale di via, con un ritardo simulato realistico.
         if (p.pitAutoState || p.pitting) {
             p.botHeadingToPits = false;
-            if (p.pitPhase === 'waiting') p.botPitReactionScheduled = false;
-            if (p.pitting && p.pitPhase === 'go' && !p.botPitReactionScheduled) {
-                p.botPitReactionScheduled = true;
+            if (!p.pitAutoState) p.botPitReactionScheduled = false;
+            // "Preme" quando la corsia lo porta sul punto che si è scelto: il
+            // bersaglio è il centro della zona, spostato di quanto quel bot è
+            // impreciso. Il verdetto lo dà il server, come per un umano.
+            if (p.pitAutoState === 'entering' && p.pitPiano && !p.botPitReactionScheduled) {
+                const piano = p.pitPiano;
+                const centro = (piano.indicatoreInizio + piano.indicatoreFine) / 2;
                 const t = p.botPrecisionNoise / BOT_PRECISION_NOISE_MAX;
-                const delay = BOT_PIT_REACTION_MIN_MS + t * (BOT_PIT_REACTION_MAX_MS - BOT_PIT_REACTION_MIN_MS);
-                setTimeout(() => handlePitReactionPress(io, lobbyId, game, p), delay);
+                const segno = (p.color.charCodeAt(1) % 2) ? 1 : -1;
+                const bersaglio = centro + segno * t * BOT_PIT_SCARTO_MAX;
+                const lane = game.track.pitLanePts;
+                const rimanente = p.pitRimanente != null ? p.pitRimanente
+                    : (lane ? BoxIngresso.distanzaLungoLane(lane, p.pitPathIndex, piano.laneIdx) : Infinity);
+                if (rimanente <= bersaglio) {
+                    p.botPitReactionScheduled = true;
+                    handlePitReactionPress(io, lobbyId, game, p);
+                }
             }
             // Nessun input di guida scritto qui (il server/autopilota guida
             // direttamente): throttle/brake/steer non sono applicabili questo

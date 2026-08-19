@@ -2443,12 +2443,68 @@ document.addEventListener('DOMContentLoaded', async () => {
         socket.emit('f1PitRepairChoice', { lobbyId, playerColor: myColor, repair: nowSelected });
     }
 
+    // ── L'indicatore di reazione ai box ─────────────────────────────────────
+    // Una banda dipinta sull'asfalto della corsia, poco prima del punto in cui
+    // l'autopilota comincia a sterzare verso lo stallo, con una fascia centrale
+    // più stretta: premere dentro la fascia vale "perfetta", dentro la banda
+    // "buona", fuori "lenta". È nel MONDO e non in un pannello — è il senso
+    // della richiesta: il tempismo si legge guardando la pista, non un riquadro.
+    //
+    // La geometria arriva dal server (evento f1PitIndicatore), calcolata dallo
+    // stesso modulo che disegna la traiettoria d'ingresso: se il disegno e il
+    // giudizio venissero da due calcoli diversi, potrebbero scostarsi in
+    // silenzio e il giocatore verrebbe giudicato su una banda che non è quella
+    // che vede.
+    let pitIndicatoreGruppo = null;
+
+    function bandaCorsia(da, a, larghezza, colore, quota) {
+        const lung = Math.hypot(a.x - da.x, a.z - da.z);
+        if (!(lung > 0.01)) return null;
+        const geo = new THREE.PlaneGeometry(larghezza, lung);
+        const mat = new THREE.MeshBasicMaterial({
+            color: colore, transparent: true, opacity: 0.72,
+            depthWrite: false,   // sta sopra l'asfalto, non ci combatte
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.rotation.z = -Math.atan2(a.x - da.x, a.z - da.z);
+        mesh.position.set((da.x + a.x) / 2, quota, (da.z + a.z) / 2);
+        ToonStyle.excludeFromOutline(mesh);
+        return mesh;
+    }
+
+    function mostraIndicatorePit(zona) {
+        nascondiIndicatorePit();
+        const larghezza = (trackData.pit && trackData.pit.roadHalfWidth ? trackData.pit.roadHalfWidth : 5) * 2;
+        const quota = (trackData.pit && trackData.pit.y) || 0;
+        pitIndicatoreGruppo = new THREE.Group();
+        // Prima la banda intera, poi la fascia perfetta sopra di essa: due
+        // quote diverse di pochi centesimi, o si scannerebbero fra loro.
+        const banda = bandaCorsia(zona.inizio, zona.fine, larghezza, 0xf5f7fa, quota + 0.06);
+        const perfetta = bandaCorsia(zona.perfettoInizio, zona.perfettoFine, larghezza, 0x2ecc71, quota + 0.08);
+        if (banda) pitIndicatoreGruppo.add(banda);
+        if (perfetta) pitIndicatoreGruppo.add(perfetta);
+        scene.add(pitIndicatoreGruppo);
+    }
+
+    function nascondiIndicatorePit() {
+        if (!pitIndicatoreGruppo) return;
+        scene.remove(pitIndicatoreGruppo);
+        pitIndicatoreGruppo.traverse((o) => {
+            if (o.geometry) o.geometry.dispose();
+            if (o.material) o.material.dispose();
+        });
+        pitIndicatoreGruppo = null;
+    }
+
+    socket.on('f1PitIndicatore', (zona) => mostraIndicatorePit(zona));
+
     socket.on('f1PitLaneEntered', () => {
         const panel = document.getElementById('pitstop-panel');
         panel.style.display = 'flex';
         document.getElementById('pitstop-status').textContent = 'INGRESSO AI BOX...';
         document.getElementById('pitstop-instructions').textContent =
-            'Scegli la mescola mentre arrivi al box.';
+            'Scegli la mescola, poi premi SPAZIO quando passi sulla banda verde in corsia.';
         document.getElementById('pitstop-react-prompt').style.display = 'none';
         document.getElementById('pitstop-result').textContent = '';
         if (tyreCompoundsInfo) renderTyreCards(tyreCompoundsInfo, null, 'pitstop-cards', 'f1PitCompoundChoice');
@@ -2467,32 +2523,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    socket.on('f1PitStopStarted', () => {
+    // L'esito arriva mentre si sta ancora arrivando: si vede subito se il
+    // tempismo era giusto, che è metà del gioco. Il pannello lo ripete quando
+    // l'auto si ferma, con la durata che ne consegue.
+    const ESITO_TESTO = {
+        perfetta: { testo: 'PERFETTA!', colore: 'var(--green)' },
+        buona:    { testo: 'BUONA',     colore: '#f1c40f' },
+        lenta:    { testo: 'LENTA',     colore: 'var(--red)' },
+    };
+
+    socket.on('f1PitEsito', ({ esito }) => {
+        nascondiIndicatorePit();   // il giudizio è dato: la banda ha finito il suo lavoro
+        const e = ESITO_TESTO[esito] || ESITO_TESTO.lenta;
+        const el = document.getElementById('pitstop-result');
+        el.textContent = e.testo;
+        el.style.color = e.colore;
+        anime({ targets: el, scale: [0.6, 1], opacity: [0, 1], duration: 320, easing: 'easeOutBack' });
+    });
+
+    socket.on('f1PitStopStarted', ({ esito, durationMs } = {}) => {
         pitting = true;
-        clearTyreNav();   // la mescola è ormai fissata: X torna a significare "reazione pit"
-        document.getElementById('pitstop-status').textContent = 'AI BOX...';
-        document.getElementById('pitstop-instructions').textContent =
-            'Aspetta il segnale verde, poi premi SPAZIO più veloce che puoi! (premere prima non conta, puoi aspettare tranquillo)';
-    });
-
-    socket.on('f1PitReactionGo', () => {
-        document.getElementById('pitstop-status').textContent = '';
-        document.getElementById('pitstop-instructions').textContent = '';
-        const promptEl = document.getElementById('pitstop-react-prompt');
-        promptEl.style.display = 'block';
-        anime({
-            targets: promptEl,
-            scale: [0, 1],
-            opacity: [0, 1],
-            duration: 380,
-            easing: 'easeOutElastic(1, 0.5)',
-        });
-    });
-
-    socket.on('f1PitStopTiming', ({ durationMs }) => {
+        nascondiIndicatorePit();
+        clearTyreNav();
         document.getElementById('pitstop-react-prompt').style.display = 'none';
-        const secs = (durationMs / 1000).toFixed(1);
-        document.getElementById('pitstop-result').textContent = `Sosta: ${secs}s`;
+        document.getElementById('pitstop-status').textContent = 'AI BOX...';
+        document.getElementById('pitstop-instructions').textContent = '';
+        const e = ESITO_TESTO[esito] || ESITO_TESTO.lenta;
+        const secs = durationMs != null ? (durationMs / 1000).toFixed(1) : null;
+        const el = document.getElementById('pitstop-result');
+        el.textContent = secs != null ? `${e.testo} — sosta ${secs}s` : e.testo;
+        el.style.color = e.colore;
     });
 
     socket.on('f1PitStopFinished', () => {
@@ -2503,14 +2563,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     socket.on('f1PitLaneExited', () => {
         document.getElementById('pitstop-panel').style.display = 'none';
+        document.getElementById('pitstop-result').style.color = '';
+        nascondiIndicatorePit();
     });
 
     // Il client inoltra la pressione ogni volta che viene premuto spazio
     // durante la sosta: è il server a decidere se conta (solo se arrivata
     // DOPO il segnale) o va ignorata (prematura) — nessun rischio di
     // "bruciarsi" l'unico tentativo premendo troppo presto per curiosità.
+    // Il tempo di gara che il client ha adesso, estrapolato fra due
+    // aggiornamenti come fa il cronometro dell'HUD. Serve al server per sapere
+    // DOVE era l'auto quando è stato premuto il tasto, invece di dove è
+    // arrivata nel frattempo: a 31 unità al secondo, 100 ms di rete sono 3
+    // unità, cioè metà della fascia "perfetta".
+    function tempoGaraOra() {
+        if (myLiveElapsedMs == null || myLiveElapsedSyncedAt == null) return null;
+        return myLiveElapsedMs + (Date.now() - myLiveElapsedSyncedAt);
+    }
+
+    function premiReazionePit() {
+        socket.emit('f1PitReactionPress', { lobbyId, playerColor: myColor, elapsedMs: tempoGaraOra() });
+    }
+
     document.addEventListener('keydown', (e) => {
-        if (pitting && e.code === 'Space') {
+        // Si preme mentre si ARRIVA (l'indicatore è a schermo), non più da
+        // fermi: la finestra utile è quella in cui l'autopilota sta portando
+        // l'auto verso lo stallo.
+        if ((pitting || pitIndicatoreGruppo) && e.code === 'Space') {
             // Senza preventDefault, se la checkbox riparazione ha il focus
             // (ce l'ha appena la clicchi) il browser la de-seleziona da solo
             // alla pressione di Spazio — comportamento nativo dell'elemento,
@@ -2518,7 +2597,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // dall'utente: "premo spazio per la reazione e mi si deseleziona
             // la riparazione danni".
             e.preventDefault();
-            socket.emit('f1PitReactionPress', { lobbyId, playerColor: myColor });
+            premiReazionePit();
         }
     });
 
@@ -4147,7 +4226,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         F1GamepadInput.setCallbacks({
             onConfirm: () => {
                 if (activeTyreContainerId) tyreConfirm();
-                else if (pitting) socket.emit('f1PitReactionPress', { lobbyId, playerColor: myColor });
+                else if (pitting || pitIndicatoreGruppo) premiReazionePit();
             },
             onCameraToggle: () => { cameraMode = cameraMode === 'third' ? 'first' : 'third'; },
             onNavLeft: () => tyreNav(-1),
