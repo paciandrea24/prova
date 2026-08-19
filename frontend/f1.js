@@ -749,6 +749,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ====================================================
     const listener = new THREE.AudioListener();
     camera.add(listener);
+    // In CAMPIONATO il mondo parte muto. La propria auto viene caricata comunque
+    // (serve appena si corre) e il suo motore parte con lei, a volume zero ma
+    // con un attacco che si sente — segnalato al playtest: "finito il
+    // caricamento sento un piccolo colpo, come qualcosa che parte per un
+    // microsecondo". Davanti a una schermata di menu non deve uscire nessun
+    // suono dal mondo, qualunque ne sia la sorgente.
+    //
+    // Il silenzio si toglie da solo al primo countdown: f1Countdown chiama
+    // silenzioTransizione(false) da sempre, per la transizione qualifica→gara.
+    if (formatoPartita === 'stagione') silenzioTransizione(true);
     // La camera nel grafo della scena. Non serve a lei — una camera funziona
     // anche staccata — ma a ciò che le si appende: il renderer disegna solo
     // quello che raggiunge partendo da `scene`, quindi un oggetto figlio di

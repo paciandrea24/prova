@@ -18,27 +18,49 @@
 
     const el = (id) => document.getElementById(id);
 
+    function testo(nodo, valore) { if (nodo) nodo.textContent = valore; }
+
+    // Chi ospita E ha un account. Letta da mostraVista, che gira anche prima
+    // che monta() la calcoli: parte falsa, cioe' dal caso piu' prudente.
+    let puoScegliere = false;
+
     // Da dove si torna indietro, e dove si va. L'elenco e' la radice: di li'
     // non c'e' un "indietro" dentro il campionato, si esce e basta — e per
     // uscire c'e' gia' il pulsante accanto.
-    const PRECEDENTE = { calendario: 'scelta', scelta: null, attesa: null };
-    let vistaCorrente = 'scelta';
+    // Solo CHI OSPITA naviga: e' lui che sceglie il campionato, e la scelta
+    // vale per tutti. Gli altri non hanno un elenco da sfogliare — aspettano,
+    // e vengono portati dentro quando lui sceglie. Dal calendario si torna
+    // all'elenco solo se quell'elenco e' tuo.
+    const PRECEDENTE = { calendario: 'scelta', scelta: null, attesa: null, account: null };
+    let vistaCorrente = 'attesa';
+
+    // Il titolo dice dove SEI, e non e' sempre "le tue stagioni": a chi non ha
+    // un account, e a chi sta aspettando che scelga qualcun altro, quella
+    // frase prometteva una cosa che non poteva avere.
+    const TITOLO = {
+        scelta: 'Le tue stagioni',
+        attesa: 'Campionato',
+        account: 'Serve un account',
+    };
 
     function mostraVista(quale) {
         vistaCorrente = quale;
-        for (const v of ['scelta', 'calendario', 'attesa']) {
+        // Il calendario scrive il nome della stagione da se', appena l'ha
+        // letta: non c'e' un titolo fisso da mettere qui.
+        if (TITOLO[quale]) testo(el('stagione-titolo'), TITOLO[quale]);
+        for (const v of ['scelta', 'calendario', 'attesa', 'account']) {
             const n = el('stagione-vista-' + v);
             if (n) n.style.display = (v === quale) ? '' : 'none';
         }
         const indietro = el('stagione-indietro');
-        if (indietro) indietro.style.display = PRECEDENTE[quale] ? '' : 'none';
+        // Chi non ospita non ha un elenco a cui tornare: per lui "indietro"
+        // non porta da nessuna parte.
+        if (indietro) indietro.style.display = (PRECEDENTE[quale] && puoScegliere) ? '' : 'none';
         // Una conferma di cancellazione aperta non deve sopravvivere al cambio
         // di schermata: riapparirebbe puntata su una stagione diversa.
         const conferma = el('stagione-conferma');
         if (conferma) conferma.style.display = 'none';
     }
-
-    function testo(nodo, valore) { if (nodo) nodo.textContent = valore; }
 
     // Ogni chiamata alle rotte porta il token: e' l'unica cosa che dice al
     // server chi sei. Senza, la rotta risponde 401 — ed e' giusto cosi'.
@@ -74,6 +96,11 @@
         const { socket, lobbyId, sonoHost, tokenDi, piste, mioUid, versoLobby } = opzioni;
         const overlay = el('stagione-overlay');
         overlay.style.display = 'flex';
+        // Le due condizioni per poter scegliere un campionato: ospitare la
+        // partita e avere un account. Senza account non si puo' nemmeno
+        // guardare — la rotta che legge una stagione chiede di esserci dentro,
+        // e chi non ha un uid non e' dentro da nessuna parte.
+        puoScegliere = !!sonoHost && !!mioUid;
 
         // Quanti piloti si corre decide QUALI PISTE possono entrare in
         // calendario: una corsia box corta non ospita venti box (maxDrivers),
@@ -204,8 +231,15 @@
                 stagione = risposta.stagione;
                 ripresa = risposta.ripresa;
             } catch (e) {
-                errore('Non riesco ad aprire la stagione: ' + e.message);
-                mostraVista('scelta');
+                // Chi non ospita non ha un elenco su cui ripiegare: torna ad
+                // aspettare, con scritto cosa e' andato storto.
+                if (puoScegliere) {
+                    errore('Non riesco ad aprire la stagione: ' + e.message);
+                    mostraVista('scelta');
+                } else {
+                    testo(el('stagione-attesa-testo'), 'Non riesco ad aprire il campionato: ' + e.message);
+                    mostraVista('attesa');
+                }
                 return;
             }
             apertaId = stagione._id;
@@ -286,10 +320,13 @@
         function tornaIndietro() {
             const dove = PRECEDENTE[vistaCorrente];
             if (!dove) return;
+            // Vale anche per Esc, non solo per il pulsante: chi non ospita non
+            // ha un elenco a cui tornare, e non deve poterci finire premendo
+            // un tasto.
+            if (!puoScegliere) return;
             if (dove === 'scelta') {
                 // Rientrando nell'elenco lo si rilegge: una stagione appena
                 // creata o appena cancellata deve trovarsi al posto giusto.
-                testo(el('stagione-titolo'), 'Le tue stagioni');
                 apertaId = null;
                 errore('');
                 caricaElenco();
@@ -325,7 +362,6 @@
             try {
                 await chiedi(tokenDi, '/api/f1/stagioni/' + encodeURIComponent(apertaId), { method: 'DELETE' });
                 apertaId = null;
-                testo(el('stagione-titolo'), 'Le tue stagioni');
                 mostraVista('scelta');
                 caricaElenco();
             } catch (e) {
@@ -337,11 +373,25 @@
         });
 
         el('stagione-crea').addEventListener('click', crea);
+        // Chi ospita ha scelto: da qui in poi il campionato e' quello, per
+        // tutti. Anche chi sta aspettando viene portato dentro — e' la
+        // richiesta dell'utente: "appena l'host la avvia, anche gli altri
+        // giocatori inclusi vengono portati verso la stagione".
         socket.on('f1StagioneScelta', ({ stagioneId }) => {
-            if (stagioneId) mostraStagione(stagioneId);
+            if (!stagioneId) return;
+            // Senza account non c'e' niente da mostrargli: la stagione si
+            // legge solo se ci si corre dentro, e lui non e' dentro da
+            // nessuna parte. Resta sulla sua schermata, che spiega perche'.
+            if (!mioUid) return;
+            mostraStagione(stagioneId);
         });
 
-        if (sonoHost) {
+        // Quale schermata si apre. Le tre condizioni sono in ordine di
+        // precedenza: senza account non si fa niente comunque, poi conta se
+        // ospiti.
+        if (!mioUid) {
+            mostraVista('account');
+        } else if (sonoHost) {
             mostraVista('scelta');
             caricaElenco();
         } else {

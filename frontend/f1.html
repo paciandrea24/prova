@@ -449,7 +449,7 @@
             </header>
 
             <!-- 1. SCELTA: riprendine una o creane una nuova -->
-            <section class="stagione-vista" id="stagione-vista-scelta">
+            <section class="stagione-vista" id="stagione-vista-scelta" style="display:none;">
                 <div class="stagione-colonne">
                     <div class="stagione-col">
                         <div class="stagione-sezione">Riprendi</div>
@@ -527,9 +527,23 @@
                 </div>
             </section>
 
-            <!-- 3. NON SEI TU A DECIDERE -->
+            <!-- 3. NON SEI TU A DECIDERE.
+                 Il campionato lo sceglie chi ospita, e vale per tutti: gli
+                 altri non hanno un elenco da sfogliare, aspettano e vengono
+                 portati dentro quando lui sceglie. -->
             <section class="stagione-vista" id="stagione-vista-attesa" style="display:none;">
-                <p class="stagione-attesa">In attesa che chi ospita scelga il campionato&hellip;</p>
+                <p class="stagione-attesa" id="stagione-attesa-testo">In attesa che chi ospita scelga il campionato&hellip;</p>
+            </section>
+
+            <!-- 4. SENZA ACCOUNT.
+                 Un campionato si salva per account: senza, non lo si potrebbe
+                 ne' ritrovare ne' riprendere. Non e' un errore da nascondere,
+                 e' l'unica cosa che quel giocatore deve leggere. -->
+            <section class="stagione-vista" id="stagione-vista-account" style="display:none;">
+                <p class="stagione-attesa">
+                    Per un campionato serve un account: un salvataggio &egrave; legato a chi lo gioca.<br>
+                    Torna alla lobby, accedi, e rientra.
+                </p>
             </section>
         </div>
     </div>
@@ -765,8 +779,8 @@
          schermate. Le regole girano UGUALI sul server: vedi
          backend/routes/f1Stagioni.js, che richiede lo stesso file. -->
     <script src="shared/f1Stagione.js?v=20260820a"></script>
-    <script src="shared/f1StagioneSchermate.js?v=20260820c"></script>
-    <script src="f1.js?v=20260820d"></script>
+    <script src="shared/f1StagioneSchermate.js?v=20260820d"></script>
+    <script src="f1.js?v=20260820e"></script>
 </body>
 
 </html>

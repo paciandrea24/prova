@@ -325,3 +325,25 @@ test('cancellare una stagione che non c e non e un errore del server', async (t)
     const r = await chiedi(server, { metodo: 'DELETE', percorso: '/api/f1/stagioni/mai-esistita', uid: 'uid-andrea' });
     assert.equal(r.stato, 404);
 });
+
+test('una stagione non si crea se in pista c e qualcuno senza account', async (t) => {
+    // Le stagioni si salvano PER ACCOUNT: un pilota senza account non
+    // potrebbe ne' ritrovarla ne' riprenderla, e in classifica sarebbe una
+    // riga che non appartiene a nessuno. Meglio dirlo subito che scoprirlo
+    // alla seconda gara.
+    t.after(pulisci);
+    const server = await avviaServer();
+    t.after(() => server.close());
+    preparaPartita([
+        { colore: '#e74c3c', uid: 'uid-andrea' },
+        { colore: '#3498db', uid: null },          // ospite, nessun account
+    ]);
+
+    const r = await chiedi(server, {
+        metodo: 'POST', percorso: '/api/f1/stagioni', uid: 'uid-andrea',
+        corpo: { lobbyId: LOBBY, nome: 'Con un ospite', quanteGare: 3, gridSize: 6 },
+    });
+    assert.equal(r.stato, 409);
+    assert.match(String(r.dati.error), /account/i);
+    assert.deepEqual(r.dati.senzaAccount, ['#3498db'], 'e deve dire CHI, per colore');
+});

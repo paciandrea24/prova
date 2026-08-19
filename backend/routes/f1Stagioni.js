@@ -65,9 +65,26 @@ function creaRouter(opzioni) {
         }
         // Chi crea dev'essere in pista: senza questo si potrebbe creare una
         // stagione dentro la partita di qualcun altro, e infilarcisi dentro.
-        const presenti = Object.values(game.players).filter(p => !p.isBot).map(p => p.uid);
-        if (!presenti.includes(req.uid)) {
+        const umani = Object.values(game.players).filter(p => !p.isBot);
+        if (!umani.some(p => p.uid === req.uid)) {
             return res.status(403).json({ error: 'Non stai giocando in questa lobby' });
+        }
+
+        // Le stagioni si salvano PER ACCOUNT: un pilota senza account non
+        // potrebbe ne' ritrovarla ne' riprenderla, e in classifica sarebbe una
+        // riga che non appartiene a nessuno. Si rifiuta qui, dicendo CHI manca,
+        // invece di lasciarlo scoprire alla seconda gara.
+        //
+        // 409 e non 400: la richiesta e' fatta bene, e' lo stato della lobby a
+        // non permetterla — e cambia se quel giocatore fa l'accesso.
+        const senzaAccount = umani.filter(p => !p.uid).map(p => p.color);
+        if (senzaAccount.length) {
+            return res.status(409).json({
+                error: senzaAccount.length === 1
+                    ? 'Un pilota non ha fatto l\'accesso: le stagioni si salvano per account'
+                    : `${senzaAccount.length} piloti non hanno fatto l'accesso: le stagioni si salvano per account`,
+                senzaAccount,
+            });
         }
 
         // Quanti piloti si corre decide QUALI PISTE possono entrare in
