@@ -2563,9 +2563,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
         const quota = myCarGroup ? myCarGroup.position.y : 0;
         mesh.position.set(dati.x, quota + MURO_ALTEZZA / 2, dati.z);
-        // Perpendicolare alla corsia: il piano nasce con la normale su +Z, e la
-        // normale del muro DEVE essere la direzione di marcia.
-        mesh.rotation.y = Math.atan2(dati.tx, dati.tz);
+        // Perpendicolare alla corsia e RIVOLTO A CHI ARRIVA. Il piano nasce con
+        // la normale su +Z; orientarla lungo la direzione di marcia lo mette di
+        // spalle a chi sopraggiunge, che quindi ne vede il retro e legge il
+        // testo specchiato (segnalato al playtest). La faccia deve guardare
+        // all'indietro, cioè verso l'auto: da qui il segno meno.
+        mesh.rotation.y = Math.atan2(-dati.tx, -dati.tz);
         ToonStyle.excludeFromOutline(mesh);
         scene.add(mesh);
 
@@ -4672,11 +4675,55 @@ document.addEventListener('DOMContentLoaded', async () => {
     const dBox = minimapPathString(PIT_PTS, minimapT, false);
     minimapTrackEl.setAttribute('d', dPista);
     minimapPitEl.setAttribute('d', dBox);
-    // La copia chiara sopra il contorno scuro: stessa `d`, altro tratto.
+    // Il filo chiaro sopra il nastro scuro: stessa `d`, tratto più sottile.
     const pistaChiara = document.getElementById('minimap-track-fill');
     const boxChiara = document.getElementById('minimap-pit-fill');
     if (pistaChiara) pistaChiara.setAttribute('d', dPista);
     if (boxChiara) boxChiara.setAttribute('d', dBox);
+
+    // ── Traguardo e confini di settore ──────────────────────────────────────
+    // Due trattini di traverso al nastro dove finisce un settore e ne comincia
+    // un altro, più la linea del traguardo a scacchi. I confini sono a un terzo
+    // e a due terzi del giro CONTATI DAL TRAGUARDO, che è la stessa definizione
+    // del server (SECTOR1_REL_IDX / SECTOR2_REL_IDX in f1GameSocket.js): se qui
+    // li si contasse dall'inizio dell'array, la mappa mostrerebbe confini che
+    // non sono quelli su cui vengono presi i tempi.
+    function segnoDiTraverso(idx, lunghezza) {
+        const p = trackPts[idx % trackPts.length];
+        const n = TrackGeometry.normalAt(trackPts, idx % trackPts.length, true);
+        const x = p.x * minimapT.scale + minimapT.offX;
+        const y = p.z * minimapT.scale + minimapT.offZ;
+        // La normale è unitaria e `lunghezza` è in unità del viewBox, non del
+        // mondo: il trattino deve avere la stessa lunghezza A SCHERMO su un
+        // circuito da un chilometro e su uno da sette, altrimenti sul più
+        // grande diventa invisibile e sul più piccolo taglia la mappa in due.
+        const dx = n.nx * lunghezza, dy = n.nz * lunghezza;
+        return { x1: x - dx, y1: y - dy, x2: x + dx, y2: y + dy };
+    }
+
+    const svgMinimappa = document.getElementById('minimap-svg');
+    function aggiungiSegno(idx, classe, lunghezza) {
+        if (!svgMinimappa || !trackPts.length) return;
+        const s = segnoDiTraverso(idx, lunghezza);
+        const el = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        el.setAttribute('class', classe);
+        el.setAttribute('x1', s.x1.toFixed(2)); el.setAttribute('y1', s.y1.toFixed(2));
+        el.setAttribute('x2', s.x2.toFixed(2)); el.setAttribute('y2', s.y2.toFixed(2));
+        // Prima dei pallini dei piloti, che vengono appesi in coda e devono
+        // restare sopra a tutto.
+        svgMinimappa.appendChild(el);
+    }
+
+    {
+        const n = trackPts.length;
+        const s1 = (START_FINISH_INDEX + Math.round(n / 3)) % n;
+        const s2 = (START_FINISH_INDEX + Math.round(2 * n / 3)) % n;
+        aggiungiSegno(s1, 'minimap-settore', 5.5);
+        aggiungiSegno(s2, 'minimap-settore', 5.5);
+        // Il traguardo per ultimo, così sta sopra gli altri due se il circuito
+        // è così corto da farli quasi coincidere.
+        aggiungiSegno(START_FINISH_INDEX, 'minimap-traguardo', 6.5);
+    }
 
     // Mappa dell'anteprima (schermata mescole): stesso tracciato e stessa
     // trasformazione della minimappa dell'HUD — hanno lo stesso viewBox — con
