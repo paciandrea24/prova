@@ -320,3 +320,43 @@ test('un weekend abbandonato a meta non conta: la stagione resta ferma', async (
     assert.equal(riletta.giro, 0, 'il calendario non si muove');
     assert.deepEqual(riletta.risultati, [], 'e non resta nessun risultato a meta');
 });
+
+test('il podio di una gara di campionato non offre "Riavvia"', async (t) => {
+    // Riavviare rigiocherebbe una gara il cui risultato e' GIA' stato
+    // registrato: la stessa tappa conterebbe due volte, con due risultati
+    // diversi. In campionato si va avanti, non si ripete.
+    t.after(pulisci);
+    const seasonStore = require('../../store/seasonStore.js');
+    t.after(() => seasonStore._svuota());
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const io = ioFinto();
+    const F1Stagione = require('../../../frontend/shared/f1Stagione.js');
+
+    const stagione = await seasonStore.salva(F1Stagione.creaStagione({
+        nome: 'Niente riavvii', creataDa: 'uid-andrea',
+        piloti: [{ uid: 'uid-andrea', colore: 'red', bot: false }],
+        calendario: ['prova', 'new-monza', 'monte-rosso'],
+        impostazioni: { botsEnabled: false, gridSize: 1 },
+    }));
+    lobbies.set(LOBBY, {
+        host: 'red', players: ['red'], lockedPlayers: ['red'],
+        gameSettings: {
+            trackId: 'prova', botsEnabled: 'false', gridSize: '1',
+            formato: 'stagione', stagioneId: stagione._id, stagioneInCorso: true,
+        },
+    });
+    const a = collega(io);
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', uid: 'uid-andrea', token: creaGettone(LOBBY, 'red') });
+
+    const g = activeGames.get(LOBBY);
+    g.phase = 'race';
+    g.grid = ['red'];
+    for (const p of Object.values(g.players)) { p.finished = true; p.time = 60000; p.lap = g.track.totalLaps; }
+
+    io.inviati.length = 0;
+    await registraHandlerF1.endRace(io, LOBBY, g);
+
+    const fine = io.inviati.find(m => m.evento === 'f1RaceEnded');
+    assert.equal(fine.dati.restaAlPodio, false,
+        'da soli in gara veloce "Riavvia" ha senso; in campionato no');
+});

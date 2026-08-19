@@ -2977,6 +2977,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // niente a che fare con la scena 3D.
     let schermateStagione = null;
 
+    // Dopo questa gara si torna al calendario invece che in lobby: lo dice il
+    // server a fine gara di campionato (f1StagioneAlCalendario), e lo legge il
+    // conto alla rovescia del podio.
+    let campionatoTornaAlCalendario = false;
+
     // Il token vive qui, che l'autenticazione ce l'ha gia' (vedi `user` in
     // cima): le schermate ne ricevono solo il modo di chiederlo, cosi' non
     // esiste un secondo posto che sa di Firebase. getIdToken() restituisce
@@ -4359,13 +4364,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Il tempo lo decide il server, ed è lo stesso su cui programma lo
         // smontaggio della partita: non possono divergere.
+        //
+        // In CAMPIONATO cambia la destinazione, non il timer: dopo una gara di
+        // stagione non si rientra in lobby, si torna al calendario — che è
+        // questa stessa pagina ricaricata. Un secondo timer parallelo avrebbe
+        // fatto sparire il podio mentre il conto ne annunciava un altro, cioè
+        // avrebbe scritto il falso per tutta la premiazione.
+        const dove = () => (campionatoTornaAlCalendario ? 'al calendario' : 'in lobby');
         let resta = Math.max(1000, durataMs || 15000);
-        conto.textContent = `Rientro fra ${Math.ceil(resta / 1000)}s`;
+        conto.textContent = `Si torna ${dove()} fra ${Math.ceil(resta / 1000)}s`;
         const passo = setInterval(() => {
             if (mia !== sequenzaCorrente) { clearInterval(passo); return; }
             resta -= 1000;
-            if (resta > 0) { conto.textContent = `Rientro fra ${Math.ceil(resta / 1000)}s`; return; }
+            if (resta > 0) { conto.textContent = `Si torna ${dove()} fra ${Math.ceil(resta / 1000)}s`; return; }
             clearInterval(passo);
+            if (campionatoTornaAlCalendario) {
+                conto.textContent = 'Al calendario…';
+                window.location.reload();
+                return;
+            }
             conto.textContent = 'Rientro in lobby…';
             window.location.href = `/lobby.html?lobby=${lobbyId}`;
         }, 1000);
@@ -4394,6 +4411,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                 complete: () => { el.style.display = 'none'; }
             });
         }, Math.max(0, graceMs - 400));
+    });
+
+    // ── CAMPIONATO: dentro e fuori dal weekend ──────────────────────────
+    // Si RICARICA invece di ricostruire la scena a caldo. E' la scelta che
+    // tiene intatto il codice del weekend: la pagina riparte con la pista della
+    // gara del calendario e da li' gira il flusso di sempre. Il caricamento fra
+    // una gara e l'altra e' lo stesso che c'e' gia' fra lobby e gara.
+    socket.on('f1StagioneInPista', () => {
+        window.location.reload();
+    });
+
+    // Gara di campionato finita. Non fa partire nessun timer: cambia solo la
+    // DESTINAZIONE del conto alla rovescia che il podio ha gia' avviato (vedi
+    // il conto in fondo alla cerimonia), cosi' il podio si vede tutto e il
+    // testo dice la verita' fin dal primo secondo.
+    socket.on('f1StagioneAlCalendario', () => {
+        campionatoTornaAlCalendario = true;
     });
 
     socket.on('f1RedirectToLobby', () => {

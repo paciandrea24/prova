@@ -2624,7 +2624,11 @@ async function endRace(io, lobbyId, game) {
     // I disconnessi contano come umani: restano in `game.players` per la
     // finestra di riconnessione e possono tornare.
     const umani = Object.values(game.players).filter(p => !p.isBot).length;
-    const restaAlPodio = umani <= 1;
+    // In CAMPIONATO mai: "Riavvia" rigiocherebbe una gara il cui risultato e'
+    // gia' stato registrato qui sotto, e quella tappa conterebbe due volte con
+    // due risultati diversi. In una stagione si va avanti, non si ripete —
+    // dal podio si torna al calendario.
+    const restaAlPodio = umani <= 1 && !game.stagioneId;
 
     io.to(lobbyId).emit('f1RaceEnded', {
         podium,

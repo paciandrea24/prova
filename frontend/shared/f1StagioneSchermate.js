@@ -302,16 +302,27 @@
                 ? 'Stagione conclusa'
                 : `Prossima: ${nomePista(piste, prossima)}`);
 
-            // "Corri" arriva al passo 3: il posto c'e' gia', spento, cosi' la
-            // schermata e' quella definitiva e non un'altra da rifare.
-            el('stagione-corri').disabled = true;
+            // Si corre se: la stagione non e' finita, la si puo' riprendere con
+            // i giocatori che ci sono adesso, e sei tu a ospitare. Le tre
+            // condizioni le fa rispettare il server comunque — qui servono
+            // solo a non offrire un pulsante che poi non fa niente.
+            const puoiCorrere = !finita && (!ripresa || ripresa.ok) && puoScegliere;
+            el('stagione-corri').disabled = !puoiCorrere;
+            // A chi non ospita il pulsante non si mostra affatto: la gara la
+            // lancia chi ospita, e gli altri vengono portati in pista con lui.
+            el('stagione-corri').style.display = puoScegliere ? '' : 'none';
+
             if (ripresa && !ripresa.ok) {
                 const quanti = ripresa.mancanti.length;
                 testo(el('stagione-nota'), quanti
                     ? `Manca ${quanti === 1 ? 'un pilota' : quanti + ' piloti'} di questa stagione: si riprende solo con gli stessi giocatori.`
                     : 'In pista c’è qualcuno che non fa parte di questa stagione: si riprende solo con gli stessi giocatori.');
+            } else if (finita) {
+                testo(el('stagione-nota'), 'Tutte le gare sono state corse.');
+            } else if (!puoScegliere) {
+                testo(el('stagione-nota'), 'La gara la lancia chi ospita.');
             } else {
-                testo(el('stagione-nota'), 'Correre una gara arriva col prossimo passo.');
+                testo(el('stagione-nota'), '');
             }
             mostraVista('calendario');
         }
@@ -370,6 +381,14 @@
                 el('stagione-conferma-si').disabled = false;
                 el('stagione-conferma').style.display = 'none';
             }
+        });
+
+        el('stagione-corri').addEventListener('click', () => {
+            // Un solo via, anche se si preme due volte: il secondo clic
+            // arriverebbe mentre la pagina sta gia' per ricaricarsi.
+            el('stagione-corri').disabled = true;
+            testo(el('stagione-nota'), 'Si va in pista…');
+            socket.emit('f1StagioneCorri', { lobbyId });
         });
 
         el('stagione-crea').addEventListener('click', crea);
