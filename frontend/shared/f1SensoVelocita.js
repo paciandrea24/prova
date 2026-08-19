@@ -148,6 +148,15 @@
     // sente "in ritardo" rispetto a quello che si vede sotto le ruote.
     const TAU_SCOSSONE_MS = 70;
 
+    // Quanto pesa ciascuna superficie rispetto all'altra (scelta dell'utente al
+    // playtest del 2026-08-19: cordolo a metà, fuoripista pieno). Non è un
+    // ripiego per abbassare un effetto troppo forte, è una gerarchia: il cordolo
+    // lo prendi in traiettoria decine di volte per giro — è routine, e a piena
+    // ampiezza diventa un rumore di fondo che affatica e non dice più niente.
+    // Erba e ghiaia sono un errore, e devono restare un evento.
+    const PESO_CORDOLO = 0.5;
+    const PESO_FUORI = 1;
+
     // ── I bordi dello schermo ───────────────────────────────────────────────
     //
     // L'ultimo effetto è l'unico che non tocca la camera: la periferia
@@ -408,9 +417,9 @@
         // dai box si sente poco, ma si sente.
         const fraGrezza = clamp01(v / VEL_RIFERIMENTO);
         stato.intCordolo = passoVersoObiettivo(stato.intCordolo,
-            c.superficie === CORDOLO ? fraGrezza : 0, TAU_SCOSSONE_MS, dtMs);
+            c.superficie === CORDOLO ? fraGrezza * PESO_CORDOLO : 0, TAU_SCOSSONE_MS, dtMs);
         stato.intFuori = passoVersoObiettivo(stato.intFuori,
-            c.superficie === FUORI ? fraGrezza : 0, TAU_SCOSSONE_MS, dtMs);
+            c.superficie === FUORI ? fraGrezza * PESO_FUORI : 0, TAU_SCOSSONE_MS, dtMs);
 
         // Le fasi avanzano alla frequenza della superficie che sta dominando, e
         // avanzano SEMPRE: nessun salto quando la vibrazione riparte.
@@ -448,6 +457,7 @@
         SCARTO_PIENO_ACCEL, SCARTO_PIENO_FRENO,
         MOLLA_ARRETRAMENTO, MOLLA_ABBASSAMENTO, MOLLA_BECCHEGGIO_DEG,
         SCOSSONE_CORDOLO, SCOSSONE_FUORI, SCOSSONE_HALO_MULT, TAU_SCOSSONE_MS,
+        PESO_CORDOLO, PESO_FUORI,
         ASFALTO, CORDOLO, FUORI,
     };
 

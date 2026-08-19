@@ -207,6 +207,30 @@ test('scossone: proporzionale alla velocita', () => {
     assert.ok(piano > 0, 'a bassa velocita il cordolo deve comunque sentirsi');
 });
 
+test('scossone: il cordolo pesa meta del fuoripista', () => {
+    // Gerarchia voluta (playtest 2026-08-19): il cordolo lo prendi in
+    // traiettoria decine di volte per giro ed e' routine; erba e ghiaia sono un
+    // errore e devono restare un evento. A regime, alla stessa velocita', la
+    // vibrazione del cordolo deve valere la meta di quella del fuoripista.
+    function aRegime(superficie) {
+        const stato = SV.creaStato();
+        for (let t = 0; t < 1500; t += 16) SV.avanza(stato, { velocita: SV.VEL_RIFERIMENTO, superficie }, 16);
+        return stato;
+    }
+    const suCordolo = aRegime(SV.CORDOLO);
+    const fuori = aRegime(SV.FUORI);
+    assert.ok(Math.abs(suCordolo.intCordolo - SV.PESO_CORDOLO) < 0.01,
+        `intensita cordolo a regime: ${suCordolo.intCordolo}`);
+    assert.ok(Math.abs(fuori.intFuori - SV.PESO_FUORI) < 0.01,
+        `intensita fuoripista a regime: ${fuori.intFuori}`);
+
+    // E in ampiezza vera, non solo nell'intensita interna: il cordolo deve
+    // risultare piu leggero del fuoripista, non solo diverso.
+    const ampCordolo = suCordolo.intCordolo * SV.SCOSSONE_CORDOLO.dy;
+    const ampFuori = fuori.intFuori * SV.SCOSSONE_FUORI.dy;
+    assert.ok(ampCordolo < ampFuori, `cordolo ${ampCordolo} non piu leggero di fuori ${ampFuori}`);
+});
+
 test('scossone: fermi non succede niente nemmeno in ghiaia', () => {
     // Insabbiato e fermo: la camera non deve vibrare da sola.
     const stato = SV.creaStato();
