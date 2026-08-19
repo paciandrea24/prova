@@ -146,6 +146,38 @@ non avrò varianti della stessa pista». Quindi **niente campo "sono una
 variante di X"**: una pista è un file, e il giorno o la notte sono una sua
 proprietà come le altre.
 
+## Dove vivono le schermate della stagione — deciso il 2026-08-19
+
+Scoperta durante il passo 2, e cambia il piano: **la lobby non sa chi sei.**
+Conosce i colori e un gettone di sessione, non gli account. L'uid Firebase
+compare per la prima volta in `joinF1Game`, cioè già dentro la pagina di
+gioco. Ma una stagione ha bisogno degli uid: il salvataggio è per account, e
+l'account è obbligatorio per scelta dell'utente.
+
+Due strade:
+
+- **A — insegnare gli account alla lobby**: verificare un token Firebase
+  all'ingresso in lobby e tenere l'uid accanto al colore. Funziona, ma mette
+  le mani nel codice dell'identità appena irrobustito (step 4 della roadmap),
+  e per una ragione che riguarda un solo gioco.
+- **B — le schermate della stagione stanno in `f1.html`** (scelta). Lo
+  smistamento in lobby resta com'è e si limita a dire *quale* modalità
+  avviare; poi tutti atterrano nella pagina di gioco, dove il token c'è già e
+  `joinF1Game` porta l'uid di ciascuno. Le schermate della stagione diventano
+  sorelle di quella della scelta mescole: stesso posto, stesso canale, stessi
+  giocatori connessi insieme.
+
+**B, e non solo perché evita di toccare l'autenticazione.** La classifica fra
+una gara e l'altra la devono vedere tutti nello stesso momento, ed è roba da
+socket: tenerla in lobby vorrebbe dire tornare in lobby dopo ogni gara e
+rifare il giro di avvio ad ogni weekend. Con B fra una gara e l'altra non si
+esce mai dalla pagina.
+
+Conseguenza sull'ingresso già costruito al passo 1: *Stagione* non apre un
+pannello nella lobby, ma **avvia la sessione F1 con `settings.formato =
+'stagione'`**. Quello che l'utente ha scelto — «premendo F1 si sceglie fra
+gara veloce e stagione» — resta intatto.
+
 ## Il flusso
 
 ```
