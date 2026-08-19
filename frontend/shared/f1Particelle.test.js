@@ -119,6 +119,30 @@ test('a emissione zero le ultime particelle finiscono la corsa, poi il pool si s
     assert.equal(vive, 0, 'il pool non si e svuotato');
 });
 
+test('emissione parziale regola la densita, e non dipende dal frame rate', () => {
+    // Con l'emissione come probabilita per frame (la prima idea) a 144 fps si
+    // tirano i dadi due volte e mezzo piu spesso della stessa mezza emissione,
+    // e la densita cambia da sola. Qui e' una quota del pool: e' un conteggio.
+    function viveConEmissione(emissione, fps) {
+        const rand = randFinto(31);
+        const stato = P.creaStato(P.DETRITI);
+        const dt = 1000 / fps;
+        const passi = Math.round(2000 / dt);
+        for (let i = 0; i < passi; i++) P.avanza(stato, P.DETRITI, dt, { emissione, rand });
+        let vive = 0;
+        for (let i = 0; i < P.DETRITI.numero; i++) vive += stato.viva[i];
+        return vive;
+    }
+    assert.equal(viveConEmissione(1, 60), P.DETRITI.numero, 'a emissione piena il pool deve essere tutto in circolo');
+    const meta60 = viveConEmissione(0.5, 60);
+    const meta144 = viveConEmissione(0.5, 144);
+    assert.equal(meta60, meta144, `mezza emissione: ${meta60} a 60 fps contro ${meta144} a 144`);
+    assert.ok(Math.abs(meta60 - P.DETRITI.numero / 2) <= 1, `mezza emissione da ${meta60} particelle su ${P.DETRITI.numero}`);
+    // Anche a emissioni minime qualcosa si deve vedere, o l'effetto scompare
+    // invece di attenuarsi.
+    assert.ok(viveConEmissione(0.01, 60) >= 1);
+});
+
 test('riempi sfalsa le eta: il primo istante non e uno sbuffo unico', () => {
     const rand = randFinto(17);
     const stato = P.creaStato(P.SCIA);

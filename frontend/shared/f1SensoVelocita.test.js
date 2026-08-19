@@ -440,6 +440,75 @@ test('superficie: asfalto, cordolo e fuori su ogni campione di prova e monte-ros
     }
 });
 
+test('superficie: erba e ghiaia distinte sul profilo vero delle vie di fuga', () => {
+    // La ghiaia non e' dappertutto: su `prova` la disegna 115 campioni sul lato
+    // destro e 31 sul sinistro, con larghezze fino a 25 unita. Il test cammina
+    // sul profilo VERO e verifica che dentro la banda si trovi ghiaia e appena
+    // fuori si torni sul prato — compreso il lato, che e' la cosa piu facile da
+    // sbagliare: leggere `left` per `right` darebbe zolle verdi in mezzo alla
+    // ghiaia sul lato opposto, e nessun test lo direbbe.
+    const track = loadTrack('prova');
+    const g = track.barrierProfile.gravel;
+    const CURB_W = 2.8;
+    const bordo = track.roadHalf + CURB_W;
+    let provatiGhiaia = 0, provatiErba = 0;
+
+    for (let i = 0; i < track.points.length; i += 3) {
+        for (const [lato, banda] of [[1, g.right], [-1, g.left]]) {
+            const larghezza = banda[i] || 0;
+            if (larghezza <= 0) {
+                // Niente ghiaia qui: a qualunque distanza si esce sul prato.
+                assert.equal(SV.materialeFuori(g, i, lato * (bordo + 4), track.roadHalf, CURB_W), SV.ERBA,
+                    `campione ${i} lato ${lato}: ghiaia dove il profilo non ne disegna`);
+                provatiErba++;
+                continue;
+            }
+            // A meta della banda: ghiaia.
+            assert.equal(SV.materialeFuori(g, i, lato * (bordo + larghezza / 2), track.roadHalf, CURB_W), SV.GHIAIA,
+                `campione ${i} lato ${lato}: prato dentro la banda di ghiaia`);
+            // Oltre la banda: prato.
+            assert.equal(SV.materialeFuori(g, i, lato * (bordo + larghezza + 3), track.roadHalf, CURB_W), SV.ERBA,
+                `campione ${i} lato ${lato}: ghiaia oltre la fine della banda`);
+            // E dall'altra parte della pista, alla stessa distanza, dipende dal
+            // profilo di QUEL lato: e' il controllo che il verso non sia invertito.
+            const altroLato = lato > 0 ? g.left : g.right;
+            const atteso = (altroLato[i] || 0) >= larghezza / 2 ? SV.GHIAIA : SV.ERBA;
+            assert.equal(SV.materialeFuori(g, i, -lato * (bordo + larghezza / 2), track.roadHalf, CURB_W), atteso,
+                `campione ${i}: i due lati si stanno leggendo scambiati`);
+            provatiGhiaia++;
+        }
+    }
+    assert.ok(provatiGhiaia > 40, `solo ${provatiGhiaia} campioni con ghiaia provati`);
+    assert.ok(provatiErba > 100, `solo ${provatiErba} campioni di prato provati`);
+});
+
+test('superficie: senza profilo di ghiaia il fuoripista e prato', () => {
+    // Una pista puo non avere vie di fuga in ghiaia (buildGravel non emette
+    // nemmeno la mesh): li tutto il fuoripista e erba, senza casi speciali.
+    assert.equal(SV.materialeFuori(null, 0, 40, 11, 2.8), SV.ERBA);
+    assert.equal(SV.materialeFuori({ left: [], right: [] }, 0, 40, 11, 2.8), SV.ERBA);
+});
+
+test('superficie: misuraSottoAuto riporta anche lo scostamento e l indice', () => {
+    // Serve a non ricalcolare due volte per frame la stessa geometria: chi
+    // vuole sapere se sotto c'e erba o ghiaia ha bisogno del lato e del
+    // campione, non solo del nome della superficie.
+    const track = loadTrack('prova');
+    const i = 300;
+    const p = track.points[i];
+    const n = TG.normalAt(track.points, i, true);
+    const scostamento = track.roadHalf + 6;
+    const m = SV.misuraSottoAuto(TG, {
+        trackPts: track.points, pitPts: track.pitLanePts, idxPrecedente: i,
+        x: p.x + n.nx * scostamento, z: p.z + n.nz * scostamento,
+        roadHalf: track.roadHalf, curbW: 2.8,
+    });
+    assert.equal(m.superficie, SV.FUORI);
+    assert.ok(Math.abs(m.lat - scostamento) < 0.5, `scostamento riportato ${m.lat}, atteso ~${scostamento}`);
+    assert.ok(Math.abs(m.idx - i) < 5, `indice riportato ${m.idx}, atteso ~${i}`);
+    assert.equal(m.inPit, false);
+});
+
 test('superficie: in corsia box e sempre asfalto', () => {
     // In mezzo alla corsia box lo scostamento dall asse PISTA e' enorme: senza
     // la regola del tracciato piu vicino, ogni sosta ai box sarebbe una

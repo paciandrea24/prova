@@ -147,22 +147,34 @@
 
     // Fa avanzare tutte le particelle di `dtMs`.
     //
-    // `emissione` 0..1 è quante ne rinascono: 1 = l'effetto è in corso e il pool
-    // si ricicla tutto, 0 = l'effetto è finito e chi è ancora in aria finisce la
-    // sua corsa senza che nessuno rinasca. È ciò che fa ricadere le ultime zolle
-    // dopo che sei rientrato in pista, invece di spegnerle a mezz'aria.
-    function avanza(stato, config, dtMs, { ancora = null, emissione = 1, rand = Math.random } = {}) {
+    // `emissione` 0..1 è QUANTA PARTE DEL POOL resta in circolo: 1 = tutte, 0 =
+    // nessuna rinasce e chi è ancora in aria finisce la sua corsa — è ciò che fa
+    // ricadere le ultime zolle dopo che sei rientrato in pista, invece di
+    // spegnerle a mezz'aria. Non è una probabilità per frame: quella sarebbe
+    // legata al frame rate (a 144 fps si tirano i dadi due volte e mezzo più
+    // spesso, e la stessa "mezza emissione" darebbe una densità diversa).
+    //
+    // `pavimento` sovrascrive quello della configurazione: la quota del terreno
+    // non è zero dappertutto — le piste hanno dislivelli — e chi chiama la sa.
+    function avanza(stato, config, dtMs, { ancora = null, emissione = 1, rand = Math.random, pavimento = null } = {}) {
         const dt = Math.max(0, dtMs) / 1000;
         const turb = config.turbolenza * dt;
+        const suolo = pavimento != null ? pavimento : config.pavimento;
+        // Quante particelle possono stare in circolo adesso. Sempre almeno una
+        // se l'effetto è acceso, o a emissioni molto basse non si vedrebbe nulla.
+        const attive = emissione > 0
+            ? Math.max(1, Math.round(config.numero * Math.min(1, emissione)))
+            : 0;
         for (let i = 0; i < config.numero; i++) {
             if (!stato.viva[i]) {
-                // Posto libero: rinasce solo se l'effetto è ancora acceso.
-                if (emissione > 0 && rand() < emissione) rinasci(stato, i, config, ancora, rand);
+                // Posto libero: rinasce solo se l'effetto è acceso e questa
+                // particella rientra nella quota attiva.
+                if (i < attive) rinasci(stato, i, config, ancora, rand);
                 continue;
             }
             stato.eta[i] += dtMs;
             if (stato.eta[i] >= config.vitaMs) {
-                if (emissione > 0 && rand() < emissione) rinasci(stato, i, config, ancora, rand);
+                if (i < attive) rinasci(stato, i, config, ancora, rand);
                 else stato.viva[i] = 0;
                 continue;
             }
@@ -171,10 +183,10 @@
             stato.y[i] += stato.vy[i] * dt + (rand() - 0.5) * turb;
             stato.z[i] += stato.vz[i] * dt + (rand() - 0.5) * turb;
 
-            if (config.pavimento != null && stato.y[i] < config.pavimento) {
+            if (suolo != null && stato.y[i] < suolo) {
                 // Posata: si ferma dov'è invece di sprofondare, e da lì continua
                 // solo a rimpicciolire fino a sparire.
-                stato.y[i] = config.pavimento;
+                stato.y[i] = suolo;
                 stato.vx[i] = 0; stato.vy[i] = 0; stato.vz[i] = 0;
             }
         }

@@ -1504,13 +1504,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     const _particelleDummy = new THREE.Object3D();
     const particelleGeometria = new THREE.BoxGeometry(1, 1, 1);
 
-    function costruisciEffettoParticelle(config, colore, opacita) {
+    // `partiPieno`: la scia nasce col pool già sparso su tutta la durata di vita
+    // (si accende e si spegne in blocco con `visible`, e deve essere completa
+    // dal primo frame). I detriti no — nascono VUOTI: le loro particelle vivono
+    // in coordinate mondo, e un pool precaricato sarebbe una manciata di zolle
+    // ferme all'origine della mappa, pronte a comparire al primo fuoripista.
+    function costruisciEffettoParticelle(config, colore, opacita, { partiPieno = true } = {}) {
         const materiale = new THREE.MeshBasicMaterial({
             color: colore, transparent: true, opacity: opacita
         });
         const mesh = new THREE.InstancedMesh(particelleGeometria, materiale, config.numero);
         mesh.visible = false;
-        mesh.userData.particelle = F1Particelle.riempi(F1Particelle.creaStato(config), config, null);
+        const stato = F1Particelle.creaStato(config);
+        mesh.userData.particelle = partiPieno ? F1Particelle.riempi(stato, config, null) : stato;
         mesh.userData.configParticelle = config;
         // Effetto, non oggetto solido: col contorno i cubetti diventerebbero
         // coriandoli neri. Perde anche la proiezione d'ombra, che comunque non
@@ -1538,6 +1544,75 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function buildSlipstreamEffect() {
         return costruisciEffettoParticelle(F1Particelle.SCIA, 0xdfe3e6, 0.55);
+    }
+
+    // ── Detriti di erba e ghiaia ────────────────────────────────────────────
+    // Appesi alla SCENA, non all'auto: la terra sollevata resta dov'era e la
+    // vettura se ne va. Un solo materiale, di cui si cambia il colore quando si
+    // passa dal prato alla via di fuga — due mesh separate sarebbero due draw
+    // call per un effetto che non è mai di due colori nello stesso istante.
+    const detritiMesh = costruisciEffettoParticelle(
+        F1Particelle.DETRITI, ToonPalette.SURFACES.grass, 0.95, { partiPieno: false });
+    // Senza questo l'effetto non si vedrebbe MAI. Il frustum culling di Three
+    // prova la sfera di ingombro della GEOMETRIA trasformata dalla matrice
+    // dell'oggetto, e non sa niente delle istanze: questa mesh sta nella scena
+    // con origine (0,0,0) mentre le sue zolle vivono a centinaia di unità da lì,
+    // quindi verrebbe scartata ogni volta che l'origine della mappa è fuori
+    // inquadratura — cioè quasi sempre. Su 34 cubetti il culling non vale niente.
+    detritiMesh.frustumCulled = false;
+    scene.add(detritiMesh);
+    let detritiMateriale = null;      // 'erba' | 'ghiaia' — quale colore è montato ora
+    const _detritiAncora = { x: 0, y: 0, z: 0, avantiX: 0, avantiZ: 1 };
+    const _detritiAvanti = new THREE.Vector3();
+
+    // Sotto questa frazione di velocità non schizza niente: fermarsi nella
+    // ghiaia e restarci non solleva terra, e un effetto che continua a sbuffare
+    // sull'auto ferma è la cosa che si nota per prima come sbagliata.
+    const DETRITI_SOGLIA = 0.08;
+    const DETRITI_PIENO = 0.5;        // frazione di velocità a cui il pool è tutto in circolo
+
+    function aggiornaDetriti(dtMs, misura) {
+        const mio = serverState[myColor];
+        const inPista = !!myCarGroup && !tyreSelectActive && !panoramicaAttiva && !cerimoniaAttiva;
+        let emissione = 0;
+
+        if (inPista && misura && misura.superficie === F1SensoVelocita.FUORI) {
+            const frazione = Math.min(1, Math.abs((mio && mio.speed) || 0) / F1SensoVelocita.VEL_RIFERIMENTO);
+            emissione = Math.max(0, Math.min(1, (frazione - DETRITI_SOGLIA) / (DETRITI_PIENO - DETRITI_SOGLIA)));
+
+            // Il colore lo decide la mappa, non un valore fisso: la ghiaia
+            // esiste solo dove il profilo delle vie di fuga la disegna, e
+            // altrove il fuoripista è prato.
+            const materiale = F1SensoVelocita.materialeFuori(
+                BARRIER_PROFILE.gravel, misura.idx, misura.lat, ROAD_HALF, CURB_W);
+            if (materiale !== detritiMateriale) {
+                detritiMesh.material.color.setHex(materiale === F1SensoVelocita.GHIAIA
+                    ? ToonPalette.SURFACES.gravel
+                    : ToonPalette.SURFACES.grass);
+                detritiMateriale = materiale;
+            }
+
+            _detritiAvanti.set(0, 0, 1).applyQuaternion(myCarGroup.quaternion);
+            _detritiAncora.x = myCarGroup.position.x;
+            _detritiAncora.y = myCarGroup.position.y;
+            _detritiAncora.z = myCarGroup.position.z;
+            _detritiAncora.avantiX = _detritiAvanti.x;
+            _detritiAncora.avantiZ = _detritiAvanti.z;
+        }
+
+        // Anche a emissione zero si continua ad aggiornare finché resta
+        // qualcosa in aria: è ciò che fa ricadere le ultime zolle dopo il
+        // rientro in pista invece di spegnerle a mezz'aria. Quando il pool è
+        // vuoto la mesh sparisce e non costa più niente.
+        if (emissione === 0 && !detritiMesh.visible) return;
+        const vive = aggiornaEffettoParticelle(detritiMesh, dtMs, {
+            ancora: _detritiAncora,
+            emissione,
+            // Il suolo sta alla quota dell'auto: le piste hanno dislivelli, e
+            // uno zero fisso farebbe posare le zolle sotto o sopra il prato.
+            pavimento: myCarGroup ? myCarGroup.position.y : 0,
+        });
+        detritiMesh.visible = vive > 0;
     }
 
     // ====================================================
@@ -4123,8 +4198,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // dati di questa partita.
     function superficieSottoLAuto() {
         const mio = serverState[myColor];
-        if (!mio || !myCarGroup) return F1SensoVelocita.ASFALTO;
-        return F1SensoVelocita.superficieSottoAuto(TrackGeometry, {
+        if (!mio || !myCarGroup) return null;
+        return F1SensoVelocita.misuraSottoAuto(TrackGeometry, {
             trackPts, pitPts: PIT_PTS,
             idxPrecedente: mio.trackIndex || 0,
             x: myCarGroup.position.x, z: myCarGroup.position.z,
@@ -4136,13 +4211,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // (scelta mescole, panoramica, premiazione) il campo visivo torna a 65 nello
     // STESSO frame: quelle inquadrature sono tarate su quel valore, e la vetrina
     // dell'auto in pole ricava la propria posizione leggendo camera.fov.
-    function aggiornaCampoVisivo(dtMs) {
+    function aggiornaCampoVisivo(dtMs, misura) {
         const guidando = !tyreSelectActive && !panoramicaAttiva && !cerimoniaAttiva && !!myCarGroup;
         const mio = serverState[myColor];
         F1SensoVelocita.avanza(sensoVelocita, {
             velocita: guidando ? (mio && mio.speed) || 0 : 0,
             attivo: guidando,
-            superficie: guidando ? superficieSottoLAuto() : F1SensoVelocita.ASFALTO,
+            superficie: (guidando && misura) ? misura.superficie : F1SensoVelocita.ASFALTO,
         }, dtMs);
         // La matrice di proiezione si ricalcola solo quando il valore si muove
         // per davvero: fermi ai box, o in una qualunque delle schermate, questo
@@ -4634,10 +4709,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
 
+        // Che cosa c'è sotto l'auto: una misura sola per frame, usata sia dalla
+        // camera (gli scossoni) sia dai detriti (il colore e se emettere).
+        const _misuraSuperficie = superficieSottoLAuto();
+
         // Prima di scegliere DOVE sta la camera, quanto vede: il campo visivo
         // partecipa alle inquadrature delle schermate (che lo leggono per
         // posizionare l'auto della vetrina), quindi va risolto per primo.
-        aggiornaCampoVisivo(_dt);
+        aggiornaCampoVisivo(_dt, _misuraSuperficie);
+        aggiornaDetriti(_dt, _misuraSuperficie);
 
         if (tyreSelectActive) updateTyreSelectCamera();
         else if (panoramicaAttiva) aggiornaCameraPanoramica();

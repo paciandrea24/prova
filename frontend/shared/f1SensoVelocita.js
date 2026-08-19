@@ -180,6 +180,13 @@
     const CORDOLO = 'cordolo';
     const FUORI = 'fuori';
 
+    // Il dettaglio del fuoripista. Allo scossone non serve (erba e ghiaia
+    // scuotono uguale, ed è per questo che FUORI le tiene insieme), ma alle
+    // particelle sì: quello che schizza da sotto l'auto è verde o beige, e
+    // sbagliare colore è peggio che non avere l'effetto.
+    const ERBA = 'erba';
+    const GHIAIA = 'ghiaia';
+
     // ── La manopola ─────────────────────────────────────────────────────────
     //
     // Un moltiplicatore unico su TUTTI e quattro gli effetti. Non è una
@@ -293,21 +300,49 @@
     // vicino di quello della pista, siamo lì. È lo stesso criterio del pallino
     // della minimappa, che ha lo stesso problema — durante la sosta l'indice di
     // pista resta agganciato all'ingresso box e da solo direbbe "fuoripista".
-    function superficieSottoAuto(TG, { trackPts, pitPts, idxPrecedente = 0, x, z, roadHalf, curbW, finestra = 60 }) {
-        if (!trackPts || !trackPts.length) return ASFALTO;
+    // Restituisce tutto quello che si è dovuto calcolare per rispondere, non
+    // solo la risposta: `{ superficie, lat, idx, inPit }`. Lo scostamento
+    // firmato e l'indice servono a chi deve sapere ANCHE se sotto c'è erba o
+    // ghiaia, e ricalcolarli una seconda volta per frame sarebbe lavoro doppio
+    // per la stessa domanda.
+    function misuraSottoAuto(TG, { trackPts, pitPts, idxPrecedente = 0, x, z, roadHalf, curbW, finestra = 60 }) {
+        if (!trackPts || !trackPts.length) return { superficie: ASFALTO, lat: 0, idx: 0, inPit: false };
         const idx = TG.nearestIndexNear(trackPts, idxPrecedente || 0, x, z, finestra);
         const p = trackPts[idx];
-        if (!p) return ASFALTO;
+        if (!p) return { superficie: ASFALTO, lat: 0, idx: 0, inPit: false };
 
         const distPista = Math.hypot(x - p.x, z - p.z);
-        if (pitPts && pitPts.length) {
-            const nearPit = TG.nearestPoint(pitPts, x, z);
-            if (nearPit.dist < distPista) return ASFALTO;
-        }
-
         const n = TG.normalAt(trackPts, idx, true);
         const lat = (x - p.x) * n.nx + (z - p.z) * n.nz;
-        return superficieDaScostamento(lat, roadHalf, curbW, SEMI_LARGHEZZA_AUTO);
+
+        if (pitPts && pitPts.length) {
+            const nearPit = TG.nearestPoint(pitPts, x, z);
+            if (nearPit.dist < distPista) return { superficie: ASFALTO, lat, idx, inPit: true };
+        }
+        return {
+            superficie: superficieDaScostamento(lat, roadHalf, curbW, SEMI_LARGHEZZA_AUTO),
+            lat, idx, inPit: false,
+        };
+    }
+
+    function superficieSottoAuto(TG, opzioni) {
+        return misuraSottoAuto(TG, opzioni).superficie;
+    }
+
+    // Erba o ghiaia, per chi è già fuori pista. La ghiaia esiste solo dove il
+    // profilo delle vie di fuga la disegna — all'esterno delle curve, con una
+    // larghezza che varia campione per campione — e altrove il fuoripista è
+    // prato. Il verso: `lat` positivo è il verso della normale della pista, che
+    // è lo stesso lato che `buildGravel` chiama `right`; leggere l'array
+    // sbagliato darebbe zolle verdi in mezzo alla ghiaia sul lato opposto.
+    function materialeFuori(profiloGhiaia, idx, lat, roadHalf, curbW) {
+        if (!profiloGhiaia) return ERBA;
+        const banda = lat >= 0 ? profiloGhiaia.right : profiloGhiaia.left;
+        const larghezza = (banda && banda[idx]) || 0;
+        if (larghezza <= 0) return ERBA;
+        // La ghiaia comincia dal bordo esterno del cordolo e finisce dove
+        // finisce la banda: oltre, verso la barriera, si torna sull'erba.
+        return Math.abs(lat) <= roadHalf + curbW + larghezza ? GHIAIA : ERBA;
     }
 
     // Lo scossone di questo frame, in unità di gioco e radianti.
@@ -448,6 +483,7 @@
     return {
         creaStato, avanza, molla, spintaObiettivo,
         scossone, superficieDaScostamento, superficieSottoAuto, SEMI_LARGHEZZA_AUTO,
+        misuraSottoAuto, materialeFuori, ERBA, GHIAIA,
         impostaIntensita, getIntensita,
         intensitaBordi, SOGLIA_BORDI, TAU_BORDI_SU_MS, TAU_BORDI_GIU_MS,
         frazioneVelocita, fovObiettivo, passoVersoObiettivo, morbida, clamp01,
