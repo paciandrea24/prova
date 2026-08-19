@@ -360,3 +360,61 @@ test('il podio di una gara di campionato non offre "Riavvia"', async (t) => {
     assert.equal(fine.dati.restaAlPodio, false,
         'da soli in gara veloce "Riavvia" ha senso; in campionato no');
 });
+
+test('il cerchio si chiude: calendario -> gara -> risultato -> calendario', async (t) => {
+    // L'anello che nessun altro test copre: dopo la bandiera a scacchi, la
+    // pagina che riparte deve ritrovare il CALENDARIO (con la gara segnata) e
+    // non ricominciare il weekend appena corso.
+    t.after(pulisci);
+    const seasonStore = require('../../store/seasonStore.js');
+    t.after(() => seasonStore._svuota());
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const io = ioFinto();
+    const F1Stagione = require('../../../frontend/shared/f1Stagione.js');
+
+    const stagione = await seasonStore.salva(F1Stagione.creaStagione({
+        nome: 'Giro completo', creataDa: 'uid-andrea',
+        piloti: [{ uid: 'uid-andrea', colore: 'red', bot: false }],
+        calendario: ['prova', 'new-monza', 'monte-rosso'],
+        impostazioni: { botsEnabled: false, gridSize: 1 },
+    }));
+
+    // 1. Si e' al calendario, con la stagione scelta.
+    lobbies.set(LOBBY, {
+        host: 'red', players: ['red'], lockedPlayers: ['red'],
+        gameSettings: { trackId: 'prova', botsEnabled: 'false', gridSize: '1', formato: 'stagione' },
+    });
+    const a = collega(io);
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', uid: 'uid-andrea', token: creaGettone(LOBBY, 'red') });
+    a.handlers.f1StagioneScelta({ lobbyId: LOBBY, stagioneId: stagione._id });
+    assert.equal(activeGames.get(LOBBY).phase, 'stagione');
+
+    // 2. Corri: le impostazioni diventano quelle della prima tappa.
+    await a.handlers.f1StagioneCorri({ lobbyId: LOBBY });
+    assert.equal(lobbies.get(LOBBY).gameSettings.trackId, 'prova');
+
+    // 3. La pagina si ricarica: nasce la partita del weekend.
+    const b = collega(io);
+    b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', uid: 'uid-andrea', token: creaGettone(LOBBY, 'red') });
+    const gara = activeGames.get(LOBBY);
+    assert.equal(gara.phase, 'tyre_select', 'si corre');
+    assert.equal(gara.stagioneId, stagione._id);
+
+    // 4. Bandiera a scacchi.
+    gara.phase = 'race';
+    gara.grid = ['red'];
+    for (const p of Object.values(gara.players)) { p.finished = true; p.time = 60000; p.lap = gara.track.totalLaps; }
+    await registraHandlerF1.endRace(io, LOBBY, gara);
+
+    // 5. La pagina si ricarica di nuovo: si deve tornare al CALENDARIO.
+    const c = collega(io);
+    c.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', uid: 'uid-andrea', token: creaGettone(LOBBY, 'red') });
+    const dopo = activeGames.get(LOBBY);
+    assert.equal(dopo.phase, 'stagione', 'si torna a scegliere, non si ricomincia la gara appena corsa');
+    assert.equal(dopo.stagioneId, stagione._id, 'e la stagione e ancora quella');
+
+    // 6. E la prossima volta si corre la SECONDA tappa.
+    await c.handlers.f1StagioneCorri({ lobbyId: LOBBY });
+    assert.equal(lobbies.get(LOBBY).gameSettings.trackId, 'new-monza',
+        'il calendario e avanzato: la gara dopo e la seconda pista');
+});
