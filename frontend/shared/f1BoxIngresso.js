@@ -97,7 +97,7 @@
     const MURO_MARGINE = 10;
 
     // Tolleranze attorno al muro, in unità di gioco. A ~31 unità/s
-    // dell'autopilota la perfetta vale ±0.145 s e la buona ±0.39 s.
+    // dell'autopilota la perfetta vale ±0.129 s e la buona ±0.39 s.
     //
     // Perché 4.5 e non 3, che era il primo valore: il conto alla rovescia si
     // legge con un decimale, quindi cambia dieci volte al secondo — con ±0.10 s
@@ -106,7 +106,11 @@
     // pezzo del «non riesco mai a fare pit stop perfetto»: il primo era che le
     // due misure non coincidevano, ma anche a misura sistemata la finestra
     // restava più stretta di quanto lo schermo sappia mostrare.
-    const MURO_PERFETTO = 4.5;
+    // 4.0 e non 4.5: al playtest la perfetta risultava «leggerissimamente
+    // larga». Un decimo di secondo e mezzo resta sopra la risoluzione del conto
+    // alla rovescia (un decimo), che è il vincolo da cui non si può scendere —
+    // sotto, si tornerebbe a prenderla per caso.
+    const MURO_PERFETTO = 4.0;
     const MURO_BUONO = 12;
 
     function clamp01(v) {

@@ -2485,21 +2485,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     // niente da vedere.
     let pitMuro = null;
 
+    // I colori dei tre esiti, in un posto solo: li usano sia il muro (che li
+    // mostra in anticipo, mentre ci si avvicina) sia il pannello che li ripete
+    // a sosta iniziata. Fucsia per la perfetta perché è l'unico dei tre che non
+    // si confonde con nient'altro in pista — il verde è già dei cordoli e dei
+    // tempi migliori, il rosso dei danni.
+    const ESITO_COLORE = {
+        perfetta: { rgb: '236, 64, 172', css: '#ec40ac' },
+        buona:    { rgb: '46, 204, 113', css: 'var(--green, #2ecc71)' },
+        lenta:    { rgb: '231, 76, 60',  css: 'var(--red, #e74c3c)' },
+    };
+
     const MURO_ALTEZZA = 4.6;
     const MURO_TEXTURE_W = 512;
     const MURO_TEXTURE_H = 236;
 
-    function disegnaTexturaMuro(ctx, { secondi, esito, acceso }) {
+    function disegnaTexturaMuro(ctx, { secondi, esito, acceso, verdetto }) {
         const w = MURO_TEXTURE_W, h = MURO_TEXTURE_H;
         ctx.clearRect(0, 0, w, h);
 
-        // Fondo: più acceso in basso, dove il muro tocca l'asfalto.
-        const colore = esito
-            ? ({ perfetta: '46, 204, 113', buona: '241, 196, 15', lenta: '231, 76, 60' })[esito]
-            : (acceso ? '46, 204, 113' : '80, 210, 240');
+        // Fondo: più acceso in basso, dove il muro tocca l'asfalto. Il colore è
+        // quello dell'esito che si prenderebbe premendo ADESSO: rosso finché si
+        // è lontani, verde dentro la finestra buona, fucsia dentro la perfetta.
+        // È il modo in cui il muro si legge senza leggere il numero.
+        const colore = (ESITO_COLORE[esito] || { rgb: '80, 210, 240' }).rgb;
         const grad = ctx.createLinearGradient(0, 0, 0, h);
-        grad.addColorStop(0, `rgba(${colore}, ${acceso ? 0.22 : 0.10})`);
-        grad.addColorStop(1, `rgba(${colore}, ${acceso ? 0.62 : 0.42})`);
+        grad.addColorStop(0, `rgba(${colore}, ${acceso ? 0.24 : 0.12})`);
+        grad.addColorStop(1, `rgba(${colore}, ${acceso ? 0.66 : 0.44})`);
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, w, h);
 
@@ -2509,7 +2521,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ctx.lineWidth = 7;
         ctx.strokeRect(4, 4, w - 8, h - 8);
 
-        if (esito) {
+        if (verdetto) {
             ctx.fillStyle = `rgba(${colore}, 1)`;
             ctx.font = 'bold 74px Fredoka, Trebuchet MS, sans-serif';
             ctx.textAlign = 'center';
@@ -2623,11 +2635,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         // indovina: il numero cambia dieci volte al secondo ed e' troppo per
         // l'occhio, mentre un colore che cambia lo si coglie subito. Il valore
         // e' lo stesso su cui giudica il server, non una soglia grafica a parte.
-        const acceso = Math.abs(d) <= F1BoxIngresso.MURO_PERFETTO;
-        const testo = secondi.toFixed(1) + (acceso ? '!' : '');
+        // L'esito che si prenderebbe premendo adesso, con la STESSA funzione
+        // con cui il server giudica: il colore non è una soglia grafica per
+        // conto suo, è il verdetto in anticipo.
+        const esitoOra = F1BoxIngresso.esitoDaDistanza(d);
+        const acceso = esitoOra === 'perfetta';
+        const testo = secondi.toFixed(1) + esitoOra;
         if (testo === pitMuro.ultimoTesto) return;
         pitMuro.ultimoTesto = testo;
-        disegnaTexturaMuro(pitMuro.ctx, { secondi, esito: null, acceso });
+        disegnaTexturaMuro(pitMuro.ctx, { secondi, esito: esitoOra, acceso });
         pitMuro.texture.needsUpdate = true;
     }
 
@@ -2636,7 +2652,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function segnaEsitoMuroPit(esito) {
         if (!pitMuro || pitMuro.spegniA != null) return;
         pitMuro.esito = esito;
-        disegnaTexturaMuro(pitMuro.ctx, { secondi: null, esito });
+        disegnaTexturaMuro(pitMuro.ctx, { secondi: null, esito, verdetto: true });
         pitMuro.texture.needsUpdate = true;
         pitMuro.spegniA = performance.now() + 900;
     }
@@ -2677,9 +2693,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // tempismo era giusto, che è metà del gioco. Il pannello lo ripete quando
     // l'auto si ferma, con la durata che ne consegue.
     const ESITO_TESTO = {
-        perfetta: { testo: 'PERFETTA!', colore: 'var(--green)' },
-        buona:    { testo: 'BUONA',     colore: '#f1c40f' },
-        lenta:    { testo: 'LENTA',     colore: 'var(--red)' },
+        perfetta: { testo: 'PERFETTA!', colore: ESITO_COLORE.perfetta.css },
+        buona:    { testo: 'BUONA',     colore: ESITO_COLORE.buona.css },
+        lenta:    { testo: 'LENTA',     colore: ESITO_COLORE.lenta.css },
     };
 
     socket.on('f1PitEsito', ({ esito }) => {
