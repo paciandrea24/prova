@@ -462,11 +462,12 @@
                         <div class="stagione-sezione">Nuova stagione</div>
                         <label class="stagione-campo">
                             <span>Nome</span>
-                            <input type="text" id="stagione-nome" maxlength="40" placeholder="Mondiale 2026">
+                            <input type="text" id="stagione-nome" maxlength="40" placeholder="Mondiale 2026"
+                                   autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
                         </label>
                         <label class="stagione-campo">
                             <span>Quante gare</span>
-                            <input type="number" id="stagione-gare" min="3" step="1">
+                            <input type="number" id="stagione-gare" min="3" step="1" autocomplete="off">
                             <small id="stagione-gare-aiuto">&mdash;</small>
                         </label>
                         <label class="stagione-campo">
@@ -477,7 +478,7 @@
                                  esistono. Quali siano disponibili lo decide la
                                  pista piu' STRETTA del gioco, perche' il
                                  calendario puo' pescare qualsiasi pista. -->
-                            <select id="stagione-piloti">
+                            <select id="stagione-piloti" autocomplete="off">
                                 <option value="6">6</option>
                                 <option value="10">10</option>
                                 <option value="14">14</option>
