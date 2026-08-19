@@ -1768,6 +1768,10 @@ body.in-cerimonia .hud { display: none !important; }
 }
 
 .stagione-testata { display: flex; flex-direction: column; gap: 4px; }
+/* La navigazione sta SOPRA il titolo e non in fondo alla pagina: e' la prima
+   cosa che si cerca quando si e' entrati per sbaglio, e in fondo verrebbe
+   confusa con i comandi della stagione. */
+.stagione-navigazione { display: flex; gap: 8px; margin-bottom: 6px; }
 .stagione-eyebrow {
     font-size: 11px; font-weight: 800; letter-spacing: 3px;
     text-transform: uppercase; color: var(--sel-tenue);
@@ -1829,6 +1833,27 @@ body.in-cerimonia .hud { display: none !important; }
 .stagione-btn:disabled { opacity: 0.45; cursor: default; }
 .stagione-btn-primario { background: var(--sel-cordolo); border-color: transparent; }
 .stagione-btn-primario:hover:not(:disabled) { filter: brightness(1.12); background: var(--sel-cordolo); }
+/* Tornare indietro e uscire non sono azioni da mettere in evidenza: devono
+   essere trovabili, non attirare il dito. */
+.stagione-btn-piatto {
+    padding: 7px 12px; font-size: 11px; letter-spacing: 1.5px;
+    background: transparent; color: var(--sel-tenue);
+}
+.stagione-btn-piatto:hover:not(:disabled) { background: var(--sel-lavagna); color: var(--sel-testo); }
+/* Distruttivo: si riconosce dal colore ma non compete col primario, che e'
+   l'azione che si vuole davvero fare. */
+.stagione-btn-pericolo { background: transparent; color: #FF8A80; border-color: rgba(255, 138, 128, 0.45); }
+.stagione-btn-pericolo:hover:not(:disabled) { background: rgba(255, 138, 128, 0.12); }
+
+/* La conferma di cancellazione: in linea, sotto i comandi, non un confirm()
+   del browser — quello e' un salto fuori dal gioco. */
+.stagione-conferma {
+    display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+    margin-top: 10px; padding: 10px 14px; border-radius: 10px;
+    background: rgba(255, 138, 128, 0.10);
+    border: 1px solid rgba(255, 138, 128, 0.35);
+    font-size: 13px;
+}
 
 .stagione-errore { margin: 0; font-size: 13px; color: #FF8A80; }
 .stagione-nota, .stagione-attesa { margin: 0; font-size: 13px; color: var(--sel-tenue); }

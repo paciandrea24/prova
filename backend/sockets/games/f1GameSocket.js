@@ -1721,7 +1721,12 @@ function playersVisibleTo(game, viewerColor) {
     // (segnalato in playtest su monte-rosso, "teletrasportato alla mia
     // sinistra"). Ora lo spostamento avviene mentre l'animazione della pole
     // copre lo schermo, che è il momento in cui deve avvenire.
-    if (game.phase === 'tyre_select') return {};
+    // Scelta mescole e scelta del campionato: non si è ancora in pista, quindi
+    // non si vede nessuno. Vale anche per il SUONO — il client fa girare il
+    // motore di ogni auto che riceve, e mandargliele tutte (per giunta impilate
+    // sullo stesso punto, perché nessuno le ha ancora schierate) si sentiva
+    // come un rombo di motori a fine caricamento. Segnalato in playtest.
+    if (game.phase === 'tyre_select' || game.phase === 'stagione') return {};
     return game.players;
 }
 

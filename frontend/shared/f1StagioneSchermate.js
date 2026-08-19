@@ -18,11 +18,24 @@
 
     const el = (id) => document.getElementById(id);
 
+    // Da dove si torna indietro, e dove si va. L'elenco e' la radice: di li'
+    // non c'e' un "indietro" dentro il campionato, si esce e basta — e per
+    // uscire c'e' gia' il pulsante accanto.
+    const PRECEDENTE = { calendario: 'scelta', scelta: null, attesa: null };
+    let vistaCorrente = 'scelta';
+
     function mostraVista(quale) {
+        vistaCorrente = quale;
         for (const v of ['scelta', 'calendario', 'attesa']) {
             const n = el('stagione-vista-' + v);
             if (n) n.style.display = (v === quale) ? '' : 'none';
         }
+        const indietro = el('stagione-indietro');
+        if (indietro) indietro.style.display = PRECEDENTE[quale] ? '' : 'none';
+        // Una conferma di cancellazione aperta non deve sopravvivere al cambio
+        // di schermata: riapparirebbe puntata su una stagione diversa.
+        const conferma = el('stagione-conferma');
+        if (conferma) conferma.style.display = 'none';
     }
 
     function testo(nodo, valore) { if (nodo) nodo.textContent = valore; }
@@ -54,10 +67,11 @@
      * @param {() => Promise<string>} opzioni.tokenDi   token Firebase corrente
      * @param {Array<{id:string,name:string}>} opzioni.piste   da GET /api/f1/tracks
      * @param {string|null} opzioni.mioUid   per riconoscersi in classifica
+     * @param {() => void} opzioni.versoLobby  come si esce dalla partita
      * @returns {{chiudi: () => void}}
      */
     function monta(opzioni) {
-        const { socket, lobbyId, sonoHost, tokenDi, piste, mioUid } = opzioni;
+        const { socket, lobbyId, sonoHost, tokenDi, piste, mioUid, versoLobby } = opzioni;
         const overlay = el('stagione-overlay');
         overlay.style.display = 'flex';
 
@@ -180,6 +194,8 @@
             socket.emit('f1StagioneScelta', { lobbyId, stagioneId: id });
         }
 
+        let apertaId = null;
+
         async function mostraStagione(id) {
             let stagione, ripresa;
             try {
@@ -192,7 +208,14 @@
                 mostraVista('scelta');
                 return;
             }
+            apertaId = stagione._id;
             testo(el('stagione-titolo'), stagione.nome);
+
+            // Elimina compare solo a chi l'ha creata (il server rifiuta gli
+            // altri comunque, ma un pulsante che non funziona e' peggio di un
+            // pulsante che non c'e').
+            const puoiEliminare = !!(mioUid && stagione.creataDa === mioUid);
+            el('stagione-elimina').style.display = puoiEliminare ? '' : 'none';
 
             const cal = el('stagione-calendario');
             cal.innerHTML = '';
@@ -258,6 +281,60 @@
             }
             mostraVista('calendario');
         }
+
+        // ── navigazione ────────────────────────────────────────────────
+        function tornaIndietro() {
+            const dove = PRECEDENTE[vistaCorrente];
+            if (!dove) return;
+            if (dove === 'scelta') {
+                // Rientrando nell'elenco lo si rilegge: una stagione appena
+                // creata o appena cancellata deve trovarsi al posto giusto.
+                testo(el('stagione-titolo'), 'Le tue stagioni');
+                apertaId = null;
+                errore('');
+                caricaElenco();
+            }
+            mostraVista(dove);
+        }
+
+        el('stagione-indietro').addEventListener('click', tornaIndietro);
+        el('stagione-esci').addEventListener('click', () => versoLobby && versoLobby());
+
+        // Esc fa la stessa cosa del pulsante: e' il gesto che chiunque prova
+        // per primo per tornare indietro.
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            if (el('stagione-overlay').style.display === 'none') return;
+            if (el('stagione-conferma').style.display !== 'none') {
+                el('stagione-conferma').style.display = 'none';
+                return;
+            }
+            tornaIndietro();
+        });
+
+        // ── eliminazione ───────────────────────────────────────────────
+        el('stagione-elimina').addEventListener('click', () => {
+            el('stagione-conferma').style.display = 'flex';
+        });
+        el('stagione-conferma-no').addEventListener('click', () => {
+            el('stagione-conferma').style.display = 'none';
+        });
+        el('stagione-conferma-si').addEventListener('click', async () => {
+            if (!apertaId) return;
+            el('stagione-conferma-si').disabled = true;
+            try {
+                await chiedi(tokenDi, '/api/f1/stagioni/' + encodeURIComponent(apertaId), { method: 'DELETE' });
+                apertaId = null;
+                testo(el('stagione-titolo'), 'Le tue stagioni');
+                mostraVista('scelta');
+                caricaElenco();
+            } catch (e) {
+                errore('Non riesco a cancellarla: ' + e.message);
+            } finally {
+                el('stagione-conferma-si').disabled = false;
+                el('stagione-conferma').style.display = 'none';
+            }
+        });
 
         el('stagione-crea').addEventListener('click', crea);
         socket.on('f1StagioneScelta', ({ stagioneId }) => {

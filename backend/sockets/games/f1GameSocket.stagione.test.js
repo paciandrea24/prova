@@ -115,3 +115,34 @@ test('la stagione scelta da chi ospita arriva a tutti, e solo lui puo\' sceglier
     assert.equal(annunci[0].dati.stagioneId, 'stag-1');
     assert.equal(activeGames.get(LOBBY).stagioneId, 'stag-1');
 });
+
+test('in fase stagione nessuna auto va in scena: non si e ancora in pista', (t) => {
+    // Segnalato al playtest: "alla fine del caricamento si sente rumore di
+    // motori". Il client fa suonare il motore di ogni auto che riceve, e in
+    // fase 'stagione' le riceveva tutte — per giunta impilate sullo stesso
+    // punto, perche' nessuno le ha ancora schierate. La scelta mescole aveva
+    // gia' questa regola (non si e' in pista, non si vede nessuno); la fase
+    // nuova non la conosceva.
+    t.after(pulisci);
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const io = ioFinto();
+    lobbies.set(LOBBY, {
+        host: 'red', players: ['red'], lockedPlayers: ['red'],
+        gameSettings: { trackId: 'prova', botsEnabled: 'true', gridSize: '6', formato: 'stagione' },
+    });
+    const a = collega(io);
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', uid: 'uid-andrea', token: creaGettone(LOBBY, 'red') });
+
+    const g = activeGames.get(LOBBY);
+    assert.ok(Object.keys(g.players).length > 1, 'la partita ha davvero dei bot, se no il test non prova niente');
+
+    const setup = a.emessi.find(m => m.evento === 'f1Setup');
+    assert.deepEqual(Object.keys(setup.dati.players), [], 'f1Setup non deve portare nessuna auto');
+
+    io.inviati.length = 0;
+    t.mock.timers.tick(500);
+    for (const m of io.inviati.filter(m => m.evento === 'f1StateUpdate')) {
+        const colori = Object.keys(m.dati).filter(k => !k.startsWith('__'));
+        assert.deepEqual(colori, [], `lo stato porta ${colori.join(', ')}: in campionato non si e ancora in pista`);
+    }
+});

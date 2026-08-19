@@ -2991,6 +2991,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     tokenDi: tokenFirebaseCorrente,
                     piste: piste || [],
                     mioUid: user ? user.uid : null,
+                    // Uscire dal campionato e' uscire dalla partita, ed e' la
+                    // stessa regola del podio: chi ospita la chiude per tutti
+                    // (il server smonta la sessione), chi non ospita se ne va
+                    // e basta — non puo' strappare gli altri dalla schermata.
+                    versoLobby: () => {
+                        if (myColor === hostColor) socket.emit('f1ReturnToLobby', lobbyId);
+                        else window.location.href = `/lobby.html?lobby=${lobbyId}`;
+                    },
                 });
                 // Rientro a campionato gia' scelto: il server lo dice in
                 // f1Setup, e la schermata deve aprirsi su quello invece che

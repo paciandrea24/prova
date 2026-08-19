@@ -289,3 +289,39 @@ test('sei piloti restano possibili anche se esiste una pista stretta', async (t)
     assert.equal(r.stato, 201, r.dati && r.dati.error);
     assert.equal(r.dati.stagione.piloti.length, 6);
 });
+
+test('cancellare una stagione: solo chi l ha creata', async (t) => {
+    // In multiplayer una stagione e' di tutti quelli che ci corrono, ma
+    // cancellarla la toglie a TUTTI: e' l'unica operazione irreversibile qui
+    // dentro, quindi la puo' fare solo chi l'ha avviata. Gli altri la vedono e
+    // ci corrono, non la distruggono.
+    t.after(pulisci);
+    const server = await avviaServer();
+    t.after(() => server.close());
+    preparaPartita([{ colore: '#e74c3c', uid: 'uid-andrea' }, { colore: '#3498db', uid: 'uid-amico' }]);
+    const creata = await chiedi(server, {
+        metodo: 'POST', percorso: '/api/f1/stagioni', uid: 'uid-andrea',
+        corpo: { lobbyId: LOBBY, nome: 'Da cancellare', quanteGare: 3, gridSize: 6 },
+    });
+    const id = creata.dati.stagione._id;
+
+    const compagno = await chiedi(server, { metodo: 'DELETE', percorso: '/api/f1/stagioni/' + id, uid: 'uid-amico' });
+    assert.equal(compagno.stato, 403, 'chi ci corre ma non l ha creata non la puo cancellare');
+
+    const estraneo = await chiedi(server, { metodo: 'DELETE', percorso: '/api/f1/stagioni/' + id, uid: 'uid-estraneo' });
+    assert.equal(estraneo.stato, 404, 'a un estraneo non si dice nemmeno che esiste');
+
+    const suo = await chiedi(server, { metodo: 'DELETE', percorso: '/api/f1/stagioni/' + id, uid: 'uid-andrea' });
+    assert.equal(suo.stato, 200);
+
+    const dopo = await chiedi(server, { percorso: '/api/f1/stagioni', uid: 'uid-andrea' });
+    assert.deepEqual(dopo.dati.stagioni, [], 'e sparisce davvero');
+});
+
+test('cancellare una stagione che non c e non e un errore del server', async (t) => {
+    t.after(pulisci);
+    const server = await avviaServer();
+    t.after(() => server.close());
+    const r = await chiedi(server, { metodo: 'DELETE', percorso: '/api/f1/stagioni/mai-esistita', uid: 'uid-andrea' });
+    assert.equal(r.stato, 404);
+});

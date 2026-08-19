@@ -156,6 +156,32 @@ function creaRouter(opzioni) {
         }
     });
 
+    // Cancellare una stagione: solo chi l'ha CREATA.
+    //
+    // In multiplayer una stagione appartiene a tutti quelli che ci corrono —
+    // sta nella lista di ognuno, e ognuno puo' riprenderla — ma cancellarla la
+    // toglie a tutti insieme, ed e' l'unica operazione irreversibile qui
+    // dentro. Chi ci corre la vede e la gioca; chi l'ha avviata la puo'
+    // buttare.
+    router.delete('/api/f1/stagioni/:id', autentica, async (req, res) => {
+        try {
+            const stagione = await seasonStore.leggi(req.params.id);
+            // Stesso silenzio della lettura: a un estraneo non si dice
+            // nemmeno che quell'id esiste.
+            if (!stagione) return res.status(404).json({ error: 'Stagione non trovata' });
+            const ciCorro = (stagione.piloti || []).some(p => p.uid === req.uid);
+            if (!ciCorro) return res.status(404).json({ error: 'Stagione non trovata' });
+            if (stagione.creataDa !== req.uid) {
+                return res.status(403).json({ error: 'Puoi cancellare solo le stagioni che hai creato tu' });
+            }
+            await seasonStore.cancella(req.params.id);
+            res.json({ cancellata: true });
+        } catch (err) {
+            console.error('DELETE /api/f1/stagioni/:id:', err);
+            res.status(500).json({ error: 'Impossibile cancellare la stagione' });
+        }
+    });
+
     return router;
 }
 
