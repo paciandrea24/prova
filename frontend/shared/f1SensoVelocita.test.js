@@ -14,6 +14,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const SV = require('./f1SensoVelocita');
+const TG = require('./trackGeometry.js');
+const { loadTrack } = require('../../backend/sockets/games/trackLoader.js');
 
 test('frazioneVelocita: fermi zero, a tutta uno', () => {
     assert.equal(SV.frazioneVelocita(0), 0);
@@ -172,6 +174,170 @@ test('molla: uscire e rientrare in pista non inventa una frenata', () => {
     SV.avanza(stato, { velocita: 5.5 }, 16);
     assert.ok(Math.abs(stato.spinta) < 0.01, `primo frame al rientro: spinta ${stato.spinta}`);
     assert.equal(stato.velVeloce, stato.velLenta, 'i filtri devono ripartire allineati');
+});
+
+// ── Gli scossoni ────────────────────────────────────────────────────────────
+
+test('scossone: sull asfalto la camera e ferma', () => {
+    const stato = SV.creaStato();
+    for (let t = 0; t < 1000; t += 16) {
+        SV.avanza(stato, { velocita: SV.VEL_RIFERIMENTO, superficie: SV.ASFALTO }, 16);
+    }
+    const s = SV.scossone(stato);
+    // Math.abs perche' il prodotto per una sinusoide negativa da' -0, che con
+    // assert.equal in modalita' strict non e' 0.
+    assert.equal(Math.abs(s.dx), 0);
+    assert.equal(Math.abs(s.dy), 0);
+    assert.equal(Math.abs(s.rollRad), 0);
+});
+
+test('scossone: proporzionale alla velocita', () => {
+    function ampiezzaA(velocita) {
+        const stato = SV.creaStato();
+        let max = 0;
+        for (let t = 0; t < 1500; t += 16) {
+            SV.avanza(stato, { velocita, superficie: SV.CORDOLO }, 16);
+            if (t > 500) max = Math.max(max, Math.abs(SV.scossone(stato).dy));
+        }
+        return max;
+    }
+    const piano = ampiezzaA(SV.VEL_RIFERIMENTO * 0.2);
+    const forte = ampiezzaA(SV.VEL_RIFERIMENTO);
+    assert.ok(forte > piano * 3, `a tutta ${forte} contro ${piano} al 20%`);
+    assert.ok(piano > 0, 'a bassa velocita il cordolo deve comunque sentirsi');
+});
+
+test('scossone: fermi non succede niente nemmeno in ghiaia', () => {
+    // Insabbiato e fermo: la camera non deve vibrare da sola.
+    const stato = SV.creaStato();
+    for (let t = 0; t < 1000; t += 16) SV.avanza(stato, { velocita: 0, superficie: SV.FUORI }, 16);
+    assert.ok(Math.abs(SV.scossone(stato).dy) < 1e-9);
+});
+
+test('scossone: dall halo-cam scuote di piu che da fuori', () => {
+    const stato = SV.creaStato();
+    for (let t = 0; t < 800; t += 16) SV.avanza(stato, { velocita: SV.VEL_RIFERIMENTO, superficie: SV.FUORI }, 16);
+    const fuori = SV.scossone(stato);
+    const halo = SV.scossone(stato, { halo: true });
+    assert.ok(Math.abs(halo.dy) > Math.abs(fuori.dy), 'la camera sul telaio deve prendere di piu');
+    assert.equal(Math.abs(halo.dy) / Math.abs(fuori.dy), SV.SCOSSONE_HALO_MULT);
+});
+
+test('scossone: passare dal cordolo all erba si fonde, non scatta', () => {
+    // Le due intensita' sono separate proprio per questo: con una sola, il
+    // cambio di superficie cambiava i parametri sotto e si vedeva uno scatto.
+    //
+    // Si guarda l'INVILUPPO, non il valore istantaneo: a 11 Hz una sinusoide
+    // cambia molto in un frame da 16 ms, e confrontare due campioni successivi
+    // misurerebbe l'oscillazione normale, non una discontinuita'.
+    const inviluppo = (s) => s.intCordolo * SV.SCOSSONE_CORDOLO.dy + s.intFuori * SV.SCOSSONE_FUORI.dy;
+    const stato = SV.creaStato();
+    for (let t = 0; t < 1000; t += 16) SV.avanza(stato, { velocita: 5, superficie: SV.CORDOLO }, 16);
+    const primaDelCambio = inviluppo(stato);
+    SV.avanza(stato, { velocita: 5, superficie: SV.FUORI }, 16);
+    const dopoUnFrame = inviluppo(stato);
+    assert.ok(Math.abs(dopoUnFrame - primaDelCambio) < 0.01,
+        `salto d ampiezza di ${Math.abs(dopoUnFrame - primaDelCambio)} in un frame`);
+    // E dopo un decimo di secondo il cordolo si e' quasi spento.
+    for (let t = 0; t < 200; t += 16) SV.avanza(stato, { velocita: 5, superficie: SV.FUORI }, 16);
+    assert.ok(stato.intCordolo < 0.06, `il cordolo non si spegne: ${stato.intCordolo}`);
+});
+
+test('scossone: la vibrazione e la stessa a 30 e a 144 fps', () => {
+    // Non si confrontano i valori istante per istante (le fasi campionate a
+    // frame rate diversi non coincidono), ma l'INVILUPPO: ampiezza massima e
+    // numero di oscillazioni in un secondo devono essere gli stessi.
+    function inviluppo(fps) {
+        const stato = SV.creaStato();
+        const dt = 1000 / fps;
+        let max = 0, cambiSegno = 0, prec = 0;
+        for (let t = 0; t < 2000; t += dt) {
+            SV.avanza(stato, { velocita: SV.VEL_RIFERIMENTO, superficie: SV.CORDOLO }, dt);
+            if (t < 1000) continue;
+            const y = SV.scossone(stato).dy;
+            max = Math.max(max, Math.abs(y));
+            if (prec * y < 0) cambiSegno++;
+            prec = y;
+        }
+        return { max, cambiSegno };
+    }
+    const a30 = inviluppo(30);
+    const a60 = inviluppo(60);
+    const a144 = inviluppo(144);
+    assert.ok(Math.abs(a60.max - a144.max) < 0.02, `ampiezza 60 vs 144: ${a60.max} vs ${a144.max}`);
+    // A 30 fps una vibrazione da 13 Hz e' al limite di Nyquist: l'ampiezza
+    // campionata cala per forza, ma non deve sparire.
+    assert.ok(a30.max > a60.max * 0.5, `a 30 fps la vibrazione sparisce: ${a30.max} contro ${a60.max}`);
+    assert.ok(Math.abs(a60.cambiSegno - a144.cambiSegno) <= 2,
+        `frequenza diversa fra 60 e 144 fps: ${a60.cambiSegno} vs ${a144.cambiSegno} inversioni`);
+});
+
+// ── Che cosa c'e sotto l'auto, sui tracciati VERI ───────────────────────────
+
+test('superficie: asfalto, cordolo e fuori su ogni campione di prova e monte-rosso', () => {
+    for (const id of ['prova', 'monte-rosso']) {
+        const track = loadTrack(id);
+        const pts = track.points;
+        const CURB_W = 2.8;
+        const semi = SV.SEMI_LARGHEZZA_AUTO;
+        const conta = { asfalto: 0, cordolo: 0, fuori: 0, campioni: 0 };
+
+        // Un campione ogni 10, per non trasformare un test in un benchmark.
+        for (let i = 0; i < pts.length; i += 10) {
+            const p = pts[i];
+            const n = TG.normalAt(pts, i, true);
+            // Tre posizioni costruite sulla normale a scostamenti noti: in
+            // mezzo alla pista, con una ruota sul cordolo, e ben oltre il
+            // cordolo. Il lato si alterna, cosi si provano entrambi.
+            const lato = (i % 20 === 0) ? 1 : -1;
+            const casi = [
+                [0, SV.ASFALTO],
+                [track.roadHalf - semi + 0.5, SV.CORDOLO],
+                [track.roadHalf + CURB_W - semi + 1.0, SV.FUORI],
+            ];
+            for (const [scostamento, atteso] of casi) {
+                const x = p.x + n.nx * scostamento * lato;
+                const z = p.z + n.nz * scostamento * lato;
+                const s = SV.superficieSottoAuto(TG, {
+                    trackPts: pts, pitPts: track.pitLanePts, idxPrecedente: i,
+                    x, z, roadHalf: track.roadHalf, curbW: CURB_W,
+                });
+                conta.campioni++;
+                // Vicino alla corsia box la risposta legittima e' "asfalto"
+                // qualunque sia lo scostamento: il pit e' asfalto per
+                // definizione, ed e' esattamente il caso che la regola
+                // "vince il tracciato piu vicino" esiste per coprire.
+                const vicinoAlPit = TG.nearestPoint(track.pitLanePts, x, z).dist
+                    < Math.hypot(x - p.x, z - p.z);
+                if (vicinoAlPit) { conta.asfalto++; continue; }
+                assert.equal(s, atteso,
+                    `${id} campione ${i} scostamento ${scostamento.toFixed(1)}: atteso ${atteso}, ottenuto ${s}`);
+                conta[s]++;
+            }
+        }
+        // Il test non deve poter passare "perche non ha provato niente".
+        assert.ok(conta.campioni > 200, `${id}: solo ${conta.campioni} campioni provati`);
+        assert.ok(conta.cordolo > 50 && conta.fuori > 50,
+            `${id}: campioni sbilanciati ${JSON.stringify(conta)}`);
+    }
+});
+
+test('superficie: in corsia box e sempre asfalto', () => {
+    // In mezzo alla corsia box lo scostamento dall asse PISTA e' enorme: senza
+    // la regola del tracciato piu vicino, ogni sosta ai box sarebbe una
+    // vibrazione da fuoripista.
+    const track = loadTrack('prova');
+    const pit = track.pitLanePts;
+    let provati = 0;
+    for (let i = 5; i < pit.length - 5; i += 7) {
+        const s = SV.superficieSottoAuto(TG, {
+            trackPts: track.points, pitPts: pit, idxPrecedente: track.pitEntryIndex || 0,
+            x: pit[i].x, z: pit[i].z, roadHalf: track.roadHalf, curbW: 2.8,
+        });
+        assert.equal(s, SV.ASFALTO, `punto ${i} della corsia box classificato ${s}`);
+        provati++;
+    }
+    assert.ok(provati > 20, `solo ${provati} punti di corsia box provati`);
 });
 
 test('molla: la velocita a scalini della rete non fa tremare la camera', () => {

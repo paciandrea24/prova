@@ -4126,6 +4126,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     // essa la velocità apparente di ciò che scorre ai lati.
     const sensoVelocita = F1SensoVelocita.creaStato();
 
+    // Che cosa c'è sotto l'auto in questo istante: asfalto, cordolo o fuori
+    // (erba/ghiaia). La geometria sta nel modulo, che la sa fare su qualunque
+    // tracciato e viene verificata sui tracciati veri; qui si passano solo i
+    // dati di questa partita.
+    function superficieSottoLAuto() {
+        const mio = serverState[myColor];
+        if (!mio || !myCarGroup) return F1SensoVelocita.ASFALTO;
+        return F1SensoVelocita.superficieSottoAuto(TrackGeometry, {
+            trackPts, pitPts: PIT_PTS,
+            idxPrecedente: mio.trackIndex || 0,
+            x: myCarGroup.position.x, z: myCarGroup.position.z,
+            roadHalf: ROAD_HALF, curbW: CURB_W,
+        });
+    }
+
     // Si "sta guidando" solo quando la camera è quella di gioco. Nelle altre
     // (scelta mescole, panoramica, premiazione) il campo visivo torna a 65 nello
     // STESSO frame: quelle inquadrature sono tarate su quel valore, e la vetrina
@@ -4136,6 +4151,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         F1SensoVelocita.avanza(sensoVelocita, {
             velocita: guidando ? (mio && mio.speed) || 0 : 0,
             attivo: guidando,
+            superficie: guidando ? superficieSottoLAuto() : F1SensoVelocita.ASFALTO,
         }, dtMs);
         // La matrice di proiezione si ricalcola solo quando il valore si muove
         // per davvero: fermi ai box, o in una qualunque delle schermate, questo
@@ -4167,12 +4183,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             // dietro", dove la camera sta davanti al musetto: lo stesso segno
             // dice che accelerando è l'auto ad avvicinarsi alla camera.
             const m = F1SensoVelocita.molla(sensoVelocita.spinta);
-            _camOff.set(0, 5.5 + m.dy, (back ? 13 : -13) + m.dz);
+            const sc = F1SensoVelocita.scossone(sensoVelocita);
+            _camOff.set(sc.dx, 5.5 + m.dy + sc.dy, (back ? 13 : -13) + m.dz);
             _camOff.applyQuaternion(q);
             camera.position.copy(pos).add(_camOff);
             _lookTgt.copy(pos).add(new THREE.Vector3(0, 1.2, 0));
             mescolaSguardoSemaforo(_lookTgt);
             camera.lookAt(_lookTgt);
+            // Il rollio va DOPO lookAt: ruota attorno all'asse di vista, che
+            // lookAt ha appena finito di stabilire.
+            if (sc.rollRad) camera.rotateZ(sc.rollRad);
         } else {
             // Halo-cam broadcast (F1 TV pod): misurato sulla mesh reale (non
             // dedotto) analizzando il profilo di altezza lungo la lunghezza
@@ -4188,7 +4208,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const COCKPIT_PITCH_DEG = 10;    // inclinazione verso il basso
             const COCKPIT_LOOK_DIST = 30;
 
-            _camOff.set(0, COCKPIT_HEIGHT, COCKPIT_Z);
+            // Qui la camera è sul telaio: prende gli scossoni per intero (×1.5
+            // rispetto alla camera d'inseguimento, che è un'astrazione).
+            const scHalo = F1SensoVelocita.scossone(sensoVelocita, { halo: true });
+            _camOff.set(scHalo.dx, COCKPIT_HEIGHT + scHalo.dy, COCKPIT_Z);
             _camOff.applyQuaternion(q);
             camera.position.copy(pos).add(_camOff);
 
@@ -4210,6 +4233,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             _lookTgt.add(pos);
             mescolaSguardoSemaforo(_lookTgt);
             camera.lookAt(_lookTgt);
+            if (scHalo.rollRad) camera.rotateZ(scHalo.rollRad);
         }
     }
 
