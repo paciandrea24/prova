@@ -106,6 +106,20 @@ module.exports = function (io) {
             socket.lobbyId = lobbyId;
             if (color) socket.color = color;
 
+            // Chi possiede QUESTO colore, adesso. Serve al disconnect qui
+            // sotto: navigando fra le pagine della stessa lobby il socket
+            // della pagina nuova si registra PRIMA che muoia quello della
+            // vecchia, e senza questa mappa il morto si porta via il posto del
+            // vivo (Rif. i log di un playtest: "Lobby vuota. Distruzione tra 5
+            // secondi" con dentro un giocatore collegato).
+            if (color) {
+                const l = lobbies.get(lobbyId);
+                if (l) {
+                    if (!l.socketByColor) l.socketByColor = {};
+                    l.socketByColor[color] = socket.id;
+                }
+            }
+
             console.log(`🏠 Utente ${socket.id} (${color || 'Sconosciuto'}) è entrato nella lobby: ${lobbyId}`);
 
             const lobby = lobbies.get(lobbyId);
@@ -190,10 +204,26 @@ module.exports = function (io) {
                     // il giocatore si è spostato in-game, non ha lasciato la sessione.
                     if (activeGames.has(socket.lobbyId)) return;
 
+                    // IDENTITÀ, NON ESISTENZA: quel colore dev'essere ancora di
+                    // QUESTO socket. Navigando fra due pagine della stessa
+                    // lobby, il socket della pagina nuova si registra prima che
+                    // muoia quello della vecchia: senza questo controllo il
+                    // morto toglieva dalla lista un giocatore collegato, la
+                    // lobby risultava vuota e veniva distrutta cinque secondi
+                    // dopo — con lui dentro.
+                    if (lobby.socketByColor && lobby.socketByColor[socket.color] !== socket.id) return;
+                    if (lobby.socketByColor) delete lobby.socketByColor[socket.color];
+
                     // Rimuoviamo il giocatore dalla lobby
                     lobby.players = lobby.players.filter(c => c !== socket.color);
                     users.delete(socket.color);
-                    dimenticaGiocatore(socket.lobbyId, socket.color);
+                    // Il GETTONE invece resta valido finché vive la stanza. È
+                    // l'unica cosa che permette di rientrare, ed è un segreto
+                    // della scheda di quel giocatore: chiudere una pagina non
+                    // è un motivo per cancellarlo, mentre farlo rendeva
+                    // irraggiungibile il ramo di joinLobby che riaggiunge chi
+                    // torna dopo un F5. Si dimentica con la lobby
+                    // (dimenticaLobby) e con l'espulsione (kickPlayer).
 
                     // Se a uscire era l'HOST, passiamo il ruolo al primo giocatore rimasto
                     // (altrimenti la lobby resterebbe senza host e nessuno potrebbe avviare giochi)

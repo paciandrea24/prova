@@ -29,6 +29,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // solo, perche' sbagliarla in due punti diversi ha gia' prodotto due
     // difetti (il calendario davanti alla pista, e il mondo muto in gara).
     const schermataCampionato = formatoPartita === 'stagione' && clientSettings.stagioneInCorso !== true;
+    // ...e il suo opposto: una GARA di campionato. Si sa fin dall'avvio, dalle
+    // impostazioni, e non si aspetta nessun evento — il podio configura la
+    // propria uscita prima che il server possa dire com'e' andata.
+    const garaDiCampionato = formatoPartita === 'stagione' && clientSettings.stagioneInCorso === true;
 
     // Il file del circuito si legge QUI, prima di ogni altra cosa, e non
     // più giù insieme alla costruzione della pista: dentro c'è scritto se
@@ -2986,10 +2990,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // niente a che fare con la scena 3D.
     let schermateStagione = null;
 
-    // Dopo questa gara si torna al calendario invece che in lobby: lo dice il
-    // server a fine gara di campionato (f1StagioneAlCalendario), e lo legge il
-    // conto alla rovescia del podio.
-    let campionatoTornaAlCalendario = false;
+    // Dopo questa gara si torna al calendario invece che in lobby. Lo si sa
+    // gia' dalle impostazioni (garaDiCampionato); l'evento del server a fine
+    // gara (f1StagioneAlCalendario) e' solo una conferma, e arriva DOPO che il
+    // podio ha configurato la propria uscita — leggerlo da li' soltanto
+    // avrebbe fatto comparire "Torna alla lobby" su una gara di campionato.
+    let campionatoTornaAlCalendario = garaDiCampionato;
 
     // Il token vive qui, che l'autenticazione ce l'ha gia' (vedi `user` in
     // cima): le schermate ne ricevono solo il modo di chiederlo, cosi' non
@@ -4368,13 +4374,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         riavvia.style.display = puoiRiavviare ? '' : 'none';
         riavvia.onclick = () => { sequenzaCorrente++; socket.emit('f1RestartRace', lobbyId); };
 
-        // Il pulsante porta in lobby CHI LO PREME. Solo chi ospita chiude la
-        // partita per tutti: un giocatore qualunque non deve poter strappare
-        // gli altri dalla premiazione.
-        inLobby.onclick = () => {
-            if (myColor === hostColor) socket.emit('f1ReturnToLobby', lobbyId);
-            else window.location.href = `/lobby.html?lobby=${lobbyId}`;
-        };
+        // Dopo una gara di CAMPIONATO il pulsante porta al calendario, non in
+        // lobby: la stagione continua, e uscire dal gioco e' una decisione che
+        // si prende dal calendario, dove si vede a che punto si e'. Chiesto in
+        // playtest ("dovrei tornare al calendario in ogni caso, e poi dal
+        // calendario scelgo se andare alla lobby"), e per giunta uscire di qui
+        // faceva chiudere la partita mentre la pagina stava per ricaricarsi.
+        //
+        // In gara veloce resta com'era: il pulsante porta in lobby CHI LO
+        // PREME, e solo chi ospita chiude la partita per tutti — un giocatore
+        // qualunque non deve poter strappare gli altri dalla premiazione.
+        if (campionatoTornaAlCalendario) {
+            inLobby.textContent = 'Vai al calendario';
+            inLobby.onclick = () => { window.location.reload(); };
+        } else {
+            inLobby.textContent = 'Torna alla lobby';
+            inLobby.onclick = () => {
+                if (myColor === hostColor) socket.emit('f1ReturnToLobby', lobbyId);
+                else window.location.href = `/lobby.html?lobby=${lobbyId}`;
+            };
+        }
 
         // Il tempo lo decide il server, ed è lo stesso su cui programma lo
         // smontaggio della partita: non possono divergere.
