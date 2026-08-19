@@ -63,10 +63,19 @@ Verificato il 2026-08-19:
   impostazioni da `GET /api/lobby/:id/settings`. La stagione passa di qui
   aggiungendo campi a `settings`, senza un secondo canale.
 
-⚠️ **Da rimuovere**: nella lobby esiste già un menù «Mode: Championship /
-Single Race» dentro le impostazioni F1 (`frontend/lobby.html:147`) che **non
-legge nessuno** — è un residuo copiato dal vecchio gioco `racing`. Oggi
-promette una modalità che non esiste. Sparisce con il passo 1.
+⚠️ **Rimosso al passo 1**: nella lobby c'era un menù «Mode: Championship /
+Single Race» dentro le impostazioni F1. Alla prima occhiata sembrava morto e
+l'avevo detto all'utente; **non lo era**: il server lo leggeva per decidere se
+a fine gara restare sul podio col pulsante «Riprova» o tornare in lobby. Non
+ha mai avuto niente a che fare con un campionato — era il *nome* a mentire, ed
+è esattamente la trappola descritta in `feedback_formato_dati_un_solo_proprietario`.
+
+Non è stato rinominato ma **tolto**, per volontà dell'utente («non voglio il
+menù mode con Championship, ma la divisione che avevamo scelto prima»): la
+modalità la sceglie lo smistamento, e quel menù chiedeva per giunta una cosa
+**deducibile**. «Riprova» rimette in moto *questa* partita, quindi ha senso
+solo se sei da solo — con più umani in pista non puoi far ripartire una gara
+per conto degli altri. Ora il server conta gli umani e decide.
 
 ## Il modello dei dati
 
@@ -129,11 +138,13 @@ Oggi le piste sono 4 (`monte-rosso`, `new-monza`, `prova`, `prova-notturno`),
 quindi si può scegliere fra 3 e 4. Domani, con venti piste, si sceglie fra 3 e
 20 — **niente è legato al numero 3 né al numero totale**, che era la richiesta.
 
-⚠️ **Nota da portare all'utente**: il sorteggio pesca fra i FILE delle piste, e
-`prova` e `prova-notturno` sono lo stesso tracciato di giorno e di notte. Per
-il calendario contano come due piste diverse. Se non è quello che vuole,
-serve un campo nel file della pista che dica «sono una variante di X» — ma è
-una decisione sua, non una da prendere qui.
+**Chiuso il 2026-08-19**: il sorteggio pesca fra i FILE delle piste, e va bene
+così. Chiesto all'utente se `prova` e `prova-notturno` (stesso tracciato, di
+giorno e di notte) dovessero contare come una pista sola: no — «appena avrò
+tutte le piste sistemate ce ne saranno solo alcune di giorno e altre di notte,
+non avrò varianti della stessa pista». Quindi **niente campo "sono una
+variante di X"**: una pista è un file, e il giorno o la notte sono una sua
+proprietà come le altre.
 
 ## Il flusso
 
@@ -185,7 +196,10 @@ Uno per volta, ciascuno con il suo playtest, come da convenzione del progetto.
 
 1. **Lo smistamento in lobby.** La schermata di scelta dopo F1; *Gara veloce*
    porta esattamente dove porta oggi; *Stagione* porta a un pannello vuoto.
-   Via il menù «Mode» morto. — *Playtest: la gara veloce funziona come prima.*
+   Via il menù «Mode: Championship / Single Race»: la modalità la sceglie lo
+   smistamento, e quel menù chiedeva una cosa deducibile (vedi il commento in
+   `f1GameSocket.js` accanto a `restaAlPodio`). — *Playtest: la gara veloce
+   funziona come prima.*
 2. **Creare e ritrovare una stagione.** Nome, quante gare, sorteggio del
    calendario, lista bot, salvataggio su Mongo, lista delle proprie stagioni,
    guardia dei "stessi giocatori". Non si corre ancora. — *Playtest: creo,

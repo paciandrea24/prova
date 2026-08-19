@@ -175,18 +175,25 @@ test('chi abbandona DURANTE la gara viene comunque tolto dalla lobby', (t) => {
         'chi se ne e andato prima della fine non deve restare come fantasma nella lista');
 });
 
-test('in modalita singolo la partita resta viva dopo il podio (serve a "Riprova")', (t) => {
+test('da solo la partita sopravvive al podio quanto basta per "Riprova", non di piu', (t) => {
     t.after(pulisci);
     t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
-    preparaLobby(['red'], { mode: 'resta' });
+    preparaLobby(['red']);
     const io = ioFinto();
 
     const a = collega(io); a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     faiFinireLaGara(io, ['red']);
 
-    t.mock.timers.tick(60000);
+    // Durante il podio la partita c'e' ancora: e' quella che "Riprova" riusa.
+    t.mock.timers.tick(15000);
     assert.equal(activeGames.has(LOBBY), true,
-        'in singolo il podio resta a schermo e "Riprova" deve poter riusare la partita');
+        'finche il podio e a schermo "Riprova" deve poter riusare la partita');
+
+    // Ma se nessuno preme niente, muore. Prima no, e una partita in singolo
+    // abbandonata chiudendo la scheda restava in activeGames per sempre.
+    t.mock.timers.tick(15000);
+    assert.equal(activeGames.has(LOBBY), false,
+        'passato il podio senza che nessuno abbia premuto, la partita va smontata');
 });
 
 // ────────────────────────────────────────────────────────────────────────
@@ -443,7 +450,7 @@ test('"Riprova" durante la premiazione rilancia la stessa partita', (t) => {
     const io = ioFinto();
 
     const a = collega(io);
-    avvia(a, 'monte-rosso', { mode: 'resta' });
+    avvia(a, 'monte-rosso');
     a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     const g = faiFinireLaGaraVera(io, a);
     g.grid = ['red'];

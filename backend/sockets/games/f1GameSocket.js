@@ -696,6 +696,10 @@ module.exports = function (io, socket) {
         const game = activeGames.get(lobbyId);
         if (!game) return;
         if (game.endTimeout) { clearTimeout(game.endTimeout); game.endTimeout = null; }
+        // Lo smontaggio programmato a fine gara va disarmato: questa partita la
+        // vogliamo ancora viva, e senza questa riga il timer la ucciderebbe a
+        // metà della gara appena rilanciata.
+        if (game.chiusuraTimeout) { clearTimeout(game.chiusuraTimeout); game.chiusuraTimeout = null; }
         game.raceEnded = false;
         if (game.grid && game.grid.length) {
             assignGridSpawns(game);
@@ -2453,13 +2457,21 @@ function endRace(io, lobbyId, game) {
     // false: lì la partita NON va chiusa, si prosegue verso la pista dopo.
     // Vedi docs/superpowers/specs/2026-08-19-f1-stagioni-design.md, passo 3.
     const isFinal = true;
-    // Cosa fare quando la gara finisce: tornare in lobby (sempre, ed è il
-    // comportamento normale) oppure restare sul podio col pulsante "Riprova".
-    // Si chiamava `isSingleMode` e il menù in lobby lo chiamava "Championship /
-    // Single Race", ma non ha mai avuto niente a che fare con un campionato:
-    // ora che il campionato arriva davvero, tenere quel nome sarebbe stato
-    // chiamare due cose diverse allo stesso modo.
-    const restaAlPodio = (game.settings || {}).mode === 'resta';
+    // Cosa fare quando la gara finisce: restare sul podio col pulsante
+    // "Riprova", oppure tornare in lobby da soli.
+    //
+    // Era un menù in lobby chiamato "Mode: Championship / Single Race", che con
+    // un campionato vero in arrivo sarebbe diventato una trappola — due cose
+    // diverse chiamate allo stesso modo — e che comunque chiedeva al giocatore
+    // una cosa DEDUCIBILE: "Riprova" ha senso solo se sei da solo, perché
+    // rimette in moto QUESTA partita, e non si può rimettere in moto una gara
+    // per conto degli altri. Con più umani in pista il podio riporta in lobby,
+    // che è l'unico finale che vale per tutti.
+    //
+    // I disconnessi contano come umani: restano in `game.players` per la
+    // finestra di riconnessione e possono tornare.
+    const umani = Object.values(game.players).filter(p => !p.isBot).length;
+    const restaAlPodio = umani <= 1;
 
     io.to(lobbyId).emit('f1RaceEnded', {
         podium,
@@ -2477,13 +2489,18 @@ function endRace(io, lobbyId, game) {
         trackName: game.track.name
     });
 
-    // In multiplayer il podio riporta in lobby da solo, e il client non dice
-    // niente al server: la sessione la chiude il server allo scadere di
-    // quella finestra, senza dipendere da un messaggio che non arriverebbe
-    // comunque se la scheda venisse chiusa. In modalità singola no — lì il
-    // podio resta a schermo e "Riprova" riusa questa stessa partita, che
-    // viene smontata dal pulsante "Torna alla Lobby".
-    if (isFinal && !restaAlPodio) {
+    // Il podio riporta in lobby da solo, e il client non dice niente al server:
+    // la sessione la chiude il server allo scadere di quella finestra, senza
+    // dipendere da un messaggio che non arriverebbe comunque se la scheda
+    // venisse chiusa.
+    //
+    // Il timer si arma SEMPRE, anche quando c'è "Riprova". Prima no, e la
+    // ragione era buona (Riprova riusa questa partita, e un timer di
+    // smontaggio addosso l'avrebbe uccisa a metà gara) ma la cura era peggio:
+    // una partita in modalità singola abbandonata chiudendo la scheda restava
+    // in `activeGames` per sempre. Ora il timer c'è e lo cancella `Riprova`,
+    // che è l'unico che sa di volere quella partita ancora viva.
+    if (isFinal) {
         game.chiusuraTimeout = setTimeout(() => {
             // Identità, non presenza: se nel frattempo la lobby ha già
             // avviato un'altra gara, quella è una partita NUOVA e questo
