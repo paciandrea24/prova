@@ -2,6 +2,7 @@ const { activeGames } = require('../../store/activeGames');
 const { lobbies, verificaGettone } = require('../../store/lobbies');
 const { loadTrack } = require('./trackLoader');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
+const BoxIngresso = require('../../../frontend/shared/f1BoxIngresso.js');
 const { createBots, updateBotInputs, estimateFinishTime, nearestAheadPlayer, BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS } = require('./f1Bot');
 const TyreModel = require('./physics/TyreModel');
 const {
@@ -1175,6 +1176,7 @@ function assignGridSpawns(game) {
         p.falseStart = false; p.falseStartServed = false;
         p.gapToLeaderMs = null;
         p.pitAutoState = null; p.pitPathIndex = 0; p.pitBoxFinalApproach = false;
+        p.pitPiano = null; p.pitRimanente = null;
         // Box FISSO per tutta la sessione (Rif. richiesta utente
         // 2026-08-07: "la mappa in qualifica e in gara deve essere la
         // stessa" — prima il box "saltava" di slot tra qualifica e gara,
@@ -1220,10 +1222,28 @@ function addLaneIndices(track, anchors) {
     for (const a of anchors) {
         a.laneIdx = TrackGeometry.nearestPoint(track.pitLanePts, a.x, a.z).index;
     }
+    // Quanto è spostato di lato lo stallo del vicino che si supera entrando: è
+    // da lui che la traiettoria d'ingresso deve tenersi lontana, e senza
+    // l'elenco completo dei box non lo si può sapere (vedi f1BoxIngresso.js).
+    for (const a of anchors) {
+        a.scostamentoVicini = BoxIngresso.scostamentoViciniPrecedenti(track.pitLanePts, a.laneIdx, anchors);
+    }
+}
+
+// Il piano d'ingresso di un pilota: la forma della manovra e dove cade la zona
+// dell'indicatore di reazione. Si calcola una volta sola, quando l'auto imbocca
+// la corsia, e non cambia più.
+function pianoIngressoDi(track, p) {
+    const a = p.pitBoxAnchor;
+    if (!track.pitLanePts || !a || a.laneIdx == null || a.stallX == null) return null;
+    return BoxIngresso.pianoIngresso(track.pitLanePts, a.laneIdx,
+        { x: a.stallX, z: a.stallZ }, { scostamentoVicini: a.scostamentoVicini });
 }
 
 function startPitLaneEntry(io, lobbyId, game, p) {
     p.pitAutoState = 'entering';
+    p.pitPiano = pianoIngressoDi(game.track, p);
+    p.pitRimanente = null;
     // L'autopilota riparte da DOVE L'AUTO È, non dall'imbocco della corsia.
     //
     // Prima puntava sempre al campione 1, ma il trigger d'ingresso non sta
@@ -1272,6 +1292,38 @@ function startPitLaneEntry(io, lobbyId, game, p) {
 // avanti si ferma esattamente al segmento del proprio box, mai oltre.
 function updatePitAutopilot(io, lobbyId, game, p) {
     const track = game.track;
+
+    // Ingresso nello stallo: non più un balzo di 90 gradi all'altezza del
+    // proprio box, ma la traiettoria a due tempi di f1BoxIngresso.js. Si avanza
+    // di PIT_AUTO_SPEED lungo la corsia e la posizione la dà il modulo; la
+    // direzione dell'auto è semplicemente quella in cui si sta muovendo, che è
+    // ciò che elimina la rotazione sul posto.
+    if (p.pitBoxFinalApproach && p.pitAutoState === 'entering' && p.pitPiano) {
+        const lane = track.pitLanePts;
+        const prossimo = Math.max(0, (p.pitRimanente != null ? p.pitRimanente : p.pitPiano.lunghezza) - PIT_AUTO_SPEED);
+        const pos = BoxIngresso.posizioneIngresso(lane, p.pitPiano, prossimo);
+        const dx = pos.x - p.x, dz = pos.z - p.z;
+        if (Math.hypot(dx, dz) > 1e-6) p.angle = Math.atan2(dx, dz);
+        p.x = pos.x; p.z = pos.z;
+        p.pitRimanente = prossimo;
+        p.speed = PIT_AUTO_SPEED; p.vx = 0; p.vz = 0;
+
+        if (prossimo <= 0) {
+            // Arrivata: allineata al senso di marcia della corsia (Rif.
+            // richiesta utente 2026-08-07, "la macchina si deve fermare in
+            // maniera parallela"). Ora però non è più una rotazione da
+            // raddrizzare: la traiettoria ci arriva già dritta, a meno di un
+            // grado misurato, e questa riga toglie solo il residuo.
+            p.x = p.pitBoxAnchor.stallX; p.z = p.pitBoxAnchor.stallZ;
+            p.angle = Math.atan2(p.pitBoxAnchor.tx, p.pitBoxAnchor.tz);
+            p.speed = 0; p.vx = 0; p.vz = 0;
+            p.pitBoxFinalApproach = false;
+            p.pitRimanente = null;
+            p.pitAutoState = null;   // la sosta prende il posto dell'autopilota
+            startPitStop(io, lobbyId, game, p);
+        }
+        return;
+    }
 
     if (p.pitBoxFinalApproach && p.pitBoxAnchor) {
         // 'entering': balzo dal waypoint fromIdx verso lo STALLO personale
@@ -1362,9 +1414,21 @@ function updatePitAutopilot(io, lobbyId, game, p) {
         budget -= dist;
         if (dist > 1e-6) p.angle = Math.atan2(dx, dz);
 
-        // Arrivato all'altezza del proprio box: il prossimo tick fa il balzo
-        // verso lo stallo personale, spostato di lato rispetto alla corsia.
-        if (p.pitAutoState === 'entering' && p.pitBoxAnchor
+        // Si comincia a sterzare QUANDO MANCA la lunghezza della manovra, non
+        // quando si è già all'altezza del box: è tutta qui la differenza fra
+        // "si arriva dritti dentro" e la svolta secca di prima.
+        if (p.pitAutoState === 'entering' && p.pitPiano
+            && BoxIngresso.distanzaLungoLane(lane, p.pitPathIndex, p.pitPiano.laneIdx) <= p.pitPiano.lunghezza) {
+            p.pitRimanente = BoxIngresso.distanzaLungoLane(lane, p.pitPathIndex, p.pitPiano.laneIdx);
+            p.speed = PIT_AUTO_SPEED; p.vx = 0; p.vz = 0;
+            p.pitBoxFinalApproach = true;
+            return;
+        }
+
+        // Vecchia condizione, tenuta per le fixture di test che non hanno una
+        // corsia campionata (nessun piano d'ingresso): lì si arriva all'altezza
+        // del box e si fa il balzo, come prima.
+        if (p.pitAutoState === 'entering' && !p.pitPiano && p.pitBoxAnchor
             && p.pitBoxAnchor.laneIdx != null && p.pitPathIndex >= p.pitBoxAnchor.laneIdx) {
             p.speed = PIT_AUTO_SPEED; p.vx = 0; p.vz = 0;
             p.pitBoxFinalApproach = true;
