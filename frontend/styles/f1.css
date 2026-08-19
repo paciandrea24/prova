@@ -265,7 +265,18 @@ canvas.tyre-preview-canvas {
 /* I piloti, sotto il circuito: una schiera di pallini invece di un elenco.
    Il contorno verde dice "ha scelto", che e' l'unica cosa che qui cambia. */
 .mescole-piloti { display: flex; align-items: center; gap: 12px; }
-#tyre-confirm-status { display: flex; flex-wrap: wrap; gap: clamp(8px, 1vw, 16px); align-items: flex-start; }
+/* Fila ORIZZONTALE, sempre: niente `wrap`. Con il ritorno a capo, in una
+   griglia piena i pallini finivano su due righe e la schiera smetteva di
+   leggersi come una griglia di partenza. Se lo spazio non basta si stringe il
+   passo, e in ultima istanza scorre. */
+#tyre-confirm-status {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: clamp(6px, 0.8vw, 14px);
+    align-items: flex-start;
+    overflow-x: auto;
+    padding-bottom: 2px;
+}
 
 /* Un pilota = un pallino. L'etichetta sotto ce l'ha solo il proprio. */
 .tyre-pilota {
@@ -278,16 +289,14 @@ canvas.tyre-preview-canvas {
 .tyre-pilota-dot {
     width: 18px; height: 18px;
     border-radius: 50%;
-    /* Chi non ha ancora scelto e' spento: stesso colore, meno presenza. Non un
-       bordo, non un'icona — cosi la fila resta una fila di pallini e basta. */
-    opacity: 0.32;
-    filter: saturate(0.4);
-    transition: opacity 0.25s ease, filter 0.25s ease, box-shadow 0.25s ease;
+    /* Il colore del pilota resta sempre pieno — e' la sua identita, non il suo
+       stato. A dire "ha scelto" e' il BORDO, che passa da neutro a verde. */
+    border: 2px solid rgba(255, 255, 255, 0.18);
+    box-sizing: content-box;
+    transition: border-color 0.25s ease;
 }
 .tyre-pilota.is-pronto .tyre-pilota-dot {
-    opacity: 1;
-    filter: none;
-    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35) inset;
+    border-color: var(--green, #2ecc71);
 }
 .tyre-pilota-io {
     font-size: 10px;
