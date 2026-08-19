@@ -344,7 +344,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const f1Season = document.getElementById('f1-mode-season');
         if (f1Season) {
             f1Season.addEventListener('click', () => {
-                document.getElementById('f1-season-soon').style.display = 'block';
+                if (selectedColor !== currentHost) return;   // solo chi ospita avvia
+                // La stagione NON apre un pannello qui: la lobby non sa chi
+                // sei — conosce colori e gettoni, non gli account — e una
+                // stagione e' salvata per account. Si avvia la sessione e si
+                // atterra in f1.html, dove il token Firebase c'e' gia'.
+                // Vedi la sezione "Dove vivono le schermate della stagione"
+                // in docs/superpowers/specs/2026-08-19-f1-stagioni-design.md.
+                //
+                // Stessa strada di sempre (startGame + settings), col solo
+                // campo `formato` in piu': un secondo canale sarebbe un
+                // secondo posto dove client e server possono credere a due
+                // configurazioni diverse.
+                //
+                // La pista scelta qui NON e' quella che si correra': serve
+                // solo a far nascere la partita. Il calendario lo sorteggia la
+                // stagione, e la prima gara vera la carichera' il passo 3.
+                f1ModeModal.style.display = 'none';
+                const settings = saveGameSettings('f1');
+                socket.emit('startGame', {
+                    lobbyId,
+                    gameId: 'f1',
+                    settings: Object.assign({}, settings, { formato: 'stagione' }),
+                });
             });
         }
 

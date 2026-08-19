@@ -569,16 +569,6 @@ body::before {
 .f1-mode-icon  { width: 30px; height: 30px; stroke: #2D6CDF; }
 .f1-mode-title { font-size: 18px; font-weight: 700; color: var(--ink); }
 .f1-mode-sub   { font-size: 12.5px; line-height: 1.35; color: var(--muted); }
-.f1-mode-note {
-    margin-top: 14px;
-    padding: 10px 12px;
-    background: var(--yellow);
-    border: 3px solid var(--ink);
-    border-radius: 12px;
-    font-size: 13px;
-    font-weight: 600;
-    text-align: center;
-}
 @media (max-width: 520px) { .f1-mode-grid { grid-template-columns: 1fr; } }
 
 .modal {
