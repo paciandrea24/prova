@@ -2489,17 +2489,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const MURO_TEXTURE_W = 512;
     const MURO_TEXTURE_H = 236;
 
-    function disegnaTexturaMuro(ctx, { secondi, esito }) {
+    function disegnaTexturaMuro(ctx, { secondi, esito, acceso }) {
         const w = MURO_TEXTURE_W, h = MURO_TEXTURE_H;
         ctx.clearRect(0, 0, w, h);
 
         // Fondo: più acceso in basso, dove il muro tocca l'asfalto.
         const colore = esito
             ? ({ perfetta: '46, 204, 113', buona: '241, 196, 15', lenta: '231, 76, 60' })[esito]
-            : '80, 210, 240';
+            : (acceso ? '46, 204, 113' : '80, 210, 240');
         const grad = ctx.createLinearGradient(0, 0, 0, h);
-        grad.addColorStop(0, `rgba(${colore}, 0.10)`);
-        grad.addColorStop(1, `rgba(${colore}, 0.42)`);
+        grad.addColorStop(0, `rgba(${colore}, ${acceso ? 0.22 : 0.10})`);
+        grad.addColorStop(1, `rgba(${colore}, ${acceso ? 0.62 : 0.42})`);
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, w, h);
 
@@ -2591,15 +2591,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Quanto manca al muro per il MUSO dell'auto, in unità. Negativo = passato.
-    // Si misura lungo la direzione del muro, non in linea d'aria: di traverso la
-    // corsia è larga dieci unità, e una distanza euclidea direbbe che manca
-    // ancora qualcosa anche quando lo si è già passato di lato.
+    // La formula è quella del modulo condiviso, la stessa con cui il server
+    // giudica: il conto alla rovescia che si legge e il verdetto che si prende
+    // devono venire dallo stesso calcolo, o si finisce giudicati su un muro
+    // diverso da quello che si vede (è già successo, vedi f1BoxIngresso.js).
     function distanzaDalMuroPit() {
         if (!pitMuro || !myCarGroup) return null;
-        _avanti.set(0, 0, 1).applyQuaternion(myCarGroup.quaternion);
-        const musoX = myCarGroup.position.x + _avanti.x * F1BoxIngresso.SEMILUNGHEZZA_AUTO;
-        const musoZ = myCarGroup.position.z + _avanti.z * F1BoxIngresso.SEMILUNGHEZZA_AUTO;
-        return (pitMuro.dati.x - musoX) * pitMuro.dati.tx + (pitMuro.dati.z - musoZ) * pitMuro.dati.tz;
+        return F1BoxIngresso.distanzaDalMuro(
+            { muroPunto: pitMuro.dati },
+            myCarGroup.position.x, myCarGroup.position.z, myCarGroup.rotation.y);
     }
 
     // Chiamata da animate(): tiene aggiornato il conto alla rovescia e toglie il
@@ -2618,10 +2618,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         const secondi = Math.max(0, d / pitMuro.unitaAlSecondo);
-        const testo = secondi.toFixed(1);
+        // Il muro si ACCENDE quando il muso e' dentro la finestra perfetta. E'
+        // la differenza fra un gioco di tempismo che si legge e uno che si
+        // indovina: il numero cambia dieci volte al secondo ed e' troppo per
+        // l'occhio, mentre un colore che cambia lo si coglie subito. Il valore
+        // e' lo stesso su cui giudica il server, non una soglia grafica a parte.
+        const acceso = Math.abs(d) <= F1BoxIngresso.MURO_PERFETTO;
+        const testo = secondi.toFixed(1) + (acceso ? '!' : '');
         if (testo === pitMuro.ultimoTesto) return;
         pitMuro.ultimoTesto = testo;
-        disegnaTexturaMuro(pitMuro.ctx, { secondi, esito: null });
+        disegnaTexturaMuro(pitMuro.ctx, { secondi, esito: null, acceso });
         pitMuro.texture.needsUpdate = true;
     }
 

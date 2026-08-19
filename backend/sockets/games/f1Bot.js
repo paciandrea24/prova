@@ -975,15 +975,14 @@ function updateBotInputs(game, deps) {
             // bersaglio è il centro della zona, spostato di quanto quel bot è
             // impreciso. Il verdetto lo dà il server, come per un umano.
             if (p.pitAutoState === 'entering' && p.pitPiano && !p.botPitReactionScheduled) {
-                const piano = p.pitPiano;
-                const centro = (piano.indicatoreInizio + piano.indicatoreFine) / 2;
+                // Il bot mira al muro come un umano, sbagliando di quanto e'
+                // impreciso, e passa dallo stesso giudizio: la sua distanza dal
+                // muro e' misurata con la STESSA funzione.
                 const t = p.botPrecisionNoise / BOT_PRECISION_NOISE_MAX;
                 const segno = (p.color.charCodeAt(1) % 2) ? 1 : -1;
-                const bersaglio = centro + segno * t * BOT_PIT_SCARTO_MAX;
-                const lane = game.track.pitLanePts;
-                const rimanente = p.pitRimanente != null ? p.pitRimanente
-                    : (lane ? BoxIngresso.distanzaLungoLane(lane, p.pitPathIndex, piano.laneIdx) : Infinity);
-                if (rimanente <= bersaglio) {
+                const bersaglio = segno * t * BOT_PIT_SCARTO_MAX;
+                const distanza = BoxIngresso.distanzaDalMuro(p.pitPiano, p.x, p.z, p.angle);
+                if (distanza != null && distanza <= bersaglio) {
                     p.botPitReactionScheduled = true;
                     handlePitReactionPress(io, lobbyId, game, p);
                 }

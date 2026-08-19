@@ -43,10 +43,16 @@ function pilotaInCorsia(trackId = 'prova', boxIndex = 2) {
     return { track, p, game, anchors };
 }
 
-// Il valore di `pitRimanente` (misurato sul CENTRO dell'auto) nell'istante in
-// cui il MUSO si trova a `scarto` unita dal muro.
-function centroQuandoIlMusoE(piano, scarto) {
-    return piano.muro + BoxIngresso.SEMILUNGHEZZA_AUTO + scarto;
+// Mette il pilota sulla corsia col MUSO a `scarto` unita dal muro. Si scrivono
+// x/z/angle perche' e' esattamente da li che il server misura, con la stessa
+// funzione che il client usa per il conto alla rovescia.
+function musoA(p, scarto) {
+    const m = p.pitPiano.muroPunto;
+    const arretra = scarto + BoxIngresso.SEMILUNGHEZZA_AUTO;
+    p.x = m.x - m.tx * arretra;
+    p.z = m.z - m.tz * arretra;
+    p.angle = Math.atan2(m.tx, m.tz);
+    return p;
 }
 
 test('premere col muso sul muro vale perfetta, poco fuori buona, lontano lenta', () => {
@@ -60,38 +66,55 @@ test('premere col muso sul muro vale perfetta, poco fuori buona, lontano lenta',
     ];
     for (const [nome, scarto, atteso] of casi) {
         const { p, game } = pilotaInCorsia();
-        p.pitRimanente = centroQuandoIlMusoE(p.pitPiano, scarto);
+        musoA(p, scarto);
         P.handlePitReactionPress(ioFinto(), 'L', game, p);
         assert.equal(p.pitEsito, atteso, `premendo ${nome} (scarto ${scarto}) l esito e ${p.pitEsito}`);
     }
 });
 
-test('si giudica il MUSO: col centro dell auto sul muro non e piu perfetta', () => {
+test('si giudica il MUSO: il bersaglio e la punta, non il centro', () => {
     // Il difetto del playtest 2026-08-19: chi gioca mira con la punta, e il
-    // centro sta 3.58 unita piu indietro — piu della tolleranza perfetta
-    // intera. «Mi e sembrato che stessi sulla porzione verde quando ho premuto
-    // spazio ma mi ha sempre dato buona.»
+    // centro sta 3.58 unita piu indietro. «Mi e sembrato che stessi sulla
+    // porzione verde quando ho premuto spazio ma mi ha sempre dato buona.»
+    //
+    // Si verifica DOVE cade il bersaglio, non quanto e larga la finestra
+    // attorno: la finestra si puo ritarare, il riferimento no. Le due
+    // posizioni-limite della perfetta devono stare simmetriche attorno al muro
+    // misurate sul muso, cioe spostate di una semilunghezza rispetto a dove
+    // cadrebbero misurando il centro.
     const { p, game } = pilotaInCorsia();
-    p.pitRimanente = p.pitPiano.muro;   // centro sul muro = muso gia oltre
+    const limite = BoxIngresso.MURO_PERFETTO + 0.6;
+
+    musoA(p, limite);
     P.handlePitReactionPress(ioFinto(), 'L', game, p);
-    assert.equal(p.pitEsito, BoxIngresso.BUONA);
+    assert.equal(p.pitEsito, BoxIngresso.BUONA, 'appena prima del limite deve gia essere buona');
+
+    // La stessa auto, spostata in avanti di una semilunghezza: se si giudicasse
+    // il centro, QUESTA sarebbe la posizione perfetta. Col muso, non lo e.
+    const b = pilotaInCorsia();
+    musoA(b.p, limite);
+    b.p.x += Math.sin(b.p.angle) * BoxIngresso.SEMILUNGHEZZA_AUTO;
+    b.p.z += Math.cos(b.p.angle) * BoxIngresso.SEMILUNGHEZZA_AUTO;
+    P.handlePitReactionPress(ioFinto(), 'L', b.game, b.p);
+    assert.equal(b.p.pitEsito, BoxIngresso.PERFETTA,
+        'spostandosi di una semilunghezza il bersaglio non si e mosso: si sta ancora misurando il centro');
 });
 
 test('l esito si decide una volta sola: premere ancora non lo cambia', () => {
     const { p, game } = pilotaInCorsia();
-    p.pitRimanente = centroQuandoIlMusoE(p.pitPiano, 0);
+    musoA(p, 0);
     P.handlePitReactionPress(ioFinto(), 'L', game, p);
     assert.equal(p.pitEsito, BoxIngresso.PERFETTA);
     // Martellare il tasto dopo aver gia' preso "perfetta" non deve poterla
     // rovinare, ne' un secondo tentativo deve poterla migliorare.
-    p.pitRimanente = 0;
+    musoA(p, -30);
     P.handlePitReactionPress(ioFinto(), 'L', game, p);
     assert.equal(p.pitEsito, BoxIngresso.PERFETTA);
 });
 
 test('fuori dalla fase di ingresso la pressione non conta e non brucia nulla', () => {
     const { p, game } = pilotaInCorsia();
-    p.pitRimanente = centroQuandoIlMusoE(p.pitPiano, 0);
+    musoA(p, 0);
     p.pitAutoState = null;              // gia' fermo nello stallo, o ancora in pista
     P.handlePitReactionPress(ioFinto(), 'L', game, p);
     assert.equal(p.pitEsito, undefined, 'ha giudicato una pressione fuori tempo');
@@ -103,35 +126,36 @@ test('il ritardo di rete si compensa: si e giudicati dove si era, non dove si e 
     // compensazione il server la giudicherebbe li, e con una fascia perfetta
     // larga 6 unita basterebbe questo a trasformare una perfetta in una buona.
     const { p, game } = pilotaInCorsia();
-    const centro = centroQuandoIlMusoE(p.pitPiano, 0);
     const ritardoMs = 100;
     const avanzamento = (ritardoMs / 50) * P.PIT_AUTO_SPEED;   // 50 ms per tick fisico
 
-    // Dove si trova l'auto ADESSO, sul server: gia' oltre il centro.
-    p.pitRimanente = centro - avanzamento;
+    // Dove si trova l'auto ADESSO, sul server: il muso ha gia oltrepassato il
+    // muro di quanto ha percorso durante il ritardo.
+    musoA(p, -avanzamento);
     // Il client dichiara il tempo di gara che aveva quando ha premuto.
     P.handlePitReactionPress(ioFinto(), 'L', game, p, { elapsedMs: game.raceTick * 50 - ritardoMs });
     assert.equal(p.pitEsito, BoxIngresso.PERFETTA, 'la compensazione non ha recuperato il ritardo');
 
-    // Senza dichiarare nulla, lo stesso istante vale meno: e' la prova che la
-    // compensazione stia davvero facendo qualcosa.
+    // Senza dichiarare nulla si viene giudicati dove si e ARRIVATI. Con un
+    // ritardo grande abbastanza da uscire dalla tolleranza, l'esito cambia:
+    // e' la prova che la compensazione stia davvero facendo qualcosa.
     const secondo = pilotaInCorsia();
-    secondo.p.pitRimanente = centro - avanzamento;
+    musoA(secondo.p, -(BoxIngresso.MURO_PERFETTO + 2));
     P.handlePitReactionPress(ioFinto(), 'L', secondo.game, secondo.p);
     assert.notEqual(secondo.p.pitEsito, BoxIngresso.PERFETTA);
 });
 
 test('un client che dichiara un tempo assurdo non si regala una perfetta', () => {
     const { p, game } = pilotaInCorsia();
-    const centro = centroQuandoIlMusoE(p.pitPiano, 0);
-    // Preme quando e' gia' arrivatissimo, ma dichiara di aver premuto dieci
-    // secondi fa: la compensazione e' tappata, quindi il recupero massimo e'
-    // di PIT_LATENZA_MAX_MS e non basta a coprire la distanza.
-    p.pitRimanente = 0;
+    // Preme quando ha gia' passato il muro da un pezzo, ma dichiara di aver
+    // premuto dieci secondi fa: la compensazione e' tappata, quindi il recupero
+    // massimo non basta a coprire la distanza.
+    const oltre = -(BoxIngresso.MURO_BUONO + 20);
+    musoA(p, oltre);
     P.handlePitReactionPress(ioFinto(), 'L', game, p, { elapsedMs: game.raceTick * 50 - 10000 });
     const recuperoMassimo = (P.PIT_LATENZA_MAX_MS / 50) * P.PIT_AUTO_SPEED;
-    assert.ok(recuperoMassimo < centro - BoxIngresso.MURO_PERFETTO,
-        'il tetto alla compensazione non protegge la fascia perfetta');
+    assert.ok(recuperoMassimo < Math.abs(oltre) - BoxIngresso.MURO_BUONO,
+        'il tetto alla compensazione non protegge il gioco');
     assert.equal(p.pitEsito, BoxIngresso.LENTA);
 });
 

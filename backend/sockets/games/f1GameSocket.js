@@ -1535,21 +1535,22 @@ function handlePitReactionPress(io, lobbyId, game, p, { elapsedMs } = {}) {
     const lane = game.track.pitLanePts;
     if (!lane) return;
 
-    // Quanto manca al proprio box nell'istante della pressione. Durante la
-    // manovra il valore è già mantenuto tick per tick; prima, lo si misura
-    // lungo la corsia.
-    let rimanente = p.pitRimanente != null
-        ? p.pitRimanente
-        : BoxIngresso.distanzaLungoLane(lane, p.pitPathIndex, p.pitPiano.laneIdx);
+    // Quanto manca al muro per il muso, con la STESSA formula che il client usa
+    // per il conto alla rovescia: se le due misure divergessero, si verrebbe
+    // giudicati su un muro diverso da quello che si vede arrivare. È già
+    // successo — vedi la nota su `distanzaDalMuro` — e lo scarto sistematico
+    // bastava a rendere la "perfetta" irraggiungibile.
+    let distanza = BoxIngresso.distanzaDalMuro(p.pitPiano, p.x, p.z, p.angle);
+    if (distanza == null) return;
 
     // Compensazione del ritardo: quando il messaggio arriva, l'auto è già
     // avanzata rispetto a dov'era sullo schermo di chi ha premuto.
     if (typeof elapsedMs === 'number') {
         const ritardo = Math.max(0, Math.min(PIT_LATENZA_MAX_MS, (game.raceTick * PHYSICS_TICK_MS) - elapsedMs));
-        rimanente += (ritardo / PHYSICS_TICK_MS) * PIT_AUTO_SPEED;
+        distanza += (ritardo / PHYSICS_TICK_MS) * PIT_AUTO_SPEED;
     }
 
-    p.pitEsito = BoxIngresso.esitoDaRimanente(p.pitPiano, rimanente);
+    p.pitEsito = BoxIngresso.esitoDaDistanza(distanza);
     const sid = game.socketByColor[p.color];
     if (sid) io.to(sid).emit('f1PitEsito', { esito: p.pitEsito });
 }

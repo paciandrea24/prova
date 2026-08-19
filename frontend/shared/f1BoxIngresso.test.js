@@ -259,40 +259,88 @@ test('il muro sta prima del punto in cui si sterza, e cade sulla corsia', () => 
     }
 });
 
+// Mette un'auto sulla corsia a `distanza` unita dal muro, col muso, e
+// restituisce { x, z, angolo } come li avrebbe il server.
+function autoAllaDistanza(track, piano, distanza) {
+    const m = piano.muroPunto;
+    // Indietro lungo la direzione della corsia: il muso a `distanza` dal muro
+    // significa il CENTRO una semilunghezza piu indietro ancora.
+    const arretra = distanza + BI.SEMILUNGHEZZA_AUTO;
+    return {
+        x: m.x - m.tx * arretra,
+        z: m.z - m.tz * arretra,
+        angolo: Math.atan2(m.tx, m.tz),
+    };
+}
+
 test('i tre esiti si misurano sul MUSO, non sul centro dell auto', () => {
     // Il difetto del playtest 2026-08-19: «mi e sembrato che stessi sulla
     // porzione verde quando ho premuto spazio ma mi ha sempre dato buona».
     // Chi gioca mira con la punta; il centro sta 3.58 unita piu indietro, che
-    // e' piu della fascia perfetta intera.
+    // e' piu della tolleranza perfetta intera.
     const track = loadTrack('prova');
-    const a = boxDi(track)[0];
-    const piano = pianoDi(track, a);
+    const piano = pianoDi(track, boxDi(track)[0]);
 
-    // Col MUSO esattamente sul muro: perfetta. Il centro dell'auto in quel
-    // momento e' una semilunghezza piu indietro.
-    const centroQuandoIlMusoEsulMuro = piano.muro + BI.SEMILUNGHEZZA_AUTO;
-    assert.equal(BI.esitoDaRimanente(piano, centroQuandoIlMusoEsulMuro), BI.PERFETTA);
-    assert.equal(BI.distanzaDalMuro(piano, centroQuandoIlMusoEsulMuro), 0);
+    const colMuso = autoAllaDistanza(track, piano, 0);
+    assert.ok(Math.abs(BI.distanzaDalMuro(piano, colMuso.x, colMuso.z, colMuso.angolo)) < 1e-6,
+        'col muso sul muro la distanza deve essere zero');
+    assert.equal(BI.esitoDaDistanza(BI.distanzaDalMuro(piano, colMuso.x, colMuso.z, colMuso.angolo)), BI.PERFETTA);
 
-    // Se invece si giudicasse sul centro, lo stesso istante darebbe "buona":
-    // e' esattamente cio che succedeva.
-    const comeSeFosseIlCentro = piano.muro;
-    assert.equal(BI.esitoDaRimanente(piano, comeSeFosseIlCentro), BI.BUONA,
-        'il vecchio comportamento non e piu riproducibile: il test non prova piu niente');
+    // E col CENTRO sul muro la misura deve dire "muso gia oltre di una
+    // semilunghezza", non zero. E' questo il cuore della correzione: dove cade
+    // il bersaglio, non quanto e' larga la finestra attorno — la finestra puo'
+    // essere ritarata, il riferimento no.
+    const colCentro = { x: piano.muroPunto.x, z: piano.muroPunto.z, angolo: colMuso.angolo };
+    const misurata = BI.distanzaDalMuro(piano, colCentro.x, colCentro.z, colCentro.angolo);
+    assert.ok(Math.abs(misurata + BI.SEMILUNGHEZZA_AUTO) < 1e-6,
+        `col centro sul muro la misura dice ${misurata.toFixed(2)}, attesa ${-BI.SEMILUNGHEZZA_AUTO}`);
 
     // Le due tolleranze.
-    assert.equal(BI.esitoDaRimanente(piano, centroQuandoIlMusoEsulMuro + BI.MURO_PERFETTO - 0.1), BI.PERFETTA);
-    assert.equal(BI.esitoDaRimanente(piano, centroQuandoIlMusoEsulMuro + BI.MURO_PERFETTO + 0.5), BI.BUONA);
-    assert.equal(BI.esitoDaRimanente(piano, centroQuandoIlMusoEsulMuro + BI.MURO_BUONO + 1), BI.LENTA);
-    assert.equal(BI.esitoDaRimanente(piano, centroQuandoIlMusoEsulMuro - BI.MURO_BUONO - 1), BI.LENTA, 'troppo tardi');
-    assert.equal(BI.esitoDaRimanente(piano, null), BI.LENTA, 'mai premuto');
+    assert.equal(BI.esitoDaDistanza(BI.MURO_PERFETTO - 0.1), BI.PERFETTA);
+    assert.equal(BI.esitoDaDistanza(BI.MURO_PERFETTO + 0.5), BI.BUONA);
+    assert.equal(BI.esitoDaDistanza(-(BI.MURO_PERFETTO + 0.5)), BI.BUONA, 'appena passato');
+    assert.equal(BI.esitoDaDistanza(BI.MURO_BUONO + 1), BI.LENTA);
+    assert.equal(BI.esitoDaDistanza(-(BI.MURO_BUONO + 1)), BI.LENTA, 'troppo tardi');
+    assert.equal(BI.esitoDaDistanza(null), BI.LENTA, 'mai premuto');
+});
+
+test('la distanza dal muro e continua: nessuno scalino, su nessuna pista', () => {
+    // IL difetto del playtest 2026-08-19: «non riesco mai a fare pit stop
+    // perfetto». Chi giudicava contava i campioni della corsia — una misura
+    // quantizzata al passo dei campioni (1.68 unita su `prova`) che sbagliava
+    // sempre nello stesso verso — mentre il conto alla rovescia a schermo
+    // proiettava il muso sul muro. Scarto misurato: 0.96 unita in media, fino a
+    // 1.68, contro una tolleranza di 3. Sommato al ritardo di rete, bastava.
+    //
+    // Qui si avanza a passi costanti e si verifica che la distanza cali
+    // altrettanto: se qualcuno tornasse a contare i campioni, ricomparirebbero
+    // gli scalini e questo test li vedrebbe.
+    for (const id of PISTE) {
+        const track = loadTrack(id);
+        const piano = pianoDi(track, boxDi(track)[1]);
+        const PASSO = 0.4;
+        let precedente = null;
+        for (let d = 20; d >= -10; d -= PASSO) {
+            const a = autoAllaDistanza(track, piano, d);
+            const misurata = BI.distanzaDalMuro(piano, a.x, a.z, a.angolo);
+            assert.ok(Math.abs(misurata - d) < 1e-6,
+                `${id}: a ${d} unita dal muro ne misura ${misurata.toFixed(3)}`);
+            if (precedente != null) {
+                const salto = Math.abs((precedente - misurata) - PASSO);
+                assert.ok(salto < 1e-6, `${id}: scalino di ${salto.toFixed(3)} unita nella misura`);
+            }
+            precedente = misurata;
+        }
+    }
 });
 
 test('il conto alla rovescia arriva a zero quando il muso tocca il muro', () => {
     const track = loadTrack('prova');
     const piano = pianoDi(track, boxDi(track)[2]);
-    const sulMuro = piano.muro + BI.SEMILUNGHEZZA_AUTO;
-    assert.ok(BI.distanzaDalMuro(piano, sulMuro + 10) > 0, 'prima del muro deve essere positivo');
-    assert.equal(BI.distanzaDalMuro(piano, sulMuro), 0);
-    assert.ok(BI.distanzaDalMuro(piano, sulMuro - 5) < 0, 'dopo il muro deve essere negativo');
+    const prima = autoAllaDistanza(track, piano, 10);
+    const sopra = autoAllaDistanza(track, piano, 0);
+    const dopo = autoAllaDistanza(track, piano, -5);
+    assert.ok(BI.distanzaDalMuro(piano, prima.x, prima.z, prima.angolo) > 0, 'prima del muro deve essere positivo');
+    assert.ok(Math.abs(BI.distanzaDalMuro(piano, sopra.x, sopra.z, sopra.angolo)) < 1e-6);
+    assert.ok(BI.distanzaDalMuro(piano, dopo.x, dopo.z, dopo.angolo) < 0, 'dopo il muro deve essere negativo');
 });

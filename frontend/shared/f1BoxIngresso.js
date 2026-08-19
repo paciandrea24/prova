@@ -97,10 +97,16 @@
     const MURO_MARGINE = 10;
 
     // Tolleranze attorno al muro, in unità di gioco. A ~31 unità/s
-    // dell'autopilota sono ±0.10 s per la perfetta e ±0.39 s per la buona: la
-    // perfetta si prende solo anticipando con gli occhi il muro che arriva, che
-    // è esattamente il gesto del gioco vero.
-    const MURO_PERFETTO = 3;
+    // dell'autopilota la perfetta vale ±0.145 s e la buona ±0.39 s.
+    //
+    // Perché 4.5 e non 3, che era il primo valore: il conto alla rovescia si
+    // legge con un decimale, quindi cambia dieci volte al secondo — con ±0.10 s
+    // la finestra perfetta era larga quanto UN passo del numero che si sta
+    // guardando, cioè si poteva prendere solo per caso. Questo era il secondo
+    // pezzo del «non riesco mai a fare pit stop perfetto»: il primo era che le
+    // due misure non coincidevano, ma anche a misura sistemata la finestra
+    // restava più stretta di quanto lo schermo sappia mostrare.
+    const MURO_PERFETTO = 4.5;
     const MURO_BUONO = 12;
 
     function clamp01(v) {
@@ -205,6 +211,10 @@
     // basta: un box più esterno dei suoi vicini, misurato su sé stesso, gli
     // passerebbe addosso. Se non lo si passa, si assume che i vicini stiano
     // dove sta lui.
+    // Il piano si porta dietro anche il PUNTO del muro, non solo la sua
+    // distanza dal box: è ciò che permette a chi giudica e a chi disegna il
+    // conto alla rovescia di usare la stessa identica misura. Vedi
+    // `distanzaDalMuro`, e il difetto che ha causato averne due.
     function pianoIngresso(lane, laneIdx, stallo, opzioni = {}) {
         const scostamento = scostamentoStallo(lane, laneIdx, stallo);
         const riferimento = Math.min(
@@ -226,9 +236,10 @@
             // Dove comincia a sterzare, e dove sta la zona dell'indicatore:
             // distanze in unità PRIMA del proprio box, lungo la corsia.
             inizioRaccordo: L,
-            // Distanza del MURO dal proprio box, lungo la corsia. Il giudizio
-            // confronta con questa: `rimanente` del muso, non dell'auto.
+            // Distanza del MURO dal proprio box, lungo la corsia.
             muro: L + MURO_MARGINE,
+            // E dove sta, in coordinate mondo. Calcolato qui una volta sola.
+            muroPunto: puntoIndietroSullaLane(lane, laneIdx, L + MURO_MARGINE),
         };
     }
 
@@ -277,29 +288,43 @@
     const BUONA = 'buona';
     const LENTA = 'lenta';
 
-    // `rimanenteAuto` è quanto manca al proprio box misurato sul CENTRO
-    // dell'auto: la funzione si sposta da sola sul muso, che è ciò che
-    // attraversa il muro e ciò con cui il giocatore mira.
-    function esitoDaRimanente(piano, rimanenteAuto) {
-        if (rimanenteAuto == null) return LENTA;
-        const muso = rimanenteAuto - SEMILUNGHEZZA_AUTO;
-        const scarto = Math.abs(muso - piano.muro);
+    // Quanto manca al muro per il MUSO dell'auto, in unità. Negativo = passato.
+    //
+    // QUESTA È L'UNICA MISURA. Prima ce n'erano due: chi giudicava contava i
+    // campioni della corsia fra l'auto e il proprio box, chi disegnava il conto
+    // alla rovescia proiettava il muso sul muro. Le due non coincidono — la
+    // prima è quantizzata al passo dei campioni (1.68 unità su `prova`) e
+    // sbaglia sempre nello stesso verso — e lo scarto misurato è 0.96 unità in
+    // media, fino a 1.68, contro una tolleranza "perfetta" di 3. Sommato al
+    // ritardo di rete bastava a rendere la perfetta irraggiungibile: segnalato
+    // al playtest come «non riesco mai a fare pit stop perfetto», ed era vero.
+    //
+    // Si proietta sulla direzione del muro e non si prende la distanza in linea
+    // d'aria: di traverso la corsia è larga dieci unità, e una distanza
+    // euclidea direbbe che manca ancora qualcosa anche quando lo si è passato
+    // di lato.
+    function distanzaDalMuro(piano, x, z, angolo) {
+        const m = piano.muroPunto;
+        if (!m) return null;
+        const musoX = x + Math.sin(angolo) * SEMILUNGHEZZA_AUTO;
+        const musoZ = z + Math.cos(angolo) * SEMILUNGHEZZA_AUTO;
+        return (m.x - musoX) * m.tx + (m.z - musoZ) * m.tz;
+    }
+
+    // L'esito, data la distanza del muso dal muro nell'istante della pressione.
+    function esitoDaDistanza(distanza) {
+        if (distanza == null) return LENTA;
+        const scarto = Math.abs(distanza);
         if (scarto <= MURO_PERFETTO) return PERFETTA;
         if (scarto <= MURO_BUONO) return BUONA;
         return LENTA;
-    }
-
-    // Quanto manca al muro, in unità, per il muso dell'auto. Negativo = già
-    // passato. Serve al conto alla rovescia che si legge sul pannello.
-    function distanzaDalMuro(piano, rimanenteAuto) {
-        return (rimanenteAuto - SEMILUNGHEZZA_AUTO) - piano.muro;
     }
 
     return {
         lunghezzaRaccordo, distanzaLungoLane, puntoIndietroSullaLane,
         scostamentoStallo, pianoIngresso, posizioneIngresso, muroReazione,
         scostamentoViciniPrecedenti, distanzaDalMuro,
-        esitoDaRimanente, morbida, morbidissima, clamp01,
+        esitoDaDistanza, morbida, morbidissima, clamp01,
         PERFETTA, BUONA, LENTA,
         RACCORDO_A, RACCORDO_B_MIN, RACCORDO_B_MAX, FASCIA_SICUREZZA,
         lunghezzaSecondoTempo,
