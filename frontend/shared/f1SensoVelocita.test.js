@@ -100,3 +100,101 @@ test('passoVersoObiettivo: dt zero non muove nulla, tau zero arriva subito', () 
     assert.equal(SV.passoVersoObiettivo(65, 82, 500, 0), 65);
     assert.equal(SV.passoVersoObiettivo(65, 82, 0, 16), 82);
 });
+
+// ── La molla ────────────────────────────────────────────────────────────────
+//
+// Accelerazioni MISURATE con la fisica vera del server (banco prova headless,
+// 3 bot su `prova` e `monte-rosso`): l'accelerazione satura a 3.72 u/s², la
+// frenata a ~8 u/s². Sono gli stessi numeri su cui e' tarata la scala della
+// spinta, quindi qui si simulano quelli e non due valori inventati.
+const ACCEL_PIENA = 3.72;    // unità/s²
+const FRENO_PIENO = 8.0;     // unità/s²
+
+// Fa girare `avanza` per `ms` millisecondi a 60 fps con un'accelerazione
+// costante, partendo da `v0`. Restituisce lo stato.
+function guida(stato, { v0 = 0, a = 0, ms = 1000, fps = 60 } = {}) {
+    const dt = 1000 / fps;
+    let v = v0;
+    for (let t = 0; t < ms; t += dt) {
+        v = Math.max(0, Math.min(SV.VEL_RIFERIMENTO, v + a * (dt / 1000)));
+        SV.avanza(stato, { velocita: v }, dt);
+    }
+    return stato;
+}
+
+test('molla: a velocita costante la camera sta ferma', () => {
+    const stato = SV.creaStato();
+    guida(stato, { v0: 4, a: 0, ms: 2000 });
+    assert.ok(Math.abs(stato.spinta) < 0.02, `spinta ${stato.spinta} a velocita costante`);
+    const m = SV.molla(stato.spinta);
+    assert.ok(Math.abs(m.dz) < 0.03 && Math.abs(m.dy) < 0.03, `camera mossa a velocita costante: ${JSON.stringify(m)}`);
+});
+
+test('molla: in accelerazione arretra e si abbassa, in frenata il contrario', () => {
+    const acc = guida(SV.creaStato(), { v0: 1, a: ACCEL_PIENA, ms: 1200 });
+    assert.ok(acc.spinta > 0.4, `accelerazione piena ha dato spinta ${acc.spinta}`);
+    const mAcc = SV.molla(acc.spinta);
+    assert.ok(mAcc.dz < 0, 'accelerando la camera deve arretrare (dz < 0)');
+    assert.ok(mAcc.dy < 0, 'accelerando la camera deve abbassarsi (dy < 0)');
+    assert.ok(mAcc.beccheggioDeg < 0, 'accelerando lo sguardo dell halo-cam deve alzarsi');
+
+    const fre = guida(SV.creaStato(), { v0: SV.VEL_RIFERIMENTO, a: -FRENO_PIENO, ms: 700 });
+    assert.ok(fre.spinta < -0.4, `frenata piena ha dato spinta ${fre.spinta}`);
+    const mFre = SV.molla(fre.spinta);
+    assert.ok(mFre.dz > 0 && mFre.dy > 0 && mFre.beccheggioDeg > 0,
+        `frenata: la camera deve avvicinarsi e alzarsi, invece ${JSON.stringify(mFre)}`);
+});
+
+test('molla: le due scale sono tarate, non satura ne resta muta', () => {
+    // Il difetto che le due scale separate esistono per evitare: con una scala
+    // sola, o l'accelerazione non si vede o la frenata sbatte al fondo.
+    const acc = guida(SV.creaStato(), { v0: 1, a: ACCEL_PIENA, ms: 1500 });
+    const fre = guida(SV.creaStato(), { v0: SV.VEL_RIFERIMENTO, a: -FRENO_PIENO, ms: 700 });
+    assert.ok(acc.spinta > 0.35 && acc.spinta <= 1, `accelerazione fuori scala: ${acc.spinta}`);
+    assert.ok(fre.spinta < -0.35 && fre.spinta >= -1, `frenata fuori scala: ${fre.spinta}`);
+    assert.equal(Math.abs(SV.molla(2).dz), SV.MOLLA_ARRETRAMENTO, 'la molla non deve sfondare oltre spinta 1');
+});
+
+test('molla: indipendente dal frame rate', () => {
+    const a30 = guida(SV.creaStato(), { v0: 1, a: ACCEL_PIENA, ms: 800, fps: 30 }).spinta;
+    const a60 = guida(SV.creaStato(), { v0: 1, a: ACCEL_PIENA, ms: 800, fps: 60 }).spinta;
+    const a144 = guida(SV.creaStato(), { v0: 1, a: ACCEL_PIENA, ms: 800, fps: 144 }).spinta;
+    assert.ok(Math.abs(a30 - a60) < 0.05, `30 vs 60 fps: ${a30} vs ${a60}`);
+    assert.ok(Math.abs(a60 - a144) < 0.05, `60 vs 144 fps: ${a60} vs ${a144}`);
+});
+
+test('molla: uscire e rientrare in pista non inventa una frenata', () => {
+    // Dieci secondi di schermata a 300 km/h alle spalle: al rientro il primo
+    // campione deve reinizializzare i filtri, non generare un transitorio.
+    const stato = guida(SV.creaStato(), { v0: 5, a: ACCEL_PIENA, ms: 1000 });
+    SV.avanza(stato, { attivo: false }, 16);
+    assert.equal(stato.spinta, 0);
+    SV.avanza(stato, { velocita: 5.5 }, 16);
+    assert.ok(Math.abs(stato.spinta) < 0.01, `primo frame al rientro: spinta ${stato.spinta}`);
+    assert.equal(stato.velVeloce, stato.velLenta, 'i filtri devono ripartire allineati');
+});
+
+test('molla: la velocita a scalini della rete non fa tremare la camera', () => {
+    // La velocita' arriva dal server a 20 Hz ma animate() gira a 60: lo stesso
+    // valore si ripete per 3 frame. Il filtro veloce (80 ms) e' piu' lento dello
+    // scalino di proposito — se non lo fosse, la molla sfarfallerebbe a ogni
+    // pacchetto anche in accelerazione perfettamente costante.
+    const stato = SV.creaStato();
+    let v = 2, ultimoAggiornamento = 0, vRete = 2;
+    const storia = [];
+    for (let t = 0; t < 1500; t += 16.7) {
+        v = Math.min(SV.VEL_RIFERIMENTO, v + ACCEL_PIENA * 0.0167);
+        if (t - ultimoAggiornamento >= 50) { vRete = v; ultimoAggiornamento = t; }
+        SV.avanza(stato, { velocita: vRete }, 16.7);
+        if (t > 500) storia.push(stato.spinta);
+    }
+    // Nessuna inversione di direzione della molla: l'accelerazione e' monotona,
+    // e la camera non deve mai andare avanti e indietro mentre accelero.
+    let inversioni = 0;
+    for (let i = 2; i < storia.length; i++) {
+        const d1 = storia[i - 1] - storia[i - 2];
+        const d2 = storia[i] - storia[i - 1];
+        if (d1 * d2 < 0 && Math.abs(d2) > 0.002) inversioni++;
+    }
+    assert.equal(inversioni, 0, `la molla ha cambiato direzione ${inversioni} volte in accelerazione costante`);
+});

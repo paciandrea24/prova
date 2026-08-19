@@ -4161,7 +4161,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             // vede il retro; con la camera a 5.5 che mira a 1.2 l'auto (alta
             // 1.79) resta nella fascia bassa dell'inquadratura e chi insegue
             // rimane visibile sopra di essa.
-            _camOff.set(0, 5.5, back ? 13 : -13);
+            // La molla del senso di velocità: arretra e si abbassa in
+            // accelerazione, si avvicina e si alza in frenata. `dz` è in
+            // coordinate locali (+Z = avanti), quindi vale anche per il "guarda
+            // dietro", dove la camera sta davanti al musetto: lo stesso segno
+            // dice che accelerando è l'auto ad avvicinarsi alla camera.
+            const m = F1SensoVelocita.molla(sensoVelocita.spinta);
+            _camOff.set(0, 5.5 + m.dy, (back ? 13 : -13) + m.dz);
             _camOff.applyQuaternion(q);
             camera.position.copy(pos).add(_camOff);
             _lookTgt.copy(pos).add(new THREE.Vector3(0, 1.2, 0));
@@ -4186,7 +4192,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             _camOff.applyQuaternion(q);
             camera.position.copy(pos).add(_camOff);
 
-            const pitchRad = COCKPIT_PITCH_DEG * Math.PI / 180;
+            // Dall'halo-cam la camera è imbullonata al telaio: spostarla
+            // sarebbe la testa del pilota che scivola nell'abitacolo. La molla
+            // qui è un beccheggio di pochi gradi — il muso che si siede in
+            // accelerazione, che si tuffa in frenata.
+            const pitchRad = (COCKPIT_PITCH_DEG + F1SensoVelocita.molla(sensoVelocita.spinta).beccheggioDeg) * Math.PI / 180;
             // "Guarda dietro" dall'halo-cam = il pilota gira la testa: la
             // camera resta dov'è e il punto mirato passa dietro l'auto, con
             // la stessa inclinazione verso il basso. La distanza orizzontale

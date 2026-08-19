@@ -51,6 +51,43 @@
     const TAU_APERTURA_MS = 500;
     const TAU_CHIUSURA_MS = 300;
 
+    // ── La molla: quanto la camera "sente" accelerazione e frenata ──────────
+    //
+    // COME SI STIMA L'ACCELERAZIONE SENZA DERIVARE. Il client conosce solo la
+    // velocità che arriva dal server, e arriva a 20 Hz: una derivata
+    // (dv/dt) calcolata per frame darebbe zero nei frame senza aggiornamento e
+    // un picco in quelli con, cioè uno sfarfallio. Qui si tengono due medie
+    // mobili esponenziali della stessa velocità, una svelta e una lenta: il
+    // loro SCARTO è proporzionale all'accelerazione, non ha divisioni per dt e
+    // non ha bisogno di sapere quando è arrivato un pacchetto.
+    const TAU_VEL_VELOCE_MS = 80;
+    const TAU_VEL_LENTA_MS = 400;
+
+    // Gli scarti che valgono "accelerazione piena" e "frenata piena". NON sono
+    // indovinati: misurati con la fisica vera del server (banco prova headless,
+    // 3 bot × 200 s su `prova` e `monte-rosso`, tick da 50 ms). L'accelerazione
+    // satura a 3.72 u/s² e la frenata a ~8 u/s², cioè la frenata è più del
+    // doppio dell'accelerazione — con una scala sola per entrambe, o la molla
+    // non si vedeva in accelerazione o sbatteva al fondo in frenata.
+    const SCARTO_PIENO_ACCEL = 1.15;
+    const SCARTO_PIENO_FRENO = 1.85;
+
+    // Quanto si muove la camera d'inseguimento, in unità di gioco, sull'offset
+    // (0, 5.5, -13) da cui parte. Arretra e si abbassa in accelerazione — è
+    // l'auto che scappa via — risale e si avvicina in frenata.
+    const MOLLA_ARRETRAMENTO = 1.3;
+    const MOLLA_ABBASSAMENTO = 0.55;
+
+    // Dall'halo-cam la camera è imbullonata al telaio: spostarla sarebbe la
+    // testa del pilota che scivola nell'abitacolo. Lì la molla è un beccheggio
+    // di pochi gradi — il muso che si siede in accelerazione e si tuffa in
+    // frenata — che è quello che si vede davvero da dentro.
+    const MOLLA_BECCHEGGIO_DEG = 1.6;
+
+    // La molla ha una sua inerzia, breve: senza, ogni pacchetto di rete la
+    // farebbe tremare. Con lo scarto già filtrato, 120 ms bastano.
+    const TAU_MOLLA_MS = 120;
+
     function clamp01(v) {
         return v < 0 ? 0 : (v > 1 ? 1 : v);
     }
@@ -81,7 +118,47 @@
     }
 
     function creaStato() {
-        return { fov: FOV_BASE };
+        return {
+            fov: FOV_BASE,
+            // Le due medie mobili della velocità: `null` = "non ho ancora visto
+            // niente", e il primo campione le inizializza entrambe a sé stesso
+            // invece di far partire un transitorio da zero (che sarebbe una
+            // finta accelerazione violenta al primo frame, o al rientro in
+            // pista dopo una schermata).
+            velVeloce: null,
+            velLenta: null,
+            // -1 = frenata piena, 0 = velocità costante, +1 = accelerazione piena.
+            spinta: 0,
+        };
+    }
+
+    // Dove si sposta la camera per una data spinta. Segni: spinta positiva
+    // (accelerazione) arretra — dz negativo, cioè in direzione opposta al muso —
+    // e abbassa; spinta negativa (frenata) fa l'opposto.
+    //
+    // `dz` è in coordinate LOCALI dell'auto, dove +Z è avanti: va bene anche
+    // per il "guarda dietro", dove la camera sta davanti al musetto (z = +13).
+    // Lì lo stesso segno significa che in accelerazione l'auto si avvicina alla
+    // camera — che è esattamente ciò che accade nel mondo.
+    function molla(spinta) {
+        const s = clamp01(Math.abs(spinta)) * Math.sign(spinta || 0);
+        return {
+            dz: -MOLLA_ARRETRAMENTO * s,
+            dy: -MOLLA_ABBASSAMENTO * s,
+            // Aggiunta al beccheggio dell'halo-cam: accelerando lo sguardo si
+            // alza (il muso si siede), frenando si abbassa.
+            beccheggioDeg: -MOLLA_BECCHEGGIO_DEG * s,
+        };
+    }
+
+    // Spinta desiderata dallo stato attuale dei due filtri, già normalizzata
+    // sulle due scale misurate.
+    function spintaObiettivo(stato) {
+        if (stato.velVeloce === null) return 0;
+        const scarto = stato.velVeloce - stato.velLenta;
+        const scala = scarto >= 0 ? SCARTO_PIENO_ACCEL : SCARTO_PIENO_FRENO;
+        const v = scarto / scala;
+        return v > 1 ? 1 : (v < -1 ? -1 : v);
     }
 
     // Campo visivo desiderato a una data velocità, senza smorzamento.
@@ -100,24 +177,46 @@
     // l'auto fuori dalla sua colonna.
     function avanza(stato, campione, dtMs) {
         const c = campione || {};
+        const v = Math.abs(c.velocita || 0);
+
         if (c.attivo === false) {
             stato.fov = FOV_BASE;
+            stato.spinta = 0;
+            // I filtri si scordano tutto: al rientro in pista il primo campione
+            // li reinizializza, così una schermata durata dieci secondi non
+            // produce una frenata immaginaria nel primo frame di gioco.
+            stato.velVeloce = null;
+            stato.velLenta = null;
             return stato;
         }
+
+        if (stato.velVeloce === null) {
+            stato.velVeloce = v;
+            stato.velLenta = v;
+        } else {
+            stato.velVeloce = passoVersoObiettivo(stato.velVeloce, v, TAU_VEL_VELOCE_MS, dtMs);
+            stato.velLenta = passoVersoObiettivo(stato.velLenta, v, TAU_VEL_LENTA_MS, dtMs);
+        }
+        stato.spinta = passoVersoObiettivo(stato.spinta, spintaObiettivo(stato), TAU_MOLLA_MS, dtMs);
+
+        const obiettivo = fovObiettivo(c.velocita);
         stato.fov = passoVersoObiettivo(
             stato.fov,
-            fovObiettivo(c.velocita),
-            fovObiettivo(c.velocita) > stato.fov ? TAU_APERTURA_MS : TAU_CHIUSURA_MS,
+            obiettivo,
+            obiettivo > stato.fov ? TAU_APERTURA_MS : TAU_CHIUSURA_MS,
             dtMs,
         );
         return stato;
     }
 
     return {
-        creaStato, avanza,
+        creaStato, avanza, molla, spintaObiettivo,
         frazioneVelocita, fovObiettivo, passoVersoObiettivo, morbida, clamp01,
         VEL_RIFERIMENTO, FOV_BASE, FOV_MASSIMO, SOGLIA_APERTURA,
         TAU_APERTURA_MS, TAU_CHIUSURA_MS,
+        TAU_VEL_VELOCE_MS, TAU_VEL_LENTA_MS, TAU_MOLLA_MS,
+        SCARTO_PIENO_ACCEL, SCARTO_PIENO_FRENO,
+        MOLLA_ARRETRAMENTO, MOLLA_ABBASSAMENTO, MOLLA_BECCHEGGIO_DEG,
     };
 
 });
