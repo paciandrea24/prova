@@ -25,7 +25,15 @@ const registraHandlerF1 = require('./f1GameSocket.js');
 
 const LOBBY = 'TESTRIAVVIO';
 
-function ioFinto() { return { to: () => ({ emit: () => { } }) }; }
+// Registra ogni emit per destinatario: serve a guardare COSA riceve davvero
+// un client, non solo cosa vale lo stato sul server.
+function ioFinto() {
+    const inviati = [];
+    return {
+        inviati,
+        to: (dest) => ({ emit: (evento, dati) => inviati.push({ dest, evento, dati }) }),
+    };
+}
 
 function collega(io) {
     const handlers = {};
@@ -189,4 +197,33 @@ test('dopo il riavvio la sequenza arriva fino in fondo: qualifica -> griglia -> 
     t.mock.timers.tick(60000);
     assert.equal(g.phase, 'race', `si deve arrivare in gara (fase "${g.phase}")`);
     assert.equal(g.raceEnded, false, 'e la gara non deve essere gia\' finita');
+});
+
+test('durante la pausa del riavvio nessuno riceve le auto degli altri', (t) => {
+    // Segnalato in playtest: "ho fatto riavvia e oltre a me in qualifica c'era
+    // un'altra macchina, di un bot". La fase restava 'race' per tutta la pausa
+    // di cortesia mentre le auto erano gia' tutte impilate sul via della
+    // qualifica: il server le trasmetteva tutte, sovrapposte, e il client se le
+    // teneva a schermo anche dopo, perche' da li' in poi non le riceveva piu'.
+    t.after(pulisci);
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const io = ioFinto();
+    const { a, g } = garaFinitaConBot(io);
+
+    t.mock.timers.tick(5000);
+    a.handlers.f1RestartRace(LOBBY);
+
+    assert.equal(g.phase, 'qualifying',
+        'la fase deve cambiare INSIEME allo schieramento, non fra RESTART_GRACE_MS');
+
+    io.inviati.length = 0;
+    t.mock.timers.tick(500);   // qualche tick di pausa, prima del countdown
+
+    const stati = io.inviati.filter(m => m.evento === 'f1StateUpdate');
+    assert.ok(stati.length > 0, 'lo stato deve continuare a viaggiare durante la pausa');
+    for (const m of stati) {
+        const colori = Object.keys(m.dati).filter(k => !k.startsWith('__'));
+        assert.deepEqual(colori, ['red'],
+            `un client riceve ${colori.join(', ')}: in qualifica si vede solo la propria auto`);
+    }
 });

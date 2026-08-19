@@ -3288,7 +3288,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         lastStandingsOrder = newOrder;
     }
 
-    socket.on('f1PlayerLeft', (color) => {
+    // Toglie di scena tutto ciò che appartiene a un pilota: l'auto, le sue
+    // zolle, la scia, la hitbox, il pallino sulla minimappa e il suo stato.
+    // Due chiamanti, ed è il motivo per cui non vive più dentro f1PlayerLeft:
+    // un pilota che se ne va, e l'ingresso in QUALIFICA (dove ognuno corre da
+    // solo e le auto altrui non devono esistere).
+    function rimuoviAutoDi(color) {
         if (otherCars[color]) { scene.remove(otherCars[color]); delete otherCars[color]; }
         // Anche le sue zolle: senza, resterebbero appese alla scena per sempre
         // (la mesh sta nella scena, non dentro l'auto). La scia se ne va con
@@ -3298,7 +3303,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (hitboxMeshes[color]) { scene.remove(hitboxMeshes[color]); delete hitboxMeshes[color]; }
         if (minimapDots[color]) { minimapDots[color].remove(); delete minimapDots[color]; }
         delete serverState[color]; delete visualState[color];
-    });
+    }
+
+    socket.on('f1PlayerLeft', (color) => rimuoviAutoDi(color));
 
     socket.on('f1TyreConfirmed', renderAttesaMescole);
 
@@ -3346,6 +3353,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         // gara (data.phase==='race') la chiude anche come rete di sicurezza,
         // ridondante con f1QualiEnded qui sotto ma innocuo.
         qualiSessionOpen = (data?.phase === 'qualifying');
+        // In qualifica ognuno corre da solo: il server smette di trasmettere
+        // le auto altrui (playersVisibleTo), e un'auto di cui non arrivano più
+        // aggiornamenti resta piantata dove l'abbiamo vista l'ultima volta —
+        // questo handler non ne toglie nessuna da sé. Nel flusso normale non
+        // c'è niente da togliere (la qualifica è la prima sessione in pista),
+        // ma una qualifica RIAVVIATA arriva dopo una gara intera: senza questa
+        // riga il giocatore si ritrovava in pista le macchine dei bot
+        // (segnalato in playtest). Sotto il velo nero del riavvio, quindi la
+        // sparizione non si vede.
+        if (data?.phase === 'qualifying') {
+            for (const color of Object.keys(otherCars)) rimuoviAutoDi(color);
+        }
         document.getElementById('quali-waiting-overlay').style.display = 'none';
         document.getElementById('tyre-select-overlay').style.display = 'none';
         const overlay = document.getElementById('countdown-overlay');

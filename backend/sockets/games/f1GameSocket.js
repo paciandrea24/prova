@@ -732,6 +732,15 @@ module.exports = function (io, socket) {
         game.grid = null;
         game.stableRankOrder = null;
         game.abbandoniPrimaDellaFine = [];
+        // La fase cambia INSIEME allo schieramento, non fra RESTART_GRACE_MS
+        // quando startQualifying gira. È lei a decidere chi vede cosa
+        // (playersVisibleTo isola ogni pilota alla propria auto in qualifica):
+        // restare in fase 'race' mentre le auto sono già tutte impilate sul
+        // via della qualifica significava trasmetterle tutte, sovrapposte, a
+        // chiunque — e il client se le teneva a schermo anche dopo, perché da
+        // lì in poi non le riceveva più (segnalato in playtest: "in qualifica
+        // c'era un'altra macchina").
+        game.phase = 'qualifying';
         // Riposizionamento SUBITO, non fra RESTART_GRACE_MS: il client ha
         // appena alzato il velo nero (vedi f1RestartTransition) e questo è
         // l'unico istante in cui lo spostamento delle auto non si vede.
