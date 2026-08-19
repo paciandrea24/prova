@@ -379,12 +379,28 @@ module.exports = function (io, socket) {
                 console.error(`joinF1Game: impossibile caricare la pista "${trackId}", fallback a "monte-rosso":`, err);
                 track = loadTrack('monte-rosso');
             }
+            const formatoRichiesto = (lobby && lobby.gameSettings && lobby.gameSettings.formato) === 'stagione'
+                ? 'stagione' : 'veloce';
             activeGames.set(lobbyId, {
                 gameId: 'f1',   // marca il tipo: gli handler condivisi (disconnect) NON devono toccare partite di altri giochi
                 // Da quale avvio dalla lobby nasce questa partita (vedi sopra).
                 sessione: lobby ? (lobby.sessioneF1 || 0) : 0,
                 track: track,
-                phase: 'tyre_select',   // tyre_select -> qualifying -> grid_display -> race -> race_end
+                // Gara veloce o stagione. Lo decide lo smistamento in lobby
+                // (vedi frontend/lobby.js) e viaggia dentro lobby.gameSettings
+                // come ogni altra impostazione: un solo canale, una sola fonte
+                // — la stessa ragione per cui le impostazioni non stanno piu'
+                // nell'indirizzo (vedi shared/impostazioniGara.js).
+                //
+                // In formato stagione la partita nasce in una fase che sta
+                // PRIMA della scelta mescole: il weekend resta identico, gli si
+                // mette solo una schermata davanti (Rif.
+                // docs/superpowers/specs/2026-08-19-f1-stagioni-design.md).
+                formato: formatoRichiesto,
+                stagioneId: null,   // quale campionato si corre: lo dice chi ospita, vedi f1StagioneScelta
+                // stagione -> tyre_select -> qualifying -> grid_display -> race -> race_end
+                // ('stagione' solo in formato stagione, e solo prima del primo weekend)
+                phase: formatoRichiesto === 'stagione' ? 'stagione' : 'tyre_select',
                 players: {},
                 socketByColor: {},   // color -> socket.id CORRENTE, per gli emit personalizzati in qualifica
                 tick: null,
@@ -522,6 +538,10 @@ module.exports = function (io, socket) {
             trackName: game.track.name,
             totalLaps,
             phase: game.phase,
+            // Il client monta le schermate del campionato solo se e' in
+            // stagione: e' l'unica cosa che deve sapere per farlo.
+            formato: game.formato,
+            stagioneId: game.stagioneId,
             grid: game.grid,
             raceStarted: game.raceStarted,
             elapsed: game.raceStarted ? (game.raceTick * PHYSICS_TICK_MS) : 0,
@@ -559,7 +579,10 @@ module.exports = function (io, socket) {
                 const ms = Number(process.hrtime.bigint() - t0) / 1e6;
                 recordTickDuration(lobbyId, Object.keys(game.players).length, game.phase, ms);
             }, PHYSICS_TICK_MS);
-            startTyreSelect(io, lobbyId, game);
+            // In formato stagione il weekend non parte da solo: prima si
+            // sceglie il campionato. A far partire la scelta mescole sara'
+            // "CORRI" (passo 3).
+            if (game.formato !== 'stagione') startTyreSelect(io, lobbyId, game);
         }
     });
 
@@ -754,6 +777,20 @@ module.exports = function (io, socket) {
             if (!ancoraViva(lobbyId, game)) return;
             startQualifying(io, lobbyId, game);
         }, RESTART_GRACE_MS);
+    });
+
+    // Quale campionato si corre: lo sceglie chi ospita, e da quel momento vale
+    // per tutti quelli che sono nella pagina. Il server non legge il documento
+    // della stagione (lo fa il client, dalla rotta protetta: e' li' che l'uid
+    // e' verificato) — qui si tiene solo l'id, che al passo 3 dira' quale pista
+    // caricare.
+    socket.on('f1StagioneScelta', ({ lobbyId, stagioneId }) => {
+        const game = activeGames.get(lobbyId);
+        if (!game || game.gameId !== 'f1') return;
+        if (socket.color !== game.hostColor) return;   // non decide chi non ospita
+        if (!stagioneId || typeof stagioneId !== 'string') return;
+        game.stagioneId = stagioneId;
+        io.to(lobbyId).emit('f1StagioneScelta', { stagioneId });
     });
 
     socket.on('f1ReturnToLobby', (lobbyId) => {
