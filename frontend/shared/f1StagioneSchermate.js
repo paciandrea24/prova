@@ -61,16 +61,56 @@
         const overlay = el('stagione-overlay');
         overlay.style.display = 'flex';
 
-        // Quante gare si possono scegliere: il minimo e' un numero, il massimo
-        // e' quante piste ci sono (una pista non si ripete). Nessuno dei due e'
-        // scritto qui — li decide F1Stagione, che e' anche quello che li fa
-        // rispettare al server.
-        const intervallo = F1Stagione.intervalloGare(piste.length);
-        el('stagione-gare').min = intervallo.min;
-        el('stagione-gare').max = intervallo.max;
-        el('stagione-gare').value = intervallo.consigliate;
-        testo(el('stagione-gare-aiuto'),
-            `da ${intervallo.min} a ${intervallo.max} — una pista non si ripete`);
+        // Quanti piloti si corre decide QUALI PISTE possono entrare in
+        // calendario: una corsia box corta non ospita venti box (maxDrivers),
+        // quindi con venti piloti quella pista non si corre. Non e' un tetto
+        // sui piloti — quella strada bloccava ogni campionato appena esisteva
+        // una pista stretta, e le piste le disegna l'utente.
+        //
+        // Di conseguenza il numero massimo di GARE dipende dal numero di
+        // piloti, e va ricalcolato ogni volta che si cambia scaglione.
+        const selPiloti = el('stagione-piloti');
+        const selGare = el('stagione-gare');
+
+        function pisteAdatteA(quantiPiloti) {
+            return piste.filter(p => (p.maxDrivers || 20) >= quantiPiloti);
+        }
+
+        function aggiornaGare() {
+            const quanti = parseInt(selPiloti.value, 10) || 6;
+            const adatte = pisteAdatteA(quanti);
+            const intervallo = F1Stagione.intervalloGare(adatte.length);
+            const primaValore = parseInt(selGare.value, 10);
+            selGare.min = intervallo.min;
+            selGare.max = intervallo.max;
+            // Si tiene la scelta di prima se ci sta ancora, invece di
+            // rimetterla al consigliato ad ogni cambio di scaglione.
+            selGare.value = (primaValore >= intervallo.min && primaValore <= intervallo.max)
+                ? primaValore : intervallo.consigliate;
+            testo(el('stagione-gare-aiuto'), adatte.length === piste.length
+                ? `da ${intervallo.min} a ${intervallo.max} — una pista non si ripete`
+                : `da ${intervallo.min} a ${intervallo.max} — con ${quanti} piloti solo ${adatte.length} piste su ${piste.length} hanno i box per tutti`);
+        }
+
+        // Uno scaglione che lascia meno piste del minimo di gare non e'
+        // giocabile: resta VISIBILE e spiegato invece di sparire, perche'
+        // sparendo sembrerebbe un limite del gioco e non delle piste. Stessa
+        // scelta gia' fatta in lobby (vedi aggiornaScaglioniPiloti).
+        let ripiego = null;
+        for (const opt of selPiloti.options) {
+            const n = parseInt(opt.value, 10);
+            const adatte = pisteAdatteA(n).length;
+            opt.disabled = adatte < F1Stagione.MIN_GARE;
+            opt.textContent = opt.disabled
+                ? `${n} — solo ${adatte} ${adatte === 1 ? 'pista ha' : 'piste hanno'} i box per tutti`
+                : String(n);
+            if (!opt.disabled) ripiego = opt.value;
+        }
+        if (selPiloti.selectedOptions[0] && selPiloti.selectedOptions[0].disabled && ripiego) {
+            selPiloti.value = ripiego;
+        }
+        selPiloti.addEventListener('change', aggiornaGare);
+        aggiornaGare();
 
         function errore(messaggio) {
             const n = el('stagione-errore');

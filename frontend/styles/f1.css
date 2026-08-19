@@ -1804,13 +1804,19 @@ body.in-cerimonia .hud { display: none !important; }
 
 /* --- il modulo di creazione --- */
 .stagione-campo { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--sel-tenue); }
-.stagione-campo input {
+.stagione-campo input,
+.stagione-campo select {
     padding: 9px 12px; border-radius: 8px; font-size: 15px; font-weight: 600;
     font-family: inherit;
     color: var(--sel-testo); background: var(--sel-lavagna);
     border: 1px solid var(--sel-filo); outline: none;
 }
-.stagione-campo input:focus { border-color: var(--sel-cordolo); }
+.stagione-campo input:focus,
+.stagione-campo select:focus { border-color: var(--sel-cordolo); }
+/* Un'opzione fuori portata resta VISIBILE e spiegata, non sparisce: farla
+   sparire lascerebbe credere a un limite del gioco invece che della pista
+   (stessa scelta gia' fatta in lobby, vedi aggiornaScaglioniPiloti). */
+.stagione-campo select option:disabled { color: var(--sel-tenue); }
 .stagione-campo small { color: var(--sel-tenue); }
 
 .stagione-btn {

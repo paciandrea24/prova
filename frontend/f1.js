@@ -18,6 +18,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // costruire il fronte della corsia box per il numero reale invece che per
     // il caso peggiore — vedi la spec 2026-08-17-f1-piloti-configurabili.
     const gridSize = Math.min(20, Math.max(1, parseInt(clientSettings.gridSize, 10) || 6));
+    // Gara veloce o campionato. Si sa GIA' QUI, dalle impostazioni della
+    // lobby, e non solo da f1Setup che arriva col socket: serve prima di
+    // scrivere qualunque cosa sulla schermata di caricamento.
+    const formatoPartita = clientSettings.formato === 'stagione' ? 'stagione' : 'veloce';
 
     // Il file del circuito si legge QUI, prima di ogni altra cosa, e non
     // più giù insieme alla costruzione della pista: dentro c'è scritto se
@@ -459,7 +463,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     caricamento.passo('Dati del circuito…', 0.12);
     // trackData è già stato letto in cima (serviva a sapere se si corre in
     // notturno prima di accendere le luci): qui non si rilegge.
-    caricamento.pista(trackData.name || trackId);
+    //
+    // In CAMPIONATO il nome del circuito non si scrive: la pista caricata qui
+    // non è quella che si correrà — serve solo a far nascere la partita,
+    // mentre il calendario lo sorteggia la stagione. Annunciarla sarebbe una
+    // bugia, ed è stata segnalata come tale al playtest ("dice caricamento del
+    // circuito, e cita Monte Rosso"). Il nome vero comparirà quando una gara
+    // del calendario partirà davvero.
+    caricamento.pista(formatoPartita === 'stagione' ? 'Campionato' : (trackData.name || trackId));
     // Il nome del circuito è il titolo della schermata mescole: è la cosa che
     // il giocatore vuole sapere per prima ("dove corro?"), e l'anteprima di
     // fianco è la risposta lunga alla stessa domanda.

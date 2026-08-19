@@ -233,3 +233,59 @@ test('con gli stessi giocatori la stagione e ripartibile', async (t) => {
     assert.deepEqual(r.dati.ripresa.mancanti, []);
     assert.deepEqual(r.dati.ripresa.inPiu, []);
 });
+
+test('quanti piloti si corre decide QUALI piste entrano in calendario', async (t) => {
+    // Non un tetto di piloti: un filtro sulle piste. Una corsia box corta non
+    // ospita venti box, quindi con venti piloti quella pista non si corre — ma
+    // non impedisce di correre il campionato altrove. La strada opposta (tetto
+    // pari alla pista piu' stretta) rendeva impossibile QUALUNQUE campionato
+    // appena esisteva una pista stretta, e le piste le disegna l'utente.
+    //
+    // L'invariante e' verificata SUL RISULTATO e non su un elenco letto a
+    // parte: la cartella delle piste puo' cambiare sotto i piedi mentre i test
+    // girano (trackLoader.test.js ne crea una temporanea), e un test che
+    // confronta due fotografie prese in due istanti diversi e' instabile per
+    // costruzione.
+    t.after(pulisci);
+    const server = await avviaServer();
+    t.after(() => server.close());
+    preparaPartita([{ colore: '#e74c3c', uid: 'uid-andrea' }]);
+
+    const { listTracks } = require('../sockets/games/trackLoader.js');
+    const PILOTI = 14;
+
+    const r = await chiedi(server, {
+        metodo: 'POST', percorso: '/api/f1/stagioni', uid: 'uid-andrea',
+        corpo: { lobbyId: LOBBY, nome: 'Griglia larga', quanteGare: 3, gridSize: PILOTI },
+    });
+
+    if (r.stato === 201) {
+        const capienza = new Map(listTracks().map(t => [t.id, t.maxDrivers || 20]));
+        for (const id of r.dati.stagione.calendario) {
+            assert.ok((capienza.get(id) || 20) >= PILOTI,
+                `${id} non ha i box per ${PILOTI} piloti: non puo' stare in calendario`);
+        }
+    } else {
+        // Poche piste adatte: si rifiuta dicendo i numeri, non si accorcia il
+        // calendario di nascosto.
+        assert.equal(r.stato, 400);
+        assert.match(String(r.dati.error), /piloti/i);
+    }
+});
+
+test('sei piloti restano possibili anche se esiste una pista stretta', async (t) => {
+    // La regressione che ha fatto cambiare disegno: una pista di prova con la
+    // corsia box minima (la crea trackLoader.test.js) faceva rifiutare perfino
+    // la griglia piu' piccola.
+    t.after(pulisci);
+    const server = await avviaServer();
+    t.after(() => server.close());
+    preparaPartita([{ colore: '#e74c3c', uid: 'uid-andrea' }]);
+
+    const r = await chiedi(server, {
+        metodo: 'POST', percorso: '/api/f1/stagioni', uid: 'uid-andrea',
+        corpo: { lobbyId: LOBBY, nome: 'Piccola', quanteGare: 3, gridSize: 6 },
+    });
+    assert.equal(r.stato, 201, r.dati && r.dati.error);
+    assert.equal(r.dati.stagione.piloti.length, 6);
+});

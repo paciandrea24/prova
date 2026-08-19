@@ -70,14 +70,41 @@ function creaRouter(opzioni) {
             return res.status(403).json({ error: 'Non stai giocando in questa lobby' });
         }
 
-        const piste = listTracks().map(t => t.id);
+        // Quanti piloti si corre decide QUALI PISTE possono entrare in
+        // calendario, non il contrario: una corsia box corta non ospita venti
+        // box (vedi maxDrivers in trackLoader.listTracks), quindi con venti
+        // piloti quella pista semplicemente non si corre.
+        //
+        // La strada opposta — un tetto di piloti pari alla pista piu' stretta
+        // di tutte — era gia' scritta e l'ho buttata: basta UNA pista stretta
+        // perche' diventi impossibile creare qualunque campionato, e le piste
+        // le disegna l'utente con l'editor. L'ha dimostrato un test rosso, dove
+        // una pista di prova temporanea faceva rifiutare anche sei piloti.
+        //
+        // Il controllo sta QUI e non solo nella schermata: un limite che vive
+        // solo nella UI e' un limite che il server non ha.
+        const quantiPiloti = Number(gridSize) || 6;
+        const adatte = listTracks().filter(t => (t.maxDrivers || MAX_GRID_SIZE) >= quantiPiloti);
+        const piste = adatte.map(t => t.id);
+
         const { min, max } = F1Stagione.intervalloGare(piste.length);
         const n = Number(quanteGare);
         if (!Number.isFinite(n) || n < min || n > max) {
-            return res.status(400).json({ error: `Le gare devono essere fra ${min} e ${max}` });
+            return res.status(400).json({
+                error: `Con ${quantiPiloti} piloti ci sono ${piste.length} piste adatte:`
+                    + ` le gare devono essere fra ${min} e ${max}`,
+            });
+        }
+        // Meno piste adatte del minimo di gare: non e' una questione di
+        // arrotondamenti, quel campionato non esiste. Dirlo con i numeri.
+        if (piste.length < F1Stagione.MIN_GARE) {
+            return res.status(400).json({
+                error: `Con ${quantiPiloti} piloti solo ${piste.length} piste hanno i box per tutti,`
+                    + ` e un campionato ne vuole almeno ${F1Stagione.MIN_GARE}: servono meno piloti`,
+            });
         }
 
-        const piloti = costruisciPiloti(game, Number(gridSize) || 6, botsEnabled !== false);
+        const piloti = costruisciPiloti(game, quantiPiloti, botsEnabled !== false);
         const stagione = F1Stagione.creaStagione({
             nome: String(nome || '').slice(0, NOME_MAX),
             creataDa: req.uid,

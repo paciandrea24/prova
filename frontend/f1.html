@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260820a">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260820b">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -105,7 +105,7 @@
          e f1.js lo aggiorna man mano (vedi passoCaricamento). -->
     <div id="f1-loading">
         <div id="f1-loading-title">Formula 1</div>
-        <div id="f1-loading-track">Caricamento del circuito</div>
+        <div id="f1-loading-track">Caricamento…</div>
         <div id="f1-loading-bar"><div id="f1-loading-fill"></div></div>
         <div id="f1-loading-step">Avvio…</div>
     </div>
@@ -459,7 +459,18 @@
                         </label>
                         <label class="stagione-campo">
                             <span>Piloti in griglia</span>
-                            <input type="number" id="stagione-piloti" min="1" max="20" step="1" value="6">
+                            <!-- Gli stessi scaglioni della gara veloce (vedi
+                                 #f1-gridSize in lobby.html): un campo libero
+                                 qui faceva scegliere numeri che li' non
+                                 esistono. Quali siano disponibili lo decide la
+                                 pista piu' STRETTA del gioco, perche' il
+                                 calendario puo' pescare qualsiasi pista. -->
+                            <select id="stagione-piloti">
+                                <option value="6">6</option>
+                                <option value="10">10</option>
+                                <option value="14">14</option>
+                                <option value="20">20</option>
+                            </select>
                         </label>
                         <button type="button" class="stagione-btn stagione-btn-primario" id="stagione-crea">
                             Crea la stagione
@@ -728,8 +739,8 @@
          schermate. Le regole girano UGUALI sul server: vedi
          backend/routes/f1Stagioni.js, che richiede lo stesso file. -->
     <script src="shared/f1Stagione.js?v=20260820a"></script>
-    <script src="shared/f1StagioneSchermate.js?v=20260820a"></script>
-    <script src="f1.js?v=20260820b"></script>
+    <script src="shared/f1StagioneSchermate.js?v=20260820b"></script>
+    <script src="f1.js?v=20260820c"></script>
 </body>
 
 </html>
