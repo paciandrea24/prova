@@ -146,3 +146,74 @@ test('in fase stagione nessuna auto va in scena: non si e ancora in pista', (t) 
         assert.deepEqual(colori, [], `lo stato porta ${colori.join(', ')}: in campionato non si e ancora in pista`);
     }
 });
+
+test('Corri prepara la pista del calendario e manda tutti in pista', async (t) => {
+    t.after(pulisci);
+    const seasonStore = require('../../store/seasonStore.js');
+    t.after(() => seasonStore._svuota());
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const io = ioFinto();
+    const a = entra(io, 'stagione');
+
+    const F1Stagione = require('../../../frontend/shared/f1Stagione.js');
+    const stagione = await seasonStore.salva(F1Stagione.creaStagione({
+        nome: 'Corsa', creataDa: 'uid-andrea',
+        piloti: [
+            { uid: 'uid-andrea', colore: 'red', bot: false },
+            { uid: null, colore: '#111111', bot: true, nome: 'Bot 1' },
+        ],
+        calendario: ['new-monza', 'prova'],
+        impostazioni: { botsEnabled: true, gridSize: 2 },
+    }));
+
+    a.handlers.f1StagioneScelta({ lobbyId: LOBBY, stagioneId: stagione._id });
+    io.inviati.length = 0;
+    await a.handlers.f1StagioneCorri({ lobbyId: LOBBY });
+
+    const lobby = lobbies.get(LOBBY);
+    assert.equal(lobby.gameSettings.trackId, 'new-monza', 'la pista e quella del calendario');
+    assert.equal(lobby.gameSettings.stagioneInCorso, true);
+    assert.equal(lobby.gameSettings.stagioneId, stagione._id);
+    assert.ok((lobby.sessioneF1 || 0) > 0, 'la sessione va timbrata, o il rientro sembrera un F5');
+
+    const annuncio = io.inviati.find(m => m.evento === 'f1StagioneInPista');
+    assert.ok(annuncio, 'i client devono sapere che si va in pista');
+    assert.equal(annuncio.dest, LOBBY);
+});
+
+test('la partita di una gara di campionato parte dal weekend, non dal calendario', (t) => {
+    t.after(pulisci);
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const io = ioFinto();
+    lobbies.set(LOBBY, {
+        host: 'red', players: ['red'], lockedPlayers: ['red'],
+        gameSettings: {
+            trackId: 'prova', botsEnabled: 'true', gridSize: '3',
+            formato: 'stagione', stagioneId: 'stag-1', stagioneInCorso: true,
+            botStagione: [{ colore: '#111111', nome: 'Bot 1' }, { colore: '#222222', nome: 'Bot 2' }],
+        },
+    });
+    const a = collega(io);
+    a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', uid: 'uid-andrea', token: creaGettone(LOBBY, 'red') });
+
+    const g = activeGames.get(LOBBY);
+    assert.equal(g.phase, 'tyre_select', 'si sta correndo una gara: il weekend parte come sempre');
+    assert.equal(g.stagioneId, 'stag-1', 'ma la partita sa a quale campionato appartiene');
+    const coloriBot = Object.values(g.players).filter(p => p.isBot).map(p => p.color).sort();
+    assert.deepEqual(coloriBot, ['#111111', '#222222'], 'e i bot sono quelli della stagione');
+});
+
+test('solo chi ospita puo lanciare la gara', async (t) => {
+    t.after(pulisci);
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const io = ioFinto();
+    entra(io, 'stagione');
+    lobbies.get(LOBBY).players.push('blue');
+    lobbies.get(LOBBY).lockedPlayers.push('blue');
+    const b = collega(io);
+    b.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'blue', uid: 'uid-amico', token: creaGettone(LOBBY, 'blue') });
+
+    io.inviati.length = 0;
+    await b.handlers.f1StagioneCorri({ lobbyId: LOBBY });
+    assert.equal(io.inviati.filter(m => m.evento === 'f1StagioneInPista').length, 0);
+});

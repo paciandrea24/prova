@@ -3,6 +3,10 @@ const { lobbies, verificaGettone } = require('../../store/lobbies');
 const { loadTrack } = require('./trackLoader');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 const BoxIngresso = require('../../../frontend/shared/f1BoxIngresso.js');
+// Il campionato: il ponte fra una partita e la stagione a cui appartiene.
+const Stagione = require('./f1Stagione.server.js');
+const F1Stagione = require('../../../frontend/shared/f1Stagione.js');
+const seasonStore = require('../../store/seasonStore');
 const { createBots, updateBotInputs, estimateFinishTime, nearestAheadPlayer, BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS } = require('./f1Bot');
 const TyreModel = require('./physics/TyreModel');
 const {
@@ -379,8 +383,13 @@ module.exports = function (io, socket) {
                 console.error(`joinF1Game: impossibile caricare la pista "${trackId}", fallback a "monte-rosso":`, err);
                 track = loadTrack('monte-rosso');
             }
-            const formatoRichiesto = (lobby && lobby.gameSettings && lobby.gameSettings.formato) === 'stagione'
-                ? 'stagione' : 'veloce';
+            const impostazioniLobby = (lobby && lobby.gameSettings) || {};
+            const formatoRichiesto = impostazioniLobby.formato === 'stagione' ? 'stagione' : 'veloce';
+            // Si sta CORRENDO una gara del campionato: la partita e' un weekend
+            // normale in tutto, sa solo a quale stagione appartiene. Senza
+            // questa distinzione la pagina che riparte dopo "Corri" riaprirebbe
+            // il calendario invece della pista.
+            const garaDiCampionato = formatoRichiesto === 'stagione' && impostazioniLobby.stagioneInCorso === true;
             activeGames.set(lobbyId, {
                 gameId: 'f1',   // marca il tipo: gli handler condivisi (disconnect) NON devono toccare partite di altri giochi
                 // Da quale avvio dalla lobby nasce questa partita (vedi sopra).
@@ -397,10 +406,17 @@ module.exports = function (io, socket) {
                 // mette solo una schermata davanti (Rif.
                 // docs/superpowers/specs/2026-08-19-f1-stagioni-design.md).
                 formato: formatoRichiesto,
-                stagioneId: null,   // quale campionato si corre: lo dice chi ospita, vedi f1StagioneScelta
+                // Quale campionato si corre. In fase 'stagione' lo dice chi ospita
+                // (f1StagioneScelta); in una gara arriva gia' dalle
+                // impostazioni, scritte da f1StagioneCorri.
+                stagioneId: impostazioniLobby.stagioneId || null,
+                // I bot di QUESTA stagione — colori e nomi fissi, letti dalle
+                // impostazioni e usati da createBots (vedi f1Bot.js).
+                botStagione: garaDiCampionato && Array.isArray(impostazioniLobby.botStagione)
+                    ? impostazioniLobby.botStagione : null,
                 // stagione -> tyre_select -> qualifying -> grid_display -> race -> race_end
                 // ('stagione' solo in formato stagione, e solo prima del primo weekend)
-                phase: formatoRichiesto === 'stagione' ? 'stagione' : 'tyre_select',
+                phase: (formatoRichiesto === 'stagione' && !garaDiCampionato) ? 'stagione' : 'tyre_select',
                 players: {},
                 socketByColor: {},   // color -> socket.id CORRENTE, per gli emit personalizzati in qualifica
                 tick: null,
@@ -791,6 +807,38 @@ module.exports = function (io, socket) {
         if (!stagioneId || typeof stagioneId !== 'string') return;
         game.stagioneId = stagioneId;
         io.to(lobbyId).emit('f1StagioneScelta', { stagioneId });
+    });
+
+    // Dal calendario alla pista. Fa esattamente quello che fa startGame dalla
+    // lobby — scrive le impostazioni e timbra la sessione — e poi dice ai client
+    // di ricaricare: da li' in poi gira il weekend di SEMPRE, sulla pista del
+    // calendario, senza una riga di codice diversa. E' la ragione per cui il
+    // codice del weekend non va toccato (Rif. la spec delle stagioni, "Il
+    // punto", e il piano del passo 3 per il perche' si ricarica invece di
+    // ricostruire la scena a caldo).
+    socket.on('f1StagioneCorri', async ({ lobbyId }) => {
+        const game = activeGames.get(lobbyId);
+        if (!game || game.gameId !== 'f1') return;
+        if (socket.color !== game.hostColor) return;   // la gara la lancia chi ospita
+        if (!game.stagioneId) return;
+
+        const stagione = await seasonStore.leggi(game.stagioneId);
+        if (!stagione) return;
+        const lobby = lobbies.get(lobbyId);
+        if (!lobby) return;
+
+        const settings = Stagione.impostazioniPerLaProssimaGara(stagione, lobby.gameSettings);
+        if (!settings) return;   // stagione finita: non c'e' niente da correre
+
+        lobby.gameSettings = settings;
+        lobby.lockedPlayers = [...lobby.players];
+        // Stesso timbro di startGame: senza, joinF1Game scambierebbe il rientro
+        // per un F5 e riuserebbe la partita del calendario invece di crearne
+        // una nuova sulla pista giusta.
+        lobby.sessioneF1 = (lobby.sessioneF1 || 0) + 1;
+
+        console.log(`🏁 [F1] Campionato "${stagione.nome}": gara ${stagione.giro + 1}/${stagione.calendario.length} su ${settings.trackId} (lobby ${lobbyId})`);
+        io.to(lobbyId).emit('f1StagioneInPista', { trackId: settings.trackId });
     });
 
     socket.on('f1ReturnToLobby', (lobbyId) => {
