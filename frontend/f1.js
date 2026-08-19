@@ -182,7 +182,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         return oggetto;
     }
 
-    const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1200);
+    // 65° è il campo visivo con cui è tarato tutto il resto del gioco (le
+    // inquadrature della griglia, la vetrina dell'auto in pole, l'halo-cam):
+    // resta il valore di partenza, ma in gara non è più fisso — si apre con la
+    // velocità, vedi aggiornaCampoVisivo() e shared/f1SensoVelocita.js.
+    const camera = new THREE.PerspectiveCamera(F1SensoVelocita.FOV_BASE, window.innerWidth / window.innerHeight, 0.1, 1200);
 
     // Misure del frame condivise col pannello F9. `logica` la riempie
     // animate(), il resto lo legge il pannello da renderer e camera.
@@ -4114,6 +4118,34 @@ document.addEventListener('DOMContentLoaded', async () => {
                    myCarGroup.position.z + _avanti.z * ANTICIPO_OMBRA);
     }
 
+    // ── Senso di velocità ───────────────────────────────────────────────────
+    // Lo stato sta qui, la matematica in shared/f1SensoVelocita.js (che non sa
+    // niente di Three.js e si verifica senza browser). Primo effetto: il campo
+    // visivo che si apre con la velocità — l'unico che a costo zero cambia
+    // davvero la percezione, perché allarga la periferia dell'immagine e con
+    // essa la velocità apparente di ciò che scorre ai lati.
+    const sensoVelocita = F1SensoVelocita.creaStato();
+
+    // Si "sta guidando" solo quando la camera è quella di gioco. Nelle altre
+    // (scelta mescole, panoramica, premiazione) il campo visivo torna a 65 nello
+    // STESSO frame: quelle inquadrature sono tarate su quel valore, e la vetrina
+    // dell'auto in pole ricava la propria posizione leggendo camera.fov.
+    function aggiornaCampoVisivo(dtMs) {
+        const guidando = !tyreSelectActive && !panoramicaAttiva && !cerimoniaAttiva && !!myCarGroup;
+        const mio = serverState[myColor];
+        F1SensoVelocita.avanza(sensoVelocita, {
+            velocita: guidando ? (mio && mio.speed) || 0 : 0,
+            attivo: guidando,
+        }, dtMs);
+        // La matrice di proiezione si ricalcola solo quando il valore si muove
+        // per davvero: fermi ai box, o in una qualunque delle schermate, questo
+        // non costa niente.
+        if (Math.abs(camera.fov - sensoVelocita.fov) > 0.01) {
+            camera.fov = sensoVelocita.fov;
+            camera.updateProjectionMatrix();
+        }
+    }
+
     function updateCamera() {
         if (!myCarGroup) return;
         const pos = myCarGroup.position;
@@ -4542,6 +4574,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
         }
+
+        // Prima di scegliere DOVE sta la camera, quanto vede: il campo visivo
+        // partecipa alle inquadrature delle schermate (che lo leggono per
+        // posizionare l'auto della vetrina), quindi va risolto per primo.
+        aggiornaCampoVisivo(_dt);
 
         if (tyreSelectActive) updateTyreSelectCamera();
         else if (panoramicaAttiva) aggiornaCameraPanoramica();
