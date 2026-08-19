@@ -398,9 +398,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function showF1ModeChoice() {
-        // L'avviso riparte nascosto ad ogni apertura: se resta acceso da una
-        // volta prima sembra la risposta al clic che non hai ancora fatto.
-        document.getElementById('f1-season-soon').style.display = 'none';
         document.getElementById('f1-mode-modal').style.display = 'flex';
     }
 
