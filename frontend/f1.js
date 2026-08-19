@@ -4244,9 +4244,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             const COCKPIT_LOOK_DIST = 30;
 
             // Qui la camera è sul telaio: prende gli scossoni per intero (×1.5
-            // rispetto alla camera d'inseguimento, che è un'astrazione).
+            // rispetto alla camera d'inseguimento, che è un'astrazione), ma come
+            // ROTAZIONE e non come spostamento — la scocca è a mezza unità
+            // dall'obiettivo, e traslare qui la faceva saltare per parallasse
+            // invece di far tremare l'inquadratura (segnalato al playtest).
+            // `dx`/`dy` sono zero per costruzione in questo ramo.
             const scHalo = F1SensoVelocita.scossone(sensoVelocita, { halo: true });
-            _camOff.set(scHalo.dx, COCKPIT_HEIGHT + scHalo.dy, COCKPIT_Z);
+            _camOff.set(0, COCKPIT_HEIGHT, COCKPIT_Z);
             _camOff.applyQuaternion(q);
             camera.position.copy(pos).add(_camOff);
 
@@ -4268,6 +4272,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             _lookTgt.add(pos);
             mescolaSguardoSemaforo(_lookTgt);
             camera.lookAt(_lookTgt);
+            // Tutte e tre dopo lookAt: sono rotazioni negli assi della camera,
+            // che lookAt ha appena finito di stabilire. Tremano insieme il
+            // mondo e l'auto in primo piano, nella stessa misura — che è
+            // esattamente ciò che vede chi ha la testa dentro l'abitacolo.
+            if (scHalo.pitchRad) camera.rotateX(scHalo.pitchRad);
+            if (scHalo.yawRad) camera.rotateY(scHalo.yawRad);
             if (scHalo.rollRad) camera.rotateZ(scHalo.rollRad);
         }
     }

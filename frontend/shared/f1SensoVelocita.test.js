@@ -214,13 +214,48 @@ test('scossone: fermi non succede niente nemmeno in ghiaia', () => {
     assert.ok(Math.abs(SV.scossone(stato).dy) < 1e-9);
 });
 
-test('scossone: dall halo-cam scuote di piu che da fuori', () => {
+test('scossone: la camera d inseguimento trasla, quella sul telaio ruota', () => {
+    // Il difetto che questa separazione esiste per risolvere (playtest
+    // 2026-08-19, "dall'halo la macchina si vede saltare moltissimo"): la
+    // scocca sta a mezza unita' dall'obiettivo, e traslare li' la sposta
+    // nell'inquadratura di decine di gradi mentre il mondo lontano resta
+    // fermo. Non e' una vibrazione, e' parallasse.
     const stato = SV.creaStato();
     for (let t = 0; t < 800; t += 16) SV.avanza(stato, { velocita: SV.VEL_RIFERIMENTO, superficie: SV.FUORI }, 16);
-    const fuori = SV.scossone(stato);
+
+    const inseguimento = SV.scossone(stato);
+    assert.ok(Math.abs(inseguimento.dy) > 0 && Math.abs(inseguimento.dx) > 0, 'da fuori deve traslare');
+    assert.equal(inseguimento.pitchRad, 0, 'da fuori niente beccheggio: basta la traslazione');
+    assert.equal(inseguimento.yawRad, 0);
+
     const halo = SV.scossone(stato, { halo: true });
-    assert.ok(Math.abs(halo.dy) > Math.abs(fuori.dy), 'la camera sul telaio deve prendere di piu');
-    assert.equal(Math.abs(halo.dy) / Math.abs(fuori.dy), SV.SCOSSONE_HALO_MULT);
+    assert.equal(halo.dy, 0, 'sul telaio la camera NON si sposta rispetto all auto');
+    assert.equal(halo.dx, 0);
+    assert.ok(Math.abs(halo.pitchRad) > 0 && Math.abs(halo.yawRad) > 0, 'sul telaio deve ruotare');
+
+    // Il rollio c'e' in entrambe (e' una rotazione anche da fuori, non fa
+    // parallasse): e' li che si verifica il moltiplicatore dell halo-cam.
+    assert.ok(Math.abs(Math.abs(halo.rollRad) / Math.abs(inseguimento.rollRad) - SV.SCOSSONE_HALO_MULT) < 1e-9,
+        `moltiplicatore halo: ${Math.abs(halo.rollRad) / Math.abs(inseguimento.rollRad)}`);
+});
+
+test('scossone: gli angoli dell halo restano dell ordine del grado', () => {
+    // Un grado e' gia' molto per una camera a mezza unita dalla scocca: sopra i
+    // due, l'inquadratura non trema piu, sbanda.
+    const stato = SV.creaStato();
+    let maxPitch = 0, maxYaw = 0, maxRoll = 0;
+    for (let t = 0; t < 2000; t += 16) {
+        SV.avanza(stato, { velocita: SV.VEL_RIFERIMENTO, superficie: SV.CORDOLO }, 16);
+        const s = SV.scossone(stato, { halo: true });
+        maxPitch = Math.max(maxPitch, Math.abs(s.pitchRad));
+        maxYaw = Math.max(maxYaw, Math.abs(s.yawRad));
+        maxRoll = Math.max(maxRoll, Math.abs(s.rollRad));
+    }
+    const gradi = (rad) => rad * 180 / Math.PI;
+    for (const [nome, v] of [['beccheggio', maxPitch], ['imbardata', maxYaw], ['rollio', maxRoll]]) {
+        assert.ok(gradi(v) > 0.1, `${nome} impercettibile: ${gradi(v).toFixed(2)}°`);
+        assert.ok(gradi(v) < 2, `${nome} troppo ampio: ${gradi(v).toFixed(2)}°`);
+    }
 });
 
 test('scossone: passare dal cordolo all erba si fonde, non scatta', () => {

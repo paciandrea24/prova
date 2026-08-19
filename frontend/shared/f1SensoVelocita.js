@@ -108,15 +108,34 @@
     // campioni per oscillazione: oltre, la vibrazione non si legge più come tale
     // e su un frame rate ballerino compaiono battimenti lenti che sembrano un
     // difetto. Il gioco gira intorno ai 60 fps, quindi il tetto è quello.
+    // PERCHÉ L'HALO-CAM SCUOTE IN ANGOLO E NON IN POSIZIONE. Segnalato al
+    // playtest: dall'abitacolo, sui cordoli, "la macchina si vede saltare
+    // moltissimo". È parallasse, e la sola geometria la spiega — la scocca sta a
+    // mezza unità dall'obiettivo, quindi 0.2 unità di traslazione la spostano
+    // nell'inquadratura di decine di gradi mentre il mondo lontano resta quasi
+    // fermo: ciò che si legge non è "la camera vibra", è "l'auto salta".
+    //
+    // Nella realtà quella camera è imbullonata al telaio: rispetto all'auto NON
+    // si muove mai, si muove insieme a lei rispetto al mondo. Qui l'auto non può
+    // sobbalzare (la fisica del server è piatta), e la traduzione corretta è una
+    // ROTAZIONE della camera: tutto il quadro trema insieme — auto compresa,
+    // nella stessa misura — e la parallasse sparisce perché non c'è più niente
+    // che si muova rispetto a qualcos'altro.
+    //
+    // Le ampiezze angolari sono l'equivalente di quelle di traslazione viste
+    // dalla camera d'inseguimento: 0.14 unità a 13 di distanza sono atan(0.14/13)
+    // ≈ 0.6°, che è da dove nascono i decimi di grado qui sotto.
     const SCOSSONE_CORDOLO = {
         // Il cordolo è secco e verticale: le stecche sono un gradino, non sabbia.
         hz1: 11, hz2: 16.4,
         dy: 0.14, dx: 0.05, rollDeg: 0.5,
+        pitchDeg: 0.55, yawDeg: 0.22,
     };
     const SCOSSONE_FUORI = {
         // Erba e ghiaia sono più lente e più laterali: l'auto galleggia e sbanda.
         hz1: 6.5, hz2: 9.7,
         dy: 0.10, dx: 0.09, rollDeg: 0.75,
+        pitchDeg: 0.38, yawDeg: 0.45,
     };
 
     // Dall'halo-cam la camera è imbullonata al telaio e prende tutto quello che
@@ -282,9 +301,13 @@
         return superficieDaScostamento(lat, roadHalf, curbW, SEMI_LARGHEZZA_AUTO);
     }
 
-    // Lo scossone di questo frame, in unità di gioco e radianti. `dx`/`dy` sono
-    // in coordinate locali dell'auto (fianchi / verticale), `rollRad` è la
-    // rotazione attorno all'asse di vista.
+    // Lo scossone di questo frame, in unità di gioco e radianti.
+    //
+    // Due forme dello stesso effetto, mai mescolate: la camera d'inseguimento lo
+    // riceve come TRASLAZIONE (`dx`/`dy`, in coordinate locali dell'auto), quella
+    // sul telaio come ROTAZIONE (`pitchRad`/`yawRad`) — vedi il commento sulla
+    // parallasse sopra. Il rollio c'è in entrambe: è una rotazione anche da
+    // fuori, e non produce parallasse in nessuno dei due casi.
     function scossone(stato, { halo = false } = {}) {
         const mult = (halo ? SCOSSONE_HALO_MULT : 1) * intensita;
         const s1 = Math.sin(stato.fase1);
@@ -292,10 +315,14 @@
         const c1 = Math.cos(stato.fase1 * 0.87);
         const cordolo = stato.intCordolo * mult;
         const fuori = stato.intFuori * mult;
+        const verticale = s1 * 0.7 + s2 * 0.3;
+        const GRADI = Math.PI / 180;
         return {
-            dy: (cordolo * SCOSSONE_CORDOLO.dy + fuori * SCOSSONE_FUORI.dy) * (s1 * 0.7 + s2 * 0.3),
-            dx: (cordolo * SCOSSONE_CORDOLO.dx + fuori * SCOSSONE_FUORI.dx) * s2,
-            rollRad: (cordolo * SCOSSONE_CORDOLO.rollDeg + fuori * SCOSSONE_FUORI.rollDeg) * c1 * Math.PI / 180,
+            dy: halo ? 0 : (cordolo * SCOSSONE_CORDOLO.dy + fuori * SCOSSONE_FUORI.dy) * verticale,
+            dx: halo ? 0 : (cordolo * SCOSSONE_CORDOLO.dx + fuori * SCOSSONE_FUORI.dx) * s2,
+            pitchRad: halo ? (cordolo * SCOSSONE_CORDOLO.pitchDeg + fuori * SCOSSONE_FUORI.pitchDeg) * verticale * GRADI : 0,
+            yawRad: halo ? (cordolo * SCOSSONE_CORDOLO.yawDeg + fuori * SCOSSONE_FUORI.yawDeg) * s2 * GRADI : 0,
+            rollRad: (cordolo * SCOSSONE_CORDOLO.rollDeg + fuori * SCOSSONE_FUORI.rollDeg) * c1 * GRADI,
         };
     }
 
