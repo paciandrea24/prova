@@ -1668,12 +1668,47 @@ document.addEventListener('DOMContentLoaded', async () => {
         d.mesh.visible = vive > 0;
     }
 
+    // ── La scia, per tutte le vetture ───────────────────────────────────────
+    // Il server segnala chi è in scia per OGNI pilota (buildPublicState), era il
+    // client a guardare solo il proprio colore. Qui la mesh è appesa all'auto —
+    // la scia è vento, sta attaccata a chi la produce — quindi si sposta e si
+    // distrugge insieme a lei senza doverla inseguire.
+    const sciePerAuto = {};
+
+    function rimuoviSciaDi(color) {
+        const mesh = sciePerAuto[color];
+        if (!mesh) return;
+        if (mesh.parent) mesh.parent.remove(mesh);
+        mesh.material.dispose();
+        delete sciePerAuto[color];
+    }
+
+    function aggiornaSciaDi(color, carGroup, dtMs) {
+        const stato = serverState[color];
+        const attiva = !!(carGroup && stato && stato.slipstream);
+        let mesh = sciePerAuto[color];
+        // Chi non è mai stato in scia non ha nemmeno la mesh.
+        if (!attiva && !mesh) return;
+        if (!mesh) {
+            mesh = sciePerAuto[color] = buildSlipstreamEffect();
+            carGroup.add(mesh);
+        }
+        mesh.visible = attiva;
+        // Ferma quando non serve: il pool resta dov'è e riprende da lì, già
+        // sfalsato, la volta dopo.
+        if (attiva) aggiornaEffettoParticelle(mesh, dtMs);
+    }
+
     // Tutte le vetture in scena, non solo la propria: chi guarda una gara vede
-    // gli errori degli altri, ed è metà del senso di avere l'effetto.
-    function aggiornaDetriti(dtMs, misuraMia) {
+    // la scia e gli errori degli altri, ed è metà del senso di avere gli effetti.
+    // Un giro solo per entrambi, così non possono divergere su chi è in pista.
+    function aggiornaEffettiVetture(dtMs, misuraMia) {
         aggiornaDetritiDi(myColor, myCarGroup, dtMs, misuraMia);
+        aggiornaSciaDi(myColor, myCarGroup, dtMs);
         for (const color of Object.keys(otherCars)) {
-            aggiornaDetritiDi(color, otherCars[color], dtMs);
+            const carGroup = otherCars[color];
+            aggiornaDetritiDi(color, carGroup, dtMs);
+            aggiornaSciaDi(color, carGroup, dtMs);
         }
     }
 
@@ -1681,8 +1716,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // STATO DI GIOCO
     // ====================================================
     let myCarGroup = null;
-    let slipstreamGroup = null;
-    let slipstreamActive = false;
     let cameraMode = 'third';
     // "Guarda dietro": attivo solo finché il tasto resta premuto (B / freccia
     // giù, Cerchio sul controller). Non è una terza modalità camera — si
@@ -2561,8 +2594,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         // già in scena, ricrearli darebbe auto duplicate.
         if (!myCarGroup) loadCarModel(myColor, (g) => {
             myCarGroup = g;
-            slipstreamGroup = buildSlipstreamEffect();
-            myCarGroup.add(slipstreamGroup);
             segnalaAutoPronta();
         }, TEST_LIVERY_COLORS);
         else segnalaAutoPronta();
@@ -2662,8 +2693,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (color === myColor && currentPhase === 'race') aggiornaAvvisoSosta(data);
             if (color === myColor) {
                 renderTyreVisibility();
-                slipstreamActive = !!data.slipstream;
-                if (slipstreamGroup) slipstreamGroup.visible = slipstreamActive;
                 updateDebugPanel(data);
             }
         }
@@ -2885,8 +2914,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     socket.on('f1PlayerLeft', (color) => {
         if (otherCars[color]) { scene.remove(otherCars[color]); delete otherCars[color]; }
         // Anche le sue zolle: senza, resterebbero appese alla scena per sempre
-        // (la mesh sta nella scena, non dentro l'auto).
+        // (la mesh sta nella scena, non dentro l'auto). La scia se ne va con
+        // l'auto perché le è appesa, ma il suo materiale va comunque liberato.
         rimuoviDetritiDi(color);
+        rimuoviSciaDi(color);
         if (hitboxMeshes[color]) { scene.remove(hitboxMeshes[color]); delete hitboxMeshes[color]; }
         if (minimapDots[color]) { minimapDots[color].remove(); delete minimapDots[color]; }
         delete serverState[color]; delete visualState[color];
@@ -4507,10 +4538,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         maybeSendInputs();
 
-        // Effetto scia: il pool si muove solo quando l'effetto è attivo —
-        // nessun lavoro quando non serve.
-        if (slipstreamActive && slipstreamGroup) aggiornaEffettoParticelle(slipstreamGroup, _dt);
-
         for (const [color, target] of Object.entries(serverState)) {
             const v = visualState[color];
             if (!v) continue;
@@ -4782,7 +4809,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // partecipa alle inquadrature delle schermate (che lo leggono per
         // posizionare l'auto della vetrina), quindi va risolto per primo.
         aggiornaCampoVisivo(_dt, _misuraSuperficie);
-        aggiornaDetriti(_dt, _misuraSuperficie);
+        aggiornaEffettiVetture(_dt, _misuraSuperficie);
 
         if (tyreSelectActive) updateTyreSelectCamera();
         else if (panoramicaAttiva) aggiornaCameraPanoramica();
