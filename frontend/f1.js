@@ -1770,24 +1770,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     let debugPanelOpen = false;   // pannello debug usura/guasti (tasto G), stato locale, mai sincronizzato col server
     let lightsSequenceActive = false;   // true durante la plancia luci del via gara (non in qualifica)
 
-    // Interpola verde -> giallo -> rosso in base all'usura (0-100): stessa
-    // scala già usata nel mockup approvato dall'utente.
-    function wearColor(pct) {
-        const stops = [
-            [0, [79, 191, 130]],
-            [55, [217, 178, 60]],
-            [100, [198, 91, 82]],
-        ];
-        for (let i = 0; i < stops.length - 1; i++) {
-            const [p0, c0] = stops[i], [p1, c1] = stops[i + 1];
-            if (pct >= p0 && pct <= p1) {
-                const f = (pct - p0) / (p1 - p0);
-                const c = c0.map((v, idx) => Math.round(v + (c1[idx] - v) * f));
-                return `rgb(${c[0]},${c[1]},${c[2]})`;
-            }
-        }
-        return `rgb(${stops[stops.length - 1][1].join(',')})`;
-    }
+    // Verde -> giallo -> rosso, la scala approvata per l'usura. Vive in
+    // shared/f1Danni.js perche' ora la usano anche i quattro quadranti dei
+    // danni: due copie della stessa scala si sarebbero scostate al primo
+    // ritocco, e il pannello avrebbe detto una cosa e l'icona un'altra.
+    const wearColor = (pct) => F1Danni.colore(pct);
 
     // Il pannello gomme ha senso SOLO in gara (in qualifica/tyre_select/
     // grid_display l'usura non è mai rilevante — stessa logica del vecchio
@@ -1803,6 +1790,98 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         closedEl.style.display = tyrePanelOpen ? 'none' : 'flex';
         openEl.style.display = tyrePanelOpen ? 'block' : 'none';
+    }
+
+    // I quattro quadranti circolari del pannello stato vettura, uno per
+    // componente. Sono costruiti da qui e non scritti a mano nell'HTML perche'
+    // l'elenco dei componenti e' quello del server (F1Danni.COMPONENTI, che un
+    // test tiene agganciato a DamageModel.createDamageParts): se un giorno se
+    // ne aggiunge o toglie uno, qui se ne accorge subito invece di lasciare un
+    // quadrante fermo a 0% per sempre.
+    //
+    // Le quattro posizioni seguono l'ordine di COMPONENTI: davanti-sinistra,
+    // davanti-destra, dietro-sinistra, dietro-destra. Sono le stesse a cui
+    // puntano le linee punteggiate disegnate nell'HTML.
+    const QUADRANTI_POS = [
+        { cx: 30, cy: 44 }, { cx: 214, cy: 44 },
+        { cx: 30, cy: 162 }, { cx: 214, cy: 162 },
+    ];
+    const QUADRANTE_R = 24;
+
+    function costruisciQuadranti() {
+        const g = document.getElementById('hud-quadranti');
+        if (!g) return;
+        const NS = 'http://www.w3.org/2000/svg';
+        const el = (tag, attrs) => {
+            const n = document.createElementNS(NS, tag);
+            for (const k in attrs) n.setAttribute(k, attrs[k]);
+            return n;
+        };
+        F1Danni.COMPONENTI.forEach((c, i) => {
+            const pos = QUADRANTI_POS[i];
+            if (!pos) {
+                console.warn('[f1] nessun posto nel pannello per il componente', c.chiave);
+                return;
+            }
+            g.appendChild(el('circle', { class: 'v-pista', cx: pos.cx, cy: pos.cy, r: QUADRANTE_R }));
+
+            const arco = el('path', { class: 'v-arco', id: 'arco-' + c.chiave });
+            arco.dataset.cx = pos.cx; arco.dataset.cy = pos.cy; arco.dataset.r = QUADRANTE_R;
+            g.appendChild(arco);
+
+            const num = el('text', { class: 'v-num', x: pos.cx, y: pos.cy + 6, id: 'num-' + c.chiave });
+            num.textContent = '0%';
+            g.appendChild(num);
+
+            const sigla = el('text', { class: 'v-sigla', x: pos.cx, y: pos.cy + QUADRANTE_R + 13 });
+            sigla.textContent = c.breve;
+            // Il nome per esteso resta raggiungibile col puntatore: la sigla da
+            // sola ("SOSP") non basta a chi apre il pannello la prima volta.
+            const titolo = document.createElementNS(NS, 'title');
+            titolo.textContent = c.nome;
+            sigla.appendChild(titolo);
+            g.appendChild(sigla);
+        });
+    }
+    costruisciQuadranti();
+
+    // Quale mescola e' gia' disegnata nella riga in fondo: il disegno si
+    // rigenera solo quando cambia davvero, non venti volte al secondo.
+    let mescolaDisegnata = null;
+
+    // Tutto il pannello in una funzione sola: gli stessi numeri colorano il
+    // disegno dell'auto, i quadranti e i due quadratini dell'icona chiusa.
+    function aggiornaStatoVettura(data) {
+        const svg = document.getElementById('hud-vettura');
+        if (!svg) return;
+        const parti = data.damageParts || {};
+
+        for (const c of F1Danni.COMPONENTI) {
+            const v = Math.round(parti[c.chiave] || 0);
+            const col = F1Danni.colore(v);
+            const arco = document.getElementById('arco-' + c.chiave);
+            if (arco) {
+                arco.setAttribute('d', F1Danni.arco(v, +arco.dataset.cx, +arco.dataset.cy, +arco.dataset.r));
+                arco.style.stroke = col;
+            }
+            const num = document.getElementById('num-' + c.chiave);
+            if (num) num.textContent = v + '%';
+            // La variabile CSS si chiama come il campo del server apposta:
+            // niente tabella di traduzione da tenere allineata.
+            svg.style.setProperty('--' + c.chiave, col);
+        }
+
+        const usura = Math.round(data.tyreWear || 0);
+        svg.style.setProperty('--gomme', F1Danni.colore(usura));
+        document.getElementById('tyre-wear-value').textContent = usura;
+
+        // L'icona chiusa: il quadrato e' l'usura, il rombo compare solo se
+        // qualcosa e' rotto.
+        document.getElementById('tyre-icon-closed').style.background = F1Danni.colore(usura);
+        const peggio = Math.round(F1Danni.peggiore(parti));
+        const rombo = document.getElementById('damage-icon-closed');
+        rombo.style.display = peggio > 0 ? 'inline-block' : 'none';
+        rombo.style.background = F1Danni.colore(peggio);
     }
 
     // Mostra il giro CORRENTE che si sta guidando (convenzione vera F1: durante
@@ -2978,17 +3057,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (color === myColor && currentPhase === 'race' && data.compound && tyreCompoundsInfo) {
                 const info = tyreCompoundsInfo[data.compound];
                 if (info) {
-                    const wear = Math.round(data.tyreWear || 0);
-                    const col = wearColor(wear);
-                    document.getElementById('tyre-icon-closed').style.background = col;
-                    document.getElementById('tyre-compound-dot').style.background = info.color;
-                    document.getElementById('tyre-compound-label').textContent = info.label.toUpperCase();
-                    document.getElementById('tyre-wear-value').textContent = wear;
-                    ['wFL', 'wFR', 'wRL', 'wRR'].forEach(id =>
-                        document.getElementById(id).style.setProperty('--wear', col));
-                    const dmg = Math.round(data.damage || 0);
-                    document.getElementById('damage-value').textContent = dmg;
-                    document.getElementById('tyre-open').style.setProperty('--damage', wearColor(dmg));
+                    if (mescolaDisegnata !== data.compound) {
+                        mescolaDisegnata = data.compound;
+                        document.getElementById('tyre-drawing').innerHTML =
+                            F1Pneumatico.svg(data.compound, info.color, { titolo: 'Mescola ' + info.label });
+                        document.getElementById('tyre-compound-label').textContent = info.label.toUpperCase();
+                        document.getElementById('tyre-open').style.setProperty('--mescola', info.color);
+                    }
+                    aggiornaStatoVettura(data);
                 }
             }
             if (color === myColor && currentPhase === 'race') aggiornaAvvisoSosta(data);

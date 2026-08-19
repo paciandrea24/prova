@@ -668,7 +668,7 @@ canvas.tyre-preview-canvas {
     100% { transform: translateX(385%); }
 }
 
-/* ---- bottom-left: gomme, stato chiuso ---- */
+/* ---- bottom-left: stato vettura, chiuso ---- */
 .hud-tyre-closed {
     bottom: 14px; left: 12px;
     display: flex; align-items: center; gap: 5px;
@@ -681,35 +681,119 @@ canvas.tyre-preview-canvas {
     width: 12px; height: 12px; border-radius: 3px;
     background: var(--hud-wear-mid);
 }
+/* Il quadratino dei danni: rombo invece che quadrato, cosi' i due si
+   distinguono a colpo d'occhio anche quando hanno per caso lo stesso colore. */
+.tyre-icon-danno { border-radius: 2px; transform: rotate(45deg) scale(0.86); }
 
-/* ---- bottom-left: gomme, stato aperto ---- */
+/* ---- bottom-left: stato vettura, aperto ----
+   Impaginazione presa dal pannello del gioco F1 ufficiale (immagine di
+   riferimento dell'utente): auto vista dall'alto al centro, quattro quadranti
+   circolari intorno, ognuno legato al suo pezzo da una linea punteggiata. */
 .hud-tyre-open {
     bottom: 14px; left: 12px;
-    width: 176px;
-    padding: 12px 14px 14px;
+    width: 252px;
+    padding: 10px 12px 12px;
     pointer-events: auto;
 }
 .hud-tyre-open-head {
     display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
     cursor: pointer;
 }
-.hud-tyre-compound {
-    display: flex; align-items: center; gap: 5px;
-    font-family: 'Fredoka', sans-serif;
-    font-size: 11px; font-weight: 700; letter-spacing: 0.8px; color: var(--hud-text-dim);
+
+.hud-vettura { width: 100%; height: auto; display: block; }
+
+/* Ogni gruppo del disegno prende il colore di un numero vero. Le variabili le
+   scrive f1.js sull'<svg>; il valore di ripiego serve solo al primo istante,
+   prima che arrivi il primo aggiornamento dal server. */
+.hud-vettura .p-frontWing    { fill: var(--frontWing, #39424f); }
+.hud-vettura .p-floor  { fill: var(--floor, #39424f); }
+.hud-vettura .p-engine { fill: var(--engine, #39424f); }
+.hud-vettura .p-struttura { fill: #49535f; }   /* neutro: nessun numero dietro */
+.hud-vettura .v-cerchione { fill: #171b21; stroke: rgba(6, 8, 11, 0.85); stroke-width: 1.6; }
+.hud-vettura .p-gomme  { fill: var(--gomme, #39424f); }
+.hud-vettura .p-suspension {
+    stroke: var(--suspension, #39424f);
+    stroke-width: 4;
+    stroke-linecap: round;
 }
-.hud-tyre-compound-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.hud-car-top { width: 100%; height: 132px; margin: 2px 0 8px; }
-.hud-car-top svg { width: 100%; height: 100%; display: block; }
-.car-chassis { fill: var(--damage, #2b313c); transition: fill 0.4s ease; }
-.car-wing    { fill: var(--damage, #232830); transition: fill 0.4s ease; }
-.car-halo    { fill: none; stroke: #454e5c; stroke-width: 2; }
-.wheel       { fill: var(--wear, var(--f1-wear-mid)); transition: fill 0.4s ease; }
-.hud-tyre-wear-readout { text-align: center; }
-.hud-tyre-wear-readout .hud-screen { padding: 5px 0 6px; }
-.hud-tyre-wear-readout .hud-mono { font-size: 20px; font-weight: 700; }
-.hud-tyre-wear-readout .hud-eyebrow { margin-top: 4px; }
+/* Un filo scuro attorno a ogni pezzo: senza, due componenti dello stesso
+   colore (che e' il caso normale, sono quasi sempre tutti sani) si fondono in
+   una macchia sola e l'auto non si legge piu'. */
+.hud-vettura .p-frontWing,
+.hud-vettura .p-floor,
+.hud-vettura .p-engine,
+.hud-vettura .p-struttura,
+.hud-vettura .p-gomme { stroke: rgba(6, 8, 11, 0.85); stroke-width: 1.6; stroke-linejoin: round; }
+.hud-vettura .v-halo  { fill: none; stroke: rgba(6, 8, 11, 0.85); stroke-width: 2.4; }
+
+.hud-vettura .p-frontWing, .hud-vettura .p-floor, .hud-vettura .p-engine,
+.hud-vettura .p-struttura, .hud-vettura .p-gomme, .hud-vettura .p-suspension {
+    transition: fill 0.4s ease, stroke 0.4s ease;
+}
+
+.hud-vettura .v-filo line {
+    stroke: rgba(255, 255, 255, 0.24);
+    stroke-width: 1.4;
+    stroke-dasharray: 1.5 3.5;
+    stroke-linecap: round;
+}
+
+/* I quadranti: anello spento sotto, arco acceso sopra, percentuale al centro
+   e sigla del componente sotto. */
+.hud-vettura .v-pista {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.10);
+    stroke-width: 4.5;
+}
+.hud-vettura .v-arco {
+    fill: none;
+    stroke-width: 4.5;
+    stroke-linecap: round;
+    transition: stroke 0.4s ease;
+}
+.hud-vettura .v-num {
+    fill: var(--hud-text);
+    font-family: 'Fredoka', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    text-anchor: middle;
+}
+.hud-vettura .v-sigla {
+    fill: var(--hud-text-dim);
+    font-family: 'Fredoka', sans-serif;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-anchor: middle;
+}
+
+/* ---- la riga delle gomme, sotto l'auto ----
+   Non e' un quinto quadrante apposta: da noi l'usura e' UN valore per tutte e
+   quattro le ruote, e metterla in cerchio come i componenti farebbe credere il
+   contrario. Il colore lo porta gia' il disegno delle quattro gomme sopra. */
+.hud-gomme {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.10);
+}
+.hud-gomme-disegno { width: 34px; height: 34px; flex-shrink: 0; display: block; }
+.hud-gomme-disegno .pneumatico { width: 100%; height: 100%; display: block; }
+.hud-gomme-etichetta { margin-left: auto; }
+.hud-gomme-mescola {
+    font-family: 'Fredoka', sans-serif;
+    font-size: 12px; font-weight: 700; letter-spacing: 1px;
+    color: var(--mescola, var(--hud-text));
+    white-space: nowrap;
+}
+.hud-gomme-num {
+    padding: 4px 9px 5px;
+    display: flex; align-items: baseline;
+}
+.hud-gomme-num .hud-mono { font-size: 19px; font-weight: 700; }
 
 /* ---- top-center: pannello DEBUG usura/guasti (tasto G), nascosto di
    default — unica zona libera (standings è top-left, timer/velocità

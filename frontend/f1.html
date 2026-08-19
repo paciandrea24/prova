@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260819h">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260819i">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -157,41 +157,110 @@
 
     <!-- HUD: gomme — bottom-left, apribile/chiudibile (tasto T / L1), chiuso di
          default, visibile solo in gara (vedi renderTyreVisibility in f1.js) -->
-    <div class="hud hud-tyre-closed f1-panel" id="tyre-closed" style="display:none;" title="T / L1 — apri gomme">
-        <span class="tyre-icon-closed" id="tyre-icon-closed"></span>
+    <div class="hud hud-tyre-closed f1-panel" id="tyre-closed" style="display:none;" title="T / L1 — apri stato vettura">
+        <span class="tyre-icon-closed" id="tyre-icon-closed" title="usura gomme"></span>
+        <!-- Il secondo quadratino compare solo se qualcosa e' rotto: da chiuso
+             il pannello deve poter dire "guardami" anche per i danni, non solo
+             per le gomme. -->
+        <span class="tyre-icon-closed tyre-icon-danno" id="damage-icon-closed" style="display:none;" title="danni"></span>
         <span class="hud-key-hint">T</span>
     </div>
+
+    <!-- Stato vettura, rifatto sul pannello del gioco F1 ufficiale: l'auto
+         vista dall'alto al centro, quattro quadranti a percentuale intorno,
+         ognuno collegato da una linea punteggiata al pezzo che rappresenta.
+         Da noi i quadranti sono i quattro COMPONENTI che si rompono (nel
+         riferimento sono le quattro gomme): l'usura gomme e' un valore solo e
+         sta nella riga in fondo. Ogni forma del disegno prende il colore di un
+         numero vero — vedi shared/f1Danni.js. -->
     <div class="hud hud-tyre-open f1-panel" id="tyre-open" style="display:none;">
         <div class="hud-tyre-open-head" id="tyre-open-head">
-            <span class="hud-tyre-compound">
-                <span class="hud-tyre-compound-dot" id="tyre-compound-dot"></span>
-                <span id="tyre-compound-label"></span>
-            </span>
+            <span class="hud-eyebrow">Stato vettura</span>
             <span class="hud-key-hint">T</span>
         </div>
-        <div class="hud-car-top">
-            <svg viewBox="0 0 64 122">
-                <rect class="wheel" id="wFL" x="4" y="16" width="11" height="22" rx="3"></rect>
-                <rect class="wheel" id="wFR" x="49" y="16" width="11" height="22" rx="3"></rect>
-                <rect class="wheel" id="wRL" x="2" y="88" width="12" height="24" rx="3"></rect>
-                <rect class="wheel" id="wRR" x="50" y="88" width="12" height="24" rx="3"></rect>
-                <polygon class="car-chassis" stroke-linejoin="round" points="
-                    32,6   38,20  38,42  44,52  44,90  37,102 37,113
-                    27,113 27,102 20,90  20,52  26,42  26,20" />
-                <rect class="car-wing" x="12" y="13" width="40" height="3.5" rx="1.5"></rect>
-                <rect class="car-wing" x="10" y="115" width="44" height="4.5" rx="1.5"></rect>
-                <circle class="car-halo" cx="32" cy="47" r="7"></circle>
-            </svg>
-        </div>
-        <div class="hud-tyre-wear-readout">
-            <div class="hud-screen"><span class="hud-mono" id="tyre-wear-value">0</span><span class="hud-mono">%</span>
+
+        <svg class="hud-vettura" id="hud-vettura" viewBox="0 0 244 214">
+            <!-- ---- le linee punteggiate quadrante -> pezzo ---- -->
+            <g class="v-filo">
+                <line x1="54"  y1="40"  x2="74"  y2="26"></line>
+                <line x1="190" y1="44"  x2="150" y2="57"></line>
+                <line x1="54"  y1="158" x2="92"  y2="132"></line>
+                <line x1="190" y1="158" x2="130" y2="150"></line>
+            </g>
+
+            <!-- ---- l'auto vista dall'alto ---- -->
+            <!-- ala anteriore: due piani e i due deviatori laterali -->
+            <g class="p-frontWing">
+                <polygon points="72,14 118,20 118,31 72,27"></polygon>
+                <polygon points="172,14 126,20 126,31 172,27"></polygon>
+                <rect x="66" y="9" width="8" height="24" rx="2"></rect>
+                <rect x="170" y="9" width="8" height="24" rx="2"></rect>
+                <polygon points="119,24 125,24 130,86 114,86"></polygon>
+            </g>
+            <!-- sospensioni: i bracci che vanno dal telaio alle quattro ruote -->
+            <g class="p-suspension">
+                <line x1="117" y1="43" x2="87" y2="40"></line>
+                <line x1="117" y1="56" x2="87" y2="59"></line>
+                <line x1="127" y1="43" x2="157" y2="40"></line>
+                <line x1="127" y1="56" x2="157" y2="59"></line>
+                <line x1="116" y1="160" x2="87" y2="157"></line>
+                <line x1="116" y1="176" x2="87" y2="179"></line>
+                <line x1="128" y1="160" x2="157" y2="157"></line>
+                <line x1="128" y1="176" x2="157" y2="179"></line>
+            </g>
+            <!-- fondo e fiancate, piu' l'estrattore dietro -->
+            <g class="p-floor">
+                <polygon points="98,82 118,87 118,152 94,152 88,124 92,96"></polygon>
+                <polygon points="146,82 126,87 126,152 150,152 156,124 152,96"></polygon>
+                <rect x="104" y="178" width="36" height="9" rx="2"></rect>
+            </g>
+            <!-- Ala posteriore, abitacolo e halo: nel nostro modello di danno
+                 non esistono, quindi restano di un colore NEUTRO. Colorarli col
+                 peggiore dei quattro era la prima idea ed e' sbagliata: faceva
+                 sembrare rotto un pezzo che non lo e'. Qui ogni colore e' un
+                 numero, e dove il numero non c'e' non c'e' nemmeno il colore. -->
+            <g class="p-struttura">
+                <rect x="76" y="188" width="92" height="11" rx="2"></rect>
+                <rect x="72" y="182" width="8" height="23" rx="2"></rect>
+                <rect x="164" y="182" width="8" height="23" rx="2"></rect>
+            </g>
+            <!-- motore: cofano e airbox -->
+            <g class="p-engine">
+                <polygon points="113,88 131,88 134,122 129,170 115,170 110,122"></polygon>
+            </g>
+            <g class="p-struttura">
+                <circle cx="122" cy="97" r="6.5"></circle>
+                <circle class="v-halo" cx="122" cy="97" r="11"></circle>
+            </g>
+            <!-- le quattro gomme: stesso colore su tutte e quattro perche' da
+                 noi l'usura e' UN valore, non uno per ruota -->
+            <g class="v-cerchione">
+                <rect x="68" y="36" width="19" height="31" rx="4"></rect>
+                <rect x="157" y="36" width="19" height="31" rx="4"></rect>
+                <rect x="66" y="152" width="21" height="35" rx="4"></rect>
+                <rect x="157" y="152" width="21" height="35" rx="4"></rect>
+            </g>
+            <g class="p-gomme">
+                <rect x="71" y="39" width="13" height="25" rx="2.5"></rect>
+                <rect x="160" y="39" width="13" height="25" rx="2.5"></rect>
+                <rect x="69" y="155" width="15" height="29" rx="2.5"></rect>
+                <rect x="160" y="155" width="15" height="29" rx="2.5"></rect>
+            </g>
+
+            <!-- ---- i quattro quadranti (arco + percentuale + sigla) ----
+                 Costruiti da f1.js sull'elenco di F1Danni.COMPONENTI, cosi'
+                 aggiungere o togliere un componente al modello di danno non
+                 lascia qui un quadrante scollegato. -->
+            <g class="v-quadranti" id="hud-quadranti"></g>
+        </svg>
+
+        <div class="hud-gomme">
+            <span class="hud-gomme-disegno" id="tyre-drawing"></span>
+            <span class="hud-gomme-mescola" id="tyre-compound-label">&mdash;</span>
+            <span class="hud-eyebrow hud-gomme-etichetta">Usura</span>
+            <div class="hud-screen hud-gomme-num">
+                <span class="hud-mono" id="tyre-wear-value">0</span><span class="hud-mono">%</span>
             </div>
-            <span class="hud-eyebrow">Usura</span>
-        </div>
-        <div class="hud-tyre-wear-readout">
-            <div class="hud-screen"><span class="hud-mono" id="damage-value">0</span><span class="hud-mono">%</span>
-            </div>
-            <span class="hud-eyebrow">Danni</span>
         </div>
     </div>
 
@@ -551,6 +620,7 @@
     <script src="shared/f1Particelle.js?v=20260819c"></script>
     <script src="shared/f1BoxIngresso.js?v=20260819d"></script>
     <script src="shared/f1Pneumatico.js?v=20260819a"></script>
+    <script src="shared/f1Danni.js?v=20260819a"></script>
     <script src="shared/f1ProfiloCircuito.js?v=20260819a"></script>
     <script src="shared/sceneryLandmarks.js?v=20260817b"></script>
     <script src="shared/sceneryTrackside.js?v=20260813i"></script>
@@ -570,7 +640,7 @@
     <!-- nell'indirizzo. Deve precedere lo script di gioco, che le usa subito. -->
     <script src="shared/impostazioniGara.js?v=20260818a"></script>
     <script src="shared/sessioneGiocatore.js?v=20260818a"></script>
-    <script src="f1.js?v=20260819t"></script>
+    <script src="f1.js?v=20260819u"></script>
 </body>
 
 </html>
