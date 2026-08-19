@@ -231,7 +231,6 @@ canvas.tyre-preview-canvas {
     transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
 }
 .tyre-card:hover { background: var(--sel-rilievo); }
-.tyre-card:focus-visible { outline: 2px solid var(--sel-testo); outline-offset: 2px; }
 .tyre-card.selected { border-color: var(--mescola, var(--sel-cordolo)); background: var(--sel-rilievo); }
 .tyre-card .pneumatico {
     width: clamp(52px, 5.4vw, 86px);
@@ -371,10 +370,7 @@ canvas.tyre-preview-canvas {
 
 /* Il pallino salta da un'inquadratura all'altra: la transizione lo fa
    scivolare lungo il tracciato invece di teletrasportarlo. */
-#tyre-map-dot { transition: cx 0.5s ease, cy 0.5s ease; }
-
-/* ── La lavagna ── */
-
+/* ── Testi della testata ── */
 .mescole-eyebrow {
     font-size: 11px;
     font-weight: 600;
@@ -383,42 +379,29 @@ canvas.tyre-preview-canvas {
     color: var(--sel-tenue);
 }
 
-.mescole-titolo {
-    margin: -4px 0 0;
-    font-size: clamp(26px, 3vw, 40px);
-    font-weight: 700;
-    line-height: 1.05;
-    letter-spacing: -0.5px;
-}
-
-/* ── Le tre mescole, in riga ──
-   In colonna erano tre card larghe affiancate e non ci stavano nella
-   lavagna. Come righe si leggono anche meglio: nome a sinistra, numeri
-   incolonnati a destra, come su un tabellone dei tempi.
-   Selettore legato a #tyre-cards apposta: le stesse .tyre-card servono
-   anche al pannello dei box, dove restano affiancate. */
-#tyre-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-#tyre-cards .tyre-card {
-    width: 100%;
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 12px;
-    padding: clamp(8px, 1.2vh, 12px) 13px;
-    border-radius: 10px;
-    background: var(--sel-rilievo);
-    box-shadow: inset 0 1px 0 var(--sel-filo);
-    text-align: left;
-}
-
+/* Le mescole come RIGHE e non come carte affiancate: nome a sinistra, numeri
+   incolonnati a destra, come su un tabellone dei tempi. Il selettore e' legato
+   a #tyre-cards apposta — le stesse .tyre-card servono anche al pannello dei
+   box, dove restano affiancate. */
 #tyre-cards .tyre-card:hover {
     background: #24596A;
     transform: none;   /* niente sollevamento: qui sono righe, non carte */
+}
+
+/* Verde = "questa e la tua", la stessa lingua che il resto del gioco usa per
+   "confermato". Non un bagliore ma un taglio pieno sul fianco: su una riga si
+   legge meglio. */
+#tyre-cards .tyre-card.selected {
+    background: #24596A;
+    box-shadow: inset 4px 0 0 var(--green), inset 0 1px 0 var(--sel-filo);
+}
+
+/* I numeri in monospace: sono dati di telemetria, e incolonnati si confrontano
+   a colpo d'occhio fra una mescola e l'altra. */
+#tyre-cards .tyre-card-stats {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 .tyre-card:focus-visible {
@@ -426,80 +409,16 @@ canvas.tyre-preview-canvas {
     outline-offset: 2px;
 }
 
-/* Verde = "questa è la tua", la stessa lingua che il resto del gioco usa
-   per "confermato" (e che l'elenco piloti qui sotto ripete). Non un
-   bagliore ma un taglio pieno sul fianco: su una riga si legge meglio. */
-#tyre-cards .tyre-card.selected {
-    background: #24596A;
-    box-shadow: inset 4px 0 0 var(--green), inset 0 1px 0 var(--sel-filo);
-}
-
-#tyre-cards .tyre-card-dot {
-    width: 24px;
-    height: 24px;
-    margin: 0;
-    border-width: 2px;
-    border-color: rgba(0, 0, 0, 0.35);
-}
-
-#tyre-cards .tyre-card-label {
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    color: var(--sel-testo);
-}
-
-/* I numeri in monospace: sono dati di telemetria, e incolonnati si
-   confrontano a colpo d'occhio fra una mescola e l'altra. */
-#tyre-cards .tyre-card-stats {
-    margin: 0;
-    text-align: right;
-    font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
-    font-variant-numeric: tabular-nums;
-    font-size: 11px;
-    line-height: 1.55;
-    white-space: nowrap;
-    color: var(--sel-tenue);
-}
-
-#tyre-strategy-hint {
-    font-size: 12.5px;
-    line-height: 1.45;
-    color: var(--sel-tenue);
-}
-
-/* ── Chi manca all'appello ── */
-#tyre-confirm-status {
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-}
-
-}
-
-.mescole-partenza {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 10px;
-    margin-top: 2px;
-    padding-top: 12px;
-    border-top: 1px solid var(--sel-filo);
-}
-
 #tyre-countdown {
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--sel-testo);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 1px;
 }
 
 /* Ultimi dieci secondi: il numero passa all'ambra del gioco. Non lampeggia —
-   il compito è informare, non mettere fretta. */
+   il compito e informare, non mettere fretta. */
 #tyre-countdown.in-scadenza { color: var(--yellow); }
 
 @media (prefers-reduced-motion: reduce) {
-    /* I pallini dei piloti non si animano piu (niente pulsazione, solo acceso o
-       spento), quindi qui non resta nulla da spegnere per la scelta mescola. */
     .tyre-pilota-dot { transition: none; }
 }
 
@@ -902,8 +821,6 @@ canvas.tyre-preview-canvas {
 .tyre-card.gp-focused {
     outline: 3px solid var(--hud-wear-mid);
     outline-offset: 2px;
-}
-
 }
 
 /* Pulsante riparazione danni ai box: stesso linguaggio neumorfico/toggle
