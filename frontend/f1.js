@@ -2281,6 +2281,43 @@ document.addEventListener('DOMContentLoaded', async () => {
         el.classList.toggle('in-scadenza', sec <= 10);
     }
 
+    // Le informazioni del circuito nella colonna di sinistra: numeri veri,
+    // calcolati dalla stessa geometria che il server usa per la gara (vedi
+    // shared/f1ProfiloCircuito.js, e il test che verifica che i giri mostrati
+    // qui siano quelli che la gara fara' davvero).
+    function renderInfoCircuito() {
+        const el = (id) => document.getElementById(id);
+        if (!el('tyre-info-giri')) return;
+        const profilo = F1ProfiloCircuito.profilo(trackPts, trackData.targetKm || 10);
+        // I giri li decide il server: se li ha già mandati si usano i suoi, e il
+        // calcolo locale resta solo per il caso in cui la schermata apra prima.
+        const giri = raceTotalLaps || profilo.giri;
+        el('tyre-info-giri').textContent = giri;
+        el('tyre-info-distanza').innerHTML =
+            (profilo.lunghezzaKm * giri).toFixed(1) + '<span class="unita">km</span>';
+        el('tyre-info-lunghezza').innerHTML =
+            profilo.lunghezzaKm.toFixed(3) + '<span class="unita">km</span>';
+
+        const NOMI = {
+            trazione: 'Trazione',
+            stress: 'Stress gomme',
+            frenata: 'Frenata',
+            caricoAero: 'Carico aero',
+        };
+        const box = el('tyre-barrette');
+        box.innerHTML = '';
+        for (const [chiave, nome] of Object.entries(NOMI)) {
+            const voto = profilo.barrette[chiave];
+            const riga = document.createElement('div');
+            riga.className = 'mescole-barretta';
+            const tacche = [1, 2, 3, 4, 5]
+                .map(i => `<span class="mescole-tacca${i <= voto ? ' accesa' : ''}"></span>`).join('');
+            riga.innerHTML = `<span class="mescole-barretta-nome">${nome}</span>`
+                + `<span class="mescole-tacche" role="img" aria-label="${nome}: ${voto} su 5">${tacche}</span>`;
+            box.appendChild(riga);
+        }
+    }
+
     function renderAttesaMescole(dati) {
         const box = document.getElementById('tyre-confirm-status');
         if (!box || !dati) return;
@@ -2303,18 +2340,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             pallino.className = 'tyre-attesa-dot';
             pallino.style.background = color;
             const testo = document.createElement('span');
+            // Testi corti: qui i piloti sono una schiera di pallini in fondo
+            // alla pagina, non un elenco — il colore dice CHI e il contorno
+            // verde dice se ha già scelto, e una frase lunga accanto a ognuno
+            // trasformerebbe la riga in un paragrafo.
             if (confermati.has(color)) {
                 testo.textContent = 'pronto';
                 riga.classList.add('is-pronto');
             } else if (arrivati.has(color)) {
-                testo.textContent = 'sta scegliendo…';
+                testo.textContent = 'sceglie…';
             } else {
-                testo.textContent = 'in caricamento…';
+                testo.textContent = 'carica…';
                 riga.classList.add('is-attesa');
             }
             if (color === myColor) {
                 riga.classList.add('is-me');
-                testo.textContent = 'tu · ' + testo.textContent;
+                testo.textContent = 'tu';
             }
             riga.append(pallino, testo);
             box.appendChild(riga);
@@ -2338,13 +2379,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             card.tabIndex = 0;
             card.setAttribute('role', 'button');
             card.onkeydown = (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); card.click(); } };
-            card.innerHTML = `
-                <div class="tyre-card-dot" style="background:${c.color};"></div>
-                <div class="tyre-card-label">${c.label.toUpperCase()}</div>
-                <div class="tyre-card-stats">
-                    Velocità ${c.speedMult >= 1 ? '+' : ''}${Math.round((c.speedMult - 1) * 100)}%<br>
-                    Aderenza ${c.gripMult >= 1 ? '+' : ''}${Math.round((c.gripMult - 1) * 100)}%<br>
-                    Usura ${c.wearRate}×
+            // Lo pneumatico disegnato al posto del pallino colorato: è la
+            // richiesta esplicita dell'utente sul riferimento Pirelli, «voglio
+            // quella stessa rappresentazione, voglio vederli così». Il colore
+            // della fascia esce dalla stessa tabella del server, non da una
+            // copia qui.
+            card.style.setProperty('--mescola', c.color);
+            const segno = (v) => (v >= 1 ? '+' : '') + Math.round((v - 1) * 100) + '%';
+            card.innerHTML = F1Pneumatico.svg(key, c.color, { titolo: `Mescola ${c.label}` })
+                + `<div>
+                    <div class="tyre-card-label">${c.label.toUpperCase()}</div>
+                    <div class="tyre-card-stats">
+                        Velocità <b>${segno(c.speedMult)}</b> · Aderenza <b>${segno(c.gripMult)}</b><br>
+                        Usura <b>${c.wearRate}×</b>
+                    </div>
                 </div>`;
             card.onclick = () => {
                 if (eventName === 'f1TyreChoice') myCompoundChoice = key;
@@ -2880,8 +2928,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             myCompoundChoice = myCompound || null;
             document.getElementById('tyre-select-overlay').style.display = 'flex';
             enterTyrePreview();
+            renderInfoCircuito();
             document.getElementById('tyre-strategy-hint').textContent =
-                'Consigliata per ' + (raceTotalLaps || totalLaps || 1) + ' giri: ' +
+                'Consigliata: ' +
                 (strategy || []).map(c => (compounds[c]?.label || c).toLowerCase()).join(' → ');
             renderTyreCards(compounds, myCompoundChoice, 'tyre-cards', 'f1TyreChoice');
             renderAttesaMescole({
@@ -4760,8 +4809,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const anteprimaMappaTrack = document.getElementById('tyre-map-track');
     const anteprimaMappaPit = document.getElementById('tyre-map-pit');
     const anteprimaMappaDot = document.getElementById('tyre-map-dot');
-    if (anteprimaMappaTrack) anteprimaMappaTrack.setAttribute('d', minimapPathString(trackPts, minimapT, true));
-    if (anteprimaMappaPit) anteprimaMappaPit.setAttribute('d', minimapPathString(PIT_PTS, minimapT, false));
+    if (anteprimaMappaTrack) anteprimaMappaTrack.setAttribute('d', dPista);
+    if (anteprimaMappaPit) anteprimaMappaPit.setAttribute('d', dBox);
+    const anteprimaPistaChiara = document.getElementById('tyre-map-track-fill');
+    const anteprimaBoxChiara = document.getElementById('tyre-map-pit-fill');
+    if (anteprimaPistaChiara) anteprimaPistaChiara.setAttribute('d', dPista);
+    if (anteprimaBoxChiara) anteprimaBoxChiara.setAttribute('d', dBox);
 
     function aggiornaPallinoAnteprima(idx) {
         const p = trackPts[idx];

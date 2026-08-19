@@ -88,13 +88,217 @@ canvas.tyre-preview-canvas {
         radial-gradient(120% 90% at 22% 15%, var(--sel-fondo-a), var(--sel-fondo-b) 72%);
 }
 
-.mescole-schermo {
+.mescole-foglio {
+    width: 100%;
+    max-width: 1560px;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(8px, 1.4vh, 18px);
+}
+
+/* Testata come quella dell'infografica: il nome del circuito grande, e accanto
+   a cosa si sta guardando. */
+.mescole-testata {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-bottom: clamp(6px, 1vh, 12px);
+    border-bottom: 2px solid var(--sel-filo);
+}
+.mescole-titolo {
+    margin: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: clamp(14px, 2vw, 30px);
+    gap: 14px;
+    font-size: clamp(26px, 3.6vw, 52px);
+    font-weight: 900;
+    letter-spacing: 1px;
+    line-height: 1;
+    text-transform: uppercase;
+}
+/* Il filo verticale fra il nome e il sottotitolo: nel riferimento e' una barra
+   sottile, ed e' quello che fa leggere le due parole come un'unica testata. */
+.mescole-titolo-sep {
+    width: 3px;
+    align-self: stretch;
+    min-height: 1em;
+    background: var(--sel-cordolo);
+    border-radius: 2px;
+}
+.mescole-titolo-sub {
+    font-weight: 400;
+    color: var(--sel-tenue);
+    letter-spacing: 3px;
+}
+
+/* Tre colonne: informazioni, circuito, mescole. Quella centrale prende lo
+   spazio che avanza — e' il circuito la cosa da guardare. */
+.mescole-schermo {
+    display: grid;
+    grid-template-columns: minmax(210px, 1fr) minmax(0, 2.4fr) minmax(230px, 1fr);
+    align-items: stretch;
+    gap: clamp(12px, 1.6vw, 28px);
     width: 100%;
-    max-width: 1520px;
+    min-height: 0;
+}
+.mescole-col {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(6px, 1vh, 14px);
+    min-width: 0;
+    min-height: 0;
+}
+.mescole-col-pista { gap: clamp(6px, 1vh, 12px); }
+
+/* Intestazione di sezione: la riga con la barretta rossa davanti, ripetuta
+   uguale nelle tre colonne — e' quello che le tiene insieme come una pagina
+   sola invece di tre pannelli affiancati. */
+.mescole-sezione {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--sel-testo);
+}
+.mescole-sezione::before {
+    content: '';
+    width: 14px; height: 3px;
+    background: var(--sel-cordolo);
+    border-radius: 2px;
+}
+
+/* I dati del circuito: etichetta piccola sopra, numero grande sotto. */
+.mescole-dati { margin: 0; display: flex; flex-direction: column; gap: clamp(4px, 0.9vh, 12px); }
+.mescole-dati > div {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: clamp(4px, 0.8vh, 10px);
+    border-bottom: 1px solid var(--sel-filo);
+}
+.mescole-dati dt {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--sel-tenue);
+}
+.mescole-dati dd {
+    margin: 0;
+    font-size: clamp(19px, 2vw, 27px);
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+}
+.mescole-dati .unita {
+    font-size: 0.5em;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--sel-tenue);
+    margin-left: 3px;
+}
+
+/* Le barrette 1-5. Cinque tacche, quelle accese in rosso cordolo: si leggono
+   di sfuggita, che e' il modo in cui si legge un'infografica. */
+.mescole-barrette { display: flex; flex-direction: column; gap: clamp(3px, 0.7vh, 9px); }
+.mescole-barretta { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mescole-barretta-nome {
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--sel-tenue);
+}
+.mescole-tacche { display: flex; gap: 3px; }
+.mescole-tacca {
+    width: 13px; height: 6px;
+    border-radius: 2px;
+    background: var(--sel-rilievo);
+}
+.mescole-tacca.accesa { background: var(--sel-cordolo); }
+
+/* Le mescole: lo pneumatico grande, l'etichetta e i numeri accanto. */
+#tyre-cards { display: flex; flex-direction: column; gap: clamp(5px, 1vh, 12px); }
+.tyre-card {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: clamp(8px, 1vw, 16px);
+    padding: clamp(5px, 0.9vh, 11px) clamp(8px, 1vw, 14px);
+    border: 2px solid transparent;
+    border-radius: 12px;
+    background: var(--sel-lavagna);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+.tyre-card:hover { background: var(--sel-rilievo); }
+.tyre-card:focus-visible { outline: 2px solid var(--sel-testo); outline-offset: 2px; }
+.tyre-card.selected { border-color: var(--mescola, var(--sel-cordolo)); background: var(--sel-rilievo); }
+.tyre-card .pneumatico {
+    width: clamp(52px, 5.4vw, 86px);
+    height: clamp(52px, 5.4vw, 86px);
+    display: block;
+}
+.tyre-card-label {
+    font-size: clamp(15px, 1.5vw, 21px);
+    font-weight: 900;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--mescola, var(--sel-testo));
+    line-height: 1.1;
+}
+.tyre-card-stats {
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--sel-tenue);
+    font-variant-numeric: tabular-nums;
+}
+.tyre-card-stats b { color: var(--sel-testo); font-weight: 700; }
+
+#tyre-strategy-hint {
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--sel-tenue);
+    padding-top: 4px;
+    border-top: 1px solid var(--sel-filo);
+}
+
+/* I piloti, sotto il circuito: una schiera di pallini invece di un elenco.
+   Il contorno verde dice "ha scelto", che e' l'unica cosa che qui cambia. */
+.mescole-piloti { display: flex; align-items: center; gap: 12px; }
+#tyre-confirm-status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tyre-attesa-riga {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 9px 3px 4px;
+    border-radius: 999px;
+    background: var(--sel-lavagna);
+    border: 2px solid transparent;
+    font-size: 11px;
+    color: var(--sel-tenue);
+}
+.tyre-attesa-riga.is-pronto { border-color: var(--green, #2ecc71); color: var(--sel-testo); }
+.tyre-attesa-riga.is-attesa { opacity: 0.55; }
+.tyre-attesa-riga.is-me { box-shadow: 0 0 0 1px var(--sel-testo) inset; }
+.tyre-attesa-dot {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(0, 0, 0, 0.45);
+}
+
+.mescole-partenza {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: clamp(6px, 1vh, 12px);
+    border-top: 1px solid var(--sel-filo);
+}
+#tyre-countdown { font-size: clamp(22px, 2.4vw, 34px); font-weight: 900; }
+
+@media (max-width: 980px) {
+    /* Sotto questa larghezza tre colonne diventano tre strisce illeggibili: il
+       circuito passa sopra, le due colonne di testo sotto affiancate. */
+    .mescole-schermo { grid-template-columns: 1fr 1fr; }
+    .mescole-col-pista { grid-column: 1 / -1; order: -1; }
 }
 
 /* ── L'anteprima: l'eroe ──
@@ -163,27 +367,6 @@ canvas.tyre-preview-canvas {
 #tyre-map-dot { transition: cx 0.5s ease, cy 0.5s ease; }
 
 /* ── La lavagna ── */
-.mescole-lavagna {
-    flex: none;
-    width: clamp(272px, 25vw, 350px);
-    max-height: 92vh;
-    overflow-y: auto;
-    /* Esplicito: con overflow-y:auto l'asse orizzontale diventa auto da solo,
-       e il rimbalzo delle carte alla conferma (anime.js, scale 1.12) farebbe
-       comparire una barra di scorrimento per un terzo di secondo. */
-    overflow-x: hidden;
-    display: flex;
-    flex-direction: column;
-    /* Spaziature legate all'altezza della finestra e non fisse: su un portatile
-       a 720p con sei piloti in elenco la lavagna arrivava a sfiorare il bordo,
-       ed è il difetto da cui è partito questo ridisegno. */
-    gap: clamp(8px, 1.4vh, 14px);
-    padding: clamp(14px, 2vh, 24px) 20px;
-    border-radius: 14px;
-    background: var(--sel-lavagna);
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 var(--sel-filo);
-    text-align: left;
-}
 
 .mescole-eyebrow {
     font-size: 11px;
@@ -201,24 +384,8 @@ canvas.tyre-preview-canvas {
     letter-spacing: -0.5px;
 }
 
-.mescole-cordolo {
-    height: 6px;
-    border-radius: 2px;
-    background: repeating-linear-gradient(115deg,
-        var(--sel-cordolo) 0 14px, #FFFFFF 14px 28px);
-}
 
-.mescole-istruzione {
-    margin-top: 4px;
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--sel-testo);
-}
 
-.mescole-sep {
-    height: 1px;
-    background: var(--sel-filo);
-}
 
 /* ── Le tre mescole, in riga ──
    In colonna erano tre card larghe affiancate e non ci stavano nella
@@ -356,13 +523,6 @@ canvas.tyre-preview-canvas {
 @media (prefers-reduced-motion: reduce) {
     .tyre-attesa-riga.is-attesa { animation: none; }
     #tyre-map-dot { transition: none; }
-}
-
-/* Schermi stretti: la lavagna passa sotto l'anteprima e l'insieme scorre. */
-@media (max-width: 900px) {
-    .mescole-schermo { flex-direction: column; overflow-y: auto; }
-    #tyre-preview-frame { height: auto; width: 100%; max-width: 100%; }
-    .mescole-lavagna { width: 100%; max-width: 520px; }
 }
 
 /* ========================
@@ -760,94 +920,15 @@ canvas.tyre-preview-canvas {
 .minimap-you-core { r: 4.5; stroke: rgba(6, 10, 14, 0.85); stroke-width: 1.6; }
 .minimap-you-halo { r: 9; opacity: 0.3; }
 
-/* Selezione mescola */
-.tyre-card {
-    width: 130px;
-    padding: 18px 12px;
-    border-radius: 16px;
-    background: var(--hud-surface);
-    box-shadow:
-        4px 4px 10px var(--hud-shadow-dk),
-        -4px -4px 9px var(--hud-shadow-lt);
-    cursor: pointer;
-    transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
-    pointer-events: auto;
-}
-
-.tyre-card:hover {
-    transform: translateY(-4px);
-    background: #232a35;
-}
-
-/* Bagliore verde sommato all'ombra neumorfica di base (mai un bordo pieno,
-   coerente col resto del sistema neumorfico). */
-.tyre-card.selected {
-    box-shadow:
-        4px 4px 10px var(--hud-shadow-dk),
-        -4px -4px 9px var(--hud-shadow-lt),
-        0 0 0 2px rgba(46,204,113,0.55);
-}
-
-/* Focus da navigazione gamepad (D-pad sx/dx + X per confermare): outline,
-   non box-shadow — altrimenti confliggerebbe con .selected (le box-shadow
-   di classi diverse si sovrascrivono, non si sommano; gli outline invece
-   restano sempre visibili insieme a qualunque box-shadow). */
+/* Focus da navigazione gamepad (D-pad sx/dx + X per confermare): outline e non
+   box-shadow, cosi resta visibile insieme al bordo della carta selezionata. */
 .tyre-card.gp-focused {
     outline: 3px solid var(--hud-wear-mid);
     outline-offset: 2px;
-    transform: translateY(-4px);
 }
 
-.tyre-card-dot {
-    width: 46px;
-    height: 46px;
-    border-radius: 50%;
-    margin: 0 auto 10px;
-    border: 3px solid var(--hud-surface);
-}
 
-.tyre-card-label {
-    font-size: 18px;
-    font-weight: 900;
-    letter-spacing: 1px;
-    color: var(--hud-text);
-}
 
-.tyre-card-stats {
-    font-size: 12px;
-    color: var(--hud-text-dim);
-    margin-top: 6px;
-    line-height: 1.6;
-}
-
-/* Elenco dei piloti attesi sotto le mescole (vedi renderAttesaMescole in
-   f1.js): una riga per pilota con il suo stato. Chi sta ancora caricando la
-   pista pulsa, così si vede a colpo d'occhio che l'attesa non dipende da noi. */
-#tyre-confirm-status {
-    display: flex;
-    gap: 18px;
-    flex-wrap: wrap;
-    justify-content: center;
-}
-
-.tyre-attesa-riga {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 14px;
-    color: var(--hud-text-dim);
-}
-
-.tyre-attesa-riga.is-pronto { color: var(--green); }
-.tyre-attesa-riga.is-attesa { animation: tyre-attesa-pulsa 1.4s ease-in-out infinite; }
-
-.tyre-attesa-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    border: 2px solid var(--hud-surface);
-    flex: none;
-}
 
 @keyframes tyre-attesa-pulsa {
     0%, 100% { opacity: 1; }

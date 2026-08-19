@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260819d">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260819e">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -265,60 +265,91 @@
     </div>
 
     <!-- ═══════════ SCELTA MESCOLA ═══════════
-         Impaginata come il muretto box prima di una sessione: a sinistra il
-         circuito (l'unica cosa che conta guardare, quindi occupa lo spazio),
-         a destra una lavagna stretta con le mescole e chi manca all'appello.
-         Su due colonne e non in pila: in colonna la pagina superava l'altezza
-         dello schermo e le carte finivano tagliate.
+         Impaginata sull'infografica che Pirelli pubblica prima di ogni gran
+         premio (riferimento portato dall'utente), con le due colonne laterali
+         SCAMBIATE rispetto all'originale: al centro l'anteprima del circuito al
+         posto dell'auto, a destra le mescole — «mi piace tantissimo vedere gli
+         pneumatici e poterli selezionare» — e a sinistra le informazioni.
+
+         Tre cose del riferimento NON ci sono, e non per dimenticanza:
+         il record del giro (non lo memorizziamo), le marce (non esistono nel
+         gioco) e le temperature delle gomme. Al posto delle temperature, in
+         fondo, chi manca all'appello: e' l'unica informazione che in questa
+         schermata cambia da un momento all'altro, ed e' il motivo per cui la
+         schermata dura.
 
          Il canvas 3D viene riparentato dentro #tyre-preview-frame da
-         enterTyrePreview; le inquadrature del carosello le calcola
-         shared/trackPreviewShots.js. -->
+         enterTyrePreview; le inquadrature le calcola shared/trackPreviewShots.js. -->
     <div id="tyre-select-overlay" style="display:none;">
-        <div class="mescole-schermo">
+        <div class="mescole-foglio">
 
-            <div id="tyre-preview-frame">
-                <div id="tyre-shot-label"></div>
-                <!-- Velo nero per gli stacchi fra un'inquadratura e l'altra:
-                     un taglio secco su una camera che si teletrasporta si
-                     legge come un difetto. -->
-                <div id="tyre-shot-fade"></div>
-                <!-- La mappa sta DENTRO l'inquadratura e piccola: dice dove
-                     sei sul giro, che è un'informazione di contorno — il
-                     soggetto è il circuito, non la posizione. -->
-                <div id="tyre-preview-map">
-                    <svg viewBox="0 0 200 140">
-                        <path id="tyre-map-track" class="minimap-track-line"></path>
-                        <path id="tyre-map-pit" class="minimap-pit-line"></path>
-                        <circle id="tyre-map-dot" r="6" fill="#f1c40f" stroke="rgba(0,0,0,0.65)" stroke-width="2"></circle>
-                    </svg>
-                </div>
+            <header class="mescole-testata">
+                <span class="mescole-eyebrow" id="tyre-eyebrow">Prima della qualifica</span>
+                <h2 class="mescole-titolo">
+                    <span id="tyre-track-name">Circuito</span>
+                    <span class="mescole-titolo-sep"></span>
+                    <span class="mescole-titolo-sub">Anteprima</span>
+                </h2>
+            </header>
+
+            <div class="mescole-schermo">
+
+                <!-- SINISTRA — le informazioni sul circuito. -->
+                <section class="mescole-col">
+                    <div class="mescole-sezione">Il circuito</div>
+                    <dl class="mescole-dati">
+                        <div><dt>Giri</dt><dd id="tyre-info-giri">—</dd></div>
+                        <div><dt>Distanza di gara</dt><dd id="tyre-info-distanza">—</dd></div>
+                        <div><dt>Lunghezza</dt><dd id="tyre-info-lunghezza">—</dd></div>
+                    </dl>
+
+                    <div class="mescole-sezione">Che pista e</div>
+                    <!-- Le barrette del riferimento, ma calcolate davvero dalla
+                         forma del tracciato (shared/f1ProfiloCircuito.js): la
+                         geometria dice gia' se una pista chiede trazione o
+                         carico, e inventarle sarebbe stato peggio che non
+                         metterle. -->
+                    <div class="mescole-barrette" id="tyre-barrette"></div>
+                </section>
+
+                <!-- CENTRO — il circuito, che e' la cosa da guardare. -->
+                <section class="mescole-col mescole-col-pista">
+                    <div id="tyre-preview-frame">
+                        <div id="tyre-shot-label"></div>
+                        <!-- Velo nero per gli stacchi fra un'inquadratura e
+                             l'altra: un taglio secco su una camera che si
+                             teletrasporta si legge come un difetto. -->
+                        <div id="tyre-shot-fade"></div>
+                        <div id="tyre-preview-map">
+                            <svg viewBox="0 0 200 140">
+                                <path id="tyre-map-track" class="minimap-track-line"></path>
+                                <path id="tyre-map-pit" class="minimap-pit-line"></path>
+                                <path id="tyre-map-pit-fill" class="minimap-pit-fill"></path>
+                                <path id="tyre-map-track-fill" class="minimap-track-fill"></path>
+                                <circle id="tyre-map-dot" r="5" fill="#f1c40f" stroke="rgba(0,0,0,0.7)" stroke-width="2"></circle>
+                            </svg>
+                        </div>
+                    </div>
+                    <!-- Chi manca all'appello, sotto il circuito: al posto delle
+                         temperature gomme del riferimento. -->
+                    <div class="mescole-piloti">
+                        <span class="mescole-sezione">Piloti</span>
+                        <div id="tyre-confirm-status"></div>
+                    </div>
+                </section>
+
+                <!-- DESTRA — le mescole. -->
+                <section class="mescole-col">
+                    <div class="mescole-sezione">Mescola</div>
+                    <div id="tyre-cards"></div>
+                    <div id="tyre-strategy-hint"></div>
+                    <div class="mescole-partenza">
+                        <span class="mescole-eyebrow">In pista fra</span>
+                        <span id="tyre-countdown" class="hud-mono">—</span>
+                    </div>
+                </section>
+
             </div>
-
-            <aside class="mescole-lavagna">
-                <div class="mescole-eyebrow">Prima della qualifica</div>
-                <h2 id="tyre-track-name" class="mescole-titolo">Circuito</h2>
-                <!-- Cordolo: le stesse strisce rosso/bianco che buildCurbs
-                     disegna sul bordo pista, l'oggetto più riconoscibile di
-                     un autodromo. È il filo che lega questa schermata al
-                     mondo che ha dietro. -->
-                <div class="mescole-cordolo"></div>
-
-                <div class="mescole-istruzione">Scegli la mescola</div>
-                <div id="tyre-cards"></div>
-                <div id="tyre-strategy-hint"></div>
-
-                <div class="mescole-sep"></div>
-
-                <div class="mescole-eyebrow">Piloti</div>
-                <div id="tyre-confirm-status"></div>
-
-                <div class="mescole-partenza">
-                    <span class="mescole-eyebrow">In pista fra</span>
-                    <span id="tyre-countdown" class="hud-mono">—</span>
-                </div>
-            </aside>
-
         </div>
     </div>
 
@@ -528,6 +559,8 @@
     <script src="shared/f1SensoVelocita.js?v=20260819h"></script>
     <script src="shared/f1Particelle.js?v=20260819c"></script>
     <script src="shared/f1BoxIngresso.js?v=20260819d"></script>
+    <script src="shared/f1Pneumatico.js?v=20260819a"></script>
+    <script src="shared/f1ProfiloCircuito.js?v=20260819a"></script>
     <script src="shared/sceneryLandmarks.js?v=20260817b"></script>
     <script src="shared/sceneryTrackside.js?v=20260813i"></script>
     <script src="shared/sceneryCrowd.js?v=20260814a"></script>
@@ -546,7 +579,7 @@
     <!-- nell'indirizzo. Deve precedere lo script di gioco, che le usa subito. -->
     <script src="shared/impostazioniGara.js?v=20260818a"></script>
     <script src="shared/sessioneGiocatore.js?v=20260818a"></script>
-    <script src="f1.js?v=20260819r"></script>
+    <script src="f1.js?v=20260819s"></script>
 </body>
 
 </html>
