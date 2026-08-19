@@ -272,6 +272,33 @@ test('scossone: la vibrazione e la stessa a 30 e a 144 fps', () => {
         `frequenza diversa fra 60 e 144 fps: ${a60.cambiSegno} vs ${a144.cambiSegno} inversioni`);
 });
 
+// ── I bordi dello schermo ───────────────────────────────────────────────────
+
+test('bordi: spenti per quasi tutto il giro, accesi solo in fondo', () => {
+    assert.equal(SV.intensitaBordi(0), 0);
+    assert.equal(SV.intensitaBordi(SV.VEL_RIFERIMENTO * 0.5), 0);
+    assert.equal(SV.intensitaBordi(SV.VEL_RIFERIMENTO * SV.SOGLIA_BORDI), 0);
+    assert.ok(SV.intensitaBordi(SV.VEL_RIFERIMENTO * 0.9) > 0.2, 'al 90% devono essersi accesi');
+    assert.equal(SV.intensitaBordi(SV.VEL_RIFERIMENTO), 1);
+});
+
+test('bordi: si accendono piu in fretta di quanto si spengono', () => {
+    const su = SV.creaStato();
+    SV.avanza(su, { velocita: SV.VEL_RIFERIMENTO }, 150);
+    const giu = SV.creaStato();
+    giu.bordi = 1;
+    SV.avanza(giu, { velocita: 0 }, 150);
+    assert.ok(su.bordi > 1 - giu.bordi,
+        `accensione ${su.bordi} non piu svelta dello spegnimento ${1 - giu.bordi}`);
+});
+
+test('bordi: fuori dalla guida si spengono nello stesso frame', () => {
+    const stato = SV.creaStato();
+    stato.bordi = 1;
+    SV.avanza(stato, { attivo: false }, 16);
+    assert.equal(stato.bordi, 0);
+});
+
 // ── Che cosa c'e sotto l'auto, sui tracciati VERI ───────────────────────────
 
 test('superficie: asfalto, cordolo e fuori su ogni campione di prova e monte-rosso', () => {

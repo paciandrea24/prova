@@ -1476,3 +1476,68 @@ canvas.tyre-preview-canvas {
    pannelli sono accesi e spenti da JavaScript con `style.display`, che
    vincerebbe su qualunque regola di foglio senza di esso. */
 body.in-cerimonia .hud { display: none !important; }
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Senso di velocità — i bordi dello schermo
+
+   Quarto e ultimo effetto della camera (gli altri tre sono in Three.js, vedi
+   shared/f1SensoVelocita.js): quando si va davvero forte la periferia si
+   scurisce e si riempie di linee di flusso. In una scena cel-shaded le linee
+   di velocità sono la lingua giusta, non un ripiego: è lo stesso vocabolario
+   del cartone animato che il resto del gioco già parla.
+
+   Perché in CSS e non in shader: il gioco è limitato dai pixel che disegna
+   (misurato col pannello F9), e un passaggio di post-produzione a schermo
+   intero costerebbe più di tutto l'effetto messo insieme. Qui il compositore
+   del browser fa il lavoro, e ciò che varia da un frame all'altro è solo
+   un'opacità — la proprietà più economica che esista.
+
+   L'opacità la scrive f1.js. Tutto il resto è fermo. */
+#senso-bordi {
+    position: fixed;
+    inset: 0;
+    z-index: 9;            /* sotto l'HUD (10): vela il mondo, mai i numeri */
+    pointer-events: none;
+    display: none;         /* acceso da f1.js solo quando serve davvero */
+    opacity: 0;
+    /* Vignettatura: il centro dell'immagine resta intatto — è dove il
+       giocatore guarda — e scurisce solo dove la periferia scorre. */
+    background: radial-gradient(ellipse 70% 64% at 50% 50%,
+        transparent 52%, rgba(4, 9, 14, 0.62) 100%);
+}
+
+.senso-bordi-linee {
+    position: absolute;
+    /* Più larghe dello schermo: crescendo non devono mai scoprire un bordo. */
+    inset: -12%;
+    /* 72 raggi che partono dal centro. Un gradiente conico ripetuto costa una
+       texture sola e non ha un solo nodo DOM per riga. */
+    background: repeating-conic-gradient(from 0deg at 50% 50%,
+        rgba(255, 255, 255, 0.42) 0deg 0.6deg,
+        transparent 0.6deg 5deg);
+    /* La maschera tiene le linee FUORI dal centro: al centro sarebbero
+       sporco sull'unica parte dell'immagine che si sta guardando. */
+    -webkit-mask-image: radial-gradient(ellipse 62% 56% at 50% 50%, transparent 58%, #000 92%);
+    mask-image: radial-gradient(ellipse 62% 56% at 50% 50%, transparent 58%, #000 92%);
+    animation: senso-flusso 620ms linear infinite;
+    will-change: transform, opacity;
+}
+
+/* Due copie sfasate di mezzo ciclo: una sola darebbe un battito, perché
+   ogni 620 ms le linee sparirebbero tutte insieme prima di ricominciare. */
+.senso-bordi-sfasate { animation-delay: -310ms; }
+
+/* Le linee non "stanno": nascono verso il centro e scappano fuori dai bordi.
+   È la scala a raccontare il flusso, e la scala è composited — non ridisegna
+   niente. */
+@keyframes senso-flusso {
+    0%   { transform: scale(1);    opacity: 0; }
+    30%  { opacity: 0.85; }
+    100% { transform: scale(1.38); opacity: 0; }
+}
+
+/* Chi ha chiesto meno movimento tiene la vignettatura, che è informazione, e
+   perde l'animazione, che è decorazione. */
+@media (prefers-reduced-motion: reduce) {
+    .senso-bordi-linee { animation: none; opacity: 0.5; }
+}

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260818f">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260819a">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -108,6 +108,17 @@
         <div id="f1-loading-track">Caricamento del circuito</div>
         <div id="f1-loading-bar"><div id="f1-loading-fill"></div></div>
         <div id="f1-loading-step">Avvio…</div>
+    </div>
+
+    <!-- Bordi dello schermo alla massima velocità: vignettatura + linee di
+         flusso. Sta fra il canvas e l'HUD (z-index 9 contro 10) perché deve
+         velare il mondo, mai i numeri che il giocatore sta leggendo. È DOM e
+         non un passaggio di post-produzione sul canvas apposta: il gioco è
+         legato ai pixel che disegna, e questo non gliene aggiunge nessuno da
+         calcolare in shader. Lo accende f1.js, in proporzione alla velocità. -->
+    <div id="senso-bordi" aria-hidden="true">
+        <div class="senso-bordi-linee"></div>
+        <div class="senso-bordi-linee senso-bordi-sfasate"></div>
     </div>
 
     <!-- HUD: classifica + giri — top-left, un pannello solo. Popolato da
@@ -483,7 +494,7 @@
          dipendenza dal gioco — nasce per essere riusato per caricamenti e
          cambi di scena. -->
     <script src="shared/f1Sting.js?v=20260818d"></script>
-    <script src="shared/f1SensoVelocita.js?v=20260819c"></script>
+    <script src="shared/f1SensoVelocita.js?v=20260819d"></script>
     <script src="shared/sceneryLandmarks.js?v=20260817b"></script>
     <script src="shared/sceneryTrackside.js?v=20260813i"></script>
     <script src="shared/sceneryCrowd.js?v=20260814a"></script>
@@ -502,7 +513,7 @@
     <!-- nell'indirizzo. Deve precedere lo script di gioco, che le usa subito. -->
     <script src="shared/impostazioniGara.js?v=20260818a"></script>
     <script src="shared/sessioneGiocatore.js?v=20260818a"></script>
-    <script src="f1.js?v=20260819d"></script>
+    <script src="f1.js?v=20260819e"></script>
 </body>
 
 </html>

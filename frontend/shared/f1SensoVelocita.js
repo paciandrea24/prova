@@ -129,6 +129,21 @@
     // sente "in ritardo" rispetto a quello che si vede sotto le ruote.
     const TAU_SCOSSONE_MS = 70;
 
+    // ── I bordi dello schermo ───────────────────────────────────────────────
+    //
+    // L'ultimo effetto è l'unico che non tocca la camera: la periferia
+    // dell'immagine che si scurisce e si riempie di linee di flusso quando si
+    // va DAVVERO forte. Non è un effetto continuo come gli altri — arriva tardi
+    // e in fretta, perché è il segnale di "questa è la velocità massima", e se
+    // ci fosse anche a metà rettilineo non direbbe più niente.
+    const SOGLIA_BORDI = 0.78;
+
+    // Più lento a spegnersi che ad accendersi: in staccata la strada si
+    // stringe subito (è il campo visivo a farlo), ma le linee che sfumano un
+    // istante dopo tengono insieme il gesto invece di sparire di colpo.
+    const TAU_BORDI_SU_MS = 220;
+    const TAU_BORDI_GIU_MS = 420;
+
     // Nomi delle superfici. `fuori` tiene insieme erba e ghiaia: al fine dello
     // scossone sono la stessa cosa (per le PARTICELLE non lo saranno — quello è
     // il prossimo effetto, e distinguerle è compito di chi campiona la mappa,
@@ -187,6 +202,8 @@
             // vibrazione riparte non lo fa da un salto.
             fase1: 0,
             fase2: 0,
+            // 0..1 — quanto sono accesi i bordi dello schermo.
+            bordi: 0,
         };
     }
 
@@ -279,6 +296,13 @@
         };
     }
 
+    // Quanto devono essere accesi i bordi a una data velocità: zero fin quasi
+    // in fondo, poi su in fretta.
+    function intensitaBordi(velocita) {
+        const grezza = clamp01(Math.abs(velocita || 0) / VEL_RIFERIMENTO);
+        return morbida(clamp01((grezza - SOGLIA_BORDI) / (1 - SOGLIA_BORDI)));
+    }
+
     // Spinta desiderata dallo stato attuale dei due filtri, già normalizzata
     // sulle due scale misurate.
     function spintaObiettivo(stato) {
@@ -312,6 +336,7 @@
             stato.spinta = 0;
             stato.intCordolo = 0;
             stato.intFuori = 0;
+            stato.bordi = 0;
             // I filtri si scordano tutto: al rientro in pista il primo campione
             // li reinizializza, così una schermata durata dieci secondi non
             // produce una frenata immaginaria nel primo frame di gioco.
@@ -348,6 +373,10 @@
         stato.fase1 = (stato.fase1 + 2 * Math.PI * hz1 * dtS) % (2 * Math.PI * 1000);
         stato.fase2 = (stato.fase2 + 2 * Math.PI * hz2 * dtS) % (2 * Math.PI * 1000);
 
+        const bordiObiettivo = intensitaBordi(c.velocita);
+        stato.bordi = passoVersoObiettivo(stato.bordi, bordiObiettivo,
+            bordiObiettivo > stato.bordi ? TAU_BORDI_SU_MS : TAU_BORDI_GIU_MS, dtMs);
+
         const obiettivo = fovObiettivo(c.velocita);
         stato.fov = passoVersoObiettivo(
             stato.fov,
@@ -361,6 +390,7 @@
     return {
         creaStato, avanza, molla, spintaObiettivo,
         scossone, superficieDaScostamento, superficieSottoAuto, SEMI_LARGHEZZA_AUTO,
+        intensitaBordi, SOGLIA_BORDI, TAU_BORDI_SU_MS, TAU_BORDI_GIU_MS,
         frazioneVelocita, fovObiettivo, passoVersoObiettivo, morbida, clamp01,
         VEL_RIFERIMENTO, FOV_BASE, FOV_MASSIMO, SOGLIA_APERTURA,
         TAU_APERTURA_MS, TAU_CHIUSURA_MS,

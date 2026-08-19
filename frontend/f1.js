@@ -4160,6 +4160,30 @@ document.addEventListener('DOMContentLoaded', async () => {
             camera.fov = sensoVelocita.fov;
             camera.updateProjectionMatrix();
         }
+        aggiornaBordiSchermo(sensoVelocita.bordi);
+    }
+
+    // I bordi dello schermo (vignettatura + linee di flusso, vedi f1.css). Si
+    // tocca SOLO l'opacità, che è la proprietà che il browser sa comporre senza
+    // ridisegnare niente — e la si tocca solo quando cambia davvero.
+    //
+    // Sotto la soglia l'elemento sparisce del tutto (`display: none`) invece di
+    // restare trasparente: un velo a schermo intero che non si vede è comunque
+    // un livello che il compositore deve considerare, e per tutta la parte lenta
+    // del giro non ha nulla da mostrare.
+    const bordiEl = document.getElementById('senso-bordi');
+    let bordiApplicati = -1;
+    function aggiornaBordiSchermo(intensita) {
+        if (!bordiEl) return;
+        const val = intensita < 0.004 ? 0 : intensita;
+        if (Math.abs(val - bordiApplicati) < 0.01) return;
+        if (val === 0) {
+            bordiEl.style.display = 'none';
+        } else {
+            if (bordiApplicati <= 0) bordiEl.style.display = 'block';
+            bordiEl.style.opacity = val.toFixed(3);
+        }
+        bordiApplicati = val;
     }
 
     function updateCamera() {
