@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260819e">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260819f">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -303,7 +303,7 @@
                         <div><dt>Lunghezza</dt><dd id="tyre-info-lunghezza">—</dd></div>
                     </dl>
 
-                    <div class="mescole-sezione">Che pista e</div>
+                    <div class="mescole-sezione">Carattere</div>
                     <!-- Le barrette del riferimento, ma calcolate davvero dalla
                          forma del tracciato (shared/f1ProfiloCircuito.js): la
                          geometria dice gia' se una pista chiede trazione o
@@ -320,18 +320,9 @@
                              l'altra: un taglio secco su una camera che si
                              teletrasporta si legge come un difetto. -->
                         <div id="tyre-shot-fade"></div>
-                        <div id="tyre-preview-map">
-                            <svg viewBox="0 0 200 140">
-                                <path id="tyre-map-track" class="minimap-track-line"></path>
-                                <path id="tyre-map-pit" class="minimap-pit-line"></path>
-                                <path id="tyre-map-pit-fill" class="minimap-pit-fill"></path>
-                                <path id="tyre-map-track-fill" class="minimap-track-fill"></path>
-                                <circle id="tyre-map-dot" r="5" fill="#f1c40f" stroke="rgba(0,0,0,0.7)" stroke-width="2"></circle>
-                            </svg>
-                        </div>
                     </div>
-                    <!-- Chi manca all'appello, sotto il circuito: al posto delle
-                         temperature gomme del riferimento. -->
+                    <!-- I piloti, sotto il circuito: al posto delle temperature
+                         gomme del riferimento. -->
                     <div class="mescole-piloti">
                         <span class="mescole-sezione">Piloti</span>
                         <div id="tyre-confirm-status"></div>
@@ -579,7 +570,7 @@
     <!-- nell'indirizzo. Deve precedere lo script di gioco, che le usa subito. -->
     <script src="shared/impostazioniGara.js?v=20260818a"></script>
     <script src="shared/sessioneGiocatore.js?v=20260818a"></script>
-    <script src="f1.js?v=20260819s"></script>
+    <script src="f1.js?v=20260819t"></script>
 </body>
 
 </html>

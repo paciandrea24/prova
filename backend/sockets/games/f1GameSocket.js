@@ -884,18 +884,26 @@ function tuttiHannoScelto(game) {
         && game.tyreConfirmed.size >= Object.keys(game.players).length;
 }
 
-// Riepilogo mostrato nella schermata di scelta mescola: le tre liste sono
-// ristrette ai piloti attesi (umani), così il client può disegnare una riga
-// per ciascuno e dire chi sta ancora caricando. `total` include i mancanti,
-// altrimenti "1/1 pronti" mentirebbe mentre un pilota deve ancora arrivare.
+// Riepilogo mostrato nella schermata di scelta mescola: chi c'è e a che punto
+// è. `total` include i mancanti, altrimenti "1/1 pronti" mentirebbe mentre un
+// pilota deve ancora arrivare.
+//
+// I BOT stanno nella lista come tutti gli altri, e sono pronti per definizione:
+// la mescola gliela assegna createBots quando nascono, quindi non stanno
+// scegliendo niente. Prima non comparivano affatto — la schiera mostrava tre
+// pallini in una gara di otto, e non si capiva se gli altri mancassero o non
+// esistessero.
 function statoScelteMescola(game) {
-    const attesi = (game.attesiAllaPartenza || []).slice();
+    const umani = (game.attesiAllaPartenza || []).slice();
+    const bot = Object.keys(game.players).filter(c => game.players[c].isBot);
+    const attesi = umani.concat(bot);
     return {
         count: game.tyreConfirmed.size,
         total: Object.keys(game.players).length + pilotiMancanti(game).length,
         attesi,
+        bot,
         arrivati: attesi.filter(c => !!game.players[c]),
-        confermati: attesi.filter(c => game.tyreConfirmed.has(c)),
+        confermati: umani.filter(c => game.tyreConfirmed.has(c)).concat(bot),
         // Quanto manca alla partenza d'ufficio. Si manda il RESIDUO e non
         // l'istante di scadenza: l'orologio del client non è quello del
         // server, e una differenza di qualche secondo fra i due farebbe

@@ -2048,7 +2048,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function mostraScatto(s) {
         if (etichettaScatto) etichettaScatto.textContent = s.etichetta;
-        aggiornaPallinoAnteprima(s.idx);
     }
 
     // ── Panoramica del riepilogo griglia ────────────────────────────────
@@ -2330,35 +2329,33 @@ document.addEventListener('DOMContentLoaded', async () => {
             box.textContent = `${dati.count || 0}/${dati.total || 1} pronti`;
             return;
         }
-        const arrivati = new Set(dati.arrivati || []);
+
+        // Una FILA DI PALLINI, uno per pilota, bot compresi. Niente pillole con
+        // il testo accanto: erano un elenco travestito, e in una gara da otto
+        // occupavano mezza colonna. Chi non ha ancora scelto resta spento —
+        // l'unica differenza è quanto il pallino è acceso, che si legge di
+        // sfuggita anche senza sapere cosa significhi.
+        //
+        // Sotto il proprio pallino c'è scritto "Tu": è l'unica etichetta che
+        // serve, perché è l'unica cosa che il colore da solo non dice a chi non
+        // ricorda di che colore è.
         const confermati = new Set(dati.confermati || []);
         box.innerHTML = '';
         for (const color of attesi) {
-            const riga = document.createElement('div');
-            riga.className = 'tyre-attesa-riga';
+            const cella = document.createElement('div');
+            cella.className = 'tyre-pilota' + (confermati.has(color) ? ' is-pronto' : '');
             const pallino = document.createElement('span');
-            pallino.className = 'tyre-attesa-dot';
+            pallino.className = 'tyre-pilota-dot';
             pallino.style.background = color;
-            const testo = document.createElement('span');
-            // Testi corti: qui i piloti sono una schiera di pallini in fondo
-            // alla pagina, non un elenco — il colore dice CHI e il contorno
-            // verde dice se ha già scelto, e una frase lunga accanto a ognuno
-            // trasformerebbe la riga in un paragrafo.
-            if (confermati.has(color)) {
-                testo.textContent = 'pronto';
-                riga.classList.add('is-pronto');
-            } else if (arrivati.has(color)) {
-                testo.textContent = 'sceglie…';
-            } else {
-                testo.textContent = 'carica…';
-                riga.classList.add('is-attesa');
-            }
+            pallino.title = confermati.has(color) ? 'ha scelto' : 'sta scegliendo';
+            cella.appendChild(pallino);
             if (color === myColor) {
-                riga.classList.add('is-me');
-                testo.textContent = 'tu';
+                const io_ = document.createElement('span');
+                io_.className = 'tyre-pilota-io';
+                io_.textContent = 'Tu';
+                cella.appendChild(io_);
             }
-            riga.append(pallino, testo);
-            box.appendChild(riga);
+            box.appendChild(cella);
         }
     }
 
@@ -4801,27 +4798,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         aggiungiSegno(START_FINISH_INDEX, 'minimap-traguardo', 6.5);
     }
 
-    // Mappa dell'anteprima (schermata mescole): stesso tracciato e stessa
-    // trasformazione della minimappa dell'HUD — hanno lo stesso viewBox — con
-    // in più il pallino del punto inquadrato dal carosello. È la metà che
-    // racconta la FORMA del giro: le inquadrature raccontano l'ambiente, e
-    // nessuna delle due da sola dice cos'è questo circuito.
-    const anteprimaMappaTrack = document.getElementById('tyre-map-track');
-    const anteprimaMappaPit = document.getElementById('tyre-map-pit');
-    const anteprimaMappaDot = document.getElementById('tyre-map-dot');
-    if (anteprimaMappaTrack) anteprimaMappaTrack.setAttribute('d', dPista);
-    if (anteprimaMappaPit) anteprimaMappaPit.setAttribute('d', dBox);
-    const anteprimaPistaChiara = document.getElementById('tyre-map-track-fill');
-    const anteprimaBoxChiara = document.getElementById('tyre-map-pit-fill');
-    if (anteprimaPistaChiara) anteprimaPistaChiara.setAttribute('d', dPista);
-    if (anteprimaBoxChiara) anteprimaBoxChiara.setAttribute('d', dBox);
-
-    function aggiornaPallinoAnteprima(idx) {
-        const p = trackPts[idx];
-        if (!anteprimaMappaDot || !p) return;
-        anteprimaMappaDot.setAttribute('cx', (p.x * minimapT.scale + minimapT.offX).toFixed(1));
-        anteprimaMappaDot.setAttribute('cy', (p.z * minimapT.scale + minimapT.offZ).toFixed(1));
-    }
+    // La mappa dentro l'anteprima del circuito non c'e piu: tolta su richiesta
+    // dell'utente quando la pagina e' stata rifatta sull'infografica. Diceva
+    // dove cadesse l'inquadratura corrente sul giro — un'informazione di
+    // contorno dentro l'unico riquadro che deve mostrare il circuito e basta.
 
     const minimapDots = {};   // color -> <circle> element
 

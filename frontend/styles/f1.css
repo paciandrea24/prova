@@ -265,23 +265,35 @@ canvas.tyre-preview-canvas {
 /* I piloti, sotto il circuito: una schiera di pallini invece di un elenco.
    Il contorno verde dice "ha scelto", che e' l'unica cosa che qui cambia. */
 .mescole-piloti { display: flex; align-items: center; gap: 12px; }
-#tyre-confirm-status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.tyre-attesa-riga {
-    display: flex; align-items: center; gap: 6px;
-    padding: 3px 9px 3px 4px;
-    border-radius: 999px;
-    background: var(--sel-lavagna);
-    border: 2px solid transparent;
-    font-size: 11px;
-    color: var(--sel-tenue);
+#tyre-confirm-status { display: flex; flex-wrap: wrap; gap: clamp(8px, 1vw, 16px); align-items: flex-start; }
+
+/* Un pilota = un pallino. L'etichetta sotto ce l'ha solo il proprio. */
+.tyre-pilota {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    min-width: 22px;
 }
-.tyre-attesa-riga.is-pronto { border-color: var(--green, #2ecc71); color: var(--sel-testo); }
-.tyre-attesa-riga.is-attesa { opacity: 0.55; }
-.tyre-attesa-riga.is-me { box-shadow: 0 0 0 1px var(--sel-testo) inset; }
-.tyre-attesa-dot {
-    width: 14px; height: 14px;
+.tyre-pilota-dot {
+    width: 18px; height: 18px;
     border-radius: 50%;
-    border: 2px solid rgba(0, 0, 0, 0.45);
+    /* Chi non ha ancora scelto e' spento: stesso colore, meno presenza. Non un
+       bordo, non un'icona — cosi la fila resta una fila di pallini e basta. */
+    opacity: 0.32;
+    filter: saturate(0.4);
+    transition: opacity 0.25s ease, filter 0.25s ease, box-shadow 0.25s ease;
+}
+.tyre-pilota.is-pronto .tyre-pilota-dot {
+    opacity: 1;
+    filter: none;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35) inset;
+}
+.tyre-pilota-io {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: var(--sel-tenue);
 }
 
 .mescole-partenza {
@@ -347,20 +359,6 @@ canvas.tyre-preview-canvas {
 
 /* La mappa è un inserto nell'angolo, non una seconda immagine di pari
    dignità: dice dove sei mentre guardi, e basta. */
-#tyre-preview-map {
-    position: absolute;
-    right: 12px;
-    bottom: 12px;
-    z-index: 2;
-    width: clamp(88px, 11vw, 128px);
-    padding: 6px;
-    border-radius: 8px;
-    background: rgba(8, 25, 30, 0.72);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-    pointer-events: none;
-}
-
-#tyre-preview-map svg { display: block; width: 100%; height: auto; }
 
 /* Il pallino salta da un'inquadratura all'altra: la transizione lo fa
    scivolare lungo il tracciato invece di teletrasportarlo. */
@@ -383,9 +381,6 @@ canvas.tyre-preview-canvas {
     line-height: 1.05;
     letter-spacing: -0.5px;
 }
-
-
-
 
 /* ── Le tre mescole, in riga ──
    In colonna erano tre card larghe affiancate e non ci stavano nella
@@ -471,33 +466,6 @@ canvas.tyre-preview-canvas {
     gap: 7px;
 }
 
-.tyre-attesa-riga {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    font-size: 13px;
-    color: var(--sel-tenue);
-}
-
-.tyre-attesa-riga.is-pronto { color: var(--green); }
-.tyre-attesa-riga.is-attesa { animation: tyre-attesa-pulsa 1.4s ease-in-out infinite; }
-.tyre-attesa-riga.is-me { color: var(--sel-testo); font-weight: 600; }
-
-.tyre-attesa-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    border: 2px solid rgba(0, 0, 0, 0.4);
-    flex: none;
-}
-
-.tyre-attesa-riga.is-me .tyre-attesa-dot {
-    box-shadow: 0 0 0 2px var(--sel-testo);
-}
-
-@keyframes tyre-attesa-pulsa {
-    0%, 100% { opacity: 1; }
-    50%      { opacity: 0.45; }
 }
 
 .mescole-partenza {
@@ -521,8 +489,9 @@ canvas.tyre-preview-canvas {
 #tyre-countdown.in-scadenza { color: var(--yellow); }
 
 @media (prefers-reduced-motion: reduce) {
-    .tyre-attesa-riga.is-attesa { animation: none; }
-    #tyre-map-dot { transition: none; }
+    /* I pallini dei piloti non si animano piu (niente pulsazione, solo acceso o
+       spento), quindi qui non resta nulla da spegnere per la scelta mescola. */
+    .tyre-pilota-dot { transition: none; }
 }
 
 /* ========================
@@ -648,7 +617,6 @@ canvas.tyre-preview-canvas {
     color: var(--f1-text);
 }
 .f1-standing-row.me { background: rgba(255,255,255,0.05); }
-
 
 .f1-standing-row.is-lifting {
     position: relative;
@@ -927,12 +895,6 @@ canvas.tyre-preview-canvas {
     outline-offset: 2px;
 }
 
-
-
-
-@keyframes tyre-attesa-pulsa {
-    0%, 100% { opacity: 1; }
-    50%      { opacity: 0.45; }
 }
 
 /* Pulsante riparazione danni ai box: stesso linguaggio neumorfico/toggle
