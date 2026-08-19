@@ -2451,13 +2451,20 @@ function endRace(io, lobbyId, game) {
     // isFinal = questa era l'ultima gara della sessione. Resta fisso a true
     // finché non arriva il campionato, dove una gara intermedia dovrà valere
     // false: lì la partita NON va chiusa, si prosegue verso la pista dopo.
+    // Vedi docs/superpowers/specs/2026-08-19-f1-stagioni-design.md, passo 3.
     const isFinal = true;
-    const isSingleMode = (game.settings || {}).mode === 'single';
+    // Cosa fare quando la gara finisce: tornare in lobby (sempre, ed è il
+    // comportamento normale) oppure restare sul podio col pulsante "Riprova".
+    // Si chiamava `isSingleMode` e il menù in lobby lo chiamava "Championship /
+    // Single Race", ma non ha mai avuto niente a che fare con un campionato:
+    // ora che il campionato arriva davvero, tenere quel nome sarebbe stato
+    // chiamare due cose diverse allo stesso modo.
+    const restaAlPodio = (game.settings || {}).mode === 'resta';
 
     io.to(lobbyId).emit('f1RaceEnded', {
         podium,
         isFinal,
-        isSingleMode,
+        restaAlPodio,
         // Il client ci fa il conto alla rovescia del rientro automatico:
         // il valore ha un proprietario solo, ed è questo.
         returnMs: RACE_END_RETURN_MS,
@@ -2476,7 +2483,7 @@ function endRace(io, lobbyId, game) {
     // comunque se la scheda venisse chiusa. In modalità singola no — lì il
     // podio resta a schermo e "Riprova" riusa questa stessa partita, che
     // viene smontata dal pulsante "Torna alla Lobby".
-    if (isFinal && !isSingleMode) {
+    if (isFinal && !restaAlPodio) {
         game.chiusuraTimeout = setTimeout(() => {
             // Identità, non presenza: se nel frattempo la lobby ha già
             // avviato un'altra gara, quella è una partita NUOVA e questo

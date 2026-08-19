@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
         racing: { mode: 'championship', numTracks: 3, trackName: 'Monza' },
         football: { maxGoals: 3 },
         fps: { rounds: 5 }, // round FISSI a 5 (il server ignora comunque questo valore)
-        f1: { mode: 'championship', trackId: 'monte-rosso', botsEnabled: 'true', gridSize: '6' }
+        f1: { mode: 'lobby', trackId: 'monte-rosso', botsEnabled: 'true', gridSize: '6' }
     };
 
     // Popola il menu "Track" delle impostazioni F1 con le piste disponibili
@@ -319,9 +319,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (selectedColor !== currentHost) return; // solo l'host attuale può scegliere
                 if (e.target.closest('#leaderboard-mini-btn')) return;
                 if (e.target.closest('#livery-mini-btn')) return;
+                // F1 passa prima dallo smistamento gara veloce / stagione;
+                // gli altri giochi vanno dritti alle impostazioni come sempre.
+                if (card.dataset.gameId === 'f1') { showF1ModeChoice(); return; }
                 showGameSettings(card.dataset.gameId); // Apre semplicemente il modale
             });
         });
+
+        // Smistamento F1: gara veloce -> le impostazioni di sempre; stagione ->
+        // per ora solo l'avviso, la modalita' arriva nel passo successivo
+        // (vedi docs/superpowers/specs/2026-08-19-f1-stagioni-design.md).
+        const f1ModeModal = document.getElementById('f1-mode-modal');
+        const closeF1ModeBtn = document.getElementById('close-f1-mode-btn');
+        if (closeF1ModeBtn) {
+            closeF1ModeBtn.addEventListener('click', () => { f1ModeModal.style.display = 'none'; });
+        }
+        const f1Quick = document.getElementById('f1-mode-quick');
+        if (f1Quick) {
+            f1Quick.addEventListener('click', () => {
+                f1ModeModal.style.display = 'none';
+                showGameSettings('f1');
+            });
+        }
+        const f1Season = document.getElementById('f1-mode-season');
+        if (f1Season) {
+            f1Season.addEventListener('click', () => {
+                document.getElementById('f1-season-soon').style.display = 'block';
+            });
+        }
 
         // Evento chiusura Modale Settings
         const closeSettingsBtn = document.getElementById('close-settings-btn');
@@ -348,6 +373,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 socket.emit('startGame', { lobbyId, gameId: currentSelectedGame, settings });
             });
         }
+    }
+
+    function showF1ModeChoice() {
+        // L'avviso riparte nascosto ad ogni apertura: se resta acceso da una
+        // volta prima sembra la risposta al clic che non hai ancora fatto.
+        document.getElementById('f1-season-soon').style.display = 'none';
+        document.getElementById('f1-mode-modal').style.display = 'flex';
     }
 
     function showGameSettings(gameId) {

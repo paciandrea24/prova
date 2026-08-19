@@ -4253,7 +4253,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // "Riprova" rilancia la gara con la stessa griglia: ha senso solo in
         // modalità singola e solo per chi ospita.
-        const puoiRiprovare = !!data.isSingleMode && myColor === hostColor;
+        const puoiRiprovare = !!data.restaAlPodio && myColor === hostColor;
         riprova.style.display = puoiRiprovare ? '' : 'none';
         riprova.onclick = () => { sequenzaCorrente++; socket.emit('f1RestartRace', lobbyId); };
 

@@ -178,7 +178,7 @@ test('chi abbandona DURANTE la gara viene comunque tolto dalla lobby', (t) => {
 test('in modalita singolo la partita resta viva dopo il podio (serve a "Riprova")', (t) => {
     t.after(pulisci);
     t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
-    preparaLobby(['red'], { mode: 'single' });
+    preparaLobby(['red'], { mode: 'resta' });
     const io = ioFinto();
 
     const a = collega(io); a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
@@ -443,7 +443,7 @@ test('"Riprova" durante la premiazione rilancia la stessa partita', (t) => {
     const io = ioFinto();
 
     const a = collega(io);
-    avvia(a, 'monte-rosso', { mode: 'single' });
+    avvia(a, 'monte-rosso', { mode: 'resta' });
     a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     const g = faiFinireLaGaraVera(io, a);
     g.grid = ['red'];

@@ -144,7 +144,7 @@
                 <div class="setting-row"><span>Rounds</span><span style="font-weight:bold;">5</span></div>
             </div>
             <div class="settings-section" id="f1-settings" style="display:none;">
-                <div class="setting-row"><span>Mode</span><select id="f1-mode"><option value="championship">Championship</option><option value="single">Single Race</option></select></div>
+                <div class="setting-row"><span>After the race</span><select id="f1-mode"><option value="lobby">Back to lobby</option><option value="resta">Stay &amp; retry</option></select></div>
                 <div class="setting-row"><span>Track</span><select id="f1-trackId"></select></div>
                 <div class="setting-row"><span>Bot</span><select id="f1-botsEnabled"><option value="true">On</option><option value="false">Off</option></select></div>
                 <div class="setting-row"><span>Drivers</span><select id="f1-gridSize"><option value="6">6</option><option value="10">10</option><option value="14">14</option><option value="20">20</option></select></div>
@@ -152,6 +152,41 @@
         </div>
 
         <button id="start-game-btn" class="btn-start">START GAME</button>
+    </div>
+</div>
+
+<!-- MODAL: F1 — gara veloce o stagione.
+     Premendo F1 si passa di qui PRIMA delle impostazioni: e' lo smistamento
+     chiesto dall'utente ("dalla lobby, il pulsante F1 smista fra tutto quello
+     che c'e' oggi e la modalita' stagioni"), e sara' anche il posto del
+     tutorial, che deve comparire in lobby premendo F1 la prima volta. Le due
+     cose condividono la schermata invece di litigarsela.
+     Testi in inglese: e' hub di piattaforma, non gioco. -->
+<div id="f1-mode-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>F1 3D</h2>
+            <button id="close-f1-mode-btn" class="btn-close">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+
+        <div class="f1-mode-grid">
+            <button class="f1-mode-card" id="f1-mode-quick">
+                <i data-lucide="flag" class="f1-mode-icon"></i>
+                <span class="f1-mode-title">Quick Race</span>
+                <span class="f1-mode-sub">One weekend: qualifying, then the race. Pick a track and go.</span>
+            </button>
+            <button class="f1-mode-card" id="f1-mode-season">
+                <i data-lucide="trophy" class="f1-mode-icon"></i>
+                <span class="f1-mode-title">Season</span>
+                <span class="f1-mode-sub">A championship across several tracks, with standings between races and a save you can come back to.</span>
+            </button>
+        </div>
+
+        <div id="f1-season-soon" class="f1-mode-note" style="display:none;">
+            Seasons aren't playable yet — this is the next thing being built.
+        </div>
     </div>
 </div>
 
