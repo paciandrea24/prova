@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260819b">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260819c">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -199,10 +199,16 @@
          <circle> per giocatore creato/distrutto dinamicamente da f1.js
          (vedi ensureMinimapDot/updateMinimapDot) — non più un marker
          singolo statico. -->
-    <div class="hud hud-minimap f1-panel" id="minimap-box">
+    <div class="hud hud-minimap" id="minimap-box">
         <svg id="minimap-svg" viewBox="0 0 200 140">
+            <!-- Ogni tracciato e' disegnato DUE volte: prima il contorno scuro,
+                 poi la linea chiara sopra. E' cio' che lo rende leggibile su
+                 qualunque sfondo senza bisogno di un pannello dietro. I due
+                 path della stessa coppia ricevono sempre la stessa `d`. -->
             <path id="minimap-track" class="minimap-track-line"></path>
             <path id="minimap-pit" class="minimap-pit-line"></path>
+            <path id="minimap-pit-fill" class="minimap-pit-fill"></path>
+            <path id="minimap-track-fill" class="minimap-track-fill"></path>
         </svg>
     </div>
 
@@ -540,7 +546,7 @@
     <!-- nell'indirizzo. Deve precedere lo script di gioco, che le usa subito. -->
     <script src="shared/impostazioniGara.js?v=20260818a"></script>
     <script src="shared/sessioneGiocatore.js?v=20260818a"></script>
-    <script src="f1.js?v=20260819m"></script>
+    <script src="f1.js?v=20260819n"></script>
 </body>
 
 </html>

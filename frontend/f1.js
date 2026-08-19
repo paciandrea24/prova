@@ -4668,8 +4668,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const minimapTrackEl = document.getElementById('minimap-track');
     const minimapPitEl = document.getElementById('minimap-pit');
     const minimapT = minimapTransform([...trackPts, ...PIT_PTS]);
-    minimapTrackEl.setAttribute('d', minimapPathString(trackPts, minimapT, true));
-    minimapPitEl.setAttribute('d', minimapPathString(PIT_PTS, minimapT, false));
+    const dPista = minimapPathString(trackPts, minimapT, true);
+    const dBox = minimapPathString(PIT_PTS, minimapT, false);
+    minimapTrackEl.setAttribute('d', dPista);
+    minimapPitEl.setAttribute('d', dBox);
+    // La copia chiara sopra il contorno scuro: stessa `d`, altro tratto.
+    const pistaChiara = document.getElementById('minimap-track-fill');
+    const boxChiara = document.getElementById('minimap-pit-fill');
+    if (pistaChiara) pistaChiara.setAttribute('d', dPista);
+    if (boxChiara) boxChiara.setAttribute('d', dBox);
 
     // Mappa dell'anteprima (schermata mescole): stesso tracciato e stessa
     // trasformazione della minimappa dell'HUD — hanno lo stesso viewBox — con

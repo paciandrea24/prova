@@ -687,28 +687,56 @@ canvas.tyre-preview-canvas {
 /* ---- bottom-right: minimappa ---- */
 .hud-minimap {
     bottom: 14px; right: 12px;
-    width: 200px; height: 150px;
-    padding: 8px;
+    width: 230px; height: 168px;
+    padding: 0;
+    /* NIENTE pannello: nel riferimento (F1 22) il layout del circuito è
+       disegnato direttamente sulla scena, senza un riquadro che se lo porti
+       dietro. Un pannello opaco in un angolo è una toppa per rendere leggibile
+       una linea sottile; qui la leggibilità viene dal tratto stesso — una linea
+       chiara con il suo contorno scuro — e la pista dietro resta visibile. */
+    background: none;
+    box-shadow: none;
+    border: none;
 }
-.hud-minimap .hud-screen { width: 100%; height: 100%; }
-.hud-minimap svg { width: 100%; height: 100%; display: block; }
+.hud-minimap svg {
+    width: 100%; height: 100%; display: block;
+    overflow: visible;
+}
+/* Il contorno scuro sotto la linea chiara: è ciò che rende il tracciato
+   leggibile sia sull'asfalto scuro sia sul prato o sul cielo, senza dover
+   mettere un fondo. Due tratti sovrapposti e non un filtro: un drop-shadow su
+   una polilinea lunga costa a ogni frame, questo no. */
 .minimap-track-line {
     fill: none;
-    stroke: rgba(255,255,255,0.22);
-    stroke-width: 3;
+    stroke: rgba(6, 10, 14, 0.72);
+    stroke-width: 7;
     stroke-linecap: round;
     stroke-linejoin: round;
 }
-/* Corsia box: stesso stile della pista ma tinta ambra e più sottile, per
-   distinguerla a colpo d'occhio senza spiccare quanto il tracciato vero. */
+.minimap-track-fill {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.92);
+    stroke-width: 3.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+/* Corsia box: tinta ambra e più sottile, per distinguerla a colpo d'occhio
+   senza spiccare quanto il tracciato vero. */
 .minimap-pit-line {
     fill: none;
-    stroke: rgba(217, 178, 96, 0.4);
-    stroke-width: 2;
+    stroke: rgba(6, 10, 14, 0.6);
+    stroke-width: 5;
     stroke-linecap: round;
     stroke-linejoin: round;
 }
-.minimap-you-core { r: 4; }
+.minimap-pit-fill {
+    fill: none;
+    stroke: rgba(240, 196, 110, 0.9);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.minimap-you-core { r: 4.5; stroke: rgba(6, 10, 14, 0.85); stroke-width: 1.6; }
 .minimap-you-halo { r: 9; opacity: 0.3; }
 
 /* Selezione mescola */
