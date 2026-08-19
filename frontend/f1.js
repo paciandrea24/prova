@@ -22,6 +22,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // lobby, e non solo da f1Setup che arriva col socket: serve prima di
     // scrivere qualunque cosa sulla schermata di caricamento.
     const formatoPartita = clientSettings.formato === 'stagione' ? 'stagione' : 'veloce';
+    // "Sono davanti alle SCHERMATE del campionato", che non e' la stessa cosa
+    // di "questa partita appartiene a un campionato": una gara di stagione ha
+    // il formato 'stagione' ma e' un weekend in tutto e per tutto — pista da
+    // annunciare, sonoro acceso, comandi vivi. Distinzione tenuta in un posto
+    // solo, perche' sbagliarla in due punti diversi ha gia' prodotto due
+    // difetti (il calendario davanti alla pista, e il mondo muto in gara).
+    const schermataCampionato = formatoPartita === 'stagione' && clientSettings.stagioneInCorso !== true;
 
     // Il file del circuito si legge QUI, prima di ogni altra cosa, e non
     // più giù insieme alla costruzione della pista: dentro c'è scritto se
@@ -470,7 +477,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // bugia, ed è stata segnalata come tale al playtest ("dice caricamento del
     // circuito, e cita Monte Rosso"). Il nome vero comparirà quando una gara
     // del calendario partirà davvero.
-    caricamento.pista(formatoPartita === 'stagione' ? 'Campionato' : (trackData.name || trackId));
+    caricamento.pista(schermataCampionato ? 'Campionato' : (trackData.name || trackId));
     // Il nome del circuito è il titolo della schermata mescole: è la cosa che
     // il giocatore vuole sapere per prima ("dove corro?"), e l'anteprima di
     // fianco è la risposta lunga alla stessa domanda.
@@ -758,7 +765,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     //
     // Il silenzio si toglie da solo al primo countdown: f1Countdown chiama
     // silenzioTransizione(false) da sempre, per la transizione qualifica→gara.
-    if (formatoPartita === 'stagione') silenzioTransizione(true);
+    // Solo davanti alle SCHERMATE del campionato, non nelle sue gare: una gara
+    // di campionato e' un weekend come gli altri e deve avere il suo sonoro.
+    if (schermataCampionato) silenzioTransizione(true);
     // La camera nel grafo della scena. Non serve a lei — una camera funziona
     // anche staccata — ma a ciò che le si appende: il renderer disegna solo
     // quello che raggiunge partendo da `scene`, quindi un oggetto figlio di
@@ -2991,8 +3000,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         return user.getIdToken();
     }
 
-    function montaSchermateStagione(formato, stagioneId) {
-        if (formato !== 'stagione' || schermateStagione) return;
+    // Il formato dice "questa partita appartiene a un campionato" e resta
+    // 'stagione' ANCHE mentre si corre una sua gara: e' la FASE a dire se in
+    // questo momento si sceglie o si guida. Guardare solo il formato metteva il
+    // calendario davanti alla pista — segnalato al playtest: "premo Corri, il
+    // caricamento parte, e torno nella stessa identica pagina".
+    function montaSchermateStagione(fase, stagioneId) {
+        if (fase !== 'stagione' || schermateStagione) return;
         // Segnaposto immediato: senza, due f1Setup ravvicinati (rientro,
         // riconnessione) monterebbero le schermate due volte mentre la fetch
         // delle piste e' ancora in volo.
@@ -3037,7 +3051,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (hc) hostColor = hc;
         // Dopo hostColor: le schermate della stagione devono sapere se sono io
         // a ospitare, ed e' l'unica cosa che decide cosa mi mostrano.
-        montaSchermateStagione(formato, stagioneId);
+        montaSchermateStagione(phase, stagioneId);
         if (totalLaps) {
             // totalLaps qui è SEMPRE quello della gara vera (il server lo manda
             // così a prescindere dalla fase corrente): setLapDisplay lo riduce
@@ -4527,6 +4541,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     function isLookBackKey(k) { return k === 'b' || k === 'arrowdown'; }
 
     document.addEventListener('keydown', (e) => {
+        // Se si sta scrivendo in un campo, i tasti sono LETTERE, non comandi.
+        // Mancava, e si vedeva: scrivere il nome di una stagione mandava
+        // sterzate al server (la "a" e la "d" di "Mondiale"), la "c" cambiava
+        // telecamera e la "h" accendeva le hitbox. Le voci che avevano gia' la
+        // guardia da sole restano corrette, questa le copre tutte.
+        // Nessun rischio di tasto incastrato: se il keydown non lo accende, il
+        // keyup lo spegne comunque.
+        if (isTypingInField(e)) return;
         const k = e.key.toLowerCase();
         if (k === 'w') keys.w = true;
         if (k === 'a') keys.a = true;
