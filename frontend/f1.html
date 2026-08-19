@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260819j">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260819k">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -237,17 +237,22 @@
                 <circle class="v-halo" cx="118" cy="106" r="10"></circle>
             </g>
             <!-- Le quattro gomme: cerchione scuro e battistrada colorato
-                 dall'usura, che da noi e' UN valore per tutte e quattro. Le
-                 posteriori sono piu' larghe delle anteriori, come sul serio. -->
+                 dall'usura, che da noi e' UN valore per tutte e quattro.
+                 Tutte e quattro dello STESSO spessore (quello delle posteriori,
+                 il maggiore): scelta dell'utente. In F1 vera le anteriori sono
+                 piu' strette, ma qui l'usura e' un numero solo per tutte e
+                 quattro, e quattro gomme identiche lo dicono meglio di quattro
+                 diverse. Cosi' le anteriori vanno a filo dell'ala anteriore,
+                 che e' larga esattamente quanto loro. -->
             <g class="v-cerchione">
-                <rect x="78" y="47" width="13" height="30" rx="3"></rect>
-                <rect x="145" y="47" width="13" height="30" rx="3"></rect>
+                <rect x="75.5" y="47" width="18" height="30" rx="3"></rect>
+                <rect x="142.5" y="47" width="18" height="30" rx="3"></rect>
                 <rect x="77" y="197" width="18" height="30" rx="3"></rect>
                 <rect x="141" y="197" width="18" height="30" rx="3"></rect>
             </g>
             <g class="p-gomme">
-                <rect x="80.5" y="50" width="8" height="24" rx="2"></rect>
-                <rect x="147.5" y="50" width="8" height="24" rx="2"></rect>
+                <rect x="78.5" y="50" width="12" height="24" rx="2"></rect>
+                <rect x="145.5" y="50" width="12" height="24" rx="2"></rect>
                 <rect x="80" y="200" width="12" height="24" rx="2"></rect>
                 <rect x="144" y="200" width="12" height="24" rx="2"></rect>
             </g>
@@ -645,7 +650,7 @@
     <!-- nell'indirizzo. Deve precedere lo script di gioco, che le usa subito. -->
     <script src="shared/impostazioniGara.js?v=20260818a"></script>
     <script src="shared/sessioneGiocatore.js?v=20260818a"></script>
-    <script src="f1.js?v=20260819v"></script>
+    <script src="f1.js?v=20260819w"></script>
 </body>
 
 </html>
