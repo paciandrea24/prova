@@ -2485,11 +2485,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // niente da vedere.
     let pitMuro = null;
 
-    // I colori dei tre esiti, in un posto solo: li usano sia il muro (che li
-    // mostra in anticipo, mentre ci si avvicina) sia il pannello che li ripete
-    // a sosta iniziata. Fucsia per la perfetta perché è l'unico dei tre che non
-    // si confonde con nient'altro in pista — il verde è già dei cordoli e dei
-    // tempi migliori, il rosso dei danni.
+    // I colori dei tre esiti, in un posto solo: li usano il muro quando dà il
+    // VERDETTO — a reazione avvenuta, non prima — e il pannello che lo ripete a
+    // sosta iniziata. Fucsia per la perfetta perché è l'unico dei tre che non si
+    // confonde con nient'altro in pista: il verde è già dei cordoli e dei tempi
+    // migliori, il rosso dei danni.
     const ESITO_COLORE = {
         perfetta: { rgb: '236, 64, 172', css: '#ec40ac' },
         buona:    { rgb: '46, 204, 113', css: 'var(--green, #2ecc71)' },
@@ -2504,11 +2504,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         const w = MURO_TEXTURE_W, h = MURO_TEXTURE_H;
         ctx.clearRect(0, 0, w, h);
 
-        // Fondo: più acceso in basso, dove il muro tocca l'asfalto. Il colore è
-        // quello dell'esito che si prenderebbe premendo ADESSO: rosso finché si
-        // è lontani, verde dentro la finestra buona, fucsia dentro la perfetta.
-        // È il modo in cui il muro si legge senza leggere il numero.
-        const colore = (ESITO_COLORE[esito] || { rgb: '80, 210, 240' }).rgb;
+        // Fondo: più acceso in basso, dove il muro tocca l'asfalto.
+        //
+        // Avvicinandosi il muro è azzurro e si ACCENDE di verde quando il muso
+        // entra nella finestra perfetta: è il segnale di "adesso", e serve a non
+        // dover leggere il numero che scorre. A reazione avvenuta prende invece
+        // il colore del verdetto. Le due cose sono separate apposta — colorare
+        // anche l'avvicinamento con l'esito previsto è stato provato e bocciato:
+        // un muro che cambia tinta in continuazione mentre si arriva racconta
+        // troppo, e quello che serve sapere prima è solo "adesso o non ancora".
+        const colore = verdetto
+            ? (ESITO_COLORE[esito] || ESITO_COLORE.lenta).rgb
+            : (acceso ? ESITO_COLORE.buona.rgb : '80, 210, 240');
         const grad = ctx.createLinearGradient(0, 0, 0, h);
         grad.addColorStop(0, `rgba(${colore}, ${acceso ? 0.24 : 0.12})`);
         grad.addColorStop(1, `rgba(${colore}, ${acceso ? 0.66 : 0.44})`);
@@ -2635,15 +2642,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         // indovina: il numero cambia dieci volte al secondo ed e' troppo per
         // l'occhio, mentre un colore che cambia lo si coglie subito. Il valore
         // e' lo stesso su cui giudica il server, non una soglia grafica a parte.
-        // L'esito che si prenderebbe premendo adesso, con la STESSA funzione
-        // con cui il server giudica: il colore non è una soglia grafica per
-        // conto suo, è il verdetto in anticipo.
-        const esitoOra = F1BoxIngresso.esitoDaDistanza(d);
-        const acceso = esitoOra === 'perfetta';
-        const testo = secondi.toFixed(1) + esitoOra;
+        // Acceso = il muso è dentro la finestra perfetta. La soglia è quella su
+        // cui giudica il server, non una soglia grafica per conto suo.
+        const acceso = Math.abs(d) <= F1BoxIngresso.MURO_PERFETTO;
+        const testo = secondi.toFixed(1) + (acceso ? '!' : '');
         if (testo === pitMuro.ultimoTesto) return;
         pitMuro.ultimoTesto = testo;
-        disegnaTexturaMuro(pitMuro.ctx, { secondi, esito: esitoOra, acceso });
+        disegnaTexturaMuro(pitMuro.ctx, { secondi, acceso });
         pitMuro.texture.needsUpdate = true;
     }
 
