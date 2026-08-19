@@ -175,7 +175,7 @@ test('chi abbandona DURANTE la gara viene comunque tolto dalla lobby', (t) => {
         'chi se ne e andato prima della fine non deve restare come fantasma nella lista');
 });
 
-test('da solo la partita sopravvive al podio quanto basta per "Riprova", non di piu', (t) => {
+test('da solo la partita sopravvive al podio quanto basta per "Riavvia", non di piu', (t) => {
     t.after(pulisci);
     t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
     preparaLobby(['red']);
@@ -184,10 +184,10 @@ test('da solo la partita sopravvive al podio quanto basta per "Riprova", non di 
     const a = collega(io); a.handlers.joinF1Game({ lobbyId: LOBBY, playerColor: 'red', token: creaGettone(LOBBY, 'red') });
     faiFinireLaGara(io, ['red']);
 
-    // Durante il podio la partita c'e' ancora: e' quella che "Riprova" riusa.
+    // Durante il podio la partita c'e' ancora: e' quella che "Riavvia" riusa.
     t.mock.timers.tick(15000);
     assert.equal(activeGames.has(LOBBY), true,
-        'finche il podio e a schermo "Riprova" deve poter riusare la partita');
+        'finche il podio e a schermo "Riavvia" deve poter riusare la partita');
 
     // Ma se nessuno preme niente, muore. Prima no, e una partita in singolo
     // abbandonata chiudendo la scheda restava in activeGames per sempre.
@@ -309,7 +309,7 @@ test('un timer della sessione precedente non spinge in gara quella nuova', (t) =
     const vecchia = activeGames.get(LOBBY);
     vecchia.phase = 'race_end';
     vecchia.grid = ['red'];
-    // "Riprova": programma il semaforo fra RESTART_GRACE_MS.
+    // "Riavvia": programma la qualifica fra RESTART_GRACE_MS.
     a.handlers.f1RestartRace(LOBBY);
 
     // Nel frattempo si riparte dalla lobby, su un'altra pista.
@@ -443,7 +443,7 @@ test('il pulsante di chi ospita chiude la partita e riporta tutti in lobby', (t)
         'chi e rientrato in lobby non deve sparire dalla lista');
 });
 
-test('"Riprova" durante la premiazione rilancia la stessa partita', (t) => {
+test('"Riavvia" durante la premiazione rilancia la stessa partita, dalla qualifica', (t) => {
     t.after(pulisci);
     t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
     preparaLobby(['red']);
@@ -460,7 +460,9 @@ test('"Riprova" durante la premiazione rilancia la stessa partita', (t) => {
     t.mock.timers.tick(20000);
 
     assert.equal(activeGames.get(LOBBY), g,
-        'Riprova deve riusare la partita, non crearne una nuova');
-    assert.equal(g.phase, 'race', 'e riportarla in gara');
+        'Riavvia deve riusare la partita, non crearne una nuova');
+    // Dalla QUALIFICA, non dalla gara: una gara riavviata si rigioca tutta,
+    // griglia compresa (vedi f1GameSocket.riavvio.test.js).
+    assert.equal(g.phase, 'qualifying', 'e riportarla in qualifica');
     assert.equal(g.raceEnded, false);
 });

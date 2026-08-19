@@ -168,8 +168,8 @@ const RACE_GRACE_MS = 30000;
 const RACE_GRACE_TICKS = Math.round(RACE_GRACE_MS / PHYSICS_TICK_MS);
 // Il normale flusso qualifica->griglia->gara ha già una pausa naturale
 // (GRID_DISPLAY_MS) tra la fine di una sessione e l'inizio della prossima,
-// tempo per staccare il piede dall'acceleratore. "Riprova" (modalità
-// singola) invece incatenava resetPlayers/assignGridSpawns e il semaforo
+// tempo per staccare il piede dall'acceleratore. "Riavvia" (modalità
+// singola) invece incatenava lo schieramento e il countdown
 // nello stesso istante, senza alcuna pausa: chi finiva la gara tenendo
 // premuto l'acceleratore lo teneva ancora premuto un attimo dopo — falsa
 // partenza "vera" secondo la regola, ma percepita come un bug perché non
@@ -690,30 +690,60 @@ module.exports = function (io, socket) {
         };
     });
 
-    // "Riprova" (modalità single): rilancia la GARA con la stessa griglia già
-    // determinata dalla qualifica, senza rifare la qualifica stessa.
+    // "Riavvia" (modalità single): rimette in moto QUESTA partita da capo,
+    // cioè DALLA QUALIFICA — non dalla gara.
+    //
+    // Prima ripartiva direttamente dalla gara riusando la griglia già
+    // determinata. Due ragioni per cambiare, la seconda emersa in playtest:
+    //  1. una gara riavviata deve rigiocarsi tutta, griglia compresa:
+    //     ereditare lo schieramento di un tentativo precedente non è un
+    //     riavvio, è una ripetizione a metà (richiesta utente);
+    //  2. il difetto "i bot sono già oltre il traguardo". `raceStarted` resta
+    //     vero anche dopo la bandiera a scacchi (chi ha finito continua a
+    //     girare da fantasma, è voluto), quindi la fisica non si era mai
+    //     fermata: rimessi in griglia, i bot avevano ancora updateBotInputs
+    //     addosso e guidavano per tutta la pausa di cortesia qui sotto.
+    //     Misurato headless: 70 unità di vantaggio prima ancora che si
+    //     accendesse il primo semaforo, mentre il giocatore restava fermo
+    //     sulla sua casella perché il suo client era al podio.
     socket.on('f1RestartRace', (lobbyId) => {
         const game = activeGames.get(lobbyId);
         if (!game) return;
+        // PRIMA di ogni altra cosa: la fisica si ferma qui. È la riga che
+        // manca al difetto descritto sopra — senza, ogni riposizionamento
+        // dura solo fino al tick successivo.
+        game.raceStarted = false;
         if (game.endTimeout) { clearTimeout(game.endTimeout); game.endTimeout = null; }
         // Lo smontaggio programmato a fine gara va disarmato: questa partita la
         // vogliamo ancora viva, e senza questa riga il timer la ucciderebbe a
         // metà della gara appena rilanciata.
         if (game.chiusuraTimeout) { clearTimeout(game.chiusuraTimeout); game.chiusuraTimeout = null; }
+        if (game.qualiEndTimeout) { clearTimeout(game.qualiEndTimeout); game.qualiEndTimeout = null; }
         game.raceEnded = false;
-        if (game.grid && game.grid.length) {
-            assignGridSpawns(game);
-        } else {
-            resetPlayers(game);   // difensivo, non dovrebbe capitare (la qualifica gira sempre prima)
-        }
-        // Pausa di cortesia prima del semaforo (vedi RESTART_GRACE_MS):
+        // Le finestre di cortesia di fine sessione sono contatori di TICK, e
+        // il riavvio riporta raceTick a zero: lasciarle armate significa che
+        // la sessione nuova si chiude da sola appena il contatore riraggiunge
+        // il valore vecchio, senza che nessuno abbia finito niente.
+        game.raceGraceEndTick = null;
+        game.qualiGraceEndTick = null;
+        game.raceTick = 0;
+        // La griglia è il RISULTATO della qualifica: ricomincia da capo anche
+        // lei, la ricalcola endQualifying.
+        game.grid = null;
+        game.stableRankOrder = null;
+        game.abbandoniPrimaDellaFine = [];
+        // Riposizionamento SUBITO, non fra RESTART_GRACE_MS: il client ha
+        // appena alzato il velo nero (vedi f1RestartTransition) e questo è
+        // l'unico istante in cui lo spostamento delle auto non si vede.
+        schieraPerLaQualifica(game);
+        // Pausa di cortesia prima del countdown (vedi RESTART_GRACE_MS):
         // annunciata SUBITO al client con questo evento dedicato, così può
         // coprirla con una dissolvenza a nero invece di lasciare il podio a
         // schermo fino all'ultimo istante (vedi f1RestartTransition in f1.js).
         io.to(lobbyId).emit('f1RestartTransition', { graceMs: RESTART_GRACE_MS });
         setTimeout(() => {
             if (!ancoraViva(lobbyId, game)) return;
-            startRaceCountdown(io, lobbyId, game);
+            startQualifying(io, lobbyId, game);
         }, RESTART_GRACE_MS);
     });
 
@@ -979,15 +1009,51 @@ function startTyreSelect(io, lobbyId, game) {
 // playersVisibleTo — ognuno vede solo la propria auto, nessuno quelle
 // altrui) → GRIGLIA → GARA
 // ====================================================
-function startQualifying(io, lobbyId, game) {
-    game.phase = 'qualifying';
-    game.qualiEnded = false;
-    game.qualiGraceEndTick = null;
-    game.qualiLastWaitingFinished = null;
-    game.raceStarted = false;
-    // Tutti allo stesso identico punto (vedi game.track.qualiSpawn), a
-    // prescindere da dove fossero prima (già impostato alla creazione, ma qui
-    // è garantito anche per chi era entrato con uno stato diverso).
+// Stato "auto come nuova" di un pilota: gomme, danni, penalità, box, falsa
+// partenza, e tutto ciò che vale per UNA sessione soltanto.
+//
+// Estratta perché ha DUE chiamanti che devono per forza azzerare le stesse
+// cose: lo schieramento in griglia e lo schieramento per la qualifica. Finché
+// la lista viveva in un solo posto, una qualifica rilanciata dopo una gara
+// (vedi f1RestartRace) si correva con l'ala rotta e le gomme finite.
+function resetStatoAuto(p) {
+    p.speed = 0; p.vx = 0; p.vz = 0;
+    p.finished = false; p.time = null;
+    p.lap = 0; p.checkpointA = false; p.inFinishZone = false;
+    p.curLapCurve = null; p.prevLapCurve = null;
+    p.curLapSectorTimes = [null, null, null]; p.prevLapSectorTimes = null;
+    p.deltaToPreviousLapMs = null; p.lapTrulyStarted = false;
+    p.lapRecapSectorTimes = null; p.lapRecapExpiresAtMs = null;
+    p.pendingFinishTime = null;
+    p.tyreWear = 0;   // gomme fresche ad ogni sessione (l'usura conta solo in gara, ma in qualifica è già zero)
+    p.damage = 0;   // auto perfetta — stesso confine di tyreWear
+    p.damageParts = createDamageParts();   // fresco ogni volta — mai riutilizzare l'oggetto precedente
+    p.collisionPenaltyMs = 0;
+    p.pendingRepair = false;
+    if (p.carContacts) p.carContacts.clear();
+    p.wallContact = false;
+    if (p.pendingCollisionPenaltyEvents) p.pendingCollisionPenaltyEvents.length = 0;
+    if (p.pitGoTimer) { clearTimeout(p.pitGoTimer); p.pitGoTimer = null; }
+    p.pitting = false; p.pitEsito = null;
+    p.pendingCompound = null; p.hasPitted = false; p.pitPenalty = false;
+    p.falseStart = false; p.falseStartServed = false;
+    p.gapToLeaderMs = null;
+    p.pitAutoState = null; p.pitPathIndex = 0; p.pitBoxFinalApproach = false;
+    p.pitPiano = null; p.pitRimanente = null;
+    p.inputs = { throttle: 0, brake: 0, steer: 0 };
+    // Stato bot transitorio: un bot ancora diretto ai box (non ancora entrato
+    // nel trigger) alla fine della sessione precedente non deve ripartire già
+    // puntato alla corsia box con gomme appena montate.
+    if (p.isBot) { p.botHeadingToPits = false; p.botPitReactionScheduled = false; }
+}
+
+// Tutti al punto di partenza della qualifica, auto come nuova.
+//
+// Separata da startQualifying perché il RIAVVIO (f1RestartRace) deve poterla
+// chiamare SUBITO, mentre il client tiene ancora il velo nero: se il
+// riposizionamento cadesse insieme al countdown il teletrasporto si vedrebbe,
+// ed è esattamente ciò che quella dissolvenza esiste per coprire.
+function schieraPerLaQualifica(game) {
     game.bestSectorTimes = [Infinity, Infinity, Infinity];
     // Box visibili anche in qualifica, per coerenza visiva (Rif. richiesta
     // utente 2026-08-07: "i box in qualifica non funzionano" — p.pitBoxAnchor
@@ -1008,18 +1074,22 @@ function startQualifying(io, lobbyId, game) {
         game.players[color].pitBoxAnchor = qualiBoxAnchors[i];
         game.players[color].pitBoxSlot = i;
     });
+    // Tutti allo stesso identico punto (vedi game.track.qualiSpawn), a
+    // prescindere da dove fossero prima.
     for (const p of Object.values(game.players)) {
         p.x = game.track.qualiSpawn.x; p.z = game.track.qualiSpawn.z; p.angle = game.track.qualiSpawn.angle;
-        p.speed = 0; p.vx = 0; p.vz = 0;
-        p.finished = false; p.time = null;
-        p.lap = 0; p.checkpointA = false; p.inFinishZone = false;
-        p.curLapCurve = null; p.prevLapCurve = null;
-        p.curLapSectorTimes = [null, null, null]; p.prevLapSectorTimes = null;
-        p.deltaToPreviousLapMs = null; p.lapTrulyStarted = false;
-        p.lapRecapSectorTimes = null; p.lapRecapExpiresAtMs = null;
-        p.pendingFinishTime = null;
         p.trackIndex = 0;
+        resetStatoAuto(p);
     }
+}
+
+function startQualifying(io, lobbyId, game) {
+    game.phase = 'qualifying';
+    game.qualiEnded = false;
+    game.qualiGraceEndTick = null;
+    game.qualiLastWaitingFinished = null;
+    game.raceStarted = false;
+    schieraPerLaQualifica(game);
     io.to(lobbyId).emit('f1Countdown', { trackName: game.track.name, label: 'QUALIFICA — 1 GIRO', phase: 'qualifying' });
     setTimeout(() => {
         if (!ancoraViva(lobbyId, game)) return;
@@ -1177,35 +1247,13 @@ function assignGridSpawns(game) {
         if (!p) return;
         const spawn = game.track.gridSpawnPoint(i);
         p.x = spawn.x; p.z = spawn.z; p.angle = spawn.angle;
-        p.speed = 0; p.vx = 0; p.vz = 0;
-        p.finished = false; p.time = null;
-        p.lap = 0; p.checkpointA = false; p.inFinishZone = false;
-        p.curLapCurve = null; p.prevLapCurve = null;
-        p.curLapSectorTimes = [null, null, null]; p.prevLapSectorTimes = null;
-        p.deltaToPreviousLapMs = null; p.lapTrulyStarted = false;
-        p.lapRecapSectorTimes = null; p.lapRecapExpiresAtMs = null;
-        p.pendingFinishTime = null;
         // L'indice VERO dello schieramento, non 0: vedi il commento in
         // TrackGeometry.gridSpawnPoint. Dichiarando 0 mentre l'auto sta al
         // campione 41 (monte-rosso), la fisica cercava il punto pista attorno
         // a quello sbagliato e il muro spingeva l'auto di lato al primo tick
         // di gara — misurato, 11.6 unità.
         p.trackIndex = spawn.index || 0;
-        p.tyreWear = 0;   // gomme fresche per la gara vera (l'usura conta solo in gara, non in qualifica)
-        p.damage = 0;   // auto perfetta a inizio gara vera — stesso confine di tyreWear
-        p.damageParts = createDamageParts();   // fresco ad ogni gara — mai riutilizzare l'oggetto precedente
-        p.collisionPenaltyMs = 0;
-        p.pendingRepair = false;
-        p.carContacts.clear();
-        p.wallContact = false;
-        p.pendingCollisionPenaltyEvents.length = 0;
-        if (p.pitGoTimer) { clearTimeout(p.pitGoTimer); p.pitGoTimer = null; }
-        p.pitting = false; p.pitEsito = null;
-        p.pendingCompound = null; p.hasPitted = false; p.pitPenalty = false;
-        p.falseStart = false; p.falseStartServed = false;
-        p.gapToLeaderMs = null;
-        p.pitAutoState = null; p.pitPathIndex = 0; p.pitBoxFinalApproach = false;
-        p.pitPiano = null; p.pitRimanente = null;
+        resetStatoAuto(p);
         // Box FISSO per tutta la sessione (Rif. richiesta utente
         // 2026-08-07: "la mappa in qualifica e in gara deve essere la
         // stessa" — prima il box "saltava" di slot tra qualifica e gara,
@@ -1220,11 +1268,6 @@ function assignGridSpawns(game) {
             p.pitBoxSlot = i;
             p.pitBoxAnchor = boxAnchors[i];
         }
-        p.inputs = { throttle: 0, brake: 0, steer: 0 };
-        // Stato bot transitorio: un bot ancora diretto ai box (non ancora
-        // entrato nel trigger) alla fine della gara precedente non deve
-        // ripartire già puntato alla corsia box con gomme appena montate.
-        if (p.isBot) { p.botHeadingToPits = false; p.botPitReactionScheduled = false; }
     });
 }
 
@@ -2458,12 +2501,12 @@ function endRace(io, lobbyId, game) {
     // Vedi docs/superpowers/specs/2026-08-19-f1-stagioni-design.md, passo 3.
     const isFinal = true;
     // Cosa fare quando la gara finisce: restare sul podio col pulsante
-    // "Riprova", oppure tornare in lobby da soli.
+    // "Riavvia", oppure tornare in lobby da soli.
     //
     // Era un menù in lobby chiamato "Mode: Championship / Single Race", che con
     // un campionato vero in arrivo sarebbe diventato una trappola — due cose
     // diverse chiamate allo stesso modo — e che comunque chiedeva al giocatore
-    // una cosa DEDUCIBILE: "Riprova" ha senso solo se sei da solo, perché
+    // una cosa DEDUCIBILE: "Riavvia" ha senso solo se sei da solo, perché
     // rimette in moto QUESTA partita, e non si può rimettere in moto una gara
     // per conto degli altri. Con più umani in pista il podio riporta in lobby,
     // che è l'unico finale che vale per tutti.
@@ -2494,11 +2537,11 @@ function endRace(io, lobbyId, game) {
     // dipendere da un messaggio che non arriverebbe comunque se la scheda
     // venisse chiusa.
     //
-    // Il timer si arma SEMPRE, anche quando c'è "Riprova". Prima no, e la
-    // ragione era buona (Riprova riusa questa partita, e un timer di
+    // Il timer si arma SEMPRE, anche quando c'è "Riavvia". Prima no, e la
+    // ragione era buona (Riavvia riusa questa partita, e un timer di
     // smontaggio addosso l'avrebbe uccisa a metà gara) ma la cura era peggio:
     // una partita in modalità singola abbandonata chiudendo la scheda restava
-    // in `activeGames` per sempre. Ora il timer c'è e lo cancella `Riprova`,
+    // in `activeGames` per sempre. Ora il timer c'è e lo cancella `Riavvia`,
     // che è l'unico che sa di volere quella partita ancora viva.
     if (isFinal) {
         game.chiusuraTimeout = setTimeout(() => {

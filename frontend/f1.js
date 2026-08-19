@@ -3331,7 +3331,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // cui si è sicuri che la pista vada rivista.
         sipario(false);
         nascondiRiepilogoGriglia();
-        // "Riprova" riparte dalla premiazione: la scena col podio va tolta di
+        // "Riavvia" riparte dalla premiazione: la scena col podio va tolta di
         // mezzo, o resterebbe piantata sul traguardo per tutta la gara nuova.
         nascondiCerimonia();
         fermaCerimonia();
@@ -4116,7 +4116,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // insieme all'HUD di gioco rimasto acceso davanti al podio).
     //
     // Si nascondono le auto invece di fermare la simulazione: la gara deve
-    // poter chiudersi normalmente per chi è ancora in pista, e "Riprova"
+    // poter chiudersi normalmente per chi è ancora in pista, e "Riavvia"
     // riparte da quella stessa partita.
     function mostraAutoDiGara(visibili) {
         if (myCarGroup) myCarGroup.visible = visibili;
@@ -4247,15 +4247,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         // ── Uscita ──────────────────────────────────────────────────────
-        const riprova = document.getElementById('rc-riprova');
+        const riavvia = document.getElementById('rc-riavvia');
         const inLobby = document.getElementById('rc-lobby');
         const conto = document.getElementById('rc-conto');
 
-        // "Riprova" rilancia la gara con la stessa griglia: ha senso solo in
-        // modalità singola e solo per chi ospita.
-        const puoiRiprovare = !!data.restaAlPodio && myColor === hostColor;
-        riprova.style.display = puoiRiprovare ? '' : 'none';
-        riprova.onclick = () => { sequenzaCorrente++; socket.emit('f1RestartRace', lobbyId); };
+        // "Riavvia" rimette in moto QUESTA partita dalla qualifica: ha senso
+        // solo in modalità singola e solo per chi ospita.
+        const puoiRiavviare = !!data.restaAlPodio && myColor === hostColor;
+        riavvia.style.display = puoiRiavviare ? '' : 'none';
+        riavvia.onclick = () => { sequenzaCorrente++; socket.emit('f1RestartRace', lobbyId); };
 
         // Il pulsante porta in lobby CHI LO PREME. Solo chi ospita chiude la
         // partita per tutti: un giocatore qualunque non deve poter strappare
@@ -4284,10 +4284,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (box) box.style.display = 'none';
     }
 
-    // Dissolvenza a nero durante la pausa "Riprova" (RESTART_GRACE_MS lato
-    // server, vedi backend): copre il riposizionamento dell'auto alla
-    // griglia, che altrimenti si vedrebbe "teletrasportata" appena il
-    // podio si chiude. Il fade-out finisce all'incirca quando arriva
+    // Dissolvenza a nero durante la pausa "Riavvia" (RESTART_GRACE_MS lato
+    // server, vedi backend): copre il riposizionamento dell'auto al via
+    // della qualifica, che altrimenti si vedrebbe "teletrasportata" appena
+    // il podio si chiude. Il fade-out finisce all'incirca quando arriva
     // f1Countdown (che nasconde comunque podium-modal per conto suo, in
     // modo idempotente — nessun conflitto se questo handler lo ha già
     // fatto sparire prima).

@@ -554,7 +554,7 @@
         <div class="rc-fascia">
             <ol class="rc-lista" id="rc-lista"></ol>
             <div class="rc-comandi">
-                <button type="button" class="rc-btn" id="rc-riprova">Riprova</button>
+                <button type="button" class="rc-btn" id="rc-riavvia">Riavvia</button>
                 <button type="button" class="rc-btn rc-btn-primario" id="rc-lobby">Torna alla lobby</button>
                 <span class="rc-conto" id="rc-conto"></span>
             </div>
@@ -588,10 +588,10 @@
         </div>
     </div>
 
-    <!-- Dissolvenza a nero durante la pausa "Riprova" (solo modalità
-         singola) — copre il riposizionamento alla griglia, vedi
+    <!-- Dissolvenza a nero durante la pausa "Riavvia" (solo modalità
+         singola) — copre il riposizionamento al via della qualifica, vedi
          f1RestartTransition in f1.js -->
-    <div id="restart-transition" class="restart-transition" style="display:none;">PROSSIMA GARA…</div>
+    <div id="restart-transition" class="restart-transition" style="display:none;">SI RICOMINCIA…</div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -650,7 +650,7 @@
     <!-- nell'indirizzo. Deve precedere lo script di gioco, che le usa subito. -->
     <script src="shared/impostazioniGara.js?v=20260818a"></script>
     <script src="shared/sessioneGiocatore.js?v=20260818a"></script>
-    <script src="f1.js?v=20260819y"></script>
+    <script src="f1.js?v=20260819z"></script>
 </body>
 
 </html>
