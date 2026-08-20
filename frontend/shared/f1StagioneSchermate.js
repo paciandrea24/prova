@@ -31,7 +31,10 @@
     // vale per tutti. Gli altri non hanno un elenco da sfogliare — aspettano,
     // e vengono portati dentro quando lui sceglie. Dal calendario si torna
     // all'elenco solo se quell'elenco e' tuo.
-    const PRECEDENTE = { calendario: 'scelta', scelta: null, attesa: null, account: null };
+    // Dal riepilogo non si torna indietro: si va AVANTI al calendario, e il
+    // pulsante per farlo e' li' in mezzo alla schermata. La gara e' finita, non
+    // c'e' niente a cui tornare.
+    const PRECEDENTE = { calendario: 'scelta', scelta: null, attesa: null, account: null, riepilogo: null };
     let vistaCorrente = 'attesa';
 
     // Il titolo dice dove SEI, e non e' sempre "le tue stagioni": a chi non ha
@@ -48,7 +51,7 @@
         // Il calendario scrive il nome della stagione da se', appena l'ha
         // letta: non c'e' un titolo fisso da mettere qui.
         if (TITOLO[quale]) testo(el('stagione-titolo'), TITOLO[quale]);
-        for (const v of ['scelta', 'calendario', 'attesa', 'account']) {
+        for (const v of ['scelta', 'calendario', 'riepilogo', 'attesa', 'account']) {
             const n = el('stagione-vista-' + v);
             if (n) n.style.display = (v === quale) ? '' : 'none';
         }
@@ -81,6 +84,67 @@
         return (t && t.name) || id;
     }
 
+    // I piloti umani non hanno un nome: la piattaforma li identifica col
+    // COLORE, ed e' una scelta gia' presa altrove (mai nickname, solo colore).
+    // Il pallino accanto fa il riconoscimento; qui basta distinguere se stessi
+    // dagli altri.
+    function etichettaPilota(riga, mioUid) {
+        if (riga.bot) return riga.nome || 'Bot';
+        return (riga.uid && riga.uid === mioUid) ? 'Tu' : 'Pilota';
+    }
+
+    // Una riga di elenco: posizione, colore, chi e', e un valore a destra.
+    // La usano tutte e tre le liste (classifica del calendario, ordine
+    // d'arrivo, classifica del riepilogo) — sono la stessa cosa vista in tre
+    // momenti diversi, e tenerle uguali e' quello che le rende confrontabili
+    // a colpo d'occhio.
+    //
+    // `delta` aggiunge la colonna del movimento in classifica; null la lascia
+    // fuori del tutto, invece di occupare spazio con un trattino.
+    function rigaPilota({ posizione, colore, etichetta, valore, mio, delta }) {
+        const li = document.createElement('li');
+        li.className = 'stagione-riga' + (mio ? ' sono-io' : '') + (delta != null ? ' con-delta' : '');
+
+        const pos = document.createElement('span');
+        pos.className = 'stagione-pos';
+        pos.textContent = String(posizione);
+
+        const pallino = document.createElement('span');
+        pallino.className = 'stagione-pallino';
+        pallino.style.background = colore || '#888';
+
+        const nome = document.createElement('span');
+        nome.className = 'stagione-nome';
+        // textContent e mai innerHTML: il nome di un bot lo decide il server,
+        // ma questa funzione la useranno anche liste che non lo fanno.
+        nome.textContent = etichetta;
+
+        li.appendChild(pos);
+        li.appendChild(pallino);
+        li.appendChild(nome);
+
+        if (delta != null) {
+            const d = document.createElement('span');
+            d.className = 'stagione-delta';
+            li.appendChild(d);
+            scriviDelta(d, delta);
+        }
+
+        const val = document.createElement('span');
+        val.className = 'stagione-punti';
+        val.textContent = String(valore);
+        li.appendChild(val);
+        return li;
+    }
+
+    // ▲/▼ e di quanto. Glifi geometrici, non emoji (regola del progetto).
+    function scriviDelta(nodo, delta) {
+        if (!nodo) return;
+        const su = delta > 0, giu = delta < 0;
+        nodo.className = 'stagione-delta ' + (su ? 'su' : giu ? 'giu' : 'fermo');
+        nodo.textContent = su ? '▲' + delta : giu ? '▼' + Math.abs(delta) : '–';
+    }
+
     /**
      * @param {object} opzioni
      * @param {object} opzioni.socket       il socket della partita
@@ -92,10 +156,16 @@
      * @param {() => void} opzioni.versoLobby  come si esce dalla partita
      * @param {string|null} opzioni.stagioneIniziale  la stagione gia' in corso,
      *        se si rientra dopo una sua gara: si apre direttamente su quella
+     * @param {{stagioneId:string,pista:string}|null} opzioni.garaAppenaCorsa
+     *        il segno lasciato prima di tornare al calendario: se c'e' ed e'
+     *        di questa stagione, invece del calendario si apre il RIEPILOGO
+     *        della gara. Chi lo raccoglie e lo cancella e' f1.js — qui non si
+     *        sa niente di dove sia scritto.
      * @returns {{chiudi: () => void}}
      */
     function monta(opzioni) {
-        const { socket, lobbyId, sonoHost, tokenDi, piste, mioUid, versoLobby, stagioneIniziale } = opzioni;
+        const { socket, lobbyId, sonoHost, tokenDi, piste, mioUid, versoLobby,
+            stagioneIniziale, garaAppenaCorsa } = opzioni;
         const overlay = el('stagione-overlay');
         overlay.style.display = 'flex';
         // Le due condizioni per poter scegliere un campionato: ospitare la
@@ -225,7 +295,10 @@
 
         let apertaId = null;
 
-        async function mostraStagione(id) {
+        // Leggere una stagione e disegnarla sono due cose diverse: dal
+        // riepilogo si passa al calendario senza rileggere niente, perche' la
+        // stagione e' gia' in mano.
+        async function mostraStagione(id, opzioni) {
             let stagione, ripresa;
             try {
                 const risposta = await chiedi(tokenDi, '/api/f1/stagioni/'
@@ -245,6 +318,20 @@
                 return;
             }
             apertaId = stagione._id;
+
+            // Ci si arriva in due modi: rientrando da una gara appena corsa, e
+            // allora si passa dal riepilogo; oppure aprendo la stagione, e
+            // allora si va dritti al calendario. Quale dei due lo dice il segno
+            // lasciato prima di ricaricare la pagina — e se quel segno vale
+            // davvero lo dice F1Stagione.garaDaRiepilogare.
+            const gara = (opzioni && opzioni.daGara)
+                ? F1Stagione.garaDaRiepilogare(stagione, opzioni.daGara)
+                : null;
+            if (gara != null) disegnaRiepilogo(stagione, gara, ripresa);
+            else disegnaCalendario(stagione, ripresa);
+        }
+
+        function disegnaCalendario(stagione, ripresa) {
             testo(el('stagione-titolo'), stagione.nome);
 
             // Elimina compare solo a chi l'ha creata (il server rifiuta gli
@@ -274,28 +361,13 @@
             const cls = el('stagione-classifica');
             cls.innerHTML = '';
             for (const riga of F1Stagione.classifica(stagione)) {
-                const li = document.createElement('li');
-                li.className = 'stagione-riga';
-                const pos = document.createElement('span');
-                pos.className = 'stagione-pos';
-                pos.textContent = String(riga.posizione);
-                const pallino = document.createElement('span');
-                pallino.className = 'stagione-pallino';
-                pallino.style.background = riga.colore || '#888';
-                const nome = document.createElement('span');
-                nome.className = 'stagione-nome';
-                // I piloti umani non hanno un nome: la piattaforma li
-                // identifica col COLORE, ed e' una scelta gia' presa altrove
-                // (mai nickname, solo colore). Il pallino accanto fa il
-                // riconoscimento; qui basta distinguere se stessi dagli altri.
-                nome.textContent = riga.bot ? (riga.nome || 'Bot')
-                    : (riga.uid && riga.uid === mioUid ? 'Tu' : 'Pilota');
-                const punti = document.createElement('span');
-                punti.className = 'stagione-punti';
-                punti.textContent = String(riga.punti);
-                li.appendChild(pos); li.appendChild(pallino);
-                li.appendChild(nome); li.appendChild(punti);
-                cls.appendChild(li);
+                cls.appendChild(rigaPilota({
+                    posizione: riga.posizione,
+                    colore: riga.colore,
+                    etichetta: etichettaPilota(riga, mioUid),
+                    valore: riga.punti,
+                    mio: !!(riga.uid && riga.uid === mioUid),
+                }));
             }
 
             const finita = F1Stagione.finita(stagione);
@@ -327,6 +399,127 @@
                 testo(el('stagione-nota'), '');
             }
             mostraVista('calendario');
+        }
+
+        // ── il riepilogo di fine gara ──────────────────────────────────
+        // Com'e' finita la gara appena corsa, e cosa ha cambiato in campionato.
+        // Ci si passa soltanto: non e' una schermata che si possa riaprire.
+        function disegnaRiepilogo(stagione, indice, ripresa) {
+            const r = F1Stagione.riepilogoGara(stagione, indice);
+            // Niente da riepilogare non e' un errore: e' una stagione aperta
+            // normalmente, e il calendario e' esattamente dove si voleva
+            // andare.
+            if (!r) { disegnaCalendario(stagione, ripresa); return; }
+
+            testo(el('stagione-titolo'), stagione.nome);
+            testo(el('stagione-riepilogo-gara'),
+                `Gara ${r.numero} di ${r.totale} · ${nomePista(piste, r.pista)}`);
+
+            const arrivo = el('stagione-arrivo');
+            arrivo.innerHTML = '';
+            for (const x of r.arrivo) {
+                const li = rigaPilota({
+                    posizione: x.posizione,
+                    colore: x.colore,
+                    etichetta: etichettaPilota(x, mioUid),
+                    // Fuori dai punti si scrive un trattino e non uno zero: da
+                    // undicesimo in giu' non e' che hai preso zero punti, e'
+                    // che i punti finiscono prima di te.
+                    valore: x.puntiPresi ? '+' + x.puntiPresi : '–',
+                    mio: !!(x.uid && x.uid === mioUid),
+                });
+                if (x.posizione === 1) li.classList.add('vincitore');
+                arrivo.appendChild(li);
+            }
+
+            // Le righe nascono nell'ordine e coi numeri di PRIMA della gara:
+            // e' da li' che parte l'animazione.
+            const cls = el('stagione-riepilogo-classifica');
+            cls.innerHTML = '';
+            const righe = r.dopo.map((x) => {
+                const li = rigaPilota({
+                    posizione: x.posizionePrima,
+                    colore: x.colore,
+                    etichetta: etichettaPilota(x, mioUid),
+                    valore: x.punti - x.puntiPresi,
+                    mio: !!(x.uid && x.uid === mioUid),
+                    // La colonna del movimento c'e' da subito anche se vuota:
+                    // farla comparire alla fine sposterebbe tutte le altre.
+                    delta: r.primaGara ? null : 0,
+                });
+                cls.appendChild(li);
+                return { li, dati: x };
+            });
+
+            testo(el('stagione-riepilogo-nota'), r.ultima
+                ? 'Era l’ultima gara del calendario.'
+                : `Prossima: ${nomePista(piste, stagione.calendario[stagione.giro])}`);
+            el('stagione-al-calendario').onclick = () => disegnaCalendario(stagione, ripresa);
+
+            // Prima si mostra, poi si anima: a schermata nascosta le righe non
+            // hanno un'altezza, e l'animazione non saprebbe di quanto spostarle.
+            mostraVista('riepilogo');
+            animaClassifica(cls, righe);
+        }
+
+        // Ogni riga sta gia' al suo posto FINALE nel DOM: quello che si anima
+        // e' uno scostamento verticale che parte da dov'era prima e va a zero.
+        // Riordinare i nodi a meta' corsa vorrebbe dire spostarli mentre si
+        // stanno gia' muovendo.
+        function animaClassifica(lista, righe) {
+            const ATTESA = 550, DURATA = 900;
+
+            function stampaFinale(x) {
+                x.li.style.transform = '';
+                x.li.querySelector('.stagione-pos').textContent = String(x.dati.posizione);
+                x.li.querySelector('.stagione-punti').textContent = String(x.dati.punti);
+                scriviDelta(x.li.querySelector('.stagione-delta'), x.dati.movimento);
+            }
+
+            const passo = righe.length > 1
+                ? righe[1].li.getBoundingClientRect().top - righe[0].li.getBoundingClientRect().top
+                : 0;
+            const daMostrare = righe.some(x => x.dati.movimento !== 0 || x.dati.puntiPresi > 0);
+            // Senza anime.js, o senza niente da animare, si va dritti allo
+            // stato finale: una schermata ferma sui numeri VECCHI direbbe il
+            // falso, ed e' peggio di una senza animazione.
+            if (typeof anime !== 'function' || passo <= 0 || !daMostrare) {
+                righe.forEach(stampaFinale);
+                return;
+            }
+
+            lista.classList.add('in-movimento');
+            for (const x of righe) {
+                x.li.style.transform =
+                    `translateY(${(x.dati.posizionePrima - x.dati.posizione) * passo}px)`;
+            }
+
+            // UN solo tempo per tutto: lo scorrimento delle righe, i punti che
+            // salgono e la stampa dello stato finale. Con animazioni separate
+            // piu' un setTimeout a chiuderle, l'ultima a terminare riscrive
+            // quello che le altre hanno gia' finito — ed e' successo davvero:
+            // le posizioni erano quelle nuove e i punti erano rimasti vecchi.
+            const stato = { t: 0 };
+            anime({
+                targets: stato, t: 1,
+                duration: DURATA, delay: ATTESA, easing: 'easeInOutQuad',
+                update: () => {
+                    const resta = 1 - stato.t;
+                    for (const x of righe) {
+                        const scarto = (x.dati.posizionePrima - x.dati.posizione) * passo * resta;
+                        x.li.style.transform = `translateY(${scarto}px)`;
+                        if (!x.dati.puntiPresi) continue;
+                        x.li.querySelector('.stagione-punti').textContent =
+                            String(Math.round(x.dati.punti - x.dati.puntiPresi * resta));
+                    }
+                },
+                // Posizioni e frecce si scrivono solo qui: durante il movimento
+                // direbbero un posto in cui la riga non e' ancora arrivata.
+                complete: () => {
+                    lista.classList.remove('in-movimento');
+                    righe.forEach(stampaFinale);
+                },
+            });
         }
 
         // ── navigazione ────────────────────────────────────────────────
@@ -420,7 +613,7 @@
             // playtest. Si aspetta in silenzio, con scritto cosa si aspetta.
             testo(el('stagione-attesa-testo'), 'Un momento…');
             mostraVista('attesa');
-            mostraStagione(stagioneIniziale);
+            mostraStagione(stagioneIniziale, { daGara: garaAppenaCorsa });
         } else if (sonoHost) {
             mostraVista('scelta');
             caricaElenco();

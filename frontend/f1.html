@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260820c">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260820d">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -528,7 +528,38 @@
                 </div>
             </section>
 
-            <!-- 3. NON SEI TU A DECIDERE.
+            <!-- 3. RIEPILOGO: si torna da una gara del campionato.
+                 Non e' una schermata che si puo' aprire: ci si passa soltanto,
+                 rientrando dal podio. Chi riapre la stessa stagione domani
+                 trova il calendario, non questa. -->
+            <section class="stagione-vista" id="stagione-vista-riepilogo" style="display:none;">
+                <div class="stagione-riepilogo-dove">
+                    <span class="stagione-riepilogo-etichetta">Riepilogo</span>
+                    <span id="stagione-riepilogo-gara">&mdash;</span>
+                </div>
+                <div class="stagione-colonne">
+                    <div class="stagione-col">
+                        <div class="stagione-sezione">Ordine d&rsquo;arrivo</div>
+                        <ol class="stagione-classifica" id="stagione-arrivo"></ol>
+                    </div>
+                    <div class="stagione-col">
+                        <!-- La classifica di campionato parte da com'era PRIMA
+                             di questa gara e si aggiorna sotto gli occhi: e' il
+                             solo momento in cui si vede cosa ha cambiato la
+                             gara appena corsa. -->
+                        <div class="stagione-sezione">Campionato</div>
+                        <ol class="stagione-classifica" id="stagione-riepilogo-classifica"></ol>
+                    </div>
+                </div>
+                <div class="stagione-comandi">
+                    <p class="stagione-nota" id="stagione-riepilogo-nota"></p>
+                    <button type="button" class="stagione-btn stagione-btn-primario" id="stagione-al-calendario">
+                        Vai al calendario
+                    </button>
+                </div>
+            </section>
+
+            <!-- 4. NON SEI TU A DECIDERE.
                  Il campionato lo sceglie chi ospita, e vale per tutti: gli
                  altri non hanno un elenco da sfogliare, aspettano e vengono
                  portati dentro quando lui sceglie. -->
@@ -536,7 +567,7 @@
                 <p class="stagione-attesa" id="stagione-attesa-testo">In attesa che chi ospita scelga il campionato&hellip;</p>
             </section>
 
-            <!-- 4. SENZA ACCOUNT.
+            <!-- 5. SENZA ACCOUNT.
                  Un campionato si salva per account: senza, non lo si potrebbe
                  ne' ritrovare ne' riprendere. Non e' un errore da nascondere,
                  e' l'unica cosa che quel giocatore deve leggere. -->
@@ -779,9 +810,9 @@
     <!-- Le regole del campionato (punti, classifica, calendario) e le sue
          schermate. Le regole girano UGUALI sul server: vedi
          backend/routes/f1Stagioni.js, che richiede lo stesso file. -->
-    <script src="shared/f1Stagione.js?v=20260820a"></script>
-    <script src="shared/f1StagioneSchermate.js?v=20260820f"></script>
-    <script src="f1.js?v=20260820i"></script>
+    <script src="shared/f1Stagione.js?v=20260820b"></script>
+    <script src="shared/f1StagioneSchermate.js?v=20260820g"></script>
+    <script src="f1.js?v=20260820j"></script>
 </body>
 
 </html>

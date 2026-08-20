@@ -221,6 +221,24 @@
         };
     }
 
+    // Di quale gara va mostrato il riepilogo, dato il segno lasciato prima di
+    // tornare al calendario ({ stagioneId, pista }).
+    //
+    // Non basta "c'è un segno": deve essere il segno di QUESTA stagione e della
+    // gara che risulta davvero corsa. Un segno rimasto in giro da un'altra
+    // partita, o una gara il cui risultato non è stato registrato, darebbero il
+    // riepilogo di una gara che non hai appena corso — ed è la stessa forma di
+    // errore che nel progetto è già costata quattro volte: controllare che una
+    // cosa esista invece di controllare che sia quella giusta.
+    function garaDaRiepilogare(stagione, segno) {
+        if (!stagione || !segno || !segno.stagioneId) return null;
+        if (stagione._id !== segno.stagioneId) return null;
+        const i = stagione.risultati.length - 1;
+        if (i < 0) return null;
+        if (segno.pista && stagione.risultati[i].pista !== segno.pista) return null;
+        return i;
+    }
+
     // ---- riprendere una stagione -------------------------------------------
 
     // Regola dettata dall'utente: un salvataggio si riprende **solo con
@@ -243,7 +261,7 @@
         PUNTI, MIN_GARE, GARE_CONSIGLIATE,
         intervalloGare, puntiPerPosizione, mescola, sorteggiaCalendario,
         idPilota, creaStagione, garaCorrente, finita, registraRisultato,
-        classifica, vittorie, riepilogoGara, siPuoRiprendere,
+        classifica, vittorie, riepilogoGara, garaDaRiepilogare, siPuoRiprendere,
     };
 
 });

@@ -2997,6 +2997,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     // avrebbe fatto comparire "Torna alla lobby" su una gara di campionato.
     let campionatoTornaAlCalendario = garaDiCampionato;
 
+    // Il SEGNO lasciato da una gara di campionato appena finita.
+    //
+    // Fra una gara e l'altra la pagina si ricarica (e' la scelta che tiene
+    // intatto il codice del weekend), e la pagina che riparte non ha modo di
+    // sapere da sola che si arriva da una gara: senza segno mostrerebbe il
+    // calendario, mentre quello e' l'unico momento in cui ha senso mostrare il
+    // riepilogo. Sta in sessionStorage e non nell'indirizzo perche' e' roba di
+    // questa scheda e di questo momento: nessuno deve poterla incollare a un
+    // amico, e chiudendo il browser sparisce da se'.
+    //
+    // Si porta dietro anche la PISTA, non solo la stagione: al ritorno serve
+    // sapere che il risultato di quella gara e' stato davvero registrato, e non
+    // soltanto che una gara, qualche volta, e' stata corsa.
+    const SEGNO_GARA = 'f1StagioneDaGara';
+
+    function alCalendario() {
+        try {
+            sessionStorage.setItem(SEGNO_GARA, JSON.stringify({
+                stagioneId: clientSettings.stagioneId || null,
+                pista: trackId,
+            }));
+        } catch (e) {
+            // Niente sessionStorage: si torna al calendario lo stesso, si
+            // perde solo il riepilogo. Non e' un motivo per non ricaricare.
+        }
+        window.location.reload();
+    }
+
+    // Si legge UNA VOLTA all'avvio e si cancella subito: il riepilogo si vede
+    // rientrando dalla gara, non ogni volta che si ricarica la pagina.
+    const garaAppenaCorsa = (() => {
+        try {
+            const grezzo = sessionStorage.getItem(SEGNO_GARA);
+            sessionStorage.removeItem(SEGNO_GARA);
+            const segno = grezzo ? JSON.parse(grezzo) : null;
+            return (segno && segno.stagioneId) ? segno : null;
+        } catch (e) { return null; }
+    })();
+
     // Il token vive qui, che l'autenticazione ce l'ha gia' (vedi `user` in
     // cima): le schermate ne ricevono solo il modo di chiederlo, cosi' non
     // esiste un secondo posto che sa di Firebase. getIdToken() restituisce
@@ -3040,6 +3079,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // nel frattempo — un paio di secondi di "crea una nuova
                     // stagione" in faccia a chi ne stava giocando una.
                     stagioneIniziale: stagioneId || null,
+                    // Se si arriva da una gara di questa stagione, invece del
+                    // calendario si apre il riepilogo.
+                    garaAppenaCorsa,
                 });
             })
             .catch((e) => console.error('[F1] elenco piste per la stagione:', e));
@@ -4388,7 +4430,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // qualunque non deve poter strappare gli altri dalla premiazione.
         if (campionatoTornaAlCalendario) {
             inLobby.textContent = 'Vai al calendario';
-            inLobby.onclick = () => { window.location.reload(); };
+            inLobby.onclick = () => { alCalendario(); };
         } else {
             inLobby.textContent = 'Torna alla lobby';
             inLobby.onclick = () => {
@@ -4415,7 +4457,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             clearInterval(passo);
             if (campionatoTornaAlCalendario) {
                 conto.textContent = 'Al calendario…';
-                window.location.reload();
+                alCalendario();
                 return;
             }
             conto.textContent = 'Rientro in lobby…';
