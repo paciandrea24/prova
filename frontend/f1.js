@@ -4322,6 +4322,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }).catch(() => null);
     }
 
+    // I colori dei piloti viaggiano come stringhe CSS (#e74c3c): un materiale
+    // Three li vuole numerici.
+    function coloreEsadecimale(colore) {
+        const n = parseInt(String(colore || '').replace('#', ''), 16);
+        return Number.isFinite(n) ? n : 0xffffff;
+    }
+
     // Un'auto in mostra non deve rombare. Vale per tutte e due le cerimonie —
     // quella di fine gara e quella di fine mondiale.
     function zittisci(car) {
@@ -4427,9 +4434,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             gruppo.position.set(p.x, p.y || 0, p.z);
             gruppo.rotation.set(0, Math.atan2(-avanti.x, -avanti.z), 0);
 
-            if (miaSequenza !== sequenzaCorrente) { smaltisciAuto(gruppo); return null; }
+            // I coriandoli: tre emettitori, uno per colore del podio (una
+            // InstancedMesh ha un materiale solo, quindi un colore solo). Vanno
+            // nella SCENA e non nel gruppo: le loro particelle vivono in
+            // coordinate mondo, come i detriti, e dentro un gruppo ruotato
+            // verrebbero trasformate due volte.
+            const coriandoli = premiati.map((riga) => {
+                const mesh = costruisciEffettoParticelle(
+                    F1Particelle.CORIANDOLI, coloreEsadecimale(riga.colore), 0.95, { partiPieno: false });
+                mesh.visible = true;
+                scene.add(mesh);
+                return mesh;
+            });
+
+            if (miaSequenza !== sequenzaCorrente) {
+                smaltisciAuto(gruppo);
+                for (const m of coriandoli) scene.remove(m);
+                return null;
+            }
             scene.add(gruppo);
-            return { gruppo, attori, trofeo, base: { p, avanti, quota: p.y || 0 } };
+            return { gruppo, attori, trofeo, coriandoli, base: { p, avanti, quota: p.y || 0 } };
         }).catch(() => null);
     }
 
@@ -4473,7 +4497,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { visibile: true, pos: attore.gradino, rotY: 0 };
     }
 
-    function aggiornaPremiazione() {
+    function aggiornaPremiazione(dtMs) {
         if (!premiazione || !premiazione.scena) return;
         const stato = F1Premiazione.stato(premiazione.copione, performance.now() - premiazione.da);
 
@@ -4502,6 +4526,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             p.z - avanti.z * distanza + destra.z * scarto,
         );
         camera.lookAt(p.x, quota + misto(PRE_CAM_VICINO.mira, PRE_CAM_LARGO.mira, apertura), p.z);
+
+        // I coriandoli cadono solo sull'apoteosi. `emissione` a 0 non li spegne
+        // a mezz'aria: smette di farne nascere di nuovi e lascia scendere
+        // quelli che ci sono, che e' esattamente come finisce una pioggia.
+        const cori = premiazione.scena.coriandoli || [];
+        if (cori.length) {
+            const ancora = {
+                x: p.x, y: quota, z: p.z,
+                avantiX: avanti.x, avantiZ: avanti.z,
+            };
+            const emissione = stato.posto === 0 && stato.fase !== 'finita' ? 1 : 0;
+            for (const mesh of cori) {
+                aggiornaEffettoParticelle(mesh, dtMs || 16, { ancora, emissione });
+            }
+        }
 
         // Il trofeo cresce nei primi istanti dell'apoteosi invece di apparire
         // di colpo: e' l'unico oggetto che entra in scena senza guidarci.
@@ -4567,6 +4606,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (finita.scena) {
             scene.remove(finita.scena.gruppo);
             smaltisciAuto(finita.scena.gruppo);
+            for (const mesh of finita.scena.coriandoli || []) {
+                scene.remove(mesh);
+                if (mesh.material) mesh.material.dispose();
+            }
         }
         mostraAutoDiGara(true);
         camera.near = nearDiGioco;
@@ -5829,7 +5872,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         aggiornaTempiCorsia();
 
         if (tyreSelectActive) updateTyreSelectCamera();
-        else if (premiazione) aggiornaPremiazione();
+        else if (premiazione) aggiornaPremiazione(_dt);
         else if (panoramicaAttiva) aggiornaCameraPanoramica();
         else if (cerimoniaAttiva) aggiornaCameraCerimonia();
         else updateCamera();

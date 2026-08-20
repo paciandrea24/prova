@@ -91,6 +91,34 @@
         pavimento: 0,
     };
 
+    // ── I coriandoli della premiazione ──────────────────────────────────────
+    // Il terzo uso dello stesso sistema. Sono l'opposto dei detriti: non
+    // schizzano, PIOVONO — nascono in alto sopra il podio, scendono piano e si
+    // posano. La gravità è quella della carta, non quella della terra: a -9.5
+    // arriverebbero a terra in mezzo secondo e non si vedrebbero nemmeno.
+    const CORIANDOLI = {
+        numero: 90,
+        dimensione: 0.22,
+        vitaMs: 3400,
+        // Sopra il podio, su tutta la sua larghezza: il podio ingrandito è largo
+        // 19.2, e i coriandoli devono coprirlo tutto e un po' più in là.
+        nascita: {
+            avanti: [-7, 7],
+            lato: [-11, 11],
+            quota: [11, 17],
+        },
+        velocita: { avanti: 0, lato: 0, quota: -1.1 },
+        velocitaCasuale: { avanti: 2.4, lato: 2.4, quota: 1.4 },
+        // Molto più della scia: è quello che li fa svolazzare invece di cadere
+        // in linea retta come sassolini.
+        turbolenza: 1.7,
+        vitaVariazione: [0.55, 1.45],
+        gravita: -1.6,
+        scalaBase: [0.7, 1.5],
+        crescita: 0.05,
+        pavimento: 0,
+    };
+
     function fra(rand, coppia) {
         return coppia[0] + rand() * (coppia[1] - coppia[0]);
     }
@@ -234,7 +262,7 @@
     }
 
     return {
-        SCIA, DETRITI,
+        SCIA, DETRITI, CORIANDOLI,
         creaStato, riempi, rinasci, avanza, scalaDi,
         ANCORA_LOCALE,
     };
