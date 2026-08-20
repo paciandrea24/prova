@@ -548,13 +548,20 @@
                 // si chiamino i circuiti, e non e' il caso di insegnarglielo.
                 const cronaca = F1Stagione.cronaca(stagione).map(v => ({
                     numero: v.numero,
+                    // L'id serve a caricare il file della pista per disegnarne
+                    // la mappa; il nome serve a scriverlo a schermo.
+                    pistaId: v.pista,
                     pista: nomePista(piste, v.pista),
                     vincitore: {
                         etichetta: v.vincitore ? etichettaPilota(v.vincitore, mioUid) : '—',
                         colore: v.vincitore ? v.vincitore.colore : null,
                     },
-                    testa: v.classifica.slice(0, 2).map(r => ({
-                        etichetta: etichettaPilota(r, mioUid), colore: r.colore, punti: r.punti,
+                    // I primi cinque, non i primi due: la schermata nuova ha
+                    // una riga a barra per ciascuno, e cinque righe raccontano
+                    // un campionato meglio di due.
+                    testa: v.classifica.slice(0, 5).map(r => ({
+                        etichetta: etichettaPilota(r, mioUid), colore: r.colore,
+                        punti: r.punti, posizione: r.posizione,
                     })),
                 }));
                 const cerimonia = (typeof window !== 'undefined' && window.f1PremiazioneAvvia)

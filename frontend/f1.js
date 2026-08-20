@@ -4629,57 +4629,162 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (finita.risolvi) finita.risolvi(true);
     }
 
-    // L'annata, una tappa alla volta, sulla panoramica del circuito. Le barre si
-    // misurano sul punteggio FINALE del capoclassifica: cosi' l'ultima gara
-    // riempie la barra e non c'e' un riscalamento a meta' racconto, che
-    // renderebbe illeggibile proprio il confronto che si vuole mostrare.
+    // Il materiale della schermata dell'annata: una mappa e una scheda per
+    // ogni circuito del calendario. Si prepara PRIMA che la cerimonia
+    // cominci — richiesta esplicita dell'utente: «una volta che si arriva a
+    // questa animazione non possiamo aspettare che si carichi la mappa».
     //
-    // La cronaca arriva gia' pronta per essere scritta a schermo (nomi delle
-    // piste ed etichette dei piloti): qui non si sa chi sia l'utente, e
-    // nemmeno come si chiamino i circuiti.
-    function mostraAnnata(cronaca) {
+    // I file delle piste sono piccoli (poche decine di punti di controllo); il
+    // lavoro vero e' campionare il tracciato, e si fa una volta sola qui.
+    // Una pista che non si carica non ferma niente: quella tappa mostrera' il
+    // riquadro vuoto col suo nome.
+    function preparaMappe(cronaca) {
+        return Promise.all((cronaca || []).map((voce) =>
+            fetch('/tracks/' + encodeURIComponent(voce.pistaId) + '.json')
+                .then(r => r.json())
+                .then((dati) => {
+                    const punti = TrackGeometry.sampleLoop(dati.controlPoints, 400);
+                    const traguardo = dati.startFinish
+                        ? TrackGeometry.nearestPoint(punti, dati.startFinish.x, dati.startFinish.z).index
+                        : 0;
+                    return {
+                        punti, traguardo,
+                        profilo: F1ProfiloCircuito.profilo(punti, dati.targetKm || 10),
+                    };
+                })
+                .catch(() => null)
+        ));
+    }
+
+    const PA_NOMI_BARRETTE = {
+        trazione: 'Trazione',
+        stress: 'Stress gomme',
+        frenata: 'Frenata',
+        caricoAero: 'Carico aero',
+    };
+
+    function scriviSchedaCircuito(mappa) {
+        const giri = document.getElementById('pa-giri');
+        const distanza = document.getElementById('pa-distanza');
+        const lunghezza = document.getElementById('pa-lunghezza');
+        const barrette = document.getElementById('pa-barrette');
+        barrette.innerHTML = '';
+        if (!mappa) {
+            giri.textContent = distanza.textContent = lunghezza.textContent = '—';
+            return;
+        }
+        const profilo = mappa.profilo;
+        giri.textContent = profilo.giri;
+        distanza.innerHTML = (profilo.lunghezzaKm * profilo.giri).toFixed(1) + '<span class="unita">km</span>';
+        lunghezza.innerHTML = profilo.lunghezzaKm.toFixed(3) + '<span class="unita">km</span>';
+        for (const chiave of Object.keys(PA_NOMI_BARRETTE)) {
+            const voto = profilo.barrette[chiave];
+            const riga = document.createElement('div');
+            riga.className = 'pa-barretta';
+            const tacche = [1, 2, 3, 4, 5]
+                .map(i => `<span class="pa-tacca${i <= voto ? ' accesa' : ''}"></span>`).join('');
+            riga.innerHTML = `<span class="pa-barretta-nome">${PA_NOMI_BARRETTE[chiave]}</span>`
+                + `<span class="pa-tacche" role="img" aria-label="${PA_NOMI_BARRETTE[chiave]}: ${voto} su 5">${tacche}</span>`;
+            barrette.appendChild(riga);
+        }
+    }
+
+    function disegnaMappa(mappa) {
+        const canvas = document.getElementById('pa-mappa');
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!mappa) return;
+        F1Planimetria.disegna(ctx, mappa.punti, {
+            larghezza: canvas.width,
+            altezza: canvas.height,
+            margine: 34,
+            spessore: 9,
+            colore: '#8CAEB6',
+            coloreTraguardo: '#E9F3F5',
+            traguardo: mappa.traguardo,
+        });
+    }
+
+    // La classifica a quel punto della stagione: ogni riga e' una barra, e le
+    // barre si misurano sul punteggio FINALE del capoclassifica. Riscalarle a
+    // ogni tappa renderebbe illeggibile proprio il confronto che devono
+    // mostrare — a ogni gara sembrerebbe che nessuno guadagni niente.
+    function scriviClassificaAnnata(voce, massimo) {
+        const elenco = document.getElementById('pa-classifica');
+        elenco.innerHTML = '';
+        for (const riga of voce.testa) {
+            const li = document.createElement('li');
+            li.className = 'pa-riga';
+            const riempie = document.createElement('span');
+            riempie.className = 'pa-riempie';
+            riempie.style.background = riga.colore || '#888';
+            const testo = document.createElement('span');
+            testo.className = 'pa-riga-testo';
+            const pos = document.createElement('span');
+            pos.className = 'pa-riga-pos';
+            pos.textContent = String(riga.posizione);
+            const nome = document.createElement('span');
+            nome.className = 'pa-riga-nome';
+            nome.textContent = riga.etichetta;
+            const punti = document.createElement('span');
+            punti.className = 'pa-riga-punti';
+            punti.textContent = String(riga.punti);
+            testo.appendChild(pos); testo.appendChild(nome); testo.appendChild(punti);
+            li.appendChild(riempie); li.appendChild(testo);
+            elenco.appendChild(li);
+            // La larghezza si assegna dopo l'inserimento, cosi' la transizione
+            // CSS parte da zero e la barra cresce invece di comparire piena.
+            requestAnimationFrame(() => {
+                riempie.style.width = Math.round((riga.punti / massimo) * 100) + '%';
+            });
+        }
+    }
+
+    // L'annata, una tappa alla volta, in una schermata sorella di quella delle
+    // mescole: i dati del circuito a sinistra, la sua MAPPA al centro, il
+    // campionato a destra.
+    function mostraAnnata(cronaca, mappe) {
         if (!cronaca || !cronaca.length) return Promise.resolve();
         const durata = Math.max(PRE_ANNATA_MIN, cronaca.length * PRE_GARA_MS);
         const passo = durata / cronaca.length;
         const massimo = Math.max(1, ...cronaca.map(v => (v.testa[0] ? v.testa[0].punti : 0)));
         const box = document.getElementById('premiazione-annata');
+        const velo = document.getElementById('pa-velo');
         box.style.display = '';
-        avviaPanoramica(durata);
-        // La camera della panoramica va messa a posto SUBITO: il sipario sta per
-        // calare, e sotto ci deve essere gia' il circuito, non l'ultimo frame di
-        // gioco.
-        aggiornaCameraPanoramica();
         sipario(false, 420);
 
         return new Promise((risolvi) => {
             let i = 0;
             const chiudi = () => {
-                // Si richiude prima di passare al podio, e la panoramica NON si
-                // spegne qui: spegnere una camera prima di averne accesa
-                // un'altra vuol dire tornare per un istante a quella di gioco.
+                // Si richiude prima di passare al podio: il sipario copre il
+                // salto fra la schermata e la scena.
                 sipario(true, 260);
-                box.style.display = 'none';
-                setTimeout(risolvi, 280);
+                setTimeout(() => { box.style.display = 'none'; risolvi(); }, 280);
             };
             const scrivi = () => {
                 if (!premiazioneInCorso) { chiudi(); return; }
                 const voce = cronaca[i];
-                document.getElementById('pa-numero').textContent = 'Gara ' + voce.numero;
+                const mappa = (mappe && mappe[i]) || null;
+                document.getElementById('pa-numero').textContent =
+                    'Gara ' + voce.numero + ' di ' + cronaca.length;
                 document.getElementById('pa-pista').textContent = voce.pista;
                 document.getElementById('pa-chi').textContent = voce.vincitore.etichetta;
                 document.getElementById('pa-pallino').style.background = voce.vincitore.colore || '#888';
-                for (const k of [0, 1]) {
-                    const riga = voce.testa[k];
-                    const barra = document.getElementById('pa-barra-' + (k + 1));
-                    const nome = document.getElementById('pa-nome-' + (k + 1));
-                    if (!riga) { barra.style.width = '0%'; nome.textContent = ''; continue; }
-                    barra.style.width = Math.round((riga.punti / massimo) * 100) + '%';
-                    barra.style.background = riga.colore || '#888';
-                    nome.textContent = riga.etichetta + ' ' + riga.punti;
-                }
+                scriviSchedaCircuito(mappa);
+                disegnaMappa(mappa);
+                scriviClassificaAnnata(voce, massimo);
+                // Il velo si accende un istante prima del cambio e si spegne
+                // subito dopo: e' lo stacco fra una mappa e l'altra.
+                velo.style.opacity = '0';
                 i += 1;
-                setTimeout(i < cronaca.length ? scrivi : chiudi, passo);
+                if (i < cronaca.length) {
+                    setTimeout(() => { velo.style.opacity = '1'; }, Math.max(0, passo - 260));
+                    setTimeout(scrivi, passo);
+                } else {
+                    setTimeout(chiudi, passo);
+                }
             };
+            velo.style.opacity = '0';
             scrivi();
         });
     }
@@ -4699,12 +4804,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         // farebbe arrivare in ritardo sul proprio ingresso, ed e' l'errore gia'
         // fatto una volta con l'auto in pole del riepilogo griglia.
         const scenaPronta = costruisciPremiazione(righe, tutte);
+        // Anche le mappe dell'annata: lo stacco dura 4.2 s, ed e' li' che si
+        // paga il caricamento che l'utente ha accettato («accetto un
+        // caricamento per arrivarci»). Se non bastasse, si aspetta a sipario
+        // chiuso — mai davanti alla schermata gia' aperta.
+        const mappePronte = preparaMappe(cronaca);
         return F1Sting.play({
             titolo: 'Campione del mondo',
             sottotitolo: nome || '',
             durataMs: PRE_STING_MS,
         })
-            .then(() => (premiazioneInCorso ? mostraAnnata(cronaca) : null))
+            .then(() => mappePronte)
+            .then((mappe) => (premiazioneInCorso ? mostraAnnata(cronaca, mappe) : null))
             .then(() => scenaPronta)
             .then((scena) => {
                 if (!premiazioneInCorso) {

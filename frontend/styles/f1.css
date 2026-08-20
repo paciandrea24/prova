@@ -2017,6 +2017,175 @@ body.in-cerimonia .hud { display: none !important; }
 #premiazione-fascia.campione { border-color: #E23127; }
 #premiazione-fascia.campione #premiazione-posto { color: #E23127; }
 
+/* ====================================================================
+   PREMIAZIONE — L'ANNATA CHE SCORRE
+   Stessa pianta della pagina mescole (tre colonne, la cosa da guardare al
+   centro), stessa palette: e' la sua sorella di fine stagione. Le variabili
+   sono ricopiate perche' questo nodo vive fuori dagli altri due overlay, e le
+   custom property ereditano dall'antenato.
+   ==================================================================== */
+#premiazione-annata {
+    --pa-fondo-a: #123138;
+    --pa-fondo-b: #08191E;
+    --pa-lavagna: #163A44;
+    --pa-filo: rgba(255, 255, 255, 0.10);
+    --pa-testo: #E9F3F5;
+    --pa-tenue: #8CAEB6;
+    --pa-cordolo: #E23127;
+
+    position: fixed;
+    inset: 0;
+    z-index: 41;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(10px, 2.5vh, 34px);
+    color: var(--pa-testo);
+    font-family: 'Fredoka', 'Trebuchet MS', sans-serif;
+    /* Fondo PIENO, non velato: dietro c'e' la scena di gioco con la camera di
+       gioco, e da un fondo semitrasparente si intravedrebbe la propria auto
+       ferma in pista — che e' il difetto appena chiuso col sipario. */
+    background: radial-gradient(120% 90% at 22% 15%, var(--pa-fondo-a), var(--pa-fondo-b) 72%);
+}
+.pa-foglio {
+    width: 100%;
+    max-width: 1280px;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(10px, 1.8vh, 22px);
+}
+.pa-testata { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.pa-numero {
+    font-size: 11px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--pa-testo); background: var(--pa-cordolo);
+    padding: 4px 12px; border-radius: 999px;
+}
+.pa-pista { margin: 0; font-size: clamp(22px, 3.4vh, 38px); font-weight: 800; }
+.pa-schermo {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr 1fr;
+    gap: clamp(14px, 2vw, 30px);
+    align-items: start;
+}
+.pa-col { display: flex; flex-direction: column; gap: clamp(6px, 1vh, 14px); min-width: 0; }
+.pa-sezione {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 800; letter-spacing: 3px;
+    text-transform: uppercase; color: var(--pa-testo);
+}
+.pa-sezione::before {
+    content: ''; width: 14px; height: 3px;
+    background: var(--pa-cordolo); border-radius: 2px;
+}
+.pa-dati { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.pa-dati div {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 8px 12px; border-radius: 8px; background: var(--pa-lavagna);
+}
+.pa-dati dt { font-size: 13px; color: var(--pa-tenue); }
+.pa-dati dd { margin: 0; font-weight: 800; font-variant-numeric: tabular-nums; }
+.pa-dati .unita { font-size: 11px; color: var(--pa-tenue); margin-left: 3px; }
+
+/* Le barrette del carattere, come nella pagina mescole. */
+.pa-barrette { display: flex; flex-direction: column; gap: 6px; }
+.pa-barretta { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pa-barretta-nome { font-size: 12px; color: var(--pa-tenue); }
+.pa-tacche { display: flex; gap: 3px; }
+.pa-tacca {
+    width: 16px; height: 6px; border-radius: 2px;
+    background: rgba(255, 255, 255, 0.12);
+}
+.pa-tacca.accesa { background: var(--pa-cordolo); }
+
+/* La mappa. */
+.pa-cornice {
+    position: relative;
+    border-radius: 12px;
+    background: var(--pa-lavagna);
+    border: 1px solid var(--pa-filo);
+    overflow: hidden;
+}
+/* La regola globale qui sopra prende OGNI canvas e lo stende a schermo intero
+   (serve a quello del gioco): la mappa deve disdirla punto per punto, come fa
+   gia' il canvas dell'anteprima mescole. Senza, il tracciato si disegna largo
+   quanto la finestra e passa dietro tutte le colonne. */
+canvas#pa-mappa {
+    display: block;
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    width: 100% !important;
+    height: auto !important;
+}
+.pa-velo {
+    position: absolute; inset: 0; background: #08191E;
+    opacity: 0; transition: opacity 260ms ease; pointer-events: none;
+}
+.pa-vincitore { display: flex; align-items: center; gap: 10px; justify-content: center; }
+.pa-pallino { width: 13px; height: 13px; border-radius: 50%; }
+.pa-vince { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--pa-tenue); }
+.pa-chi { font-size: 18px; font-weight: 800; }
+
+/* La classifica a quel punto della stagione: ogni riga e' una barra, cosi' il
+   duello per il titolo si vede nella forma e non solo nei numeri. */
+.pa-classifica { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.pa-riga {
+    position: relative; height: 30px; border-radius: 7px;
+    background: rgba(255, 255, 255, 0.07); overflow: hidden;
+}
+.pa-riempie {
+    position: absolute; inset: 0 auto 0 0; width: 0;
+    opacity: 0.55; transition: width 620ms ease;
+}
+.pa-riga-testo {
+    position: absolute; inset: 0; display: flex; align-items: center; gap: 8px;
+    padding: 0 10px; font-size: 13px; font-weight: 700;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.pa-riga-pos { color: var(--pa-tenue); font-size: 11px; font-weight: 800; min-width: 14px; }
+.pa-riga-nome { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pa-riga-punti { font-variant-numeric: tabular-nums; font-weight: 800; }
+
+@media (max-width: 1000px) {
+    .pa-schermo { grid-template-columns: 1fr; }
+}
+
+/* ====================================================================
+   PREMIAZIONE DI FINE MONDIALE — la fascia dei nomi
+   Sopra la scena 3D, in basso, come una grafica televisiva: il podio deve
+   restare tutto visibile. I colori sono ricopiati dalla palette delle
+   schermate della stagione perche' questo nodo vive FUORI da quell'overlay
+   (le custom property ereditano dall'antenato, e antenato non e').
+   ==================================================================== */
+#premiazione-fascia {
+    position: fixed;
+    left: 50%;
+    bottom: 7vh;
+    transform: translateX(-50%);
+    z-index: 41;                 /* sopra l'overlay della stagione, che intanto e' nascosto */
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 22px;
+    border-radius: 12px;
+    background: rgba(8, 25, 30, 0.86);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #E9F3F5;
+    font-family: 'Fredoka', 'Trebuchet MS', sans-serif;
+    white-space: nowrap;
+}
+#premiazione-posto { font-size: 22px; font-weight: 800; color: #8CAEB6; }
+#premiazione-pallino { width: 14px; height: 14px; border-radius: 50%; }
+#premiazione-chi { font-size: 22px; font-weight: 800; }
+#premiazione-punti { font-size: 14px; color: #8CAEB6; }
+/* Il modo per uscirne si vede, ma non compete col podio. */
+#premiazione-salta {
+    font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: #8CAEB6; opacity: 0.7; margin-left: 10px;
+}
+#premiazione-fascia.campione { border-color: #E23127; }
+#premiazione-fascia.campione #premiazione-posto { color: #E23127; }
+
 /* --- PREMIAZIONE: l'annata che scorre ---
    Una tappa alla volta sopra la panoramica del circuito, e in basso le due
    barre del duello per il titolo. Sta in alto a sinistra e non al centro: al
