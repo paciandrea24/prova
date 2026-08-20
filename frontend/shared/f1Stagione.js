@@ -205,11 +205,17 @@
         // avvenute.
         const primaGara = indice === 0;
 
-        const dopo = classifica(stagione, { fermaA: indice + 1 }).map(r => Object.assign({}, r, {
-            puntiPresi: presi.get(r.id) || 0,
-            posizionePrima: posizionePrima.get(r.id) || r.posizione,
-            movimento: primaGara ? 0 : (posizionePrima.get(r.id) || r.posizione) - r.posizione,
-        }));
+        const dopo = classifica(stagione, { fermaA: indice + 1 }).map((r) => {
+            // Alla prima gara "dov'era prima" è dove è adesso: non esisteva una
+            // classifica, e qualunque altro valore farebbe scorrere le righe da
+            // un ordine che non ha mai voluto dire niente.
+            const dovEra = primaGara ? r.posizione : (posizionePrima.get(r.id) || r.posizione);
+            return Object.assign({}, r, {
+                puntiPresi: presi.get(r.id) || 0,
+                posizionePrima: dovEra,
+                movimento: dovEra - r.posizione,
+            });
+        });
 
         return {
             pista: gara.pista,

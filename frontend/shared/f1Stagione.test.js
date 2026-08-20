@@ -279,6 +279,11 @@ test('alla prima gara il riepilogo non inventa movimenti', () => {
     const r = S.riepilogoGara(s, 0);
     assert.equal(r.primaGara, true);
     assert.ok(r.dopo.every(x => x.movimento === 0), 'alla prima gara nessuno si e mosso');
+    // E nemmeno "veniva da" un posto diverso: chi disegna usa questo numero
+    // per far scorrere le righe, e un valore qualunque le farebbe scorrere da
+    // un ordine che non ha mai voluto dire niente.
+    assert.ok(r.dopo.every(x => x.posizionePrima === x.posizione),
+        'alla prima gara le righe partirebbero da posizioni inventate');
 });
 
 test('un riepilogo di una gara non ancora corsa non esiste', () => {
