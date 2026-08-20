@@ -287,3 +287,23 @@ test('un riepilogo di una gara non ancora corsa non esiste', () => {
     assert.equal(S.riepilogoGara(s, -1), null);
     assert.equal(S.riepilogoGara(null, 0), null);
 });
+
+// ---- da quale gara si torna -------------------------------------------------
+
+test('il riepilogo si mostra solo se il segno e di QUESTA stagione e di QUELLA gara', () => {
+    let s = stagioneDiProva(['a', 'b']);
+    s = S.registraRisultato(s, { ordine: ['p1', 'p2', 'p3'] });
+    s._id = 'S1';
+
+    assert.equal(S.garaDaRiepilogare(s, { stagioneId: 'S1', pista: 'a' }), 0);
+    // Una stagione diversa: il segno e' di un'altra partita rimasta in giro.
+    assert.equal(S.garaDaRiepilogare(s, { stagioneId: 'ALTRA', pista: 'a' }), null);
+    // La pista non coincide: vuol dire che il risultato di quella gara NON e'
+    // stato registrato, e l'ultimo che c'e' e' di una gara precedente. Meglio
+    // nessun riepilogo che il riepilogo di una gara che non hai appena corso.
+    assert.equal(S.garaDaRiepilogare(s, { stagioneId: 'S1', pista: 'b' }), null);
+    assert.equal(S.garaDaRiepilogare(s, null), null);
+    // Nessuna gara corsa: non c'e' niente da riepilogare.
+    const vuota = Object.assign(stagioneDiProva(), { _id: 'S1' });
+    assert.equal(S.garaDaRiepilogare(vuota, { stagioneId: 'S1', pista: 'a' }), null);
+});
