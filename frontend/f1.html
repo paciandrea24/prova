@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260820e">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260820f">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -562,7 +562,36 @@
                 </div>
             </section>
 
-            <!-- 4. NON SEI TU A DECIDERE.
+            <!-- 4. ALBO D'ORO: la stagione e' finita.
+                 Ci si arriva alla fine della premiazione, e ci si torna ogni
+                 volta che si riapre una stagione conclusa: una stagione finita
+                 non ha un calendario da mostrare, ha un risultato. -->
+            <section class="stagione-vista" id="stagione-vista-albo" style="display:none;">
+                <div class="stagione-albo-testa">
+                    <span class="stagione-riepilogo-etichetta">Campione</span>
+                    <span class="stagione-albo-pallino" id="stagione-albo-pallino"></span>
+                    <span class="stagione-albo-chi" id="stagione-albo-chi">&mdash;</span>
+                    <span class="stagione-albo-punti" id="stagione-albo-punti"></span>
+                </div>
+                <div class="stagione-colonne">
+                    <div class="stagione-col">
+                        <div class="stagione-sezione">Classifica finale</div>
+                        <ol class="stagione-classifica" id="stagione-albo-classifica"></ol>
+                    </div>
+                    <div class="stagione-col">
+                        <div class="stagione-sezione">La stagione</div>
+                        <dl class="stagione-numeri" id="stagione-albo-numeri"></dl>
+                    </div>
+                </div>
+                <div class="stagione-comandi">
+                    <p class="stagione-nota" id="stagione-albo-nota"></p>
+                    <button type="button" class="stagione-btn stagione-btn-primario" id="stagione-albo-esci">
+                        Torna alla lobby
+                    </button>
+                </div>
+            </section>
+
+            <!-- 5. NON SEI TU A DECIDERE.
                  Il campionato lo sceglie chi ospita, e vale per tutti: gli
                  altri non hanno un elenco da sfogliare, aspettano e vengono
                  portati dentro quando lui sceglie. -->
@@ -570,7 +599,7 @@
                 <p class="stagione-attesa" id="stagione-attesa-testo">In attesa che chi ospita scelga il campionato&hellip;</p>
             </section>
 
-            <!-- 5. SENZA ACCOUNT.
+            <!-- 6. SENZA ACCOUNT.
                  Un campionato si salva per account: senza, non lo si potrebbe
                  ne' ritrovare ne' riprendere. Non e' un errore da nascondere,
                  e' l'unica cosa che quel giocatore deve leggere. -->
@@ -813,8 +842,8 @@
     <!-- Le regole del campionato (punti, classifica, calendario) e le sue
          schermate. Le regole girano UGUALI sul server: vedi
          backend/routes/f1Stagioni.js, che richiede lo stesso file. -->
-    <script src="shared/f1Stagione.js?v=20260820c"></script>
-    <script src="shared/f1StagioneSchermate.js?v=20260820h"></script>
+    <script src="shared/f1Stagione.js?v=20260820d"></script>
+    <script src="shared/f1StagioneSchermate.js?v=20260820i"></script>
     <script src="f1.js?v=20260820j"></script>
 </body>
 

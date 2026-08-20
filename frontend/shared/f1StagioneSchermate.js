@@ -34,7 +34,12 @@
     // Dal riepilogo non si torna indietro: si va AVANTI al calendario, e il
     // pulsante per farlo e' li' in mezzo alla schermata. La gara e' finita, non
     // c'e' niente a cui tornare.
-    const PRECEDENTE = { calendario: 'scelta', scelta: null, attesa: null, account: null, riepilogo: null };
+    // Dall'albo d'oro nemmeno: una stagione finita non ha un calendario a cui
+    // tornare. Si esce, e basta.
+    const PRECEDENTE = {
+        calendario: 'scelta', scelta: null, attesa: null, account: null,
+        riepilogo: null, albo: null,
+    };
     let vistaCorrente = 'attesa';
 
     // Il titolo dice dove SEI, e non e' sempre "le tue stagioni": a chi non ha
@@ -51,7 +56,7 @@
         // Il calendario scrive il nome della stagione da se', appena l'ha
         // letta: non c'e' un titolo fisso da mettere qui.
         if (TITOLO[quale]) testo(el('stagione-titolo'), TITOLO[quale]);
-        for (const v of ['scelta', 'calendario', 'riepilogo', 'attesa', 'account']) {
+        for (const v of ['scelta', 'calendario', 'riepilogo', 'albo', 'attesa', 'account']) {
             const n = el('stagione-vista-' + v);
             if (n) n.style.display = (v === quale) ? '' : 'none';
         }
@@ -358,6 +363,9 @@
                 ? F1Stagione.garaDaRiepilogare(stagione, opzioni.daGara)
                 : null;
             if (gara != null) disegnaRiepilogo(stagione, gara, ripresa);
+            // Una stagione conclusa si apre sul suo albo d'oro: il calendario
+            // non ha piu' niente da proporre.
+            else if (F1Stagione.finita(stagione)) disegnaAlbo(stagione);
             else disegnaCalendario(stagione, ripresa);
         }
 
@@ -514,12 +522,86 @@
             testo(el('stagione-riepilogo-nota'), r.ultima
                 ? 'Era l’ultima gara del calendario.'
                 : `Prossima: ${nomePista(piste, stagione.calendario[stagione.giro])}`);
-            el('stagione-al-calendario').onclick = () => disegnaCalendario(stagione, ripresa);
+
+            // Se quella era l'ultima gara di qui non si torna al calendario: si
+            // va alla premiazione.
+            const conclusa = F1Stagione.finita(stagione);
+            const avanti = el('stagione-al-calendario');
+            avanti.textContent = conclusa ? 'La premiazione' : 'Vai al calendario';
+            avanti.onclick = () => {
+                if (conclusa) disegnaAlbo(stagione);
+                else disegnaCalendario(stagione, ripresa);
+            };
 
             // Prima si mostra, poi si anima: a schermata nascosta le righe non
             // hanno un'altezza, e l'animazione non saprebbe di quanto spostarle.
             mostraVista('riepilogo');
             animaClassifica(cls, righe);
+        }
+
+        // ── l'albo d'oro ───────────────────────────────────────────────
+        // Una stagione finita non ha un calendario da mostrare: ha un
+        // risultato. Ci si arriva a fine premiazione, e ci si torna ogni volta
+        // che si riapre quella stagione.
+        function disegnaAlbo(stagione) {
+            const albo = F1Stagione.albo(stagione);
+            const campione = albo.campione;
+            testo(el('stagione-titolo'), stagione.nome);
+            testo(el('stagione-albo-chi'), campione ? etichettaPilota(campione, mioUid) : '—');
+            el('stagione-albo-pallino').style.background = (campione && campione.colore) || '#888';
+            testo(el('stagione-albo-punti'), campione
+                ? `${campione.punti} punti in ${albo.gare} ${albo.gare === 1 ? 'gara' : 'gare'}`
+                : '');
+
+            const cls = el('stagione-albo-classifica');
+            cls.innerHTML = '';
+            cls.appendChild(intestazioneClassifica());
+            for (const riga of albo.classifica) {
+                cls.appendChild(rigaPilota({
+                    posizione: riga.posizione,
+                    colore: riga.colore,
+                    etichetta: etichettaPilota(riga, mioUid),
+                    valore: riga.punti,
+                    vittorie: F1Stagione.vittorie(riga),
+                    mio: !!(riga.uid && riga.uid === mioUid),
+                }));
+            }
+
+            // I numeri del campione, e — se il campione non sono io — anche i
+            // miei: a chi guarda interessa com'e' andata a lui, non solo a chi
+            // ha vinto.
+            const mio = albo.classifica.find(r => r.uid && r.uid === mioUid);
+            const suoi = campione ? F1Stagione.numeriDi(stagione, campione.id) : null;
+            const miei = (mio && (!campione || mio.id !== campione.id))
+                ? F1Stagione.numeriDi(stagione, mio.id) : null;
+            const voci = [
+                ['Gare corse', String(albo.gare)],
+                ['Vittorie del campione', suoi ? String(suoi.vittorie) : '—'],
+                ['Podi del campione', suoi ? String(suoi.podi) : '—'],
+                ['Margine sul secondo', albo.margine ? `${albo.margine} punti` : 'nessuno'],
+            ];
+            if (miei) {
+                voci.push(['I tuoi punti', String(miei.punti)]);
+                voci.push(['Le tue vittorie', String(miei.vittorie)]);
+                voci.push(['Il tuo miglior arrivo', miei.miglioreArrivo ? `${miei.miglioreArrivo}°` : '—']);
+            }
+            const numeri = el('stagione-albo-numeri');
+            numeri.innerHTML = '';
+            for (const voce of voci) {
+                const riga = document.createElement('div');
+                const dt = document.createElement('dt');
+                dt.textContent = voce[0];
+                const dd = document.createElement('dd');
+                dd.textContent = voce[1];
+                riga.appendChild(dt);
+                riga.appendChild(dd);
+                numeri.appendChild(riga);
+            }
+
+            testo(el('stagione-albo-nota'), campione && campione.uid && campione.uid === mioUid
+                ? 'Campione del mondo.'
+                : '');
+            mostraVista('albo');
         }
 
         // Ogni riga sta gia' al suo posto FINALE nel DOM: quello che si anima
@@ -602,6 +684,7 @@
 
         el('stagione-indietro').addEventListener('click', tornaIndietro);
         el('stagione-esci').addEventListener('click', () => versoLobby && versoLobby());
+        el('stagione-albo-esci').addEventListener('click', () => versoLobby && versoLobby());
 
         // Esc fa la stessa cosa del pulsante: e' il gesto che chiunque prova
         // per primo per tornare indietro.

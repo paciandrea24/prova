@@ -1952,6 +1952,24 @@ body.in-cerimonia .hud { display: none !important; }
    non c'e' niente da riordinare a meta' animazione. */
 .stagione-classifica.in-movimento .stagione-riga { will-change: transform; }
 
+/* --- albo d'oro ---
+   La chiusura di una stagione: chi ha vinto in grande, la classifica finale e
+   i numeri dell'annata. Non e' un calendario piu' corto — e' un'altra cosa, e
+   si deve vedere dalla prima riga. */
+.stagione-albo-testa { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.stagione-albo-pallino { width: 18px; height: 18px; border-radius: 50%; }
+.stagione-albo-chi { font-size: clamp(20px, 3vh, 32px); font-weight: 800; }
+.stagione-albo-punti { font-size: 14px; color: var(--sel-tenue); }
+/* I numeri della stagione: etichetta a sinistra, valore a destra, come una
+   scheda tecnica. Nessuna icona — sono cifre, si leggono. */
+.stagione-numeri { margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.stagione-numeri div {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 8px 12px; border-radius: 8px; background: var(--sel-lavagna);
+}
+.stagione-numeri dt { font-size: 13px; color: var(--sel-tenue); }
+.stagione-numeri dd { margin: 0; font-weight: 800; font-variant-numeric: tabular-nums; }
+
 /* Una riga sola in fondo: a sinistra cosa c'e' da sapere, a destra cosa si
    puo' fare. Su due righe separate (com'era) i due pezzi finivano a due
    altezze diverse e sembravano scollegati. */
