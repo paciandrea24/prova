@@ -4570,7 +4570,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Il server non c'entra: la stagione e' gia' stata salvata dopo l'ultima
     // gara, e qui non c'e' piu' niente da scrivere.
     function avviaConsegna(scena, righe) {
-        if (!scena) return Promise.resolve(null);
+        // Niente scena (modello mancante, WebGL in ginocchio): la cerimonia
+        // finisce qui, ma va CHIUSA lo stesso — altrimenti la schermata resta
+        // nascosta e l'albo d'oro viene disegnato dietro le quinte.
+        if (!scena) { fermaPremiazione(); return Promise.resolve(null); }
         scena.gruppo.visible = true;
         mostraAutoDiGara(false);
         // Stesso piano vicino della panoramica: anche qui si guarda da lontano,
