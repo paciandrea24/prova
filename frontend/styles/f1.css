@@ -1980,3 +1980,39 @@ body.in-cerimonia .hud { display: none !important; }
 @media (max-width: 900px) {
     .stagione-colonne { grid-template-columns: 1fr; }
 }
+
+/* ====================================================================
+   PREMIAZIONE DI FINE MONDIALE — la fascia dei nomi
+   Sopra la scena 3D, in basso, come una grafica televisiva: il podio deve
+   restare tutto visibile. I colori sono ricopiati dalla palette delle
+   schermate della stagione perche' questo nodo vive FUORI da quell'overlay
+   (le custom property ereditano dall'antenato, e antenato non e').
+   ==================================================================== */
+#premiazione-fascia {
+    position: fixed;
+    left: 50%;
+    bottom: 7vh;
+    transform: translateX(-50%);
+    z-index: 41;                 /* sopra l'overlay della stagione, che intanto e' nascosto */
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 22px;
+    border-radius: 12px;
+    background: rgba(8, 25, 30, 0.86);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #E9F3F5;
+    font-family: 'Fredoka', 'Trebuchet MS', sans-serif;
+    white-space: nowrap;
+}
+#premiazione-posto { font-size: 22px; font-weight: 800; color: #8CAEB6; }
+#premiazione-pallino { width: 14px; height: 14px; border-radius: 50%; }
+#premiazione-chi { font-size: 22px; font-weight: 800; }
+#premiazione-punti { font-size: 14px; color: #8CAEB6; }
+/* Il modo per uscirne si vede, ma non compete col podio. */
+#premiazione-salta {
+    font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: #8CAEB6; opacity: 0.7; margin-left: 10px;
+}
+#premiazione-fascia.campione { border-color: #E23127; }
+#premiazione-fascia.campione #premiazione-posto { color: #E23127; }

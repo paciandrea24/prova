@@ -529,8 +529,24 @@
             const avanti = el('stagione-al-calendario');
             avanti.textContent = conclusa ? 'La premiazione' : 'Vai al calendario';
             avanti.onclick = () => {
-                if (conclusa) disegnaAlbo(stagione);
-                else disegnaCalendario(stagione, ripresa);
+                if (!conclusa) { disegnaCalendario(stagione, ripresa); return; }
+                // La premiazione la mette in scena la pagina di gioco: qui si
+                // sa chi ha vinto, non come si accende un podio. Se non si
+                // puo' fare (WebGL in ginocchio, modello mancante) si va
+                // all'albo lo stesso: la fine di una stagione non puo'
+                // dipendere da un file .glb.
+                const albo = F1Stagione.albo(stagione);
+                const podio = albo.classifica.slice(0, 3).map(r => ({
+                    uid: r.uid, colore: r.colore, bot: r.bot, punti: r.punti,
+                    etichetta: etichettaPilota(r, mioUid),
+                }));
+                const tutti = albo.classifica.map(r => ({
+                    uid: r.uid, colore: r.colore, bot: r.bot,
+                }));
+                const cerimonia = (typeof window !== 'undefined' && window.f1PremiazioneAvvia)
+                    ? window.f1PremiazioneAvvia(podio, tutti)
+                    : Promise.resolve(null);
+                Promise.resolve(cerimonia).catch(() => null).then(() => disegnaAlbo(stagione));
             };
 
             // Prima si mostra, poi si anima: a schermata nascosta le righe non

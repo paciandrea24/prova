@@ -4188,6 +4188,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     const CER_MIRA_Y = 5;        // fra le auto e la base del fondale
     const CER_AVVICINAMENTO = 4; // di quanto la camera si avvicina durante la scena
 
+    // ── PREMIAZIONE DI FINE MONDIALE ────────────────────────────────────
+    // Non e' la cerimonia di fine gara con un titolo diverso: li' le tre auto
+    // sono gia' sul podio quando la scena si apre, qui SALGONO una alla volta,
+    // dalla terza alla prima, e ognuna ha il suo momento. Richiesta esplicita
+    // dell'utente: «il mondiale e' una cosa molto piu' grossa della vittoria di
+    // una singola gara, non vorrei semplicemente riusare l'animazione del
+    // podio». Il podio e la sua scala restano gli stessi (CER_*): a cambiare e'
+    // chi c'e' sopra, quando ci arriva e da dove lo si guarda.
+    //
+    // I tempi non sono qui: stanno in shared/f1Premiazione.js, che gira anche
+    // senza browser ed e' l'unico posto dove l'ordine delle entrate si puo'
+    // verificare davvero.
+    // Le auto entrano DI LATO, non lungo l'asse del rettilineo: da li' dovrebbero
+    // attraversare il podio, che sta esattamente in mezzo (19.2 unita' di
+    // larghezza una volta ingrandito). Entrano da fuori inquadratura, sfilano
+    // fino alla loro piazzola e negli ultimi metri si girano verso chi guarda.
+    const PRE_INGRESSO_X = 30;       // da quanto fuori campo entra un'auto
+    const PRE_PIAZZOLA_Z = 9;        // dove si ferma prima di salire, davanti al podio
+    const PRE_GIRATA = 0.72;         // da che punto dell'arrivo comincia a girarsi
+    const PRE_ARCO = 1.2;            // quanto scavalca il bordo del gradino salendo
+    const PRE_CAM_VICINO = { distanza: 16, quota: 3.2, mira: 3.4 };
+    const PRE_CAM_LARGO = { distanza: 30, quota: 12, mira: 5.5 };
+    // La parata sta in colonna DIETRO il podio, sull'asfalto, come una griglia
+    // ancora schierata. Non ai fianchi: il podio ingrandito occupa 19.2 unita' e
+    // il rettilineo del traguardo ne e' largo 22-28, quindi di fianco non c'e'
+    // spazio che non sia gia' erba, barriera o tribuna. Non davanti: la camera
+    // guarda da 16 unita' e ci finirebbero addosso.
+    const PRE_PARATA_MAX = 8;
+    const PRE_PARATA_X = 5.5;        // due colonne, dentro la carreggiata su qualunque pista
+    const PRE_PARATA_Z = -12;        // oltre il podio, che arriva a 3.2
+    const PRE_PARATA_PASSO = 9;      // un'auto e' lunga 7.17: sotto questo passo si toccano
+
+    let premiazione = null;          // { scena, copione, righe, da, risolvi }
+
     let cerimoniaGruppo = null;
     let cerimoniaPronta = null;
     let cerimoniaAttiva = false;
@@ -4228,12 +4262,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             gruppo.add(podioMesh);
 
             auto.forEach((car, k) => {
-                // Il motore no: qui le auto sono ferme e in mostra.
-                if (car.userData.engineSound) {
-                    try { car.userData.engineSound.stop(); } catch (e) { /* mai partito */ }
-                    car.remove(car.userData.engineSound);
-                    delete car.userData.engineSound;
-                }
+                zittisci(car);
                 const g = CER_GRADINI[k];
                 car.position.set(g.x * CER_SCALA, g.y * CER_SCALA, g.z * CER_SCALA);
                 // Muso verso chi guarda: l'avanti dell'auto è +Z locale, ed è
@@ -4269,6 +4298,224 @@ document.addEventListener('DOMContentLoaded', async () => {
             return gruppo;
         }).catch(() => null);
     }
+
+    // Un'auto in mostra non deve rombare. Vale per tutte e due le cerimonie —
+    // quella di fine gara e quella di fine mondiale.
+    function zittisci(car) {
+        if (!car.userData.engineSound) return;
+        try { car.userData.engineSound.stop(); } catch (e) { /* mai partito */ }
+        car.remove(car.userData.engineSound);
+        delete car.userData.engineSound;
+    }
+
+    // Podio, auto dei premiati (che partono FUORI CAMPO) e parata di tutte le
+    // altre. Restituisce quello che serve ad animarle: per ogni premiato, le
+    // tre pose fra cui si muove.
+    function costruisciPremiazione(righe, tutte) {
+        const premiati = (righe || []).slice(0, 3);
+        if (!premiati.length) return Promise.resolve(null);
+        const miaSequenza = sequenzaCorrente;
+
+        const caricaPodio = new Promise((risolvi, rifiuta) => {
+            new THREE.GLTFLoader().load(SCENERY_ASSET_PATHS.podium,
+                (gltf) => risolvi(gltf.scene), undefined, rifiuta);
+        });
+        const caricaAuto = (riga) => fetchLiveryForUid(riga.bot ? null : riga.uid)
+            .then((livrea) => new Promise((risolvi) => loadCarModel(riga.colore, risolvi, livrea)));
+
+        const contorno = (tutte || []).slice(3, 3 + PRE_PARATA_MAX);
+        return Promise.all([
+            caricaPodio,
+            Promise.all(premiati.map(caricaAuto)),
+            Promise.all(contorno.map(caricaAuto)),
+        ]).then(([podioMesh, auto, parata]) => {
+            const gruppo = new THREE.Group();
+            gruppo.visible = false;
+
+            podioMesh.scale.setScalar(CER_SCALA);
+            applicaStile(podioMesh, { saturation: ToonPalette.SATURATION.scenery });
+            gruppo.add(podioMesh);
+
+            const attori = auto.map((car, k) => {
+                zittisci(car);
+                const g = CER_GRADINI[k];
+                const gradino = { x: g.x * CER_SCALA, y: g.y * CER_SCALA, z: g.z * CER_SCALA };
+                const piazzola = { x: gradino.x, y: 0, z: PRE_PIAZZOLA_Z };
+                // Ognuno entra dal lato del proprio gradino: meno strada, e le
+                // tre entrate non si assomigliano. Il primo, che sta al centro,
+                // arriva da destra.
+                const lato = gradino.x >= 0 ? 1 : -1;
+                const lontano = { x: lato * PRE_INGRESSO_X, y: 0, z: PRE_PIAZZOLA_Z };
+                // Muso nella direzione di marcia mentre sfila; a fine corsa si
+                // gira verso chi guarda (il fronte dell'auto e' +Z, e +Z e'
+                // anche il fronte del podio).
+                car.rotation.set(0, -lato * Math.PI / 2, 0);
+                car.position.set(lontano.x, lontano.y, lontano.z);
+                car.visible = false;      // entra quando tocca a lei
+                gruppo.add(car);
+                return { car, posto: k + 1, lato, lontano, piazzola, gradino };
+            });
+
+            // La parata: ferme ai due lati, muso verso il centro. Non entrano e
+            // non si muovono — sono il campo, e sono li' a dire che quello che
+            // sta finendo e' un campionato e non una gara.
+            parata.forEach((car, k) => {
+                zittisci(car);
+                const lato = (k % 2 === 0) ? -1 : 1;
+                const fila = Math.floor(k / 2);
+                car.position.set(lato * PRE_PARATA_X, 0, PRE_PARATA_Z - fila * PRE_PARATA_PASSO);
+                // Muso verso il podio: sono schierate a guardare, non parcheggiate.
+                car.rotation.set(0, 0, 0);
+                gruppo.add(car);
+            });
+
+            // Posa sul traguardo, col fronte rivolto a chi arriva: le auto
+            // guardano indietro lungo il rettilineo, verso la camera.
+            const { p, avanti } = assiDelTraguardo();
+            gruppo.position.set(p.x, p.y || 0, p.z);
+            gruppo.rotation.set(0, Math.atan2(-avanti.x, -avanti.z), 0);
+
+            if (miaSequenza !== sequenzaCorrente) { smaltisciAuto(gruppo); return null; }
+            scene.add(gruppo);
+            return { gruppo, attori, base: { p, avanti, quota: p.y || 0 } };
+        }).catch(() => null);
+    }
+
+    // Dove sta un premiato in questo istante. Chi e' gia' salito resta sul suo
+    // gradino, chi non e' ancora entrato sta fuori campo: i posti scendono
+    // (3, 2, 1), quindi "posto minore del mio" vuol dire "il mio momento e'
+    // gia' passato".
+    function posaPremiato(attore, stato) {
+        const suo = stato.posto === attore.posto;
+        const passato = stato.posto === 0 || stato.posto < attore.posto;
+        const diMarcia = -attore.lato * Math.PI / 2;
+        if (passato) return { visibile: true, pos: attore.gradino, rotY: 0 };
+        if (!suo) return { visibile: false, pos: attore.lontano, rotY: diMarcia };
+        if (stato.fase === 'arrivo') {
+            // Frena arrivando: parte veloce e si posa, invece di piantarsi.
+            const a = stato.avanzamento;
+            const e = a * a * (3 - 2 * a);
+            // La girata verso chi guarda comincia negli ultimi metri, non
+            // subito: un'auto che sfila gia' girata sembra trascinata di lato.
+            const g = Math.max(0, (a - PRE_GIRATA) / (1 - PRE_GIRATA));
+            return {
+                visibile: true,
+                pos: { x: misto(attore.lontano.x, attore.piazzola.x, e), y: 0, z: attore.piazzola.z },
+                rotY: misto(diMarcia, 0, g * g * (3 - 2 * g)),
+            };
+        }
+        if (stato.fase === 'salita') {
+            const a = stato.avanzamento;
+            return {
+                visibile: true,
+                pos: {
+                    x: misto(attore.piazzola.x, attore.gradino.x, a),
+                    // L'arco serve a scavalcare il bordo del gradino: senza, la
+                    // salita e' una diagonale che ci passa dentro.
+                    y: misto(0, attore.gradino.y, a) + 4 * a * (1 - a) * PRE_ARCO,
+                    z: misto(attore.piazzola.z, attore.gradino.z, a),
+                },
+                rotY: 0,
+            };
+        }
+        return { visibile: true, pos: attore.gradino, rotY: 0 };
+    }
+
+    function aggiornaPremiazione() {
+        if (!premiazione || !premiazione.scena) return;
+        const stato = F1Premiazione.stato(premiazione.copione, performance.now() - premiazione.da);
+
+        for (const attore of premiazione.scena.attori) {
+            const posa = posaPremiato(attore, stato);
+            attore.car.visible = posa.visibile;
+            attore.car.position.set(posa.pos.x, posa.pos.y, posa.pos.z);
+            attore.car.rotation.y = posa.rotY;
+        }
+
+        // La camera: addosso a chi sta entrando, larga sull'apoteosi. Durante
+        // l'apoteosi si ALZA piano invece di scattare, e per questo la sua posa
+        // e' una miscela fra le due e non una delle due.
+        const { p, avanti, quota } = premiazione.scena.base;
+        const vicino = stato.posto !== 0;
+        const apertura = vicino ? 0 : Math.min(1, stato.avanzamento * 1.4);
+        const distanza = misto(PRE_CAM_VICINO.distanza, PRE_CAM_LARGO.distanza, apertura);
+        const altezza = misto(PRE_CAM_VICINO.quota, PRE_CAM_LARGO.quota, apertura);
+        // Di lato quando entra qualcuno che non sta al centro: guardarlo
+        // frontalmente lo metterebbe dietro il gradino piu' alto.
+        const scarto = vicino ? CER_GRADINI[stato.posto - 1].x * CER_SCALA * 0.6 : 0;
+        const destra = { x: -avanti.z, z: avanti.x };
+        camera.position.set(
+            p.x - avanti.x * distanza + destra.x * scarto,
+            quota + altezza,
+            p.z - avanti.z * distanza + destra.z * scarto,
+        );
+        camera.lookAt(p.x, quota + misto(PRE_CAM_VICINO.mira, PRE_CAM_LARGO.mira, apertura), p.z);
+
+        aggiornaFasciaPremiazione(stato);
+        if (stato.fase === 'finita') fermaPremiazione();
+    }
+
+    function aggiornaFasciaPremiazione(stato) {
+        const riga = stato.posto ? premiazione.righe[stato.posto - 1] : premiazione.righe[0];
+        if (!riga) return;
+        const fascia = document.getElementById('premiazione-fascia');
+        document.getElementById('premiazione-posto').textContent = stato.posto ? stato.posto + '\u00B0' : 'Campione';
+        document.getElementById('premiazione-chi').textContent = riga.etichetta;
+        document.getElementById('premiazione-pallino').style.background = riga.colore || '#888';
+        document.getElementById('premiazione-punti').textContent = riga.punti + ' punti';
+        fascia.classList.toggle('campione', stato.posto === 0);
+    }
+
+    // Avvia la consegna e si risolve quando e' finita — o quando la si salta.
+    // Il server non c'entra: la stagione e' gia' stata salvata dopo l'ultima
+    // gara, e qui non c'e' piu' niente da scrivere.
+    function avviaConsegna(scena, righe) {
+        if (!scena) return Promise.resolve(null);
+        scena.gruppo.visible = true;
+        mostraAutoDiGara(false);
+        // Stesso piano vicino della panoramica: anche qui si guarda da lontano,
+        // e col near di gioco l'asfalto sfarfalla.
+        camera.near = PANORAMICA_NEAR;
+        camera.updateProjectionMatrix();
+        document.getElementById('stagione-overlay').style.display = 'none';
+        document.getElementById('premiazione-fascia').style.display = '';
+        premiazione = {
+            scena, righe,
+            copione: F1Premiazione.copione(Math.min(3, righe.length)),
+            da: performance.now(),
+            risolvi: null,
+        };
+        return new Promise((risolvi) => { premiazione.risolvi = risolvi; });
+    }
+
+    function fermaPremiazione() {
+        if (!premiazione) return;
+        const finita = premiazione;
+        premiazione = null;
+        document.getElementById('premiazione-fascia').style.display = 'none';
+        document.getElementById('stagione-overlay').style.display = 'flex';
+        if (finita.scena) {
+            scene.remove(finita.scena.gruppo);
+            smaltisciAuto(finita.scena.gruppo);
+        }
+        mostraAutoDiGara(true);
+        camera.near = nearDiGioco;
+        camera.updateProjectionMatrix();
+        if (finita.risolvi) finita.risolvi(true);
+    }
+
+    // L'unico modo di entrare, e lo usa la schermata della stagione.
+    window.f1PremiazioneAvvia = function (righe, tutte) {
+        return costruisciPremiazione(righe, tutte).then((scena) => avviaConsegna(scena, righe));
+    };
+
+    // Si puo' saltare: una cerimonia che non si puo' interrompere e' una
+    // cerimonia che la seconda volta si subisce.
+    document.addEventListener('keydown', (e) => {
+        if (!premiazione) return;
+        if (e.key !== 'Escape' && e.key !== 'Enter' && e.key !== ' ') return;
+        fermaPremiazione();
+    });
 
     // Durante la premiazione la pista resta viva dietro le quinte: il server
     // continua a simulare finché non smonta la partita, quindi i bot che non
@@ -5440,6 +5687,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         aggiornaTempiCorsia();
 
         if (tyreSelectActive) updateTyreSelectCamera();
+        else if (premiazione) aggiornaPremiazione();
         else if (panoramicaAttiva) aggiornaCameraPanoramica();
         else if (cerimoniaAttiva) aggiornaCameraCerimonia();
         else updateCamera();
