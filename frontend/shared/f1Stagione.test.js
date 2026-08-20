@@ -207,3 +207,83 @@ test('i bot non contano fra i giocatori attesi', () => {
     // Da soli con due bot si riprende senza che nessun altro debba esserci.
     assert.equal(S.siPuoRiprendere(s, ['a']).ok, true);
 });
+
+// ---- il riepilogo di fine gara ----------------------------------------------
+
+test('la classifica si puo fermare a una gara indietro', () => {
+    // E' quello che serve per mostrare "com'era prima" accanto a "com'e
+    // adesso": la stessa somma, fermata un passo prima. Se fosse un secondo
+    // calcolo, i due totali potrebbero divergere.
+    let s = stagioneDiProva(['a', 'b']);
+    s = S.registraRisultato(s, { ordine: ['p1', 'p2', 'p3'] });
+    s = S.registraRisultato(s, { ordine: ['p3', 'p2', 'p1'] });
+
+    const prima = S.classifica(s, { fermaA: 1 });
+    assert.equal(prima.find(r => r.id === 'p1').punti, 25);
+    assert.equal(prima.find(r => r.id === 'p3').punti, 15);
+    assert.equal(prima.find(r => r.id === 'p1').gare, 1);
+
+    const zero = S.classifica(s, { fermaA: 0 });
+    assert.ok(zero.every(r => r.punti === 0), 'fermata a zero gare deve essere tutta a zero');
+
+    // Oltre il numero di gare corse e' come non fermarla affatto.
+    assert.deepEqual(S.classifica(s, { fermaA: 99 }), S.classifica(s));
+});
+
+test('il riepilogo dice quanti punti ha preso ognuno in QUELLA gara', () => {
+    let s = stagioneDiProva(['a', 'b']);
+    s = S.registraRisultato(s, { ordine: ['p1', 'p2', 'p3'] });
+    s = S.registraRisultato(s, { ordine: ['p3', 'p2', 'p1'] });
+
+    const r = S.riepilogoGara(s, 1);
+    assert.equal(r.pista, 'b');
+    assert.equal(r.numero, 2);
+    assert.equal(r.totale, 2);
+    assert.deepEqual(r.arrivo.map(x => x.id), ['p3', 'p2', 'p1']);
+    assert.deepEqual(r.arrivo.map(x => x.posizione), [1, 2, 3]);
+    assert.deepEqual(r.arrivo.map(x => x.puntiPresi), [25, 18, 15]);
+    // I dati del pilota viaggiano con la riga: chi disegna non deve andarseli
+    // a cercare nell'elenco dei piloti.
+    assert.equal(r.arrivo[0].colore, '#2ecc71');
+    assert.equal(r.arrivo[0].bot, true);
+});
+
+test('il riepilogo porta la classifica prima e dopo, col movimento', () => {
+    let s = stagioneDiProva(['a', 'b']);
+    s = S.registraRisultato(s, { ordine: ['p1', 'p2', 'p3'] });   // p1 25, p2 18, p3 15
+    s = S.registraRisultato(s, { ordine: ['p3', 'p2', 'p1'] });   // p3 +25, p2 +18, p1 +15
+
+    const r = S.riepilogoGara(s, 1);
+    // Prima: p1 primo, p2 secondo, p3 terzo. Dopo: p1 e p3 a 40, p2 a 36.
+    assert.deepEqual(r.prima.map(x => x.id), ['p1', 'p2', 'p3']);
+    const dopo = Object.fromEntries(r.dopo.map(x => [x.id, x]));
+    assert.equal(dopo.p3.puntiPresi, 25);
+    assert.equal(dopo.p3.punti, 40);
+    assert.equal(dopo.p3.posizionePrima, 3);
+    assert.equal(dopo.p3.movimento, 1, 'p3 e salito dal terzo al secondo posto');
+    assert.equal(dopo.p2.movimento, -1, 'p2 e sceso dal secondo al terzo');
+    assert.equal(dopo.p1.movimento, 0);
+    // Chi non e' arrivato in quella gara non guadagna punti, e va detto con
+    // uno zero e non con un buco: la riga si disegna comunque.
+    const s3 = S.registraRisultato(stagioneDiProva(['a']), { ordine: ['p1', 'p2'] });
+    const soloDue = S.riepilogoGara(s3, 0);
+    assert.equal(soloDue.dopo.find(x => x.id === 'p3').puntiPresi, 0);
+});
+
+test('alla prima gara il riepilogo non inventa movimenti', () => {
+    // Prima della prima gara non esiste una classifica: sono tutti a zero, e
+    // l'ordine e' solo quello in cui i piloti sono scritti. Mostrare frecce
+    // rispetto a quello vorrebbe dire raccontare scalate che non sono
+    // avvenute.
+    const s = S.registraRisultato(stagioneDiProva(), { ordine: ['p3', 'p1', 'p2'] });
+    const r = S.riepilogoGara(s, 0);
+    assert.equal(r.primaGara, true);
+    assert.ok(r.dopo.every(x => x.movimento === 0), 'alla prima gara nessuno si e mosso');
+});
+
+test('un riepilogo di una gara non ancora corsa non esiste', () => {
+    const s = stagioneDiProva(['a', 'b']);
+    assert.equal(S.riepilogoGara(s, 0), null);
+    assert.equal(S.riepilogoGara(s, -1), null);
+    assert.equal(S.riepilogoGara(null, 0), null);
+});

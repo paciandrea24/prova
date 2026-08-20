@@ -128,7 +128,13 @@
     // via). Senza, due piloti a pari punti si ordinerebbero come capita, e
     // "come capita" in un campionato vuol dire che il campione cambia a
     // seconda di come è stato scritto un ciclo.
-    function classifica(stagione) {
+    //
+    // `fermaA` conta solo le prime N gare: serve a mostrare la classifica
+    // com'era PRIMA dell'ultima gara accanto a quella di adesso. È la stessa
+    // somma fermata un passo indietro, non un secondo calcolo — due formule
+    // per lo stesso totale sono due posti dove i numeri possono divergere.
+    function classifica(stagione, opzioni) {
+        const fermaA = (opzioni && opzioni.fermaA != null) ? opzioni.fermaA : Infinity;
         const righe = new Map();
         for (const p of stagione.piloti) {
             righe.set(p.id, {
@@ -136,7 +142,7 @@
                 punti: 0, gare: 0, piazzamenti: [],
             });
         }
-        for (const gara of stagione.risultati) {
+        for (const gara of stagione.risultati.slice(0, fermaA)) {
             gara.ordine.forEach((id, i) => {
                 const r = righe.get(id);
                 if (!r) return;   // un id che non è in `piloti`: dato sporco, non deve far cadere la classifica
@@ -163,6 +169,58 @@
         return riga.piazzamenti[0] || 0;
     }
 
+    // Tutto quello che serve alla schermata di riepilogo dopo una gara: com'è
+    // finita quella gara, e cosa ha cambiato in campionato.
+    //
+    // Sta qui e non nella schermata perché è ancora aritmetica del campionato:
+    // i punti presi sono `puntiPerPosizione`, e il movimento è la differenza
+    // fra la stessa classifica fermata a due momenti diversi. Nella UI non
+    // deve esistere nessuna somma — quella regola è già costata una volta
+    // (vedi il commento in testa a questo file).
+    //
+    // `indice` è la gara nel calendario (0 = la prima), e deve essere una gara
+    // già corsa: di una non ancora disputata non c'è niente da riepilogare.
+    function riepilogoGara(stagione, indice) {
+        if (!stagione || !(indice >= 0) || indice >= stagione.risultati.length) return null;
+        const gara = stagione.risultati[indice];
+        const anagrafica = new Map(stagione.piloti.map(p => [p.id, p]));
+
+        const arrivo = gara.ordine.map((id, i) => {
+            const p = anagrafica.get(id) || {};
+            return {
+                id, uid: p.uid || null, colore: p.colore || null,
+                bot: !!p.bot, nome: p.nome || null,
+                posizione: i + 1,
+                puntiPresi: puntiPerPosizione(i + 1),
+            };
+        }).filter(r => anagrafica.has(r.id));   // un id sconosciuto non si disegna, ma la sua posizione resta occupata
+
+        const prima = classifica(stagione, { fermaA: indice });
+        const posizionePrima = new Map(prima.map(r => [r.id, r.posizione]));
+        const presi = new Map(arrivo.map(r => [r.id, r.puntiPresi]));
+
+        // Prima della PRIMA gara non esiste una classifica: sono tutti a pari
+        // merito e l'ordine è solo quello in cui i piloti sono scritti.
+        // Mostrare frecce rispetto a quello racconterebbe scalate mai
+        // avvenute.
+        const primaGara = indice === 0;
+
+        const dopo = classifica(stagione, { fermaA: indice + 1 }).map(r => Object.assign({}, r, {
+            puntiPresi: presi.get(r.id) || 0,
+            posizionePrima: posizionePrima.get(r.id) || r.posizione,
+            movimento: primaGara ? 0 : (posizionePrima.get(r.id) || r.posizione) - r.posizione,
+        }));
+
+        return {
+            pista: gara.pista,
+            numero: indice + 1,
+            totale: stagione.calendario.length,
+            ultima: indice + 1 >= stagione.calendario.length,
+            primaGara,
+            arrivo, prima, dopo,
+        };
+    }
+
     // ---- riprendere una stagione -------------------------------------------
 
     // Regola dettata dall'utente: un salvataggio si riprende **solo con
@@ -185,7 +243,7 @@
         PUNTI, MIN_GARE, GARE_CONSIGLIATE,
         intervalloGare, puntiPerPosizione, mescola, sorteggiaCalendario,
         idPilota, creaStagione, garaCorrente, finita, registraRisultato,
-        classifica, vittorie, siPuoRiprendere,
+        classifica, vittorie, riepilogoGara, siPuoRiprendere,
     };
 
 });
