@@ -2244,3 +2244,19 @@ canvas#pa-mappa {
     padding-left: 10px; font-size: 13px; font-weight: 700;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
+
+/* L'attesa prima della cerimonia: sopra il sipario, perche' e' l'unica cosa
+   che deve poter comparire su un nero pieno. */
+#premiazione-attesa {
+    position: fixed;
+    left: 50%;
+    bottom: 12vh;
+    transform: translateX(-50%);
+    z-index: 59;
+    font-family: 'Fredoka', 'Trebuchet MS', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #8CAEB6;
+}

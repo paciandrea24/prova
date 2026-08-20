@@ -4820,6 +4820,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function fermaPremiazione() {
         premiazioneInCorso = false;
         document.getElementById('premiazione-annata').style.display = 'none';
+        document.getElementById('premiazione-attesa').style.display = 'none';
         fermaPanoramica();
         // Si torna sempre a una schermata opaca (riepilogo o albo d'oro): il
         // sipario, se era su, non serve piu' a niente.
@@ -5144,14 +5145,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         // paga il caricamento che l'utente ha accettato («accetto un
         // caricamento per arrivarci»). Se non bastasse, si aspetta a sipario
         // chiuso — mai davanti alla schermata gia' aperta.
-        const mappePronte = preparaMappe(cronaca);
+        let mappeFinite = false;
+        const mappePronte = preparaMappe(cronaca).then((m) => { mappeFinite = true; return m; });
+        const attesa = document.getElementById('premiazione-attesa');
         return F1Sting.play({
             titolo: 'Campione del mondo',
             sottotitolo: nome || '',
             durataMs: PRE_STING_MS,
         })
-            .then(() => mappePronte)
-            .then((mappe) => (premiazioneInCorso ? mostraAnnata(cronaca, mappe) : null))
+            .then(() => {
+                // Se le vedute non sono pronte allo scadere dello stacco, si
+                // aspetta a sipario chiuso — ma dicendo che si sta aspettando.
+                if (!mappeFinite && attesa) attesa.style.display = '';
+                return mappePronte;
+            })
+            .then((mappe) => {
+                if (attesa) attesa.style.display = 'none';
+                return premiazioneInCorso ? mostraAnnata(cronaca, mappe) : null;
+            })
             .then(() => scenaPronta)
             .then((scena) => {
                 if (!premiazioneInCorso) {
