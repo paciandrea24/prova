@@ -4587,6 +4587,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             da: performance.now(),
             risolvi: null,
         };
+        // Una passata a vuoto prima di scoprire: mette la camera al suo posto e
+        // le auto alle loro pose di partenza, cosi' il primo frame visibile e'
+        // gia' quello giusto.
+        aggiornaPremiazione(0);
+        fermaPanoramica();
+        sipario(false, 420);
         return new Promise((risolvi) => { premiazione.risolvi = risolvi; });
     }
 
@@ -4597,6 +4603,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         premiazioneInCorso = false;
         document.getElementById('premiazione-annata').style.display = 'none';
         fermaPanoramica();
+        // Si torna sempre a una schermata opaca (riepilogo o albo d'oro): il
+        // sipario, se era su, non serve piu' a niente.
+        sipario(false, 240);
         if (!premiazione) {
             // Saltata prima della consegna: c'e' solo da riaprire la schermata.
             document.getElementById('stagione-overlay').style.display = 'flex';
@@ -4636,13 +4645,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         const box = document.getElementById('premiazione-annata');
         box.style.display = '';
         avviaPanoramica(durata);
+        // La camera della panoramica va messa a posto SUBITO: il sipario sta per
+        // calare, e sotto ci deve essere gia' il circuito, non l'ultimo frame di
+        // gioco.
+        aggiornaCameraPanoramica();
+        sipario(false, 420);
 
         return new Promise((risolvi) => {
             let i = 0;
             const chiudi = () => {
+                // Si richiude prima di passare al podio, e la panoramica NON si
+                // spegne qui: spegnere una camera prima di averne accesa
+                // un'altra vuol dire tornare per un istante a quella di gioco.
+                sipario(true, 260);
                 box.style.display = 'none';
-                fermaPanoramica();
-                risolvi();
+                setTimeout(risolvi, 280);
             };
             const scrivi = () => {
                 if (!premiazioneInCorso) { chiudi(); return; }
@@ -4672,6 +4689,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // questa promessa si risolve.
     window.f1PremiazioneAvvia = function (righe, tutte, cronaca, nome) {
         premiazioneInCorso = true;
+        // PRIMA si copre, poi si toglie la schermata. Nell'ordine inverso resta
+        // scoperto un frame con la camera di gioco, che inquadra la propria auto
+        // ferma sulla pista dell'ultima gara — segnalato in playtest: «per un
+        // secondo vedo la mia macchina nell'ultima pista».
+        sipario(true, 0);
         document.getElementById('stagione-overlay').style.display = 'none';
         // La scena si costruisce DURANTE lo stacco: caricarla quando serve la
         // farebbe arrivare in ritardo sul proprio ingresso, ed e' l'errore gia'
