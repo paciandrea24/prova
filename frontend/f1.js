@@ -4859,6 +4859,108 @@ document.addEventListener('DOMContentLoaded', async () => {
     // lavoro vero e' campionare il tracciato, e si fa una volta sola qui.
     // Una pista che non si carica non ferma niente: quella tappa mostrera' il
     // riquadro vuoto col suo nome.
+    const PA_VISTA_W = 700, PA_VISTA_H = 500;
+
+    // La VEDUTA AEREA di un circuito, renderizzata fuori schermo e restituita
+    // come immagine.
+    //
+    // E' la stessa inquadratura della pagina mescole (TrackPreviewShots, scatto
+    // 'panoramica') su una scena costruita apposta: asfalto e terreno, niente
+    // scenografia. In scena esiste un solo circuito — quello dell'ultima gara —
+    // e qui servono tutti quelli del calendario, quindi ognuno si costruisce,
+    // si fotografa e si butta.
+    function renderaVistaPista(dati) {
+        let gruppo = null, target = null;
+        try {
+            const punti = TrackGeometry.sampleLoop(dati.controlPoints, 500);
+            const mezza = dati.roadHalfWidth || 11;
+            gruppo = new THREE.Group();
+            // Il mondo largo il doppio del necessario: piu' stretto, e nella
+            // veduta si vedrebbe finire il terreno con il cielo sotto
+            // l'orizzonte.
+            TrackMeshBuilder.buildGround(gruppo, punti, mezza + 16, 6000);
+            TrackMeshBuilder.buildRibbon(gruppo, punti, mezza, new THREE.MeshStandardMaterial({
+                color: ToonPalette.SURFACES.asphalt, roughness: 0.95, side: THREE.DoubleSide,
+            }));
+            // Stesso trattamento cel-shading del resto del gioco, cosi' la
+            // veduta non stona accanto alle altre schermate.
+            applicaStile(gruppo, { saturation: ToonPalette.SATURATION.scenery });
+
+            const scena = new THREE.Scene();
+            scena.background = new THREE.Color(dati.notturno ? 0x0B1B2B : 0x9FD6EF);
+            scena.add(gruppo);
+            // La somma delle intensita' resta intorno a 1: e' la regola del cel
+            // shading di questo gioco, e vale anche fuori dalla scena vera.
+            scena.add(new THREE.HemisphereLight(0xFFFFFF, 0x88AA66, 0.6));
+            const sole = new THREE.DirectionalLight(0xFFFFFF, 0.4);
+            sole.position.set(0.6, 1.4, 0.8);
+            scena.add(sole);
+
+            // L'inquadratura si CALCOLA invece di riusare lo scatto
+            // 'panoramica' della pagina mescole: quello e' tarato su una
+            // camera che ruota dentro la scena vera, e qui tagliava fuori
+            // meta' tracciato (misurato in headless).
+            //
+            // Due vincoli: il circuito deve entrare in altezza — dove lo
+            // scorcio lo schiaccia di sin(inclinazione) — e in larghezza, dove
+            // no. Vince il piu' severo. L'inclinazione bassa e' voluta: dai 50
+            // gradi in su diventa una piantina vista dall'alto, ed e'
+            // esattamente quello che l'utente ha bocciato.
+            const c = TrackPreviewShots.ingombro(punti);
+            const cam = new THREE.PerspectiveCamera(
+                F1SensoVelocita.FOV_BASE, PA_VISTA_W / PA_VISTA_H, 1, 12000);
+            const mezzoFov = Math.tan((F1SensoVelocita.FOV_BASE / 2) * Math.PI / 180);
+            const inclinazione = 33 * Math.PI / 180;
+            const raggio = c.diagonale / 2;
+            const distanza = Math.max(
+                raggio * Math.sin(inclinazione) / (mezzoFov * 0.82),
+                raggio / (mezzoFov * (PA_VISTA_W / PA_VISTA_H) * 0.82));
+            // Si guarda dal lato del traguardo: e' il punto che il giocatore
+            // riconosce.
+            const traguardo = dati.startFinish
+                ? TrackGeometry.nearestPoint(punti, dati.startFinish.x, dati.startFinish.z).index
+                : 0;
+            const sf = punti[traguardo] || { x: c.cx + raggio, z: c.cz };
+            const azimut = Math.atan2(sf.z - c.cz, sf.x - c.cx);
+            cam.position.set(
+                c.cx + Math.cos(azimut) * distanza * Math.cos(inclinazione),
+                distanza * Math.sin(inclinazione),
+                c.cz + Math.sin(azimut) * distanza * Math.cos(inclinazione));
+            cam.lookAt(c.cx, 0, c.cz);
+
+            target = new THREE.WebGLRenderTarget(PA_VISTA_W, PA_VISTA_H);
+            const prima = renderer.getRenderTarget();
+            renderer.setRenderTarget(target);
+            renderer.render(scena, cam);
+            renderer.setRenderTarget(prima);
+
+            // Dal render target a un'immagine: i pixel arrivano capovolti,
+            // perche' l'origine di WebGL sta in basso a sinistra e quella di un
+            // canvas in alto a sinistra.
+            const pixel = new Uint8Array(PA_VISTA_W * PA_VISTA_H * 4);
+            renderer.readRenderTargetPixels(target, 0, 0, PA_VISTA_W, PA_VISTA_H, pixel);
+            const tela = document.createElement('canvas');
+            tela.width = PA_VISTA_W; tela.height = PA_VISTA_H;
+            const ctx = tela.getContext('2d');
+            const immagine = ctx.createImageData(PA_VISTA_W, PA_VISTA_H);
+            for (let y = 0; y < PA_VISTA_H; y++) {
+                const da = (PA_VISTA_H - 1 - y) * PA_VISTA_W * 4;
+                const a = y * PA_VISTA_W * 4;
+                immagine.data.set(pixel.subarray(da, da + PA_VISTA_W * 4), a);
+            }
+            ctx.putImageData(immagine, 0, 0);
+            return tela.toDataURL('image/jpeg', 0.86);
+        } catch (e) {
+            // Una veduta che non si puo' fare non ferma la cerimonia: al suo
+            // posto resta la planimetria, che si disegna sempre.
+            console.warn('[F1] veduta del circuito non riuscita:', e);
+            return null;
+        } finally {
+            if (gruppo) smaltisciAuto(gruppo);
+            if (target) target.dispose();
+        }
+    }
+
     function preparaMappe(cronaca) {
         return Promise.all((cronaca || []).map((voce) =>
             fetch('/tracks/' + encodeURIComponent(voce.pistaId) + '.json')
@@ -4871,6 +4973,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return {
                         punti, traguardo,
                         profilo: F1ProfiloCircuito.profilo(punti, dati.targetKm || 10),
+                        vista: renderaVistaPista(dati),
                     };
                 })
                 .catch(() => null)
@@ -4911,7 +5014,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function disegnaMappa(mappa) {
+        const vista = document.getElementById('pa-vista');
         const canvas = document.getElementById('pa-mappa');
+        // La veduta e' la cosa da vedere; la planimetria e' il ripiego per
+        // quando il render non e' riuscito.
+        if (mappa && mappa.vista) {
+            vista.src = mappa.vista;
+            vista.style.display = '';
+            canvas.style.display = 'none';
+            return;
+        }
+        vista.removeAttribute('src');
+        vista.style.display = 'none';
+        canvas.style.display = '';
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (!mappa) return;

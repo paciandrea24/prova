@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260820i">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260820j">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -642,7 +642,12 @@
                      quelli del calendario, e in scena ne esiste uno solo. -->
                 <section class="pa-col pa-col-mappa">
                     <div class="pa-cornice">
-                        <canvas id="pa-mappa" width="620" height="460"></canvas>
+                        <!-- La VEDUTA del circuito, renderizzata prima della
+                             cerimonia: la stessa inquadratura della pagina
+                             mescole. Il canvas sotto e' il ripiego, e si vede
+                             solo se quel render non e' riuscito. -->
+                        <img id="pa-vista" alt="">
+                        <canvas id="pa-mappa" width="620" height="460" style="display:none;"></canvas>
                         <!-- Velo per lo stacco fra una mappa e l'altra: un
                              cambio secco si legge come un difetto. -->
                         <div class="pa-velo" id="pa-velo"></div>
@@ -909,7 +914,7 @@
     <script src="shared/f1SuoniCerimonia.js?v=20260820a"></script>
     <script src="shared/f1Premiazione.js?v=20260820b"></script>
     <script src="shared/f1StagioneSchermate.js?v=20260820l"></script>
-    <script src="f1.js?v=20260820t"></script>
+    <script src="f1.js?v=20260820v"></script>
 </body>
 
 </html>

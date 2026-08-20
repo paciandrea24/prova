@@ -2042,10 +2042,11 @@ body.in-cerimonia .hud { display: none !important; }
     padding: clamp(10px, 2.5vh, 34px);
     color: var(--pa-testo);
     font-family: 'Fredoka', 'Trebuchet MS', sans-serif;
-    /* Fondo PIENO, non velato: dietro c'e' la scena di gioco con la camera di
-       gioco, e da un fondo semitrasparente si intravedrebbe la propria auto
-       ferma in pista — che e' il difetto appena chiuso col sipario. */
-    background: radial-gradient(120% 90% at 22% 15%, var(--pa-fondo-a), var(--pa-fondo-b) 72%);
+    /* Fondo PIENO, in due strati: il colore sotto e il gradiente sopra. Dietro
+       c'e' la scena di gioco, e qualunque velatura la lascerebbe intravedere —
+       segnalato in playtest («in sottofondo si vede la mappa»). */
+    background-color: var(--pa-fondo-b);
+    background-image: radial-gradient(120% 90% at 22% 15%, var(--pa-fondo-a), var(--pa-fondo-b) 72%);
 }
 .pa-foglio {
     width: 100%;
@@ -2054,7 +2055,9 @@ body.in-cerimonia .hud { display: none !important; }
     flex-direction: column;
     gap: clamp(10px, 1.8vh, 22px);
 }
-.pa-testata { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+/* Centrata: sopra tre colonne simmetriche una testata allineata a sinistra fa
+   sembrare storta tutta la pagina. */
+.pa-testata { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; justify-content: center; }
 .pa-numero {
     font-size: 11px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase;
     color: var(--pa-testo); background: var(--pa-cordolo);
@@ -2063,7 +2066,10 @@ body.in-cerimonia .hud { display: none !important; }
 .pa-pista { margin: 0; font-size: clamp(22px, 3.4vh, 38px); font-weight: 800; }
 .pa-schermo {
     display: grid;
-    grid-template-columns: 1fr 1.5fr 1fr;
+    /* minmax(0, ...) e non 1fr secco: un contenuto largo (l'immagine della
+       veduta) allargherebbe la sua colonna e sposterebbe il centro della
+       pagina — ed e' quello che e' successo. */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
     gap: clamp(14px, 2vw, 30px);
     align-items: start;
 }
@@ -2109,6 +2115,11 @@ body.in-cerimonia .hud { display: none !important; }
    (serve a quello del gioco): la mappa deve disdirla punto per punto, come fa
    gia' il canvas dell'anteprima mescole. Senza, il tracciato si disegna largo
    quanto la finestra e passa dietro tutte le colonne. */
+#pa-vista {
+    display: block;
+    width: 100%;
+    height: auto;
+}
 canvas#pa-mappa {
     display: block;
     position: relative !important;
