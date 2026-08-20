@@ -707,3 +707,19 @@ stampa nomi di oggetti che il giocatore non aveva davanti. L'invariante è
 protetta da quattro test in `backend/tools/f1-segnalazioni.test.js`, uno per
 tracciato, che replicano la catena del client e pretendono layout identici.
 **Se tocchi quella catena in f1.js, quei test sono la prima cosa da rilanciare.**
+
+## Guardare la premiazione senza correre un campionato
+
+La cerimonia di fine mondiale sta in fondo a una stagione: per vederla
+servirebbero tre gare. Da una **gara veloce** si lancia una premiazione di
+prova, con un campionato inventato ma le piste vere del gioco (quindi anche
+le mappe dell'annata sono quelle vere):
+
+- **F8** — la cerimonia completa, con la festa che tocca a quel circuito:
+  fuochi d'artificio se è notturno, frecce tricolori se è diurno.
+- **Shift+F8** — la stessa, ma con l'altra festa: serve a vederle entrambe
+  senza cambiare pista.
+- **Esc / Invio / spazio** — salta e torna alla gara.
+
+Il tasto è ignorato in una gara di campionato: lì la cerimonia vera arriva da
+sé, e sovrapporgliene una di prova la lascerebbe a metà.

@@ -4264,6 +4264,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // interrompere anche il racconto dell'annata, che dura piu' di tutto il
     // resto.
     let premiazioneInCorso = false;
+    // Premiazione DI PROVA (tasto F8 in gara veloce): stessa cerimonia, ma alla
+    // fine non c'e' nessuna schermata di campionato da riaprire — si torna alla
+    // gara da cui e' partita.
+    let premiazioneDiProva = false;
 
     let cerimoniaGruppo = null;
     let cerimoniaPronta = null;
@@ -4392,8 +4396,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // La festa: quale delle due, e tutto ciò che le serve. Nasce spenta e si
     // accende nell'apoteosi.
-    function costruisciFesta(colori, base) {
-        const notte = !!(trackData && trackData.notturno);
+    function costruisciFesta(colori, base, invertiFesta) {
+        const notte = invertiFesta ? !(trackData && trackData.notturno)
+            : !!(trackData && trackData.notturno);
         const festa = { notte, razzi: [], scoppi: [], aerei: [], scie: [], suonata: false };
         const { p, avanti, quota } = base;
         const destra = { x: -avanti.z, z: avanti.x };
@@ -4554,7 +4559,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Podio, auto dei premiati (che partono FUORI CAMPO) e parata di tutte le
     // altre. Restituisce quello che serve ad animarle: per ogni premiato, le
     // tre pose fra cui si muove.
-    function costruisciPremiazione(righe, tutte) {
+    function costruisciPremiazione(righe, tutte, opzioni) {
         const premiati = (righe || []).slice(0, 3);
         if (!premiati.length) return Promise.resolve(null);
         const miaSequenza = sequenzaCorrente;
@@ -4655,7 +4660,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             scene.add(gruppo);
             const base = { p, avanti, quota: p.y || 0 };
-            const festa = costruisciFesta(premiati.map(r => coloreEsadecimale(r.colore)), base);
+            const festa = costruisciFesta(
+                premiati.map(r => coloreEsadecimale(r.colore)), base, opzioni && opzioni.invertiFesta);
             return { gruppo, attori, trofeo, coriandoli, festa, base };
         }).catch(() => null);
     }
@@ -4820,13 +4826,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         sipario(false, 240);
         if (!premiazione) {
             // Saltata prima della consegna: c'e' solo da riaprire la schermata.
-            document.getElementById('stagione-overlay').style.display = 'flex';
+            if (!premiazioneDiProva) document.getElementById('stagione-overlay').style.display = 'flex';
+            premiazioneDiProva = false;
             return;
         }
         const finita = premiazione;
         premiazione = null;
         document.getElementById('premiazione-fascia').style.display = 'none';
-        document.getElementById('stagione-overlay').style.display = 'flex';
+        if (!premiazioneDiProva) document.getElementById('stagione-overlay').style.display = 'flex';
+        premiazioneDiProva = false;
         if (finita.scena) {
             scene.remove(finita.scena.gruppo);
             smaltisciAuto(finita.scena.gruppo);
@@ -5005,7 +5013,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // L'unico modo di entrare, e lo usa la schermata della stagione. Tre
     // movimenti in fila; il quarto (l'albo d'oro) lo mostra la schermata quando
     // questa promessa si risolve.
-    window.f1PremiazioneAvvia = function (righe, tutte, cronaca, nome) {
+    window.f1PremiazioneAvvia = function (righe, tutte, cronaca, nome, opzioni) {
         premiazioneInCorso = true;
         // PRIMA si copre, poi si toglie la schermata. Nell'ordine inverso resta
         // scoperto un frame con la camera di gioco, che inquadra la propria auto
@@ -5016,7 +5024,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // La scena si costruisce DURANTE lo stacco: caricarla quando serve la
         // farebbe arrivare in ritardo sul proprio ingresso, ed e' l'errore gia'
         // fatto una volta con l'auto in pole del riepilogo griglia.
-        const scenaPronta = costruisciPremiazione(righe, tutte);
+        const scenaPronta = costruisciPremiazione(righe, tutte, opzioni);
         // Anche le mappe dell'annata: lo stacco dura 4.2 s, ed e' li' che si
         // paga il caricamento che l'utente ha accettato («accetto un
         // caricamento per arrivarci»). Se non bastasse, si aspetta a sipario
@@ -5042,6 +5050,62 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return avviaConsegna(scena, righe);
             });
     };
+
+    // ── PREMIAZIONE DI PROVA (F8) ───────────────────────────────────────
+    // Guardare la cerimonia costava tre gare di campionato. Da una gara
+    // veloce, F8 la lancia con un campionato inventato: stessi movimenti,
+    // stessa scena, stessi suoni.
+    //   F8         — la festa che tocca a questo circuito (notte o giorno)
+    //   Shift+F8   — l'altra, per vederle entrambe senza cambiare pista
+    // Le piste del calendario finto sono quelle vere del gioco, cosi' anche le
+    // mappe dell'annata sono quelle vere.
+    function premiazioneDiProvaAvvia(inverti) {
+        if (premiazioneInCorso) return;
+        premiazioneDiProva = true;
+        const COLORI = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22'];
+        const nomi = ['Tu', 'Bot 1', 'Bot 2', 'Bot 3', 'Bot 4', 'Bot 5'];
+        // Il primo pilota sei tu, col tuo colore: cosi' si vede la propria
+        // livrea sul gradino piu' alto.
+        const colori = [myColor || COLORI[0]].concat(COLORI.filter(c => c !== myColor)).slice(0, 6);
+        const punti = [129, 107, 97, 73, 63, 59];
+        const podio = colori.slice(0, 3).map((colore, i) => ({
+            uid: i === 0 ? (user ? user.uid : null) : null,
+            colore, bot: i !== 0, punti: punti[i], etichetta: nomi[i],
+        }));
+        const tutti = colori.map((colore, i) => ({
+            uid: i === 0 ? (user ? user.uid : null) : null, colore, bot: i !== 0,
+        }));
+
+        fetch('/api/f1/tracks').then(r => r.json()).then((piste) => {
+            const scelte = (piste || []).slice(0, 5);
+            const cronaca = scelte.map((pista, k) => ({
+                numero: k + 1,
+                pistaId: pista.id,
+                pista: pista.name || pista.id,
+                vincitore: { etichetta: nomi[k % 3], colore: colori[k % 3] },
+                testa: colori.slice(0, 5).map((colore, i) => ({
+                    etichetta: nomi[i], colore, posizione: i + 1,
+                    // I punti crescono tappa dopo tappa, come in un campionato
+                    // vero: e' quello che le barre devono raccontare.
+                    punti: Math.round(punti[i] * (k + 1) / scelte.length),
+                })),
+            }));
+            window.f1PremiazioneAvvia(podio, tutti, cronaca, 'Premiazione di prova',
+                { invertiFesta: !!inverti });
+        }).catch((e) => {
+            console.error('[F1] premiazione di prova:', e);
+            premiazioneDiProva = false;
+        });
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'F8') return;
+        // Solo in gara veloce: in campionato la cerimonia vera arriva da se',
+        // e sovrapporle una di prova la lascerebbe a meta'.
+        if (formatoPartita === 'stagione') return;
+        e.preventDefault();
+        premiazioneDiProvaAvvia(e.shiftKey);
+    });
 
     // Si puo' saltare: una cerimonia che non si puo' interrompere e' una
     // cerimonia che la seconda volta si subisce.
