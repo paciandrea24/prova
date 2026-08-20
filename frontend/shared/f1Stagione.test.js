@@ -312,3 +312,60 @@ test('il riepilogo si mostra solo se il segno e di QUESTA stagione e di QUELLA g
     const vuota = Object.assign(stagioneDiProva(), { _id: 'S1' });
     assert.equal(S.garaDaRiepilogare(vuota, { stagioneId: 'S1', pista: 'a' }), null);
 });
+
+// ---- la fine della stagione -------------------------------------------------
+
+test('l albo dice chi e campione e con quanto margine', () => {
+    let s = stagioneDiProva(['a', 'b']);
+    s = S.registraRisultato(s, { ordine: ['p1', 'p2', 'p3'] });   // 25 / 18 / 15
+    s = S.registraRisultato(s, { ordine: ['p1', 'p3', 'p2'] });   // 25 / 18 / 15
+    const albo = S.albo(s);
+    assert.equal(albo.campione.id, 'p1');
+    assert.equal(albo.campione.punti, 50);
+    assert.equal(albo.gare, 2);
+    // p2 ha 18+15=33, p3 ha 15+18=33: il margine e sul SECONDO, chiunque sia.
+    assert.equal(albo.margine, 50 - 33);
+    assert.deepEqual(albo.classifica.map(r => r.id), S.classifica(s).map(r => r.id));
+});
+
+test('i numeri di un pilota: gare, vittorie, podi, miglior arrivo', () => {
+    let s = S.creaStagione({
+        nome: 'x', calendario: ['a', 'b', 'c'],
+        piloti: [{ uid: 'u' }, { bot: true }, { bot: true }, { bot: true }],
+    });
+    s = S.registraRisultato(s, { ordine: ['p1', 'p2', 'p3', 'p4'] });   // 1o
+    s = S.registraRisultato(s, { ordine: ['p2', 'p3', 'p1', 'p4'] });   // 3o
+    s = S.registraRisultato(s, { ordine: ['p2', 'p3', 'p4', 'p1'] });   // 4o
+
+    const n = S.numeriDi(s, 'p1');
+    assert.equal(n.gare, 3);
+    assert.equal(n.vittorie, 1);
+    assert.equal(n.podi, 2, 'primo e terzo posto sono due podi');
+    assert.equal(n.punti, 25 + 15 + 12);
+    assert.equal(n.miglioreArrivo, 1);
+
+    // Un pilota che non ha mai corso non ha un "miglior arrivo" da mostrare:
+    // uno zero li' verrebbe letto come una posizione.
+    const mai = S.numeriDi(stagioneDiProva(), 'p1');
+    assert.equal(mai.gare, 0);
+    assert.equal(mai.miglioreArrivo, null);
+});
+
+test('la cronaca racconta le gare in ordine, con la classifica di quel momento', () => {
+    let s = stagioneDiProva(['a', 'b']);
+    s = S.registraRisultato(s, { ordine: ['p2', 'p1', 'p3'] });
+    s = S.registraRisultato(s, { ordine: ['p1', 'p3', 'p2'] });
+
+    const c = S.cronaca(s);
+    assert.equal(c.length, 2, 'una voce per ogni gara CORSA, non per ogni tappa in calendario');
+    assert.deepEqual(c.map(x => x.numero), [1, 2]);
+    assert.deepEqual(c.map(x => x.pista), ['a', 'b']);
+    assert.equal(c[0].vincitore.id, 'p2');
+    assert.equal(c[1].vincitore.id, 'p1');
+    // Dopo la prima gara comanda p2; alla fine comanda p1. E' il duello che le
+    // barre devono raccontare: senza la classifica PROGRESSIVA non si vede.
+    assert.equal(c[0].classifica[0].id, 'p2');
+    assert.deepEqual(c[1].classifica.map(r => r.id), S.classifica(s).map(r => r.id));
+    // Una stagione senza gare corse non ha niente da raccontare.
+    assert.deepEqual(S.cronaca(stagioneDiProva()), []);
+});

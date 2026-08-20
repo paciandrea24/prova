@@ -169,6 +169,55 @@
         return riga.piazzamenti[0] || 0;
     }
 
+    // ---- la fine della stagione --------------------------------------------
+
+    // I numeri di un pilota nella stagione. Tutti ricavati dai risultati: un
+    // conteggio salvato accanto sarebbe un secondo posto dove vive lo stesso
+    // numero, e prima o poi i due si contraddicono.
+    function numeriDi(stagione, idPilota) {
+        let gare = 0, vittorie = 0, podi = 0, punti = 0, miglioreArrivo = null;
+        for (const gara of (stagione && stagione.risultati) || []) {
+            const i = gara.ordine.indexOf(idPilota);
+            if (i < 0) continue;
+            const posizione = i + 1;
+            gare += 1;
+            punti += puntiPerPosizione(posizione);
+            if (posizione === 1) vittorie += 1;
+            if (posizione <= 3) podi += 1;
+            if (miglioreArrivo === null || posizione < miglioreArrivo) miglioreArrivo = posizione;
+        }
+        // `miglioreArrivo` resta null per chi non ha mai corso: uno zero lì
+        // verrebbe letto come una posizione.
+        return { gare, vittorie, podi, punti, miglioreArrivo };
+    }
+
+    // Chi ha vinto il campionato, con quanto margine, e la classifica finale.
+    function albo(stagione) {
+        const finale = classifica(stagione);
+        const campione = finale[0] || null;
+        const secondo = finale[1] || null;
+        return {
+            campione,
+            classifica: finale,
+            gare: (stagione && stagione.risultati.length) || 0,
+            margine: (campione && secondo) ? campione.punti - secondo.punti : 0,
+        };
+    }
+
+    // La stagione raccontata gara per gara: serve al movimento in cui l'annata
+    // scorre. La classifica di ogni voce è quella di QUEL momento, non quella
+    // finale — è la sola cosa che permette di vedere il duello per il titolo
+    // invece del suo risultato.
+    function cronaca(stagione) {
+        const piloti = new Map(((stagione && stagione.piloti) || []).map(p => [p.id, p]));
+        return ((stagione && stagione.risultati) || []).map((gara, i) => {
+            const progressiva = classifica(stagione, { fermaA: i + 1 });
+            const vincitore = progressiva.find(r => r.id === gara.ordine[0])
+                || piloti.get(gara.ordine[0]) || null;
+            return { numero: i + 1, pista: gara.pista, vincitore, classifica: progressiva };
+        });
+    }
+
     // Tutto quello che serve alla schermata di riepilogo dopo una gara: com'è
     // finita quella gara, e cosa ha cambiato in campionato.
     //
@@ -267,7 +316,8 @@
         PUNTI, MIN_GARE, GARE_CONSIGLIATE,
         intervalloGare, puntiPerPosizione, mescola, sorteggiaCalendario,
         idPilota, creaStagione, garaCorrente, finita, registraRisultato,
-        classifica, vittorie, riepilogoGara, garaDaRiepilogare, siPuoRiprendere,
+        classifica, vittorie, riepilogoGara, garaDaRiepilogare,
+        albo, numeriDi, cronaca, siPuoRiprendere,
     };
 
 });
