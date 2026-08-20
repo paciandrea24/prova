@@ -2016,3 +2016,51 @@ body.in-cerimonia .hud { display: none !important; }
 }
 #premiazione-fascia.campione { border-color: #E23127; }
 #premiazione-fascia.campione #premiazione-posto { color: #E23127; }
+
+/* --- PREMIAZIONE: l'annata che scorre ---
+   Una tappa alla volta sopra la panoramica del circuito, e in basso le due
+   barre del duello per il titolo. Sta in alto a sinistra e non al centro: al
+   centro coprirebbe il circuito, che e' lo sfondo di tutto il movimento. */
+#premiazione-annata {
+    position: fixed;
+    left: 6vw;
+    top: 14vh;
+    z-index: 41;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 22px 28px;
+    border-radius: 14px;
+    background: rgba(8, 25, 30, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #E9F3F5;
+    font-family: 'Fredoka', 'Trebuchet MS', sans-serif;
+    min-width: min(520px, 84vw);
+}
+.pa-tappa { display: flex; align-items: baseline; gap: 12px; }
+.pa-numero {
+    font-size: 11px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase;
+    color: #E9F3F5; background: #E23127; padding: 3px 10px; border-radius: 999px;
+}
+.pa-pista { font-size: clamp(20px, 2.8vh, 30px); font-weight: 800; }
+.pa-vincitore { display: flex; align-items: center; gap: 10px; }
+.pa-pallino { width: 13px; height: 13px; border-radius: 50%; }
+.pa-vince { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #8CAEB6; }
+.pa-chi { font-size: 17px; font-weight: 700; }
+/* Le barre: il fondo e' la corsia, il riempimento sono i punti. La transizione
+   sta QUI e non in JavaScript perche' fra una tappa e l'altra deve crescere da
+   sola, senza un secondo orologio da tenere allineato al primo. */
+.pa-barre { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.pa-barra {
+    position: relative; height: 26px; border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08); overflow: hidden;
+}
+.pa-riempie {
+    position: absolute; inset: 0 auto 0 0; width: 0;
+    transition: width 600ms ease;
+}
+.pa-etichetta {
+    position: absolute; inset: 0; display: flex; align-items: center;
+    padding-left: 10px; font-size: 13px; font-weight: 700;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}

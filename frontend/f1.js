@@ -4220,7 +4220,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const PRE_PARATA_Z = -12;        // oltre il podio, che arriva a 3.2
     const PRE_PARATA_PASSO = 9;      // un'auto e' lunga 7.17: sotto questo passo si toccano
 
+    // I tempi dei due movimenti che precedono la consegna. Quelli DENTRO la
+    // consegna stanno in shared/f1Premiazione.js.
+    const PRE_STING_MS = 4200;
+    const PRE_GARA_MS = 1700;        // quanto resta a schermo ogni tappa dell'annata
+    const PRE_ANNATA_MIN = 6000;     // sotto questa soglia il racconto non e' un racconto
+
     let premiazione = null;          // { scena, copione, righe, da, risolvi }
+    // Vale per TUTTA la cerimonia, non solo per la consegna: Esc deve poter
+    // interrompere anche il racconto dell'annata, che dura piu' di tutto il
+    // resto.
+    let premiazioneInCorso = false;
 
     let cerimoniaGruppo = null;
     let cerimoniaPronta = null;
@@ -4477,7 +4487,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         // e col near di gioco l'asfalto sfarfalla.
         camera.near = PANORAMICA_NEAR;
         camera.updateProjectionMatrix();
-        document.getElementById('stagione-overlay').style.display = 'none';
         document.getElementById('premiazione-fascia').style.display = '';
         premiazione = {
             scena, righe,
@@ -4488,8 +4497,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         return new Promise((risolvi) => { premiazione.risolvi = risolvi; });
     }
 
+    // Chiude TUTTA la cerimonia, in qualunque movimento ci si trovi: lo stacco
+    // si copre da se', l'annata guarda `premiazioneInCorso` al prossimo passo,
+    // la consegna smette qui.
     function fermaPremiazione() {
-        if (!premiazione) return;
+        premiazioneInCorso = false;
+        document.getElementById('premiazione-annata').style.display = 'none';
+        fermaPanoramica();
+        if (!premiazione) {
+            // Saltata prima della consegna: c'e' solo da riaprire la schermata.
+            document.getElementById('stagione-overlay').style.display = 'flex';
+            return;
+        }
         const finita = premiazione;
         premiazione = null;
         document.getElementById('premiazione-fascia').style.display = 'none';
@@ -4504,15 +4523,87 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (finita.risolvi) finita.risolvi(true);
     }
 
-    // L'unico modo di entrare, e lo usa la schermata della stagione.
-    window.f1PremiazioneAvvia = function (righe, tutte) {
-        return costruisciPremiazione(righe, tutte).then((scena) => avviaConsegna(scena, righe));
+    // L'annata, una tappa alla volta, sulla panoramica del circuito. Le barre si
+    // misurano sul punteggio FINALE del capoclassifica: cosi' l'ultima gara
+    // riempie la barra e non c'e' un riscalamento a meta' racconto, che
+    // renderebbe illeggibile proprio il confronto che si vuole mostrare.
+    //
+    // La cronaca arriva gia' pronta per essere scritta a schermo (nomi delle
+    // piste ed etichette dei piloti): qui non si sa chi sia l'utente, e
+    // nemmeno come si chiamino i circuiti.
+    function mostraAnnata(cronaca) {
+        if (!cronaca || !cronaca.length) return Promise.resolve();
+        const durata = Math.max(PRE_ANNATA_MIN, cronaca.length * PRE_GARA_MS);
+        const passo = durata / cronaca.length;
+        const massimo = Math.max(1, ...cronaca.map(v => (v.testa[0] ? v.testa[0].punti : 0)));
+        const box = document.getElementById('premiazione-annata');
+        box.style.display = '';
+        avviaPanoramica(durata);
+
+        return new Promise((risolvi) => {
+            let i = 0;
+            const chiudi = () => {
+                box.style.display = 'none';
+                fermaPanoramica();
+                risolvi();
+            };
+            const scrivi = () => {
+                if (!premiazioneInCorso) { chiudi(); return; }
+                const voce = cronaca[i];
+                document.getElementById('pa-numero').textContent = 'Gara ' + voce.numero;
+                document.getElementById('pa-pista').textContent = voce.pista;
+                document.getElementById('pa-chi').textContent = voce.vincitore.etichetta;
+                document.getElementById('pa-pallino').style.background = voce.vincitore.colore || '#888';
+                for (const k of [0, 1]) {
+                    const riga = voce.testa[k];
+                    const barra = document.getElementById('pa-barra-' + (k + 1));
+                    const nome = document.getElementById('pa-nome-' + (k + 1));
+                    if (!riga) { barra.style.width = '0%'; nome.textContent = ''; continue; }
+                    barra.style.width = Math.round((riga.punti / massimo) * 100) + '%';
+                    barra.style.background = riga.colore || '#888';
+                    nome.textContent = riga.etichetta + ' ' + riga.punti;
+                }
+                i += 1;
+                setTimeout(i < cronaca.length ? scrivi : chiudi, passo);
+            };
+            scrivi();
+        });
+    }
+
+    // L'unico modo di entrare, e lo usa la schermata della stagione. Tre
+    // movimenti in fila; il quarto (l'albo d'oro) lo mostra la schermata quando
+    // questa promessa si risolve.
+    window.f1PremiazioneAvvia = function (righe, tutte, cronaca, nome) {
+        premiazioneInCorso = true;
+        document.getElementById('stagione-overlay').style.display = 'none';
+        // La scena si costruisce DURANTE lo stacco: caricarla quando serve la
+        // farebbe arrivare in ritardo sul proprio ingresso, ed e' l'errore gia'
+        // fatto una volta con l'auto in pole del riepilogo griglia.
+        const scenaPronta = costruisciPremiazione(righe, tutte);
+        return F1Sting.play({
+            titolo: 'Campione del mondo',
+            sottotitolo: nome || '',
+            durataMs: PRE_STING_MS,
+        })
+            .then(() => (premiazioneInCorso ? mostraAnnata(cronaca) : null))
+            .then(() => scenaPronta)
+            .then((scena) => {
+                if (!premiazioneInCorso) {
+                    // Saltata durante lo stacco o l'annata: la scena e' stata
+                    // costruita comunque, e va smaltita invece che lasciata
+                    // appesa a una cerimonia che non ci sara'.
+                    if (scena) { scene.remove(scena.gruppo); smaltisciAuto(scena.gruppo); }
+                    fermaPremiazione();
+                    return null;
+                }
+                return avviaConsegna(scena, righe);
+            });
     };
 
     // Si puo' saltare: una cerimonia che non si puo' interrompere e' una
     // cerimonia che la seconda volta si subisce.
     document.addEventListener('keydown', (e) => {
-        if (!premiazione) return;
+        if (!premiazioneInCorso) return;
         if (e.key !== 'Escape' && e.key !== 'Enter' && e.key !== ' ') return;
         fermaPremiazione();
     });

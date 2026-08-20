@@ -543,8 +543,22 @@
                 const tutti = albo.classifica.map(r => ({
                     uid: r.uid, colore: r.colore, bot: r.bot,
                 }));
+                // La cronaca arriva alla pagina di gioco gia' pronta da
+                // scrivere a schermo: li' non si sa chi sia l'utente ne' come
+                // si chiamino i circuiti, e non e' il caso di insegnarglielo.
+                const cronaca = F1Stagione.cronaca(stagione).map(v => ({
+                    numero: v.numero,
+                    pista: nomePista(piste, v.pista),
+                    vincitore: {
+                        etichetta: v.vincitore ? etichettaPilota(v.vincitore, mioUid) : '—',
+                        colore: v.vincitore ? v.vincitore.colore : null,
+                    },
+                    testa: v.classifica.slice(0, 2).map(r => ({
+                        etichetta: etichettaPilota(r, mioUid), colore: r.colore, punti: r.punti,
+                    })),
+                }));
                 const cerimonia = (typeof window !== 'undefined' && window.f1PremiazioneAvvia)
-                    ? window.f1PremiazioneAvvia(podio, tutti)
+                    ? window.f1PremiazioneAvvia(podio, tutti, cronaca, stagione.nome)
                     : Promise.resolve(null);
                 Promise.resolve(cerimonia).catch(() => null).then(() => disegnaAlbo(stagione));
             };
