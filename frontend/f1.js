@@ -4239,6 +4239,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     const PRE_TROFEO_ALTEZZA = 2.2;
     const PRE_TROFEO_POS = { x: 0, y: 0, z: 3.9 };   // il podio arriva a 3.2: appena davanti
 
+    // LA FESTA DELL'APOTEOSI — di notte i fuochi d'artificio, di giorno le
+    // frecce tricolori. La scelta la fa il CIRCUITO dell'ultima gara, che e'
+    // quello caricato in scena: di giorno un fuoco d'artificio non si vede
+    // (era il dubbio dell'utente), e di notte tre aerei bianchi contro il cielo
+    // nero nemmeno.
+    // Le quote sono misurate sull'inquadratura larga dell'apoteosi (camera 30
+    // indietro, 12 di quota, mira a 5.5, FOV 65): sopra le 28 unita' uno
+    // scoppio vicino esce dal quadro, e un aereo a 46 si vede solo quando e'
+    // gia' lontanissimo. Una festa fuori campo e' una festa che non c'e'.
+    const PRE_RAZZI = 5;
+    const PRE_RAZZO_QUOTA = [18, 28];      // dove scoppia, sopra il podio
+    const PRE_RAZZO_SPARSO = 26;           // di quanto si allarga la rosa dei lanci
+    const PRE_JET_QUOTA = 26;
+    const PRE_JET_PASSAGGIO_MS = 4200;     // da fuori campo a fuori campo
+    const PRE_JET_LUNGO = 260;             // quanta pista percorrono nel passaggio
+    const PRE_JET_PASSO = 11;              // distanza fra un aereo e l'altro in formazione
+    // Verde, bianco, rosso: i tre colori delle scie, e sono anche i tre aerei
+    // che le lasciano.
+    const PRE_TRICOLORE = [0x2E9E4F, 0xF2F5F5, 0xCE2B37];
+
     let premiazione = null;          // { scena, copione, righe, da, risolvi }
     // Vale per TUTTA la cerimonia, non solo per la consegna: Esc deve poter
     // interrompere anche il racconto dell'annata, che dura piu' di tutto il
@@ -4350,6 +4370,187 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // Un aereo in stile voxel, costruito da codice: nessun asset da procurare,
+    // e a quaranta unita' di quota tre scatole ben proporzionate sono tutto
+    // quello che si distingue.
+    function costruisciAereo() {
+        const aereo = new THREE.Group();
+        const corpo = new THREE.Mesh(
+            new THREE.BoxGeometry(1.1, 1.0, 6.4),
+            new THREE.MeshLambertMaterial({ color: 0xE8ECEE }));
+        const ali = new THREE.Mesh(
+            new THREE.BoxGeometry(7.4, 0.35, 1.6),
+            new THREE.MeshLambertMaterial({ color: 0xE8ECEE }));
+        ali.position.z = -0.4;
+        const deriva = new THREE.Mesh(
+            new THREE.BoxGeometry(0.35, 1.5, 1.4),
+            new THREE.MeshLambertMaterial({ color: 0xCE2B37 }));
+        deriva.position.set(0, 0.9, -2.6);
+        aereo.add(corpo); aereo.add(ali); aereo.add(deriva);
+        return aereo;
+    }
+
+    // La festa: quale delle due, e tutto ciò che le serve. Nasce spenta e si
+    // accende nell'apoteosi.
+    function costruisciFesta(colori, base) {
+        const notte = !!(trackData && trackData.notturno);
+        const festa = { notte, razzi: [], scoppi: [], aerei: [], scie: [], suonata: false };
+        const { p, avanti, quota } = base;
+        const destra = { x: -avanti.z, z: avanti.x };
+
+        if (notte) {
+            // Un razzo per volta: un cubetto che sale e sparisce, e uno
+            // scoppio pronto a fiorire dov'era arrivato.
+            const programma = F1SuoniCerimonia.programmaFuochi(
+                F1Premiazione.DURATE.apoteosi, PRE_RAZZI);
+            const partenze = programma.filter(e => e.tipo === 'fischio');
+            partenze.forEach((evento, i) => {
+                // Sparsi dietro il podio, mai davanti alla camera.
+                const lato = ((i * 53) % 100) / 100 - 0.5;
+                const indietro = 10 + ((i * 31) % 100) / 100 * 26;
+                const alto = PRE_RAZZO_QUOTA[0]
+                    + ((i * 17) % 100) / 100 * (PRE_RAZZO_QUOTA[1] - PRE_RAZZO_QUOTA[0]);
+                const px = p.x + avanti.x * indietro + destra.x * lato * PRE_RAZZO_SPARSO;
+                const pz = p.z + avanti.z * indietro + destra.z * lato * PRE_RAZZO_SPARSO;
+
+                const colore = colori[i % colori.length];
+                const razzo = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.5, 0.9, 0.5),
+                    new THREE.MeshBasicMaterial({ color: colore }));
+                razzo.visible = false;
+                ToonStyle.excludeFromOutline(razzo);
+                scene.add(razzo);
+
+                const scoppio = costruisciEffettoParticelle(
+                    F1Particelle.SCOPPIO, colore, 0.95, { partiPieno: false });
+                scoppio.visible = true;
+                scene.add(scoppio);
+
+                festa.razzi.push({
+                    mesh: razzo, scoppio,
+                    da: evento.istanteMs, a: evento.istanteMs + F1SuoniCerimonia.SALITA_MS,
+                    base: { x: px, y: quota, z: pz }, alto: quota + alto,
+                    esploso: false,
+                });
+            });
+            festa.programmaSuono = programma;
+        } else {
+            // Cinque aerei in formazione a cuneo, e tre scie tricolori.
+            for (let i = 0; i < 5; i++) {
+                const aereo = costruisciAereo();
+                aereo.visible = false;
+                scene.add(aereo);
+                // Cuneo: il capoformazione davanti, gli altri due a due dietro
+                // e di lato.
+                const fila = Math.ceil(i / 2);
+                const lato = (i === 0) ? 0 : (i % 2 === 0 ? 1 : -1);
+                festa.aerei.push({ mesh: aereo, indietro: fila * PRE_JET_PASSO, lato: lato * fila * PRE_JET_PASSO });
+            }
+            for (let k = 0; k < PRE_TRICOLORE.length; k++) {
+                const scia = costruisciEffettoParticelle(
+                    F1Particelle.SCIA_AEREO, PRE_TRICOLORE[k], 0.9, { partiPieno: false });
+                scia.visible = true;
+                scene.add(scia);
+                // Le tre scie stanno sugli aerei 0, 1 e 2: la formazione ne ha
+                // cinque, ma tre colori sono tre colori.
+                festa.scie.push({ mesh: scia, aereo: k });
+            }
+            festa.programmaSuono = F1SuoniCerimonia.programmaJet(
+                F1Premiazione.DURATE.apoteosi, 1);
+        }
+        return festa;
+    }
+
+    // Fa vivere la festa. `t` e' il tempo trascorso dall'inizio dell'apoteosi;
+    // finche' e' negativo non c'e' niente da mostrare.
+    function aggiornaFesta(festa, t, dtMs, base) {
+        if (!festa) return;
+        const { p, avanti, quota } = base;
+        const destra = { x: -avanti.z, z: avanti.x };
+
+        // I suoni si programmano tutti in una volta, sull'orologio dell'audio:
+        // un setTimeout per ogni botto sarebbe alla merce' del frame rate.
+        if (t >= 0 && !festa.suonata) {
+            festa.suonata = true;
+            const ctx = listener && listener.context;
+            if (ctx) {
+                if (festa.notte) F1SuoniCerimonia.suonaFuochi(ctx, festa.programmaSuono, 0.7);
+                else F1SuoniCerimonia.suonaJet(ctx, festa.programmaSuono, PRE_JET_PASSAGGIO_MS, 0.7);
+            }
+        }
+
+        if (festa.notte) {
+            for (const razzo of festa.razzi) {
+                const salita = (t - razzo.da) / Math.max(1, razzo.a - razzo.da);
+                if (salita < 0) { razzo.mesh.visible = false; continue; }
+                if (salita < 1) {
+                    razzo.mesh.visible = true;
+                    razzo.mesh.position.set(
+                        razzo.base.x,
+                        misto(razzo.base.y, razzo.alto, salita * salita),
+                        razzo.base.z);
+                } else {
+                    razzo.mesh.visible = false;
+                    if (!razzo.esploso) {
+                        razzo.esploso = true;
+                        // Tutto il pool nello stesso istante: e' quello che
+                        // distingue uno scoppio da un emettitore.
+                        const stato = razzo.scoppio.userData.particelle;
+                        const config = razzo.scoppio.userData.configParticelle;
+                        const ancora = { x: razzo.base.x, y: razzo.alto, z: razzo.base.z, avantiX: 0, avantiZ: 1 };
+                        for (let i = 0; i < config.numero; i++) {
+                            F1Particelle.rinasci(stato, i, config, ancora);
+                        }
+                    }
+                }
+                // `emissione` a zero: nessuno rinasce, la fiammata si spegne.
+                aggiornaEffettoParticelle(razzo.scoppio, dtMs || 16, { emissione: 0 });
+            }
+            return;
+        }
+
+        // Di giorno: il passaggio degli aerei.
+        const avanzamento = t / PRE_JET_PASSAGGIO_MS;
+        for (let i = 0; i < festa.aerei.length; i++) {
+            const jet = festa.aerei[i];
+            if (avanzamento < 0 || avanzamento > 1.15) { jet.mesh.visible = false; continue; }
+            jet.mesh.visible = true;
+            // Entrano da dietro la camera e vanno verso l'orizzonte lungo il
+            // rettilineo: cosi' la traiettoria e' giusta su qualunque circuito
+            // senza doverla tarare pista per pista.
+            const lungo = misto(-PRE_JET_LUNGO * 0.55, PRE_JET_LUNGO * 0.75, avanzamento) - jet.indietro;
+            jet.mesh.position.set(
+                p.x + avanti.x * lungo + destra.x * jet.lato,
+                quota + PRE_JET_QUOTA,
+                p.z + avanti.z * lungo + destra.z * jet.lato);
+            jet.mesh.rotation.y = Math.atan2(avanti.x, avanti.z);
+        }
+        for (const scia of festa.scie) {
+            const jet = festa.aerei[scia.aereo];
+            const viva = jet && jet.mesh.visible;
+            aggiornaEffettoParticelle(scia.mesh, dtMs || 16, {
+                ancora: viva ? {
+                    x: jet.mesh.position.x, y: jet.mesh.position.y, z: jet.mesh.position.z,
+                    avantiX: avanti.x, avantiZ: avanti.z,
+                } : null,
+                emissione: viva ? 1 : 0,
+            });
+        }
+    }
+
+    function smaltisciFesta(festa) {
+        if (!festa) return;
+        const roba = []
+            .concat(festa.razzi.map(r => r.mesh))
+            .concat(festa.razzi.map(r => r.scoppio))
+            .concat(festa.aerei.map(a => a.mesh))
+            .concat(festa.scie.map(s => s.mesh));
+        for (const oggetto of roba) {
+            scene.remove(oggetto);
+            smaltisciAuto(oggetto);
+        }
+    }
+
     // Podio, auto dei premiati (che partono FUORI CAMPO) e parata di tutte le
     // altre. Restituisce quello che serve ad animarle: per ogni premiato, le
     // tre pose fra cui si muove.
@@ -4453,7 +4654,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return null;
             }
             scene.add(gruppo);
-            return { gruppo, attori, trofeo, coriandoli, base: { p, avanti, quota: p.y || 0 } };
+            const base = { p, avanti, quota: p.y || 0 };
+            const festa = costruisciFesta(premiati.map(r => coloreEsadecimale(r.colore)), base);
+            return { gruppo, attori, trofeo, coriandoli, festa, base };
         }).catch(() => null);
     }
 
@@ -4542,6 +4745,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
 
+        // La festa parte con l'apoteosi. Il tempo che le si passa e' quello
+        // trascorso da quando e' cominciata, non dall'inizio della cerimonia.
+        if (premiazione.scena.festa) {
+            const inizioApoteosi = premiazione.copione[premiazione.copione.length - 1].da;
+            aggiornaFesta(premiazione.scena.festa,
+                (performance.now() - premiazione.da) - inizioApoteosi,
+                dtMs, premiazione.scena.base);
+        }
+
         // Il trofeo cresce nei primi istanti dell'apoteosi invece di apparire
         // di colpo: e' l'unico oggetto che entra in scena senza guidarci.
         const trofeo = premiazione.scena.trofeo;
@@ -4622,6 +4834,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 scene.remove(mesh);
                 if (mesh.material) mesh.material.dispose();
             }
+            smaltisciFesta(finita.scena.festa);
         }
         mostraAutoDiGara(true);
         camera.near = nearDiGioco;

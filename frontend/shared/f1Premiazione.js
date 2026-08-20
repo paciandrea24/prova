@@ -24,7 +24,10 @@
     //   salita   — sale sul gradino con un arco (è un gioco arcade: si alza)
     //   sosta    — resta ferma il tempo di essere guardata
     //   apoteosi — non entra più nessuno: la camera si alza, partono i coriandoli
-    const DURATE = { arrivo: 2600, salita: 900, sosta: 700, apoteosi: 5200 };
+    // L'apoteosi dura piu' delle altre fasi perche' e' quella in cui succede la
+    // festa: fuochi d'artificio se il circuito e' notturno, frecce tricolori se
+    // e' diurno. Con 5.2 s i razzi non facevano in tempo a salire e scoppiare.
+    const DURATE = { arrivo: 2600, salita: 900, sosta: 700, apoteosi: 8000 };
     const DURATA_ENTRATA = DURATE.arrivo + DURATE.salita + DURATE.sosta;
 
     // Quanti posti ha un podio. Non è un numero arbitrario: è quanti gradini ha

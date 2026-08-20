@@ -119,6 +119,45 @@
         pavimento: 0,
     };
 
+    // ── Lo scoppio di un fuoco d'artificio ──────────────────────────────────
+    // Non e' un emettitore continuo: nasce tutto in un istante (chi lo usa fa
+    // rinascere l'intero pool in una volta) e da li' in poi si allarga e si
+    // spegne. Per questo `emissione` va tenuta a zero: nessuno deve rinascere.
+    const SCOPPIO = {
+        numero: 64,
+        dimensione: 0.42,
+        vitaMs: 1700,
+        // Tutte dallo stesso punto: la sfera la fa la velocita', non la nascita.
+        nascita: { avanti: [-0.3, 0.3], lato: [-0.3, 0.3], quota: [-0.3, 0.3] },
+        velocita: { avanti: 0, lato: 0, quota: 0 },
+        velocitaCasuale: { avanti: 26, lato: 26, quota: 26 },
+        turbolenza: 0.4,
+        vitaVariazione: [0.6, 1.35],
+        // Quasi niente: un fuoco d'artificio si spegne prima di cadere.
+        gravita: -2.2,
+        scalaBase: [0.7, 1.5],
+        crescita: 0.04,
+        pavimento: null,
+    };
+
+    // ── La scia di un aereo ─────────────────────────────────────────────────
+    // L'opposto della scia dell'auto: non scappa all'indietro e non si dissolve
+    // subito. Nasce dove passa l'aereo e resta ferma in cielo, perche' e' fumo.
+    const SCIA_AEREO = {
+        numero: 90,
+        dimensione: 0.7,
+        vitaMs: 4200,
+        nascita: { avanti: [-0.5, 0.5], lato: [-0.4, 0.4], quota: [-0.3, 0.3] },
+        velocita: { avanti: 0, lato: 0, quota: 0 },
+        velocitaCasuale: { avanti: 0.6, lato: 0.6, quota: 0.6 },
+        turbolenza: 0.25,
+        vitaVariazione: [0.85, 1.15],
+        gravita: -0.15,
+        scalaBase: [0.9, 1.5],
+        crescita: 0.12,
+        pavimento: null,
+    };
+
     function fra(rand, coppia) {
         return coppia[0] + rand() * (coppia[1] - coppia[0]);
     }
@@ -262,7 +301,7 @@
     }
 
     return {
-        SCIA, DETRITI, CORIANDOLI,
+        SCIA, DETRITI, CORIANDOLI, SCOPPIO, SCIA_AEREO,
         creaStato, riempi, rinasci, avanza, scalaDi,
         ANCORA_LOCALE,
     };
