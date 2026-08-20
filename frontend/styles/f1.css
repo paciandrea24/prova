@@ -1776,6 +1776,12 @@ body.in-cerimonia .hud { display: none !important; }
     font-size: 11px; font-weight: 800; letter-spacing: 3px;
     text-transform: uppercase; color: var(--sel-tenue);
 }
+/* Una nota in fondo all'intestazione di sezione (es. "gara 3 di 6"): stessa
+   riga del titolo, ma in minuscolo, perche' e' un dato e non un'etichetta. */
+.stagione-sezione-nota {
+    margin-left: auto; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.5px; text-transform: none; color: var(--sel-tenue);
+}
 .stagione-titolo { margin: 0; font-size: clamp(22px, 3.4vh, 38px); font-weight: 800; }
 
 /* Le viste hanno piu' di un pezzo (le colonne, i comandi, la fascia del
@@ -1875,8 +1881,16 @@ body.in-cerimonia .hud { display: none !important; }
     color: var(--sel-tenue);
 }
 .stagione-tappa-nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stagione-tappa.corsa { opacity: 0.45; }                          /* gia' andata */
+/* Una tappa gia' andata si sbiadisce nel NOME, non tutta: accanto c'e' chi
+   l'ha vinta, ed e' l'unica cosa nuova che quella riga ha da dire. */
+.stagione-tappa.corsa .stagione-tappa-n,
+.stagione-tappa.corsa .stagione-tappa-nome { opacity: 0.45; }
 .stagione-tappa.prossima { border-color: var(--sel-cordolo); }    /* quella che si corre adesso */
+.stagione-tappa-vinta {
+    margin-left: auto; display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--sel-tenue); white-space: nowrap;
+}
+.stagione-tappa-vinta .stagione-pallino { width: 9px; height: 9px; }
 
 /* --- classifica --- */
 .stagione-classifica { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -1907,8 +1921,23 @@ body.in-cerimonia .hud { display: none !important; }
     padding: 3px 10px; border-radius: 999px;
     background: var(--sel-cordolo);
 }
-/* La riga con una colonna in piu' per il movimento in classifica. */
-.stagione-riga.con-delta { grid-template-columns: 28px 14px 1fr 30px auto; }
+/* La riga con una colonna in piu': il movimento nel riepilogo, le vittorie nel
+   calendario. Le due non convivono mai, e la griglia e' la stessa apposta. */
+.stagione-riga.con-colonna { grid-template-columns: 28px 14px 1fr 34px auto; }
+.stagione-vitt {
+    font-size: 12px; font-weight: 700; text-align: right;
+    color: var(--sel-tenue); font-variant-numeric: tabular-nums;
+}
+/* L'intestazione e' una riga senza sfondo: deve dire cosa sono le colonne,
+   non sembrare un pilota in piu'. */
+.stagione-riga.stagione-testa {
+    background: transparent; padding-top: 0; padding-bottom: 2px;
+    font-size: 10px; font-weight: 800; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--sel-tenue);
+}
+.stagione-riga.stagione-testa .stagione-punti,
+.stagione-riga.stagione-testa .stagione-nome { font-size: 10px; font-weight: 800; }
+.stagione-riga.stagione-testa .stagione-punti { text-align: right; }
 .stagione-delta {
     font-size: 11px; font-weight: 800; text-align: right;
     font-variant-numeric: tabular-nums;

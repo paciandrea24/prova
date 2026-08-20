@@ -99,11 +99,14 @@
     // momenti diversi, e tenerle uguali e' quello che le rende confrontabili
     // a colpo d'occhio.
     //
-    // `delta` aggiunge la colonna del movimento in classifica; null la lascia
-    // fuori del tutto, invece di occupare spazio con un trattino.
-    function rigaPilota({ posizione, colore, etichetta, valore, mio, delta }) {
+    // Fra il nome e il valore ci sta UNA colonna in piu', e le due che la
+    // occupano non convivono mai: il movimento (in alto/in basso) e' roba del
+    // riepilogo, le vittorie sono roba del calendario. Stessa griglia per
+    // entrambe, cosi' le liste restano allineate anche affiancate.
+    function rigaPilota({ posizione, colore, etichetta, valore, mio, delta, vittorie }) {
         const li = document.createElement('li');
-        li.className = 'stagione-riga' + (mio ? ' sono-io' : '') + (delta != null ? ' con-delta' : '');
+        const colonnaInPiu = delta != null || vittorie != null;
+        li.className = 'stagione-riga' + (mio ? ' sono-io' : '') + (colonnaInPiu ? ' con-colonna' : '');
 
         const pos = document.createElement('span');
         pos.className = 'stagione-pos';
@@ -128,12 +131,39 @@
             d.className = 'stagione-delta';
             li.appendChild(d);
             scriviDelta(d, delta);
+        } else if (vittorie != null) {
+            const w = document.createElement('span');
+            w.className = 'stagione-vitt';
+            // Zero vittorie si scrive con un trattino: una colonna di zeri
+            // nasconde le poche righe che hanno un numero, che sono l'unica
+            // ragione per cui la colonna esiste.
+            w.textContent = vittorie ? String(vittorie) : '–';
+            li.appendChild(w);
         }
 
         const val = document.createElement('span');
         val.className = 'stagione-punti';
         val.textContent = String(valore);
         li.appendChild(val);
+        return li;
+    }
+
+    // L'intestazione della classifica: stessa griglia delle righe, cosi' ogni
+    // colonna cade esattamente sopra i suoi numeri.
+    function intestazioneClassifica() {
+        const li = document.createElement('li');
+        li.className = 'stagione-riga con-colonna stagione-testa';
+        const colonne = [
+            ['stagione-pos', '#'], ['stagione-pallino-vuoto', ''],
+            ['stagione-nome', 'Pilota'], ['stagione-vitt', 'Vitt.'],
+            ['stagione-punti', 'Punti'],
+        ];
+        for (const colonna of colonne) {
+            const span = document.createElement('span');
+            span.className = colonna[0];
+            span.textContent = colonna[1];
+            li.appendChild(span);
+        }
         return li;
     }
 
@@ -340,8 +370,16 @@
             const puoiEliminare = !!(mioUid && stagione.creataDa === mioUid);
             el('stagione-elimina').style.display = puoiEliminare ? '' : 'none';
 
+            // A che punto si e' del campionato, accanto al titolo della
+            // colonna: prima lo si poteva sapere solo contando le tappe
+            // sbiadite.
+            testo(el('stagione-a-che-punto'), F1Stagione.finita(stagione)
+                ? `${stagione.calendario.length} gare, tutte corse`
+                : `gara ${stagione.giro + 1} di ${stagione.calendario.length}`);
+
             const cal = el('stagione-calendario');
             cal.innerHTML = '';
+            const anagrafica = new Map(stagione.piloti.map(p => [p.id, p]));
             stagione.calendario.forEach((pistaId, i) => {
                 const li = document.createElement('li');
                 li.className = 'stagione-tappa'
@@ -355,17 +393,39 @@
                 nome.textContent = nomePista(piste, pistaId);
                 li.appendChild(n);
                 li.appendChild(nome);
+                // Su una tappa gia' corsa si scrive CHI L'HA VINTA: sbiadirla e
+                // basta diceva che era passata, non com'e' andata.
+                const gara = stagione.risultati[i];
+                const vincitore = gara && anagrafica.get(gara.ordine[0]);
+                if (vincitore) {
+                    const chi = document.createElement('span');
+                    chi.className = 'stagione-tappa-vinta';
+                    const pallino = document.createElement('span');
+                    pallino.className = 'stagione-pallino';
+                    pallino.style.background = vincitore.colore || '#888';
+                    const etichetta = document.createElement('span');
+                    etichetta.textContent = etichettaPilota(vincitore, mioUid);
+                    chi.appendChild(pallino);
+                    chi.appendChild(etichetta);
+                    li.appendChild(chi);
+                }
                 cal.appendChild(li);
             });
 
             const cls = el('stagione-classifica');
             cls.innerHTML = '';
+            // L'intestazione esiste per una colonna sola: quella delle
+            // VITTORIE. Senza, due piloti a pari punti stanno uno sopra
+            // l'altro e non si capisce perche' — a decidere e' il countback, e
+            // le vittorie sono la sua prima parola.
+            cls.appendChild(intestazioneClassifica());
             for (const riga of F1Stagione.classifica(stagione)) {
                 cls.appendChild(rigaPilota({
                     posizione: riga.posizione,
                     colore: riga.colore,
                     etichetta: etichettaPilota(riga, mioUid),
                     valore: riga.punti,
+                    vittorie: F1Stagione.vittorie(riga),
                     mio: !!(riga.uid && riga.uid === mioUid),
                 }));
             }

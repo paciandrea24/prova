@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260820d">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260820e">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -497,7 +497,10 @@
             <section class="stagione-vista" id="stagione-vista-calendario" style="display:none;">
                 <div class="stagione-colonne">
                     <div class="stagione-col">
-                        <div class="stagione-sezione">Calendario</div>
+                        <div class="stagione-sezione">
+                            Calendario
+                            <span class="stagione-sezione-nota" id="stagione-a-che-punto"></span>
+                        </div>
                         <ol class="stagione-calendario" id="stagione-calendario"></ol>
                     </div>
                     <div class="stagione-col">
@@ -811,7 +814,7 @@
          schermate. Le regole girano UGUALI sul server: vedi
          backend/routes/f1Stagioni.js, che richiede lo stesso file. -->
     <script src="shared/f1Stagione.js?v=20260820b"></script>
-    <script src="shared/f1StagioneSchermate.js?v=20260820g"></script>
+    <script src="shared/f1StagioneSchermate.js?v=20260820h"></script>
     <script src="f1.js?v=20260820j"></script>
 </body>
 
