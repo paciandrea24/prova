@@ -4226,6 +4226,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     const PRE_GARA_MS = 1700;        // quanto resta a schermo ogni tappa dell'annata
     const PRE_ANNATA_MIN = 6000;     // sotto questa soglia il racconto non e' un racconto
 
+    // IL TROFEO — l'asset lo consegna l'utente, e potrebbe non esserci.
+    //
+    // Sta ai piedi del podio, al centro, e compare quando il campione e' salito:
+    // prima non avrebbe senso, e in mezzo alla salita l'auto ci passa sopra.
+    // La quota 2.2 e' scelta apposta perche' l'auto in salita passa a 2.4 e non
+    // lo sfiori.
+    //
+    // Non si concorda nessuna scala con chi lo modella: il modello viene
+    // normalizzato dal suo ingombro reale.
+    const PRE_TROFEO_PATH = '/assets/custom/circuit/trophy.glb';
+    const PRE_TROFEO_ALTEZZA = 2.2;
+    const PRE_TROFEO_POS = { x: 0, y: 0, z: 3.9 };   // il podio arriva a 3.2: appena davanti
+
     let premiazione = null;          // { scena, copione, righe, da, risolvi }
     // Vale per TUTTA la cerimonia, non solo per la consegna: Esc deve poter
     // interrompere anche il racconto dell'annata, che dura piu' di tutto il
@@ -4318,6 +4331,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         delete car.userData.engineSound;
     }
 
+    // Il trofeo e' facoltativo: se il file non c'e', la cerimonia gira identica.
+    // Un 404 qui non e' un errore da segnalare — e' la risposta alla domanda
+    // "c'e' un trofeo?".
+    function caricaTrofeo() {
+        return new Promise((risolvi) => {
+            new THREE.GLTFLoader().load(PRE_TROFEO_PATH,
+                (gltf) => risolvi(gltf.scene),
+                undefined,
+                () => risolvi(null));
+        });
+    }
+
     // Podio, auto dei premiati (che partono FUORI CAMPO) e parata di tutte le
     // altre. Restituisce quello che serve ad animarle: per ogni premiato, le
     // tre pose fra cui si muove.
@@ -4338,7 +4363,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             caricaPodio,
             Promise.all(premiati.map(caricaAuto)),
             Promise.all(contorno.map(caricaAuto)),
-        ]).then(([podioMesh, auto, parata]) => {
+            caricaTrofeo(),
+        ]).then(([podioMesh, auto, parata, trofeoMesh]) => {
             const gruppo = new THREE.Group();
             gruppo.visible = false;
 
@@ -4379,6 +4405,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                 gruppo.add(car);
             });
 
+            // Il trofeo, se c'e'. Normalizzato dal suo ingombro: cosi' va bene
+            // qualunque scala abbia il file, e non serve mettersi d'accordo con
+            // chi lo ha modellato.
+            let trofeo = null;
+            if (trofeoMesh) {
+                const scatola = new THREE.Box3().setFromObject(trofeoMesh);
+                const altezza = Math.max(0.001, scatola.max.y - scatola.min.y);
+                trofeoMesh.userData.scalaPiena = PRE_TROFEO_ALTEZZA / altezza;
+                trofeoMesh.scale.setScalar(trofeoMesh.userData.scalaPiena);
+                trofeoMesh.position.set(PRE_TROFEO_POS.x, PRE_TROFEO_POS.y, PRE_TROFEO_POS.z);
+                applicaStile(trofeoMesh, { saturation: ToonPalette.SATURATION.scenery });
+                trofeoMesh.visible = false;   // compare quando il campione e' sul podio
+                gruppo.add(trofeoMesh);
+                trofeo = trofeoMesh;
+            }
+
             // Posa sul traguardo, col fronte rivolto a chi arriva: le auto
             // guardano indietro lungo il rettilineo, verso la camera.
             const { p, avanti } = assiDelTraguardo();
@@ -4387,7 +4429,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (miaSequenza !== sequenzaCorrente) { smaltisciAuto(gruppo); return null; }
             scene.add(gruppo);
-            return { gruppo, attori, base: { p, avanti, quota: p.y || 0 } };
+            return { gruppo, attori, trofeo, base: { p, avanti, quota: p.y || 0 } };
         }).catch(() => null);
     }
 
@@ -4460,6 +4502,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             p.z - avanti.z * distanza + destra.z * scarto,
         );
         camera.lookAt(p.x, quota + misto(PRE_CAM_VICINO.mira, PRE_CAM_LARGO.mira, apertura), p.z);
+
+        // Il trofeo cresce nei primi istanti dell'apoteosi invece di apparire
+        // di colpo: e' l'unico oggetto che entra in scena senza guidarci.
+        const trofeo = premiazione.scena.trofeo;
+        if (trofeo) {
+            const nato = stato.posto === 0 ? Math.min(1, stato.avanzamento * 4) : 0;
+            trofeo.visible = nato > 0;
+            trofeo.scale.setScalar(trofeo.userData.scalaPiena * (nato > 0 ? nato : 1));
+        }
 
         aggiornaFasciaPremiazione(stato);
         if (stato.fase === 'finita') fermaPremiazione();
