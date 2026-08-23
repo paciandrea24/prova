@@ -22,6 +22,13 @@ function makeSimPlayer(track, opts) {
         checkpointA: false, inFinishZone: false,
         trackIndex: 0,
         compound: 'medium', tyreWear: 0,
+        // Peso del carburante. ASSENTE = serbatoio vuoto, che e' il
+        // comportamento storico del banco: si popola solo con --fuel, e serve
+        // a misurare quanto costa l'auto piena. simulateLap gira in modalita'
+        // qualifica, dove il tick di gara non riempie mai il serbatoio — ed e'
+        // proprio per questo che il carburante non ramifica su isQuali: basta
+        // popolare il campo. Vedi backend/sockets/games/physics/FuelModel.js.
+        ...(opts.fuelFactor ? { fuelFactor: opts.fuelFactor } : {}),
         pitting: false, pitPhase: null, pitAutoState: null,
         isBot: true,
         botSpeedFactor: opts.speedFactor,
@@ -102,7 +109,7 @@ function simulateLap(track, opts) {
         p.inFinishZone = inFinishZone;
     }
 
-    return { finished: p.finished, timeMs: p.time, telemetry };
+    return { finished: p.finished, timeMs: p.time, telemetry, fuelFactor: opts.fuelFactor };
 }
 
 // Raggruppa la telemetria in "bucket" di 20 campioni (~2% di un giro
@@ -172,6 +179,7 @@ function parseArgs(argv) {
         else if (arg.startsWith('--pace-mult=')) args.paceMult = Number(arg.slice('--pace-mult='.length));
         else if (arg.startsWith('--precision-noise=')) args.precisionNoise = Number(arg.slice('--precision-noise='.length));
         else if (arg.startsWith('--safety-cap=')) args.safetyCapS = Number(arg.slice('--safety-cap='.length));
+        else if (arg.startsWith('--fuel=')) args.fuelFactor = Number(arg.slice('--fuel='.length));
         else if (!arg.startsWith('--')) args.trackId = arg;
     }
     return args;
@@ -182,7 +190,7 @@ function runOne(trackId, args) {
     const tuning = args.preset === 'zero-margin' ? ZERO_MARGIN_TUNING : undefined;
     const result = simulateLap(track, {
         speedFactor: args.speedFactor, paceMult: args.paceMult, precisionNoise: args.precisionNoise,
-        safetyCapS: args.safetyCapS, tuning
+        safetyCapS: args.safetyCapS, tuning, fuelFactor: args.fuelFactor
     });
     return { trackId, track, ...result };
 }
@@ -202,7 +210,7 @@ function main() {
     }
 
     if (!args.trackId) {
-        console.error('Uso: node backend/tools/f1LapSimulator.js <trackId> [--preset=zero-margin] [--all-tracks] [--speed-factor=N] [--pace-mult=N] [--precision-noise=N] [--safety-cap=SECONDI]');
+        console.error('Uso: node backend/tools/f1LapSimulator.js <trackId> [--preset=zero-margin] [--all-tracks] [--speed-factor=N] [--pace-mult=N] [--precision-noise=N] [--safety-cap=SECONDI] [--fuel=N]');
         process.exitCode = 1;
         return;
     }
@@ -213,6 +221,7 @@ function main() {
         return;
     }
     console.log(`${args.trackId}: giro completato in ${r.timeMs}ms (${(r.timeMs / 1000).toFixed(2)}s)`);
+    if (args.fuelFactor) console.log(`  carburante: x${args.fuelFactor}`);
     console.log('Curve piu lente:');
     for (const s of slowestPoints(r.telemetry, r.track, args.slowestCount)) {
         console.log(`  ${s.pctLap}% giro: ${s.speedKmh} km/h`);

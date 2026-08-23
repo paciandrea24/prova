@@ -56,3 +56,28 @@ test('parseArgs: trackId posizionale + flag --all-tracks/--preset/--speed-factor
     assert.equal(args.preset, 'zero-margin');
     assert.equal(args.speedFactor, 0.9);
 });
+
+// Il banco deve poter pesare l'auto, altrimenti il peso del carburante non e'
+// misurabile: simulateLap gira in modalita' qualifica, e li' il tick di gara
+// non arriva mai a riempire il serbatoio.
+// Rif. docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md
+test('parseArgs: --fuel finisce in opts.fuelFactor', () => {
+    const args = parseArgs(['--fuel=1.08']);
+    assert.equal(args.fuelFactor, 1.08);
+});
+
+test('parseArgs: senza --fuel il campo resta assente (auto scarica)', () => {
+    const args = parseArgs([]);
+    assert.ok(args.fuelFactor === undefined || args.fuelFactor === 1,
+        `atteso assente o 1, ottenuto ${args.fuelFactor}`);
+});
+
+test('simulateLap: --fuel arriva davvero al giocatore simulato', () => {
+    // Senza questo, un A/B che non mostra differenze verrebbe letto come
+    // "il peso e' troppo piccolo" invece che "l'opzione non passa".
+    const { loadTrack } = require('../sockets/games/trackLoader.js');
+    const track = loadTrack('prova');
+    const r = simulateLap(track, { speedFactor: 1, paceMult: 1, precisionNoise: 0, fuelFactor: 1.08 });
+    assert.ok(r.telemetry.length > 0, 'la simulazione deve produrre telemetria');
+    assert.equal(r.fuelFactor, 1.08, 'simulateLap deve dichiarare con che carico ha girato');
+});
