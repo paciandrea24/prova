@@ -24,6 +24,7 @@ const {
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise
 } = DamageModel;
 
+const { fuelFactorFor } = require('./physics/FuelModel');
 const VehiclePhysics = require('./physics/VehiclePhysics');
 const {
     ACCEL, BRAKE_MULT, TURN_SPEED_HIGH,
@@ -1841,6 +1842,19 @@ function broadcastQualiWaitingCount(io, lobbyId, game) {
 // ====================================================
 // TICK FISICO
 // ====================================================
+// L'UNICO punto che decide quanta benzina ha a bordo un'auto. I modelli
+// fisici leggono p.fuelFactor e non sanno ne' che formato di gara si sta
+// correndo ne' che esistono le stagioni: e' questa asimmetria che tiene
+// pulita la fisica (Rif.
+// docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md).
+//
+// In qualifica il serbatoio e' vuoto per definizione — e NON si passa da
+// `totalLaps`, che nel tick vale 1 in qualifica e darebbe un'auto PIENA sul
+// giro secco, l'esatto contrario di come si corre una qualifica.
+function aggiornaCarburante(p, isQuali, totalLaps) {
+    p.fuelFactor = isQuali ? 1 : fuelFactorFor(p.lap, totalLaps);
+}
+
 function tickGame(io, lobbyId, game) {
     if (!game.raceStarted) {
         // Falsa partenza: il client inizia a inviare l'input dell'acceleratore
@@ -1914,6 +1928,7 @@ function tickGame(io, lobbyId, game) {
                 p.inSlipstream = true;   // solo per il badge/effetto visivo lato client, vedi buildPublicState
             }
         }
+        aggiornaCarburante(p, isQuali, game.track.totalLaps);
         updateVelocity(p, isQuali, slipstreamMult);
     }
 
@@ -2862,7 +2877,7 @@ module.exports.physics = {
     effectiveMaxSpeed, effectiveAccel, effectiveBrakeMult, corneringCapacity, updateVelocity, integratePosition,
     applyOffTrackDrag, applyBarrier, updateTrackIndex,
     circularWithin, checkpointWindowFor, finishWindowFor,
-    assignGridSpawns, resetPlayers,
+    assignGridSpawns, resetPlayers, aggiornaCarburante,
     MIN_COLLISION_SEVERITY, DAMAGE_CAP_PER_HIT, COLLISION_PENALTY_CAP_MS,
     collisionDamageAmount, applyCarCollisionDamage, applyBarrierDamage, applyCollisionPenalty,
     resolveCollisions,
