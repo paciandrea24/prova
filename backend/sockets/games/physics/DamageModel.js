@@ -82,9 +82,9 @@ function addComponentDamage(p, amount, split) {
     );
 }
 
-// Penalità pure (0..MAX), funzioni del solo stato dei componenti — l'eventuale
-// esclusione in qualifica (dove il danno non ha mai effetto) resta a carico
-// del chiamante in VehiclePhysics.js, come già per usura/mescola. Fallback
+// Penalità pure (0..MAX), funzioni del solo stato dei componenti. Dal
+// 2026-08-23 NESSUN chiamante le esenta in qualifica: il danno vale sempre, e
+// chi decide se c'è danno è chi riempie damageParts. Fallback
 // `parts?.x || 0` per i player creati dagli strumenti offline
 // (f1LapSimulator.js, f1RaceLineOptimizer.js), che non hanno damageParts.
 function getEnginePowerPenalty(parts) {
@@ -150,6 +150,27 @@ function applyCollisionPenalty(culprit, severity) {
 // avvicina a b; -bvn>0: b si avvicina ad a. Chi si avvicina di più è il
 // colpevole (tampona col muso: REAR_END_CULPRIT_SPLIT); l'altro è la vittima
 // (colpita da dietro: REAR_END_VICTIM_SPLIT).
+// Il fondo si rovina fuori pista — la prima fonte di danno che non viene da
+// un urto. Rif. docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md.
+//
+// Proporzionale alla PROFONDITA' del fuoripista (0..1, da
+// VehicleMotionModel.applyOffTrackDrag): sfiorare l'erba con due ruote costa
+// quasi niente, attraversare la ghiaia costa. E i cordoli non costano nulla,
+// perche' sul cordolo non si e' fuori pista — vedi la soglia in
+// applyOffTrackDrag, che quella coincidenza la protegge con un test.
+//
+// Il valore e' PER TICK: un'escursione larga di un paio di secondi deve
+// costare qualche punto di fondo, non mezza vettura. Con PHYSICS_TICK_MS a
+// 50 ms sono 20 tick al secondo. Passa da addComponentDamage e non tocca
+// damageParts.floor a mano: e' quello che ridiriva p.damage, che l'HUD mostra.
+const OFFTRACK_FLOOR_DAMAGE_PER_TICK = 0.06;
+
+function applyOffTrackFloorDamage(p, profondita) {
+    const k = Math.max(0, Math.min(1, profondita || 0));
+    if (k === 0) return;
+    addComponentDamage(p, k * OFFTRACK_FLOOR_DAMAGE_PER_TICK, { floor: 1 });
+}
+
 function applyCarCollisionDamage(a, b, avn, bvn, closingRate) {
     const closingA = avn, closingB = -bvn;
     const faultIsA = closingA >= closingB;
@@ -171,7 +192,7 @@ function applyBarrierDamage(p, vn) {
 
 module.exports = {
     DAMAGE_GRIP_THRESHOLD, DAMAGE_STEER_THRESHOLD, DAMAGE_SPEED_PENALTY_MAX, DAMAGE_GRIP_PENALTY_MAX, DAMAGE_STEER_NOISE_MAX,
-    applyDamageSteerNoise,
+    applyDamageSteerNoise, applyOffTrackFloorDamage, OFFTRACK_FLOOR_DAMAGE_PER_TICK,
     FRONT_WING_STEER_PENALTY_MAX,
     FRONT_WING_DRAG_PENALTY_MAX, FLOOR_DOWNFORCE_PENALTY_MAX,
     createDamageParts, addComponentDamage,

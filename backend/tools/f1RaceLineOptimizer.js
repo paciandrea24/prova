@@ -160,7 +160,7 @@ function buildOptimizer(track) {
             // (richiesta esplicita: i bot possono usare il cordolo, non
             // devono finire fuori asfalto). Contato qui, non solo applicato,
             // per poterlo usare come vincolo in fitness sotto.
-            if (physics.applyOffTrackDrag(p, track)) offTrackTicks++;
+            if (physics.applyOffTrackDrag(p, track).offTrack) offTrackTicks++;
             physics.updateTrackIndex(p, track);
 
             const idx = p.trackIndex || 0;

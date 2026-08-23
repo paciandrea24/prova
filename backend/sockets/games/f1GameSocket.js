@@ -21,7 +21,8 @@ const {
     applyDamageSteerNoise, collisionDamageAmount, applyCollisionPenalty,
     applyCarCollisionDamage, applyBarrierDamage,
     createDamageParts, FRONT_WING_STEER_PENALTY_MAX,
-    getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise
+    getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
+    applyOffTrackFloorDamage
 } = DamageModel;
 
 const { fuelFactorFor } = require('./physics/FuelModel');
@@ -1956,13 +1957,17 @@ function tickGame(io, lobbyId, game) {
     }
 
     for (const p of racing) {
-        const offTrack = applyOffTrackDrag(p, game.track);
+        const { offTrack, profondita } = applyOffTrackDrag(p, game.track);
         updateTrackIndex(p, game.track);
         // L'usura conta solo in GARA: in qualifica le gomme restano quelle
         // scelte ma "fresche" fino al via vero (resettate in assignGridSpawns).
         // Usura e cronometraggio si fermano al traguardo: il giro di
         // rientro non consuma gomme e non ha settori da misurare.
         if (game.phase === 'race' && !p.finished) applyTyreWear(p, offTrack, game.track);
+        // Il fondo si rovina fuori pista. Come l'usura vale SOLO in gara: in
+        // qualifica la macchina e' quella con cui si arriva al weekend, e il
+        // giro di rientro dopo la bandiera non deve costare niente.
+        if (game.phase === 'race' && !p.finished && offTrack) applyOffTrackFloorDamage(p, profondita);
         checkLap(p, totalLaps, io, lobbyId, game);
         if (!p.finished) updateSectorTiming(p, game);
 

@@ -192,3 +192,49 @@ test('in qualifica le sospensioni rotte sporcano lo sterzo', () => {
     }
     assert.ok(deviato > 0, 'le sospensioni rotte devono sporcare lo sterzo anche in qualifica');
 });
+
+// ---- Il fondo si rovina fuori pista ---------------------------------------
+// E' la prima fonte di danno che non viene da un urto: fino a qui la macchina
+// si rompeva solo sbattendo. Rif.
+// docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md.
+//
+// NB: questo file importa il modulo INTERO come `DamageModel` (riga 4), non
+// destrutturato — seguire quella convenzione.
+test("applyOffTrackFloorDamage: la ghiaia costa piu' dell'erba sfiorata", () => {
+    const sfiora  = { damageParts: DamageModel.createDamageParts() };
+    const affonda = { damageParts: DamageModel.createDamageParts() };
+    DamageModel.applyOffTrackFloorDamage(sfiora, 0.1);
+    DamageModel.applyOffTrackFloorDamage(affonda, 1);
+    assert.ok(affonda.damageParts.floor > sfiora.damageParts.floor,
+        `attesa piu' rottura affondando, ottenuto ${affonda.damageParts.floor} vs ${sfiora.damageParts.floor}`);
+});
+
+test("applyOffTrackFloorDamage: rovina SOLO il fondo", () => {
+    const p = { damageParts: DamageModel.createDamageParts() };
+    DamageModel.applyOffTrackFloorDamage(p, 1);
+    assert.ok(p.damageParts.floor > 0, 'il fondo deve rovinarsi');
+    assert.equal(p.damageParts.frontWing, 0, "l'ala non c'entra");
+    assert.equal(p.damageParts.engine, 0, "il motore non c'entra");
+    assert.equal(p.damageParts.suspension, 0, "le sospensioni non c'entrano");
+});
+
+test("applyOffTrackFloorDamage: profondita' zero non fa niente", () => {
+    const p = { damageParts: DamageModel.createDamageParts() };
+    DamageModel.applyOffTrackFloorDamage(p, 0);
+    assert.equal(p.damageParts.floor, 0);
+});
+
+test("applyOffTrackFloorDamage: aggiorna anche p.damage, che l'HUD mostra", () => {
+    // Senza questo l'indicatore dei danni resterebbe fermo mentre il fondo si
+    // rovina: p.damage e' DERIVATO dal massimo dei quattro componenti, e chi
+    // lo scrive e' addComponentDamage.
+    const p = { damage: 0, damageParts: DamageModel.createDamageParts() };
+    DamageModel.applyOffTrackFloorDamage(p, 1);
+    assert.equal(p.damage, p.damageParts.floor);
+});
+
+test("applyOffTrackFloorDamage: il fondo non supera mai 100", () => {
+    const p = { damageParts: DamageModel.createDamageParts() };
+    for (let i = 0; i < 100000; i++) DamageModel.applyOffTrackFloorDamage(p, 1);
+    assert.equal(p.damageParts.floor, 100);
+});
