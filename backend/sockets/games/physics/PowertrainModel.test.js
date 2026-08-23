@@ -187,7 +187,7 @@ test('effectiveMaxSpeed: default ON, velocità massima -> tetto di velocità rid
     delete process.env.F1_AERO_DRAG_MODEL; // torna al default ON
     const on = effectiveMaxSpeed(p, false);
     assert.ok(on < off, `atteso tetto ridotto: off=${off}, on=${on}`);
-    const expected = off * AerodynamicsModel.dragFactor(1, false);
+    const expected = off * AerodynamicsModel.dragFactor(1);
     assert.ok(Math.abs(on - expected) < 1e-9, `atteso ${expected}, ottenuto ${on}`);
 });
 

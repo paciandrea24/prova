@@ -154,15 +154,19 @@ test('in qualifica il fondo rotto cambia il grip', () => {
     assert.notEqual(rotto, sano, 'il danno al fondo deve avere effetto anche in qualifica');
 });
 
-test('in qualifica l\'ala rotta aumenta la resistenza', () => {
-    const sano  = AerodynamicsModel.dragFactor(1, true, SANO);
-    const rotto = AerodynamicsModel.dragFactor(1, true, { ...SANO, frontWing: 100 });
+// Queste due non dicono più "in qualifica" perché le funzioni aero non
+// sanno più cosa sia una qualifica: dopo la rimozione dell'esenzione,
+// `isQuali` è uscito anche dalle loro firme. Restano qui, accanto alle altre
+// del danno, perché l'ala e il fondo rotti sono ciò che verificano.
+test('l\'ala rotta aumenta la resistenza, sempre', () => {
+    const sano  = AerodynamicsModel.dragFactor(1, SANO);
+    const rotto = AerodynamicsModel.dragFactor(1, { ...SANO, frontWing: 100 });
     assert.ok(rotto < sano, `atteso rotto < sano, ottenuto ${rotto} vs ${sano}`);
 });
 
-test('in qualifica il fondo rotto toglie deportanza', () => {
-    const sano  = AerodynamicsModel.downforceFactor(1, true, SANO);
-    const rotto = AerodynamicsModel.downforceFactor(1, true, { ...SANO, floor: 100 });
+test('il fondo rotto toglie deportanza, sempre', () => {
+    const sano  = AerodynamicsModel.downforceFactor(1, SANO);
+    const rotto = AerodynamicsModel.downforceFactor(1, { ...SANO, floor: 100 });
     assert.ok(rotto < sano, `atteso rotto < sano, ottenuto ${rotto} vs ${sano}`);
 });
 

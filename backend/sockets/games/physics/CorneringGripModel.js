@@ -36,7 +36,7 @@ function corneringCapacity(p, isQuali, maxSpeed) {
     const speedFrac = Math.min(1, Math.abs(p.speed) / maxSpeed);
     let capacity = corneringGripFactor(p.tyreWear, isQuali);
     if (AerodynamicsModel.isAeroDownforceModelActive()) {
-        capacity *= AerodynamicsModel.downforceFactor(speedFrac, isQuali, p.damageParts);
+        capacity *= AerodynamicsModel.downforceFactor(speedFrac, p.damageParts);
     }
     return capacity;
 }

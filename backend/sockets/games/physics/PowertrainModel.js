@@ -43,7 +43,7 @@ function effectiveMaxSpeed(p, isQuali) {
     // a prima.
     if (AerodynamicsModel.isAeroDragModelActive()) {
         const speedFrac = Math.min(1, Math.abs(p.speed || 0) / MAX_SPEED);
-        maxSpeed *= AerodynamicsModel.dragFactor(speedFrac, isQuali, p.damageParts);
+        maxSpeed *= AerodynamicsModel.dragFactor(speedFrac, p.damageParts);
     }
 
     return maxSpeed;

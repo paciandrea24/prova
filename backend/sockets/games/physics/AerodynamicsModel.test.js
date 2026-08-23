@@ -13,7 +13,7 @@ test('effectiveGrip: gomma fresca, nessun danno -> GRIP pieno per la mescola med
     assert.ok(Math.abs(effectiveGrip(p, false) - 0.741) < 1e-9);
 });
 
-test('effectiveGrip: fondo danneggiato 50% -> aderenza ridotta (valore aggiornato dopo la promozione a default ON di F1_AERO_DOWNFORCE_MODEL/F1_AERO_DAMAGE_MODEL, Rif. docs/superpowers/plans/2026-07-28-f1-aerodynamics-playtest-plan.md: la penalità danno dentro downforceFactor non dipende da maxSpeed, quindi si applica anche qui pur senza passarlo — 0.611325 storico / downforceFactor(0,false,{floor:50})=0.95 = 0.6435)', () => {
+test('effectiveGrip: fondo danneggiato 50% -> aderenza ridotta (valore aggiornato dopo la promozione a default ON di F1_AERO_DOWNFORCE_MODEL/F1_AERO_DAMAGE_MODEL, Rif. docs/superpowers/plans/2026-07-28-f1-aerodynamics-playtest-plan.md: la penalità danno dentro downforceFactor non dipende da maxSpeed, quindi si applica anche qui pur senza passarlo — 0.611325 storico / downforceFactor(0,{floor:50})=0.95 = 0.6435)', () => {
     const p = { compound: 'medium', tyreWear: 0, damageParts: { frontWing: 0, floor: 50, engine: 0, suspension: 0 } };
     assert.ok(Math.abs(effectiveGrip(p, false) - 0.6435000000000001) < 1e-9);
 });
@@ -42,22 +42,29 @@ test('applyGripBlend: vx/vz convergono verso la direzione del muso pesati da gri
 // ---- Fase 2 (Rif. docs/superpowers/specs/2026-07-28-f1-aerodynamics-model-design.md):
 // downforceFactor ha ora una prima formula reale, non più il placeholder Fase 0 ----
 
-test('downforceFactor: velocità zero -> nessun bonus (fattore 1), qualunque qualifica', () => {
-    assert.equal(downforceFactor(0, false), 1);
-    assert.equal(downforceFactor(0, true), 1);
+test('downforceFactor: velocità zero -> nessun bonus (fattore 1)', () => {
+    assert.equal(downforceFactor(0), 1);
 });
 
 test('downforceFactor: velocità massima -> bonus massimo pari a DOWNFORCE_CAPACITY_BONUS_MAX', () => {
-    assert.ok(Math.abs(downforceFactor(1, false) - (1 + DOWNFORCE_CAPACITY_BONUS_MAX)) < 1e-9);
+    assert.ok(Math.abs(downforceFactor(1) - (1 + DOWNFORCE_CAPACITY_BONUS_MAX)) < 1e-9);
 });
 
 test('downforceFactor: monotono crescente al crescere di speedFrac', () => {
-    assert.ok(downforceFactor(0.5, false) < downforceFactor(1, false));
-    assert.ok(downforceFactor(0.2, false) < downforceFactor(0.5, false));
+    assert.ok(downforceFactor(0.5) < downforceFactor(1));
+    assert.ok(downforceFactor(0.2) < downforceFactor(0.5));
 });
 
-test('downforceFactor: indipendente da isQuali (fenomeno fisico, non penalità da usura/danno)', () => {
-    assert.equal(downforceFactor(0.7, false), downforceFactor(0.7, true));
+// Questo test asseriva `downforceFactor(0.7, false) === downforceFactor(0.7, true)`.
+// Dal 2026-08-23 la firma è `(speedFrac, damageParts)`: isQuali non c'è più, e
+// l'indipendenza non è più una proprietà da verificare ma un fatto strutturale.
+// Al suo posto si difende la cosa che PUÒ ancora rompersi: che il secondo
+// argomento sia il danno e venga letto davvero. Una firma posizionale con un
+// buco in mezzo non darebbe errore — darebbe un risultato sbagliato.
+test('downforceFactor: la firma è (speedFrac, damageParts) e il danno viene letto', () => {
+    const sano  = downforceFactor(1, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
+    const rotto = downforceFactor(1, { frontWing: 0, floor: 100, engine: 0, suspension: 0 });
+    assert.ok(rotto < sano, `atteso rotto < sano, ottenuto ${rotto} vs ${sano}`);
 });
 
 // ---- Promozione a default ON (Rif. docs/superpowers/plans/2026-07-28-f1-aerodynamics-playtest-plan.md,
@@ -112,29 +119,33 @@ test('effectiveGrip: default ON, velocità massima -> grip RIDOTTO in modo misur
     delete process.env.F1_AERO_DOWNFORCE_MODEL; // torna al default ON
     const on = effectiveGrip(p, false, 6.2);
     assert.ok(on < off, `atteso grip ridotto rispetto al rollback: off=${off}, on=${on}`);
-    const expected = off / downforceFactor(1, false);
+    const expected = off / downforceFactor(1);
     assert.ok(Math.abs(on - expected) < 1e-9);
 });
 
 // ---- Fase 1 (Rif. docs/superpowers/specs/2026-07-28-f1-aerodynamics-model-design.md):
 // dragFactor ha ora una prima formula reale, non più il placeholder Fase 0 ----
 
-test('dragFactor: velocità zero -> nessuna penalità (fattore 1), qualunque qualifica', () => {
-    assert.equal(dragFactor(0, false), 1);
-    assert.equal(dragFactor(0, true), 1);
+test('dragFactor: velocità zero -> nessuna penalità (fattore 1)', () => {
+    assert.equal(dragFactor(0), 1);
 });
 
 test('dragFactor: velocità massima -> penalità massima pari a DRAG_TOP_SPEED_PENALTY_MAX', () => {
-    assert.ok(Math.abs(dragFactor(1, false) - (1 - DRAG_TOP_SPEED_PENALTY_MAX)) < 1e-9);
+    assert.ok(Math.abs(dragFactor(1) - (1 - DRAG_TOP_SPEED_PENALTY_MAX)) < 1e-9);
 });
 
 test('dragFactor: monotono decrescente al crescere di speedFrac', () => {
-    assert.ok(dragFactor(0.5, false) > dragFactor(1, false));
-    assert.ok(dragFactor(0.2, false) > dragFactor(0.5, false));
+    assert.ok(dragFactor(0.5) > dragFactor(1));
+    assert.ok(dragFactor(0.2) > dragFactor(0.5));
 });
 
-test('dragFactor: indipendente da isQuali (fenomeno fisico, non penalità da usura/danno)', () => {
-    assert.equal(dragFactor(0.7, false), dragFactor(0.7, true));
+// Come per downforceFactor sopra: isQuali non è più nella firma, quindi
+// l'indipendenza è strutturale. Si difende invece che il secondo argomento sia
+// il danno e venga letto.
+test('dragFactor: la firma è (speedFrac, damageParts) e il danno viene letto', () => {
+    const sano  = dragFactor(1, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
+    const rotto = dragFactor(1, { frontWing: 100, floor: 0, engine: 0, suspension: 0 });
+    assert.ok(rotto < sano, `atteso rotto < sano, ottenuto ${rotto} vs ${sano}`);
 });
 
 test('isAeroDragModelActive: attivo di default (env var non impostata) — promosso dopo playtest', () => {
@@ -210,13 +221,13 @@ test("isAeroDamageModelActive: disattivo SOLO con F1_AERO_DAMAGE_MODEL='0' esatt
 });
 
 test('dragFactor: default ON -> il danno HA effetto (a differenza di prima della promozione), passando damageParts il fattore cambia', () => {
-    assert.notEqual(dragFactor(1, false), dragFactor(1, false, { frontWing: 100, floor: 0, engine: 0, suspension: 0 }));
+    assert.notEqual(dragFactor(1), dragFactor(1, { frontWing: 100, floor: 0, engine: 0, suspension: 0 }));
 });
 
 test('dragFactor: F1_AERO_DAMAGE_MODEL="0" (rollback) -> comportamento identico a prima anche passando damageParts', () => {
     process.env.F1_AERO_DAMAGE_MODEL = '0';
     try {
-        assert.equal(dragFactor(1, false), dragFactor(1, false, { frontWing: 100, floor: 0, engine: 0, suspension: 0 }));
+        assert.equal(dragFactor(1), dragFactor(1, { frontWing: 100, floor: 0, engine: 0, suspension: 0 }));
     } finally {
         delete process.env.F1_AERO_DAMAGE_MODEL;
     }
@@ -225,7 +236,7 @@ test('dragFactor: F1_AERO_DAMAGE_MODEL="0" (rollback) -> comportamento identico 
 test('dragFactor: F1_AERO_DAMAGE_MODEL="1", danno zero -> nessuna penalità aggiuntiva', () => {
     process.env.F1_AERO_DAMAGE_MODEL = '1';
     try {
-        assert.ok(Math.abs(dragFactor(1, false, { frontWing: 0, floor: 0, engine: 0, suspension: 0 }) - dragFactor(1, false)) < 1e-9);
+        assert.ok(Math.abs(dragFactor(1, { frontWing: 0, floor: 0, engine: 0, suspension: 0 }) - dragFactor(1)) < 1e-9);
     } finally {
         delete process.env.F1_AERO_DAMAGE_MODEL;
     }
@@ -234,8 +245,8 @@ test('dragFactor: F1_AERO_DAMAGE_MODEL="1", danno zero -> nessuna penalità aggi
 test('dragFactor: F1_AERO_DAMAGE_MODEL="1", ala anteriore distrutta -> drag aumentato in modo misurabile (fattore ridotto)', () => {
     process.env.F1_AERO_DAMAGE_MODEL = '1';
     try {
-        const healthy = dragFactor(1, false, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
-        const damaged = dragFactor(1, false, { frontWing: 100, floor: 0, engine: 0, suspension: 0 });
+        const healthy = dragFactor(1, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
+        const damaged = dragFactor(1, { frontWing: 100, floor: 0, engine: 0, suspension: 0 });
         assert.ok(damaged < healthy, `atteso più drag (fattore minore) con ala rotta: sana=${healthy}, danneggiata=${damaged}`);
     } finally {
         delete process.env.F1_AERO_DAMAGE_MODEL;
@@ -248,8 +259,8 @@ test('dragFactor: F1_AERO_DAMAGE_MODEL="1", ala anteriore distrutta -> drag aume
 test('dragFactor: F1_AERO_DAMAGE_MODEL="1", isQuali=true -> il danno vale lo stesso', () => {
     process.env.F1_AERO_DAMAGE_MODEL = '1';
     try {
-        const healthy = dragFactor(1, true, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
-        const damaged = dragFactor(1, true, { frontWing: 100, floor: 0, engine: 0, suspension: 0 });
+        const healthy = dragFactor(1, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
+        const damaged = dragFactor(1, { frontWing: 100, floor: 0, engine: 0, suspension: 0 });
         assert.ok(damaged < healthy, 'anche in qualifica l\'ala rotta deve aumentare la resistenza');
     } finally {
         delete process.env.F1_AERO_DAMAGE_MODEL;
@@ -259,8 +270,8 @@ test('dragFactor: F1_AERO_DAMAGE_MODEL="1", isQuali=true -> il danno vale lo ste
 test('dragFactor: floor danneggiato NON influenza il drag (isolamento per componente)', () => {
     process.env.F1_AERO_DAMAGE_MODEL = '1';
     try {
-        const healthy = dragFactor(1, false, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
-        const floorDamaged = dragFactor(1, false, { frontWing: 0, floor: 100, engine: 0, suspension: 0 });
+        const healthy = dragFactor(1, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
+        const floorDamaged = dragFactor(1, { frontWing: 0, floor: 100, engine: 0, suspension: 0 });
         assert.equal(healthy, floorDamaged, 'floor non deve influenzare dragFactor, solo frontWing');
     } finally {
         delete process.env.F1_AERO_DAMAGE_MODEL;
@@ -268,13 +279,13 @@ test('dragFactor: floor danneggiato NON influenza il drag (isolamento per compon
 });
 
 test('downforceFactor: default ON -> il danno HA effetto (a differenza di prima della promozione), passando damageParts il fattore cambia', () => {
-    assert.notEqual(downforceFactor(1, false), downforceFactor(1, false, { frontWing: 0, floor: 100, engine: 0, suspension: 0 }));
+    assert.notEqual(downforceFactor(1), downforceFactor(1, { frontWing: 0, floor: 100, engine: 0, suspension: 0 }));
 });
 
 test('downforceFactor: F1_AERO_DAMAGE_MODEL="0" (rollback) -> comportamento identico a prima anche passando damageParts', () => {
     process.env.F1_AERO_DAMAGE_MODEL = '0';
     try {
-        assert.equal(downforceFactor(1, false), downforceFactor(1, false, { frontWing: 0, floor: 100, engine: 0, suspension: 0 }));
+        assert.equal(downforceFactor(1), downforceFactor(1, { frontWing: 0, floor: 100, engine: 0, suspension: 0 }));
     } finally {
         delete process.env.F1_AERO_DAMAGE_MODEL;
     }
@@ -283,8 +294,8 @@ test('downforceFactor: F1_AERO_DAMAGE_MODEL="0" (rollback) -> comportamento iden
 test('downforceFactor: F1_AERO_DAMAGE_MODEL="1", fondo distrutto -> downforce ridotto in modo misurabile', () => {
     process.env.F1_AERO_DAMAGE_MODEL = '1';
     try {
-        const healthy = downforceFactor(1, false, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
-        const damaged = downforceFactor(1, false, { frontWing: 0, floor: 100, engine: 0, suspension: 0 });
+        const healthy = downforceFactor(1, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
+        const damaged = downforceFactor(1, { frontWing: 0, floor: 100, engine: 0, suspension: 0 });
         assert.ok(damaged < healthy, `atteso downforce ridotto con fondo rotto: sano=${healthy}, danneggiato=${damaged}`);
     } finally {
         delete process.env.F1_AERO_DAMAGE_MODEL;
@@ -294,8 +305,8 @@ test('downforceFactor: F1_AERO_DAMAGE_MODEL="1", fondo distrutto -> downforce ri
 test('downforceFactor: frontWing danneggiata NON influenza il downforce (isolamento per componente)', () => {
     process.env.F1_AERO_DAMAGE_MODEL = '1';
     try {
-        const healthy = downforceFactor(1, false, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
-        const wingDamaged = downforceFactor(1, false, { frontWing: 100, floor: 0, engine: 0, suspension: 0 });
+        const healthy = downforceFactor(1, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
+        const wingDamaged = downforceFactor(1, { frontWing: 100, floor: 0, engine: 0, suspension: 0 });
         assert.equal(healthy, wingDamaged, 'frontWing non deve influenzare downforceFactor, solo floor');
     } finally {
         delete process.env.F1_AERO_DAMAGE_MODEL;
@@ -322,14 +333,14 @@ test('nessun doppio conteggio: getFloorGripPenalty (meccanico, floorFactor) e ge
         // internamente) — non due applicazioni separate della stessa penalità floor.
         // Divisione, non moltiplicazione (playtest 2026-07-28, fix del segno): vedi test
         // "grip RIDOTTO" sopra e la nota in AerodynamicsModel.js.
-        const expected = mechanicalBaseGrip / downforceFactor(1, false, p.damageParts);
+        const expected = mechanicalBaseGrip / downforceFactor(1, p.damageParts);
         assert.ok(Math.abs(gripWithAeroDamage - expected) < 1e-9, 'la penalità aero deve applicarsi UNA VOLTA sopra alla base meccanica, non sostituirla né duplicarla');
         // conferma esplicita che il danno al fondo pesa DUE VOLTE nel risultato finale
         // (una volta via floorFactor meccanico, una volta via downforceFactor aereo) ma
         // ciascuna delle due SOLO una volta, non di più: sono penalità indipendenti che si
         // compongono, non lo stesso numero applicato due volte.
-        const noDamageDownforce = downforceFactor(1, false, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
-        assert.ok(downforceFactor(1, false, p.damageParts) < noDamageDownforce, 'il danno al fondo deve ridurre downforceFactor rispetto a fondo sano');
+        const noDamageDownforce = downforceFactor(1, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
+        assert.ok(downforceFactor(1, p.damageParts) < noDamageDownforce, 'il danno al fondo deve ridurre downforceFactor rispetto a fondo sano');
     } finally {
         delete process.env.F1_AERO_DOWNFORCE_MODEL;
         delete process.env.F1_AERO_DAMAGE_MODEL;

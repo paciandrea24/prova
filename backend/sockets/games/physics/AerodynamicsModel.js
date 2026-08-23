@@ -44,7 +44,7 @@ function effectiveGrip(p, isQuali, maxSpeed) {
     let grip = GRIP * tyreOf(p, isQuali).gripMult * wearFactor * floorFactor;
     if (isAeroDownforceModelActive()) {
         const speedFrac = maxSpeed ? Math.min(1, Math.abs(p.speed || 0) / maxSpeed) : 0;
-        grip /= downforceFactor(speedFrac, isQuali, p.damageParts);
+        grip /= downforceFactor(speedFrac, p.damageParts);
     }
     return grip;
 }
@@ -64,10 +64,11 @@ function applyGripBlend(p, grip) {
 // valore di partenza conservativo, tarabile in playtest. Cresce con
 // speedFrac^2 (stessa ispirazione fisica di dragFactor, direzione
 // opposta: più velocità = più deportanza = più capacità disponibile, non
-// meno). NON dipende da isQuali, stesso motivo di dragFactor: fenomeno
-// fisico sempre presente. Da quando anche il danno vale in qualifica
-// (2026-08-23), `isQuali` qui non è più letto affatto: resta nella firma
-// per non toccare i tre chiamanti, e va tolto nel prossimo passo.
+// meno). Il fenomeno fisico è sempre presente, e dal 2026-08-23 lo è anche
+// la penalità da danno al fondo: `isQuali` non serviva più a niente ed è
+// stato TOLTO dalla firma. Non rimetterlo — con un parametro posizionale
+// inutilizzato in mezzo, chiamare `downforceFactor(frac, damageParts)` non
+// darebbe errore, darebbe un risultato sbagliato in silenzio.
 // Consultato da `effectiveGrip` (sopra) e da
 // `CorneringGripModel.lateralExcess` in modo indipendente: i due consumer
 // non si moltiplicano fra loro né uno legge l'output dell'altro (vedi
@@ -75,7 +76,7 @@ function applyGripBlend(p, grip) {
 const DOWNFORCE_CAPACITY_BONUS_MAX = 0.15;
 const DOWNFORCE_EXPONENT = 2;
 
-function downforceFactor(speedFrac, isQuali, damageParts) {
+function downforceFactor(speedFrac, damageParts) {
     const frac = Math.max(0, Math.min(1, speedFrac));
     let factor = 1 + Math.pow(frac, DOWNFORCE_EXPONENT) * DOWNFORCE_CAPACITY_BONUS_MAX;
     // Fase 3: danno al fondo -> meno downforce. NON è più esente in
@@ -128,15 +129,13 @@ function isAeroSlipstreamModelActive() {
 // prima formula reale di drag longitudinale — valore di partenza
 // conservativo, tarabile in playtest. Cresce con speedFrac^2 (ispirazione
 // fisica: la resistenza aerodinamica cresce col quadrato della velocità,
-// non un vincolo rigoroso). NON dipende da isQuali: a differenza delle
-// penalità da usura/danno, il drag è un fenomeno fisico sempre presente,
-// non un degrado che la qualifica ignora — isQuali resta nella firma solo
-// in vista della Fase 3 (danno aero), che quella sì seguirà la stessa
-// esenzione qualifica di ogni altro danno.
+// non un vincolo rigoroso). Il drag è un fenomeno fisico sempre presente, e
+// dal 2026-08-23 lo è anche la penalità da ala rotta: `isQuali` è stato
+// TOLTO dalla firma, vedi la nota su downforceFactor sopra.
 const DRAG_TOP_SPEED_PENALTY_MAX = 0.05;
 const DRAG_EXPONENT = 2;
 
-function dragFactor(speedFrac, isQuali, damageParts) {
+function dragFactor(speedFrac, damageParts) {
     const frac = Math.max(0, Math.min(1, speedFrac));
     let factor = 1 - Math.pow(frac, DRAG_EXPONENT) * DRAG_TOP_SPEED_PENALTY_MAX;
     // Fase 3: danno ala anteriore -> più drag. NON è più esente in

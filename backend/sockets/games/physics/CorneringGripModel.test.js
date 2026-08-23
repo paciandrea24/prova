@@ -32,7 +32,7 @@ test('lateralExcess: gomma fresca (tyreWear=0), sterzo pieno a velocità massima
 test('lateralExcess: gomma usurata (tyreWear=80), sterzo pieno a velocità massima -> eccesso > 0, coerente col calcolo diretto (criterio 3: differenza fresca vs usurata; capacità aggiornata dopo la promozione a default ON di F1_AERO_DOWNFORCE_MODEL, Rif. docs/superpowers/plans/2026-07-28-f1-aerodynamics-playtest-plan.md — include ora il contributo downforceFactor)', () => {
     const p = makePlayer(1, 6.2, 80);
     const excess = lateralExcess(p, false, 6.2);
-    const expectedCapacity = corneringGripFactor(80, false) * AerodynamicsModel.downforceFactor(1, false);
+    const expectedCapacity = corneringGripFactor(80, false) * AerodynamicsModel.downforceFactor(1);
     const expected = corneringExcess(1, 1, expectedCapacity);
     assert.ok(excess > 0, `atteso > 0, ottenuto ${excess}`);
     assertClose(excess, expected, 'coerente con corneringGripFactor * downforceFactor + corneringExcess calcolati a mano');
@@ -106,7 +106,7 @@ test('lateralExcess: default ON, velocità alta -> capacità aumentata, eccesso 
     delete process.env.F1_AERO_DOWNFORCE_MODEL; // torna al default ON
     const on = lateralExcess(p, false, 6.2);
     assert.ok(on < off, `atteso eccesso ridotto dalla downforce: off=${off}, on=${on}`);
-    const expectedCapacity = corneringGripFactor(80, false) * AerodynamicsModel.downforceFactor(1, false);
+    const expectedCapacity = corneringGripFactor(80, false) * AerodynamicsModel.downforceFactor(1);
     const expected = corneringExcess(1, 1, expectedCapacity);
     assertClose(on, expected, 'capacità = corneringGripFactor * downforceFactor, combinazione diretta');
 });
@@ -138,7 +138,7 @@ test('nessun doppio conteggio: chiamare effectiveGrip prima o dopo lateralExcess
         const excess = lateralExcess(p, false, 6.2);
         const gripAfter = AerodynamicsModel.effectiveGrip(p, false, 6.2);
         assertClose(gripAfter, gripBefore, 'effectiveGrip non deve cambiare per effetto di una chiamata a lateralExcess');
-        const expectedCapacity = corneringGripFactor(0, false) * AerodynamicsModel.downforceFactor(1, false);
+        const expectedCapacity = corneringGripFactor(0, false) * AerodynamicsModel.downforceFactor(1);
         assertClose(excess, corneringExcess(1, 1, expectedCapacity), 'capacity di lateralExcess non coinvolge il valore di effectiveGrip');
     } finally {
         delete process.env.F1_AERO_DOWNFORCE_MODEL;
@@ -171,7 +171,7 @@ test('lateralExcess: default ON (downforce+danno), fondo distrutto -> eccesso ma
 
 test('corneringCapacity: coincide con la capacità calcolata a mano (usura + downforce)', () => {
     const p = makePlayer(1, 6.2, 80);
-    const expected = corneringGripFactor(80, false) * AerodynamicsModel.downforceFactor(1, false);
+    const expected = corneringGripFactor(80, false) * AerodynamicsModel.downforceFactor(1);
     assertClose(corneringCapacity(p, false, 6.2), expected, 'corneringCapacity = corneringGripFactor * downforceFactor');
 });
 
@@ -182,8 +182,8 @@ test('corneringCapacity: isQuali=true -> usura ignorata (corneringGripFactor=1),
     // legge affatto isQuali per il termine legato alla velocità (vedi
     // AerodynamicsModel.js) — a velocità piena resta ~1.15 anche in un giro
     // secco, esattamente come per un'auto vera.
-    const expected = AerodynamicsModel.downforceFactor(1, true, undefined);
-    assertClose(corneringCapacity(p, true, 6.2), expected, 'capacità in quali = 1 (usura neutra) * downforceFactor(1, true) — non un flat 1');
+    const expected = AerodynamicsModel.downforceFactor(1, undefined);
+    assertClose(corneringCapacity(p, true, 6.2), expected, 'capacità in quali = 1 (usura neutra) * downforceFactor(1) — non un flat 1');
 });
 
 test('corneringCapacity: F1_AERO_DOWNFORCE_MODEL="0" -> solo corneringGripFactor, nessun contributo downforce', () => {
