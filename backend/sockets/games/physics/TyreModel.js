@@ -4,6 +4,8 @@
 // Estratto da f1GameSocket.js (Rif. SDD Capitolo 10.6) senza modificarne la
 // logica — stesse formule, stessi valori, stesso comportamento.
 
+const { fuelFactorOf } = require('./FuelModel');
+
 // ====================================================
 // MESCOLE E USURA GOMME
 // Soft/Medium/Hard differiscono sia in prestazioni (velocità massima e
@@ -74,7 +76,10 @@ function getWearPenaltyFactor(tyreWear) {
 function applyTyreWear(p, offTrack, track) {
     const dist = Math.hypot(p.vx, p.vz);   // distanza percorsa in questo tick
     const wearPerUnitDist = 100 / (WEAR_LAPS_AT_MEDIUM * track.lapLength);
-    p.tyreWear = Math.min(100, p.tyreWear + dist * wearPerUnitDist * tyreOf(p).wearRate);
+    // Peso del carburante: l'auto piena carica di piu' le gomme e le consuma
+    // di piu'. E' la ragione fisica per cui il primo stint e' il piu' duro.
+    const wear = dist * wearPerUnitDist * tyreOf(p).wearRate * fuelFactorOf(p);
+    p.tyreWear = Math.min(100, p.tyreWear + wear);
     if (offTrack) p.tyreWear = Math.min(100, p.tyreWear + WEAR_OFFTRACK_EXTRA);
 }
 

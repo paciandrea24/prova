@@ -143,3 +143,27 @@ test('TYRE_COMPOUNDS: contiene soft, medium, hard con proprietà attese', () => 
 test('DEFAULT_COMPOUND: è "medium"', () => {
     assert.equal(DEFAULT_COMPOUND, 'medium');
 });
+
+// L'auto piena mangia piu' gomma: e' la ragione fisica per cui il primo stint
+// e' il piu' duro, e insieme all'alleggerimento produce da sola la piattezza
+// dei tempi sul giro (vedi FuelModel.js). Non va programmata, va lasciata
+// emergere.
+test('applyTyreWear: l\'auto piena consuma piu\' dell\'auto scarica', () => {
+    const track = { lapLength: 1000 };
+    const base = () => ({ vx: 0, vz: 10, tyreWear: 0, compound: 'medium' });
+    const scarica = base();
+    const piena = { ...base(), fuelFactor: 1.08 };
+    applyTyreWear(scarica, false, track);
+    applyTyreWear(piena, false, track);
+    assert.ok(piena.tyreWear > scarica.tyreWear,
+        `attesa piu' usura da piena, ottenuto ${piena.tyreWear} vs ${scarica.tyreWear}`);
+});
+
+test('applyTyreWear: senza fuelFactor il consumo e\' identico a prima', () => {
+    const track = { lapLength: 1000 };
+    const senza = { vx: 0, vz: 10, tyreWear: 0, compound: 'medium' };
+    const uno   = { vx: 0, vz: 10, tyreWear: 0, compound: 'medium', fuelFactor: 1 };
+    applyTyreWear(senza, false, track);
+    applyTyreWear(uno, false, track);
+    assert.equal(senza.tyreWear, uno.tyreWear);
+});
