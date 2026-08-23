@@ -123,9 +123,13 @@ Verificato il 2026-08-23.
   (`VehicleMotionModel.js:25-36`), e `offTrack` scatta solo oltre
   `roadHalf + 2`. Quei 2 sono la fascia del cordolo: **i cordoli sono
   già esclusi, gratis.**
-- **Tre agganci moltiplicativi per il peso**, tutti con la stessa forma
-  `(p, isQuali)`: `effectiveAccel`, `effectiveBrakeMult`,
-  `corneringCapacity`.
+- **Gli agganci del peso ricevono tutti `p`**, quindi il fattore viaggia
+  sul giocatore (`p.fuelFactor`) e nessuna firma cambia. È lo stesso
+  schema di `p.tyreWear` e `p.damageParts`, con lo stesso invariante:
+  **campo assente = serbatoio vuoto**, così gli strumenti offline che
+  costruiscono giocatori a mano continuano a funzionare senza NaN.
+  È anche ciò che fa ereditare il peso al bot senza toccarlo: consulta
+  `effectiveBrakeMult` e `corneringCapacity` passando `p`.
 - **`suggestStrategy(totalLaps)`** (`TyreModel.js:84`) stima già i giri
   per mescola: basta farle sapere l'abrasività.
 - **La riparazione ai box è già a tempo variabile**:
@@ -161,9 +165,12 @@ verificata come tale prima di aggiungerci sopra qualsiasi cosa.
 
 ### 2. Il peso del carburante
 
-Un fattore `fuelFactor(p, totalLaps)`: 1.08 al via, 1.00 all'ultimo
-giro, lineare. In qualifica vale 1.00 — `isQuali` significa già
-serbatoio vuoto, non serve aggiungere nulla.
+Un fattore 1.08 al via, 1.00 all'ultimo giro, lineare, che viaggia sul
+giocatore come `p.fuelFactor` e che **un solo punto riempie**: il tick.
+I modelli fisici lo leggono e basta, e **non ramificano su `isQuali`**:
+in qualifica il tick semplicemente non lo alza, e il campo assente vale
+serbatoio vuoto. È anche ciò che permette al banco di pesare l'auto in
+un simulatore che gira in modalità qualifica.
 
 L'avanzamento è quello **di quel pilota** (`p.lap / totalLaps`,
 limitato a 0-1), non quello della gara: la benzina la consuma chi
@@ -173,15 +180,40 @@ Dove entra:
 
 | Aggancio | Effetto |
 |---|---|
-| `effectiveAccel` | pieno: accelerazione divisa per il fattore |
-| `effectiveBrakeMult` | pieno: frenata divisa per il fattore |
-| `corneringCapacity` | **dimezzato** |
-| `applyTyreWear` | moltiplicato: pesante consuma di più |
+| `PowertrainModel.effectiveAccel` | pieno: accelerazione divisa per il fattore |
+| `BrakingModel.effectiveBrakeMult` | pieno: frenata divisa per il fattore |
+| `SteeringModel.applySteering` (`turnRate`) | **dimezzato**: l'auto pesante sterza meno |
+| `CorneringGripModel.corneringCapacity` | **dimezzato** |
+| `TyreModel.applyTyreWear` | moltiplicato: pesante consuma di più |
 
 Il dimezzamento in curva non è pigrizia: a forza piena il primo giro
 diventa ingiocabile, e la memoria del progetto è esplicita sul fatto che
 un flag di guida si misura in curva e non sul tempo sul giro. È il primo
 parametro da tarare.
+
+**Perché la curva ha DUE agganci e nessuno dei due è `effectiveGrip`**
+(corretto il 2026-08-23, leggendo il codice):
+
+- `corneringCapacity` da solo **non basta**: il suo unico consumatore
+  nella fisica sta dietro `F1_CORNERING_GRIP_MODEL`, che è **spento di
+  default** (`=== '1'`, `TyreSlipModel.js:243`). Oggi quella funzione
+  arriva davvero solo al bot, che la consulta sempre per la
+  grip-awareness. Metterci il peso e fermarsi lì darebbe bot prudenti da
+  pieni e un umano che non sente niente.
+- `turnRate` in `applySteering` è invece il posto **non ambiguo** dove
+  «l'auto gira di meno» è già di casa: è esattamente lì che vive il
+  sottosterzo da ala anteriore rotta (`steerFactor`). Un'auto pesante
+  sottosterza per lo stesso motivo e con lo stesso meccanismo.
+- **`effectiveGrip` si lascia stare.** Il suo `grip` ha semantica
+  invertita e documentata (più alto = più scivolata), ma `wearFactor` vi
+  entra moltiplicando verso il basso: la direzione del suo effetto non è
+  quella che il commento lascerebbe prevedere. Non è una cosa da
+  chiarire di passaggio dentro un'altra modifica.
+
+I due agganci non si sommano fra loro: `corneringCapacity` serve al bot
+per **decidere** quanto frenare, `turnRate` **esegue** la sterzata.
+Stessa separazione già documentata per `downforceFactor`, consultato da
+due consumatori indipendenti senza doppio conteggio.
 
 Proprietà emergente da **non** programmare: l'auto si alleggerisce
 mentre la gomma si consuma, e le due cose in buona parte si annullano. È
