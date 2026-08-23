@@ -114,3 +114,77 @@ test('applyCarCollisionDamage/applyBarrierDamage: continuano a mantenere p.damag
     applyBarrierDamage(p, 3);
     assert.equal(typeof p.damage, 'number');
 });
+
+// ---- Il danno vale ANCHE in qualifica (2026-08-23) -------------------------
+// Prima di questa modifica `isQuali` spegneva due cose insieme: l'usura delle
+// gomme (giusto: in qualifica le gomme sono nuove) e il danno alle componenti
+// (residuo). Questi test bloccano il ritorno della seconda: chi arriva al
+// weekend con la macchina consumata la sente anche sul giro secco.
+// Rif. docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md
+const PowertrainModel   = require('./PowertrainModel');
+const AerodynamicsModel = require('./AerodynamicsModel');
+const SteeringModel     = require('./SteeringModel');
+
+function playerDanneggiato(parts) {
+    return {
+        speed: 2, angle: 0, vx: 0, vz: 2,
+        inputs: { throttle: 0, brake: 0, steer: 1 },
+        compound: 'medium', tyreWear: 0,
+        damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0, ...parts },
+    };
+}
+
+const SANO = { frontWing: 0, floor: 0, engine: 0, suspension: 0 };
+
+test('in qualifica il motore rotto toglie velocita\' massima', () => {
+    const sano  = PowertrainModel.effectiveMaxSpeed(playerDanneggiato({}), true);
+    const rotto = PowertrainModel.effectiveMaxSpeed(playerDanneggiato({ engine: 100 }), true);
+    assert.ok(rotto < sano, `atteso rotto < sano, ottenuto ${rotto} vs ${sano}`);
+});
+
+test('in qualifica il motore rotto toglie accelerazione', () => {
+    const sano  = PowertrainModel.effectiveAccel(playerDanneggiato({}), true);
+    const rotto = PowertrainModel.effectiveAccel(playerDanneggiato({ engine: 100 }), true);
+    assert.ok(rotto < sano, `atteso rotto < sano, ottenuto ${rotto} vs ${sano}`);
+});
+
+test('in qualifica il fondo rotto cambia il grip', () => {
+    const sano  = AerodynamicsModel.effectiveGrip(playerDanneggiato({}), true, 6.2);
+    const rotto = AerodynamicsModel.effectiveGrip(playerDanneggiato({ floor: 100 }), true, 6.2);
+    assert.notEqual(rotto, sano, 'il danno al fondo deve avere effetto anche in qualifica');
+});
+
+test('in qualifica l\'ala rotta aumenta la resistenza', () => {
+    const sano  = AerodynamicsModel.dragFactor(1, true, SANO);
+    const rotto = AerodynamicsModel.dragFactor(1, true, { ...SANO, frontWing: 100 });
+    assert.ok(rotto < sano, `atteso rotto < sano, ottenuto ${rotto} vs ${sano}`);
+});
+
+test('in qualifica il fondo rotto toglie deportanza', () => {
+    const sano  = AerodynamicsModel.downforceFactor(1, true, SANO);
+    const rotto = AerodynamicsModel.downforceFactor(1, true, { ...SANO, floor: 100 });
+    assert.ok(rotto < sano, `atteso rotto < sano, ottenuto ${rotto} vs ${sano}`);
+});
+
+test('in qualifica l\'ala rotta fa sterzare di meno', () => {
+    const sano  = playerDanneggiato({});
+    const rotto = playerDanneggiato({ frontWing: 100 });
+    SteeringModel.applySteering(sano, true, 6.2);
+    SteeringModel.applySteering(rotto, true, 6.2);
+    assert.ok(Math.abs(rotto.angle) < Math.abs(sano.angle),
+        `atteso meno sterzata da rotto, ottenuto ${rotto.angle} vs ${sano.angle}`);
+});
+
+test('in qualifica le sospensioni rotte sporcano lo sterzo', () => {
+    // getSuspensionNoise e' casuale: si confrontano 200 campioni e si guarda se
+    // ALMENO UNO devia. Con rumore spento devierebbero zero volte.
+    let deviato = 0;
+    for (let i = 0; i < 200; i++) {
+        const pulito = playerDanneggiato({});
+        const rotto  = playerDanneggiato({ suspension: 100 });
+        SteeringModel.applySteering(pulito, true, 6.2);
+        SteeringModel.applySteering(rotto, true, 6.2);
+        if (rotto.angle !== pulito.angle) deviato++;
+    }
+    assert.ok(deviato > 0, 'le sospensioni rotte devono sporcare lo sterzo anche in qualifica');
+});

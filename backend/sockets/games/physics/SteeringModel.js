@@ -39,13 +39,15 @@ function applySteering(p, isQuali, maxSpeed) {
         // (turnRate), non la annulla mai — un'ala completamente distrutta
         // lascia comunque il complemento di FRONT_WING_STEER_PENALTY_MAX di
         // capacità residua, mai zero.
-        const steerFactor = isQuali ? 1 : 1 - getFrontWingSteerPenalty(p.damageParts);
+        // Dal 2026-08-23 vale anche in qualifica: in stagione al giro secco
+        // si arriva con la macchina che si ha.
+        const steerFactor = 1 - getFrontWingSteerPenalty(p.damageParts);
         let turnRate = (TURN_SPEED_LOW + (TURN_SPEED_HIGH - TURN_SPEED_LOW) * speedFrac) * steerFactor;
         if (isTyreSlipModelActive()) {
             const lockupExcess = brakingExcess(inputs.brake, speedFrac, brakingFactor(p.tyreWear, isQuali));
             turnRate *= 1 - lockupExcess * STEER_LOCKUP_PENALTY_MAX;
         }
-        const suspensionNoise = isQuali ? 0 : getSuspensionNoise(p.damageParts);
+        const suspensionNoise = getSuspensionNoise(p.damageParts);
         const steer = inputs.steer + suspensionNoise;
         p.angle += turnRate * dir * steer;
     }

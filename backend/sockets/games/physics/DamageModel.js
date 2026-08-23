@@ -40,6 +40,9 @@ function applyDamageSteerNoise(p, isQuali, rng = Math.random) {
 // - floor (fondo vettura): perdita di aderenza — vedi getFloorGripPenalty
 // - engine (motore): perdita di accelerazione/velocità — vedi getEnginePowerPenalty
 // - suspension (sospensioni): instabilità/rumore sterzo — vedi getSuspensionNoise
+// NESSUNA di queste penalità è esente in qualifica (dal 2026-08-23): chi
+// decide se c'è danno è chi riempie damageParts, non la formula. Rif.
+// docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md.
 // p.damage (scalare 0-100, storico) resta SEMPRE disponibile per HUD/tool
 // offline: è DERIVATO come il massimo dei 4 componenti (non più un contatore
 // indipendente) — un singolo componente gravemente danneggiato deve

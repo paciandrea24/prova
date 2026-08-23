@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { applySteering, TURN_SPEED_LOW, TURN_SPEED_HIGH } = require('./SteeringModel');
 const { STEER_LOCKUP_PENALTY_MAX } = require('./TyreSlipModel');
+const { FRONT_WING_STEER_PENALTY_MAX } = require('./DamageModel');
 
 test('TURN_SPEED_LOW/HIGH: valori storici invariati', () => {
     assert.equal(TURN_SPEED_LOW, 0.075);
@@ -21,10 +22,20 @@ test('applySteering: ala anteriore danneggiata riduce la turnRate (sottosterzo)'
     assert.ok(Math.abs(p.angle - 0.04854193548387097) < 1e-12);
 });
 
-test('applySteering: in qualifica il danno viene ignorato (steerFactor sempre 1)', () => {
+// ASSERZIONE CAPOVOLTA il 2026-08-23: prima diceva «in qualifica il danno
+// viene ignorato, steerFactor sempre 1». Ora il danno vale sempre — in
+// stagione al giro secco si arriva con la macchina che si ha. Rif.
+// docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md.
+//
+// Il valore atteso è derivato dalla costante invece che scritto a mano: così
+// una ritaratura di FRONT_WING_STEER_PENALTY_MAX non fa fallire questo test,
+// che è qui per l'esenzione mancante, non per il numero.
+test('applySteering: in qualifica il danno vale come in gara (steerFactor non è più 1)', () => {
     const p = { speed: 3, vx: 0, vz: 0, angle: 0, damageParts: { frontWing: 100, floor: 0, engine: 0, suspension: 0 }, inputs: { steer: -1 } };
     applySteering(p, true, 6.2);
-    assert.ok(Math.abs(p.angle - (-0.06387096774193549)) < 1e-12);
+    const senzaDanno = -0.06387096774193549;
+    assert.ok(Math.abs(p.angle - senzaDanno * (1 - FRONT_WING_STEER_PENALTY_MAX)) < 1e-12,
+        `atteso ${senzaDanno * (1 - FRONT_WING_STEER_PENALTY_MAX)}, ottenuto ${p.angle}`);
 });
 
 test('applySteering: sotto la soglia di velocità/moto minima, nessun effetto', () => {

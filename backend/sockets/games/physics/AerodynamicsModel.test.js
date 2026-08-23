@@ -242,12 +242,15 @@ test('dragFactor: F1_AERO_DAMAGE_MODEL="1", ala anteriore distrutta -> drag aume
     }
 });
 
-test('dragFactor: F1_AERO_DAMAGE_MODEL="1", isQuali=true -> danno ignorato (stessa esenzione di ogni altra penalità danno)', () => {
+// ASSERZIONE CAPOVOLTA il 2026-08-23: prima il danno era esente in qualifica.
+// Ora vale sempre — in stagione al giro secco si arriva con la macchina che si
+// ha. Rif. docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md.
+test('dragFactor: F1_AERO_DAMAGE_MODEL="1", isQuali=true -> il danno vale lo stesso', () => {
     process.env.F1_AERO_DAMAGE_MODEL = '1';
     try {
         const healthy = dragFactor(1, true, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
         const damaged = dragFactor(1, true, { frontWing: 100, floor: 0, engine: 0, suspension: 0 });
-        assert.equal(healthy, damaged, 'in qualifica il danno non deve avere effetto');
+        assert.ok(damaged < healthy, 'anche in qualifica l\'ala rotta deve aumentare la resistenza');
     } finally {
         delete process.env.F1_AERO_DAMAGE_MODEL;
     }

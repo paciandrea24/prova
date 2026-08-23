@@ -40,7 +40,7 @@ const GRIP = 0.78;
 // (l'opposto dell'intento); con la divisione si riduce, come atteso.
 function effectiveGrip(p, isQuali, maxSpeed) {
     const wearFactor  = corneringGripFactor(p.tyreWear, isQuali);
-    const floorFactor = isQuali ? 1 : 1 - getFloorGripPenalty(p.damageParts);
+    const floorFactor = 1 - getFloorGripPenalty(p.damageParts);
     let grip = GRIP * tyreOf(p, isQuali).gripMult * wearFactor * floorFactor;
     if (isAeroDownforceModelActive()) {
         const speedFrac = maxSpeed ? Math.min(1, Math.abs(p.speed || 0) / maxSpeed) : 0;
@@ -65,7 +65,9 @@ function applyGripBlend(p, grip) {
 // speedFrac^2 (stessa ispirazione fisica di dragFactor, direzione
 // opposta: più velocità = più deportanza = più capacità disponibile, non
 // meno). NON dipende da isQuali, stesso motivo di dragFactor: fenomeno
-// fisico sempre presente, non un degrado ignorato in qualifica.
+// fisico sempre presente. Da quando anche il danno vale in qualifica
+// (2026-08-23), `isQuali` qui non è più letto affatto: resta nella firma
+// per non toccare i tre chiamanti, e va tolto nel prossimo passo.
 // Consultato da `effectiveGrip` (sopra) e da
 // `CorneringGripModel.lateralExcess` in modo indipendente: i due consumer
 // non si moltiplicano fra loro né uno legge l'output dell'altro (vedi
@@ -76,9 +78,11 @@ const DOWNFORCE_EXPONENT = 2;
 function downforceFactor(speedFrac, isQuali, damageParts) {
     const frac = Math.max(0, Math.min(1, speedFrac));
     let factor = 1 + Math.pow(frac, DOWNFORCE_EXPONENT) * DOWNFORCE_CAPACITY_BONUS_MAX;
-    // Fase 3: danno al fondo -> meno downforce. Esenzione qualifica come
-    // ogni altra penalità danno (vedi DamageModel.js).
-    if (isAeroDamageModelActive() && !isQuali) {
+    // Fase 3: danno al fondo -> meno downforce. NON è più esente in
+    // qualifica (2026-08-23): il danno vale sempre, perché in stagione al
+    // giro secco si arriva con la macchina che si ha. Rif.
+    // docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md.
+    if (isAeroDamageModelActive()) {
         factor *= 1 - getFloorDownforcePenalty(damageParts);
     }
     return factor;
@@ -135,9 +139,9 @@ const DRAG_EXPONENT = 2;
 function dragFactor(speedFrac, isQuali, damageParts) {
     const frac = Math.max(0, Math.min(1, speedFrac));
     let factor = 1 - Math.pow(frac, DRAG_EXPONENT) * DRAG_TOP_SPEED_PENALTY_MAX;
-    // Fase 3: danno ala anteriore -> più drag. Esenzione qualifica come
-    // ogni altra penalità danno.
-    if (isAeroDamageModelActive() && !isQuali) {
+    // Fase 3: danno ala anteriore -> più drag. NON è più esente in
+    // qualifica (2026-08-23), vedi downforceFactor sopra.
+    if (isAeroDamageModelActive()) {
         factor *= 1 - getFrontWingDragPenalty(damageParts);
     }
     return factor;

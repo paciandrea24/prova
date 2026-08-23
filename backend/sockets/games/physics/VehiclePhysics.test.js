@@ -72,17 +72,28 @@ test('updateVelocity: coast (nessun input), moto residua, sterzo in coast — Fa
     assertClose(r.angle, -0.2675426673929925, 'angle');
 });
 
-test('updateVelocity: qualifica ignora usura/danno, con boost scia. vx/vz/angle RICALCOLATI DI NUOVO dopo la promozione a default ON del downforce (Rif. docs/superpowers/plans/2026-07-28-f1-aerodynamics-playtest-plan.md): il downforce NON è gated da isQuali (fenomeno fisico sempre presente, come il drag) — `speed` resta invariato (il piccolo calo di maxSpeed da drag non fa mai scattare il clamp in questo scenario).', () => {
+// VALORI RICALCOLATI il 2026-08-23. Il titolo diceva «qualifica ignora
+// usura/danno»: metà è ancora vera (l'usura delle gomme resta ignorata, in
+// qualifica sono nuove), l'altra metà non lo è più — il danno alle componenti
+// vale sempre, perché in stagione al giro secco si arriva con la macchina che
+// si ha. Rif. docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md.
+//
+// Cosa è cambiato, con lo stesso scenario di prima (motore/fondo/ala all'80%):
+//   speed 1.186 -> 1.14136   (il motore rotto abbassa il tetto di velocità)
+//   angle 0.01420 -> 0.00945 (l'ala rotta fa sterzare di meno)
+// Sono le due penalità che prima sparivano. Il downforce non era e non è
+// gated da isQuali (fenomeno fisico sempre presente, come il drag).
+test('updateVelocity: in qualifica l\'usura delle gomme è ignorata ma il DANNO no, con boost scia', () => {
     const p = {
         speed: 1, vx: 1, vz: 0, angle: 0, compound: 'hard', tyreWear: 90,
         damageParts: { frontWing: 80, floor: 80, engine: 80, suspension: 0 },
         inputs: { throttle: 1, brake: 0, steer: 0.2 }
     };
     const r = run(p, true, 1.05);
-    assertClose(r.speed, 1.186, 'speed');
-    assertClose(r.vx, 0.7812447683588838, 'vx');
-    assertClose(r.vz, 0.2638613989127322, 'vz');
-    assertClose(r.angle, 0.014200833077869507, 'angle');
+    assertClose(r.speed, 1.14136, 'speed');
+    assertClose(r.vx, 0.6106877803498082, 'vx');
+    assertClose(r.vz, 0.44917120989113873, 'vz');
+    assertClose(r.angle, 0.009452032113302769, 'angle');
 });
 
 // ---- Fase 4: F1_CORNERING_GRIP_MODEL (Rif. docs/superpowers/specs/2026-07-28-f1-cornering-grip-limit-design.md) ----

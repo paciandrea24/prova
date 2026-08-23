@@ -29,7 +29,7 @@ const FRICTION  = 0.120;   // decremento costante per tick del coast-down
 // joinF1Game/createBots).
 function effectiveMaxSpeed(p, isQuali) {
     const wearFactor   = isQuali ? 1 : 1 - getWearPenaltyFactor(p.tyreWear) * WEAR_SPEED_PENALTY;
-    const engineFactor = isQuali ? 1 : 1 - getEnginePowerPenalty(p.damageParts);
+    const engineFactor = 1 - getEnginePowerPenalty(p.damageParts);
     let maxSpeed = MAX_SPEED * tyreOf(p, isQuali).speedMult * wearFactor * engineFactor;
 
     // Fase 1 (percorso di confronto, F1_AERO_DRAG_MODEL=1): drag
@@ -55,7 +55,7 @@ function effectiveMaxSpeed(p, isQuali) {
 // l'avevano affiancata/tarata dietro un flag, ora superfluo).
 function effectiveAccel(p, isQuali) {
     const wearFactor   = tractionFactor(p.tyreWear, isQuali);
-    const engineFactor = isQuali ? 1 : 1 - getEnginePowerPenalty(p.damageParts);
+    const engineFactor = 1 - getEnginePowerPenalty(p.damageParts);
     return ACCEL * wearFactor * engineFactor;
 }
 

@@ -485,7 +485,13 @@ test('applyBarrier: senza profilo (editor, test storici) vale solo sui ponti, co
     assert.equal(q.x, 15, 'senza profilo e fuori dai ponti si comporta come prima');
 });
 
-test('effectiveMaxSpeed: il danno al motore riduce la velocità massima in gara, non in qualifica', () => {
+// ASSERZIONE CAPOVOLTA il 2026-08-23: prima diceva «in qualifica il danno non
+// deve avere effetto». Serviva alle stagioni, dove al giro secco si arriva con
+// la macchina con cui si è finita la gara precedente — ma la regola giusta non
+// è «tranne in stagione»: è che chi decide se c'è danno è chi riempie
+// damageParts, non la formula. Rif.
+// docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md.
+test('effectiveMaxSpeed: il danno al motore riduce la velocità massima, in gara come in qualifica', () => {
     const { physics } = f1GameSocket;
     const pDanneggiato = { tyreWear: 0, compound: 'medium', damageParts: { engine: 100, frontWing: 0, floor: 0, suspension: 0 } };
     const pIlleso       = { tyreWear: 0, compound: 'medium', damageParts: { engine: 0, frontWing: 0, floor: 0, suspension: 0 } };
@@ -496,7 +502,7 @@ test('effectiveMaxSpeed: il danno al motore riduce la velocità massima in gara,
 
     const qualiDanneggiato = physics.effectiveMaxSpeed(pDanneggiato, true);
     const qualiIlleso      = physics.effectiveMaxSpeed(pIlleso, true);
-    assert.ok(Math.abs(qualiDanneggiato - qualiIlleso) < 1e-9, 'in qualifica il danno non deve avere effetto');
+    assert.ok(qualiDanneggiato < qualiIlleso, 'anche in qualifica il danno al motore deve rallentare');
 });
 
 test("effectiveGrip: il danno al fondo riduce l'aderenza in modo proporzionale, nessuna soglia", () => {
@@ -518,8 +524,9 @@ test('effectiveAccel: il danno al motore riduce anche l\'accelerazione, non solo
 
     assert.ok(physics.effectiveAccel(pDanneggiato, false) < physics.effectiveAccel(pIlleso, false),
         'motore danneggiato: accelerazione ridotta in gara');
-    assert.ok(Math.abs(physics.effectiveAccel(pDanneggiato, true) - physics.effectiveAccel(pIlleso, true)) < 1e-9,
-        'in qualifica il danno non deve avere effetto');
+    // Capovolta il 2026-08-23, vedi effectiveMaxSpeed sopra.
+    assert.ok(physics.effectiveAccel(pDanneggiato, true) < physics.effectiveAccel(pIlleso, true),
+        'motore danneggiato: accelerazione ridotta anche in qualifica');
 });
 
 test('Simcade: isolamento dei componenti — ala anteriore riduce lo sterzo ma non velocità/accelerazione; motore riduce velocità/accelerazione ma non lo sterzo', () => {
