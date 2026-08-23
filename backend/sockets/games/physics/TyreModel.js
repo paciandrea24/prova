@@ -78,7 +78,11 @@ function applyTyreWear(p, offTrack, track) {
     const wearPerUnitDist = 100 / (WEAR_LAPS_AT_MEDIUM * track.lapLength);
     // Peso del carburante: l'auto piena carica di piu' le gomme e le consuma
     // di piu'. E' la ragione fisica per cui il primo stint e' il piu' duro.
-    const wear = dist * wearPerUnitDist * tyreOf(p).wearRate * fuelFactorOf(p);
+    // Abrasivita' del circuito: quanto quell'asfalto mangia le gomme. Il
+    // valore lo normalizza e lo limita trackLoader; qui `|| 1` copre solo i
+    // game costruiti a mano nei test e negli strumenti offline.
+    const abrasivita = track.abrasivita || 1;
+    const wear = dist * wearPerUnitDist * tyreOf(p).wearRate * fuelFactorOf(p) * abrasivita;
     p.tyreWear = Math.min(100, p.tyreWear + wear);
     if (offTrack) p.tyreWear = Math.min(100, p.tyreWear + WEAR_OFFTRACK_EXTRA);
 }
@@ -86,12 +90,23 @@ function applyTyreWear(p, offTrack, track) {
 // Suggerimento di strategia (solo indicativo, mostrato in selezione mescola):
 // parte da una mescola durevole per il primo stint, poi via via più
 // prestazionali per i restanti — quante ne servono dipende dai giri totali.
-function suggestStrategy(totalLaps) {
-    const life = {
-        hard:   Math.max(1, Math.round(WEAR_LAPS_AT_MEDIUM / TYRE_COMPOUNDS.hard.wearRate)),
-        medium: WEAR_LAPS_AT_MEDIUM,
-        soft:   Math.max(1, Math.round(WEAR_LAPS_AT_MEDIUM / TYRE_COMPOUNDS.soft.wearRate)),
+// Quanti giri dura ogni mescola SU QUESTA PISTA. E' il numero che il giocatore
+// usa per decidere se fermarsi una volta o due — cioe' lo strumento con cui si
+// calcola un under-cut. `totalLaps` non entra nel conto: e' qui solo perche'
+// chi chiama ha gia' quel dato sottomano e non deve andarlo a cercare due
+// volte. Rif. docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md.
+function giriPerMescola(totalLaps, abrasivita) {
+    const abr = abrasivita || 1;
+    const giri = (wearRate) => Math.max(1, Math.round(WEAR_LAPS_AT_MEDIUM / (wearRate * abr)));
+    return {
+        hard:   giri(TYRE_COMPOUNDS.hard.wearRate),
+        medium: giri(TYRE_COMPOUNDS.medium.wearRate),
+        soft:   giri(TYRE_COMPOUNDS.soft.wearRate),
     };
+}
+
+function suggestStrategy(totalLaps, abrasivita) {
+    const life = giriPerMescola(totalLaps, abrasivita);
     const order  = ['hard', 'medium', 'soft'];
     const stints = [];
     let remaining = totalLaps;
@@ -109,5 +124,5 @@ module.exports = {
     TYRE_COMPOUNDS, DEFAULT_COMPOUND,
     WEAR_LAPS_AT_MEDIUM, WEAR_OFFTRACK_EXTRA, WEAR_SPEED_PENALTY,
     WEAR_CLIFF_THRESHOLD, WEAR_CLIFF_GENTLE_FRACTION,
-    tyreOf, applyTyreWear, suggestStrategy, getWearPenaltyFactor
+    tyreOf, applyTyreWear, suggestStrategy, giriPerMescola, getWearPenaltyFactor
 };

@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { loadTrack, listTracks, saveTrack, deleteTrack } = require('./trackLoader.js');
+const { loadTrack, listTracks, saveTrack, deleteTrack, normalizzaAbrasivita } = require('./trackLoader.js');
 
 const TRACKS_DIR = path.join(__dirname, '..', '..', '..', 'frontend', 'tracks');
 
@@ -343,4 +343,24 @@ test('il tetto di una pista coincide con le posizioni della sua corsia box', () 
         assert.equal(p.maxDrivers, Math.min(20, posizioni),
             `${p.id}: dichiara ${p.maxDrivers} piloti ma la corsia ha ${posizioni} posizioni`);
     }
+});
+
+// Abrasivita' del circuito: quanto quell'asfalto mangia le gomme. E' l'unica
+// cosa che rende under-cut e over-cut una scelta invece che una teoria, e
+// resta INVISIBILE graficamente (richiesta esplicita dell'utente): due piste
+// identiche a vedersi possono chiedere una sosta o due.
+// Rif. docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md
+test("trackLoader: senza il campo, abrasivita' vale 1", () => {
+    const track = loadTrack('prova');
+    assert.equal(track.abrasivita, 1);
+});
+
+test("trackLoader: abrasivita' fuori scala viene limitata", () => {
+    // Un file scritto a mano non deve poter azzerare o far esplodere il
+    // consumo: 0 renderebbe le gomme eterne, 50 le distruggerebbe in una curva.
+    assert.equal(normalizzaAbrasivita(0), 0.5);
+    assert.equal(normalizzaAbrasivita(50), 2);
+    assert.equal(normalizzaAbrasivita(undefined), 1);
+    assert.equal(normalizzaAbrasivita('molta'), 1);
+    assert.equal(normalizzaAbrasivita(1.35), 1.35);
 });

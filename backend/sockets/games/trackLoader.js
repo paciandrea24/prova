@@ -114,6 +114,22 @@ function buildRacingLineFromControls(points, lineControls) {
     });
 }
 
+// Quanto l'asfalto di questo circuito mangia le gomme. 1 = riferimento (una
+// Medium dura WEAR_LAPS_AT_MEDIUM giri). Sotto 1 e' dolce, sopra e'
+// aggressivo; l'intervallo utile e' 0.75-1.35, i limiti sono piu' larghi solo
+// per non rompersi su un file scritto a mano.
+//
+// NON ha nessun effetto grafico: due piste identiche a vedersi possono
+// chiedere una sosta o due. E' una scelta dell'utente. Rif.
+// docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md.
+const ABRASIVITA_MIN = 0.5;
+const ABRASIVITA_MAX = 2;
+
+function normalizzaAbrasivita(valore) {
+    if (typeof valore !== 'number' || !Number.isFinite(valore)) return 1;
+    return Math.max(ABRASIVITA_MIN, Math.min(ABRASIVITA_MAX, valore));
+}
+
 function buildTrack(id, raw) {
     const points = TrackGeometry.sampleLoop(raw.controlPoints, SAMPLES);
     const lapLength = TrackGeometry.lapLength(points);
@@ -257,6 +273,7 @@ function buildTrack(id, raw) {
         pitGapPts,
         lapLength,
         totalLaps,
+        abrasivita: normalizzaAbrasivita(raw.abrasivita),
         pitPath,
         pitLanePts,
         pitEntryIndex,
@@ -387,4 +404,4 @@ function deleteTrack(id) {
     cache.delete(id);
 }
 
-module.exports = { loadTrack, listTracks, saveTrack, deleteTrack, loadRacelineData, buildRacingLineFromControls };
+module.exports = { loadTrack, listTracks, saveTrack, deleteTrack, loadRacelineData, buildRacingLineFromControls, normalizzaAbrasivita };

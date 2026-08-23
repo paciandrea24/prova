@@ -11,7 +11,7 @@ const { createBots, updateBotInputs, estimateFinishTime, nearestAheadPlayer, BOT
 const TyreModel = require('./physics/TyreModel');
 const {
     TYRE_COMPOUNDS, DEFAULT_COMPOUND, WEAR_LAPS_AT_MEDIUM,
-    tyreOf, suggestStrategy
+    tyreOf, suggestStrategy, giriPerMescola
 } = TyreModel;
 
 const DamageModel = require('./physics/DamageModel');
@@ -564,7 +564,12 @@ module.exports = function (io, socket) {
             elapsed: game.raceStarted ? (game.raceTick * PHYSICS_TICK_MS) : 0,
             players: buildPublicState(playersVisibleTo(game, playerColor), game.raceStarted, game.track, game),
             compounds: TYRE_COMPOUNDS,
-            strategy: suggestStrategy(totalLaps),
+            strategy: suggestStrategy(totalLaps, game.track.abrasivita),
+            // I giri VERI di questa pista, non quelli nominali: e' cio' con
+            // cui il giocatore calcola se fermarsi una volta o due. Rif.
+            // docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md
+            abrasivita: game.track.abrasivita,
+            giriPerMescola: giriPerMescola(totalLaps, game.track.abrasivita),
             myCompound: game.players[playerColor].compound,
             tyreConfirmed: scelteMescola.count,
             tyreTotal: scelteMescola.total,

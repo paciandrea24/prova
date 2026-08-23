@@ -5,7 +5,7 @@ const {
     TYRE_COMPOUNDS, DEFAULT_COMPOUND,
     WEAR_LAPS_AT_MEDIUM, WEAR_OFFTRACK_EXTRA, WEAR_SPEED_PENALTY,
     WEAR_CLIFF_THRESHOLD, WEAR_CLIFF_GENTLE_FRACTION,
-    tyreOf, applyTyreWear, suggestStrategy, getWearPenaltyFactor
+    tyreOf, applyTyreWear, suggestStrategy, getWearPenaltyFactor, giriPerMescola
 } = require('./TyreModel.js');
 
 test('getWearPenaltyFactor: zero wear ha fattore zero', () => {
@@ -166,4 +166,60 @@ test('applyTyreWear: senza fuelFactor il consumo e\' identico a prima', () => {
     applyTyreWear(senza, false, track);
     applyTyreWear(uno, false, track);
     assert.equal(senza.tyreWear, uno.tyreWear);
+});
+
+// ---- Abrasivita' del circuito --------------------------------------------
+// Quanto quell'asfalto mangia le gomme. E' l'unica cosa che rende under-cut e
+// over-cut una scelta invece che una teoria: non li implementiamo, diamo al
+// giocatore i numeri con cui li calcola.
+test("applyTyreWear: una pista abrasiva consuma di piu'", () => {
+    const dolce      = { lapLength: 1000, abrasivita: 0.75 };
+    const aggressiva = { lapLength: 1000, abrasivita: 1.35 };
+    const base = () => ({ vx: 0, vz: 10, tyreWear: 0, compound: 'medium' });
+    const a = base(), b = base();
+    applyTyreWear(a, false, dolce);
+    applyTyreWear(b, false, aggressiva);
+    assert.ok(b.tyreWear > a.tyreWear,
+        `attesa piu' usura sull'aggressiva, ottenuto ${b.tyreWear} vs ${a.tyreWear}`);
+});
+
+test("applyTyreWear: senza abrasivita' nella pista il consumo e' quello di sempre", () => {
+    const senza = { lapLength: 1000 };
+    const uno   = { lapLength: 1000, abrasivita: 1 };
+    const a = { vx: 0, vz: 10, tyreWear: 0, compound: 'medium' };
+    const b = { vx: 0, vz: 10, tyreWear: 0, compound: 'medium' };
+    applyTyreWear(a, false, senza);
+    applyTyreWear(b, false, uno);
+    assert.equal(a.tyreWear, b.tyreWear);
+});
+
+test('giriPerMescola: a riferimento la Medium dura WEAR_LAPS_AT_MEDIUM giri', () => {
+    assert.equal(giriPerMescola(20, 1).medium, WEAR_LAPS_AT_MEDIUM);
+});
+
+test('giriPerMescola: su pista aggressiva ogni mescola dura meno', () => {
+    const riferimento = giriPerMescola(20, 1);
+    const aggressiva  = giriPerMescola(20, 1.35);
+    for (const k of ['hard', 'medium', 'soft']) {
+        assert.ok(aggressiva[k] < riferimento[k],
+            `${k}: attesa vita minore, ottenuto ${aggressiva[k]} vs ${riferimento[k]}`);
+    }
+});
+
+test("giriPerMescola: la Hard dura sempre piu' della Soft", () => {
+    for (const abr of [0.75, 1, 1.35]) {
+        const g = giriPerMescola(20, abr);
+        assert.ok(g.hard > g.soft, `abrasivita' ${abr}: hard ${g.hard} deve battere soft ${g.soft}`);
+    }
+});
+
+test("suggestStrategy: su pista aggressiva servono piu' stint", () => {
+    const dolce      = suggestStrategy(20, 0.75);
+    const aggressiva = suggestStrategy(20, 1.35);
+    assert.ok(aggressiva.length > dolce.length,
+        `attesi piu' stint sull'aggressiva, ottenuti ${aggressiva.length} vs ${dolce.length}`);
+});
+
+test("suggestStrategy: senza abrasivita' il consiglio e' quello di sempre", () => {
+    assert.deepEqual(suggestStrategy(20), suggestStrategy(20, 1));
 });
