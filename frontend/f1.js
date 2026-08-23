@@ -2138,6 +2138,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // SELEZIONE MESCOLA
     // ====================================================
     let tyreSelectActive = false;   // true mentre siamo in fase tyre_select: la camera orbita sul tracciato
+    // I numeri veri di QUESTA pista, mandati dal server: quanto l'asfalto
+    // mangia le gomme e quanti giri dura ogni mescola. Servono a decidere se
+    // fermarsi una volta o due — cioe' a calcolare un under-cut. Rif.
+    // docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md
+    let abrasivitaPista = 1;
+    let giriMescolaPista = null;
     let tyreOrbitAngle = 0;
     let myCompoundChoice = null;
     let tyreCompoundsInfo = null;   // { hard:{...}, medium:{...}, soft:{...} }, ricevuto una volta in f1Setup
@@ -2409,6 +2415,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             (profilo.lunghezzaKm * giri).toFixed(1) + '<span class="unita">km</span>';
         el('tyre-info-lunghezza').innerHTML =
             profilo.lunghezzaKm.toFixed(3) + '<span class="unita">km</span>';
+        // In parole e non come numero: "1.35" non dice niente a nessuno, e il
+        // valore esatto non e' un'informazione che serve al giocatore. Gli
+        // serve sapere se questa pista chiede una sosta o due — e quello
+        // glielo dicono i giri sulle card, qui accanto.
+        const elAbr = el('tyre-info-abrasivita');
+        if (elAbr) {
+            const scala = [[0.85, 'Dolce'], [1.15, 'Media'], [Infinity, 'Aggressiva']];
+            elAbr.textContent = scala.find(([soglia]) => abrasivitaPista < soglia)[1];
+        }
 
         const NOMI = {
             trazione: 'Trazione',
@@ -2474,7 +2489,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Riusata sia per la selezione mescola pre-qualifica sia per il cambio
     // gomme ai box (containerId/eventName diversi, stessa presentazione).
-    function renderTyreCards(compounds, myCompound, containerId, eventName) {
+    function renderTyreCards(compounds, myCompound, containerId, eventName, giriPerMescola) {
         const container = document.getElementById(containerId);
         container.innerHTML = '';
         let myIndex = 0, i = 0;
@@ -2496,12 +2511,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             // copia qui.
             card.style.setProperty('--mescola', c.color);
             const segno = (v) => (v >= 1 ? '+' : '') + Math.round((v - 1) * 100) + '%';
+            // "Usura 1.5×" e' un moltiplicatore astratto; "dura ~3 giri" e' la
+            // cosa con cui si decide una strategia. Se il server non ha ancora
+            // mandato i giri (schermata aperta prima del payload) si torna al
+            // moltiplicatore, che e' sempre vero.
+            const giri = giriPerMescola && giriPerMescola[key];
+            const durata = giri ? `Dura <b>~${giri} giri</b>` : `Usura <b>${c.wearRate}×</b>`;
             card.innerHTML = F1Pneumatico.svg(key, c.color, { titolo: `Mescola ${c.label}` })
                 + `<div>
                     <div class="tyre-card-label">${c.label.toUpperCase()}</div>
                     <div class="tyre-card-stats">
                         Velocità <b>${segno(c.speedMult)}</b> · Aderenza <b>${segno(c.gripMult)}</b><br>
-                        Usura <b>${c.wearRate}×</b>
+                        ${durata}
                     </div>
                 </div>`;
             card.onclick = () => {
@@ -2836,7 +2857,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             'Scegli la mescola, poi premi SPAZIO quando passi sulla banda verde in corsia.';
         document.getElementById('pitstop-react-prompt').style.display = 'none';
         document.getElementById('pitstop-result').textContent = '';
-        if (tyreCompoundsInfo) renderTyreCards(tyreCompoundsInfo, null, 'pitstop-cards', 'f1PitCompoundChoice');
+        if (tyreCompoundsInfo) renderTyreCards(tyreCompoundsInfo, null, 'pitstop-cards', 'f1PitCompoundChoice', giriMescolaPista);
 
         const myDamage = (serverState[myColor] && serverState[myColor].damage) || 0;
         const repairToggle = document.getElementById('pitstop-repair-toggle');
@@ -3088,7 +3109,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     socket.on('f1Setup', ({ players, trackName, hostColor: hc, totalLaps, phase, raceStarted, elapsed,
-        compounds, strategy, myCompound, tyreConfirmed, tyreTotal,
+        compounds, strategy, myCompound, tyreConfirmed, tyreTotal, abrasivita, giriPerMescola,
         tyreAttesi, tyreArrivati, tyreConfermati, tyreRestaMs, formato, stagioneId }) => {
         if (compounds) tyreCompoundsInfo = compounds;
         if (phase) currentPhase = phase;
@@ -3146,11 +3167,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             myCompoundChoice = myCompound || null;
             document.getElementById('tyre-select-overlay').style.display = 'flex';
             enterTyrePreview();
+            if (typeof abrasivita === 'number') abrasivitaPista = abrasivita;
+            if (giriPerMescola) giriMescolaPista = giriPerMescola;
             renderInfoCircuito();
             document.getElementById('tyre-strategy-hint').textContent =
                 'Consigliata: ' +
                 (strategy || []).map(c => (compounds[c]?.label || c).toLowerCase()).join(' → ');
-            renderTyreCards(compounds, myCompoundChoice, 'tyre-cards', 'f1TyreChoice');
+            renderTyreCards(compounds, myCompoundChoice, 'tyre-cards', 'f1TyreChoice', giriMescolaPista);
             renderAttesaMescole({
                 attesi: tyreAttesi, arrivati: tyreArrivati, confermati: tyreConfermati,
                 count: tyreConfirmed, total: tyreTotal, restaMs: tyreRestaMs,
