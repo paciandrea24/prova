@@ -10,6 +10,7 @@ const { getEnginePowerPenalty } = require('./DamageModel');
 const { tractionFactor } = require('./TyreForceModel');
 const { isTyreSlipModelActive, tractionExcess, updateTractionSlipDebt, TRACTION_SLIP_PENALTY_MAX } = require('./TyreSlipModel');
 const AerodynamicsModel = require('./AerodynamicsModel');
+const { fuelFactorOf } = require('./FuelModel');
 
 // Velocità realistica F1: fattore di scala R=1.55 (+55%) applicato a
 // MAX_SPEED/ACCEL/FRICTION rispetto ai valori storici (4.0/0.12/0.050). Vedi
@@ -56,7 +57,9 @@ function effectiveMaxSpeed(p, isQuali) {
 function effectiveAccel(p, isQuali) {
     const wearFactor   = tractionFactor(p.tyreWear, isQuali);
     const engineFactor = 1 - getEnginePowerPenalty(p.damageParts);
-    return ACCEL * wearFactor * engineFactor;
+    // Peso del carburante: piu' massa, meno accelerazione. Si DIVIDE perche'
+    // fuelFactorOf cresce sopra 1 col serbatoio pieno.
+    return ACCEL * wearFactor * engineFactor / fuelFactorOf(p);
 }
 
 // Acceleratore premuto: applica effectiveAccel*throttle, clampato al tetto

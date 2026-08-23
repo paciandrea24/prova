@@ -7,6 +7,7 @@
 // docs/superpowers/plans/2026-07-27-f1-vehicle-dynamics-refactor.md),
 // nessuna formula cambiata.
 const { getFrontWingSteerPenalty, getSuspensionNoise } = require('./DamageModel');
+const { fuelCorneringFactor } = require('./FuelModel');
 const { brakingFactor } = require('./TyreForceModel');
 const { isTyreSlipModelActive, brakingExcess, STEER_LOCKUP_PENALTY_MAX } = require('./TyreSlipModel');
 
@@ -43,6 +44,12 @@ function applySteering(p, isQuali, maxSpeed) {
         // si arriva con la macchina che si ha.
         const steerFactor = 1 - getFrontWingSteerPenalty(p.damageParts);
         let turnRate = (TURN_SPEED_LOW + (TURN_SPEED_HIGH - TURN_SPEED_LOW) * speedFrac) * steerFactor;
+        // Peso del carburante: l'auto piena sottosterza. Sta QUI e non in
+        // effectiveGrip perche' questo e' il posto dove "l'auto gira di meno"
+        // ha un significato non ambiguo — e' lo stesso meccanismo del
+        // sottosterzo da ala rotta, tre righe sopra. In curva il peso conta
+        // la meta' (FUEL_CORNERING_SHARE): vedi FuelModel.js.
+        turnRate /= fuelCorneringFactor(p);
         if (isTyreSlipModelActive()) {
             const lockupExcess = brakingExcess(inputs.brake, speedFrac, brakingFactor(p.tyreWear, isQuali));
             turnRate *= 1 - lockupExcess * STEER_LOCKUP_PENALTY_MAX;

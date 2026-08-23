@@ -7,6 +7,7 @@
 // nessuna formula cambiata.
 const { brakingFactor } = require('./TyreForceModel');
 const { isTyreSlipModelActive, brakingExcess, BRAKING_EXCESS_PENALTY_MAX } = require('./TyreSlipModel');
+const { fuelFactorOf } = require('./FuelModel');
 
 // Moltiplicatore di ACCEL in frenata (era 1.4 a MAX_SPEED=4.0), scalato ×R²
 // (non ×R) come FRICTION: la decelerazione è un decremento costante per
@@ -20,7 +21,8 @@ const BRAKE_MULT = 2.17;
 // frenata — la vecchia WEAR_BRAKE_PENALTY è stata rimossa.
 function effectiveBrakeMult(p, isQuali) {
     const wearFactor = brakingFactor(p.tyreWear, isQuali);
-    return BRAKE_MULT * wearFactor;
+    // Peso del carburante: piu' massa, spazio d'arresto piu' lungo.
+    return BRAKE_MULT * wearFactor / fuelFactorOf(p);
 }
 
 // `accelValue` = effectiveAccel(p, isQuali) del chiamante (PowertrainModel):

@@ -23,6 +23,7 @@
 const { corneringGripFactor } = require('./TyreForceModel');
 const { corneringExcess } = require('./TyreSlipModel');
 const AerodynamicsModel = require('./AerodynamicsModel');
+const { fuelCorneringFactor } = require('./FuelModel');
 
 // Contributo relativo alla capacità laterale (moltiplicatore adimensionale
 // ~1 = nominale, <1 = usura, fino a +15% con downforce ad alta velocità,
@@ -38,6 +39,12 @@ function corneringCapacity(p, isQuali, maxSpeed) {
     if (AerodynamicsModel.isAeroDownforceModelActive()) {
         capacity *= AerodynamicsModel.downforceFactor(speedFrac, p.damageParts);
     }
+    // Peso del carburante: l'auto piena ha meno capacita' laterale
+    // disponibile. Consumatore INDIPENDENTE dallo stesso fatto fisico
+    // agganciato in SteeringModel.turnRate — nessun doppio conteggio: qui il
+    // bot DECIDE quanto frenare per la curva, li' la sterzata si ESEGUE.
+    // Stessa separazione gia' documentata per downforceFactor.
+    capacity /= fuelCorneringFactor(p);
     return capacity;
 }
 
