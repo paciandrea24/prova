@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const path = require('path');
 const http = require('http');
 
@@ -56,6 +57,16 @@ if (strumentiDiSviluppoAttivi()) {
 // default di express.json() (100kb) — stesso motivo già documentato sopra
 // per /dev/minimap.
 app.use('/api/livery', express.json({ limit: '5mb' }));
+
+// Compressione gzip di TUTTO cio' che esce: pagine, JS, CSS, JSON delle piste.
+// Misurato il 2026-08-23: la sola pagina F1 serviva 1207 KB di JS/CSS/HTML ad
+// ogni caricamento, che gzippati sono 382 KB — il 68% in meno. Su una
+// connessione da hotspot e' la differenza fra "parte" e "ci mette".
+//
+// Va PRIMA di express.static e delle route, altrimenti non vede le risposte
+// che deve comprimere. I .glb e le altre risorse gia' compresse le salta da
+// solo (guarda il Content-Type), quindi non c'e' niente da escludere a mano.
+app.use(compression());
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
