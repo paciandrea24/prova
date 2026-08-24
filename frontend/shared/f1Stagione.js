@@ -106,17 +106,80 @@
         return !!stagione && stagione.giro >= stagione.calendario.length;
     }
 
+    // ---- il parco chiuso ----------------------------------------------------
+    //
+    // Come per la classifica: nel documento stanno gli EVENTI, non i totali.
+    // Un'usura salvata accanto agli eventi sarebbe un secondo posto dove vive
+    // la stessa verità, e i due prima o poi divergono. Rif.
+    // docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md.
+    const COMPONENTI = ['frontWing', 'floor', 'engine', 'suspension'];
+
+    // L'ala anteriore NON è del parco chiuso: è nuova ad ogni via e si cambia
+    // ai box. Le altre tre si trascinano, e sono le uniche che l'officina può
+    // sostituire.
+    const COMPONENTI_PARCO_CHIUSO = ['floor', 'engine', 'suspension'];
+
+    function vetturaNuova() {
+        return { frontWing: 0, floor: 0, engine: 0, suspension: 0 };
+    }
+
+    // 0-100, e mai NaN: questi numeri arrivano dal server e finiscono nella
+    // fisica, dove un NaN non si ferma più (stessa trappola documentata in
+    // TyreModel.getWearPenaltyFactor).
+    function percentuale(v) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return 0;
+        return Math.max(0, Math.min(100, n));
+    }
+
+    function normalizzaUsura(grezza) {
+        const out = vetturaNuova();
+        if (!grezza) return out;
+        for (const c of COMPONENTI) out[c] = percentuale(grezza[c]);
+        return out;
+    }
+
+    // Com'è ridotta la macchina di questo pilota ADESSO.
+    //
+    // L'usura registrata è già il TOTALE alla bandiera, non l'incremento di
+    // quella gara: si prende l'ULTIMA, non si somma. Sommare la conterebbe due
+    // volte, e dopo tre gare la macchina sarebbe distrutta senza motivo.
+    //
+    // I ricambi decisi in officina azzerano il loro componente, e vengono
+    // applicati DOPO l'usura della gara a cui sono agganciati: è l'ordine in
+    // cui i fatti sono successi.
+    function statoVettura(stagione, idPilota) {
+        const stato = vetturaNuova();
+        for (const gara of (stagione && stagione.risultati) || []) {
+            const registrata = gara.usura && gara.usura[idPilota];
+            if (registrata) Object.assign(stato, normalizzaUsura(registrata));
+            const ricambi = gara.ricambiDopo && gara.ricambiDopo[idPilota];
+            for (const c of ricambi || []) {
+                if (COMPONENTI.indexOf(c) >= 0) stato[c] = 0;
+            }
+        }
+        return stato;
+    }
+
     // Registra il risultato della gara corrente e avanza. `ordine` è l'elenco
     // degli id dei piloti dal primo all'ultimo.
     //
     // Non muta: restituisce una stagione nuova. Chi salva su Mongo deve poter
     // fallire senza aver già sporcato l'oggetto in memoria.
-    function registraRisultato(stagione, { ordine, adesso }) {
+    function registraRisultato(stagione, { ordine, usura, adesso }) {
         if (finita(stagione)) throw new Error('la stagione è già finita');
         const pista = garaCorrente(stagione);
+        // L'usura si normalizza QUI, una volta, all'ingresso: da qui in poi
+        // nessun altro deve chiedersi se quei numeri sono buoni.
+        const usuraPulita = {};
+        for (const id in (usura || {})) usuraPulita[id] = normalizzaUsura(usura[id]);
         return Object.assign({}, stagione, {
             giro: stagione.giro + 1,
-            risultati: stagione.risultati.concat([{ pista, ordine: (ordine || []).slice() }]),
+            risultati: stagione.risultati.concat([{
+                pista,
+                ordine: (ordine || []).slice(),
+                usura: usuraPulita,
+            }]),
             aggiornataIl: adesso || new Date().toISOString(),
         });
     }
@@ -316,6 +379,7 @@
         PUNTI, MIN_GARE, GARE_CONSIGLIATE,
         intervalloGare, puntiPerPosizione, mescola, sorteggiaCalendario,
         idPilota, creaStagione, garaCorrente, finita, registraRisultato,
+        COMPONENTI, COMPONENTI_PARCO_CHIUSO, vetturaNuova, statoVettura,
         classifica, vittorie, riepilogoGara, garaDaRiepilogare,
         albo, numeriDi, cronaca, siPuoRiprendere,
     };

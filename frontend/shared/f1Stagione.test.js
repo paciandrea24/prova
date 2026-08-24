@@ -369,3 +369,83 @@ test('la cronaca racconta le gare in ordine, con la classifica di quel momento',
     // Una stagione senza gare corse non ha niente da raccontare.
     assert.deepEqual(S.cronaca(stagioneDiProva()), []);
 });
+
+// ---- Il parco chiuso: lo stato della vettura si CALCOLA ---------------------
+// Stesso principio già scritto sopra per la classifica: nel documento stanno
+// gli EVENTI, non i totali. Un'usura salvata accanto agli eventi sarebbe un
+// secondo posto dove vive la stessa verità.
+// Rif. docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md
+//
+// Il nome per esteso è quello con cui queste regole girano nel resto del
+// progetto: qui sotto si legge come nel codice che le usa.
+const F1Stagione = S;
+
+function stagioneDaDueGare() {
+    return F1Stagione.creaStagione({
+        nome: 'Parco chiuso', creataDa: 'uid-a',
+        piloti: [{ uid: 'uid-a', colore: 'red' }, { colore: 'blue', bot: true }],
+        calendario: ['prova', 'new-monza', 'monte-rosso'],
+        adesso: '2026-08-23T00:00:00.000Z',
+    });
+}
+
+test('statoVettura: prima di ogni gara la macchina e\' nuova', () => {
+    const s = stagioneDaDueGare();
+    assert.deepEqual(F1Stagione.statoVettura(s, 'p1'),
+        { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
+});
+
+test('statoVettura: dopo una gara porta l\'usura di quella gara', () => {
+    let s = stagioneDaDueGare();
+    s = F1Stagione.registraRisultato(s, {
+        ordine: ['p1', 'p2'],
+        usura: { p1: { frontWing: 40, floor: 12, engine: 35, suspension: 3 } },
+        adesso: '2026-08-23T01:00:00.000Z',
+    });
+    assert.deepEqual(F1Stagione.statoVettura(s, 'p1'),
+        { frontWing: 40, floor: 12, engine: 35, suspension: 3 });
+});
+
+test('statoVettura: l\'ultima gara registrata e\' quella che conta, non la somma', () => {
+    // L'usura salvata e' gia' il TOTALE alla bandiera, non l'incremento di
+    // quella gara: sommarla la conterebbe due volte.
+    let s = stagioneDaDueGare();
+    s = F1Stagione.registraRisultato(s, {
+        ordine: ['p1', 'p2'],
+        usura: { p1: { frontWing: 40, floor: 12, engine: 35, suspension: 3 } },
+    });
+    s = F1Stagione.registraRisultato(s, {
+        ordine: ['p1', 'p2'],
+        usura: { p1: { frontWing: 10, floor: 20, engine: 70, suspension: 5 } },
+    });
+    assert.deepEqual(F1Stagione.statoVettura(s, 'p1'),
+        { frontWing: 10, floor: 20, engine: 70, suspension: 5 });
+});
+
+test('statoVettura: un pilota senza usura registrata resta a zero', () => {
+    // Il bot p2 non compare nella mappa: non e' un errore, e' una gara
+    // registrata da una versione che l'usura non la scriveva.
+    let s = stagioneDaDueGare();
+    s = F1Stagione.registraRisultato(s, {
+        ordine: ['p1', 'p2'],
+        usura: { p1: { frontWing: 40, floor: 12, engine: 35, suspension: 3 } },
+    });
+    assert.deepEqual(F1Stagione.statoVettura(s, 'p2'),
+        { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
+});
+
+test('registraRisultato: non muta la stagione che riceve', () => {
+    const s = stagioneDaDueGare();
+    F1Stagione.registraRisultato(s, { ordine: ['p1', 'p2'], usura: { p1: { engine: 50 } } });
+    assert.equal(s.risultati.length, 0, 'l\'originale non si tocca');
+});
+
+test('statoVettura: valori fuori scala vengono limitati a 0-100', () => {
+    let s = stagioneDaDueGare();
+    s = F1Stagione.registraRisultato(s, {
+        ordine: ['p1', 'p2'],
+        usura: { p1: { frontWing: -5, floor: 250, engine: NaN, suspension: 3 } },
+    });
+    assert.deepEqual(F1Stagione.statoVettura(s, 'p1'),
+        { frontWing: 0, floor: 100, engine: 0, suspension: 3 });
+});
