@@ -488,29 +488,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     const titoloPista = document.getElementById('tyre-track-name');
     if (titoloPista) titoloPista.textContent = trackData.name || trackId;
 
-    const ROAD_HALF = trackData.roadHalfWidth;
-    const CURB_W = 2.8;
-    const BARRIER_D = ROAD_HALF + CURB_W + 1.2;
-    // Il terrapieno deve iniziare esattamente dal bordo esterno del cordolo
-    // (non da BARRIER_D, che è 1.2 unità più in là, dove sta la barriera):
-    // altrimenti resta scoperta una fascia sottile tra cordolo e barriera —
-    // prima invisibile perché il prato piatto infinito copriva tutto, ora
-    // che il prato parte dal terrapieno si vedrebbe il cielo di sfondo.
-    const EMBANKMENT_START = ROAD_HALF + CURB_W;
-    // Ampiezza del terrapieno oltre EMBANKMENT_START, entro cui la quota del
-    // terreno sfuma dalla quota pista a 0 (prato in piano) — valore di
-    // partenza, da tarare a vista (pendenza troppo ripida/dolce si aggiusta
-    // solo qui, non in TrackGeometry.terrainHeightAt/TrackMeshBuilder).
-    const EMBANKMENT_WIDTH = 45;
+    // LA SCENA DEL CIRCUITO la costruisce un modulo condiviso: le stesse
+    // quindici chiamate a TrackMeshBuilder che stavano qui, con gli stessi
+    // parametri, ora vivono in frontend/shared/f1Scena.js — così l'anteprima
+    // esplorabile costruisce la SUA scena con la stessa funzione invece di
+    // ricopiarla, e le due non possono divergere. Rif.
+    // docs/superpowers/specs/2026-08-24-f1-anteprima-esplorabile-design.md
+    const circuito = await F1Scena.costruisciCircuito(scene, trackData, {
+        gridSize,
+        passo: (testo, frazione) => caricamento.passo(testo, frazione),
+        respira: () => caricamento.respira(),
+    });
+    const {
+        trackPts, groundPts, pitPath: PIT_PATH, pitPts: PIT_PTS,
+        barrierProfile: BARRIER_PROFILE, embankPlateau: EMBANK_PLATEAU,
+        embankOuter: EMBANK_OUTER, startFinishIndex: START_FINISH_INDEX,
+        roadHalf: ROAD_HALF, curbW: CURB_W, barrierDist: BARRIER_D,
+        mesheTerreno,
+    } = circuito;
 
-    const N_SAMPLES = 1000;
-    const trackPts = TrackGeometry.sampleLoop(trackData.controlPoints, N_SAMPLES);
-    // Aggancia il primo/ultimo punto della corsia box al bordo pista vero
-    // (Rif. richiesta utente 2026-08-08) — stessa funzione usata dal
-    // server (trackLoader.js::buildTrack) sugli stessi punti di controllo
-    // grezzi, quindi il disegno qui corrisponde ESATTAMENTE alla posizione
-    // fisica reale dell'auto in uscita dai box.
-    const PIT_PATH = TrackGeometry.snapPitPathEnds(trackData.pit.path, trackPts, ROAD_HALF);
+    // Le superfici che di notte stanno SOTTO le torri faro — asfalto, cordoli,
+    // ghiaia — prendono la tinta dei tratti illuminati invece di quella del
+    // buio: è il nastro chiaro che taglia la notte, e senza il circuito è solo
+    // una scena scura. La passata generale più sotto le salta, perché convert()
+    // converte solo i MeshStandardMaterial e questi sono già toon.
+    for (const m of circuito.mesheSuperfici) {
+        applicaStile(m, {
+            saturation: ToonPalette.SATURATION.world,
+            tintaNotte: ToonPalette.orario().tintaPista,
+            guadagnoNotte: ToonPalette.orario().guadagnoPista,
+        });
+    }
+
 
     // ====================================================
     // MINIMAPPA — contorno pista + corsia box in SVG, generati una tantum
@@ -561,61 +570,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // senza toccare la firma di buildPitLane. Stessa funzione pura con gli
     // stessi input di buildPitLane → stesso risultato, nessun rischio di
     // divergenza tra corsia box disegnata e varco/scenografia.
-    const PIT_PTS = TrackGeometry.tuckPitEndsToTrack(TrackGeometry.sampleOpenPath(PIT_PATH, 300), trackPts);
-
-    // Dove sta il bordo del circuito: barriera e vie di fuga, calcolate UNA
-    // volta qui e riusate per la banda di ghiaia disegnata, per la posizione
-    // delle barriere e per traslare la scenografia. Il server ne calcola uno
-    // identico con la stessa funzione (trackLoader.js) per il muro fisico —
-    // stessi input, stesso risultato, nessun rischio di divergenza.
-    //
-    // ⚠️ Va calcolato PRIMA di costruire il terreno: il pianoro del terrapieno
-    // deve arrivare fino alla barriera, e la barriera la decide questo profilo.
-    //
-    // `BARRIER_PROFILE.gravel` è la ghiaia GIÀ RIFILATA sul muro: è quella da
-    // disegnare, non il risultato grezzo di gravelProfile, altrimenti dove il
-    // muro si abbassa (imbocchi dei ponti) la banda gli sbucherebbe da sotto.
-    const BARRIER_PROFILE = TrackGravel.barrierProfile(trackPts, {
-        roadHalf: ROAD_HALF,
-        curbW: CURB_W,
-        pitLanePts: PIT_PTS,
-        pitRoadHalf: trackData.pit.roadHalfWidth,
-    });
-
-    // Fin dove il terreno resta alla quota della pista, e dove ha finito di
-    // degradare al prato in piano. Il pianoro arriva alla barriera più lontana
-    // del giro: con la via di fuga la barriera sta ben oltre il vecchio
-    // EMBANKMENT_START, e lasciandolo com'era nelle zone sopraelevate il muro
-    // restava sospeso sul pendio e le tribune si piantavano più in basso della
-    // pista. La stessa distanza la ricava da sé TrackScenery.generateLayout
-    // dal profilo, quindi terreno disegnato e oggetti piazzati concordano.
-    const EMBANK_PLATEAU = TrackScenery.embankmentStart(BARRIER_PROFILE, EMBANKMENT_START);
-    const EMBANK_OUTER = EMBANK_PLATEAU + EMBANKMENT_WIDTH;
 
     // I `respira()` sparsi fra un blocco di costruzione e l'altro non sono
     // decorativi: queste chiamate bloccano il thread per centinaia di ms
     // ciascuna, e senza cedere il controllo la barra resterebbe ferma
     // dall'inizio alla fine della costruzione.
-    caricamento.passo('Terreno e dislivelli…', 0.20);
-    await caricamento.respira();
-
-    const primaDelPrato = scene.children.length;
-    TrackMeshBuilder.buildGround(scene, trackPts, EMBANK_OUTER, 3000);
-    const mesheTerreno = scene.children.slice(primaDelPrato);
-    // Tre distanze: attacco alla pista, fine del pianoro, fine della rampa.
-    // EMBANKMENT_START resta l'attacco (bordo del cordolo), com'è sempre
-    // stato: è il pianoro che è nuovo.
-    TrackMeshBuilder.buildEmbankment(scene, trackPts, EMBANKMENT_START, EMBANK_PLATEAU, EMBANK_OUTER);
-    // Punti "a terra" (non-ponte): usati sia per i piloni (quota reale sotto
-    // un ponte) sia per la quota visiva dell'auto fuori pista più sotto —
-    // calcolato una sola volta qui, non ad ogni frame.
-    const groundPts = trackPts.filter(p => !p.bridge);
-    // Ultimo argomento: la barriera VERA del tratto che passa sotto il
-    // viadotto. Senza, i piloni si tenevano alla larga da una distanza
-    // costante che le vie di fuga hanno reso obsoleta, e su "prova" quattro
-    // finivano dentro la carreggiata (vedi buildBridgeDecks).
-    TrackMeshBuilder.buildBridgeDecks(scene, trackPts, groundPts, ROAD_HALF + CURB_W, EMBANKMENT_START, EMBANK_PLATEAU, EMBANK_OUTER,
-        (i, lato) => TrackGravel.barrierAt(BARRIER_PROFILE, i, lato));
 
     // Beccheggio (pitch) visivo dell'auto sui dislivelli: pendenza locale tra
     // il campione precedente e successivo lungo il giro, applicata come
@@ -631,82 +590,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         return -Math.atan2(dy, horiz);
     }
 
-    // Calcolato una volta sola: cordolo, barriera disegnata e MURO FISICO
-    // lato server devono aprire il varco esattamente nello stesso punto e
-    // nella stessa forma (Rif. richiesta utente 2026-08-08: "togliere il
-    // cordolo... tanto c'è la corsia box"). La regola sta in TrackGravel, non
-    // più qui: il server la richiama sugli stessi punti, così il varco
-    // disegnato e quello fisico non possono divergere.
-    //
-    // Solo i campioni vicino ai due estremi (entro PIT_MERGE_WINDOW unità
-    // d'arco da ciascuno) e non l'intero PIT_PTS: il varco deve aprirsi SOLO
-    // al vero ingresso/uscita, non ovunque il tracciato passi vicino a un
-    // punto qualunque della corsia box (bug reale misurato in playtest: 139m
-    // di varco spurio su "prova"). Usare i campioni "abbracciati" alla curva
-    // fa sì che anche la FORMA del varco segua la vera curvatura della pista.
-    const PIT_MERGE_SAMPLES = TrackGravel.pitGapSamples(PIT_PTS);
-
-    caricamento.passo('Asfalto, cordoli e barriere…', 0.30);
-    await caricamento.respira();
-
-    // Da qui in avanti nascono le superfici che di notte stanno SOTTO le
-    // torri faro — asfalto, cordoli, ghiaia. Si segna dove comincia la
-    // lista per poterle stilizzare a parte, con la tinta notturna dei
-    // tratti illuminati invece di quella del buio: è il nastro chiaro che
-    // taglia la notte, e senza il circuito è solo una scena scura.
-    const _primaDellAsfalto = scene.children.length;
-
-    // DoubleSide evita artefatti di culling nelle zone ad alta curvatura
-    TrackMeshBuilder.buildRibbon(scene, trackPts, ROAD_HALF, new THREE.MeshStandardMaterial({ color: ToonPalette.SURFACES.asphalt, roughness: 0.95, side: THREE.DoubleSide }));
-    TrackMeshBuilder.buildCurbs(scene, trackPts, ROAD_HALF, CURB_W, PIT_MERGE_SAMPLES);
-    // Vie di fuga in ghiaia, dopo il cordolo e prima della barriera: l'ordine
-    // delle chiamate riflette la sezione reale della pista. La banda parte dal
-    // bordo esterno del cordolo, quindi non si sovrappone a nessuno dei due.
-    TrackMeshBuilder.buildGravel(scene, trackPts, ROAD_HALF, CURB_W, BARRIER_PROFILE.gravel);
-    // …e qui finiscono. La passata generale più sotto le salterà: convert()
-    // converte solo i MeshStandardMaterial, e questi sono già toon.
-    for (const m of scene.children.slice(_primaDellAsfalto)) {
-        applicaStile(m, {
-            saturation: ToonPalette.SATURATION.world,
-            tintaNotte: ToonPalette.orario().tintaPista,
-            guadagnoNotte: ToonPalette.orario().guadagnoPista,
-        });
-    }
-    // La barriera sta dove dice il profilo: arretrata della via di fuga
-    // minima quasi ovunque, di più dove c'è la ghiaia, ferma dov'era nel
-    // tratto del traguardo e dei box, a bordo strada sui ponti.
-    // Il piede va posato sul TERRENO, non sulla quota della pista: in curva
-    // mentre si sale i settori del terrapieno si accavallano e quello più
-    // avanti, più alto, seppellirebbe la barriera di quello più indietro
-    // (segnalato in gioco il 2026-08-12, in salita verso il ponte).
-    TrackMeshBuilder.buildBarriers(scene, trackPts,
-        (i, side) => TrackGravel.barrierAt(BARRIER_PROFILE, i, side),
-        PIT_MERGE_SAMPLES,
-        (i, bx, bz) => TrackGeometry.terrainTopAt(trackPts, i, bx, bz, EMBANK_PLATEAU));
-    TrackMeshBuilder.buildStartLine(scene, trackPts, ROAD_HALF);
-    // drawBoxMarker=false: il riquadro giallo unico su boxIndex era il solo
-    // indicatore visivo quando il box era un punto condiviso da tutti; ora
-    // ogni pilota ha il proprio box 3D colorato (vedi loadPlayerPitBox,
-    // caricato pigramente per gara), che ne prende il posto in gara —
-    // resta true di default per l'editor tracciato (track-editor.js).
-    // roadHalf/CURB_W in coda: solo per non disegnare la striscia laterale
-    // "allungata" sopra il cordolo nella zona di preavviso (curbBand in
-    // buildPitEdgeLines).
-    TrackMeshBuilder.buildPitLane(scene, PIT_PATH, trackData.pit.roadHalfWidth, trackData.pit.boxIndex, false, trackPts, ToonPalette.SURFACES.asphalt, ROAD_HALF, CURB_W);
-
-    // Griglia di partenza vera, permanente sulla pista (Rif. richiesta
-    // utente 2026-08-07: "visibile sia in qualifica che in gara") — stessa
-    // tecnica di startFinishIndex già usata server-side
-    // (backend/sockets/games/trackLoader.js): indice campionato più vicino
-    // al traguardo esplicito se la pista ne ha uno, altrimenti 0 (piste
-    // non ancora riaperte nell'editor). Quante piazzole dipingere non è un
-    // dato geometrico ma il numero di piloti scelto in lobby: prima era un 6
-    // scritto qui a mano, da tenere in sync con altri due file — ed è
-    // esattamente la divergenza che questo lavoro ha tolto di mezzo.
-    const START_FINISH_INDEX = trackData.startFinish
-        ? TrackGeometry.nearestPoint(trackPts, trackData.startFinish.x, trackData.startFinish.z).index
-        : 0;
-    TrackMeshBuilder.buildStartingGrid(scene, trackPts, START_FINISH_INDEX, gridSize);
 
     // ====================================================
     // STILE CEL-SHADED — conversione dei materiali generati qui
@@ -1511,7 +1394,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // errore, e' il caso normale.
     }
     if (!sceneryLayout) {
-        sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, BARRIER_PROFILE, terraceAnchors, { gridSize });
+        sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, F1Scena.EMBANKMENT_WIDTH, seatAnchors, BARRIER_PROFILE, terraceAnchors, { gridSize });
     }
     const scenografiaPronta = loadScenery(scene, sceneryLayout);
 
@@ -2336,6 +2219,95 @@ document.addEventListener('DOMContentLoaded', async () => {
             scattoCorrente = (scattoCorrente + 1) % anteprimaScatti.length;
             scattoDa = ora;
             mostraScatto(anteprimaScatti[scattoCorrente]);
+        }
+    }
+
+    // ── LE VEDUTE DEI CIRCUITI, FOTOGRAFATE DAL GIOCO ───────────────────
+    // La schermata di fine stagione racconta l'annata gara per gara, e per
+    // ogni gara mostra il suo circuito. La prima versione lo RICOSTRUIVA
+    // fuori schermo — asfalto e prato, niente altro — ed e' tornata indietro
+    // dal playtest come «le piste vuote»: senza scenografia, folla, contorni
+    // e cielo un circuito non si riconosce.
+    //
+    // Qui non si ricostruisce niente: si FOTOGRAFA l'anteprima vera, quella
+    // che il giocatore ha davanti mentre sceglie la mescola, e la si tiene da
+    // parte. In stagione ogni pista del calendario si corre prima della
+    // premiazione, quindi quando la cerimonia comincia le foto ci sono gia'
+    // tutte — e sono le stesse immagini, non una loro imitazione.
+    const VEDUTE_CHIAVE = 'f1VeduteCircuito';
+    const VEDUTE_MAX = 14;        // foto tenute da parte (si buttano le piu' vecchie)
+    const VEDUTE_LARG_MAX = 900;  // lato lungo della foto salvata
+    // Quali inquadrature vale la pena tenere, in ordine di preferenza per chi
+    // poi le mostra. La griglia di partenza racconta il posto meglio di una
+    // veduta dall'alto — che vista piccola torna a somigliare a una piantina,
+    // ed e' proprio quello che era stato bocciato. La panoramica e' la
+    // riserva, ed essendo la prima del carosello c'e' quasi sempre.
+    const VEDUTE_SCATTI = ['traguardo', 'panoramica'];
+
+    function veduteInCasa() {
+        try { return JSON.parse(localStorage.getItem(VEDUTE_CHIAVE)) || {}; }
+        catch (e) { return {}; }   // modalita' privata, o roba vecchia illeggibile
+    }
+
+    function scriviVedute(mappa) {
+        try { localStorage.setItem(VEDUTE_CHIAVE, JSON.stringify(mappa)); return true; }
+        catch (e) { return false; }   // magazzino pieno: chi chiama pota e riprova
+    }
+
+    function salvaVeduta(pista, scatto, dataUrl) {
+        const mappa = veduteInCasa();
+        mappa[pista + '|' + scatto] = { img: dataUrl, ts: Date.now() };
+        // Le foto pesano decine di kB l'una e il magazzino del browser e'
+        // condiviso con tutto il resto del sito: si tengono le piu' recenti e
+        // si buttano le altre, anche prima che il browser dica di no.
+        const perEta = Object.keys(mappa).sort((a, b) => mappa[a].ts - mappa[b].ts);
+        while (perEta.length > VEDUTE_MAX) delete mappa[perEta.shift()];
+        while (!scriviVedute(mappa) && perEta.length > 1) delete mappa[perEta.shift()];
+    }
+
+    // La veduta da mostrare per una pista: la prima disponibile nell'ordine
+    // di preferenza. Null se quel circuito non e' mai stato caricato su
+    // questo browser — allora chi chiama si arrangia con il ripiego.
+    function vedutaDi(pista) {
+        const mappa = veduteInCasa();
+        for (const scatto of VEDUTE_SCATTI) {
+            const v = mappa[pista + '|' + scatto];
+            if (v && v.img) return v.img;
+        }
+        return null;
+    }
+
+    // Inquadrature gia' fotografate in questa sessione: una foto per
+    // inquadratura basta, e la scelta mescola si riapre ad ogni sosta ai box.
+    const veduteScattate = new Set();
+
+    // Lo scatto vero e proprio. Va chiamato SUBITO DOPO il render e nello
+    // stesso giro di frame: il contesto WebGL non conserva il disegno
+    // (preserveDrawingBuffer e' falso, e accenderlo costerebbe su ogni frame
+    // di gara), quindi un istante piu' tardi il canvas risulterebbe nero.
+    function fotografaAnteprima() {
+        if (!tyreSelectActive || !anteprimaScatti.length) return;
+        const s = anteprimaScatti[scattoCorrente];
+        if (!s || VEDUTE_SCATTI.indexOf(s.id) < 0 || veduteScattate.has(s.id)) return;
+        // A meta' inquadratura: il velo dello stacco e' del tutto trasparente
+        // (sta ai due estremi, STACCO_MS) e la deriva della camera e' nel
+        // punto per cui l'inquadratura e' stata pensata.
+        const t = (performance.now() - scattoDa) / s.durata;
+        if (t < 0.45 || t > 0.65) return;
+        veduteScattate.add(s.id);
+        try {
+            const tela = renderer.domElement;
+            // Le proporzioni sono quelle del riquadro dell'anteprima, che sono
+            // anche quelle della cornice dove la foto finira': ridurre e basta,
+            // senza forzare una forma, e' quello che le tiene uguali.
+            const scala = Math.min(1, VEDUTE_LARG_MAX / tela.width);
+            const foto = document.createElement('canvas');
+            foto.width = Math.round(tela.width * scala);
+            foto.height = Math.round(tela.height * scala);
+            foto.getContext('2d').drawImage(tela, 0, 0, foto.width, foto.height);
+            salvaVeduta(trackId, s.id, foto.toDataURL('image/jpeg', 0.82));
+        } catch (e) {
+            console.warn('[F1] veduta del circuito non salvata:', e);
         }
     }
 
@@ -5057,11 +5029,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         for (const chiave of Object.keys(PA_NOMI_BARRETTE)) {
             const voto = profilo.barrette[chiave];
             const riga = document.createElement('div');
-            riga.className = 'pa-barretta';
+            riga.className = 'mescole-barretta';
             const tacche = [1, 2, 3, 4, 5]
-                .map(i => `<span class="pa-tacca${i <= voto ? ' accesa' : ''}"></span>`).join('');
-            riga.innerHTML = `<span class="pa-barretta-nome">${PA_NOMI_BARRETTE[chiave]}</span>`
-                + `<span class="pa-tacche" role="img" aria-label="${PA_NOMI_BARRETTE[chiave]}: ${voto} su 5">${tacche}</span>`;
+                .map(i => `<span class="mescole-tacca${i <= voto ? ' accesa' : ''}"></span>`).join('');
+            riga.innerHTML = `<span class="mescole-barretta-nome">${PA_NOMI_BARRETTE[chiave]}</span>`
+                + `<span class="mescole-tacche" role="img" aria-label="${PA_NOMI_BARRETTE[chiave]}: ${voto} su 5">${tacche}</span>`;
             barrette.appendChild(riga);
         }
     }
