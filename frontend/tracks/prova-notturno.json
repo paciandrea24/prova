@@ -1,9 +1,9 @@
 {
-    "id": "prova",
-    "name": "prova",
+    "id": "prova-notturno",
+    "name": "prova notturno",
     "targetKm": 24,
     "roadHalfWidth": 11,
-    "notturno": false,
+    "notturno": true,
     "startFinish": {
         "x": -424.95,
         "z": -138.77,

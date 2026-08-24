@@ -65,7 +65,12 @@ canvas.tyre-preview-canvas {
    Fondo PETROLIO e non nero: il nero spegneva l'anteprima invece di
    incorniciarla, e il verde del prato e l'azzurro del cielo dell'immagine ci
    stanno dentro senza stonare. */
-#tyre-select-overlay {
+/* La stessa palette e la stessa pianta le usa la pagina dell'annata
+   (#premiazione-annata, in fondo al file): le due schermate sono sorelle, e
+   le custom property ereditano dall'antenato — dichiararle qui per
+   entrambe e' il solo modo perche' non possano divergere. */
+#tyre-select-overlay,
+#premiazione-annata {
     --sel-fondo-a:      #123138;
     --sel-fondo-b:      #08191E;
     --sel-lavagna:      #163A44;
@@ -79,11 +84,14 @@ canvas.tyre-preview-canvas {
 
     position: fixed;
     inset: 0;
-    z-index: 40;
     align-items: center;
     justify-content: center;
     padding: clamp(10px, 2.5vh, 34px);
     color: var(--sel-testo);
+}
+
+#tyre-select-overlay {
+    z-index: 40;
     background:
         radial-gradient(120% 90% at 22% 15%, var(--sel-fondo-a), var(--sel-fondo-b) 72%);
 }
@@ -326,7 +334,11 @@ canvas.tyre-preview-canvas {
    difetto della versione precedente, dove su uno schermo basso il fondo
    della pagina finiva tagliato. Con height + aspect-ratio + max-width la
    cornice si restringe da sola quando manca spazio, in entrambi i versi. */
-#tyre-preview-frame {
+/* Stessa cornice per la veduta della pagina dell'annata: la
+   fotografia che ci finisce dentro e' presa da QUESTO riquadro, e le due
+   devono avere la stessa forma. */
+#tyre-preview-frame,
+.pa-cornice {
     position: relative;
     height: min(66vh, 640px);
     aspect-ratio: 16 / 9;
@@ -2066,122 +2078,60 @@ body.in-cerimonia .hud { display: none !important; }
 
 /* ====================================================================
    PREMIAZIONE — L'ANNATA CHE SCORRE
-   Stessa pianta della pagina mescole (tre colonne, la cosa da guardare al
-   centro), stessa palette: e' la sua sorella di fine stagione. Le variabili
-   sono ricopiate perche' questo nodo vive fuori dagli altri due overlay, e le
-   custom property ereditano dall'antenato.
+   NON un pannello: la stessa PAGINA della scelta mescole. Stessa pianta
+   (informazioni a sinistra, il circuito al centro, la classifica a destra) e
+   le STESSE classi .mescole-*, cosi' le due schermate non possono divergere;
+   la palette la condividono in testa al file, dove le custom property sono
+   dichiarate per entrambe.
+
+   Storia, perche' non si ripeta: la prima versione era un riquadro in alto a
+   sinistra, e le sue regole erano rimaste piu' in basso in QUESTO stesso
+   file. Vincevano per ordine, e la pagina nuova continuava a comparire come
+   un pannello storto sul lato — segnalato al playtest («il pannello e'
+   ancora decentrato»).
    ==================================================================== */
 #premiazione-annata {
-    --pa-fondo-a: #123138;
-    --pa-fondo-b: #08191E;
-    --pa-lavagna: #163A44;
-    --pa-filo: rgba(255, 255, 255, 0.10);
-    --pa-testo: #E9F3F5;
-    --pa-tenue: #8CAEB6;
-    --pa-cordolo: #E23127;
-
-    position: fixed;
-    inset: 0;
-    z-index: 41;
+    z-index: 41;   /* sopra l'overlay della stagione, che intanto e' nascosto */
     display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: clamp(10px, 2.5vh, 34px);
-    color: var(--pa-testo);
     font-family: 'Fredoka', 'Trebuchet MS', sans-serif;
     /* Fondo PIENO, in due strati: il colore sotto e il gradiente sopra. Dietro
        c'e' la scena di gioco, e qualunque velatura la lascerebbe intravedere —
        segnalato in playtest («in sottofondo si vede la mappa»). */
-    background-color: var(--pa-fondo-b);
-    background-image: radial-gradient(120% 90% at 22% 15%, var(--pa-fondo-a), var(--pa-fondo-b) 72%);
+    background-color: var(--sel-fondo-b);
+    background-image: radial-gradient(120% 90% at 22% 15%, var(--sel-fondo-a), var(--sel-fondo-b) 72%);
 }
-.pa-foglio {
-    width: 100%;
-    max-width: 1280px;
-    display: flex;
-    flex-direction: column;
-    gap: clamp(10px, 1.8vh, 22px);
-}
-/* Centrata: sopra tre colonne simmetriche una testata allineata a sinistra fa
-   sembrare storta tutta la pagina. */
-.pa-testata { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; justify-content: center; }
-.pa-numero {
-    font-size: 11px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase;
-    color: var(--pa-testo); background: var(--pa-cordolo);
-    padding: 4px 12px; border-radius: 999px;
-}
-.pa-pista { margin: 0; font-size: clamp(22px, 3.4vh, 38px); font-weight: 800; }
-.pa-schermo {
-    display: grid;
-    /* minmax(0, ...) e non 1fr secco: un contenuto largo (l'immagine della
-       veduta) allargherebbe la sua colonna e sposterebbe il centro della
-       pagina — ed e' quello che e' successo. */
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
-    gap: clamp(14px, 2vw, 30px);
-    align-items: start;
-}
-.pa-col { display: flex; flex-direction: column; gap: clamp(6px, 1vh, 14px); min-width: 0; }
-.pa-sezione {
-    display: flex; align-items: center; gap: 8px;
-    font-size: 12px; font-weight: 800; letter-spacing: 3px;
-    text-transform: uppercase; color: var(--pa-testo);
-}
-.pa-sezione::before {
-    content: ''; width: 14px; height: 3px;
-    background: var(--pa-cordolo); border-radius: 2px;
-}
-.pa-dati { margin: 0; display: flex; flex-direction: column; gap: 4px; }
-.pa-dati div {
-    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-    padding: 8px 12px; border-radius: 8px; background: var(--pa-lavagna);
-}
-.pa-dati dt { font-size: 13px; color: var(--pa-tenue); }
-.pa-dati dd { margin: 0; font-weight: 800; font-variant-numeric: tabular-nums; }
-.pa-dati .unita { font-size: 11px; color: var(--pa-tenue); margin-left: 3px; }
 
-/* Le barrette del carattere, come nella pagina mescole. */
-.pa-barrette { display: flex; flex-direction: column; gap: 6px; }
-.pa-barretta { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.pa-barretta-nome { font-size: 12px; color: var(--pa-tenue); }
-.pa-tacche { display: flex; gap: 3px; }
-.pa-tacca {
-    width: 16px; height: 6px; border-radius: 2px;
-    background: rgba(255, 255, 255, 0.12);
-}
-.pa-tacca.accesa { background: var(--pa-cordolo); }
-
-/* La mappa. */
-.pa-cornice {
-    position: relative;
-    border-radius: 12px;
-    background: var(--pa-lavagna);
-    border: 1px solid var(--pa-filo);
-    overflow: hidden;
-}
-/* La regola globale qui sopra prende OGNI canvas e lo stende a schermo intero
-   (serve a quello del gioco): la mappa deve disdirla punto per punto, come fa
-   gia' il canvas dell'anteprima mescole. Senza, il tracciato si disegna largo
-   quanto la finestra e passa dietro tutte le colonne. */
-#pa-vista {
-    display: block;
-    width: 100%;
-    height: auto;
-}
+/* La veduta e la planimetria di ripiego riempiono la cornice (che e' la
+   stessa dell'anteprima mescole: vedi il selettore di #tyre-preview-frame).
+   Le proprieta' sono ripetute con !important perche' la regola globale in
+   testa al file stende OGNI canvas a schermo intero — serve a quello del
+   gioco, e qui va disdetta punto per punto. */
+#pa-vista,
 canvas#pa-mappa {
     display: block;
-    position: relative !important;
-    top: auto !important;
-    left: auto !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
     width: 100% !important;
-    height: auto !important;
+    height: 100% !important;
 }
+/* La foto e' presa dall'anteprima vera, che ha le stesse proporzioni della
+   cornice: `cover` non taglia niente, e copre il caso di una foto vecchia
+   scattata con una finestra di forma diversa. */
+#pa-vista { object-fit: cover; }
+
+/* Velo per lo stacco fra un circuito e l'altro: un cambio secco si legge come
+   un difetto. */
 .pa-velo {
-    position: absolute; inset: 0; background: #08191E;
-    opacity: 0; transition: opacity 260ms ease; pointer-events: none;
+    position: absolute; inset: 0; background: var(--sel-fondo-b);
+    opacity: 0; transition: opacity 260ms ease; pointer-events: none; z-index: 2;
 }
+
+/* Chi ha vinto quella gara, sotto la veduta: al posto dei piloti che la
+   pagina mescole mette nello stesso punto. */
 .pa-vincitore { display: flex; align-items: center; gap: 10px; justify-content: center; }
 .pa-pallino { width: 13px; height: 13px; border-radius: 50%; }
-.pa-vince { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--pa-tenue); }
+.pa-vince { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--sel-tenue); }
 .pa-chi { font-size: 18px; font-weight: 800; }
 
 /* La classifica a quel punto della stagione: ogni riga e' una barra, cosi' il
@@ -2200,97 +2150,9 @@ canvas#pa-mappa {
     padding: 0 10px; font-size: 13px; font-weight: 700;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
-.pa-riga-pos { color: var(--pa-tenue); font-size: 11px; font-weight: 800; min-width: 14px; }
+.pa-riga-pos { color: var(--sel-tenue); font-size: 11px; font-weight: 800; min-width: 14px; }
 .pa-riga-nome { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pa-riga-punti { font-variant-numeric: tabular-nums; font-weight: 800; }
-
-@media (max-width: 1000px) {
-    .pa-schermo { grid-template-columns: 1fr; }
-}
-
-/* ====================================================================
-   PREMIAZIONE DI FINE MONDIALE — la fascia dei nomi
-   Sopra la scena 3D, in basso, come una grafica televisiva: il podio deve
-   restare tutto visibile. I colori sono ricopiati dalla palette delle
-   schermate della stagione perche' questo nodo vive FUORI da quell'overlay
-   (le custom property ereditano dall'antenato, e antenato non e').
-   ==================================================================== */
-#premiazione-fascia {
-    position: fixed;
-    left: 50%;
-    bottom: 7vh;
-    transform: translateX(-50%);
-    z-index: 41;                 /* sopra l'overlay della stagione, che intanto e' nascosto */
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 12px 22px;
-    border-radius: 12px;
-    background: rgba(8, 25, 30, 0.86);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    color: #E9F3F5;
-    font-family: 'Fredoka', 'Trebuchet MS', sans-serif;
-    white-space: nowrap;
-}
-#premiazione-posto { font-size: 22px; font-weight: 800; color: #8CAEB6; }
-#premiazione-pallino { width: 14px; height: 14px; border-radius: 50%; }
-#premiazione-chi { font-size: 22px; font-weight: 800; }
-#premiazione-punti { font-size: 14px; color: #8CAEB6; }
-/* Il modo per uscirne si vede, ma non compete col podio. */
-#premiazione-salta {
-    font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;
-    color: #8CAEB6; opacity: 0.7; margin-left: 10px;
-}
-#premiazione-fascia.campione { border-color: #E23127; }
-#premiazione-fascia.campione #premiazione-posto { color: #E23127; }
-
-/* --- PREMIAZIONE: l'annata che scorre ---
-   Una tappa alla volta sopra la panoramica del circuito, e in basso le due
-   barre del duello per il titolo. Sta in alto a sinistra e non al centro: al
-   centro coprirebbe il circuito, che e' lo sfondo di tutto il movimento. */
-#premiazione-annata {
-    position: fixed;
-    left: 6vw;
-    top: 14vh;
-    z-index: 41;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 22px 28px;
-    border-radius: 14px;
-    background: rgba(8, 25, 30, 0.82);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    color: #E9F3F5;
-    font-family: 'Fredoka', 'Trebuchet MS', sans-serif;
-    min-width: min(520px, 84vw);
-}
-.pa-tappa { display: flex; align-items: baseline; gap: 12px; }
-.pa-numero {
-    font-size: 11px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase;
-    color: #E9F3F5; background: #E23127; padding: 3px 10px; border-radius: 999px;
-}
-.pa-pista { font-size: clamp(20px, 2.8vh, 30px); font-weight: 800; }
-.pa-vincitore { display: flex; align-items: center; gap: 10px; }
-.pa-pallino { width: 13px; height: 13px; border-radius: 50%; }
-.pa-vince { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #8CAEB6; }
-.pa-chi { font-size: 17px; font-weight: 700; }
-/* Le barre: il fondo e' la corsia, il riempimento sono i punti. La transizione
-   sta QUI e non in JavaScript perche' fra una tappa e l'altra deve crescere da
-   sola, senza un secondo orologio da tenere allineato al primo. */
-.pa-barre { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-.pa-barra {
-    position: relative; height: 26px; border-radius: 6px;
-    background: rgba(255, 255, 255, 0.08); overflow: hidden;
-}
-.pa-riempie {
-    position: absolute; inset: 0 auto 0 0; width: 0;
-    transition: width 600ms ease;
-}
-.pa-etichetta {
-    position: absolute; inset: 0; display: flex; align-items: center;
-    padding-left: 10px; font-size: 13px; font-weight: 700;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
-}
 
 /* L'attesa prima della cerimonia: sopra il sipario, perche' e' l'unica cosa
    che deve poter comparire su un nero pieno. */
