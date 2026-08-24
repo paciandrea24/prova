@@ -110,3 +110,59 @@ test('cuoci: quota e ponte si propagano ai punti intermedi', () => {
     assert.ok(dopo.length, 'deve esistere un punto sul tratto successivo');
     assert.ok(dopo.every(p => !p.bridge), 'con un solo nodo ponte, i punti non sono ponte');
 });
+
+const TrackGeometry = require('./trackGeometry.js');
+
+// LA MISURA CHE GIUSTIFICA L'IMPIANTO. Fra la forma che l'autore disegna e
+// quella che il gioco vede ci sono due passaggi: la cottura in punti fitti e
+// la Catmull-Rom di trackLoader. Se il gioco vedesse una forma diversa da
+// quella disegnata, tutto il modello non servirebbe a niente — e il difetto
+// sarebbe invisibile nell'editor, che mostra la forma giusta.
+test('la forma che il GIOCO vede coincide con quella disegnata', () => {
+    // Curve strette e rettilinei lunghi: e' dove un passo di cottura troppo
+    // largo si vedrebbe per primo.
+    const g = { versione: 1, nodi: [
+        { x: -200, z: -120, y: 0, dir: Math.atan2(1, 0) },
+        { x:  200, z: -120, y: 0, dir: Math.atan2(1, 0) },
+        { x:  260, z:  -40, y: 0, dir: Math.atan2(0, 1) },
+        { x:  120, z:   90, y: 0, dir: Math.atan2(-1, 0.2) },
+        { x: -160, z:  110, y: 0, dir: Math.atan2(-1, -0.4) },
+    ], tratti: [
+        { tipo: 'retta' }, { tipo: 'curva' }, { tipo: 'curva' },
+        { tipo: 'curva' }, { tipo: 'curva' },
+    ] };
+
+    const cotti = TS.cuoci(g, TS.PASSO_COTTURA);
+    // Esattamente cio' che fa il gioco: backend/sockets/games/trackLoader.js
+    const visti = TrackGeometry.sampleLoop(cotti, 1000);
+
+    // ⚠️ La distanza si misura dalla CURVA, non dal campione piu' vicino: un
+    // punto che cade esattamente a meta' fra due campioni a 5 unita' dista
+    // 2.5 dal piu' vicino pur stando perfettamente sulla curva. Misurandolo
+    // cosi' si bocciava una cottura corretta con «2.501 di scostamento»,
+    // cioe' meta' del passo.
+    //
+    // Il riferimento e' la stessa geometria cotta fittissima (1 unita'), e la
+    // distanza e' dal SEGMENTO fra due riferimenti consecutivi: cosi' il bias
+    // residuo del campionamento e' 1/(8R), sotto il millesimo di unita'.
+    const riferimento = TS.cuoci(g, 1);
+    function distanzaDalSegmento(p, a, b) {
+        const vx = b.x - a.x, vz = b.z - a.z;
+        const L = vx * vx + vz * vz;
+        let t = L > 0 ? ((p.x - a.x) * vx + (p.z - a.z) * vz) / L : 0;
+        t = Math.max(0, Math.min(1, t));
+        return Math.hypot(p.x - (a.x + vx * t), p.z - (a.z + vz * t));
+    }
+
+    let peggio = 0;
+    for (const v of visti) {
+        let minimo = Infinity;
+        for (let i = 0; i < riferimento.length; i++) {
+            const d = distanzaDalSegmento(v, riferimento[i], riferimento[(i + 1) % riferimento.length]);
+            if (d < minimo) minimo = d;
+        }
+        if (minimo > peggio) peggio = minimo;
+    }
+    assert.ok(peggio < 0.2,
+        `il gioco vede una forma scostata di ${peggio.toFixed(3)} unita da quella disegnata, tetto 0.2`);
+});
