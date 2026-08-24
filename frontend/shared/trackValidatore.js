@@ -26,11 +26,13 @@
 // Modulo PURO: niente Three.js, niente DOM.
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
-        module.exports = factory(require('./trackGeometry.js'));
+        module.exports = factory(require('./trackGeometry.js'), require('./trackGravel.js'),
+                                 require('./sceneryAssetSizes.js'), require('./sceneryRegistro.js'));
     } else {
-        root.TrackValidatore = factory(root.TrackGeometry);
+        root.TrackValidatore = factory(root.TrackGeometry, root.TrackGravel,
+                                       root.SceneryAssetSizes, root.SceneryRegistro);
     }
-})(typeof self !== 'undefined' ? self : this, function (TrackGeometry) {
+})(typeof self !== 'undefined' ? self : this, function (TrackGeometry, TrackGravel, SceneryAssetSizes, SceneryRegistro) {
 
     // --- Le soglie, e da dove vengono ------------------------------------
     // Misurate sulle piste esistenti il 2026-08-24, non scelte a naso.
@@ -227,8 +229,139 @@
         return { problemi };
     }
 
+    // --- Scenografia -----------------------------------------------------
+    //
+    // ⚠️ QUESTE MISURE SONO QUELLE DELLE INVARIANTI: `scenografiaInvarianti.test.js`
+    // usa questa funzione invece delle proprie, così la definizione di
+    // «oggetto dentro la pista» è una sola. Se ce ne fossero due, un giorno il
+    // test direbbe una cosa e il pulsante un'altra — e a quel punto non si sa
+    // più a chi credere.
+    //
+    // Serve un `layout` già generato (da TrackScenery.generateLayout): questo
+    // modulo resta puro e non genera niente, così chi lo chiama decide se
+    // pagare quel secondo di calcolo.
+
+    // Categorie senza un modello solido: non hanno un ingombro da rispettare.
+    const NON_SOLIDE = new Set(['pond', 'parkingLot', 'crowd']);
+
+    // A che distanza dal centro di una tribuna può stare uno spettatore prima
+    // di essere «a mezz'aria»: una tribuna è 19.2 x 12.8, quindi dal centro
+    // nessun sedile dista di più.
+    const RAGGIO_TRIBUNA = 15;
+
+    function dentroIlCorridoio(item, punti, mezzaLarghezza) {
+        if (!punti || !punti.length) return 0;
+        let peggio = 0;
+        for (const c of SceneryAssetSizes.footprintCorners(item)) {
+            const dentro = mezzaLarghezza - TrackGeometry.nearestPoint(punti, c.x, c.z).dist;
+            if (dentro > peggio) peggio = dentro;
+        }
+        return peggio;
+    }
+
+    // Quanto un ingombro entra oltre il muro, cioè dentro la via di fuga. Il
+    // muro non è a distanza fissa: si chiede dov'è al campione più vicino a
+    // OGNI angolo, perché si allarga in curva.
+    function dentroLaViaDiFuga(item, trackPts, barrierProfile, barrierDist) {
+        let peggio = 0;
+        for (const c of SceneryAssetSizes.footprintCorners(item)) {
+            const near = TrackGeometry.nearestPoint(trackPts, c.x, c.z);
+            const p = trackPts[near.index];
+            const n = TrackGeometry.normalAt(trackPts, near.index, true);
+            const lato = Math.sign((c.x - p.x) * n.nx + (c.z - p.z) * n.nz) || 1;
+            const muro = barrierProfile
+                ? TrackGravel.barrierAt(barrierProfile, near.index, lato)
+                : barrierDist;
+            const d = muro - near.dist;
+            if (d > peggio) peggio = d;
+        }
+        return peggio;
+    }
+
+    function controllaScenografia(trackData, layout, contesto) {
+        const problemi = [];
+        const aggiungi = (...args) => problemi.push(problema(...args));
+        if (!layout || !layout.length) return { problemi };
+
+        const c = contesto || {};
+        const trackPts = c.trackPts;
+        const pitPts = c.pitPts;
+        const mezza = trackData.roadHalfWidth;
+        const solidi = layout.filter(v => v.asset && !NON_SOLIDE.has(v.category));
+
+        // 1. Dentro la CARREGGIATA: non ci va niente, punto.
+        const inPista = solidi
+            .filter(v => !SceneryRegistro.SCAVALCANO.has(v.asset))
+            .map(v => ({ v, p: dentroIlCorridoio(v, trackPts, mezza) }))
+            .filter(x => x.p > SceneryRegistro.MAX_DENTRO_PISTA);
+        if (inPista.length) {
+            const peggio = inPista.sort((a, b) => b.p - a.p)[0];
+            aggiungi('impedisce', 'oggetti-in-pista',
+                `${inPista.length} ${inPista.length === 1 ? 'oggetto è' : 'oggetti sono'} dentro la carreggiata`
+                + ` (il peggiore: ${peggio.v.asset}, dentro di ${peggio.p.toFixed(1)} unità).`,
+                { x: peggio.v.x, z: peggio.v.z });
+        }
+
+        // 2. Dentro la VIA DI FUGA: per chi guida è pista anche quella. Esente
+        //    chi ci sta per mestiere (pile di gomme, cartelli di frenata).
+        const inFuga = solidi
+            .filter(v => !SceneryRegistro.SCAVALCANO.has(v.asset) && !SceneryRegistro.A_BORDO_PISTA.has(v.category))
+            .map(v => ({ v, p: dentroLaViaDiFuga(v, trackPts, c.barrierProfile, c.barrierDist) }))
+            .filter(x => x.p > SceneryRegistro.MAX_DENTRO_PISTA);
+        if (inFuga.length) {
+            const peggio = inFuga.sort((a, b) => b.p - a.p)[0];
+            aggiungi('da guardare', 'oggetti-in-via-di-fuga',
+                `${inFuga.length} ${inFuga.length === 1 ? 'oggetto sta' : 'oggetti stanno'} fra il muro e l'asfalto`
+                + ` (il peggiore: ${peggio.v.asset}).`,
+                { x: peggio.v.x, z: peggio.v.z });
+        }
+
+        // 3. Dentro la CORSIA BOX: i garage la lambiscono per mestiere, il
+        //    resto no.
+        if (pitPts && pitPts.length && trackData.pit) {
+            const inBox = solidi
+                .filter(v => !SceneryRegistro.SCAVALCANO.has(v.asset))
+                .map(v => ({ v, p: dentroIlCorridoio(v, pitPts, trackData.pit.roadHalfWidth) }))
+                .filter(x => x.p > SceneryRegistro.MAX_DENTRO_BOX);
+            if (inBox.length) {
+                const peggio = inBox.sort((a, b) => b.p - a.p)[0];
+                aggiungi('da guardare', 'oggetti-in-corsia-box',
+                    `${inBox.length} ${inBox.length === 1 ? 'oggetto è' : 'oggetti sono'} dentro la corsia box`
+                    + ` (il peggiore: ${peggio.v.asset}).`,
+                    { x: peggio.v.x, z: peggio.v.z });
+            }
+        }
+
+        // 4. Spettatori senza la loro tribuna: la folla nasce prima della
+        //    porta della scenografia, e se la tribuna viene scartata dopo,
+        //    restano seduti nel vuoto.
+        const sorgenti = layout.filter(v => v.category === 'grandstand' || v.category === 'grandstand-main'
+            || v.asset === 'hospitalityDeck' || v.asset === 'vipSuite');
+        const orfani = layout.filter(v => v.category === 'crowd')
+            .filter(s => !sorgenti.some(g => Math.hypot(g.x - s.x, g.z - s.z) < RAGGIO_TRIBUNA));
+        if (orfani.length) {
+            aggiungi('da guardare', 'spettatori-a-mezz-aria',
+                `${orfani.length} spettatori sono seduti dove non c'è nessuna tribuna.`,
+                { x: orfani[0].x, z: orfani[0].z });
+        }
+
+        // 5. Tribuna principale vuota. È il controllo DIRETTO sul difetto:
+        //    prende il guaio quale che sia la causa — e su `nuova-pista` la
+        //    causa non era quella che sembrava.
+        const moduliPrincipali = layout.filter(v => v.category === 'grandstand-main').length;
+        if (!moduliPrincipali) {
+            aggiungi('da guardare', 'niente-tribuna-principale',
+                `Il traguardo non ha la sua tribuna: nessun modulo ha trovato posto.`
+                + ` Di solito vuol dire che lì non c'è un tratto abbastanza dritto e libero.`,
+                trackData.startFinish ? { x: trackData.startFinish.x, z: trackData.startFinish.z } : null);
+        }
+
+        return { problemi };
+    }
+
     return {
-        controllaGeometria,
+        controllaGeometria, controllaScenografia,
+        dentroIlCorridoio, dentroLaViaDiFuga, NON_SOLIDE, RAGGIO_TRIBUNA,
         raggioMinimo, raggioAl,
         RAGGIO_MINIMO_IN_MEZZE_CARREGGIATE, PENDENZA_MASSIMA,
         RAGGIO_MINIMO_TRAGUARDO, SCARTO_MASSIMO_TRAGUARDO, GIRO_CORTO,

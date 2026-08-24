@@ -123,3 +123,64 @@ test('le piste vere del gioco non hanno problemi che impediscono di salvare', ()
     }
     assert.deepEqual(brutte, []);
 });
+
+// --- Scenografia ----------------------------------------------------------
+
+const TrackScenery = require('./trackScenery.js');
+const { loadTrack } = require(path.join(ROOT, 'backend/sockets/games/trackLoader.js'));
+const seats = require(path.join(ROOT, 'frontend/assets/custom/circuit/grandStandSeats.json')).seats;
+const terraceAnchors = require(path.join(ROOT, 'frontend/assets/custom/circuit/terraceAnchors.json')).anchors;
+
+function scenografiaDi(id) {
+    const raw = pista(id);
+    const t = loadTrack(id);
+    const barrierDist = raw.roadHalfWidth + 2.8 + 1.2;
+    const layout = TrackScenery.generateLayout(raw, t.points, t.pitLanePts, barrierDist, 45,
+        seats, t.barrierProfile, terraceAnchors, { gridSize: 6 });
+    return { raw, layout, contesto: {
+        trackPts: t.points, pitPts: t.pitLanePts,
+        barrierProfile: t.barrierProfile, barrierDist,
+    } };
+}
+
+test('le piste vere non hanno oggetti dentro la carreggiata', () => {
+    const brutte = [];
+    for (const f of fs.readdirSync(path.join(ROOT, 'frontend/tracks')).filter(x => x.endsWith('.json'))) {
+        const id = f.replace(/\.json$/, '');
+        const { raw, layout, contesto } = scenografiaDi(id);
+        const gravi = V.controllaScenografia(raw, layout, contesto).problemi
+            .filter(p => p.livello === 'impedisce');
+        if (gravi.length) brutte.push(id + ': ' + gravi.map(g => g.messaggio).join(' / '));
+    }
+    assert.deepEqual(brutte, []);
+});
+
+test('un oggetto piazzato in mezzo alla pista viene visto', () => {
+    const { raw, layout, contesto } = scenografiaDi('prova');
+    const sulNastro = contesto.trackPts[100];
+    const sporco = layout.concat([{
+        asset: 'containerStack', category: 'paddock-life',
+        x: sulNastro.x, z: sulNastro.z, y: 0, rotY: 0, scale: 1,
+    }]);
+    const problema = V.controllaScenografia(raw, sporco, contesto).problemi
+        .find(p => p.codice === 'oggetti-in-pista');
+    assert.ok(problema, 'un container in mezzo alla pista deve essere segnalato');
+    assert.equal(problema.livello, 'impedisce');
+    assert.ok(problema.dove, 'e deve dire dove');
+});
+
+test('gli spettatori senza tribuna vengono visti', () => {
+    const { raw, layout, contesto } = scenografiaDi('prova');
+    const sporco = layout.concat([
+        { asset: 'spectatorA', category: 'crowd', x: 9000, y: 4, z: 9000, rotY: 0, scale: 1 },
+    ]);
+    const c = V.controllaScenografia(raw, sporco, contesto).problemi.map(p => p.codice);
+    assert.ok(c.includes('spettatori-a-mezz-aria'), c.join(', '));
+});
+
+test('una fila del traguardo vuota viene vista', () => {
+    const { raw, layout, contesto } = scenografiaDi('prova');
+    const senzaPrincipale = layout.filter(v => v.category !== 'grandstand-main');
+    const c = V.controllaScenografia(raw, senzaPrincipale, contesto).problemi.map(p => p.codice);
+    assert.ok(c.includes('niente-tribuna-principale'), c.join(', '));
+});

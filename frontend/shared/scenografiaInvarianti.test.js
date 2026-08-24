@@ -20,6 +20,7 @@ const TrackScenery = require('./trackScenery.js');
 const Sizes = require('./sceneryAssetSizes.js');
 const TrackGeometry = require('./trackGeometry.js');
 const { SCAVALCANO, A_BORDO_PISTA, stessaFila } = require('./sceneryRegistro.js');
+const TrackValidatore = require('./trackValidatore.js');
 const TrackGravel = require('./trackGravel.js');
 const { loadTrack } = require('../../backend/sockets/games/trackLoader.js');
 
@@ -133,53 +134,23 @@ function coppieVicine(solidi) {
 }
 
 for (const id of PISTE) {
-    test(`${id}: nessun oggetto scenico dentro la carreggiata`, () => {
-        const { raw, t, solidi } = scenografiaDi(id);
-        const colpevoli = solidi
-            .filter(v => !SCAVALCANO.has(v.asset))
-            .map(v => ({ v, p: dentroIlCorridoio(v, t.points, raw.roadHalfWidth) }))
-            .filter(x => x.p > MAX_DENTRO_PISTA)
-            .map(x => `${x.v.category}/${x.v.asset} a (${x.v.x.toFixed(1)}, ${x.v.z.toFixed(1)}) dentro di ${x.p.toFixed(2)}`);
-        assert.deepEqual(colpevoli, []);
-    });
 
-    // La via di fuga E' pista per chi guida: i due container di monte-rosso
-    // stavano a 13.8 dall'asse con la carreggiata a 11 e il muro a 15, e
-    // l'utente li ha segnalati come «dentro la pista». Il muro non e' a
-    // distanza fissa, quindi si chiede dov'e' campione per campione.
-    test(`${id}: niente dentro la via di fuga, tranne chi ci sta per mestiere`, () => {
-        const { raw, t, solidi } = scenografiaDi(id);
-        const colpevoli = solidi
-            .filter(v => !SCAVALCANO.has(v.asset) && !A_BORDO_PISTA.has(v.category))
-            .map(v => {
-                let peggio = 0;
-                for (const c of Sizes.footprintCorners(v)) {
-                    const near = TrackGeometry.nearestPoint(t.points, c.x, c.z);
-                    const p = t.points[near.index];
-                    const n = TrackGeometry.normalAt(t.points, near.index, true);
-                    const lato = Math.sign((c.x - p.x) * n.nx + (c.z - p.z) * n.nz) || 1;
-                    const muro = t.barrierProfile
-                        ? TrackGravel.barrierAt(t.barrierProfile, near.index, lato)
-                        : raw.roadHalfWidth + 4;
-                    const d = muro - near.dist;
-                    if (d > peggio) peggio = d;
-                }
-                return { v, p: peggio };
-            })
-            .filter(x => x.p > MAX_DENTRO_PISTA)
-            .map(x => `${x.v.category}/${x.v.asset} a (${x.v.x.toFixed(1)}, ${x.v.z.toFixed(1)}) dentro di ${x.p.toFixed(2)}`);
-        assert.deepEqual(colpevoli, []);
-    });
 
-    test(`${id}: nessun oggetto scenico dentro la corsia box`, () => {
-        const { raw, t, solidi } = scenografiaDi(id);
-        if (!t.pitLanePts || !t.pitLanePts.length) return;
-        const colpevoli = solidi
-            .filter(v => !SCAVALCANO.has(v.asset))
-            .map(v => ({ v, p: dentroIlCorridoio(v, t.pitLanePts, raw.pit.roadHalfWidth) }))
-            .filter(x => x.p > MAX_DENTRO_BOX)
-            .map(x => `${x.v.category}/${x.v.asset} a (${x.v.x.toFixed(1)}, ${x.v.z.toFixed(1)}) dentro di ${x.p.toFixed(2)}`);
-        assert.deepEqual(colpevoli, []);
+
+    // ⚠️ QUESTI CONTROLLI NON VIVONO PIU' QUI: stanno in trackValidatore.js, e
+    // il pulsante «Controlla la pista» dell'editor usa la stessa funzione.
+    // Erano quattro test con le loro misure — oggetti in carreggiata, in via
+    // di fuga, in corsia box, spettatori orfani — e una copia delle misure
+    // avrebbe finito per divergere: un giorno il test avrebbe detto una cosa e
+    // il pulsante un'altra, e non si sarebbe saputo a chi credere.
+    test(`${id}: il validatore non trova difetti di scenografia`, () => {
+        const { raw, t, layout } = scenografiaDi(id);
+        const barrierDist = raw.roadHalfWidth + 2.8 + 1.2;
+        const problemi = TrackValidatore.controllaScenografia(raw, layout, {
+            trackPts: t.points, pitPts: t.pitLanePts,
+            barrierProfile: t.barrierProfile, barrierDist,
+        }).problemi.filter(p => p.livello !== 'da sapere');
+        assert.deepEqual(problemi.map(p => `${p.codice}: ${p.messaggio}`), []);
     });
 
     test(`${id}: nessuna compenetrazione oltre ${MAX_COMPENETRAZIONE} unita'`, () => {
@@ -213,24 +184,6 @@ for (const id of PISTE) {
             `il ponte semafori sta a ${unita.toFixed(0)} unita' dalla griglia, attese 75 ± ${FINESTRA_GANTRY}`);
     });
 
-    // NESSUNO SPETTATORE SENZA LA SUA TRIBUNA. La folla si costruisce prima
-    // della porta e passa senza ingombro: se la porta scarta la tribuna dopo,
-    // i suoi spettatori restano a mezz'aria. E' lo stesso difetto degli
-    // orfani gia' chiuso per le reti — e l'utente l'ha visto in gioco su
-    // shanghai, davanti al traguardo (2026-08-24). Misurato: 173 su
-    // melbourne, 120 su shanghai, 28 su test.
-    test(`${id}: nessuno spettatore senza la sua tribuna`, () => {
-        const { layout } = scenografiaDi(id);
-        const sorgenti = layout.filter(v => v.category === 'grandstand' || v.category === 'grandstand-main'
-            || v.asset === 'hospitalityDeck' || v.asset === 'vipSuite');
-        // 15 unita': una tribuna e' 19.2 x 12.8, quindi dal suo centro nessun
-        // sedile dista di piu'. Chi supera questa soglia non e' seduto da
-        // nessuna parte.
-        const orfani = layout.filter(v => v.category === 'crowd')
-            .filter(s => !sorgenti.some(g => Math.hypot(g.x - s.x, g.z - s.z) < 15));
-        assert.equal(orfani.length, 0,
-            orfani.length ? `${orfani.length} spettatori a mezz'aria, es. (${orfani[0].x.toFixed(0)}, ${orfani[0].z.toFixed(0)})` : '');
-    });
 
     test(`${id}: ogni tribuna ha la sua rete`, () => {
         // Il difetto non e' che la rete manchi: e' che tribuna e rete possano
