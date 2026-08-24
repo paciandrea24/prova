@@ -19,6 +19,7 @@ const path = require('path');
 const TrackScenery = require('./trackScenery.js');
 const Sizes = require('./sceneryAssetSizes.js');
 const TrackGeometry = require('./trackGeometry.js');
+const { SCAVALCANO, stessaFila } = require('./sceneryRegistro.js');
 const { loadTrack } = require('../../backend/sockets/games/trackLoader.js');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -36,8 +37,14 @@ const FINESTRA_GANTRY = 40;        // quanto il ponte semafori puo' allontanarsi
 // Categorie senza un modello solido: non hanno un ingombro da rispettare.
 const NON_SOLIDE = new Set(['pond', 'parkingLot', 'crowd']);
 
+// Il ponte dei semafori e la passerella SCAVALCANO la pista: attraversarla e'
+// il loro mestiere, e passano a 16 e 13 unita' di quota. La regola del
+// corridoio vale per cio' che sta a terra. L'elenco arriva dal registro, non
+// e' una copia: due liste della stessa cosa divergono.
+
 // Le reti nascono attaccate alla loro tribuna: e' il loro mestiere, non un
-// difetto. Nessun'altra coppia e' esentata.
+// difetto. L'altra esenzione, stessaFila, arriva dal registro: file di tribune,
+// edifici del paddock e pile di gomme si toccano per costruzione.
 function coppiaLecita(a, b) {
     const tribuna = (v) => v.category === 'grandstand' || v.category === 'grandstand-main';
     const rete = (v) => v.asset === 'catchFence';
@@ -128,6 +135,7 @@ for (const id of PISTE) {
     test(`${id}: nessun oggetto scenico dentro la carreggiata`, () => {
         const { raw, t, solidi } = scenografiaDi(id);
         const colpevoli = solidi
+            .filter(v => !SCAVALCANO.has(v.asset))
             .map(v => ({ v, p: dentroIlCorridoio(v, t.points, raw.roadHalfWidth) }))
             .filter(x => x.p > MAX_DENTRO_PISTA)
             .map(x => `${x.v.category}/${x.v.asset} a (${x.v.x.toFixed(1)}, ${x.v.z.toFixed(1)}) dentro di ${x.p.toFixed(2)}`);
@@ -138,6 +146,7 @@ for (const id of PISTE) {
         const { raw, t, solidi } = scenografiaDi(id);
         if (!t.pitLanePts || !t.pitLanePts.length) return;
         const colpevoli = solidi
+            .filter(v => !SCAVALCANO.has(v.asset))
             .map(v => ({ v, p: dentroIlCorridoio(v, t.pitLanePts, raw.pit.roadHalfWidth) }))
             .filter(x => x.p > MAX_DENTRO_BOX)
             .map(x => `${x.v.category}/${x.v.asset} a (${x.v.x.toFixed(1)}, ${x.v.z.toFixed(1)}) dentro di ${x.p.toFixed(2)}`);
@@ -148,7 +157,7 @@ for (const id of PISTE) {
         const { solidi } = scenografiaDi(id);
         const colpevoli = [];
         for (const [a, b] of coppieVicine(solidi)) {
-            if (coppiaLecita(a, b)) continue;
+            if (coppiaLecita(a, b) || stessaFila(a, b)) continue;
             if (!Sizes.itemsOverlap(a, b)) continue;
             const p = profondita(a, b);
             if (p > MAX_COMPENETRAZIONE) {

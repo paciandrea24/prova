@@ -40,6 +40,34 @@
     // spoglie dal 16% al 20%, che è il tetto del test in trackScenery.test.js.
     const MAX_COMPENETRAZIONE = 1.0;
 
+    // Gli asset che SCAVALCANO: il ponte dei semafori e la passerella sono
+    // portali, e attraversare la pista e' esattamente il loro mestiere. La
+    // regola del corridoio vale per cio' che sta a TERRA — sopra passano le
+    // auto. La compenetrazione con gli altri oggetti continua a valere anche
+    // per loro, ma itemsOverlap confronta gia' le quote, quindi un portale
+    // alto 16 non urta niente che gli stia sotto.
+    const SCAVALCANO = new Set(['startGantry', 'footbridge']);
+
+    // Le categorie che formano FILE CONTINUE per costruzione: i moduli della
+    // tribuna principale sono impilati su piu' livelli allo stesso x/z, gli
+    // edifici del paddock corrono attaccati lungo la corsia box, le tribune
+    // normali e le pile di gomme si affiancano in schiere. Fra LORO possono
+    // toccarsi quanto vogliono — e' il disegno, non un difetto: senza questa
+    // esenzione la porta apre buchi in mezzo alle file, ed e' esattamente
+    // quello che hanno segnalato quattro test appena diventati rossi
+    // («la fila del traguardo e' unica, senza vuoti», «fronte corsia box senza
+    // vuoti»).
+    //
+    // ⚠️ L'esenzione vale SOLO fra membri della stessa categoria, e SOLO per
+    // la compenetrazione: il corridoio continua a valere per tutti. E' cio'
+    // che tiene ancora preso il difetto vero di melbourne, dove sei edifici
+    // del paddock entravano nella corsia box fino a 4.29 unita'.
+    const FILE_CONTIGUE = new Set(['grandstand', 'grandstand-main', 'paddock', 'safety']);
+
+    function stessaFila(a, b) {
+        return a.category === b.category && FILE_CONTIGUE.has(a.category);
+    }
+
     // Profondità di compenetrazione fra due ingombri orientati: il minimo
     // spostamento che li separerebbe (asse di minima sovrapposizione del test
     // SAT). Serve la profondità e non un sì/no — vedi la soglia qui sopra.
@@ -102,6 +130,7 @@
         }
 
         function motivoDiRifiuto(item) {
+            if (SCAVALCANO.has(item.asset)) return motivoDaCompenetrazione(item);
             const inPista = dentro(item, trackPts, roadHalf);
             if (inPista > MAX_DENTRO_PISTA) {
                 return `dentro la carreggiata di ${inPista.toFixed(2)} unità`;
@@ -114,11 +143,16 @@
             for (const poly of box) {
                 if (SceneryAssetSizes.polysOverlap(angoli, poly)) return 'dentro un box dei piloti';
             }
+            return motivoDaCompenetrazione(item);
+        }
+
+        function motivoDaCompenetrazione(item) {
             const visti = new Set();
             for (const k of chiaviDi(item)) {
                 for (const altro of (griglia.get(k) || [])) {
                     if (visti.has(altro)) continue;
                     visti.add(altro);
+                    if (stessaFila(item, altro)) continue;
                     if (!SceneryAssetSizes.itemsOverlap(item, altro)) continue;
                     const p = profondita(item, altro);
                     if (p > MAX_COMPENETRAZIONE) {
@@ -146,5 +180,5 @@
         };
     }
 
-    return { crea, profondita, MAX_DENTRO_PISTA, MAX_DENTRO_BOX, MAX_COMPENETRAZIONE };
+    return { crea, profondita, SCAVALCANO, FILE_CONTIGUE, stessaFila, MAX_DENTRO_PISTA, MAX_DENTRO_BOX, MAX_COMPENETRAZIONE };
 });

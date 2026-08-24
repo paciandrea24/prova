@@ -11,19 +11,28 @@
                                  require('./sceneryTrackside.js'), require('./sceneryCrowd.js'),
                                  require('./sceneryAssetSizes.js'), require('./sceneryHills.js'),
                                  require('./sceneryPaddock.js'), require('./trackGravel.js'),
-                                 require('./sceneryInfrastructure.js'));
+                                 require('./sceneryInfrastructure.js'),
+                                 require('./sceneryRegistro.js'));
     } else {
         root.TrackScenery = factory(root.TrackGeometry, root.SceneryLandmarks,
                                     root.SceneryTrackside, root.SceneryCrowd,
                                     root.SceneryAssetSizes, root.SceneryHills,
                                     root.SceneryPaddock, root.TrackGravel,
-                                    root.SceneryInfrastructure);
+                                    root.SceneryInfrastructure,
+                                    root.SceneryRegistro);
     }
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryLandmarks,
                                                         SceneryTrackside, SceneryCrowd,
                                                         SceneryAssetSizes, SceneryHills,
                                                         SceneryPaddock, TrackGravel,
-                                                        SceneryInfrastructure) {
+                                                        SceneryInfrastructure,
+                                                        SceneryRegistro) {
+
+    // Le categorie senza un modello solido: superfici piane e folla, che non
+    // hanno un ingombro da far rispettare a nessuno. La folla in particolare
+    // sono ~6500 voci su 7667, tutte dentro le tribune per costruzione: farle
+    // passare dalla porta vorrebbe dire scartarle tutte.
+    const SENZA_INGOMBRO = new Set(['pond', 'parkingLot', 'crowd']);
 
     // Hash FNV-1a 32 bit di una stringa: seed deterministico dall'id del
     // tracciato, così lo stesso tracciato genera sempre lo stesso layout
@@ -1694,7 +1703,45 @@
         const terraceCrowd = SceneryCrowd.buildTerraceCrowd(
             terrazze, terraceAnchors || {}, mulberry32(hashString(trackData.id + ':terrace')));
 
-        return layout.concat(crowd, terraceCrowd);
+        // LA PORTA. Tutto ciò che è stato deciso qui sopra passa di qui, una
+        // volta, nell'ordine in cui è stato deciso: chi arriva prima ha la
+        // precedenza, chi non ci sta non entra.
+        //
+        // È il punto che rende vera la promessa fatta all'utente il
+        // 2026-08-24 — «non voglio più questi bug in una qualsiasi possibile
+        // pista che posso creare». Non perché i costruttori siano diventati
+        // più bravi, ma perché non esiste più una strada nel layout che salti
+        // il controllo: un modulo nuovo, un asset nuovo, una pista nuova o
+        // passano da qui o non sono nella scenografia.
+        //
+        // Le voci senza modello (laghetto, asfalto del parcheggio, folla) non
+        // hanno un ingombro da rispettare e passano dritte. Le reti nascono
+        // attaccate alla loro tribuna: è il loro mestiere, e la tribuna entra
+        // nel registro DOPO, non contro (vedi l'ordine qui sotto).
+        const registro = SceneryRegistro.crea({
+            trackPts, pitPts, roadHalf: trackData.roadHalfWidth,
+            pitRoadHalf: trackData.pit.roadHalfWidth, playerBoxFootprints,
+        });
+        // Non negoziabili: il ponte dei semafori porta il via (senza, la gara
+        // non si legge) e i box dei piloti sono geometria di gioco. Entrano
+        // nel registro senza essere giudicati.
+        registro.aggiungiTutti(layout.filter(v => v.asset === 'startGantry'));
+        const passate = [];
+        let scartate = 0;
+        for (const voce of layout) {
+            if (!voce.asset || SENZA_INGOMBRO.has(voce.category)) { passate.push(voce); continue; }
+            if (voce.asset === 'startGantry') { passate.push(voce); continue; }   // già registrato sopra
+            if (registro.posa(voce)) { passate.push(voce); continue; }
+            scartate++;
+        }
+        // Un conteggio, non un elenco: in gioco questo gira ad ogni
+        // caricamento e cento righe in console non le legge nessuno. Chi vuole
+        // i dettagli ha scenografiaInvarianti.test.js.
+        if (scartate && typeof console !== 'undefined' && console.debug) {
+            console.debug(`[scenografia] ${scartate} oggetti scartati dalla porta su ${layout.length}`);
+        }
+
+        return passate.concat(crowd, terraceCrowd);
     }
 
     return {
