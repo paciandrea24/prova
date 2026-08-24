@@ -1858,7 +1858,27 @@
         const senzaOrfane = passate.filter(
             v => v.asset !== 'catchFence' || tribuneRimaste.has(v.daTribuna));
 
-        return senzaOrfane.concat(crowd, terraceCrowd);
+        // E VALE ANCHE PER LA FOLLA. Gli spettatori nascono prima della porta
+        // e la attraversano senza ingombro (sono seduti su una tribuna, non a
+        // terra): se la porta scarta la tribuna dopo, restano seduti nel
+        // vuoto. E' lo stesso difetto degli orfani chiuso per le reti, e
+        // l'utente l'ha visto su shanghai davanti al traguardo. Misurato il
+        // 2026-08-24 prima della cura: 173 spettatori a mezz'aria su
+        // melbourne, 120 su shanghai, 28 su test.
+        //
+        // Le terrazze entrano nello stesso insieme delle tribune: per uno
+        // spettatore «la mia tribuna» e' l'oggetto su cui poggia, quale che
+        // sia la sua categoria.
+        const sedutiRimasti = new Set([...tribuneRimaste]);
+        for (const v of passate) {
+            if (v.asset === 'hospitalityDeck' || v.asset === 'vipSuite') {
+                sedutiRimasti.add(v.x.toFixed(2) + ',' + v.z.toFixed(2));
+            }
+        }
+        const follaRimasta = crowd.concat(terraceCrowd)
+            .filter(v => sedutiRimasti.has(v.daTribuna));
+
+        return senzaOrfane.concat(follaRimasta);
     }
 
     return {

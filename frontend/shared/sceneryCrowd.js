@@ -72,6 +72,14 @@
                     x, y: (stand.y || 0) + seat.y, z,
                     rotY: rot,
                     scale: 1,
+                    // Da CHI dipende questo spettatore. La folla nasce prima
+                    // della porta e passa senza ingombro: senza questo
+                    // legame, una tribuna scartata dopo lascia i suoi
+                    // spettatori seduti a mezz'aria — ed e' esattamente cio'
+                    // che l'utente ha visto su shanghai davanti al traguardo
+                    // (2026-08-24). Stessa chiave delle reti: posizione a due
+                    // decimali.
+                    daTribuna: stand.x.toFixed(2) + ',' + stand.z.toFixed(2),
                 });
             }
         }
@@ -117,6 +125,10 @@
                     z: t.z - a.x * sin + a.z * cos,
                     rotY: rot,
                     scale: 1,
+                    // Vale per le terrazze quanto per le tribune: se la porta
+                    // scarta l'infrastruttura, i suoi spettatori se ne vanno
+                    // con lei.
+                    daTribuna: t.x.toFixed(2) + ',' + t.z.toFixed(2),
                 });
             }
         }
