@@ -1867,6 +1867,53 @@ body.in-cerimonia .hud { display: none !important; }
 
 .stagione-errore { margin: 0; font-size: 13px; color: #FF8A80; }
 .stagione-nota, .stagione-attesa { margin: 0; font-size: 13px; color: var(--sel-tenue); }
+
+/* ---- Officina: cosa sostituire fra una gara e l'altra ---------------------
+   Una riga per componente. La barra dice quanto e' consumato, il pulsante
+   dice QUANTO COSTA cambiarlo: la penalita' si legge prima di decidere, non
+   dopo. Un componente senza ricambi rimasti si distingue a colpo d'occhio,
+   perche' li' il ricambio costa posizioni in griglia. */
+.stagione-officina-pezzi {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-direction: column; gap: clamp(6px, 1vh, 12px);
+}
+.stagione-officina-pezzo {
+    display: grid;
+    grid-template-columns: minmax(110px, 1fr) 2fr auto;
+    align-items: center; gap: clamp(10px, 1.6vw, 22px);
+    padding: 10px 12px;
+    background: var(--sel-lavagna);
+    border: 1px solid var(--sel-filo);
+    border-radius: 10px;
+}
+/* Esaurita la dotazione la riga si tinge: da qui in poi ogni ricambio costa
+   posizioni, ed e' l'unica cosa che deve saltare all'occhio in questa
+   schermata. */
+.stagione-officina-pezzo.senza-ricambi { border-color: rgba(255, 138, 128, 0.45); }
+.stagione-officina-nome { font-weight: 700; }
+.stagione-officina-stato { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.stagione-officina-barra {
+    height: 8px; border-radius: 4px; overflow: hidden;
+    background: var(--sel-fondo-b);
+}
+.stagione-officina-barra span { display: block; height: 100%; background: var(--sel-cordolo); }
+.stagione-officina-cifre {
+    display: flex; justify-content: space-between; gap: 12px;
+    font-size: 12px; color: var(--sel-tenue);
+}
+/* Il costo sta DENTRO il pulsante, non accanto: e' l'informazione che decide
+   se premerlo. */
+.stagione-officina-costo { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.6px; opacity: 0.85; }
+/* Il pulsante cambia testo (Sostituisci/Sostituito) e senza una larghezza
+   minima le tre righe si disallineano ad ogni clic. */
+.stagione-officina-pezzo .stagione-btn { min-width: 148px; }
+.stagione-officina-pezzo.scelto .stagione-btn { background: var(--sel-cordolo); border-color: transparent; }
+/* "dotazione esaurita" e' la sola cosa che cambia il prezzo della decisione:
+   va letta senza cercarla. Il bordo da solo non bastava — verificato a
+   schermo. */
+.stagione-officina-pezzo.senza-ricambi .stagione-officina-cifre span:last-child {
+    color: #FF8A80; font-weight: 700;
+}
 .stagione-attesa { text-align: center; padding: 32px 0; }
 
 /* --- calendario --- */

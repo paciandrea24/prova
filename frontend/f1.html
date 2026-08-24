@@ -563,6 +563,31 @@
                 </div>
             </section>
 
+            <!-- 3b. OFFICINA: fra il riepilogo della gara e il calendario.
+                 In stagione la macchina non rinasce, e qui si decide cosa
+                 sostituire sapendo che costa posizioni in griglia. La penalita'
+                 si vede PRIMA di confermare: e' la decisione, non la sua
+                 conseguenza.
+                 L'ala anteriore non compare: e' gia' nuova ad ogni via. -->
+            <section class="stagione-vista" id="stagione-vista-officina" style="display:none;">
+                <div class="stagione-riepilogo-dove">
+                    <span class="stagione-riepilogo-etichetta">Fra una gara e l&rsquo;altra</span>
+                    <span id="stagione-officina-gara">&mdash;</span>
+                </div>
+                <div class="stagione-sezione">
+                    Parco chiuso
+                    <span class="stagione-sezione-nota" id="stagione-officina-dotazione"></span>
+                </div>
+                <ul class="stagione-officina-pezzi" id="stagione-officina-pezzi"></ul>
+                <div class="stagione-comandi">
+                    <p class="stagione-nota" id="stagione-officina-nota"></p>
+                    <p class="stagione-errore" id="stagione-officina-errore"></p>
+                    <button type="button" class="stagione-btn stagione-btn-primario" id="stagione-officina-conferma">
+                        Vai al calendario
+                    </button>
+                </div>
+            </section>
+
             <!-- 4. ALBO D'ORO: la stagione e' finita.
                  Ci si arriva alla fine della premiazione, e ci si torna ogni
                  volta che si riapre una stagione conclusa: una stagione finita
@@ -920,7 +945,7 @@
     <script src="shared/f1Planimetria.js?v=20260820a"></script>
     <script src="shared/f1SuoniCerimonia.js?v=20260820a"></script>
     <script src="shared/f1Premiazione.js?v=20260820b"></script>
-    <script src="shared/f1StagioneSchermate.js?v=20260820l"></script>
+    <script src="shared/f1StagioneSchermate.js?v=20260824a"></script>
     <script src="f1.js?v=20260823a"></script>
 </body>
 

@@ -38,7 +38,7 @@
     // tornare. Si esce, e basta.
     const PRECEDENTE = {
         calendario: 'scelta', scelta: null, attesa: null, account: null,
-        riepilogo: null, albo: null,
+        riepilogo: null, officina: null, albo: null,
     };
     let vistaCorrente = 'attesa';
 
@@ -56,7 +56,7 @@
         // Il calendario scrive il nome della stagione da se', appena l'ha
         // letta: non c'e' un titolo fisso da mettere qui.
         if (TITOLO[quale]) testo(el('stagione-titolo'), TITOLO[quale]);
-        for (const v of ['scelta', 'calendario', 'riepilogo', 'albo', 'attesa', 'account']) {
+        for (const v of ['scelta', 'calendario', 'riepilogo', 'officina', 'albo', 'attesa', 'account']) {
             const n = el('stagione-vista-' + v);
             if (n) n.style.display = (v === quale) ? '' : 'none';
         }
@@ -366,6 +366,10 @@
             // Una stagione conclusa si apre sul suo albo d'oro: il calendario
             // non ha piu' niente da proporre.
             else if (F1Stagione.finita(stagione)) disegnaAlbo(stagione);
+            // Chi ha chiuso il browser in officina la ritrova riaprendo la
+            // stagione, senza aver perso la gara appena corsa: e' cio' che
+            // rende vero "l'officina e' uno stato, non un momento".
+            else if (F1Stagione.officinaDaFare(stagione)) disegnaOfficina(stagione, ripresa);
             else disegnaCalendario(stagione, ripresa);
         }
 
@@ -527,8 +531,14 @@
             // va alla premiazione.
             const conclusa = F1Stagione.finita(stagione);
             const avanti = el('stagione-al-calendario');
-            avanti.textContent = conclusa ? 'La premiazione' : 'Vai al calendario';
+            // Fra la gara e il calendario c'e' l'officina, se c'e' ancora da
+            // decidere cosa sostituire. Il pulsante lo dice, invece di
+            // promettere un calendario e portare altrove.
+            const passaDaOfficina = !conclusa && F1Stagione.officinaDaFare(stagione);
+            avanti.textContent = conclusa ? 'La premiazione'
+                : (passaDaOfficina ? 'Vai in officina' : 'Vai al calendario');
             avanti.onclick = () => {
+                if (passaDaOfficina) { disegnaOfficina(stagione, ripresa); return; }
                 if (!conclusa) { disegnaCalendario(stagione, ripresa); return; }
                 // La premiazione la mette in scena la pagina di gioco: qui si
                 // sa chi ha vinto, non come si accende un podio. Se non si
@@ -574,6 +584,155 @@
             // hanno un'altezza, e l'animazione non saprebbe di quanto spostarle.
             mostraVista('riepilogo');
             animaClassifica(cls, righe);
+        }
+
+        // ── l'officina ────────────────────────────────────────────────
+        // Fra il riepilogo della gara e il calendario. In stagione la macchina
+        // non rinasce: qui si decide cosa sostituire sapendo che costa
+        // posizioni in griglia.
+        //
+        // Nessuna regola vive qui, come in tutto questo file: quanto e'
+        // consumata la macchina, quanti ricambi restano e quanto costa sforare
+        // lo dice F1Stagione. Questa funzione disegna e chiede.
+        //
+        // L'ala anteriore non compare: e' gia' nuova ad ogni via, e si cambia
+        // ai box durante la gara.
+        const PEZZI = [
+            { id: 'floor', nome: 'Fondo' },
+            { id: 'engine', nome: 'Motore' },
+            { id: 'suspension', nome: 'Sospensioni' },
+        ];
+
+        function disegnaOfficina(stagione, ripresa) {
+            testo(el('stagione-titolo'), stagione.nome);
+            const ultima = stagione.risultati[stagione.risultati.length - 1];
+            testo(el('stagione-officina-gara'),
+                ultima ? 'dopo ' + nomePista(piste, ultima.pista) : '—');
+            testo(el('stagione-officina-errore'), '');
+
+            const mio = (stagione.piloti || []).find(p => !p.bot && p.uid === mioUid);
+            const stato = mio ? F1Stagione.statoVettura(stagione, mio.id) : F1Stagione.vetturaNuova();
+            const totale = F1Stagione.dotazione(stagione);
+            const rimasti = mio ? F1Stagione.ricambiRimasti(stagione, mio.id) : totale;
+            testo(el('stagione-officina-dotazione'),
+                'dotazione: ' + totale.engine
+                + (totale.engine === 1 ? ' ricambio' : ' ricambi') + ' per componente');
+
+            // La selezione vive QUI, non nel documento: finche' non si conferma
+            // non e' successo niente, e riaprendo l'officina si riparte da come
+            // sta davvero la macchina.
+            let scelti = [];
+
+            // La penalita' si vede PRIMA di confermare, e si aggiorna ad ogni
+            // clic: e' la decisione, non la sua conseguenza.
+            function penalitaScelta() {
+                let somma = 0;
+                for (const c of scelti) {
+                    if ((rimasti[c] || 0) <= 0) somma += F1Stagione.PENALITA_GRIGLIA[c] || 0;
+                }
+                return somma;
+            }
+
+            function aggiornaNota() {
+                const n = penalitaScelta();
+                let frase;
+                if (n) {
+                    frase = 'Partirai ' + n + (n === 1 ? ' posizione' : ' posizioni')
+                        + ' più indietro nella prossima gara.';
+                } else if (scelti.length) {
+                    frase = 'Nessuna penalità: sei dentro la dotazione.';
+                } else {
+                    frase = 'Puoi anche non toccare niente e correre così.';
+                }
+                testo(el('stagione-officina-nota'), frase);
+            }
+
+            const elenco = el('stagione-officina-pezzi');
+            elenco.innerHTML = '';
+            for (const pezzo of PEZZI) {
+                const usura = Math.round(stato[pezzo.id] || 0);
+                const quanti = rimasti[pezzo.id] || 0;
+                const costo = F1Stagione.PENALITA_GRIGLIA[pezzo.id] || 0;
+
+                const li = document.createElement('li');
+                li.className = 'stagione-officina-pezzo' + (quanti > 0 ? '' : ' senza-ricambi');
+
+                const nome = document.createElement('div');
+                nome.className = 'stagione-officina-nome';
+                nome.textContent = pezzo.nome;
+
+                const colonna = document.createElement('div');
+                colonna.className = 'stagione-officina-stato';
+                const barra = document.createElement('div');
+                barra.className = 'stagione-officina-barra';
+                const riempimento = document.createElement('span');
+                riempimento.style.width = Math.max(0, Math.min(100, usura)) + '%';
+                barra.appendChild(riempimento);
+                const cifre = document.createElement('div');
+                cifre.className = 'stagione-officina-cifre';
+                const consumo = document.createElement('span');
+                consumo.textContent = 'consumato al ' + usura + '%';
+                const scorta = document.createElement('span');
+                scorta.textContent = quanti > 0 ? quanti + ' in dotazione' : 'dotazione esaurita';
+                cifre.appendChild(consumo);
+                cifre.appendChild(scorta);
+                colonna.appendChild(barra);
+                colonna.appendChild(cifre);
+
+                // Il costo sta DENTRO il pulsante: e' l'informazione che decide
+                // se premerlo, non una nota da cercare altrove.
+                const bottone = document.createElement('button');
+                bottone.type = 'button';
+                bottone.className = 'stagione-btn';
+                const scrivi = function () {
+                    const preso = scelti.indexOf(pezzo.id) >= 0;
+                    bottone.textContent = preso ? 'Sostituito' : 'Sostituisci';
+                    const etichetta = document.createElement('span');
+                    etichetta.className = 'stagione-officina-costo';
+                    etichetta.textContent = quanti > 0 ? 'gratis' : '−' + costo + ' posizioni';
+                    bottone.appendChild(etichetta);
+                    li.classList.toggle('scelto', preso);
+                };
+                bottone.onclick = function () {
+                    const i = scelti.indexOf(pezzo.id);
+                    if (i >= 0) scelti.splice(i, 1); else scelti.push(pezzo.id);
+                    scrivi();
+                    aggiornaNota();
+                };
+                scrivi();
+
+                li.appendChild(nome);
+                li.appendChild(colonna);
+                li.appendChild(bottone);
+                elenco.appendChild(li);
+            }
+            aggiornaNota();
+
+            const conferma = el('stagione-officina-conferma');
+            conferma.disabled = false;
+            conferma.onclick = async function () {
+                conferma.disabled = true;
+                testo(el('stagione-officina-errore'), '');
+                try {
+                    const risposta = await chiedi(tokenDi,
+                        '/api/f1/stagioni/' + encodeURIComponent(stagione._id) + '/officina',
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ ricambi: scelti }),
+                        });
+                    disegnaCalendario(risposta.stagione, ripresa);
+                } catch (e) {
+                    // Non si avanza. L'officina e' uno STATO: riaprendo la
+                    // stagione ci si ritorna, quindi non c'e' niente da perdere
+                    // a restare qui con l'errore scritto.
+                    testo(el('stagione-officina-errore'),
+                        'Non riesco a registrare i ricambi: ' + e.message);
+                    conferma.disabled = false;
+                }
+            };
+
+            mostraVista('officina');
         }
 
         // ── l'albo d'oro ───────────────────────────────────────────────
