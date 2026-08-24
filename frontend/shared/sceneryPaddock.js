@@ -64,6 +64,36 @@
         return a > b ? 1 : -1;
     }
 
+    // A che distanza dalla corsia box mettere l'area logistica. Si prova la
+    // distanza voluta e si scende finche' TUTTO il blocco — mezzi davanti,
+    // quattro file di auto, container in fondo — resta lontano dalla pista.
+    // La misura e' sui punti estremi del blocco lungo la normale: e' li' che
+    // il blocco si avvicina o si allontana, mentre lo sviluppo laterale resta
+    // dov'e'.
+    const PARK_MIN_OFFSET = 80;       // sotto, il parcheggio e' addosso ai box
+    const PARK_TRACK_CLEARANCE = 25;  // oltre il muro: il parcheggio non e' scenografia di bordo pista
+    function scegliOffset(trackPts, pPark, nPark, side, barrierDist) {
+        const soglia = (barrierDist || 15) + PARK_TRACK_CLEARANCE;
+        let migliore = PARK_OFFSET, migliorDist = -Infinity;
+        for (let off = PARK_OFFSET; off >= PARK_MIN_OFFSET; off -= 10) {
+            let peggio = Infinity;
+            // dal muso dei mezzi alla schiena dei container
+            for (const d of [off - 34, off, off + (PARK_ROWS - 1) * PARK_STEP_Z,
+                             off + PARK_ROWS * PARK_STEP_Z + 14]) {
+                const x = pPark.x + nPark.nx * side * d;
+                const z = pPark.z + nPark.nz * side * d;
+                const dist = TrackGeometry.nearestPoint(trackPts, x, z).dist;
+                if (dist < peggio) peggio = dist;
+            }
+            if (peggio >= soglia) return off;
+            if (peggio > migliorDist) { migliorDist = peggio; migliore = off; }
+        }
+        // Nessuna distanza va bene: si prende la meno peggio invece di
+        // insistere su quella voluta. La porta scartera' cio' che comunque
+        // non ci sta, ma almeno non ci prova dal punto peggiore.
+        return migliore;
+    }
+
     function buildLayout(rng, trackPts, pitPts, barrierDist, accepted, vietato) {
         const layout = [];
         if (!pitPts || pitPts.length < 8) return layout;
@@ -102,20 +132,39 @@
         const tangPark = Math.atan2(pitPts[idxPark + 1].x - pitPts[idxPark - 1].x,
                                     pitPts[idxPark + 1].z - pitPts[idxPark - 1].z);
         const lx = Math.sin(tangPark), lz = Math.cos(tangPark);
+
+        // QUANTO LONTANO, lo decide la pista. Proiettare 210 unita' in linea
+        // retta «dalla parte opposta» funziona finche' il circuito e' largo:
+        // su uno compatto quella retta attraversa l'infield ed esce
+        // dall'altra parte del tracciato. Su monte-rosso il parcheggio
+        // atterrava a 37 unita' dall'asse e i suoi container finivano dentro
+        // la pista — la segnalazione dell'utente del 2026-08-24.
+        //
+        // Il criterio «lato opposto» guarda a 30 unita' dalla corsia box: non
+        // sa niente di cosa c'e' 200 unita' piu' in la'. Qui glielo si chiede.
+        const parkOffset = scegliOffset(trackPts, pPark, nPark, side, barrierDist);
+
         for (let r = 0; r < PARK_ROWS; r++) {
             for (let c = 0; c < PARK_COLS; c++) {
-                const off = PARK_OFFSET + r * PARK_STEP_Z;
+                const off = parkOffset + r * PARK_STEP_Z;
                 const lungo = (c - (PARK_COLS - 1) / 2) * PARK_STEP_X;
+                // rotY = tangPark e NON tangPark + PI/2: l'auto e' lunga 5.2 e
+                // larga 2.3, e in un parcheggio la LUNGHEZZA sta lungo la
+                // corsia di manovra (passo 7) mentre la larghezza sta
+                // affiancata (passo 3.2). Ruotate di 90 gradi si accavallavano
+                // di 2 unita' l'una sull'altra: ne entravano 20 su 36, e su
+                // monte-rosso 7. Nessuno se n'era accorto perche' con
+                // l'ingombro finto (6x6) si scartavano comunque.
                 piazza(CAR_COLORS[(r * PARK_COLS + c) % CAR_COLORS.length],
                        pPark.x + nPark.nx * side * off + lx * lungo,
                        pPark.z + nPark.nz * side * off + lz * lungo,
-                       tangPark + Math.PI / 2, 'paddock-life');
+                       tangPark, 'paddock-life');
             }
         }
         // Container in fondo al parcheggio, allineati: chiudono la vista
         // dietro le auto invece di stare sparsi dietro i garage.
         for (let c = 0; c < 5; c++) {
-            const off = PARK_OFFSET + PARK_ROWS * PARK_STEP_Z + 14;
+            const off = parkOffset + PARK_ROWS * PARK_STEP_Z + 14;
             const lungo = (c - 2) * 12;
             piazza('containerStack',
                    pPark.x + nPark.nx * side * off + lx * lungo,
@@ -129,9 +178,9 @@
         // piana — la stessa strada del laghetto.
         layout.push({
             asset: null, category: 'parkingLot',
-            x: pPark.x + nPark.nx * side * (PARK_OFFSET + (PARK_ROWS - 1) * PARK_STEP_Z / 2),
+            x: pPark.x + nPark.nx * side * (parkOffset + (PARK_ROWS - 1) * PARK_STEP_Z / 2),
             y: 0,
-            z: pPark.z + nPark.nz * side * (PARK_OFFSET + (PARK_ROWS - 1) * PARK_STEP_Z / 2),
+            z: pPark.z + nPark.nz * side * (parkOffset + (PARK_ROWS - 1) * PARK_STEP_Z / 2),
             rotY: tangPark,
             larghezza: PARK_COLS * PARK_STEP_X + 8,
             profondita: PARK_ROWS * PARK_STEP_Z + 8,
@@ -147,7 +196,7 @@
         // coerente insieme al parcheggio e ai container — e a 210 unità
         // stanno in una fascia libera, dove hanno spazio per leggersi.
         for (let m = 0; m < MEZZI_COUNT; m++) {
-            const off = PARK_OFFSET - 34;
+            const off = parkOffset - 34;
             const lungo = (m - (MEZZI_COUNT - 1) / 2) * 26;
             piazza(m % 3 === 2 ? 'truck' : 'motorhome',
                    pPark.x + nPark.nx * side * off + lx * lungo,
