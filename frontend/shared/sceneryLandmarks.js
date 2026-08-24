@@ -180,9 +180,19 @@
         // legge il via, quindi ogni tracciato deve averlo. Se nessuna delle
         // collocazioni cercate è libera si posa comunque quella ideale: meglio
         // un gantry che sfiora una tribuna che una gara senza semaforo.
+        //
+        // ⚠️ Quanto puo' allontanarsi dalla posizione ideale pur di trovare
+        // posto, in UNITA' DI PISTA e non in campioni. Il ciclo di prima
+        // avanzava «fino a 200» contando CAMPIONI, e un campione vale 1.18
+        // unita' su monte-rosso e 5.17 su prova: su melbourne 48 campioni
+        // erano 226 unita', tre volte la distanza voluta, e al via non si
+        // vedevano piu' i semafori. Misurato il 2026-08-24.
+        const FINESTRA_GANTRY_UNITA = 40;
         const gantryWalk = TrackGeometry.walkClosedLoop(trackPts, 0, GANTRY_AHEAD_OF_GRID);
+        const passoPista = TrackGeometry.lapLength(trackPts) / n;
+        const passiFinestra = Math.max(1, Math.round(FINESTRA_GANTRY_UNITA / passoPista));
         let gantryPosato = null;
-        for (let d = 0; d < 200; d += 4) {
+        for (let d = 0; d <= passiFinestra; d++) {
             const idx = (gantryWalk.fromIdx + d) % n;
             const cand = placeAcross(trackPts, idx, groundPts, barrierDist,
                                      embankStart, embankOuter, GANTRY_NATIVE_HALF_SPAN, barrierProfile);
