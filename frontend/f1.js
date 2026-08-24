@@ -1483,7 +1483,36 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     caricamento.passo('Disposizione della scenografia…', 0.52);
     await caricamento.respira();
-    const sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, BARRIER_PROFILE, terraceAnchors, { gridSize });
+    // Se questa pista e' CONGELATA, la sua scenografia non si ricalcola: si
+    // rilegge. E' cio' che permette di correggere l'algoritmo di
+    // posizionamento per un'altra pista senza toccare questa. Rif.
+    // docs/superpowers/specs/2026-08-23-f1-mappe-immutabili-design.md.
+    //
+    // Il fallback non e' una scorciatoia: e' cio' che rende la cottura
+    // un'ottimizzazione sicura invece di una fonte di verita' che puo'
+    // mentire. Se il file manca, o e' di un'altra pista, o di un altro
+    // gridSize, o il tracciato e' cambiato dopo la cottura, si genera come
+    // sempre e si dice perche'.
+    let sceneryLayout = null;
+    try {
+        const risposta = await fetch(`/tracks/${trackId}-scenografia.json`);
+        if (risposta.ok) {
+            const cotta = await risposta.json();
+            const motivo = ScenografiaCotta.motivoDiRifiuto(cotta, trackData, gridSize);
+            if (motivo) {
+                console.warn(`[F1] scenografia cotta ignorata (${motivo}) — rigenerata`);
+            } else {
+                sceneryLayout = ScenografiaCotta.espandi(cotta);
+                console.log(`[F1] ${trackId} e' congelata: ${sceneryLayout.length} oggetti riletti, non ricalcolati`);
+            }
+        }
+    } catch (e) {
+        // Una pista non congelata risponde 404 e finisce qui: non e' un
+        // errore, e' il caso normale.
+    }
+    if (!sceneryLayout) {
+        sceneryLayout = TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D, EMBANKMENT_WIDTH, seatAnchors, BARRIER_PROFILE, terraceAnchors, { gridSize });
+    }
     const scenografiaPronta = loadScenery(scene, sceneryLayout);
 
     // Inquadrature dell'anteprima mostrata durante la scelta mescola. Si
