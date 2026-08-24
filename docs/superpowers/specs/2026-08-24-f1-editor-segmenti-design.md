@@ -231,3 +231,19 @@ curve, salvarla, correrci.
 - **Validatore** (D5) e **pannello a categorie**: dopo, quando i controlli
   nuovi hanno trovato il loro posto.
 - **Conversione delle piste esistenti**: mai automatica. Vedi sopra.
+
+## ⚠️ Correzione alla spec, trovata scrivendo il piano
+
+**Due tratti retti adiacenti e non allineati sono uno stato impossibile.** Il
+primo impone al nodo condiviso la propria direzione, il secondo gliene
+imporrebbe un'altra: il modello dice «un nodo, una direzione», e qui ne
+servirebbero due.
+
+Non è un caso da supportare — in un circuito vero due rettilinei consecutivi
+non allineati sono sempre uniti da una curva — ma è un caso da **rendere
+impossibile**, non da lasciare alla disciplina di chi disegna. Quindi:
+`raddrizza` converte in `curva` il tratto adiacente che perde l'allineamento
+(tolleranza 0.001 rad).
+
+Cede il tratto adiacente e non quello appena dichiarato retto, perché l'ultima
+intenzione espressa è quella che l'autore sta guardando.
