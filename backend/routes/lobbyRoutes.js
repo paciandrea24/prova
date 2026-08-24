@@ -3,6 +3,7 @@ const router = express.Router();
 const { lobbies, users, generateLobbyId, creaGettone } = require('../store/lobbies');
 const leaderboard = require('../store/leaderboard');
 const { listTracks, saveTrack, deleteTrack } = require('../sockets/games/trackLoader');
+const { giriPerMescola } = require('../sockets/games/physics/TyreModel');
 const { COLORI, normalizzaColore } = require('../config/coloriGiocatore');
 const { strumentiDiSviluppoAttivi } = require('../config/ambiente');
 const { creaLimite } = require('../middleware/limiteRichieste');
@@ -174,6 +175,28 @@ router.get('/api/leaderboard', (req, res) => {
 // ---------------------------------------------------------
 router.get('/api/f1/tracks', (req, res) => {
     res.json(listTracks());
+});
+
+// ---------------------------------------------------------
+// Quanti giri dura ciascuna mescola, per l'editor: l'abrasivita' dell'asfalto
+// si sceglie li', e senza vedere quanti giri dura una gomma quel numero non
+// dice niente a nessuno.
+//
+// Risponde con la funzione VERA del gioco. Riscrivere la formula nell'editor
+// darebbe due numeri per la stessa cosa, e prima o poi divergerebbero: e' il
+// difetto gia' pagato altrove nel progetto (la sosta «perfetta» ai box che il
+// giocatore vedeva a un valore e il server calcolava a un altro).
+//
+// In sola lettura e senza stato: non ha bisogno del guardiano degli strumenti
+// di sviluppo come le rotte che scrivono file.
+// ---------------------------------------------------------
+router.get('/api/f1/giri-per-mescola', (req, res) => {
+    const laps = Number(req.query.laps);
+    const abrasivita = Number(req.query.abrasivita);
+    if (!Number.isFinite(laps) || laps <= 0 || !Number.isFinite(abrasivita) || abrasivita <= 0) {
+        return res.status(400).json({ error: 'laps e abrasivita devono essere numeri positivi' });
+    }
+    res.json(giriPerMescola(laps, abrasivita));
 });
 
 // ---------------------------------------------------------

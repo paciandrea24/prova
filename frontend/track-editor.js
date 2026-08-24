@@ -147,6 +147,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 Number.isFinite(m.raggioMinimo) ? m.raggioMinimo.toFixed(0) : '—'}`;
     }
 
+    // ====================================================
+    // ABRASIVITÀ DELL'ASFALTO e durata delle mescole.
+    //
+    // Il campo `abrasivita` (0.5-2) esiste nel .json ed è già usato in gara da
+    // TyreModel: all'editor mancava solo il controllo. Ma un numero fra 0.5 e
+    // 2 non dice niente a nessuno — accanto ci va quanto dura una gomma.
+    //
+    // ⚠️ Quella previsione NON si ricalcola qui. TyreModel è un modulo del
+    // backend e non si carica in una pagina statica; riscrivere la formula
+    // darebbe due numeri per la stessa cosa, che prima o poi divergono. La
+    // chiede al server, che risponde con la funzione vera.
+    // ====================================================
+    function giriPrevisti() {
+        if (mainPoints.length < 3) return null;
+        const pts = TrackGeometry.sampleLoop(mainPoints, 500);
+        return TrackGeometry.lapsForDistance(
+            TrackGeometry.lapLength(pts),
+            parseFloat(document.getElementById('targetKm').value) || 5);
+    }
+
+    let ultimaRichiestaAbrasivita = 0;
+    async function aggiornaAbrasivita() {
+        const el = document.getElementById('abrasivitaInfo');
+        if (!el) return;
+        const abr = parseFloat(document.getElementById('abrasivita').value) || 1;
+        const giri = giriPrevisti();
+        if (!giri) {
+            el.textContent = `abrasività ${abr.toFixed(2)} · disegna la pista per la previsione`;
+            return;
+        }
+        // Lo slider spara richieste ad ogni pixel: vince l'ultima partita, non
+        // l'ultima arrivata.
+        const mia = ++ultimaRichiestaAbrasivita;
+        try {
+            const res = await fetch(`/api/f1/giri-per-mescola?laps=${giri}&abrasivita=${abr}`);
+            const g = await res.json();
+            if (mia !== ultimaRichiestaAbrasivita) return;
+            el.textContent = `abrasività ${abr.toFixed(2)} · ${giri} giri di gara · una gomma dura: soft ${g.soft}, medium ${g.medium}, hard ${g.hard}`;
+        } catch (err) {
+            if (mia !== ultimaRichiestaAbrasivita) return;
+            el.textContent = `abrasività ${abr.toFixed(2)} · ${giri} giri di gara · previsione non disponibile`;
+        }
+    }
+
     function rigeneraDaGeometria() {
         mainPoints = geometria.nodi.length >= 3
             ? TrackSegmenti.cuoci(geometria, TrackSegmenti.PASSO_COTTURA)
@@ -516,6 +560,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         updateEntryTriggerVisual();
+        aggiornaAbrasivita();
     }
 
     // ====================================================
@@ -847,6 +892,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Scrivere un numero sposta UN nodo, quello di arrivo: i nodi sono
     // posizioni assolute, non una catena relativa in cui una modifica trascina
     // tutto il resto. È la proprietà che serve per ricalcare un'immagine.
+    document.getElementById('abrasivita').addEventListener('input', aggiornaAbrasivita);
+    document.getElementById('targetKm').addEventListener('change', aggiornaAbrasivita);
+
     document.getElementById('trattoLunghezza').addEventListener('change', (ev) => {
         const v = parseFloat(ev.target.value);
         if (!(v > 0) || !inSegmenti() || trattoSelezionato < 0) return;
@@ -986,6 +1034,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('trackName').value = data.name || '';
         document.getElementById('targetKm').value = data.targetKm ?? 5;
         document.getElementById('roadHalfWidth').value = data.roadHalfWidth ?? 11;
+        document.getElementById('abrasivita').value = data.abrasivita ?? 1;
         // Giorno o notte e' una proprieta' del circuito e sta nel suo file:
         // qualifica e gara la leggono dalla stessa fonte, quindi non possono
         // finire una di giorno e una di notte.
@@ -1129,6 +1178,7 @@ document.addEventListener('DOMContentLoaded', () => {
             name: document.getElementById('trackName').value.trim(),
             targetKm: parseFloat(document.getElementById('targetKm').value) || 1,
             roadHalfWidth: parseFloat(document.getElementById('roadHalfWidth').value) || 11,
+            abrasivita: parseFloat(document.getElementById('abrasivita').value) || 1,
             notturno: document.getElementById('notturno').checked,
             startFinish: startFinish ? { x: startFinish.x, z: startFinish.z, angle: startFinish.angle } : undefined,
             // L'intenzione accanto al risultato: `geometria` è dell'editor,
@@ -1176,6 +1226,12 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(`Errore di rete durante il salvataggio: ${err.message}`);
         }
     });
+
+    // Lo stato iniziale va MOSTRATO, non solo tenuto: `rebuild()` parte solo
+    // agli eventi, quindi su una pagina appena aperta la riga dell'abrasività
+    // restava muta e il riquadro del tratto non si sapeva se esistesse.
+    aggiornaRiquadroTratto();
+    aggiornaAbrasivita();
 
     function animate() {
         requestAnimationFrame(animate);
