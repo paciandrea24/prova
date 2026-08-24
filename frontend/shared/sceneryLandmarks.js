@@ -192,8 +192,14 @@
         const passoPista = TrackGeometry.lapLength(trackPts) / n;
         const passiFinestra = Math.max(1, Math.round(FINESTRA_GANTRY_UNITA / passoPista));
         let gantryPosato = null;
-        for (let d = 0; d <= passiFinestra; d++) {
-            const idx = (gantryWalk.fromIdx + d) % n;
+        // Si cerca ALTERNANDO avanti e indietro attorno alla posizione ideale,
+        // non solo in avanti: cercando da un lato solo, su una pista dove il
+        // fronte del traguardo occupa tutta la finestra si finiva per ripiegare
+        // sull'ideale e compenetrare la tribuna principale (melbourne, 2.93
+        // unità). Indietro c'è lo stesso spazio, e non lo guardava nessuno.
+        for (let passo = 0; passo <= passiFinestra * 2; passo++) {
+            const d = (passo % 2 === 0) ? (passo / 2) : -((passo + 1) / 2);
+            const idx = ((gantryWalk.fromIdx + d) % n + n) % n;
             const cand = placeAcross(trackPts, idx, groundPts, barrierDist,
                                      embankStart, embankOuter, GANTRY_NATIVE_HALF_SPAN, barrierProfile);
             if (!gantryPosato) gantryPosato = cand;   // ripiego: la posizione ideale

@@ -268,6 +268,10 @@
             const rete = {
                 asset: 'catchFence', category: 'safety', scale,
                 suMisuraSulMuro: !!barrierProfile,
+                // Da quale tribuna nasce questa rete. Serve a chi assembla il
+                // layout per tenerle insieme: una tribuna la cui rete non si e'
+                // potuta posare non si posa nemmeno lei.
+                daTribuna: chiave,
                 x, y, z, rotY: stand.rotY,
             };
             // Mai dentro un'ALTRA tribuna, nemmeno per un angolo.

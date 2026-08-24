@@ -336,6 +336,12 @@
     // Così edifici decorativi e box compongono un'unica fila continua, che è
     // poi l'aspetto di una vera corsia box.
     const PIT_BUILDING_OFFSET_MARGIN = 19.4;
+    // Quanto un edificio del fronte box deve stare libero dalla corsia, e di
+    // quanto puo' scostarsi verso l'esterno per riuscirci. Vedi il commento
+    // nel ciclo che li posa: dove la corsia rientra su se stessa, l'offset
+    // nominale non basta.
+    const PIT_BUILDING_LANE_CLEARANCE = 2;
+    const PIT_BUILDING_LANE_PUSH_MAX = 24;
     // Gap fra il fianco di un edificio box e quello del successivo. Il passo
     // non è più una costante di distanza (era PIT_BUILDING_STEP_LEN = 24, che
     // contro edifici larghi 20.6 lasciava 3.4 unità di stacco e, quando un
@@ -739,6 +745,12 @@
                 const prova = {
                     asset, category: 'paddock', x: q.x, y: q.y, z: q.z,
                     rotY, scale: CUSTOM_MODEL_SCALE,
+                    // Nato misurando la CORSIA, non la pista: traslaOltreLaGhiaia
+                    // allontana dalla pista e della corsia non sa niente, quindi
+                    // su melbourne spingeva questi edifici DENTRO la corsia (sei
+                    // di loro, fino a 4.29 unità). Stessa ragione per cui le
+                    // tribune portano `suMisuraSulMuro`.
+                    natoSullaCorsia: true,
                 };
                 // Niente edifici all'IMBOCCO della corsia, dove corsia e pista
                 // corrono ancora affiancate: lì un volume profondo 14.7 si
@@ -746,9 +758,28 @@
                 // dall'utente).
                 if (TrackGeometry.nearestPoint(trackPts, prova.x, prova.z).dist
                         < barrierDist + PIT_BUILDING_TRACK_CLEARANCE) continue;
-                if (!fitsUnderBridge(asset, prova.x, prova.z, prova.y)) continue;
-                if (!libero(prova, posati)) continue;
-                cand = prova;
+                // L'edificio deve stare fuori dalla CORSIA per intero, non solo
+                // dal proprio tratto. Dove la corsia rientra su se stessa
+                // (imbocco, uscita) un edificio a 24 unità dal suo tratto può
+                // trovarsi addosso a un altro: misurato su melbourne, SEI
+                // edifici fino a 4.29 unità DENTRO la corsia.
+                //
+                // Si SCOSTA verso l'esterno invece di essere scartato: un buco
+                // nel fronte box si vede a colpo d'occhio, uno scalino di due
+                // unità no. Scartarlo era la cura sbagliata per una fila.
+                const versoFuori = Math.hypot(prova.x - q.verso.x, prova.z - q.verso.z) || 1;
+                const ux = (prova.x - q.verso.x) / versoFuori, uz = (prova.z - q.verso.z) / versoFuori;
+                let scostato = null;
+                for (let extra = 0; extra <= PIT_BUILDING_LANE_PUSH_MAX; extra += 2) {
+                    const t = Object.assign({}, prova, { x: prova.x + ux * extra, z: prova.z + uz * extra });
+                    const vicino = Math.min(...SceneryAssetSizes.footprintCorners(t)
+                        .map(c => TrackGeometry.nearestPoint(pitPts, c.x, c.z).dist));
+                    if (vicino >= pitRoadHalf + PIT_BUILDING_LANE_CLEARANCE) { scostato = t; break; }
+                }
+                if (!scostato) continue;
+                if (!fitsUnderBridge(asset, scostato.x, scostato.z, scostato.y)) continue;
+                if (!libero(scostato, posati)) continue;
+                cand = scostato;
                 break;
             }
             if (!cand) continue;
@@ -1397,6 +1428,10 @@
             // rotazione del punto in cui sta davvero, invece di conservare
             // quella del punto da cui è partito.
             if (voce.suMisuraSulMuro) continue;
+            // Gli edifici del fronte box sono nati misurando la CORSIA, non la
+            // pista. Questa passata allontana dalla pista e della corsia non sa
+            // niente: su melbourne ce li spingeva dentro, fino a 4.29 unità.
+            if (voce.natoSullaCorsia) continue;
             const near = TrackGeometry.nearestPoint(trackPts, voce.x, voce.z);
             const p = trackPts[near.index];
             const { nx, nz } = TrackGeometry.normalAt(trackPts, near.index, true);
@@ -1550,6 +1585,24 @@
         // sull'orizzonte passavano dal 16% al 20% — il tetto del test.
         accepted.push(...trackside.filter(v => v.category === 'paddock-decor'));
 
+        // Tribuna e rete sono UNA decisione, non due. La rete nasce dalla
+        // tribuna (stesso centro, stessa rotazione, scala derivata), ma tre
+        // condizioni potevano farla sparire — tratto di ponte, spazio non
+        // utilizzabile, un'altra tribuna di mezzo — lasciando la tribuna lì,
+        // scoperta a bordo pista. Misurato il 2026-08-24: 15 tribune su 110
+        // senza rete su melbourne, 4 su shanghai, 2 su new-monza.
+        //
+        // Il difetto non era che la rete mancasse: era che potessero esistere
+        // separatamente. Quindi cade la tribuna: una in meno non la nota
+        // nessuno, una senza protezione sì.
+        //
+        // ⚠️ Il filtro sta QUI e non prima di buildTrackside: le reti nascono
+        // da lì, e senza le tribune non nascerebbero affatto.
+        const conRete = new Set(trackside.filter(v => v.asset === 'catchFence').map(v => v.daTribuna));
+        const scoperta = (s) => !conRete.has(s.x.toFixed(2) + ',' + s.z.toFixed(2));
+        const mainStandCoperte = mainStand.filter(s => !scoperta(s));
+        const grandstandCoperte = grandstand.filter(s => !scoperta(s));
+
         // Infrastrutture: DOPO il trackside, così vedono tribune, reti, gomme
         // e landmark già posati; PRIMA della natura, così sono gli alberi a
         // scansarsi da loro e non viceversa.
@@ -1591,7 +1644,7 @@
                                        accepted, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
         const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints);
 
-        const layout = [...paddock, ...mainStand, ...grandstand, ...landmarks,
+        const layout = [...paddock, ...mainStandCoperte, ...grandstandCoperte, ...landmarks,
                         ...trackside, ...infrastrutture,
                         ...nature, ...woods, ...rocce, ...paddockLife];
         if (pond) layout.push(pond);
@@ -1620,7 +1673,7 @@
         // là.
         const FASCIA_DAVANTI = 22;
         const SOLO_LA_RETE = new Set(['tyreStack', 'marshalPost']);
-        const tribune = [...mainStand, ...grandstand];
+        const tribune = [...mainStandCoperte, ...grandstandCoperte];
         for (let i = layout.length - 1; i >= 0; i--) {
             const v = layout[i];
             // I cartelli di frenata restano: servono a chi guida, e sono
@@ -1689,7 +1742,7 @@
         // RNG separato apposta: pescare dalla sequenza principale in un punto
         // diverso avrebbe cambiato tutti gli scatter successivi (alberi,
         // rocce, boschi) su tracciati che l'utente ha già approvato.
-        const crowd = SceneryCrowd.buildCrowd([...mainStand, ...grandstand], seatAnchors,
+        const crowd = SceneryCrowd.buildCrowd([...mainStandCoperte, ...grandstandCoperte], seatAnchors,
             mulberry32(hashString(trackData.id + ':crowd')));
 
         // Spettatori sulle terrazze: RNG proprio, come la folla delle tribune,
@@ -1725,12 +1778,27 @@
         // Non negoziabili: il ponte dei semafori porta il via (senza, la gara
         // non si legge) e i box dei piloti sono geometria di gioco. Entrano
         // nel registro senza essere giudicati.
-        registro.aggiungiTutti(layout.filter(v => v.asset === 'startGantry'));
+        //
+        // NON NEGOZIABILI. Alcune cose non si scartano mai, perche' toglierne
+        // una e' peggio del difetto che si voleva togliere:
+        //  - il ponte dei semafori porta il via: senza, la gara non si legge;
+        //  - il fronte della corsia box e la fila del traguardo sono FILE
+        //    CONTINUE, e un buco in mezzo si vede a colpo d'occhio. Le loro
+        //    violazioni si curano alla fonte, dove nascono (vedi lo scostamento
+        //    degli edifici box qui sopra), non scartandole qui.
+        // Entrano nel registro senza essere giudicate: gli altri devono
+        // VEDERLE, non poterle rimuovere.
+        const NON_SCARTABILI = new Set(['paddock', 'grandstand-main']);
+        const intoccabili = layout.filter(
+            v => v.asset === 'startGantry' || NON_SCARTABILI.has(v.category));
+        registro.aggiungiTutti(intoccabili);
         const passate = [];
         let scartate = 0;
         for (const voce of layout) {
             if (!voce.asset || SENZA_INGOMBRO.has(voce.category)) { passate.push(voce); continue; }
-            if (voce.asset === 'startGantry') { passate.push(voce); continue; }   // già registrato sopra
+            if (voce.asset === 'startGantry' || NON_SCARTABILI.has(voce.category)) {
+                passate.push(voce); continue;   // già registrate sopra
+            }
             if (registro.posa(voce)) { passate.push(voce); continue; }
             scartate++;
         }
@@ -1741,7 +1809,18 @@
             console.debug(`[scenografia] ${scartate} oggetti scartati dalla porta su ${layout.length}`);
         }
 
-        return passate.concat(crowd, terraceCrowd);
+        // Tribuna e rete restano una cosa sola anche QUI, in uscita: se la
+        // porta ha scartato una tribuna, la sua rete non deve restare in piedi
+        // da sola in mezzo al prato. Il legame vale nei due sensi — senza
+        // tribuna niente rete, senza rete niente tribuna (vedi il filtro
+        // `scoperta` piu' sopra).
+        const tribuneRimaste = new Set(passate
+            .filter(v => v.category === 'grandstand' || v.category === 'grandstand-main')
+            .map(v => v.x.toFixed(2) + ',' + v.z.toFixed(2)));
+        const senzaOrfane = passate.filter(
+            v => v.asset !== 'catchFence' || tribuneRimaste.has(v.daTribuna));
+
+        return senzaOrfane.concat(crowd, terraceCrowd);
     }
 
     return {
