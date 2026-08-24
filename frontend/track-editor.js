@@ -75,7 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // solo da quello toccato.
     function dopoModificaMain() {
         if (!inSegmenti()) return;
-        riorientaNodiAutomatici();
+        geometria = TrackSegmenti.riallinea(geometria);
         rigeneraDaGeometria();
     }
 
@@ -85,23 +85,6 @@ document.addEventListener('DOMContentLoaded', () => {
             : [];
     }
 
-    // La direzione di ogni nodo si ricalcola quando la catena cambia forma:
-    // aggiungere un nodo cambia i vicini del precedente. Solo per i nodi che
-    // l'autore non ha ancora girato a mano — da lì in poi la direzione è sua.
-    function riorientaNodiAutomatici() {
-        if (geometria.nodi.length < 3) return;
-        for (let i = 0; i < geometria.nodi.length; i++) {
-            if (geometria.nodi[i].dirManuale) continue;
-            geometria.nodi[i].dir = TrackSegmenti.direzioneAutomatica(geometria, i);
-        }
-        // I tratti retti riprendono la loro direzione: un nodo spostato non
-        // deve lasciarli storti rispetto ai propri estremi.
-        for (let i = 0; i < geometria.tratti.length; i++) {
-            if (geometria.tratti[i] && geometria.tratti[i].tipo === 'retta') {
-                geometria = TrackSegmenti.raddrizza(geometria, i);
-            }
-        }
-    }
     // Traguardo esplicito: indipendente da mainPoints/pitPoints (un solo
     // punto, non una lista). null finché non caricato/impostato — in quel
     // caso si comporta come oggi (indice 0, angolo dedotto dalla tangente),
@@ -440,6 +423,30 @@ document.addEventListener('DOMContentLoaded', () => {
             markerGroup.add(m);
         });
 
+        // LA MANIGLIA esce dal nodo scelto nella sua direzione: si trascina
+        // per girare la tangente, e con essa le due curve che vi si
+        // appoggiano. Una sola alla volta — quella del nodo scelto — perché
+        // su una pista da quaranta nodi quaranta maniglie non si guardano.
+        if (inSegmenti() && nodoSelezionato >= 0 && geometria.nodi[nodoSelezionato]) {
+            const nodo = geometria.nodi[nodoSelezionato];
+            const v = TrackSegmenti.versore(nodo.dir);
+            const LUNGHEZZA = 26;
+            const mesh = new THREE.Mesh(
+                new THREE.SphereGeometry(2.6, 12, 12),
+                new THREE.MeshBasicMaterial({ color: 0x2ecc71 }));
+            mesh.position.set(nodo.x + v.dx * LUNGHEZZA, (nodo.y || 0) + 1, nodo.z + v.dz * LUNGHEZZA);
+            mesh.userData = { maniglia: nodoSelezionato };
+            markerGroup.add(mesh);
+
+            // L'asta, così si vede a colpo d'occhio da quale nodo esce.
+            const asta = new THREE.Mesh(
+                new THREE.BoxGeometry(0.8, 0.4, LUNGHEZZA),
+                new THREE.MeshBasicMaterial({ color: 0x27ae60 }));
+            asta.position.set(nodo.x + v.dx * LUNGHEZZA / 2, (nodo.y || 0) + 1, nodo.z + v.dz * LUNGHEZZA / 2);
+            asta.rotation.y = nodo.dir;
+            markerGroup.add(asta);
+        }
+
         updateEntryTriggerVisual();
     }
 
@@ -602,6 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const marker = pickMarker(ev);
         if (marker) {
             dragging = marker.userData;
+            if (marker.userData.maniglia !== undefined) return;   // la maniglia non seleziona
             // Cliccare un nodo lo sceglie, e sceglie il tratto che ne PARTE:
             // è quello che si vede davanti quando lo si guarda.
             if (inSegmenti() && marker.userData.list === 'main') {
@@ -627,8 +635,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (inSegmenti() && !document.getElementById('pitMode').checked) {
             geometria.nodi.push({ x: +hit.x.toFixed(2), z: +hit.z.toFixed(2), y: 0, dir: 0 });
             geometria.tratti.push({ tipo: 'curva' });
-            riorientaNodiAutomatici();
-            rigeneraDaGeometria();
+            dopoModificaMain();
             rebuild();
             return;
         }
@@ -695,6 +702,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (!dragging) return;
         const hit = worldFromEvent(ev);
+
+        // Trascinare la maniglia gira la TANGENTE del nodo, non lo sposta.
+        if (dragging.maniglia !== undefined) {
+            const nodo = geometria.nodi[dragging.maniglia];
+            if (!nodo) return;
+            let dir = Math.atan2(hit.x - nodo.x, hit.z - nodo.z);
+            // Snap a 15°: è ciò che rende paralleli due rettilinei senza
+            // misurarli. Alt lo sospende, per le direzioni fuori griglia.
+            if (!ev.altKey) {
+                const PASSO = Math.PI / 12;
+                dir = Math.round(dir / PASSO) * PASSO;
+            }
+            nodo.dir = dir;
+            // Da qui in poi la direzione è una scelta dell'autore: il
+            // riorientamento automatico non la tocca più.
+            nodo.dirManuale = true;
+            rigeneraDaGeometria();
+            rebuild();
+            return;
+        }
+
         const p = listaDi(dragging.list)[dragging.index];
         p.x = +hit.x.toFixed(2);
         p.z = +hit.z.toFixed(2);
@@ -777,14 +805,49 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById(id).addEventListener('input', updateEntryTriggerVisual);
     });
     document.addEventListener('keydown', (ev) => {
-        if (ev.key === 'u' || ev.key === 'U') { activeList().pop(); rebuild(); }
+        // Mai rubare i tasti a chi sta scrivendo in un campo: R e C sono
+        // lettere comunissime nei nomi delle piste.
+        const dentroUnCampo = ev.target && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName);
+        if (dentroUnCampo) return;
+
+        if (ev.key === 'u' || ev.key === 'U') {
+            if (inSegmenti() && !document.getElementById('pitMode').checked) {
+                geometria.nodi.pop();
+                geometria.tratti.pop();
+                nodoSelezionato = -1;
+                trattoSelezionato = -1;
+                dopoModificaMain();
+            } else {
+                activeList().pop();
+            }
+            rebuild();
+        }
         if (ev.key === 'b' || ev.key === 'B') {
             const marker = pickMarker(lastMouseClient);
             if (marker && marker.userData.list === 'main') {
-                const p = mainPoints[marker.userData.index];
+                const p = listaDi('main')[marker.userData.index];
                 p.bridge = !p.bridge;
+                dopoModificaMain();
                 rebuild();
             }
+        }
+        // R: il tratto scelto diventa una retta, e i suoi due nodi prendono la
+        // sua direzione. C: torna curva. Sono le due sole forme che esistono.
+        if ((ev.key === 'r' || ev.key === 'R') && inSegmenti() && trattoSelezionato >= 0) {
+            geometria = TrackSegmenti.raddrizza(geometria, trattoSelezionato);
+            // Le direzioni imposte dalla retta sono una scelta, non un
+            // ripiego: vanno protette dal riorientamento automatico, che
+            // altrimenti le riporterebbe verso i vicini al primo spostamento.
+            const n = geometria.nodi.length;
+            geometria.nodi[trattoSelezionato].dirManuale = true;
+            geometria.nodi[(trattoSelezionato + 1) % n].dirManuale = true;
+            rigeneraDaGeometria();
+            rebuild();
+        }
+        if ((ev.key === 'c' || ev.key === 'C') && inSegmenti() && trattoSelezionato >= 0) {
+            geometria.tratti[trattoSelezionato] = { tipo: 'curva' };
+            rigeneraDaGeometria();
+            rebuild();
         }
     });
 

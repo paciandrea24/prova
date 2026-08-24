@@ -250,3 +250,75 @@ test('direzioneAutomatica: un nodo segue i suoi vicini', () => {
     ], tratti: [{ tipo: 'curva' }, { tipo: 'curva' }, { tipo: 'curva' }] };
     assert.ok(Math.abs(TS.direzioneAutomatica(g, 1) - Math.atan2(1, 0)) < 1e-9);
 });
+
+// --- riallinea: la catena resta coerente quando un nodo si muove ----------
+
+// Quanto si scosta dalla retta il PRIMO tratto. Solo i suoi punti: cuoci
+// scorre i tratti in ordine, quindi sono i primi. Filtrare per proiezione sul
+// segmento prenderebbe anche il tratto opposto del circuito, che in proiezione
+// ci cade dentro — ed e' l'errore che faceva leggere «430 unita fuori» su una
+// retta perfetta.
+function scartoDalPrimoTratto(g) {
+    const punti = TS.cuoci(g, TS.PASSO_COTTURA);
+    const a = g.nodi[0], b = g.nodi[1];
+    const quanti = Math.round(TS.misureTratto(g, 0).lunghezza / TS.PASSO_COTTURA);
+    let peggio = 0;
+    for (let i = 0; i <= quanti && i < punti.length; i++) {
+        const p = punti[i];
+        const vx = b.x - a.x, vz = b.z - a.z, L = vx * vx + vz * vz;
+        let t = L > 0 ? ((p.x - a.x) * vx + (p.z - a.z) * vz) / L : 0;
+        t = Math.max(0, Math.min(1, t));
+        peggio = Math.max(peggio, Math.hypot(p.x - (a.x + vx * t), p.z - (a.z + vz * t)));
+    }
+    return peggio;
+}
+
+function cinqueNodi() {
+    const g = { versione: 1, nodi: [], tratti: [] };
+    for (const [x, z] of [[-300, -150], [300, -150], [420, 40], [100, 240], [-350, 80]]) {
+        g.nodi.push({ x, z, y: 0, dir: 0 });
+        g.tratti.push({ tipo: 'curva' });
+    }
+    return TS.riallinea(g);
+}
+
+test('una retta dichiarata resta dritta quando si sposta un altro nodo', () => {
+    // Il difetto che questo test impedisce: un tratto marcato «retta» e
+    // disegnato curvo perche' i suoi nodi hanno preso la direzione dei vicini.
+    let g = TS.raddrizza(cinqueNodi(), 0);
+    g.nodi[0].dirManuale = true;
+    g.nodi[1].dirManuale = true;
+    assert.ok(scartoDalPrimoTratto(g) < 1e-6, 'appena dichiarata deve essere dritta');
+
+    g.nodi[3].x = 60; g.nodi[3].z = 300;       // un nodo lontano
+    g = TS.riallinea(g);
+    assert.ok(scartoDalPrimoTratto(g) < 1e-6, 'un nodo lontano non deve incurvarla');
+
+    g.nodi[2].x = 500; g.nodi[2].z = 100;      // il nodo adiacente
+    g = TS.riallinea(g);
+    assert.ok(scartoDalPrimoTratto(g) < 1e-6, 'il nodo adiacente non deve incurvarla');
+
+    g.nodi[1].x = 260; g.nodi[1].z = -120;     // un ESTREMO della retta
+    g = TS.riallinea(g);
+    assert.equal(g.tratti[0].tipo, 'retta');
+    assert.ok(scartoDalPrimoTratto(g) < 1e-6, 'spostare un estremo la sposta, non la incurva');
+});
+
+test('riallinea: una direzione scelta a mano non viene sovrascritta', () => {
+    const g = cinqueNodi();
+    g.nodi[2].dir = 1.234;
+    g.nodi[2].dirManuale = true;
+    const dopo = TS.riallinea(g);
+    assert.equal(dopo.nodi[2].dir, 1.234, 'dirManuale e la memoria di una scelta');
+    // e un nodo senza quel segno invece segue i vicini
+    assert.ok(Math.abs(dopo.nodi[3].dir - TS.direzioneAutomatica(dopo, 3)) < 1e-9);
+});
+
+test('riallinea: non muta la geometria ricevuta', () => {
+    const g = cinqueNodi();
+    const primaX = g.nodi[0].x, primaDir = g.nodi[0].dir;
+    const dopo = TS.riallinea(TS.raddrizza(g, 0));
+    assert.equal(g.nodi[0].x, primaX);
+    assert.equal(g.nodi[0].dir, primaDir);
+    assert.notEqual(dopo, g);
+});

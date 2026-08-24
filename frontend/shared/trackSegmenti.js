@@ -225,8 +225,36 @@
         return Math.atan2(dopo.x - prima.x, dopo.z - prima.z);
     }
 
+    // RIMETTERE IN SESTO LA CATENA dopo che un nodo si è mosso. La forma
+    // dipende da tutti i nodi, non solo da quello toccato: spostarne uno
+    // cambia i vicini del precedente e del successivo.
+    //
+    // Due passaggi, in quest'ordine:
+    //  1. i nodi che l'autore NON ha girato a mano riprendono la direzione dei
+    //     vicini — `dirManuale` è la memoria di una scelta, e una scelta non
+    //     si sovrascrive da sola;
+    //  2. i tratti retti riprendono la propria: un estremo spostato lascerebbe
+    //     la retta storta rispetto ai suoi stessi nodi, cioè marcata «retta» e
+    //     disegnata curva. È il difetto che questa funzione esiste per
+    //     impedire, ed è verificato dal test «una retta dichiarata resta
+    //     dritta».
+    function riallinea(geometria) {
+        if (!geometria || !Array.isArray(geometria.nodi) || geometria.nodi.length < 3) {
+            return geometria;
+        }
+        let g = copia(geometria);
+        for (let i = 0; i < g.nodi.length; i++) {
+            if (g.nodi[i].dirManuale) continue;
+            g.nodi[i].dir = direzioneAutomatica(g, i);
+        }
+        for (let i = 0; i < g.tratti.length; i++) {
+            if (g.tratti[i] && g.tratti[i].tipo === 'retta') g = raddrizza(g, i);
+        }
+        return g;
+    }
+
     return {
         cuoci, valutaTratto, versore, PASSO_COTTURA,
-        misureTratto, raddrizza, impostaLunghezza, direzioneAutomatica,
+        misureTratto, raddrizza, impostaLunghezza, direzioneAutomatica, riallinea,
     };
 });
