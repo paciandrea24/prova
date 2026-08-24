@@ -103,3 +103,48 @@ test('una gara di una stagione gia finita non si registra', async (t) => {
     const s = await seasonStore.salva(Object.assign({}, stagioneFinta(), { giro: 3 }));
     await assert.rejects(() => ponte.registraGara(s, []));
 });
+
+// L'usura alla bandiera, tradotta negli id della stagione. Stessa regola di
+// ordineDelPodio: gli umani per uid, i bot per colore.
+test('usuraDeiPiloti: traduce i damageParts negli id della stagione', () => {
+    const stagione = F1Stagione.creaStagione({
+        nome: 'x', creataDa: 'uid-a',
+        piloti: [{ uid: 'uid-a', colore: 'red' }, { colore: 'blue', bot: true }],
+        calendario: ['prova'],
+    });
+    const players = {
+        red:  { uid: 'uid-a', color: 'red',  isBot: false, damageParts: { frontWing: 40, floor: 12, engine: 35, suspension: 3 } },
+        blue: { color: 'blue', isBot: true,  damageParts: { frontWing: 5, floor: 60, engine: 30, suspension: 0 } },
+    };
+    const usura = ponte.usuraDeiPiloti(stagione, players);
+    assert.deepEqual(usura.p1, { frontWing: 40, floor: 12, engine: 35, suspension: 3 });
+    assert.deepEqual(usura.p2, { frontWing: 5, floor: 60, engine: 30, suspension: 0 });
+});
+
+test('usuraDeiPiloti: chi non appartiene alla stagione viene saltato', () => {
+    // Stessa scelta di ordineDelPodio: un pilota in piu' in pista non e' un
+    // buon motivo per perdere l'usura di tutti gli altri.
+    const stagione = F1Stagione.creaStagione({
+        nome: 'x', creataDa: 'uid-a',
+        piloti: [{ uid: 'uid-a', colore: 'red' }],
+        calendario: ['prova'],
+    });
+    const players = {
+        red:    { uid: 'uid-a', color: 'red', isBot: false, damageParts: { frontWing: 1, floor: 2, engine: 3, suspension: 4 } },
+        estraneo: { uid: 'uid-z', color: 'green', isBot: false, damageParts: { frontWing: 9, floor: 9, engine: 9, suspension: 9 } },
+    };
+    const usura = ponte.usuraDeiPiloti(stagione, players);
+    assert.deepEqual(Object.keys(usura), ['p1']);
+});
+
+test('usuraDeiPiloti: un giocatore senza damageParts non produce NaN', () => {
+    const stagione = F1Stagione.creaStagione({
+        nome: 'x', creataDa: 'uid-a',
+        piloti: [{ uid: 'uid-a', colore: 'red' }],
+        calendario: ['prova'],
+    });
+    const usura = ponte.usuraDeiPiloti(stagione, {
+        red: { uid: 'uid-a', color: 'red', isBot: false },
+    });
+    assert.deepEqual(usura.p1, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
+});

@@ -68,16 +68,33 @@ function ordineDelPodio(stagione, podium) {
         .filter(Boolean);
 }
 
+// L'usura di ogni macchina alla bandiera, tradotta negli id della stagione.
+// Stessa regola di ordineDelPodio: chi non appartiene alla stagione viene
+// SALTATO invece di far fallire tutto.
+//
+// `damageParts` puo' mancare (giocatore costruito a mano, o entrato e uscito
+// prima che la fisica girasse): vale macchina nuova, come ovunque.
+function usuraDeiPiloti(stagione, players) {
+    const usura = {};
+    for (const giocatore of Object.values(players || {})) {
+        const id = idPilotaDi(stagione, giocatore);
+        if (!id) continue;
+        usura[id] = Object.assign(F1Stagione.vetturaNuova(), giocatore.damageParts || {});
+    }
+    return usura;
+}
+
 // L'UNICO punto in cui una stagione viene scritta. Subito dopo la bandiera a
 // scacchi, mai a meta' weekend: e' cosi' che "chi chiude il browser perde il
 // weekend, non la stagione" diventa vero senza doverlo programmare — non
 // esiste nessun altro momento in cui si sarebbe potuto salvare.
-async function registraGara(stagione, podium) {
+async function registraGara(stagione, podium, players) {
     const aggiornata = F1Stagione.registraRisultato(stagione, {
         ordine: ordineDelPodio(stagione, podium),
+        usura: usuraDeiPiloti(stagione, players),
     });
     await seasonStore.salva(aggiornata);
     return aggiornata;
 }
 
-module.exports = { impostazioniPerLaProssimaGara, idPilotaDi, ordineDelPodio, registraGara };
+module.exports = { impostazioniPerLaProssimaGara, idPilotaDi, ordineDelPodio, usuraDeiPiloti, registraGara };

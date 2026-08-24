@@ -2690,7 +2690,7 @@ async function endRace(io, lobbyId, game) {
         try {
             const stagione = await seasonStore.leggi(game.stagioneId);
             if (stagione && !F1Stagione.finita(stagione)) {
-                const dopo = await Stagione.registraGara(stagione, podium);
+                const dopo = await Stagione.registraGara(stagione, podium, game.players);
                 console.log(`🏆 [F1] Campionato "${dopo.nome}": registrata la gara ${dopo.giro}/${dopo.calendario.length} (lobby ${lobbyId})`);
             }
             io.to(lobbyId).emit('f1StagioneAlCalendario', { stagioneId: game.stagioneId });
