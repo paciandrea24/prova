@@ -1139,6 +1139,35 @@ document.addEventListener('DOMContentLoaded', () => {
     // Scrivere un numero sposta UN nodo, quello di arrivo: i nodi sono
     // posizioni assolute, non una catena relativa in cui una modifica trascina
     // tutto il resto. È la proprietà che serve per ricalcare un'immagine.
+    // ESPLORARE UNA PISTA NON SALVATA e' il caso normale mentre la si disegna:
+    // i dati passano da sessionStorage, non dal disco. La corsia box qui non
+    // serve — l'anteprima non ci fa entrare nessuno — ma buildTrackData la
+    // pretende, quindi se manca se ne mette una finta che non va da nessuna
+    // parte e non viene mai salvata.
+    const CHIAVE_ANTEPRIMA = 'f1AnteprimaPista';
+    document.getElementById('esploraBtn').addEventListener('click', () => {
+        if (mainPoints.length < 3) {
+            alert('Disegna almeno tre nodi prima di esplorare.');
+            return;
+        }
+        const dati = buildTrackData();
+        if (!dati.pit.path || dati.pit.path.length < 3) {
+            const p0 = mainPoints[0], p1 = mainPoints[1] || p0;
+            dati.pit = dati.pit || {};
+            dati.pit.roadHalfWidth = dati.pit.roadHalfWidth || 5;
+            dati.pit.boxIndex = 0;
+            dati.pit.path = [p0, p1, mainPoints[2] || p1].map(p => ({ x: p.x, z: p.z }));
+            dati.pit.entryTrigger = { x: p0.x, z: p0.z, halfWidth: 5, halfLength: 5, angle: 0 };
+        }
+        try {
+            sessionStorage.setItem(CHIAVE_ANTEPRIMA, JSON.stringify(dati));
+        } catch (e) {
+            alert("Non riesco a passare la pista all'anteprima: salvala e riprova.");
+            return;
+        }
+        location.href = 'track-preview.html';
+    });
+
     document.getElementById('triggerAutoBtn').addEventListener('click', posizionaTriggerAutomatico);
     document.getElementById('trackOpacity').addEventListener('input', rebuild);
     document.getElementById('abrasivita').addEventListener('input', aggiornaAbrasivita);
@@ -1165,6 +1194,10 @@ document.addEventListener('DOMContentLoaded', () => {
             pitPoints = [];
         } else if (inSegmenti()) {
             // Svuotare i nodi svuota anche i tratti: uno per nodo, sempre.
+            // E dimentica la pista tenuta da parte per l'anteprima: senza,
+            // la prossima apertura dell'editor la ritroverebbe: «svuota» deve
+            // voler dire davvero ricominciare.
+            try { sessionStorage.removeItem('f1AnteprimaPista'); } catch (e) { /* modalità privata */ }
             geometria = { versione: 1, nodi: [], tratti: [] };
             nodoSelezionato = -1;
             trattoSelezionato = -1;
@@ -1514,6 +1547,14 @@ document.addEventListener('DOMContentLoaded', () => {
         aggiornaRigaStato();
         if (document.getElementById('pitMode').checked) mostraPagina('box');
     });
+
+    // TORNANDO DALL'ANTEPRIMA la pista deve essere ancora qui. Senza questa
+    // rilettura, «Esplora» sarebbe un modo per perdere mezz'ora di disegno —
+    // e il difetto si scoprirebbe solo dopo averla disegnata.
+    try {
+        const tornata = sessionStorage.getItem('f1AnteprimaPista');
+        if (tornata) applyTrackData(JSON.parse(tornata));
+    } catch (e) { /* modalità privata, o dati illeggibili: si riparte puliti */ }
 
     // Lo stato iniziale va MOSTRATO, non solo tenuto: `rebuild()` parte solo
     // agli eventi, quindi su una pagina appena aperta la riga dell'abrasività
