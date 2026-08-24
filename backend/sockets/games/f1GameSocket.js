@@ -416,6 +416,11 @@ module.exports = function (io, socket) {
                 // impostazioni e usati da createBots (vedi f1Bot.js).
                 botStagione: garaDiCampionato && Array.isArray(impostazioniLobby.botStagione)
                     ? impostazioniLobby.botStagione : null,
+                // PARCO CHIUSO: con che macchina ogni pilota di QUESTA
+                // stagione arriva al weekend, per colore. Stessa strada di
+                // botStagione e per la stessa ragione: createBots e joinF1Game
+                // sono sincrone e non possono aspettare Mongo.
+                usuraStagione: garaDiCampionato ? (impostazioniLobby.usuraStagione || null) : null,
                 // stagione -> tyre_select -> qualifying -> grid_display -> race -> race_end
                 // ('stagione' solo in formato stagione, e solo prima del primo weekend)
                 phase: (formatoRichiesto === 'stagione' && !garaDiCampionato) ? 'stagione' : 'tyre_select',
@@ -534,6 +539,10 @@ module.exports = function (io, socket) {
                 inSlipstream: false,   // bonus di velocità in scia attivo in questo tick (solo effetto visivo lato client)
                 damage: 0,       // 0-100, come tyreWear — solo in gara (vedi assignGridSpawns/checkLap). Derivato dal massimo dei 4 componenti di damageParts.
                 damageParts: createDamageParts(),   // { frontWing, floor, engine, suspension }, 0-100 ciascuno — vedi DamageModel.js Cap. 3.8. Ri-creato ad ogni assignGridSpawns/repair ai box, mai condiviso per riferimento.
+                // Parco chiuso: con che macchina questo pilota arriva al
+                // weekend. Assente in gara veloce = macchina nuova. Copiata,
+                // mai condivisa per riferimento (vedi createDamageParts).
+                usuraIniziale: Stagione.usuraEreditata(game, playerColor),
                 collisionPenaltyMs: 0,       // penalità di tempo accumulata per collisioni causate, sommata a p.time al traguardo
                 pendingRepair: false,   // scelta fatta ai box, applicata a fine sosta come pendingCompound
                 carContacts: new Set(),   // colori con cui è ATTUALMENTE a contatto (rileva un urto NUOVO)
@@ -1127,8 +1136,29 @@ function resetStatoAuto(p) {
     p.lapRecapSectorTimes = null; p.lapRecapExpiresAtMs = null;
     p.pendingFinishTime = null;
     p.tyreWear = 0;   // gomme fresche ad ogni sessione (l'usura conta solo in gara, ma in qualifica è già zero)
-    p.damage = 0;   // auto perfetta — stesso confine di tyreWear
+    // PARCO CHIUSO: in stagione la macchina non rinasce, riparte da com'era
+    // alla bandiera precedente — e questo è l'UNICO punto che lo decide, per
+    // la qualifica come per la gara. È anche ciò che rende vera la regola
+    // "il danno preso in qualifica non entra in gara" senza programmarla: la
+    // griglia rilegge sempre da qui.
+    //
+    // L'ala anteriore fa eccezione ed è sempre nuova al via: nella F1 vera la
+    // cambiano ai box e via, quindi non è del parco chiuso.
+    //
+    // In gara veloce `usuraIniziale` non esiste e questo è un azzeramento,
+    // identico a prima.
     p.damageParts = createDamageParts();   // fresco ogni volta — mai riutilizzare l'oggetto precedente
+    if (p.usuraIniziale) {
+        for (const c of ['floor', 'engine', 'suspension']) {
+            p.damageParts[c] = Math.max(0, Math.min(100, Number(p.usuraIniziale[c]) || 0));
+        }
+    }
+    // Derivato dal massimo dei quattro, mai lasciato a zero: l'HUD lo mostra, e
+    // uno zero direbbe "macchina sana" su una macchina consumata.
+    p.damage = Math.max(
+        p.damageParts.frontWing, p.damageParts.floor,
+        p.damageParts.engine, p.damageParts.suspension
+    );
     p.collisionPenaltyMs = 0;
     p.pendingRepair = false;
     if (p.carContacts) p.carContacts.clear();
@@ -2887,7 +2917,7 @@ module.exports.physics = {
     effectiveMaxSpeed, effectiveAccel, effectiveBrakeMult, corneringCapacity, updateVelocity, integratePosition,
     applyOffTrackDrag, applyBarrier, updateTrackIndex,
     circularWithin, checkpointWindowFor, finishWindowFor,
-    assignGridSpawns, resetPlayers, aggiornaCarburante,
+    assignGridSpawns, resetPlayers, resetStatoAuto, aggiornaCarburante,
     MIN_COLLISION_SEVERITY, DAMAGE_CAP_PER_HIT, COLLISION_PENALTY_CAP_MS,
     collisionDamageAmount, applyCarCollisionDamage, applyBarrierDamage, applyCollisionPenalty,
     resolveCollisions,

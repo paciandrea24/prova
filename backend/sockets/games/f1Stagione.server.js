@@ -39,7 +39,40 @@ function impostazioniPerLaProssimaGara(stagione, settingsCorrenti) {
         botStagione: (stagione.piloti || [])
             .filter(p => p.bot)
             .map(p => ({ colore: p.colore, nome: p.nome })),
+        // L'usura con cui ogni pilota ARRIVA a questo weekend, per COLORE: al
+        // momento del join il colore e' l'unica cosa che il server ha in mano
+        // per umani e bot insieme. Stessa strada di botStagione, e per la
+        // stessa ragione.
+        //
+        // ⚠️ Resta un OGGETTO, non una stringa: gameSettings viaggia in memoria
+        // fra lobby e partita, e gridSize/botsEnabled sono stringhe solo perche'
+        // li scrive la lobby dal client (vedi il commento qui sopra).
+        usuraStagione: (stagione.piloti || []).reduce((acc, p) => {
+            if (p.colore) acc[p.colore] = F1Stagione.statoVettura(stagione, p.id);
+            return acc;
+        }, {}),
     });
+}
+
+// L'usura ereditata di un colore, letta dal contenitore che la trasporta — le
+// impostazioni della lobby quando un umano entra, l'oggetto partita quando
+// nascono i bot. Un solo posto che sa dove sta e come si copia.
+//
+// Restituisce SEMPRE un oggetto nuovo: due giocatori che condividessero lo
+// stesso non potrebbero piu' consumarsi in modo indipendente (stessa trappola
+// gia' documentata per createDamageParts).
+//
+// L'ala parte comunque da zero: e' nuova ad ogni via, non e' del parco chiuso.
+function usuraEreditata(contenitore, colore) {
+    const mappa = contenitore && contenitore.usuraStagione;
+    const mia = mappa && mappa[colore];
+    if (!mia) return null;
+    return {
+        frontWing: 0,
+        floor: mia.floor || 0,
+        engine: mia.engine || 0,
+        suspension: mia.suspension || 0,
+    };
 }
 
 // Chi e' questo pilota, dentro la stagione.
@@ -97,4 +130,4 @@ async function registraGara(stagione, podium, players) {
     return aggiornata;
 }
 
-module.exports = { impostazioniPerLaProssimaGara, idPilotaDi, ordineDelPodio, usuraDeiPiloti, registraGara };
+module.exports = { impostazioniPerLaProssimaGara, usuraEreditata, idPilotaDi, ordineDelPodio, usuraDeiPiloti, registraGara };

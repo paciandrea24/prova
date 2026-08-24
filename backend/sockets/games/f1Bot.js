@@ -7,6 +7,7 @@
 // f1GameSocket.js, invariati e riusati as-is.
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 const BoxIngresso = require('../../../frontend/shared/f1BoxIngresso.js');
+const Stagione = require('./f1Stagione.server.js');
 
 // Palette colori — DEVE restare in sync con frontend/index.js →
 // availableColors: i colori sono l'identità del giocatore su tutta la
@@ -597,6 +598,10 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
             pitPathIndex:    0,
             inSlipstream:    false,
             damage:                  0,
+            // Parco chiuso: anche i bot arrivano al weekend con la macchina
+            // che avevano alla bandiera precedente. Se ripartissero nuovi ogni
+            // volta il campionato sarebbe una discesa. Null in gara veloce.
+            usuraIniziale:           Stagione.usuraEreditata(game, color),
             collisionPenaltyMs:      0,
             pendingRepair:           false,
             carContacts:             new Set(),
