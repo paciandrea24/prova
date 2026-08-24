@@ -166,3 +166,87 @@ test('la forma che il GIOCO vede coincide con quella disegnata', () => {
     assert.ok(peggio < 0.2,
         `il gioco vede una forma scostata di ${peggio.toFixed(3)} unita da quella disegnata, tetto 0.2`);
 });
+
+// --- Misure e operazioni --------------------------------------------------
+
+function treNodi() {
+    return { versione: 1, nodi: [
+        { x: 0, z: 0, y: 0, dir: Math.atan2(1, 0) },
+        { x: 100, z: 0, y: 0, dir: Math.atan2(1, 0) },
+        { x: 100, z: 90, y: 0, dir: Math.atan2(0, 1) },
+    ], tratti: [{ tipo: 'retta' }, { tipo: 'curva' }, { tipo: 'curva' }] };
+}
+
+test('misureTratto: una retta ha la lunghezza della corda e raggio infinito', () => {
+    const m = TS.misureTratto(treNodi(), 0);
+    assert.ok(Math.abs(m.lunghezza - 100) < 0.01, `lunghezza ${m.lunghezza}`);
+    assert.equal(m.raggioMinimo, Infinity);
+    assert.ok(Math.abs(m.angolo) < 1e-9, 'una retta non gira');
+});
+
+test('misureTratto: una curva a gomito ha angolo 90 gradi e raggio finito', () => {
+    const g = { versione: 1, nodi: [
+        { x: 0, z: 0, y: 0, dir: Math.atan2(1, 0) },
+        { x: 100, z: 0, y: 0, dir: Math.atan2(1, 0) },
+        { x: 200, z: 100, y: 0, dir: Math.atan2(0, 1) },
+    ], tratti: [{ tipo: 'retta' }, { tipo: 'curva' }, { tipo: 'curva' }] };
+    const m = TS.misureTratto(g, 1);
+    assert.ok(Math.abs(Math.abs(m.angolo) - Math.PI / 2) < 0.01, `angolo ${m.angolo}`);
+    assert.ok(m.raggioMinimo > 10 && m.raggioMinimo < 200, `raggio minimo ${m.raggioMinimo}`);
+});
+
+test('raddrizza: allinea le tangenti dei due nodi del tratto', () => {
+    const g = { versione: 1, nodi: [
+        { x: 0, z: 0, y: 0, dir: 1.2 },
+        { x: 100, z: 0, y: 0, dir: -0.4 },
+        { x: 100, z: 90, y: 0, dir: Math.atan2(0, 1) },
+    ], tratti: [{ tipo: 'curva' }, { tipo: 'curva' }, { tipo: 'curva' }] };
+    const dopo = TS.raddrizza(g, 0);
+    const atteso = Math.atan2(100, 0);
+    assert.equal(dopo.tratti[0].tipo, 'retta');
+    assert.ok(Math.abs(dopo.nodi[0].dir - atteso) < 1e-9);
+    assert.ok(Math.abs(dopo.nodi[1].dir - atteso) < 1e-9);
+    assert.equal(g.nodi[0].dir, 1.2, 'la geometria di partenza non va mutata');
+});
+
+test('raddrizza: un tratto retto adiacente che perde l allineamento diventa curva', () => {
+    // Due rette ad angolo retto: il nodo in mezzo non puo' avere due direzioni.
+    const g = { versione: 1, nodi: [
+        { x: 0, z: 0, y: 0, dir: Math.atan2(1, 0) },
+        { x: 100, z: 0, y: 0, dir: Math.atan2(1, 0) },
+        { x: 100, z: 100, y: 0, dir: Math.atan2(0, 1) },
+        { x: 0, z: 100, y: 0, dir: Math.atan2(-1, 0) },
+    ], tratti: [{ tipo: 'retta' }, { tipo: 'retta' }, { tipo: 'curva' }, { tipo: 'curva' }] };
+    const dopo = TS.raddrizza(g, 0);
+    assert.equal(dopo.tratti[0].tipo, 'retta');
+    assert.equal(dopo.tratti[1].tipo, 'curva', 'il tratto adiacente non allineato cede');
+});
+
+test('raddrizza: un tratto retto adiacente GIA allineato resta retto', () => {
+    // Tre nodi in fila sulla stessa retta: raddrizzare il primo tratto non
+    // deve incurvare il secondo, che e' gia' nella stessa direzione.
+    const g = { versione: 1, nodi: [
+        { x: 0, z: 0, y: 0, dir: 0.3 },
+        { x: 100, z: 0, y: 0, dir: 0.3 },
+        { x: 200, z: 0, y: 0, dir: Math.atan2(1, 0) },
+        { x: 100, z: 150, y: 0, dir: Math.atan2(-1, 0) },
+    ], tratti: [{ tipo: 'retta' }, { tipo: 'retta' }, { tipo: 'curva' }, { tipo: 'curva' }] };
+    const dopo = TS.raddrizza(g, 0);
+    assert.equal(dopo.tratti[1].tipo, 'retta', 'gia allineato: non deve cedere');
+});
+
+test('impostaLunghezza: sposta il nodo di arrivo e nessun altro', () => {
+    const dopo = TS.impostaLunghezza(treNodi(), 0, 140);
+    assert.ok(Math.abs(dopo.nodi[1].x - 140) < 0.01, `nodo di arrivo a x=${dopo.nodi[1].x}`);
+    assert.equal(dopo.nodi[0].x, 0, 'il nodo di partenza non si muove');
+    assert.equal(dopo.nodi[2].x, 100, 'i nodi successivi non si muovono');
+});
+
+test('direzioneAutomatica: un nodo segue i suoi vicini', () => {
+    const g = { versione: 1, nodi: [
+        { x: -100, z: 0, y: 0, dir: 0 },
+        { x: 0, z: 0, y: 0, dir: 0 },
+        { x: 100, z: 0, y: 0, dir: 0 },
+    ], tratti: [{ tipo: 'curva' }, { tipo: 'curva' }, { tipo: 'curva' }] };
+    assert.ok(Math.abs(TS.direzioneAutomatica(g, 1) - Math.atan2(1, 0)) < 1e-9);
+});

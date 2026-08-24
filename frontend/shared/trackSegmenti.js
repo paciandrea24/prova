@@ -122,5 +122,111 @@
         return out;
     }
 
-    return { cuoci, valutaTratto, versore, PASSO_COTTURA };
+    // --- Misure -----------------------------------------------------------
+    // I numeri che l'editor mostra e che l'autore riscrive a mano.
+    //
+    // ⚠️ `raggioMinimo` e non «il raggio»: una Bézier ha curvatura variabile, e
+    // il numero che conta a chi guida — e domani al validatore — è il punto
+    // più stretto del tratto, non una media che non esiste da nessuna parte.
+    function misureTratto(geometria, i) {
+        const nodi = geometria.nodi;
+        const a = nodi[i], b = nodi[(i + 1) % nodi.length];
+        const tratto = (geometria.tratti || [])[i] || { tipo: 'curva' };
+        if (tratto.tipo === 'retta') {
+            return { lunghezza: distanza(a, b), angolo: 0, raggioMinimo: Infinity };
+        }
+        const FINE = 100;
+        const p = [];
+        for (let k = 0; k <= FINE; k++) p.push(valutaTratto(a, b, tratto, k / FINE));
+        let lunghezza = 0;
+        for (let k = 1; k < p.length; k++) lunghezza += distanza(p[k - 1], p[k]);
+
+        // Raggio del cerchio per tre punti consecutivi: R = (abc) / (4·area).
+        let raggioMinimo = Infinity;
+        for (let k = 1; k < p.length - 1; k++) {
+            const A = p[k - 1], B = p[k], C = p[k + 1];
+            const la = distanza(B, C), lb = distanza(A, C), lc = distanza(A, B);
+            const areaDoppia = Math.abs((B.x - A.x) * (C.z - A.z) - (C.x - A.x) * (B.z - A.z));
+            if (areaDoppia < 1e-9) continue;   // tre punti allineati: raggio infinito
+            const R = (la * lb * lc) / (2 * areaDoppia);
+            if (R < raggioMinimo) raggioMinimo = R;
+        }
+        const angolo = Math.atan2(Math.sin(b.dir - a.dir), Math.cos(b.dir - a.dir));
+        return { lunghezza, angolo, raggioMinimo };
+    }
+
+    // --- Operazioni -------------------------------------------------------
+    // Tutte RESTITUISCONO una geometria nuova e non mutano quella ricevuta:
+    // è ciò che rende l'annulla dell'editor uno stack di stati invece di una
+    // lista di modifiche da saper disfare una per una.
+    function copia(geometria) {
+        return {
+            versione: geometria.versione || 1,
+            nodi: geometria.nodi.map(n => Object.assign({}, n)),
+            tratti: (geometria.tratti || []).map(t => Object.assign({}, t)),
+        };
+    }
+
+    const TOLLERANZA_ALLINEAMENTO = 0.001;   // rad
+
+    function scartoAngolare(a, b) {
+        return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+    }
+
+    function raddrizza(geometria, i) {
+        const g = copia(geometria);
+        const n = g.nodi.length;
+        const j = (i + 1) % n;
+        const dir = Math.atan2(g.nodi[j].x - g.nodi[i].x, g.nodi[j].z - g.nodi[i].z);
+        g.nodi[i].dir = dir;
+        g.nodi[j].dir = dir;
+        g.tratti[i] = { tipo: 'retta' };
+
+        // ⚠️ UN NODO, UNA DIREZIONE. Un tratto retto adiacente che non è più
+        // allineato pretenderebbe dal nodo condiviso una direzione diversa da
+        // questa: stato che il modello non ammette, quindi cede lui e torna
+        // curva. In un circuito vero due rettilinei consecutivi non allineati
+        // sono sempre uniti da una curva.
+        //
+        // Cede il vecchio e non quello appena dichiarato retto: l'ultima
+        // intenzione espressa è quella che l'autore sta guardando.
+        for (const k of [(i - 1 + n) % n, j]) {
+            if (k === i || !g.tratti[k] || g.tratti[k].tipo !== 'retta') continue;
+            const da = g.nodi[k], verso = g.nodi[(k + 1) % n];
+            const dirAltro = Math.atan2(verso.x - da.x, verso.z - da.z);
+            if (scartoAngolare(dirAltro, dir) > TOLLERANZA_ALLINEAMENTO) {
+                g.tratti[k] = { tipo: 'curva' };
+            }
+        }
+        return g;
+    }
+
+    // Scrivere un numero sposta UN nodo, quello di arrivo: i nodi sono
+    // posizioni assolute, non una catena relativa in cui una modifica trascina
+    // tutto il resto. È la proprietà che rende il modello adatto a ricalcare
+    // un'immagine di riferimento, che è come si disegna una pista vera.
+    function impostaLunghezza(geometria, i, lunghezza) {
+        const g = copia(geometria);
+        const n = g.nodi.length;
+        const a = g.nodi[i], b = g.nodi[(i + 1) % n];
+        const dir = Math.atan2(b.x - a.x, b.z - a.z);
+        const v = versore(dir);
+        b.x = a.x + v.dx * lunghezza;
+        b.z = a.z + v.dz * lunghezza;
+        return g;
+    }
+
+    // La direzione che un nodo avrebbe seguendo i vicini: la stessa forma che
+    // produce oggi la Catmull-Rom, quindi posare nodi dà il risultato che
+    // l'autore si aspetta finché non tocca le maniglie.
+    function direzioneAutomatica(geometria, i) {
+        const nodi = geometria.nodi, n = nodi.length;
+        const prima = nodi[(i - 1 + n) % n], dopo = nodi[(i + 1) % n];
+        return Math.atan2(dopo.x - prima.x, dopo.z - prima.z);
+    }
+
+    return {
+        cuoci, valutaTratto, versore, PASSO_COTTURA,
+        misureTratto, raddrizza, impostaLunghezza, direzioneAutomatica,
+    };
 });
