@@ -43,6 +43,65 @@ document.addEventListener('DOMContentLoaded', () => {
     // ====================================================
     let mainPoints = [];
     let pitPoints  = [];
+
+    // LA GEOMETRIA: nodi con una direzione, tratti tipizzati. Quando c'è,
+    // `mainPoints` non si modifica a mano — è il suo prodotto cotto, e
+    // toccarlo darebbe due verità per la stessa cosa (la seconda andrebbe
+    // persa alla cottura successiva).
+    //
+    // `null` = pista aperta in modalità punti, cioè come si è sempre fatto.
+    // Non c'è un terzo stato, e non si converte niente: le piste esistenti non
+    // hanno un'intenzione da cui rigenerarle, e dedurla con un fitting sarebbe
+    // una supposizione — costosa proprio sulle piste già validate. Rif.
+    // docs/superpowers/specs/2026-08-24-f1-editor-segmenti-design.md
+    //
+    // Una pista NUOVA nasce invece a segmenti: è il modo in cui si disegna da
+    // qui in avanti.
+    let geometria = { versione: 1, nodi: [], tratti: [] };
+    let nodoSelezionato = -1;
+    let trattoSelezionato = -1;
+
+    function inSegmenti() { return geometria !== null; }
+
+    // Su COSA agiscono trascinamento, cancellazione e rotellina. In modalità
+    // segmenti sono i nodi: i punti cotti sono il prodotto, e modificarli
+    // sarebbe la seconda verità che alla prossima cottura sparisce.
+    function listaDi(nome) {
+        if (nome === 'pit') return pitPoints;
+        return inSegmenti() ? geometria.nodi : mainPoints;
+    }
+
+    // Da chiamare dopo ogni modifica ai nodi: la forma dipende da tutti, non
+    // solo da quello toccato.
+    function dopoModificaMain() {
+        if (!inSegmenti()) return;
+        riorientaNodiAutomatici();
+        rigeneraDaGeometria();
+    }
+
+    function rigeneraDaGeometria() {
+        mainPoints = geometria.nodi.length >= 3
+            ? TrackSegmenti.cuoci(geometria, TrackSegmenti.PASSO_COTTURA)
+            : [];
+    }
+
+    // La direzione di ogni nodo si ricalcola quando la catena cambia forma:
+    // aggiungere un nodo cambia i vicini del precedente. Solo per i nodi che
+    // l'autore non ha ancora girato a mano — da lì in poi la direzione è sua.
+    function riorientaNodiAutomatici() {
+        if (geometria.nodi.length < 3) return;
+        for (let i = 0; i < geometria.nodi.length; i++) {
+            if (geometria.nodi[i].dirManuale) continue;
+            geometria.nodi[i].dir = TrackSegmenti.direzioneAutomatica(geometria, i);
+        }
+        // I tratti retti riprendono la loro direzione: un nodo spostato non
+        // deve lasciarli storti rispetto ai propri estremi.
+        for (let i = 0; i < geometria.tratti.length; i++) {
+            if (geometria.tratti[i] && geometria.tratti[i].tipo === 'retta') {
+                geometria = TrackSegmenti.raddrizza(geometria, i);
+            }
+        }
+    }
     // Traguardo esplicito: indipendente da mainPoints/pitPoints (un solo
     // punto, non una lista). null finché non caricato/impostato — in quel
     // caso si comporta come oggi (indice 0, angolo dedotto dalla tangente),
@@ -361,10 +420,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const pitMat = new THREE.MeshBasicMaterial({ color: 0x3498db });
         const bridgeMat = new THREE.MeshBasicMaterial({ color: 0xff8c00 });
         const geo = new THREE.SphereGeometry(2, 12, 12);
-        mainPoints.forEach((p, i) => {
+        // In modalità segmenti i marker sono i NODI: i punti cotti sono
+        // centinaia e non si trascinano — sono il prodotto, non il disegno.
+        // Più grandi, perché sono pochi e ognuno conta.
+        const selMat = new THREE.MeshBasicMaterial({ color: 0x2ecc71 });
+        listaDi('main').forEach((p, i) => {
             const y = p.y || 0;
-            const m = new THREE.Mesh(geo, p.bridge ? bridgeMat : materialForY(y));
-            m.scale.setScalar(scaleForY(y));
+            const scelto = inSegmenti() && i === nodoSelezionato;
+            const m = new THREE.Mesh(geo, scelto ? selMat : (p.bridge ? bridgeMat : materialForY(y)));
+            m.scale.setScalar(scaleForY(y) * (inSegmenti() ? 1.4 : 1));
             m.position.set(p.x, y + 1, p.z);
             m.userData = { list: 'main', index: i };
             markerGroup.add(m);
@@ -536,7 +600,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         const marker = pickMarker(ev);
-        if (marker) { dragging = marker.userData; return; }
+        if (marker) {
+            dragging = marker.userData;
+            // Cliccare un nodo lo sceglie, e sceglie il tratto che ne PARTE:
+            // è quello che si vede davanti quando lo si guarda.
+            if (inSegmenti() && marker.userData.list === 'main') {
+                nodoSelezionato = marker.userData.index;
+                trattoSelezionato = marker.userData.index;
+                rebuild();
+            }
+            return;
+        }
         if (pickEntryTriggerFrame(ev)) {
             const hit = worldFromEvent(ev);
             triggerDrag = {
@@ -547,6 +621,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const hit = worldFromEvent(ev);
+        // In modalità segmenti si posa un NODO, non un punto di controllo: i
+        // punti li produce la cottura. La corsia box resta a punti — ha una
+        // geometria sua, che questo progetto non tocca.
+        if (inSegmenti() && !document.getElementById('pitMode').checked) {
+            geometria.nodi.push({ x: +hit.x.toFixed(2), z: +hit.z.toFixed(2), y: 0, dir: 0 });
+            geometria.tratti.push({ tipo: 'curva' });
+            riorientaNodiAutomatici();
+            rigeneraDaGeometria();
+            rebuild();
+            return;
+        }
         activeList().push({ x: +hit.x.toFixed(2), z: +hit.z.toFixed(2) });
         rebuild();
     });
@@ -610,10 +695,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (!dragging) return;
         const hit = worldFromEvent(ev);
-        const list = dragging.list === 'main' ? mainPoints : pitPoints;
-        const p = list[dragging.index];
+        const p = listaDi(dragging.list)[dragging.index];
         p.x = +hit.x.toFixed(2);
         p.z = +hit.z.toFixed(2);
+        dopoModificaMain();
         rebuild();
     });
 
@@ -622,9 +707,16 @@ document.addEventListener('DOMContentLoaded', () => {
     renderer.domElement.addEventListener('contextmenu', (ev) => {
         ev.preventDefault();
         const marker = pickMarker(ev);
-        if (!marker) return;
-        const list = marker.userData.list === 'main' ? mainPoints : pitPoints;
-        list.splice(marker.userData.index, 1);
+        if (!marker || marker.userData.maniglia !== undefined) return;
+        listaDi(marker.userData.list).splice(marker.userData.index, 1);
+        // Un nodo in meno è anche un tratto in meno: la catena ne ha uno per
+        // nodo, ed è l'invariante che tiene chiusa la geometria.
+        if (inSegmenti() && marker.userData.list === 'main') {
+            geometria.tratti.splice(marker.userData.index, 1);
+            nodoSelezionato = -1;
+            trattoSelezionato = -1;
+        }
+        dopoModificaMain();
         rebuild();
     });
 
@@ -635,8 +727,9 @@ document.addEventListener('DOMContentLoaded', () => {
         ev.preventDefault();
         const marker = pickMarker(ev);
         if (marker && marker.userData.list === 'main') {
-            const p = mainPoints[marker.userData.index];
+            const p = listaDi('main')[marker.userData.index];
             p.y = +(((p.y || 0) - Math.sign(ev.deltaY) * 0.5).toFixed(2));
+            dopoModificaMain();
             rebuild();
             return;
         }
@@ -652,7 +745,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('undoBtn').addEventListener('click', () => { activeList().pop(); rebuild(); });
     document.getElementById('clearBtn').addEventListener('click', () => {
-        if (document.getElementById('pitMode').checked) pitPoints = []; else mainPoints = [];
+        if (document.getElementById('pitMode').checked) {
+            pitPoints = [];
+        } else if (inSegmenti()) {
+            // Svuotare i nodi svuota anche i tratti: uno per nodo, sempre.
+            geometria = { versione: 1, nodi: [], tratti: [] };
+            nodoSelezionato = -1;
+            trattoSelezionato = -1;
+            mainPoints = [];
+        } else {
+            mainPoints = [];
+        }
         rebuild();
     });
     // Imposta l'angolo del traguardo esattamente al verso geometrico reale
@@ -737,6 +840,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return point;
         });
         pitPoints = Array.isArray(pit.path) ? pit.path.map(p => ({ x: p.x, z: p.z })) : [];
+
+        // Un file con `geometria` si apre in modalità segmenti; uno senza, in
+        // modalità punti. Non c'è un terzo stato, e NON si converte niente: le
+        // piste esistenti non hanno un'intenzione da cui rigenerarle, e
+        // dedurla con un fitting sarebbe una supposizione — costosa proprio
+        // sulle piste già validate.
+        geometria = (data.geometria && Array.isArray(data.geometria.nodi)
+                     && data.geometria.nodi.length >= 3) ? data.geometria : null;
+        nodoSelezionato = -1;
+        trattoSelezionato = -1;
+        if (geometria) rigeneraDaGeometria();
 
         // Default: se la pista caricata non ha ancora startFinish (piste
         // esistenti pre-questa modifica), il marker appare alla posizione
@@ -850,6 +964,9 @@ document.addEventListener('DOMContentLoaded', () => {
             roadHalfWidth: parseFloat(document.getElementById('roadHalfWidth').value) || 11,
             notturno: document.getElementById('notturno').checked,
             startFinish: startFinish ? { x: startFinish.x, z: startFinish.z, angle: startFinish.angle } : undefined,
+            // L'intenzione accanto al risultato: `geometria` è dell'editor,
+            // `controlPoints` è del gioco e resta il suo prodotto cotto.
+            geometria: geometria && geometria.nodi.length >= 3 ? geometria : undefined,
             controlPoints: mainPoints,
             pit: {
                 roadHalfWidth: parseFloat(document.getElementById('pitRoadHalfWidth').value) || 5,
