@@ -364,3 +364,61 @@ test("trackLoader: abrasivita' fuori scala viene limitata", () => {
     assert.equal(normalizzaAbrasivita('molta'), 1);
     assert.equal(normalizzaAbrasivita(1.35), 1.35);
 });
+
+// ====================================================
+// LA GEOMETRIA DELL'EDITOR (blocco D, 2026-08-24)
+//
+// `geometria` e' FACOLTATIVA: le piste disegnate a punti non ce l'hanno e
+// restano valide per sempre. Se c'e', dev'essere coerente — un file malformato
+// non romperebbe il gioco (che legge controlPoints) ma romperebbe l'editor
+// alla riapertura, che e' peggio: il danno si vede solo quando l'autore ha
+// gia' perso il lavoro.
+//
+// Rif. docs/superpowers/specs/2026-08-24-f1-editor-segmenti-design.md
+// ====================================================
+function geometriaValida() {
+    return {
+        versione: 1,
+        nodi: [{ x: 0, z: 0, dir: 0 }, { x: 10, z: 0, dir: 1 }, { x: 10, z: 10, dir: 2 }],
+        tratti: [{ tipo: 'retta' }, { tipo: 'curva' }, { tipo: 'curva' }],
+    };
+}
+
+test('saveTrack rifiuta una geometria con meno tratti che nodi', () => {
+    const data = minimalValidTrackData();
+    data.geometria = geometriaValida();
+    data.geometria.tratti = [{ tipo: 'retta' }];
+    assert.throws(() => saveTrack(data), /geometria: serve un tratto per ogni nodo/);
+});
+
+test('saveTrack rifiuta un tipo di tratto sconosciuto', () => {
+    const data = minimalValidTrackData();
+    data.geometria = geometriaValida();
+    data.geometria.tratti[1] = { tipo: 'parabolica' };
+    assert.throws(() => saveTrack(data), /tipo di tratto sconosciuto/);
+});
+
+test('saveTrack rifiuta nodi senza direzione', () => {
+    const data = minimalValidTrackData();
+    data.geometria = geometriaValida();
+    delete data.geometria.nodi[1].dir;
+    assert.throws(() => saveTrack(data), /nodi malformati/);
+});
+
+test('saveTrack accetta una geometria ben formata', () => {
+    const data = minimalValidTrackData();
+    data.geometria = geometriaValida();
+    try {
+        saveTrack(data);   // non deve lanciare
+    } finally {
+        deleteTrack('test-scratch-track');
+    }
+});
+
+test('saveTrack: una pista senza geometria resta valida', () => {
+    try {
+        saveTrack(minimalValidTrackData());   // non deve lanciare
+    } finally {
+        deleteTrack('test-scratch-track');
+    }
+});

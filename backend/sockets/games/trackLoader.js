@@ -372,6 +372,32 @@ function validateTrackData(data) {
     if (data.startFinish && (typeof data.startFinish.x !== 'number' || typeof data.startFinish.z !== 'number')) {
         return 'startFinish non valido (servono almeno x e z numerici)';
     }
+    // `geometria` è FACOLTATIVA: è l'INTENZIONE con cui la pista è stata
+    // disegnata (nodi con una direzione, tratti tipizzati), e le piste
+    // disegnate a punti non ce l'hanno — restano valide per sempre. Il gioco
+    // non la legge mai: legge `controlPoints`, che ne è il prodotto cotto.
+    // Rif. docs/superpowers/specs/2026-08-24-f1-editor-segmenti-design.md
+    //
+    // Si controlla lo stesso, perché una geometria malformata non romperebbe
+    // il gioco ma romperebbe l'EDITOR alla riapertura — e quel danno si vede
+    // solo quando l'autore ha già perso il lavoro.
+    if (data.geometria !== undefined) {
+        const g = data.geometria;
+        if (!g || typeof g !== 'object') return 'geometria non valida';
+        if (!Array.isArray(g.nodi) || g.nodi.length < 3) return 'geometria: servono almeno 3 nodi';
+        if (!g.nodi.every(n => n && typeof n.x === 'number' && typeof n.z === 'number' && typeof n.dir === 'number')) {
+            return 'geometria: nodi malformati (servono x, z, dir numerici)';
+        }
+        // Un tratto per nodo, e l'ultimo chiude sul primo: è l'invariante che
+        // tiene chiusa la catena, e senza di essa la cottura salterebbe un
+        // pezzo di pista senza dirlo.
+        if (!Array.isArray(g.tratti) || g.tratti.length !== g.nodi.length) {
+            return 'geometria: serve un tratto per ogni nodo (l\'ultimo chiude sul primo)';
+        }
+        if (!g.tratti.every(t => t && (t.tipo === 'retta' || t.tipo === 'curva'))) {
+            return 'geometria: tipo di tratto sconosciuto (attesi "retta" o "curva")';
+        }
+    }
     return null;
 }
 
