@@ -224,9 +224,73 @@ document.addEventListener('DOMContentLoaded', () => {
         for (let i = 1; i < pitPts.length; i++) lung += Math.hypot(pitPts[i].x - pitPts[i-1].x, pitPts[i].z - pitPts[i-1].z);
         const box = readEntryTriggerFields();
         const tocca = pitPoints.some(p => TrackGeometry.pointInOrientedBox(p.x, p.z, box));
+        // Quanto il riquadro sta lontano dall'asfalto: se lo sfiora, ci finisce
+        // dentro anche chi sta solo passando in pista.
+        let sconfina = false;
+        if (mainPoints.length >= 3) {
+            const pts = TrackGeometry.sampleLoop(mainPoints, 500);
+            const roadHalf = parseFloat(document.getElementById('roadHalfWidth').value) || 11;
+            const c = Math.cos(box.angle), sn = Math.sin(box.angle);
+            for (const [dx, dz] of [[-box.halfWidth, -box.halfLength], [box.halfWidth, -box.halfLength],
+                                    [box.halfWidth, box.halfLength], [-box.halfWidth, box.halfLength]]) {
+                const x = box.x + dx * c + dz * sn, z = box.z - dx * sn + dz * c;
+                if (TrackGeometry.nearestPoint(pts, x, z).dist < roadHalf) sconfina = true;
+            }
+        }
         el.innerHTML = `corsia di <span class="valore">${lung.toFixed(0)}</span> unità su ${pitPoints.length} punti`
-            + `<br>riquadro d'ingresso: ${tocca ? 'aggancia la corsia' : 'NON tocca la corsia — il salvataggio lo rifiuterà'}`;
-        el.style.color = tocca ? 'var(--spento)' : 'var(--pericolo)';
+            + `<br>riquadro: ${tocca ? 'aggancia la corsia' : 'NON tocca la corsia — il salvataggio lo rifiuterà'}`
+            + (sconfina ? "<br>sconfina sull'asfalto: manderà ai box anche chi passa dritto" : '');
+        el.style.color = (tocca && !sconfina) ? 'var(--spento)' : 'var(--pericolo)';
+    }
+
+    // IL RIQUADRO D'INGRESSO AI BOX, CALCOLATO INVECE CHE TRASCINATO.
+    //
+    // Chi ci passa dentro va ai box: se il riquadro sborda sulla carreggiata,
+    // ci finisce anche chi sta solo passando di lì a tutta velocità. Il
+    // criterio non è quindi «vicino alla corsia» ma «tutto fuori
+    // dall'asfalto»: si cerca il primo punto della corsia box che dista dalla
+    // pista più di quanto il riquadro sia largo, e lo si mette lì, orientato
+    // come la corsia.
+    //
+    // Richiesta dell'utente (2026-08-24): «mi serve un modo più facile per
+    // posizionare il trigger, magari automatico subito fuori dalla pista
+    // principale, per non far entrare per sbaglio ai box».
+    const TRIGGER_MEZZA_LUNGHEZZA = 7;
+    const TRIGGER_MARGINE_ASFALTO = 2;   // oltre il bordo pista, per non sfiorarlo
+
+    function posizionaTriggerAutomatico() {
+        const roadHalf = parseFloat(document.getElementById('roadHalfWidth').value) || 11;
+        const pitHalf = parseFloat(document.getElementById('pitRoadHalfWidth').value) || 5;
+        if (mainPoints.length < 3 || pitPoints.length < 3) {
+            alert('Servono la pista e la corsia box prima di posizionare il riquadro.');
+            return;
+        }
+        const pts = TrackGeometry.sampleLoop(mainPoints, 500);
+        // Gli stessi punti che vede il gioco: la corsia agganciata alla pista.
+        const agganciata = TrackGeometry.snapPitPathEnds(pitPoints, pts, roadHalf);
+        const corsia = TrackGeometry.sampleOpenPath(agganciata, 200);
+
+        // Il riquadro è largo quanto la corsia: perché stia tutto fuori
+        // dall'asfalto, il suo centro deve distare almeno questo dalla pista.
+        const distanzaMinima = roadHalf + pitHalf + TRIGGER_MARGINE_ASFALTO;
+        let scelto = -1;
+        for (let i = 0; i < corsia.length * 0.5; i++) {
+            if (TrackGeometry.nearestPoint(pts, corsia[i].x, corsia[i].z).dist >= distanzaMinima) { scelto = i; break; }
+        }
+        if (scelto < 0) {
+            alert("La corsia box non si allontana mai abbastanza dalla pista: il riquadro finirebbe sull'asfalto. Allontana la corsia dal tracciato.");
+            return;
+        }
+        const p = corsia[scelto];
+        const dopo = corsia[Math.min(scelto + 3, corsia.length - 1)];
+        const angolo = Math.atan2(dopo.x - p.x, dopo.z - p.z);
+
+        document.getElementById('entryX').value = p.x.toFixed(2);
+        document.getElementById('entryZ').value = p.z.toFixed(2);
+        document.getElementById('entryHalfWidth').value = pitHalf.toFixed(1);
+        document.getElementById('entryHalfLength').value = TRIGGER_MEZZA_LUNGHEZZA;
+        document.getElementById('entryAngleDeg').value = (angolo * 180 / Math.PI).toFixed(1);
+        rebuild();
     }
 
     function aggiornaRiquadroTratto() {
@@ -366,12 +430,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // Il cono (marker) punta lungo +Z locale di default (ConeGeometry si
     // sviluppa lungo Y, ruotato qui una volta di 90° su X per sdraiarlo sul
     // piano orizzontale) — rotation.y = angle lo orienta nel verso di marcia.
+    // ⚠️ ORIENTARE UN CONO NEL VERSO DI MARCIA, e farlo davvero.
+    //
+    // Il cono di Three cresce lungo +Y; sdraiato con una rotazione di 90° su X
+    // e poi girato di `angolo` su Z, la sua punta finisce in (-sin, cos) —
+    // cioè SPECCHIATA rispetto alla convenzione del progetto, dove un angolo
+    // vale (dx, dz) = (sin, cos). Per due mesi il cono del traguardo e la
+    // freccia del verso hanno indicato la direzione sbagliata ogni volta che
+    // la pista non correva lungo Z: misurato su monte-rosso, 156° di scarto
+    // dal verso vero. Segnalato dall'utente il 2026-08-24 — «la freccia verde
+    // punta al lato opposto rispetto a quello in cui si corre».
+    //
+    // I DATI erano giusti (la maniglia arancione sta a (sin, cos) e l'angolo
+    // salvato segue lei): sbagliava solo il disegno. Ed è il motivo per cui
+    // «non si capiva la maniglia»: maniglia e cono raccontavano due versi
+    // diversi.
+    function orientaVersoDiMarcia(mesh, angolo) {
+        mesh.rotation.set(Math.PI / 2, 0, -angolo);
+    }
+
     function updateStartFinishMeshes() {
         if (!startFinish) { startFinishGroup.visible = false; return; }
         startFinishGroup.visible = true;
         ensureStartFinishMeshes();
         startFinishMarker.position.set(startFinish.x, 1, startFinish.z);
-        startFinishMarker.rotation.set(Math.PI / 2, 0, startFinish.angle);
+        orientaVersoDiMarcia(startFinishMarker, startFinish.angle);
         const handleDist = 12;
         startFinishRotateHandle.position.set(
             startFinish.x + Math.sin(startFinish.angle) * handleDist,
@@ -388,7 +471,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (geometricAngle != null) {
             startFinishDirectionArrow.visible = true;
             startFinishDirectionArrow.position.set(startFinish.x, 1, startFinish.z);
-            startFinishDirectionArrow.rotation.set(Math.PI / 2, 0, geometricAngle);
+            orientaVersoDiMarcia(startFinishDirectionArrow, geometricAngle);
             let diffDeg = (startFinish.angle - geometricAngle) * 180 / Math.PI;
             while (diffDeg > 180) diffDeg -= 360;
             while (diffDeg <= -180) diffDeg += 360;
@@ -1056,6 +1139,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Scrivere un numero sposta UN nodo, quello di arrivo: i nodi sono
     // posizioni assolute, non una catena relativa in cui una modifica trascina
     // tutto il resto. È la proprietà che serve per ricalcare un'immagine.
+    document.getElementById('triggerAutoBtn').addEventListener('click', posizionaTriggerAutomatico);
     document.getElementById('trackOpacity').addEventListener('input', rebuild);
     document.getElementById('abrasivita').addEventListener('input', aggiornaAbrasivita);
     document.getElementById('targetKm').addEventListener('change', () => { aggiornaAbrasivita(); aggiornaPannelloForma(); });
