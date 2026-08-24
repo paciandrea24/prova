@@ -1549,6 +1549,18 @@
         const mainStand = buildMainGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankStart, embankOuter, fitsUnderBridge, barrierProfile, paddock);
         const accepted  = [...paddock, ...mainStand];
         const grandstand = buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankStart, embankOuter, fitsUnderBridge, mainStand, barrierProfile);
+        // Le tribune entrano nel registro. Senza questa riga TUTTO cio' che
+        // viene posato dopo — ponte semafori, gomme, decoro del paddock,
+        // natura, paddock-life, boschi — era cieco rispetto a loro, ed e' da
+        // li' che nascevano il banner dentro la tribuna (5.6 unita'), il pylon
+        // dentro la tribuna (3.0) e il motorhome dentro la tribuna (3.1).
+        //
+        // E' la PREVENZIONE, distinta dalla garanzia: la porta in fondo a
+        // questa funzione impedirebbe comunque a quegli oggetti di entrare, ma
+        // li scarterebbe. Vedendoli, chi piazza sceglie un altro posto invece
+        // di perdere il pezzo — su melbourne il decoro del paddock passava da
+        // 6 pezzi a 5.
+        accepted.push(...grandstand);
 
         // Landmark (torre, ponte semafori, podio, passerella): calcolati
         // prima della natura, così lo scatter degli alberi li vede fra gli
@@ -1600,8 +1612,28 @@
         // da lì, e senza le tribune non nascerebbero affatto.
         const conRete = new Set(trackside.filter(v => v.asset === 'catchFence').map(v => v.daTribuna));
         const scoperta = (s) => !conRete.has(s.x.toFixed(2) + ',' + s.z.toFixed(2));
-        const mainStandCoperte = mainStand.filter(s => !scoperta(s));
-        const grandstandCoperte = grandstand.filter(s => !scoperta(s));
+
+        // DOVE PASSA UN PONTE, TRIBUNE NON CE NE SONO.
+        //
+        // Regola dettata dall'utente il 2026-08-24: il ponte dei semafori deve
+        // avere «i due pilastri oltre le barriere da entrambi i lati» e deve
+        // stare vicino alla griglia, se no al via non si legge il semaforo.
+        // Le due cose insieme mettono i suoi pilastri esattamente dove
+        // starebbero le tribune — quindi cede la tribuna, non il ponte. Vale
+        // uguale per la passerella, l'arco senza semafori.
+        //
+        // ⚠️ Si toglie il MODULO che sta sotto la campata, non si accorcia la
+        // fila: accorciarla era gia' stato provato il 2026-08-13 e aveva
+        // lasciato un buco di 72 unita' fra la fine della fila e la schiera
+        // successiva (segnalazione M 20). Un modulo in meno lascia lo spazio
+        // dei pilastri, che e' quello che nella realta' c'e' davvero.
+        const scavalcanti = landmarks.filter(
+            v => v.asset === 'startGantry' || v.asset === 'footbridge');
+        const sottoIlPonte = (s) => scavalcanti.some(g => SceneryAssetSizes.itemsOverlap(s, g));
+
+        const utile = (s) => !scoperta(s) && !sottoIlPonte(s);
+        const mainStandCoperte = mainStand.filter(utile);
+        const grandstandCoperte = grandstand.filter(utile);
 
         // Infrastrutture: DOPO il trackside, così vedono tribune, reti, gomme
         // e landmark già posati; PRIMA della natura, così sono gli alberi a

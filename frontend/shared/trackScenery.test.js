@@ -1195,10 +1195,26 @@ for (const id of TRACCIATI) {
         // posto della tribuna scoperta è comparso un buco di 72 unità fra la
         // fine della fila e la prima schiera secondaria.
         //
-        // Ora la fila attraversa il ponte semafori e tiene le sue reti (vedi
-        // il test sull'incrocio rete/pilone qui sotto). Qui si pretende
-        // l'unica cosa che l'utente vede: la fila è CONTINUA, nessuno stacco
-        // maggiore di un modulo e mezzo.
+        // ⚠️ AGGIORNATO IL 2026-08-24, per una decisione esplicita dell'utente:
+        // «il ponte dei semafori deve essere fuori dalle barriere, cioè i due
+        // pilastri oltre le barriere da entrambi i lati. deve sempre essere
+        // vicino alla griglia di partenza altrimenti abbiamo il problema al
+        // via. quindi dove posizioniamo il ponte dei semafori non avremo
+        // tribune. stessa cosa per il ponte ma senza semafori».
+        //
+        // Le due richieste insieme — pilastri oltre le barriere, e ponte
+        // vicino alla griglia — mettono i pilastri esattamente dove starebbe
+        // un modulo della fila. Quindi quel modulo non si posa, e la fila ha
+        // UN vuoto: quello del ponte, largo un modulo (38.4 = 2 x 19.2).
+        //
+        // Non si torna alla fila accorciata del 2026-08-13: quella lasciava un
+        // buco di 72 unità fra la fine della fila e la schiera successiva.
+        // Qui manca un modulo in mezzo, che è ciò che nella realtà si vede
+        // sotto un ponte dei semafori.
+        //
+        // Resta preteso tutto il resto: nessun ALTRO stacco maggiore di un
+        // modulo e mezzo, e il vuoto ammesso dev'essere PROPRIO sotto un
+        // ponte, non un buco qualunque.
         const { trackPts, layout } = circuitoVero(id);
         const main = layout.filter(v => v.category === 'grandstand-main');
         assert.ok(main.length >= 3, `${id}: solo ${main.length} moduli di tribuna principale`);
@@ -1216,14 +1232,32 @@ for (const id of TRACCIATI) {
         for (let i = 1; i < inFila.length; i++) {
             stacchi.push({ d: Math.hypot(inFila[i].m.x - inFila[i - 1].m.x,
                                          inFila[i].m.z - inFila[i - 1].m.z),
+                           a: inFila[i - 1].m, b: inFila[i].m,
                            idx: doveSta(trackPts, inFila[i].m).idx });
         }
         // 19.2 è il passo nominale (MAIN_STAND_COL_SPACING); 1.5 volte lascia
         // passare l'assestamento in curva e taglia il modulo mancante.
         const buchi = stacchi.filter(s => s.d > 19.2 * 1.5);
-        assert.equal(buchi.length, 0,
-            `${id}: ${buchi.length} vuoti nella fila del traguardo — `
-            + buchi.map(s => `@${s.idx} di ${s.d.toFixed(1)}`).join(', '));
+        // Il vuoto lecito e' quello sotto una campata, ed e' largo un modulo:
+        // fra i due moduli che lo delimitano deve passare un ponte.
+        //
+        // ⚠️ Il confronto e' LUNGO LA PISTA, non in linea d'aria: la fila sta a
+        // bordo pista e il ponte e' centrato sull'asse, quindi la distanza fra
+        // i due punti non dice niente su quanto siano affiancati.
+        const campate = layout.filter(
+            v => v.asset === 'startGantry' || v.asset === 'footbridge');
+        const lungoLaPista = (a, b) => {
+            const d = Math.abs(doveSta(trackPts, a).idx - doveSta(trackPts, b).idx);
+            return Math.min(d, trackPts.length - d) * passo;
+        };
+        const sottoUnaCampata = (s) => campate.some((g) => {
+            const meta = { x: (s.a.x + s.b.x) / 2, z: (s.a.z + s.b.z) / 2 };
+            return lungoLaPista(meta, g) < 19.2 * 1.5;
+        });
+        const nonSpiegati = buchi.filter(s => !(s.d <= 19.2 * 2.2 && sottoUnaCampata(s)));
+        assert.equal(nonSpiegati.length, 0,
+            `${id}: ${nonSpiegati.length} vuoti NON spiegati da un ponte nella fila del traguardo — `
+            + nonSpiegati.map(s => `@${s.idx} di ${s.d.toFixed(1)}`).join(', '));
     });
 
     test(`scenografia: la rete incrocia il ponte semafori solo sul pilone (${id})`, () => {
