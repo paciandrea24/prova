@@ -161,6 +161,122 @@
         return stato;
     }
 
+    // Quante gare copre un ricambio. Su sei gare fa UN motore solo, ed e' il
+    // freno vero: con un consumo del 18% a gara (USURA_MOTORE_PER_GARA in
+    // f1GameSocket.js) il motore non arriva in fondo alla stagione, quindi il
+    // ricambio SERVE — ma ne hai uno, e se lo spendi presto il secondo costa
+    // cinque posizioni. La domanda diventa QUANDO, non SE.
+    //
+    // ⚠️ Questo numero e quello dell'usura sono la stessa manopola vista da due
+    // lati: se un giorno l'usura cambia, questo va rifatto insieme. Una
+    // dotazione larga con un'usura docile spegne l'economia in silenzio — la
+    // penalita' non scatterebbe mai e l'officina sarebbe una formalita'.
+    const DOTAZIONE_OGNI_N_GARE = 6;
+
+    // Quanto costa sforare, in posizioni sulla griglia della gara successiva.
+    // Tarati su griglie da 6-10 auto: mordono senza essere letali.
+    const PENALITA_GRIGLIA = { engine: 5, suspension: 3, floor: 2 };
+
+    function dotazione(stagione) {
+        const gare = ((stagione && stagione.calendario) || []).length;
+        const quanti = Math.max(1, Math.ceil(gare / DOTAZIONE_OGNI_N_GARE));
+        const out = {};
+        for (const c of COMPONENTI_PARCO_CHIUSO) out[c] = quanti;
+        return out;
+    }
+
+    // I ricambi decisi dopo la gara, ripuliti: solo componenti del parco
+    // chiuso, senza duplicati. L'ala non passa di qui — e' gia' nuova ad ogni
+    // via, non ha dotazione e non ha penalita'.
+    function ricambiPuliti(elenco) {
+        const visti = [];
+        for (const c of elenco || []) {
+            if (COMPONENTI_PARCO_CHIUSO.indexOf(c) >= 0 && visti.indexOf(c) < 0) visti.push(c);
+        }
+        return visti;
+    }
+
+    function ricambiUsati(stagione, idPilota) {
+        const out = {};
+        for (const c of COMPONENTI_PARCO_CHIUSO) out[c] = 0;
+        for (const gara of (stagione && stagione.risultati) || []) {
+            for (const c of ricambiPuliti(gara.ricambiDopo && gara.ricambiDopo[idPilota])) out[c]++;
+        }
+        return out;
+    }
+
+    function ricambiRimasti(stagione, idPilota) {
+        const totale = dotazione(stagione);
+        const usati = ricambiUsati(stagione, idPilota);
+        const out = {};
+        for (const c of COMPONENTI_PARCO_CHIUSO) out[c] = Math.max(0, totale[c] - usati[c]);
+        return out;
+    }
+
+    // L'officina NON e' un momento, e' uno STATO: "questa stagione e' fra due
+    // gare e per l'ultima corsa non risulta ancora una decisione". Chi chiude
+    // il browser la ritrova riaprendo la stagione, senza aver perso la gara
+    // appena corsa — e "nessun ricambio" e' comunque una decisione, che e' cio'
+    // che la chiude.
+    //
+    // A stagione finita non si apre: non c'e' nessuna gara dopo da preparare.
+    function officinaDaFare(stagione) {
+        if (!stagione || !(stagione.risultati || []).length || finita(stagione)) return false;
+        const ultima = stagione.risultati[stagione.risultati.length - 1];
+        return !ultima.ricambiDopo;
+    }
+
+    // Attacca la decisione all'ULTIMA gara corsa. Riaprire l'officina e
+    // cambiare idea SOSTITUISCE la decisione invece di sommarsi: altrimenti
+    // un ripensamento consumerebbe due ricambi.
+    //
+    // Non muta: come registraRisultato, chi salva su Mongo deve poter fallire
+    // senza aver gia' sporcato l'oggetto in memoria.
+    function registraOfficina(stagione, { ricambi, adesso }) {
+        if (!stagione || !(stagione.risultati || []).length) {
+            throw new Error("non c'è nessuna gara da cui uscire");
+        }
+        const puliti = {};
+        for (const id in (ricambi || {})) puliti[id] = ricambiPuliti(ricambi[id]);
+        const risultati = stagione.risultati.slice();
+        const ultimo = risultati[risultati.length - 1];
+        risultati[risultati.length - 1] = Object.assign({}, ultimo, { ricambiDopo: puliti });
+        return Object.assign({}, stagione, {
+            risultati,
+            aggiornataIl: adesso || new Date().toISOString(),
+        });
+    }
+
+    // Quante posizioni perde questo pilota sulla griglia della PROSSIMA gara.
+    //
+    // Guarda solo l'ULTIMA officina: una penalita' gia' scontata non si paga
+    // due volte. Si paga solo cio' che ha sforato la dotazione, e la dotazione
+    // si conta ESCLUDENDO l'ultima officina — altrimenti il ricambio appena
+    // deciso risulterebbe gia' speso e sembrerebbe sempre fuori quota.
+    function penalitaGriglia(stagione, idPilota) {
+        const risultati = (stagione && stagione.risultati) || [];
+        if (!risultati.length) return 0;
+        const ultimaOfficina = risultati[risultati.length - 1].ricambiDopo;
+        const ultima = ricambiPuliti(ultimaOfficina && ultimaOfficina[idPilota]);
+        if (!ultima.length) return 0;
+
+        const totale = dotazione(stagione);
+        const primaDiAdesso = {};
+        for (const c of COMPONENTI_PARCO_CHIUSO) primaDiAdesso[c] = 0;
+        for (let i = 0; i < risultati.length - 1; i++) {
+            for (const c of ricambiPuliti(risultati[i].ricambiDopo && risultati[i].ricambiDopo[idPilota])) {
+                primaDiAdesso[c]++;
+            }
+        }
+
+        let posizioni = 0;
+        for (const c of ultima) {
+            primaDiAdesso[c]++;
+            if (primaDiAdesso[c] > totale[c]) posizioni += PENALITA_GRIGLIA[c] || 0;
+        }
+        return posizioni;
+    }
+
     // Registra il risultato della gara corrente e avanza. `ordine` è l'elenco
     // degli id dei piloti dal primo all'ultimo.
     //
@@ -380,6 +496,8 @@
         intervalloGare, puntiPerPosizione, mescola, sorteggiaCalendario,
         idPilota, creaStagione, garaCorrente, finita, registraRisultato,
         COMPONENTI, COMPONENTI_PARCO_CHIUSO, vetturaNuova, statoVettura,
+        DOTAZIONE_OGNI_N_GARE, PENALITA_GRIGLIA, dotazione,
+        ricambiUsati, ricambiRimasti, registraOfficina, officinaDaFare, penalitaGriglia,
         classifica, vittorie, riepilogoGara, garaDaRiepilogare,
         albo, numeriDi, cronaca, siPuoRiprendere,
     };

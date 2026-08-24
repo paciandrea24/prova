@@ -449,3 +449,126 @@ test('statoVettura: valori fuori scala vengono limitati a 0-100', () => {
     assert.deepEqual(F1Stagione.statoVettura(s, 'p1'),
         { frontWing: 0, floor: 100, engine: 0, suspension: 3 });
 });
+
+// ---- Dotazione, ricambi, penalita' ----------------------------------------
+// Il freno alle sostituzioni e' la DOTAZIONE, non la sola penalita': senza,
+// la strategia ottima sarebbe banale — riparare sempre tutto e prendersi la
+// penalita' sul circuito dove si sorpassa meglio. La domanda diventa QUANDO
+// spendere il ricambio, non SE.
+
+function stagioneDaSeiGare() {
+    return F1Stagione.creaStagione({
+        nome: 'Sei', creataDa: 'uid-a',
+        piloti: [{ uid: 'uid-a', colore: 'red' }, { colore: 'blue', bot: true }],
+        calendario: ['a', 'b', 'c', 'd', 'e', 'f'],
+    });
+}
+
+function conUnaGara(s, usura) {
+    return F1Stagione.registraRisultato(s, { ordine: ['p1', 'p2'], usura: { p1: usura } });
+}
+
+test('dotazione: si calcola dalla lunghezza della stagione', () => {
+    // Un numero fisso avrebbe significati diversi su calendari diversi.
+    // Su sei gare fa UN ricambio: con un consumo del 18% a gara il motore non
+    // arriva in fondo, quindi il ricambio serve — e il secondo si paga.
+    assert.equal(F1Stagione.dotazione(stagioneDaSeiGare()).engine, 1);
+    const lunga = F1Stagione.creaStagione({
+        nome: 'x', creataDa: 'u', piloti: [],
+        calendario: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'],
+    });
+    assert.equal(F1Stagione.dotazione(lunga).engine, 2);
+});
+
+test('officinaDaFare: dopo una gara si', () => {
+    assert.equal(F1Stagione.officinaDaFare(stagioneDaSeiGare()), false, 'prima della prima gara no');
+    const s = conUnaGara(stagioneDaSeiGare(), { engine: 40 });
+    assert.equal(F1Stagione.officinaDaFare(s), true);
+});
+
+test("officinaDaFare: e' uno STATO, non un momento — si riapre finche' non si decide", () => {
+    // Chi chiude il browser in officina la ritrova riaprendo la stagione,
+    // senza aver perso la gara appena corsa.
+    let s = conUnaGara(stagioneDaSeiGare(), { engine: 40 });
+    assert.equal(F1Stagione.officinaDaFare(s), true);
+    s = F1Stagione.registraOfficina(s, { ricambi: {} });
+    assert.equal(F1Stagione.officinaDaFare(s), false, "nessun ricambio e' comunque una decisione");
+});
+
+test('officinaDaFare: a stagione finita non si apre', () => {
+    let s = F1Stagione.creaStagione({ nome: 'x', creataDa: 'u', piloti: [{ uid: 'u', colore: 'red' }], calendario: ['a'] });
+    s = F1Stagione.registraRisultato(s, { ordine: ['p1'], usura: { p1: { engine: 90 } } });
+    assert.equal(F1Stagione.finita(s), true);
+    assert.equal(F1Stagione.officinaDaFare(s), false, "non c'e' nessuna gara dopo da preparare");
+});
+
+test('registraOfficina: il ricambio azzera il componente', () => {
+    let s = conUnaGara(stagioneDaSeiGare(), { floor: 30, engine: 80, suspension: 10 });
+    s = F1Stagione.registraOfficina(s, { ricambi: { p1: ['engine'] } });
+    const stato = F1Stagione.statoVettura(s, 'p1');
+    assert.equal(stato.engine, 0, 'motore nuovo');
+    assert.equal(stato.floor, 30, 'il fondo non si tocca');
+});
+
+test("registraOfficina: l'ala non e' sostituibile in officina", () => {
+    // E' gia' nuova ad ogni via: non ha dotazione e non ha penalita'.
+    let s = conUnaGara(stagioneDaSeiGare(), { frontWing: 90, engine: 10 });
+    s = F1Stagione.registraOfficina(s, { ricambi: { p1: ['frontWing'] } });
+    assert.equal(F1Stagione.penalitaGriglia(s, 'p1'), 0, "nessuna penalita' per l'ala");
+    assert.deepEqual(F1Stagione.ricambiUsati(s, 'p1'), { floor: 0, engine: 0, suspension: 0 });
+});
+
+test('registraOfficina: due volte sulla stessa gara sostituisce la decisione, non la somma', () => {
+    // Riaprire l'officina e cambiare idea non deve consumare due ricambi.
+    let s = conUnaGara(stagioneDaSeiGare(), { engine: 80 });
+    s = F1Stagione.registraOfficina(s, { ricambi: { p1: ['engine'] } });
+    s = F1Stagione.registraOfficina(s, { ricambi: { p1: [] } });
+    assert.equal(F1Stagione.ricambiUsati(s, 'p1').engine, 0);
+    assert.equal(F1Stagione.statoVettura(s, 'p1').engine, 80, "il motore vecchio e' tornato");
+});
+
+test('ricambiRimasti: scalano con l\u0027uso', () => {
+    let s = conUnaGara(stagioneDaSeiGare(), { engine: 80 });
+    assert.equal(F1Stagione.ricambiRimasti(s, 'p1').engine, 1);
+    s = F1Stagione.registraOfficina(s, { ricambi: { p1: ['engine'] } });
+    assert.equal(F1Stagione.ricambiRimasti(s, 'p1').engine, 0);
+});
+
+test("penalitaGriglia: dentro la dotazione sostituire e' gratis", () => {
+    let s = conUnaGara(stagioneDaSeiGare(), { engine: 80 });
+    s = F1Stagione.registraOfficina(s, { ricambi: { p1: ['engine'] } });
+    assert.equal(F1Stagione.penalitaGriglia(s, 'p1'), 0);
+});
+
+test('penalitaGriglia: oltre la dotazione costa posizioni', () => {
+    let s = stagioneDaSeiGare();
+    // Un motore e' la dotazione su sei gare: il secondo si paga.
+    for (let i = 0; i < 2; i++) {
+        s = F1Stagione.registraRisultato(s, { ordine: ['p1', 'p2'], usura: { p1: { engine: 90 } } });
+        s = F1Stagione.registraOfficina(s, { ricambi: { p1: ['engine'] } });
+    }
+    assert.equal(F1Stagione.penalitaGriglia(s, 'p1'), F1Stagione.PENALITA_GRIGLIA.engine);
+});
+
+test("penalitaGriglia: vale solo per l'ULTIMA officina, non si trascina", () => {
+    // Una penalita' gia' scontata non si paga due volte.
+    let s = stagioneDaSeiGare();
+    for (let i = 0; i < 2; i++) {
+        s = F1Stagione.registraRisultato(s, { ordine: ['p1', 'p2'], usura: { p1: { engine: 90 } } });
+        s = F1Stagione.registraOfficina(s, { ricambi: { p1: ['engine'] } });
+    }
+    assert.ok(F1Stagione.penalitaGriglia(s, 'p1') > 0);
+    s = F1Stagione.registraRisultato(s, { ordine: ['p1', 'p2'], usura: { p1: { engine: 20 } } });
+    s = F1Stagione.registraOfficina(s, { ricambi: {} });
+    assert.equal(F1Stagione.penalitaGriglia(s, 'p1'), 0, "la penalita' e' stata scontata");
+});
+
+test("penalitaGriglia: piu' ricambi oltre dotazione si sommano", () => {
+    let s = stagioneDaSeiGare();
+    for (let i = 0; i < 2; i++) {
+        s = F1Stagione.registraRisultato(s, { ordine: ['p1', 'p2'], usura: { p1: { engine: 90, floor: 90 } } });
+        s = F1Stagione.registraOfficina(s, { ricambi: { p1: ['engine', 'floor'] } });
+    }
+    assert.equal(F1Stagione.penalitaGriglia(s, 'p1'),
+        F1Stagione.PENALITA_GRIGLIA.engine + F1Stagione.PENALITA_GRIGLIA.floor);
+});
