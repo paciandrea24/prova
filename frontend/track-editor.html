@@ -4,93 +4,226 @@
     <meta charset="UTF-8">
     <title>F1 — Track Editor</title>
     <style>
-        html, body { margin: 0; height: 100%; overflow: hidden; font-family: sans-serif; background: #1a1a22; }
-        #panel {
-            position: fixed; top: 10px; left: 10px; bottom: 10px; z-index: 10;
-            background: rgba(20,20,28,0.9); color: #ecf0f1; padding: 14px 16px;
-            border-radius: 10px; width: 260px; font-size: 13px;
-            box-sizing: border-box; overflow-y: auto;
+        /* Un editor, non una pagina: pannello a sezioni, densità alta, azioni
+           sempre raggiungibili in fondo. I numeri sono in monospace perché si
+           leggono in colonna e si confrontano a colpo d'occhio. */
+        :root {
+            --fondo:      #14141b;
+            --pannello:   #1b1c25;
+            --sezione:    #22232e;
+            --bordo:      #2e3040;
+            --testo:      #e8ecf1;
+            --spento:     #8b93a5;
+            --accento:    #2ecc71;   /* lo stesso verde della maniglia in scena */
+            --pericolo:   #e74c3c;
         }
-        #panel h1 { font-size: 15px; margin: 0 0 10px; }
-        #panel label { display: block; margin-top: 8px; }
-        #panel input, #panel select { width: 100%; box-sizing: border-box; margin-top: 2px; }
-        #panel button { margin-top: 10px; width: 100%; padding: 8px; cursor: pointer; }
-        #panel .row { display: flex; gap: 6px; }
-        #panel .row > div { flex: 1; }
-        #hint { position: fixed; bottom: 10px; left: 10px; color: #95a5a6; font-size: 12px; z-index: 10; }
+        html, body {
+            margin: 0; height: 100%; overflow: hidden; background: var(--fondo);
+            font-family: "Segoe UI", system-ui, sans-serif; font-size: 13px; color: var(--testo);
+        }
+
+        #panel {
+            position: fixed; top: 0; left: 0; bottom: 0; z-index: 10;
+            width: 296px; box-sizing: border-box;
+            background: var(--pannello); border-right: 1px solid var(--bordo);
+            display: flex; flex-direction: column;
+        }
+        /* Testata: dice sempre che pista si sta modificando e con che modello. */
+        #panelHead {
+            padding: 10px 12px; border-bottom: 1px solid var(--bordo); flex: none;
+        }
+        #panelHead h1 { font-size: 13px; margin: 0; letter-spacing: 0.08em; text-transform: uppercase; }
+        #modoCorrente { font-size: 11px; color: var(--spento); margin-top: 3px; }
+
+        #panelBody { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+
+        /* Le sezioni si aprono e si chiudono: un editor mostra solo il gruppo
+           su cui stai lavorando, non tutti i campi contemporaneamente. */
+        .sez { border-bottom: 1px solid var(--bordo); }
+        .sez > summary {
+            list-style: none; cursor: pointer; user-select: none;
+            padding: 8px 12px; font-size: 11px; letter-spacing: 0.08em;
+            text-transform: uppercase; color: var(--spento);
+            display: flex; align-items: center; gap: 6px;
+        }
+        .sez > summary::-webkit-details-marker { display: none; }
+        .sez > summary::before { content: "▸"; font-size: 9px; transition: transform .12s; }
+        .sez[open] > summary::before { transform: rotate(90deg); }
+        .sez > summary:hover { color: var(--testo); background: var(--sezione); }
+        .sez[open] > summary { color: var(--testo); }
+        .corpo { padding: 2px 12px 12px; }
+
+        label { display: block; margin-top: 8px; color: var(--spento); font-size: 11px; }
+        input, select {
+            width: 100%; box-sizing: border-box; margin-top: 3px;
+            background: var(--sezione); color: var(--testo);
+            border: 1px solid var(--bordo); border-radius: 4px; padding: 5px 6px;
+            font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px;
+        }
+        input:focus, select:focus { outline: 2px solid var(--accento); outline-offset: -1px; }
+        input[type="range"] { padding: 0; border: none; background: none; }
+        input[type="checkbox"] { width: auto; margin: 0 6px 0 0; vertical-align: -1px; }
+        input[type="file"] { font-family: inherit; font-size: 11px; padding: 4px; }
+        .riga { display: flex; gap: 6px; }
+        .riga > div { flex: 1; }
+        .nota { font-size: 11px; color: var(--spento); margin-top: 4px; line-height: 1.4; }
+        .valore { font-family: "Cascadia Mono", Consolas, monospace; color: var(--testo); }
+        .avviso { color: var(--pericolo); font-size: 11px; margin-top: 6px; line-height: 1.4; }
+
+        button {
+            margin-top: 8px; width: 100%; padding: 6px; cursor: pointer;
+            background: var(--sezione); color: var(--testo);
+            border: 1px solid var(--bordo); border-radius: 4px; font-size: 12px;
+        }
+        button:hover { border-color: var(--spento); }
+        button:focus-visible { outline: 2px solid var(--accento); outline-offset: 1px; }
+
+        /* Le azioni non scorrono via: salvare è ciò che si fa più spesso. */
+        #azioni {
+            flex: none; padding: 8px 12px; border-top: 1px solid var(--bordo);
+            background: var(--pannello);
+        }
+        #azioni button { margin-top: 6px; }
+        #azioni .primaria {
+            background: var(--accento); border-color: var(--accento);
+            color: #102417; font-weight: 600;
+        }
+        #azioni .duo { display: flex; gap: 6px; }
+        #azioni .duo > div { flex: 1; }
+        /* Gli slider prendono l'accento dell'editor invece del blu di sistema:
+           sono due, e sono gli unici controlli continui del pannello. */
+        input[type="range"] { accent-color: var(--accento); }
+
+        /* Il tratto scelto sta in cima, aperto, e si chiude da solo quando non
+           c'è niente di selezionato: è contestuale, non un campo fisso. */
+        #trattoSection { background: var(--sezione); }
+        #trattoSection .corpo { padding-top: 6px; }
+
+        kbd {
+            font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px;
+            background: var(--sezione); border: 1px solid var(--bordo);
+            border-radius: 3px; padding: 0 4px; color: var(--testo);
+        }
+        .comandi { line-height: 1.9; color: var(--spento); font-size: 11px; }
     </style>
 </head>
 <body>
     <div id="panel">
-        <h1>Track Editor</h1>
+        <div id="panelHead">
+            <h1>Track Editor</h1>
+            <div id="modoCorrente">segmenti · nessun nodo</div>
+        </div>
 
-        <label>Carica pista esistente
-            <select id="loadTrackSelect"><option value="">-- seleziona --</option></select>
-        </label>
-        <button id="loadTrackBtn">Carica pista selezionata</button>
-        <button id="deleteTrackBtn">Elimina pista selezionata</button>
-        <label>Importa da file (.json scaricato)
-            <input type="file" id="importFile" accept="application/json">
-        </label>
-        <hr style="border-color: #4b5b6b; margin: 10px 0;">
+        <div id="panelBody">
+            <details class="sez" id="trattoSection" open>
+                <summary>Tratto selezionato</summary>
+                <div class="corpo">
+                    <div id="trattoTipo" class="nota"></div>
+                    <label>Lunghezza<input id="trattoLunghezza" type="number" step="1"></label>
+                    <div id="trattoMisure" class="nota"></div>
+                    <div class="nota"><kbd>R</kbd> rendi retto · <kbd>C</kbd> rendi curvo</div>
+                </div>
+            </details>
 
-        <label>ID<input id="trackId" value="nuova-pista"></label>
-        <label>Nome<input id="trackName" value="Nuova Pista"></label>
-        <label>Target km<input id="targetKm" type="number" step="0.1" value="5"></label>
-        <label>Larghezza pista<input id="roadHalfWidth" type="number" step="0.5" value="11"></label>
-        <label>Abrasività asfalto<input id="abrasivita" type="range" min="0.5" max="2" step="0.05" value="1"></label>
-        <div id="abrasivitaInfo" style="font-size:12px; color:#8b96a3; margin:-4px 0 8px;"></div>
-        <label><input type="checkbox" id="notturno" style="width:auto;"> Si corre in notturno</label>
-        <label>Larghezza corsia box<input id="pitRoadHalfWidth" type="number" step="0.5" value="5"></label>
-        <label>Indice casella box (pit)<input id="pitBoxIndex" type="number" step="1" value="4"></label>
-        <label><input type="checkbox" id="pitMode" style="width:auto;"> Modalità corsia box</label>
-        <label>Riquadro trigger ingresso pit (viola nella scena, trascinabile)</label>
-        <div class="row">
-            <div><label>Centro X<input id="entryX" type="number" value="-611.79"></label></div>
-            <div><label>Centro Z<input id="entryZ" type="number" value="-93.81"></label></div>
-        </div>
-        <div class="row">
-            <div><label>Mezza larghezza<input id="entryHalfWidth" type="number" step="0.5" value="5.5"></label></div>
-            <div><label>Mezza lunghezza<input id="entryHalfLength" type="number" step="0.5" value="5.5"></label></div>
-        </div>
-        <div class="row">
-            <div><label>Angolo (gradi)<input id="entryAngleDeg" type="number" step="1" value="0"></label></div>
-        </div>
-        <label>Trasparenza tracciato<input type="range" id="trackOpacity" min="15" max="100" value="100"></label>
-        <div style="font-size:11px; color:#8b96a3; margin:-4px 0 8px;">sbiadisce la pista, non l'immagine da ricalcare</div>
-        <div id="trattoSection" style="display:none; border-top:1px solid #2a2f3a; padding-top:8px; margin-top:8px;">
-            <h4 style="margin:0 0 4px;">Tratto selezionato</h4>
-            <div id="trattoTipo" style="font-size:12px; color:#8b96a3; margin-bottom:6px;"></div>
-            <label>Lunghezza<input id="trattoLunghezza" type="number" step="1"></label>
-            <div id="trattoMisure" style="font-size:12px; color:#8b96a3; margin-bottom:6px;"></div>
-            <div style="font-size:11px; color:#8b96a3;">R: rendi retto · C: rendi curvo</div>
-        </div>
-        <button id="undoBtn">Annulla (Ctrl+Z)</button>
-        <button id="clearBtn">Svuota lista attiva</button>
-        <button id="saveGameBtn">Salva nel gioco</button>
-        <button id="exportBtn">Esporta JSON (scarica file)</button>
+            <details class="sez" id="sezPista" open>
+                <summary>Pista</summary>
+                <div class="corpo">
+                    <label>ID<input id="trackId" value="nuova-pista"></label>
+                    <label>Nome<input id="trackName" value="Nuova Pista"></label>
+                    <div class="riga">
+                        <div><label>Lunghezza (km)<input id="targetKm" type="number" step="0.1" value="5"></label></div>
+                        <div><label>Mezza carreggiata<input id="roadHalfWidth" type="number" step="0.5" value="11"></label></div>
+                    </div>
+                    <label>Abrasività asfalto<input id="abrasivita" type="range" min="0.5" max="2" step="0.05" value="1"></label>
+                    <div id="abrasivitaInfo" class="nota"></div>
+                    <label><input type="checkbox" id="notturno"> Si corre in notturno</label>
+                </div>
+            </details>
 
-        <div id="startFinishSection">
-            <hr style="border-color: #4b5b6b; margin: 10px 0;">
-            <h1>Traguardo</h1>
-            <div id="startFinishHint" style="font-size: 11px; color: #8b96a3; margin-bottom: 6px;">
-                Cono bianco: verso scelto. Freccia verde: verso reale della pista (quello che useranno davvero i bot).
+            <details class="sez" id="sezBox">
+                <summary>Corsia box</summary>
+                <div class="corpo">
+                    <label><input type="checkbox" id="pitMode"> Sto disegnando la corsia box</label>
+                    <div class="riga">
+                        <div><label>Mezza larghezza<input id="pitRoadHalfWidth" type="number" step="0.5" value="5"></label></div>
+                        <div><label>Casella del box<input id="pitBoxIndex" type="number" step="1" value="4"></label></div>
+                    </div>
+                    <div class="nota">Riquadro d'ingresso (viola in scena, trascinabile): è dove le auto decidono di entrare ai box.</div>
+                    <div class="riga">
+                        <div><label>Centro X<input id="entryX" type="number" value="-611.79"></label></div>
+                        <div><label>Centro Z<input id="entryZ" type="number" value="-93.81"></label></div>
+                    </div>
+                    <div class="riga">
+                        <div><label>Mezza larghezza<input id="entryHalfWidth" type="number" step="0.5" value="5.5"></label></div>
+                        <div><label>Mezza lunghezza<input id="entryHalfLength" type="number" step="0.5" value="5.5"></label></div>
+                    </div>
+                    <label>Angolo (gradi)<input id="entryAngleDeg" type="number" step="1" value="0"></label>
+                </div>
+            </details>
+
+            <details class="sez" id="startFinishSection">
+                <summary>Traguardo</summary>
+                <div class="corpo">
+                    <div id="startFinishHint" class="nota">
+                        Cono bianco: il verso che hai scelto. Freccia verde: il verso reale della pista, quello che useranno i bot.
+                    </div>
+                    <div id="startFinishWarning" class="avviso" style="display:none;">
+                        Il traguardo punta quasi all'opposto del verso reale: alla partenza i bot faranno subito un testacoda per raddrizzarsi.
+                    </div>
+                    <button id="startFinishAlignBtn">Allinea al verso della pista</button>
+                </div>
+            </details>
+
+            <details class="sez" id="sezVista">
+                <summary>Vista e riferimento</summary>
+                <div class="corpo">
+                    <label>Trasparenza tracciato<input type="range" id="trackOpacity" min="15" max="100" value="100"></label>
+                    <div class="nota">Sbiadisce la pista, non l'immagine da ricalcare.</div>
+                    <div class="nota" style="margin-top:8px;">Incolla un'immagine con <kbd>Ctrl</kbd>+<kbd>V</kbd> per ricalcarla.</div>
+                    <div id="imgOverlaySection" style="display:none;">
+                        <button id="imgConfirmBtn">Blocca la posizione</button>
+                        <button id="imgEditBtn">Sposta o ridimensiona</button>
+                        <button id="imgRemoveBtn">Togli l'immagine</button>
+                    </div>
+                </div>
+            </details>
+
+            <details class="sez" id="sezFile">
+                <summary>Piste salvate</summary>
+                <div class="corpo">
+                    <label>Apri una pista<select id="loadTrackSelect"><option value="">— scegli —</option></select></label>
+                    <div class="duo riga">
+                        <div><button id="loadTrackBtn">Apri</button></div>
+                        <div><button id="deleteTrackBtn">Elimina</button></div>
+                    </div>
+                    <label>Importa da file<input type="file" id="importFile" accept="application/json"></label>
+                </div>
+            </details>
+
+            <details class="sez" id="sezComandi">
+                <summary>Comandi</summary>
+                <div class="corpo comandi">
+                    <div><kbd>Click</kbd> aggiungi un nodo · <kbd>Click su un nodo</kbd> selezionalo</div>
+                    <div><kbd>Trascina</kbd> sposta · <kbd>Tasto destro</kbd> elimina</div>
+                    <div>Maniglia verde: gira la tangente, a scatti di 15° (<kbd>Alt</kbd> li sospende)</div>
+                    <div><kbd>R</kbd> tratto retto · <kbd>C</kbd> tratto curvo · <kbd>U</kbd> togli l'ultimo nodo</div>
+                    <div><kbd>Ctrl</kbd>+<kbd>Z</kbd> annulla · <kbd>Ctrl</kbd>+<kbd>Y</kbd> rifai</div>
+                    <div><kbd>Rotellina su un nodo</kbd> alza o abbassa · <kbd>B</kbd> ponte</div>
+                    <div><kbd>Tasto centrale</kbd> sposta la vista · <kbd>Rotellina</kbd> zoom</div>
+                    <div>Cono bianco: traguardo — trascinalo, o gira la sfera arancione.</div>
+                </div>
+            </details>
+        </div>
+
+        <div id="azioni">
+            <button id="saveGameBtn" class="primaria">Salva nel gioco</button>
+            <div class="duo">
+                <div><button id="undoBtn">Annulla</button></div>
+                <div><button id="exportBtn">Esporta .json</button></div>
             </div>
-            <div id="startFinishWarning" style="display:none; color:#e74c3c; font-size:12px; margin-bottom:6px;">
-                Attenzione: il traguardo punta quasi in verso opposto a quello reale della pista — i bot partiranno e faranno subito un testacoda per raddrizzarsi.
-            </div>
-            <button id="startFinishAlignBtn">Allinea al verso pista</button>
-        </div>
-
-        <div id="imgOverlaySection" style="display:none;">
-            <hr style="border-color: #4b5b6b; margin: 10px 0;">
-            <h1>Immagine di riferimento</h1>
-            <button id="imgConfirmBtn">Conferma posizione</button>
-            <button id="imgEditBtn">Modifica posizione</button>
-            <button id="imgRemoveBtn">Rimuovi immagine</button>
+            <button id="clearBtn">Svuota il tracciato</button>
         </div>
     </div>
-    <div id="hint">Modalità segmenti — Click: aggiungi nodo · Clicca un nodo: selezionalo (maniglia verde: trascina per girare la tangente, Alt sospende lo scatto a 15°) · R: tratto retto · C: tratto curvo · Ctrl+Z / Ctrl+Y: annulla e rifai · U: togli l'ultimo nodo<br>Click: aggiungi punto · Trascina un punto: sposta · Tasto destro: elimina · Rotellina su un punto: alza/abbassa (solo pista) · B su un punto: attiva/disattiva ponte (arancione) · Tasto centrale + trascina: pan · Rotellina altrove: zoom · Ctrl+V: incolla immagine di riferimento da ricalcare (poi trascina corpo/maniglie, Conferma per bloccarla) · Marker bianco (cono): traguardo — trascina per spostare, trascina la sfera arancione per ruotare</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="shared/trackGeometry.js"></script>
@@ -98,6 +231,6 @@
     <script src="shared/toonPalette.js?v=20260810a"></script>
     <script src="shared/trackMeshBuilder.js?v=20260817a"></script>
     <script src="shared/trackSegmenti.js?v=20260824b"></script>
-    <script src="track-editor.js?v=20260824e"></script>
+    <script src="track-editor.js?v=20260824f"></script>
 </body>
 </html>

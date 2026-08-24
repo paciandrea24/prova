@@ -127,8 +127,24 @@ document.addEventListener('DOMContentLoaded', () => {
     // controllo non ha né una lunghezza né un raggio, quindi non c'era niente
     // da mostrare e niente da riscrivere.
     // ====================================================
+    // La riga sotto il titolo: dice sempre con che modello si sta lavorando e
+    // quanto c'e' in scena. Su una pista aperta a punti è l'unico posto in cui
+    // si legge che i segmenti lì non ci sono.
+    function aggiornaRigaStato() {
+        const el = document.getElementById('modoCorrente');
+        if (!el) return;
+        if (document.getElementById('pitMode').checked) {
+            el.textContent = `corsia box · ${pitPoints.length} punti`;
+            return;
+        }
+        el.textContent = inSegmenti()
+            ? `segmenti · ${geometria.nodi.length} nodi · ${mainPoints.length} punti cotti`
+            : `punti · ${mainPoints.length} punti di controllo`;
+    }
+
     function aggiornaRiquadroTratto() {
         const sez = document.getElementById('trattoSection');
+        aggiornaRigaStato();
         if (!sez) return;
         if (!inSegmenti() || trattoSelezionato < 0 || !geometria.tratti[trattoSelezionato]
             || geometria.nodi.length < 3) {
@@ -136,6 +152,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         sez.style.display = '';
+        // Contestuale: quando scegli un tratto il riquadro si apre da solo,
+        // perché è il motivo per cui l'hai scelto.
+        sez.open = true;
         const m = TrackSegmenti.misureTratto(geometria, trattoSelezionato);
         const tipo = geometria.tratti[trattoSelezionato].tipo;
         document.getElementById('trattoTipo').textContent =
@@ -569,6 +588,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateEntryTriggerVisual();
         aggiornaAbrasivita();
+        aggiornaRigaStato();
     }
 
     // ====================================================
@@ -1234,6 +1254,28 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             alert(`Errore di rete durante il salvataggio: ${err.message}`);
         }
+    });
+
+    // Quali sezioni restano aperte è una preferenza di chi disegna, non un
+    // default da reimporre ad ogni ricarica. `trattoSection` è esclusa: la
+    // apre e la chiude la selezione, non l'autore.
+    for (const sez of document.querySelectorAll('#panelBody > details.sez')) {
+        if (sez.id === 'trattoSection') continue;
+        const chiave = 'trackEditorSez:' + sez.id;
+        try {
+            const salvato = localStorage.getItem(chiave);
+            if (salvato !== null) sez.open = salvato === '1';
+        } catch (e) { /* modalità privata: si resta ai default */ }
+        sez.addEventListener('toggle', () => {
+            try { localStorage.setItem(chiave, sez.open ? '1' : '0'); } catch (e) { /* idem */ }
+        });
+    }
+
+    // Cambiare modalità cambia su cosa si clicca: va detto subito, non al
+    // primo click andato dove non ci si aspettava.
+    document.getElementById('pitMode').addEventListener('change', () => {
+        aggiornaRigaStato();
+        document.getElementById('sezBox').open = document.getElementById('pitMode').checked;
     });
 
     // Lo stato iniziale va MOSTRATO, non solo tenuto: `rebuild()` parte solo
