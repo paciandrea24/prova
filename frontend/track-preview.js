@@ -84,6 +84,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tasti = new Set();
     addEventListener('keydown', (e) => {
         tasti.add(e.code);
+        // Lo spazio fa scorrere la pagina, e qui serve a salire.
+        if (e.code === 'Space') e.preventDefault();
         if (e.code === 'KeyT') tornaSulTraguardo();
     });
     addEventListener('keyup', (e) => tasti.delete(e.code));
@@ -102,7 +104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     const VELOCITA = 45;             // unità al secondo: una corsa veloce
-    const MOLTIPLICATORE_CORSA = 5;  // con Shift si attraversa il circuito
+    const MOLTIPLICATORE_CORSA = 5;  // con Ctrl si attraversa il circuito
 
     document.getElementById('tornaBtn').addEventListener('click', () => {
         location.href = 'track-editor.html';
@@ -185,19 +187,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         const dt = Math.min(0.05, (ora - ultimo) / 1000);
         ultimo = ora;
 
-        const passo = VELOCITA * dt * (tasti.has('ShiftLeft') || tasti.has('ShiftRight') ? MOLTIPLICATORE_CORSA : 1);
+        const passo = VELOCITA * dt * (tasti.has('ControlLeft') ? MOLTIPLICATORE_CORSA : 1);
         const avanti = new THREE.Vector3(
             Math.sin(imbardata) * Math.cos(beccheggio),
             Math.sin(beccheggio),
             Math.cos(imbardata) * Math.cos(beccheggio));
-        const destra = new THREE.Vector3(Math.sin(imbardata + Math.PI / 2), 0, Math.cos(imbardata + Math.PI / 2));
+        // ⚠️ MENO un quarto di giro, non più: in un sistema destrorso con Y in
+        // alto, chi guarda verso +Z ha la destra a -X. Con «+» A e D si
+        // scambiano, ed è esattamente come è nata questa pagina.
+        const destra = new THREE.Vector3(Math.sin(imbardata - Math.PI / 2), 0, Math.cos(imbardata - Math.PI / 2));
 
         if (tasti.has('KeyW')) camera.position.addScaledVector(avanti, passo);
         if (tasti.has('KeyS')) camera.position.addScaledVector(avanti, -passo);
         if (tasti.has('KeyD')) camera.position.addScaledVector(destra, passo);
         if (tasti.has('KeyA')) camera.position.addScaledVector(destra, -passo);
-        if (tasti.has('KeyE')) camera.position.y += passo;
-        if (tasti.has('KeyQ')) camera.position.y -= passo;
+        if (tasti.has('Space')) camera.position.y += passo;
+        if (tasti.has('ShiftLeft')) camera.position.y -= passo;
 
         camera.lookAt(camera.position.clone().add(avanti));
         renderer.render(scene, camera);
