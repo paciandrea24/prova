@@ -81,14 +81,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     tornaSulTraguardo();
 
     // --- Il volo ----------------------------------------------------------
+    //
+    // ⚠️ NIENTE CTRL COME MODIFICATORE. Con Ctrl premuto i tasti del volo
+    // diventano scorciatoie del browser: Ctrl+D mette nei preferiti, Ctrl+S
+    // salva la pagina e Ctrl+W CHIUDE LA SCHEDA — e quest'ultima una pagina
+    // non può bloccarla, è riservata al browser. Segnalato dall'utente il
+    // 2026-08-25: «premendo Ctrl mi apre la pagina per salvare tra i preferiti
+    // e poi inizia a muoversi da solo». La velocità si regola con la
+    // rotellina, che non collide con niente.
     const tasti = new Set();
+    const TASTI_DEL_VOLO = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'KeyT']);
+
     addEventListener('keydown', (e) => {
+        // I tasti del volo non devono arrivare al browser: lo spazio fa
+        // scorrere la pagina, e le combinazioni fanno di peggio.
+        if (TASTI_DEL_VOLO.has(e.code)) e.preventDefault();
         tasti.add(e.code);
-        // Lo spazio fa scorrere la pagina, e qui serve a salire.
-        if (e.code === 'Space') e.preventDefault();
         if (e.code === 'KeyT') tornaSulTraguardo();
     });
     addEventListener('keyup', (e) => tasti.delete(e.code));
+
+    // ⚠️ E LA SECONDA META' DEL DIFETTO: se la pagina perde il fuoco mentre un
+    // tasto è premuto, il `keyup` non arriva mai e la camera continua a
+    // muoversi da sola per sempre. Succede con qualunque finestra si apra
+    // sopra — non solo con le scorciatoie del browser.
+    function lasciaTuttiITasti() { tasti.clear(); }
+    addEventListener('blur', lasciaTuttiITasti);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) lasciaTuttiITasti(); });
 
     const invito = document.getElementById('clicca');
     invito.addEventListener('click', () => renderer.domElement.requestPointerLock());
@@ -103,8 +122,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         beccheggio = Math.max(-1.4, Math.min(1.4, beccheggio - e.movementY * 0.0022));
     });
 
-    const VELOCITA = 45;             // unità al secondo: una corsa veloce
-    const MOLTIPLICATORE_CORSA = 5;  // con Ctrl si attraversa il circuito
+    // Velocità di volo, regolata con la ROTELLINA: da «cammino e guardo un
+    // edificio» a «attraverso il circuito». È il comando del volo negli editor
+    // 3D, e soprattutto non collide con nessuna scorciatoia del browser.
+    const VELOCITA_MINIMA = 8;
+    const VELOCITA_MASSIMA = 400;
+    let velocita = 45;               // unità al secondo: una corsa veloce
+    const elVelocita = document.getElementById('velocita');
+    function mostraVelocita() {
+        if (elVelocita) elVelocita.textContent = `velocità ${velocita.toFixed(0)} · rotellina per cambiarla`;
+    }
+    mostraVelocita();
+    addEventListener('wheel', (e) => {
+        e.preventDefault();
+        // Moltiplicativa e non additiva: da 8 a 400 con pochi scatti, e la
+        // sensibilità resta la stessa a ogni scala.
+        velocita = Math.max(VELOCITA_MINIMA, Math.min(VELOCITA_MASSIMA,
+            velocita * (e.deltaY > 0 ? 0.8 : 1.25)));
+        mostraVelocita();
+    }, { passive: false });
 
     document.getElementById('tornaBtn').addEventListener('click', () => {
         location.href = 'track-editor.html';
@@ -187,7 +223,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const dt = Math.min(0.05, (ora - ultimo) / 1000);
         ultimo = ora;
 
-        const passo = VELOCITA * dt * (tasti.has('ControlLeft') ? MOLTIPLICATORE_CORSA : 1);
+        const passo = velocita * dt;
         const avanti = new THREE.Vector3(
             Math.sin(imbardata) * Math.cos(beccheggio),
             Math.sin(beccheggio),
