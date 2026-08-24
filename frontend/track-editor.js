@@ -115,10 +115,37 @@ document.addEventListener('DOMContentLoaded', () => {
         if (trattoSelezionato >= geometria.tratti.length) trattoSelezionato = -1;
         rigeneraDaGeometria();
         rebuild();
+        aggiornaRiquadroTratto();
     }
 
     const annulla = () => ripristina(storico, rifatti);
     const rifai = () => ripristina(rifatti, storico);
+
+    // ====================================================
+    // I NUMERI DEL TRATTO SCELTO — si leggono e si scrivono.
+    // È la richiesta che il vecchio modello non poteva soddisfare: un punto di
+    // controllo non ha né una lunghezza né un raggio, quindi non c'era niente
+    // da mostrare e niente da riscrivere.
+    // ====================================================
+    function aggiornaRiquadroTratto() {
+        const sez = document.getElementById('trattoSection');
+        if (!sez) return;
+        if (!inSegmenti() || trattoSelezionato < 0 || !geometria.tratti[trattoSelezionato]
+            || geometria.nodi.length < 3) {
+            sez.style.display = 'none';
+            return;
+        }
+        sez.style.display = '';
+        const m = TrackSegmenti.misureTratto(geometria, trattoSelezionato);
+        const tipo = geometria.tratti[trattoSelezionato].tipo;
+        document.getElementById('trattoTipo').textContent =
+            `dal nodo ${trattoSelezionato} al ${(trattoSelezionato + 1) % geometria.nodi.length} · ${tipo}`;
+        document.getElementById('trattoLunghezza').value = m.lunghezza.toFixed(1);
+        document.getElementById('trattoMisure').textContent = tipo === 'retta'
+            ? 'dritto — nessun raggio'
+            : `gira di ${(m.angolo * 180 / Math.PI).toFixed(0)}° · raggio minimo ${
+                Number.isFinite(m.raggioMinimo) ? m.raggioMinimo.toFixed(0) : '—'}`;
+    }
 
     function rigeneraDaGeometria() {
         mainPoints = geometria.nodi.length >= 3
@@ -658,6 +685,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 nodoSelezionato = marker.userData.index;
                 trattoSelezionato = marker.userData.index;
                 rebuild();
+                aggiornaRiquadroTratto();
             }
             return;
         }
@@ -816,6 +844,19 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCameraTransform();
     }, { passive: false });
 
+    // Scrivere un numero sposta UN nodo, quello di arrivo: i nodi sono
+    // posizioni assolute, non una catena relativa in cui una modifica trascina
+    // tutto il resto. È la proprietà che serve per ricalcare un'immagine.
+    document.getElementById('trattoLunghezza').addEventListener('change', (ev) => {
+        const v = parseFloat(ev.target.value);
+        if (!(v > 0) || !inSegmenti() || trattoSelezionato < 0) return;
+        salvaStato();
+        geometria = TrackSegmenti.impostaLunghezza(geometria, trattoSelezionato, v);
+        dopoModificaMain();
+        rebuild();
+        aggiornaRiquadroTratto();
+    });
+
     document.getElementById('undoBtn').addEventListener('click', () => {
         if (inSegmenti() && !document.getElementById('pitMode').checked) { annulla(); return; }
         activeList().pop();
@@ -902,12 +943,14 @@ document.addEventListener('DOMContentLoaded', () => {
             geometria.nodi[(trattoSelezionato + 1) % n].dirManuale = true;
             rigeneraDaGeometria();
             rebuild();
+            aggiornaRiquadroTratto();
         }
         if ((ev.key === 'c' || ev.key === 'C') && inSegmenti() && trattoSelezionato >= 0) {
             salvaStato();
             geometria.tratti[trattoSelezionato] = { tipo: 'curva' };
             rigeneraDaGeometria();
             rebuild();
+            aggiornaRiquadroTratto();
         }
     });
 
@@ -974,6 +1017,7 @@ document.addEventListener('DOMContentLoaded', () => {
         nodoSelezionato = -1;
         trattoSelezionato = -1;
         if (geometria) rigeneraDaGeometria();
+        aggiornaRiquadroTratto();
 
         // Default: se la pista caricata non ha ancora startFinish (piste
         // esistenti pre-questa modifica), il marker appare alla posizione
