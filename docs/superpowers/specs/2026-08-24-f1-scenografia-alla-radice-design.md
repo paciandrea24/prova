@@ -199,3 +199,30 @@ a un elenco. È questa, non le singole correzioni, la risposta alla richiesta
   no, non dove mettere le cose. Se dopo la migrazione una pista risultasse
   spoglia in un punto, è un tema di *quel* modulo e si affronta a parte.
 - **Il rename di `prova`** e l'editor (blocchi D/E/F).
+
+## ⚠️ Correzione alla spec, trovata scrivendo il piano
+
+Sopra ho scritto che di `trackside` «entra solo un quinto» come se fosse una
+svista. **Non lo è.** Il commento in `trackScenery.js` sopra quella riga
+riporta una misura del 2026-08-13:
+
+> «Solo il decoro, non tutto il trackside. Gomme, cartelli e commissari stanno
+> a ridosso della barriera, dove alberi non ce ne sono: misurati ZERO alberi
+> dentro di loro. Aggiungerli toglieva 9 alberi su prova senza correggere
+> niente, e le direzioni spoglie sull'orizzonte passavano dal 16% al 20% — il
+> tetto del test.»
+
+Il tetto vive in `frontend/shared/trackScenery.test.js` (~riga 784):
+`assert.ok(quota <= 0.20)`.
+
+**Conseguenza sul disegno, non marginale:** la porta non può rifiutare ogni
+contatto, o ripaga quel prezzo. Rifiuta per **profondità** di compenetrazione,
+oltre una soglia dichiarata in unità di pista. Misurato il 2026-08-24: a soglia
+1,0 le compenetrazioni scendono da 227 a 83 su melbourne, da 199 a 26 su
+new-monza, da 88 a 11 su monte-rosso — sparisce il rumore degli accostamenti
+voluti, restano i difetti veri (1,0-5,6 unità).
+
+Ed è anche il motivo per cui il piano tiene separati **garanzia** (la porta,
+che rende le invarianti vere) e **prevenzione** (completare il registro, che
+riduce gli scarti): la seconda ha un costo in densità già pagato una volta, e
+va fatta una categoria alla volta, misurando.
