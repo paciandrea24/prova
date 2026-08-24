@@ -289,6 +289,41 @@ const PIT_LATENZA_MAX_MS = 300;
 // trovava 3.0s-7.0s troppo lento anche a reazione ottima).
 const PIT_PENALTY_MS = 30000;   // penalità se non si fa MAI pit stop in gara (regola F1 vera)
 const REPAIR_MS_PER_DAMAGE_PCT = 150;   // ms extra di sosta per ogni % di danno riparato
+// Montare l'ala nuova costa un tempo fisso, piu' il proporzionale al suo
+// stato: e' quello che l'utente ha chiesto quando ha detto che ai box adesso
+// "si perde piu' tempo, perche' non si cambiano solo le gomme".
+const COSTO_CAMBIO_ALA_MS = 2000;
+
+// In stagione si ripara SOLO l'ala anteriore. Chi e' in stagione lo dice
+// `usuraIniziale`, l'unico campo che distingue le due modalita' sul
+// giocatore: la fisica continua a non sapere che le stagioni esistono, e
+// nemmeno questo punto ha bisogno di chiedere alla lobby che formato sia.
+function inParcoChiuso(p) {
+    return !!p.usuraIniziale;
+}
+
+// La SCELTA di riparare la valuta il chiamante (p.pendingRepair): qui si
+// risponde solo a "quanto costerebbe".
+function tempoRiparazioneMs(p) {
+    const quanto = inParcoChiuso(p) ? (p.damageParts ? p.damageParts.frontWing : 0) : p.damage;
+    if (!quanto) return 0;
+    return (inParcoChiuso(p) ? COSTO_CAMBIO_ALA_MS : 0) + quanto * REPAIR_MS_PER_DAMAGE_PCT;
+}
+
+function applicaRiparazione(p) {
+    if (!p.pendingRepair) return;
+    if (inParcoChiuso(p)) {
+        p.damageParts.frontWing = 0;
+        p.damage = Math.max(
+            p.damageParts.frontWing, p.damageParts.floor,
+            p.damageParts.engine, p.damageParts.suspension
+        );
+    } else {
+        p.damage = 0;
+        p.damageParts = createDamageParts();
+    }
+    p.pendingRepair = false;
+}
 
 // Semaforo di partenza (solo gara, mai in qualifica): 5 luci, una ogni
 // LIGHT_INTERVAL_MS, poi un'attesa casuale prima che si spengano tutte
@@ -1697,10 +1732,9 @@ function startPitStop(io, lobbyId, game, p) {
         p.falseStartServed = true;
     }
 
-    // Riparazione danni: tempo extra proporzionale al danno.
-    if (p.pendingRepair && p.damage > 0) {
-        durationMs += p.damage * REPAIR_MS_PER_DAMAGE_PCT;
-    }
+    // Riparazione danni: tempo extra proporzionale al danno — e in stagione
+    // proporzionale alla sola ala, perche' e' l'unica cosa che si cambia.
+    if (p.pendingRepair) durationMs += tempoRiparazioneMs(p);
 
     const sid = game.socketByColor[p.color];
     if (sid) io.to(sid).emit('f1PitStopStarted', { esito, durationMs });
@@ -1758,8 +1792,7 @@ function completePitStop(io, lobbyId, game, p) {
     p.tyreWear = 0;
     p.hasPitted = true;
     if (p.pendingCompound) { p.compound = p.pendingCompound; p.pendingCompound = null; }
-    if (p.pendingRepair) { p.damage = 0; p.damageParts = createDamageParts(); }
-    p.pendingRepair = false;
+    applicaRiparazione(p);
 
     const sid = game.socketByColor[p.color];
     if (sid) io.to(sid).emit('f1PitStopFinished', { compound: p.compound });
@@ -2918,6 +2951,7 @@ module.exports.physics = {
     applyOffTrackDrag, applyBarrier, updateTrackIndex,
     circularWithin, checkpointWindowFor, finishWindowFor,
     assignGridSpawns, resetPlayers, resetStatoAuto, aggiornaCarburante,
+    COSTO_CAMBIO_ALA_MS, REPAIR_MS_PER_DAMAGE_PCT, inParcoChiuso, tempoRiparazioneMs, applicaRiparazione,
     MIN_COLLISION_SEVERITY, DAMAGE_CAP_PER_HIT, COLLISION_PENALTY_CAP_MS,
     collisionDamageAmount, applyCarCollisionDamage, applyBarrierDamage, applyCollisionPenalty,
     resolveCollisions,

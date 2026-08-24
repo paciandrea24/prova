@@ -55,3 +55,38 @@ test('resetStatoAuto: l\'oggetto usuraIniziale non viene condiviso per riferimen
     p.damageParts.floor = 99;
     assert.equal(usura.floor, 12, 'l\'originale non deve muoversi');
 });
+
+// Ai box, in stagione, si ripara SOLO l'ala anteriore: e' l'unica cosa che
+// nella F1 vera si cambia durante una gara.
+test('riparazione ai box: in gara veloce ripara tutto, come sempre', () => {
+    const p = { damage: 60, damageParts: { frontWing: 60, floor: 40, engine: 30, suspension: 10 }, pendingRepair: true };
+    physics.applicaRiparazione(p);
+    assert.deepEqual(p.damageParts, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
+    assert.equal(p.damage, 0);
+});
+
+test('riparazione ai box: in stagione ripara SOLO l\'ala', () => {
+    const p = {
+        damage: 60, damageParts: { frontWing: 60, floor: 40, engine: 30, suspension: 10 },
+        pendingRepair: true, usuraIniziale: { frontWing: 0, floor: 20, engine: 20, suspension: 5 },
+    };
+    physics.applicaRiparazione(p);
+    assert.equal(p.damageParts.frontWing, 0, 'l\'ala si cambia');
+    assert.equal(p.damageParts.floor, 40, 'il fondo resta');
+    assert.equal(p.damageParts.engine, 30, 'il motore resta');
+    assert.equal(p.damageParts.suspension, 10, 'le sospensioni restano');
+    assert.equal(p.damage, 40, 'p.damage torna il massimo dei quattro');
+});
+
+test('durata sosta: in stagione il tempo lo detta l\'ala, non il danno totale', () => {
+    // Con la regola vecchia (p.damage) un fondo consumato al 90% avrebbe fatto
+    // pagare una sosta lunghissima per cambiare un'ala intatta.
+    const stagione = { damage: 90, damageParts: { frontWing: 0, floor: 90, engine: 0, suspension: 0 }, usuraIniziale: {} };
+    assert.equal(physics.tempoRiparazioneMs(stagione), 0, 'ala intatta: nessun tempo in piu\'');
+});
+
+test('durata sosta: cambiare l\'ala costa un tempo fisso piu\' il proporzionale', () => {
+    const p = { damage: 50, damageParts: { frontWing: 50, floor: 0, engine: 0, suspension: 0 }, usuraIniziale: {} };
+    const atteso = physics.COSTO_CAMBIO_ALA_MS + 50 * physics.REPAIR_MS_PER_DAMAGE_PCT;
+    assert.equal(physics.tempoRiparazioneMs(p), atteso);
+});
