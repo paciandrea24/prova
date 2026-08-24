@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>F1 — Anteprima del circuito</title>
+    <style>
+        :root {
+            --pannello: #1b1c25;
+            --bordo:    #2e3040;
+            --testo:    #e8ecf1;
+            --spento:   #8b93a5;
+            --accento:  #2ecc71;
+        }
+        html, body {
+            margin: 0; height: 100%; overflow: hidden; background: #8fbcd4;
+            font-family: "Segoe UI", system-ui, sans-serif; color: var(--testo);
+        }
+        /* Un pannello solo, in alto a sinistra: qui si guarda, non si lavora. */
+        #barra {
+            position: fixed; top: 12px; left: 12px; z-index: 10;
+            background: rgba(27, 28, 37, 0.92); border: 1px solid var(--bordo);
+            border-radius: 6px; padding: 10px 12px; font-size: 12px; max-width: 320px;
+        }
+        #barra h1 { font-size: 12px; margin: 0 0 6px; letter-spacing: 0.08em; text-transform: uppercase; }
+        #nomePista { color: var(--accento); font-weight: 600; }
+        #stato { color: var(--spento); margin: 6px 0; line-height: 1.5; }
+        #comandi { color: var(--spento); line-height: 1.8; margin-top: 8px; }
+        kbd {
+            font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px;
+            background: #22232e; border: 1px solid var(--bordo);
+            border-radius: 3px; padding: 0 4px; color: var(--testo);
+        }
+        button {
+            margin-top: 8px; width: 100%; padding: 6px; cursor: pointer;
+            background: #22232e; color: var(--testo);
+            border: 1px solid var(--bordo); border-radius: 4px; font-size: 12px;
+        }
+        button:hover { border-color: var(--spento); }
+        /* L'invito a cliccare sparisce appena il mouse è agganciato. */
+        #clicca {
+            position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+            z-index: 9; background: rgba(0,0,0,0.35); font-size: 15px; letter-spacing: 0.02em;
+            cursor: pointer;
+        }
+        #clicca.via { display: none; }
+    </style>
+</head>
+<body>
+    <div id="barra">
+        <h1>Anteprima</h1>
+        <div id="nomePista">—</div>
+        <div id="stato">Carico il circuito…</div>
+        <div id="comandi">
+            <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> vola · <kbd>Q</kbd><kbd>E</kbd> scendi e sali</div>
+            <div><kbd>Shift</kbd> più veloce · <kbd>Mouse</kbd> guarda</div>
+            <div><kbd>Esc</kbd> libera il mouse · <kbd>T</kbd> torna sul traguardo</div>
+        </div>
+        <button id="tornaBtn">Torna all'editor</button>
+    </div>
+    <div id="clicca">Clicca per guardarti intorno</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <!-- Gli stessi moduli del gioco, NELLO STESSO ORDINE di f1.html: la
+         scenografia li pretende tutti, e l'ordine non è decorativo
+         (sceneryHills prima di trackMeshBuilder e trackScenery, toonPalette
+         prima di chi gli chiede i colori). -->
+    <script src="shared/trackGeometry.js?v=20260817b"></script>
+    <script src="shared/trackGravel.js?v=20260813a"></script>
+    <script src="shared/toonPalette.js?v=20260819a"></script>
+    <script src="shared/sceneryHills.js?v=20260810d"></script>
+    <script src="shared/sceneryChunks.js?v=20260816a"></script>
+    <script src="shared/trackMeshBuilder.js?v=20260818a"></script>
+    <script src="shared/sceneryAssetSizes.js?v=20260824c"></script>
+    <script src="shared/sceneryRegistro.js?v=20260824d"></script>
+    <script src="shared/sceneryGaps.js?v=20260813a"></script>
+    <script src="shared/sceneryLandmarks.js?v=20260824f"></script>
+    <script src="shared/sceneryTrackside.js?v=20260824b"></script>
+    <script src="shared/sceneryCrowd.js?v=20260824d"></script>
+    <script src="shared/sceneryPaddock.js?v=20260824e"></script>
+    <script src="shared/sceneryInfrastructure.js?v=20260816a"></script>
+    <script src="shared/trackScenery.js?v=20260824e"></script>
+    <script src="shared/sceneryAssetPaths.js?v=20260824a"></script>
+    <script src="shared/f1Scena.js?v=20260824a"></script>
+    <script src="shared/scenografiaCotta.js?v=20260824a"></script>
+    <script src="track-preview.js?v=20260824a"></script>
+</body>
+</html>
