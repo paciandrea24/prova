@@ -79,6 +79,47 @@ document.addEventListener('DOMContentLoaded', () => {
         rigeneraDaGeometria();
     }
 
+    // ====================================================
+    // ANNULLA / RIFAI — uno stack di STATI, non di modifiche.
+    //
+    // Le operazioni di TrackSegmenti restituiscono una geometria nuova senza
+    // mutare quella vecchia: annullare è tornare allo stato precedente, non
+    // saper disfare un'azione. È la ragione per cui quelle funzioni sono
+    // scritte così, e il motivo per cui qui bastano venti righe.
+    //
+    // Sostituisce «annulla ultimo punto», che non copriva né lo spostamento,
+    // né la cancellazione, né la quota, né la direzione.
+    // ====================================================
+    const storico = [];
+    const rifatti = [];
+    const STORICO_MAX = 100;
+
+    function salvaStato() {
+        if (!inSegmenti()) return;
+        const istantanea = JSON.stringify(geometria);
+        // Uno stato identico al precedente non si impila: cliccare un nodo per
+        // sceglierlo passa di qui senza cambiare niente, e senza questa riga
+        // servirebbero dieci Ctrl+Z per tornare indietro di una modifica sola.
+        if (storico.length && storico[storico.length - 1] === istantanea) return;
+        storico.push(istantanea);
+        if (storico.length > STORICO_MAX) storico.shift();
+        rifatti.length = 0;   // una modifica nuova taglia il ramo dei "rifai"
+    }
+
+    function ripristina(daDove, dove) {
+        if (!daDove.length || !inSegmenti()) return;
+        dove.push(JSON.stringify(geometria));
+        geometria = JSON.parse(daDove.pop());
+        // Un nodo può non esistere più: la selezione va rimessa in sicurezza.
+        if (nodoSelezionato >= geometria.nodi.length) nodoSelezionato = -1;
+        if (trattoSelezionato >= geometria.tratti.length) trattoSelezionato = -1;
+        rigeneraDaGeometria();
+        rebuild();
+    }
+
+    const annulla = () => ripristina(storico, rifatti);
+    const rifai = () => ripristina(rifatti, storico);
+
     function rigeneraDaGeometria() {
         mainPoints = geometria.nodi.length >= 3
             ? TrackSegmenti.cuoci(geometria, TrackSegmenti.PASSO_COTTURA)
@@ -608,6 +649,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const marker = pickMarker(ev);
         if (marker) {
+            salvaStato();
             dragging = marker.userData;
             if (marker.userData.maniglia !== undefined) return;   // la maniglia non seleziona
             // Cliccare un nodo lo sceglie, e sceglie il tratto che ne PARTE:
@@ -633,6 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // punti li produce la cottura. La corsia box resta a punti — ha una
         // geometria sua, che questo progetto non tocca.
         if (inSegmenti() && !document.getElementById('pitMode').checked) {
+            salvaStato();
             geometria.nodi.push({ x: +hit.x.toFixed(2), z: +hit.z.toFixed(2), y: 0, dir: 0 });
             geometria.tratti.push({ tipo: 'curva' });
             dopoModificaMain();
@@ -736,6 +779,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ev.preventDefault();
         const marker = pickMarker(ev);
         if (!marker || marker.userData.maniglia !== undefined) return;
+        salvaStato();
         listaDi(marker.userData.list).splice(marker.userData.index, 1);
         // Un nodo in meno è anche un tratto in meno: la catena ne ha uno per
         // nodo, ed è l'invariante che tiene chiusa la geometria.
@@ -755,6 +799,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ev.preventDefault();
         const marker = pickMarker(ev);
         if (marker && marker.userData.list === 'main') {
+            salvaStato();
             const p = listaDi('main')[marker.userData.index];
             p.y = +(((p.y || 0) - Math.sign(ev.deltaY) * 0.5).toFixed(2));
             dopoModificaMain();
@@ -771,7 +816,11 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCameraTransform();
     }, { passive: false });
 
-    document.getElementById('undoBtn').addEventListener('click', () => { activeList().pop(); rebuild(); });
+    document.getElementById('undoBtn').addEventListener('click', () => {
+        if (inSegmenti() && !document.getElementById('pitMode').checked) { annulla(); return; }
+        activeList().pop();
+        rebuild();
+    });
     document.getElementById('clearBtn').addEventListener('click', () => {
         if (document.getElementById('pitMode').checked) {
             pitPoints = [];
@@ -808,9 +857,17 @@ document.addEventListener('DOMContentLoaded', () => {
         // Mai rubare i tasti a chi sta scrivendo in un campo: R e C sono
         // lettere comunissime nei nomi delle piste.
         const dentroUnCampo = ev.target && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName);
-        if (dentroUnCampo) return;
+        if (dentroUnCampo) return;   // in un campo, Ctrl+Z e' l'annulla del testo
+
+        if (ev.ctrlKey && (ev.key === 'z' || ev.key === 'Z') && !ev.shiftKey) {
+            ev.preventDefault(); annulla(); return;
+        }
+        if (ev.ctrlKey && (ev.key === 'y' || ev.key === 'Y' || ((ev.key === 'z' || ev.key === 'Z') && ev.shiftKey))) {
+            ev.preventDefault(); rifai(); return;
+        }
 
         if (ev.key === 'u' || ev.key === 'U') {
+            salvaStato();
             if (inSegmenti() && !document.getElementById('pitMode').checked) {
                 geometria.nodi.pop();
                 geometria.tratti.pop();
@@ -825,6 +882,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ev.key === 'b' || ev.key === 'B') {
             const marker = pickMarker(lastMouseClient);
             if (marker && marker.userData.list === 'main') {
+                salvaStato();
                 const p = listaDi('main')[marker.userData.index];
                 p.bridge = !p.bridge;
                 dopoModificaMain();
@@ -834,6 +892,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // R: il tratto scelto diventa una retta, e i suoi due nodi prendono la
         // sua direzione. C: torna curva. Sono le due sole forme che esistono.
         if ((ev.key === 'r' || ev.key === 'R') && inSegmenti() && trattoSelezionato >= 0) {
+            salvaStato();
             geometria = TrackSegmenti.raddrizza(geometria, trattoSelezionato);
             // Le direzioni imposte dalla retta sono una scelta, non un
             // ripiego: vanno protette dal riorientamento automatico, che
@@ -845,6 +904,7 @@ document.addEventListener('DOMContentLoaded', () => {
             rebuild();
         }
         if ((ev.key === 'c' || ev.key === 'C') && inSegmenti() && trattoSelezionato >= 0) {
+            salvaStato();
             geometria.tratti[trattoSelezionato] = { tipo: 'curva' };
             rigeneraDaGeometria();
             rebuild();
