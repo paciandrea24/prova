@@ -18,8 +18,24 @@
 - **I moduli in `frontend/shared/` sono puri**: niente Three.js, niente `document`, niente `fetch`, niente filesystem.
 - **Ingombro ORIENTATO, mai la distanza fra i centri.** `SceneryAssetSizes.itemsOverlap` fa già il test SAT giusto; il raggio (`footprintRadius`) si usa solo come pre-filtro della griglia spaziale.
 - **Le soglie si dichiarano in unità di pista, mai in campioni.** Un campione vale 1,18 unità su monte-rosso e 5,17 su prova.
-- **Test**: `node --test backend/` dalla radice. `npm test` non esiste.
-- ⚠️ **La suite ha 8 rossi PREESISTENTI** (più uno intermittente, `prova-notturno: i bot entrano davvero in corsia box`). Registrarli all'inizio; il criterio è **«nessun rosso NUOVO»** oltre a quelli che questo piano introduce apposta (Task 1) e chiude apposta (Task 7).
+- **Test**: ⚠️ **servono DUE comandi**, e il secondo è quello che conta qui:
+  `node --test backend/` **e** `node --test frontend/shared/`. Il primo, che è
+  quello abituale del progetto, **non include** `frontend/shared/*.test.js` —
+  dove vive tutta la scenografia. `npm test` non esiste.
+- ⚠️ **`frontend/shared/` ha 6 rossi PREESISTENTI**, scoperti il 2026-08-24
+  facendo girare quel comando: erano invisibili perché nessuno lo lanciava.
+  **Quattro sono esattamente i difetti di questo piano**, e devono diventare
+  verdi:
+  `scenografia: una tribuna resta senza rete solo per un motivo noto (melbourne)`
+  («grandStand@72 è senza rete e non si capisce perché»),
+  `il decoro del paddock non finisce dentro nient'altro`
+  («melbourne: flagPole compenetra 1 oggetti — grandStandAwning»),
+  `scenografia: tribune e reti restano parallele al muro (melbourne)`,
+  `scenografia: i moduli di una fila stanno tutti alla stessa distanza dalla pista`.
+  Gli altri due — `test: produce un carosello con panoramica, traguardo e curva`
+  e `scenografia: quanto circuito resta senza niente di fianco (suzuka)` — sono
+  fuori tema e restano rossi.
+- ⚠️ **`backend/` ha 8 rossi PREESISTENTI** (più uno intermittente, `prova-notturno: i bot entrano davvero in corsia box`). Registrarli all'inizio; il criterio è **«nessun rosso NUOVO»** oltre a quelli che questo piano introduce apposta (Task 1) e chiude apposta (Task 7).
 - ⚠️ **`prova` è congelata** (`frontend/tracks/scenografie/prova.json`): il gioco rilegge la sua scenografia invece di ricalcolarla, quindi **queste modifiche non la toccano in gioco**. I test invece la ricalcolano, quindi `prova` compare comunque nelle misure. Se a fine piano si vuole che anche `prova` benefici delle correzioni, va **ricotta**: `node backend/tools/f1-cuoci-scenografia.js prova --grid=6`.
 
 ## ⚠️ Il vincolo di densità, da non violare per distrazione
