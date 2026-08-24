@@ -56,6 +56,8 @@
         <div class="row">
             <div><label>Angolo (gradi)<input id="entryAngleDeg" type="number" step="1" value="0"></label></div>
         </div>
+        <label>Trasparenza tracciato<input type="range" id="trackOpacity" min="15" max="100" value="100"></label>
+        <div style="font-size:11px; color:#8b96a3; margin:-4px 0 8px;">sbiadisce la pista, non l'immagine da ricalcare</div>
         <div id="trattoSection" style="display:none; border-top:1px solid #2a2f3a; padding-top:8px; margin-top:8px;">
             <h4 style="margin:0 0 4px;">Tratto selezionato</h4>
             <div id="trattoTipo" style="font-size:12px; color:#8b96a3; margin-bottom:6px;"></div>
@@ -83,9 +85,6 @@
         <div id="imgOverlaySection" style="display:none;">
             <hr style="border-color: #4b5b6b; margin: 10px 0;">
             <h1>Immagine di riferimento</h1>
-            <label>Opacità
-                <input type="range" id="imgOpacity" min="0" max="100" value="35">
-            </label>
             <button id="imgConfirmBtn">Conferma posizione</button>
             <button id="imgEditBtn">Modifica posizione</button>
             <button id="imgRemoveBtn">Rimuovi immagine</button>
@@ -99,6 +98,6 @@
     <script src="shared/toonPalette.js?v=20260810a"></script>
     <script src="shared/trackMeshBuilder.js?v=20260817a"></script>
     <script src="shared/trackSegmenti.js?v=20260824b"></script>
-    <script src="track-editor.js?v=20260824d"></script>
+    <script src="track-editor.js?v=20260824e"></script>
 </body>
 </html>

@@ -374,17 +374,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const geo = new THREE.PlaneGeometry(1, 1);
         geo.rotateX(-Math.PI / 2);
         const material = new THREE.MeshBasicMaterial({
-            map: texture, transparent: true, opacity: 0.35,
+            map: texture, transparent: true, opacity: 1,
             depthWrite: false, side: THREE.DoubleSide
         });
         const mesh = new THREE.Mesh(geo, material);
         scene.add(mesh);
 
-        imageOverlay = { mesh, texture, x: camTarget.x, z: camTarget.z, rotation: 0, width, height, opacity: 0.35 };
+        imageOverlay = { mesh, texture, x: camTarget.x, z: camTarget.z, rotation: 0, width, height, opacity: 1 };
         updateImageOverlayTransform();
 
         document.getElementById('imgOverlaySection').style.display = 'block';
-        document.getElementById('imgOpacity').value = 35;
         enterImagePositioning();
     }
 
@@ -430,11 +429,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.getElementById('imgOpacity').addEventListener('input', (ev) => {
-        if (!imageOverlay) return;
-        imageOverlay.opacity = ev.target.value / 100;
-        imageOverlay.mesh.material.opacity = imageOverlay.opacity;
-    });
     document.getElementById('imgConfirmBtn').addEventListener('click', exitImagePositioning);
     document.getElementById('imgEditBtn').addEventListener('click', enterImagePositioning);
     document.getElementById('imgRemoveBtn').addEventListener('click', removeImageOverlay);
@@ -558,6 +552,20 @@ document.addEventListener('DOMContentLoaded', () => {
             asta.rotation.y = nodo.dir;
             markerGroup.add(asta);
         }
+
+        // LA TRASPARENZA VA SUL TRACCIATO, non sull'immagine di riferimento
+        // (richiesta esplicita dell'utente): per controllare un ricalco si
+        // sbiadisce cio' che si sta disegnando, mentre il riferimento deve
+        // restare nitido — sbiadire proprio quello era il contrario.
+        //
+        // Solo il nastro: i marker restano pieni, perche' servono a cliccarci
+        // sopra e un marker trasparente non si prende piu'.
+        const opacitaPista = (parseInt(document.getElementById('trackOpacity').value, 10) || 100) / 100;
+        trackMeshGroup.traverse((o) => {
+            if (!o.isMesh || !o.material) return;
+            o.material.transparent = opacitaPista < 1;
+            o.material.opacity = opacitaPista;
+        });
 
         updateEntryTriggerVisual();
         aggiornaAbrasivita();
@@ -892,6 +900,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Scrivere un numero sposta UN nodo, quello di arrivo: i nodi sono
     // posizioni assolute, non una catena relativa in cui una modifica trascina
     // tutto il resto. È la proprietà che serve per ricalcare un'immagine.
+    document.getElementById('trackOpacity').addEventListener('input', rebuild);
     document.getElementById('abrasivita').addEventListener('input', aggiornaAbrasivita);
     document.getElementById('targetKm').addEventListener('change', aggiornaAbrasivita);
 
