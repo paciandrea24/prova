@@ -19,7 +19,8 @@ const path = require('path');
 const TrackScenery = require('./trackScenery.js');
 const Sizes = require('./sceneryAssetSizes.js');
 const TrackGeometry = require('./trackGeometry.js');
-const { SCAVALCANO, stessaFila } = require('./sceneryRegistro.js');
+const { SCAVALCANO, A_BORDO_PISTA, stessaFila } = require('./sceneryRegistro.js');
+const TrackGravel = require('./trackGravel.js');
 const { loadTrack } = require('../../backend/sockets/games/trackLoader.js');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -137,6 +138,34 @@ for (const id of PISTE) {
         const colpevoli = solidi
             .filter(v => !SCAVALCANO.has(v.asset))
             .map(v => ({ v, p: dentroIlCorridoio(v, t.points, raw.roadHalfWidth) }))
+            .filter(x => x.p > MAX_DENTRO_PISTA)
+            .map(x => `${x.v.category}/${x.v.asset} a (${x.v.x.toFixed(1)}, ${x.v.z.toFixed(1)}) dentro di ${x.p.toFixed(2)}`);
+        assert.deepEqual(colpevoli, []);
+    });
+
+    // La via di fuga E' pista per chi guida: i due container di monte-rosso
+    // stavano a 13.8 dall'asse con la carreggiata a 11 e il muro a 15, e
+    // l'utente li ha segnalati come «dentro la pista». Il muro non e' a
+    // distanza fissa, quindi si chiede dov'e' campione per campione.
+    test(`${id}: niente dentro la via di fuga, tranne chi ci sta per mestiere`, () => {
+        const { raw, t, solidi } = scenografiaDi(id);
+        const colpevoli = solidi
+            .filter(v => !SCAVALCANO.has(v.asset) && !A_BORDO_PISTA.has(v.category))
+            .map(v => {
+                let peggio = 0;
+                for (const c of Sizes.footprintCorners(v)) {
+                    const near = TrackGeometry.nearestPoint(t.points, c.x, c.z);
+                    const p = t.points[near.index];
+                    const n = TrackGeometry.normalAt(t.points, near.index, true);
+                    const lato = Math.sign((c.x - p.x) * n.nx + (c.z - p.z) * n.nz) || 1;
+                    const muro = t.barrierProfile
+                        ? TrackGravel.barrierAt(t.barrierProfile, near.index, lato)
+                        : raw.roadHalfWidth + 4;
+                    const d = muro - near.dist;
+                    if (d > peggio) peggio = d;
+                }
+                return { v, p: peggio };
+            })
             .filter(x => x.p > MAX_DENTRO_PISTA)
             .map(x => `${x.v.category}/${x.v.asset} a (${x.v.x.toFixed(1)}, ${x.v.z.toFixed(1)}) dentro di ${x.p.toFixed(2)}`);
         assert.deepEqual(colpevoli, []);

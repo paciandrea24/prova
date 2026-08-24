@@ -39,6 +39,12 @@
     // Misurato il 2026-08-13: toglieva 9 alberi su prova e portava le direzioni
     // spoglie dal 16% al 20%, che è il tetto del test in trackScenery.test.js.
     const MAX_COMPENETRAZIONE = 1.0;
+    // La VIA DI FUGA e' pista. Per chi guida «dentro la pista» non e' solo
+    // l'asfalto: e' tutto cio' che sta dalla parte di qua del muro. I due
+    // container di monte-rosso stavano a 13.8 unita' dall'asse con la
+    // carreggiata a 11 — fuori dall'asfalto per la porta, in mezzo alla
+    // ghiaia per l'utente, che infatti li ha segnalati.
+    const MAX_DENTRO_VIA_DI_FUGA = 0.5;
 
     // Gli asset che SCAVALCANO: il ponte dei semafori e la passerella sono
     // portali, e attraversare la pista e' esattamente il loro mestiere. La
@@ -76,6 +82,15 @@
     // albero sparso a ridosso di un bosco e' il margine del bosco.
     const VEGETAZIONE = new Set(['nature', 'woods']);
 
+    // Chi sta fra il muro e l'asfalto PER MESTIERE: le pile di pneumatici
+    // assorbono l'impatto e vanno appoggiate al muro, i cartelli di frenata
+    // vanno letti dall'abitacolo, le reti nascono sulla tribuna. Misurato il
+    // 2026-08-24 su otto piste: senza questa esenzione la regola toglierebbe
+    // 95 barriere di pneumatici e un cartello: cioe' toglierebbe la
+    // sicurezza dal circuito. Con l'esenzione costa un solo oggetto, lo
+    // striscione di shanghai — che e' esattamente il difetto da togliere.
+    const A_BORDO_PISTA = new Set(['safety']);
+
     function stessaFila(a, b) {
         if (VEGETAZIONE.has(a.category) && VEGETAZIONE.has(b.category)) return true;
         return a.category === b.category && FILE_CONTIGUE.has(a.category);
@@ -105,7 +120,11 @@
         return minimo === Infinity ? 0 : minimo;
     }
 
-    function crea({ trackPts, pitPts, roadHalf, pitRoadHalf, playerBoxFootprints }) {
+    // `muroAl(idx, side)` = distanza del muro dall'asse a quel campione, su
+    // quel lato. E' una FUNZIONE e non un numero perche' il muro non e' a
+    // distanza fissa: si allarga dove serve via di fuga. Chi non ce l'ha (i
+    // test unitari, un chiamante vecchio) ottiene il comportamento di prima.
+    function crea({ trackPts, pitPts, roadHalf, pitRoadHalf, playerBoxFootprints, muroAl }) {
         const box = playerBoxFootprints || [];
         // Griglia spaziale: senza, il controllo è quadratico sulle ~1000 voci
         // solide di un layout, per ogni pista, in ogni test.
@@ -142,11 +161,35 @@
             return peggio;
         }
 
+        // Quanto un ingombro entra oltre il muro, cioe' dentro la via di fuga.
+        // Si misura sugli ANGOLI come il corridoio, e il muro si chiede al
+        // campione piu' vicino a QUELL'angolo: un numero solo, preso al
+        // centro, direbbe la cosa sbagliata proprio dove il muro si allarga.
+        function dentroLaViaDiFuga(item) {
+            if (!muroAl || !trackPts || !trackPts.length) return 0;
+            let peggio = 0;
+            for (const c of SceneryAssetSizes.footprintCorners(item)) {
+                const near = TrackGeometry.nearestPoint(trackPts, c.x, c.z);
+                const p = trackPts[near.index];
+                const { nx, nz } = TrackGeometry.normalAt(trackPts, near.index, true);
+                const lato = Math.sign((c.x - p.x) * nx + (c.z - p.z) * nz) || 1;
+                const d = muroAl(near.index, lato) - near.dist;
+                if (d > peggio) peggio = d;
+            }
+            return peggio;
+        }
+
         function motivoDiRifiuto(item) {
             if (SCAVALCANO.has(item.asset)) return motivoDaCompenetrazione(item);
             const inPista = dentro(item, trackPts, roadHalf);
             if (inPista > MAX_DENTRO_PISTA) {
                 return `dentro la carreggiata di ${inPista.toFixed(2)} unità`;
+            }
+            if (!A_BORDO_PISTA.has(item.category)) {
+                const inFuga = dentroLaViaDiFuga(item);
+                if (inFuga > MAX_DENTRO_VIA_DI_FUGA) {
+                    return `dentro la via di fuga di ${inFuga.toFixed(2)} unità`;
+                }
             }
             const inBox = dentro(item, pitPts, pitRoadHalf);
             if (inBox > MAX_DENTRO_BOX) {
@@ -193,5 +236,5 @@
         };
     }
 
-    return { crea, profondita, SCAVALCANO, FILE_CONTIGUE, VEGETAZIONE, stessaFila, MAX_DENTRO_PISTA, MAX_DENTRO_BOX, MAX_COMPENETRAZIONE };
+    return { crea, profondita, SCAVALCANO, FILE_CONTIGUE, VEGETAZIONE, A_BORDO_PISTA, stessaFila, MAX_DENTRO_PISTA, MAX_DENTRO_BOX, MAX_COMPENETRAZIONE, MAX_DENTRO_VIA_DI_FUGA };
 });

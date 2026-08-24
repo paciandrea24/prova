@@ -119,3 +119,51 @@ test('posa: un oggetto dentro un box dei piloti viene rifiutato', () => {
     });
     assert.match(r.motivoDiRifiuto(oggetto('marshalPost', 300, 100)), /box dei piloti/i);
 });
+
+// LA VIA DI FUGA E' PISTA. Per il giocatore «dentro la pista» non e' solo
+// l'asfalto: e' tutto cio' che sta dalla parte di qua del muro. I due
+// container di monte-rosso (2026-08-24) stavano a 13.8 unita' dall'asse, con
+// la carreggiata a 11 e il muro a 15: fuori dall'asfalto per la porta, in
+// mezzo alla via di fuga per chi guida.
+//
+// Il muro NON e' a distanza fissa — si allarga in curva — quindi la porta
+// chiede dov'e' davvero, campione per campione, invece di fidarsi di un numero.
+function regConMuro(muroAl) {
+    return Registro.crea({
+        trackPts: PISTA, pitPts: BOX, roadHalf: 10, pitRoadHalf: 6,
+        playerBoxFootprints: [], muroAl,
+    });
+}
+
+test('posa: un oggetto nella via di fuga viene rifiutato', () => {
+    const r = regConMuro(() => 20);   // muro a 20, carreggiata a 10
+    // Il container (7.7 x 3.4) a 15 dall'asse: fuori dall'asfalto, dentro la
+    // via di fuga. Prima passava.
+    const motivo = r.motivoDiRifiuto(oggetto('containerStack', 250, 15));
+    assert.match(motivo || '', /via di fuga/);
+    assert.equal(r.posa(oggetto('containerStack', 250, 15)), false);
+});
+
+test('posa: oltre il muro lo stesso oggetto entra', () => {
+    const r = regConMuro(() => 20);
+    assert.equal(r.motivoDiRifiuto(oggetto('containerStack', 250, 24)), null);
+});
+
+test('posa: le pile di gomme stanno nella via di fuga per mestiere', () => {
+    const r = regConMuro(() => 20);
+    const gomme = oggetto('tyreStack', 250, 15, { category: 'safety' });
+    assert.equal(r.motivoDiRifiuto(gomme), null);
+});
+
+test('posa: senza il profilo del muro la porta si comporta come prima', () => {
+    const r = reg();   // nessun muroAl
+    assert.equal(r.motivoDiRifiuto(oggetto('containerStack', 250, 15)), null);
+});
+
+test('il muro si misura al campione piu vicino, non a distanza fissa', () => {
+    // Muro stretto (12) nel primo tratto, largo (30) nel secondo: lo stesso
+    // oggetto a 20 dall'asse passa di la e non di qua.
+    const r = regConMuro((idx) => (idx < 250 ? 12 : 30));
+    assert.equal(r.motivoDiRifiuto(oggetto('containerStack', 100, 20)), null);
+    assert.match(r.motivoDiRifiuto(oggetto('containerStack', 400, 20)) || '', /via di fuga/);
+});

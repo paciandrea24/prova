@@ -1806,6 +1806,12 @@
         const registro = SceneryRegistro.crea({
             trackPts, pitPts, roadHalf: trackData.roadHalfWidth,
             pitRoadHalf: trackData.pit.roadHalfWidth, playerBoxFootprints,
+            // Dov'e' il muro, campione per campione. Non un numero: la via di
+            // fuga si allarga dove serve, e un valore fisso direbbe la cosa
+            // sbagliata proprio nei punti che contano.
+            muroAl: barrierProfile
+                ? (i, side) => TrackGravel.barrierAt(barrierProfile, i, side)
+                : () => barrierDist,
         });
         // Non negoziabili: il ponte dei semafori porta il via (senza, la gara
         // non si legge) e i box dei piloti sono geometria di gioco. Entrano
