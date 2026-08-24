@@ -117,6 +117,23 @@
             border-radius: 3px; padding: 0 4px; color: var(--testo);
         }
         .comandi { line-height: 1.9; color: var(--spento); font-size: 11px; }
+
+        /* Ogni problema è cliccabile e porta la vista sul punto: un elenco di
+           difetti senza coordinate costringe a cercarli, ed è la ragione per
+           cui gli avvisi non si leggono. */
+        .problema {
+            border-left: 3px solid var(--bordo); padding: 6px 8px; margin-top: 6px;
+            background: var(--sezione); border-radius: 0 4px 4px 0;
+            font-size: 11px; line-height: 1.45; cursor: pointer;
+        }
+        .problema:hover { border-left-color: var(--testo); }
+        .problema.impedisce { border-left-color: var(--pericolo); }
+        .problema.guardare  { border-left-color: #e0a63a; }
+        .problema.sapere    { border-left-color: var(--spento); }
+        .problema b { display: block; font-size: 10px; letter-spacing: 0.06em;
+                      text-transform: uppercase; color: var(--spento); margin-bottom: 2px; }
+        .tuttoBene { color: var(--accento); }
+        #azioni .primaria { background: var(--accento); border-color: var(--accento); color: #102417; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -130,6 +147,7 @@
             <div id="tabs" role="tablist">
                 <button data-pagina="pista" aria-selected="true">Pista</button>
                 <button data-pagina="tratto">Tratto<span class="segno" id="segnoTratto"></span></button>
+                <button data-pagina="controlla">Check<span class="segno" id="segnoControlla"></span></button>
                 <button data-pagina="box">Box</button>
                 <button data-pagina="traguardo">Via</button>
                 <button data-pagina="vista">Vista</button>
@@ -163,6 +181,15 @@
                         <div id="quotaStato" class="nota" style="margin-top:8px;"></div>
                         <div class="nota" style="margin-top:8px;"><kbd>R</kbd> rendi retto · <kbd>C</kbd> rendi curvo · <kbd>I</kbd> spezza in due</div>
                         <div class="nota">Rotellina sul nodo: alza o abbassa · <kbd>B</kbd> ponte</div>
+                    </div>
+                </section>
+
+                <section class="pagina" data-pagina="controlla">
+                    <h2>Controlla la pista</h2>
+                    <div class="corpo">
+                        <button id="controllaBtn" class="primaria">Controlla adesso</button>
+                        <div id="controllaEsito" class="nota">Nessun controllo ancora fatto.</div>
+                        <div id="controllaElenco"></div>
                     </div>
                 </section>
 
@@ -258,10 +285,25 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="shared/trackGeometry.js"></script>
+    <script src="shared/trackGravel.js?v=20260813a"></script>
     <!-- toonPalette PRIMA di trackMeshBuilder: gli fornisce i colori delle superfici -->
     <script src="shared/toonPalette.js?v=20260810a"></script>
     <script src="shared/trackMeshBuilder.js?v=20260817a"></script>
     <script src="shared/trackSegmenti.js?v=20260824b"></script>
-    <script src="track-editor.js?v=20260824i"></script>
+    <!-- Il validatore e i moduli di scenografia che i suoi controlli usano,
+         nello stesso ordine di f1.html. -->
+    <script src="shared/sceneryAssetSizes.js?v=20260824c"></script>
+    <script src="shared/sceneryRegistro.js?v=20260824d"></script>
+    <script src="shared/sceneryHills.js?v=20260810d"></script>
+    <script src="shared/sceneryChunks.js?v=20260816a"></script>
+    <script src="shared/sceneryGaps.js?v=20260813a"></script>
+    <script src="shared/sceneryLandmarks.js?v=20260824f"></script>
+    <script src="shared/sceneryTrackside.js?v=20260824b"></script>
+    <script src="shared/sceneryCrowd.js?v=20260824d"></script>
+    <script src="shared/sceneryPaddock.js?v=20260824e"></script>
+    <script src="shared/sceneryInfrastructure.js?v=20260816a"></script>
+    <script src="shared/trackScenery.js?v=20260824e"></script>
+    <script src="shared/trackValidatore.js?v=20260825a"></script>
+    <script src="track-editor.js?v=20260825a"></script>
 </body>
 </html>

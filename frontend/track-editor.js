@@ -293,6 +293,105 @@ document.addEventListener('DOMContentLoaded', () => {
         rebuild();
     }
 
+    // ====================================================
+    // CONTROLLA LA PISTA — i difetti detti mentre disegni, invece che
+    // scoperti in gara dopo aver corso fino al punto giusto.
+    //
+    // Le misure NON stanno qui: stanno in TrackValidatore, che le condivide
+    // con le invarianti di scenografia. Un difetto è definito una volta sola.
+    // ====================================================
+    const CLASSE_LIVELLO = {
+        'impedisce': 'impedisce',
+        'da guardare': 'guardare',
+        'da sapere': 'sapere',
+    };
+
+    function portaLaVistaSu(punto) {
+        if (!punto) return;
+        camTarget.x = punto.x;
+        camTarget.z = punto.z;
+        zoom = Math.max(zoom, 2.2);   // abbastanza vicino da vedere di cosa si parla
+        updateCameraTransform();
+    }
+
+    function mostraProblemi(problemi, conScenografia) {
+        const elenco = document.getElementById('controllaElenco');
+        const esito = document.getElementById('controllaEsito');
+        const segno = document.getElementById('segnoControlla');
+        elenco.innerHTML = '';
+
+        if (!problemi.length) {
+            esito.innerHTML = '<span class="tuttoBene">Nessun problema trovato.</span>'
+                + (conScenografia ? ' Geometria e scenografia sono a posto.' : ' (solo geometria)');
+            if (segno) segno.textContent = '';
+            return;
+        }
+
+        const gravi = problemi.filter(p => p.livello === 'impedisce').length;
+        esito.textContent = gravi
+            ? `${gravi} ${gravi === 1 ? 'problema impedisce' : 'problemi impediscono'} di correre, su ${problemi.length} trovati.`
+            : `${problemi.length} ${problemi.length === 1 ? 'cosa da guardare' : 'cose da guardare'}, niente che impedisca di correre.`;
+        if (segno) segno.textContent = gravi ? '!' : '•';
+
+        // I più gravi in cima: sono quelli che fermano il lavoro.
+        const ordine = { 'impedisce': 0, 'da guardare': 1, 'da sapere': 2 };
+        for (const p of problemi.slice().sort((a, b) => ordine[a.livello] - ordine[b.livello])) {
+            const riga = document.createElement('div');
+            riga.className = 'problema ' + (CLASSE_LIVELLO[p.livello] || '');
+            riga.innerHTML = '<b>' + p.livello + '</b>' + p.messaggio;
+            if (p.dove) {
+                riga.title = 'Clicca per andarci';
+                riga.addEventListener('click', () => portaLaVistaSu(p.dove));
+            } else {
+                riga.style.cursor = 'default';
+            }
+            elenco.appendChild(riga);
+        }
+    }
+
+    async function controllaLaPista() {
+        const esito = document.getElementById('controllaEsito');
+        const dati = buildTrackData();
+        const problemi = TrackValidatore.controllaGeometria(dati).problemi;
+
+        // La scenografia costa un secondo di calcolo: si fa solo se la
+        // geometria regge, altrimenti si sta generando su una pista che il
+        // gioco non caricherebbe comunque.
+        const gravi = problemi.filter(p => p.livello === 'impedisce');
+        if (gravi.length || mainPoints.length < 3) {
+            mostraProblemi(problemi, false);
+            return;
+        }
+
+        esito.textContent = 'Dispongo la scenografia per controllarla…';
+        await new Promise(r => setTimeout(r, 20));   // lascia ridisegnare il pannello
+        try {
+            const seats = await (await fetch('/assets/custom/circuit/grandStandSeats.json')).json();
+            const terrazze = await (await fetch('/assets/custom/circuit/terraceAnchors.json')).json();
+            const roadHalf = dati.roadHalfWidth;
+            const pts = TrackGeometry.sampleLoop(dati.controlPoints, 1000);
+            const pitPath = TrackGeometry.snapPitPathEnds(dati.pit.path, pts, roadHalf);
+            const pitPts = TrackGeometry.tuckPitEndsToTrack(
+                TrackGeometry.sampleOpenPath(pitPath, 300), pts);
+            const barrierProfile = TrackGravel.barrierProfile(pts, {
+                roadHalf, curbW: 2.8, pitLanePts: pitPts, pitRoadHalf: dati.pit.roadHalfWidth,
+            });
+            const barrierDist = roadHalf + 2.8 + 1.2;
+            const layout = TrackScenery.generateLayout(dati, pts, pitPts, barrierDist, 45,
+                seats.seats, barrierProfile, terrazze.anchors, { gridSize: 6 });
+            const daScenografia = TrackValidatore.controllaScenografia(dati, layout, {
+                trackPts: pts, pitPts, barrierProfile, barrierDist,
+            }).problemi;
+            mostraProblemi(problemi.concat(daScenografia), true);
+        } catch (e) {
+            mostraProblemi(problemi, false);
+            document.getElementById('controllaEsito').textContent +=
+                ' — la scenografia non si è potuta controllare: ' + e.message;
+        }
+    }
+
+    document.getElementById('controllaBtn').addEventListener('click', controllaLaPista);
+
     function aggiornaRiquadroTratto() {
         const sez = document.getElementById('trattoSection');
         const segno = document.getElementById('segnoTratto');
