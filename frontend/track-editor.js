@@ -142,19 +142,108 @@ document.addEventListener('DOMContentLoaded', () => {
             : `punti · ${mainPoints.length} punti di controllo`;
     }
 
-    function aggiornaRiquadroTratto() {
-        const sez = document.getElementById('trattoSection');
-        aggiornaRigaStato();
-        if (!sez) return;
-        if (!inSegmenti() || trattoSelezionato < 0 || !geometria.tratti[trattoSelezionato]
-            || geometria.nodi.length < 3) {
-            sez.style.display = 'none';
+    // ⚠️ LA QUOTA VA LETTA, NON INDOVINATA. Il colore e la dimensione del
+    // marker saturano a ±5 unita' (Y_RANGE): oltre, la rotellina continua ad
+    // alzare ma il pallino resta uguale — «io come faccio a sapere quanta
+    // salita ho messo?». Qui il numero c'e', insieme alla PENDENZA verso il
+    // nodo successivo, che e' cio' che conta davvero per chi guida: una salita
+    // di 10 unita' su 500 e' pianura, su 40 e' un muro.
+    function aggiornaPannelloQuota() {
+        const el = document.getElementById('quotaStato');
+        if (!el) return;
+        const lista = listaDi('main');
+        if (!inSegmenti() || nodoSelezionato < 0 || !lista[nodoSelezionato]) {
+            // Nessun nodo scelto: si dice comunque l'escursione della pista,
+            // che e' l'informazione d'insieme.
+            if (!lista.length) { el.textContent = 'Nessun nodo.'; return; }
+            let min = Infinity, max = -Infinity;
+            for (const p of lista) { const y = p.y || 0; if (y < min) min = y; if (y > max) max = y; }
+            el.innerHTML = `dislivello del tracciato: <span class="valore">${(max - min).toFixed(1)}</span> unità`
+                + ` (da <span class="valore">${min.toFixed(1)}</span> a <span class="valore">${max.toFixed(1)}</span>)`
+                + `<br>scegli un nodo per la pendenza del tratto`;
+            el.style.color = 'var(--spento)';
             return;
         }
-        sez.style.display = '';
-        // Contestuale: quando scegli un tratto il riquadro si apre da solo,
-        // perché è il motivo per cui l'hai scelto.
-        sez.open = true;
+        const n = lista.length;
+        const a = lista[nodoSelezionato], b = lista[(nodoSelezionato + 1) % n];
+        const dislivello = (b.y || 0) - (a.y || 0);
+        const orizzontale = TrackSegmenti.misureTratto(geometria, nodoSelezionato).lunghezza;
+        const pendenza = orizzontale > 0 ? (dislivello / orizzontale) * 100 : 0;
+        const gradi = Math.atan2(dislivello, orizzontale) * 180 / Math.PI;
+        // Oltre il 15% una pista non si guida piu': e' la soglia oltre la
+        // quale conviene sapere subito di aver esagerato.
+        const troppo = Math.abs(pendenza) > 15;
+        el.innerHTML = `quota del nodo <span class="valore">${(a.y || 0).toFixed(1)}</span>`
+            + ` · verso il prossimo: <span class="valore">${dislivello >= 0 ? '+' : ''}${dislivello.toFixed(1)}</span> su ${orizzontale.toFixed(0)}`
+            + `<br>pendenza <span class="valore">${pendenza.toFixed(1)}%</span>`
+            + ` (<span class="valore">${gradi.toFixed(1)}°</span>) — ${dislivello > 0.05 ? 'salita' : dislivello < -0.05 ? 'discesa' : 'in piano'}`
+            + (troppo ? '<br>oltre il 15%: difficile da guidare' : '');
+        el.style.color = troppo ? 'var(--pericolo)' : 'var(--spento)';
+    }
+
+    // La forma della pista in numeri: quanto e' lunga, quanti giri diventa in
+    // gara, e quanto e' larga la carreggiata — in auto affiancate, che e'
+    // l'unica unita' di misura che dice qualcosa a chi guarderà la pista dal
+    // volante. Richiesta esplicita dell'utente: «mi serve un indicatore che mi
+    // dica quanti giri quel tracciato avra' in gioco» e «maggiori informazioni
+    // riguardo alla larghezza delle strade».
+    const LARGHEZZA_AUTO = 2.2;   // la vettura del gioco, misurata sul .glb
+    function aggiornaPannelloForma() {
+        const el = document.getElementById('formaInfo');
+        if (!el) return;
+        const mezza = parseFloat(document.getElementById('roadHalfWidth').value) || 11;
+        const larghezza = mezza * 2;
+        const affiancate = Math.floor(larghezza / (LARGHEZZA_AUTO * 1.35));   // con lo spazio per non toccarsi
+        if (mainPoints.length < 3) {
+            el.innerHTML = `carreggiata <span class="valore">${larghezza.toFixed(1)}</span> unità`
+                + ` — circa <span class="valore">${affiancate}</span> auto affiancate`;
+            return;
+        }
+        const pts = TrackGeometry.sampleLoop(mainPoints, 500);
+        const giroUnita = TrackGeometry.lapLength(pts);
+        const giri = giriPrevisti();
+        el.innerHTML = `giro <span class="valore">${giroUnita.toFixed(0)}</span> unità`
+            + ` · in gara <span class="valore">${giri}</span> giri`
+            + `<br>carreggiata <span class="valore">${larghezza.toFixed(1)}</span> unità`
+            + ` — circa <span class="valore">${affiancate}</span> auto affiancate`;
+    }
+
+    // La corsia box: quanto e' lunga e se il riquadro d'ingresso la intercetta
+    // davvero. Il secondo e' il controllo che il salvataggio fa comunque, ma
+    // scoprirlo PRIMA di premere Salva vale il doppio.
+    function aggiornaPannelloBox() {
+        const el = document.getElementById('boxStato');
+        if (!el) return;
+        if (pitPoints.length < 3) {
+            el.textContent = 'Corsia box non ancora disegnata: spunta la casella qui sopra e clicca in scena.';
+            el.style.color = 'var(--spento)';
+            return;
+        }
+        const pitPts = TrackGeometry.sampleOpenPath(pitPoints, 200);
+        let lung = 0;
+        for (let i = 1; i < pitPts.length; i++) lung += Math.hypot(pitPts[i].x - pitPts[i-1].x, pitPts[i].z - pitPts[i-1].z);
+        const box = readEntryTriggerFields();
+        const tocca = pitPoints.some(p => TrackGeometry.pointInOrientedBox(p.x, p.z, box));
+        el.innerHTML = `corsia di <span class="valore">${lung.toFixed(0)}</span> unità su ${pitPoints.length} punti`
+            + `<br>riquadro d'ingresso: ${tocca ? 'aggancia la corsia' : 'NON tocca la corsia — il salvataggio lo rifiuterà'}`;
+        el.style.color = tocca ? 'var(--spento)' : 'var(--pericolo)';
+    }
+
+    function aggiornaRiquadroTratto() {
+        const sez = document.getElementById('trattoSection');
+        const segno = document.getElementById('segnoTratto');
+        aggiornaRigaStato();
+        aggiornaPannelloQuota();
+        if (!sez) return;
+        const scelto = inSegmenti() && trattoSelezionato >= 0
+            && geometria.tratti[trattoSelezionato] && geometria.nodi.length >= 3;
+        if (segno) segno.textContent = scelto ? '•' : '';
+        if (!scelto) {
+            document.getElementById('trattoTipo').textContent = 'Nessun tratto scelto: clicca un nodo in scena.';
+            document.getElementById('trattoMisure').textContent = '';
+            document.getElementById('trattoLunghezza').value = '';
+            return;
+        }
         const m = TrackSegmenti.misureTratto(geometria, trattoSelezionato);
         const tipo = geometria.tratti[trattoSelezionato].tipo;
         document.getElementById('trattoTipo').textContent =
@@ -586,9 +675,54 @@ document.addEventListener('DOMContentLoaded', () => {
             o.material.opacity = opacitaPista;
         });
 
+        // IL TRAGUARDO NASCE CON LA PISTA. Prima esisteva solo se lo portava un
+        // file caricato: disegnando da zero il cono non compariva mai, e la
+        // pista si salvava senza traguardo (il gioco ripiegava sul campione 0
+        // e sulla tangente lì). Segnalato dall'utente il 2026-08-24:
+        // «ho creato un tracciato temporaneo e non vedo il cono».
+        if (!startFinish && mainPoints.length >= 3) {
+            const pts = TrackGeometry.sampleLoop(mainPoints, 500);
+            const t = TrackGeometry.tangentAt(pts, 0, true);
+            startFinish = { x: mainPoints[0].x, z: mainPoints[0].z, angle: Math.atan2(t.tx, t.tz) };
+        }
+        if (startFinish && mainPoints.length < 3) startFinish = null;
+        updateStartFinishMeshes();
+
         updateEntryTriggerVisual();
         aggiornaAbrasivita();
         aggiornaRigaStato();
+        aggiornaPannelloTraguardo();
+        aggiornaPannelloQuota();
+        aggiornaPannelloForma();
+        aggiornaPannelloBox();
+    }
+
+    // ⚠️ IL VERSO DELLA PISTA, IN NUMERI. Il cono bianco e la freccia verde
+    // dicono la stessa cosa in modo grafico, e l'utente ha detto chiaramente
+    // che così non si capisce: «continuo a non capire assolutamente come
+    // funziona l'allineamento del traguardo». Un angolo e uno scarto in gradi
+    // si leggono senza interpretare due frecce sovrapposte.
+    function aggiornaPannelloTraguardo() {
+        const el = document.getElementById('startFinishStato');
+        if (!el) return;
+        if (!startFinish) {
+            el.textContent = 'Nessun traguardo: servono almeno 3 nodi.';
+            return;
+        }
+        const reale = geometricStartFinishAngle();
+        const gradi = (r) => ((r * 180 / Math.PI) % 360 + 360) % 360;
+        if (reale == null) {
+            el.textContent = `verso scelto ${gradi(startFinish.angle).toFixed(0)}°`;
+            return;
+        }
+        const scarto = Math.abs(Math.atan2(Math.sin(startFinish.angle - reale),
+                                           Math.cos(startFinish.angle - reale))) * 180 / Math.PI;
+        const giudizio = scarto < 15 ? 'allineato'
+            : scarto < 90 ? 'storto' : 'CONTROMANO';
+        el.innerHTML = `verso scelto <span class="valore">${gradi(startFinish.angle).toFixed(0)}°</span>`
+            + ` · verso della pista <span class="valore">${gradi(reale).toFixed(0)}°</span><br>`
+            + `scarto <span class="valore">${scarto.toFixed(0)}°</span> — ${giudizio}`;
+        el.style.color = scarto < 15 ? 'var(--accento)' : scarto < 90 ? 'var(--spento)' : 'var(--pericolo)';
     }
 
     // ====================================================
@@ -757,6 +891,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (inSegmenti() && marker.userData.list === 'main') {
                 nodoSelezionato = marker.userData.index;
                 trattoSelezionato = marker.userData.index;
+                mostraPagina('tratto');
                 rebuild();
                 aggiornaRiquadroTratto();
             }
@@ -842,6 +977,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 startFinish.angle = Math.atan2(-dx, -dz) + Math.PI;
             }
             updateStartFinishMeshes();
+            aggiornaPannelloTraguardo();
             return;
         }
         if (!dragging) return;
@@ -922,7 +1058,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // tutto il resto. È la proprietà che serve per ricalcare un'immagine.
     document.getElementById('trackOpacity').addEventListener('input', rebuild);
     document.getElementById('abrasivita').addEventListener('input', aggiornaAbrasivita);
-    document.getElementById('targetKm').addEventListener('change', aggiornaAbrasivita);
+    document.getElementById('targetKm').addEventListener('change', () => { aggiornaAbrasivita(); aggiornaPannelloForma(); });
+    document.getElementById('roadHalfWidth').addEventListener('change', () => { rebuild(); });
 
     document.getElementById('trattoLunghezza').addEventListener('change', (ev) => {
         const v = parseFloat(ev.target.value);
@@ -1018,6 +1155,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const n = geometria.nodi.length;
             geometria.nodi[trattoSelezionato].dirManuale = true;
             geometria.nodi[(trattoSelezionato + 1) % n].dirManuale = true;
+            rigeneraDaGeometria();
+            rebuild();
+            aggiornaRiquadroTratto();
+        }
+        // I: spezza in due il tratto scelto, con un nodo nuovo a meta'. Senza,
+        // un nodo si puo' solo aggiungere in coda e per correggere una curva a
+        // meta' pista bisognerebbe rifare tutto da li' in avanti.
+        if ((ev.key === 'i' || ev.key === 'I') && inSegmenti() && trattoSelezionato >= 0) {
+            salvaStato();
+            geometria = TrackSegmenti.inserisci(geometria, trattoSelezionato);
+            nodoSelezionato = trattoSelezionato + 1;   // il nodo nuovo, gia' scelto
             rigeneraDaGeometria();
             rebuild();
             aggiornaRiquadroTratto();
@@ -1256,26 +1404,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Quali sezioni restano aperte è una preferenza di chi disegna, non un
-    // default da reimporre ad ogni ricarica. `trattoSection` è esclusa: la
-    // apre e la chiude la selezione, non l'autore.
-    for (const sez of document.querySelectorAll('#panelBody > details.sez')) {
-        if (sez.id === 'trattoSection') continue;
-        const chiave = 'trackEditorSez:' + sez.id;
-        try {
-            const salvato = localStorage.getItem(chiave);
-            if (salvato !== null) sez.open = salvato === '1';
-        } catch (e) { /* modalità privata: si resta ai default */ }
-        sez.addEventListener('toggle', () => {
-            try { localStorage.setItem(chiave, sez.open ? '1' : '0'); } catch (e) { /* idem */ }
-        });
+    // I TASTI DI CATEGORIA. Una finestra sola, che cambia contenuto: premi
+    // «Box» e ci sono le opzioni della corsia box, premi «Via» e nello stesso
+    // riquadro compare il traguardo. L'ultima categoria aperta si ricorda.
+    function mostraPagina(nome) {
+        for (const b of document.querySelectorAll('#tabs button')) {
+            b.setAttribute('aria-selected', String(b.dataset.pagina === nome));
+        }
+        for (const s of document.querySelectorAll('.pagina')) {
+            s.classList.toggle('attiva', s.dataset.pagina === nome);
+        }
+        try { localStorage.setItem('trackEditorPagina', nome); } catch (e) { /* modalità privata */ }
     }
+    for (const b of document.querySelectorAll('#tabs button')) {
+        b.addEventListener('click', () => mostraPagina(b.dataset.pagina));
+    }
+    try {
+        const salvata = localStorage.getItem('trackEditorPagina');
+        if (salvata && document.querySelector(`.pagina[data-pagina="${salvata}"]`)) mostraPagina(salvata);
+    } catch (e) { /* si resta su Pista */ }
 
     // Cambiare modalità cambia su cosa si clicca: va detto subito, non al
     // primo click andato dove non ci si aspettava.
     document.getElementById('pitMode').addEventListener('change', () => {
         aggiornaRigaStato();
-        document.getElementById('sezBox').open = document.getElementById('pitMode').checked;
+        if (document.getElementById('pitMode').checked) mostraPagina('box');
     });
 
     // Lo stato iniziale va MOSTRATO, non solo tenuto: `rebuild()` parte solo
@@ -1283,6 +1436,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // restava muta e il riquadro del tratto non si sapeva se esistesse.
     aggiornaRiquadroTratto();
     aggiornaAbrasivita();
+    aggiornaPannelloForma();
+    aggiornaPannelloBox();
+    aggiornaPannelloTraguardo();
 
     function animate() {
         requestAnimationFrame(animate);

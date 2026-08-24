@@ -225,6 +225,47 @@
         return Math.atan2(dopo.x - prima.x, dopo.z - prima.z);
     }
 
+    // SPEZZARE UN TRATTO IN DUE, con un nodo nuovo a metà.
+    //
+    // Serve per modificare un tracciato già disegnato: senza, un nodo si può
+    // solo aggiungere in coda, e per correggere una curva a metà pista
+    // bisognerebbe rifare tutto da lì in avanti.
+    //
+    // Il nodo nuovo nasce SULLA forma esistente, con la tangente che la curva
+    // ha in quel punto: spezzare aggiunge un appiglio, non ridisegna niente —
+    // ed è la ragione per cui la posizione si prende da `valutaTratto` a metà
+    // e non dalla media dei due estremi, che su una curva starebbe dentro la
+    // corda.
+    //
+    // Le due metà ereditano il tipo del tratto spezzato: spezzare una retta
+    // dà due rette (allineate, quindi `raddrizza` non le fa cedere a vicenda),
+    // spezzare una curva dà due curve.
+    function inserisci(geometria, i) {
+        const g = copia(geometria);
+        const n = g.nodi.length;
+        const a = g.nodi[i], b = g.nodi[(i + 1) % n];
+        const tratto = g.tratti[i] || { tipo: 'curva' };
+
+        const meta = valutaTratto(a, b, tratto, 0.5);
+        // La tangente della forma in quel punto, presa da due campioni vicini:
+        // è ciò che rende il nodo nuovo invisibile finché non lo si tocca.
+        const prima = valutaTratto(a, b, tratto, 0.5 - 1e-4);
+        const dopo = valutaTratto(a, b, tratto, 0.5 + 1e-4);
+        const nodo = {
+            x: +meta.x.toFixed(2),
+            z: +meta.z.toFixed(2),
+            y: ((a.y || 0) + (b.y || 0)) / 2,
+            dir: Math.atan2(dopo.x - prima.x, dopo.z - prima.z),
+            // La direzione è quella della forma, non una scelta: resta
+            // automatica, così spostare i vicini continua a fluidificarla.
+        };
+        if (a.bridge && b.bridge) nodo.bridge = true;
+
+        g.nodi.splice(i + 1, 0, nodo);
+        g.tratti.splice(i + 1, 0, { tipo: tratto.tipo });
+        return g;
+    }
+
     // RIMETTERE IN SESTO LA CATENA dopo che un nodo si è mosso. La forma
     // dipende da tutti i nodi, non solo da quello toccato: spostarne uno
     // cambia i vicini del precedente e del successivo.
@@ -255,6 +296,6 @@
 
     return {
         cuoci, valutaTratto, versore, PASSO_COTTURA,
-        misureTratto, raddrizza, impostaLunghezza, direzioneAutomatica, riallinea,
+        misureTratto, raddrizza, impostaLunghezza, direzioneAutomatica, riallinea, inserisci,
     };
 });

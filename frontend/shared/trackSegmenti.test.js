@@ -322,3 +322,52 @@ test('riallinea: non muta la geometria ricevuta', () => {
     assert.equal(g.nodi[0].dir, primaDir);
     assert.notEqual(dopo, g);
 });
+
+// --- inserisci: un nodo IN MEZZO a un tratto ------------------------------
+
+test('inserisci: il nodo nuovo cade sul tratto, e la catena resta coerente', () => {
+    const g = cinqueNodi();
+    const primaNodi = g.nodi.length;
+    const puntiPrima = TS.cuoci(g, 1);
+
+    const dopo = TS.inserisci(g, 1);   // spezza il tratto 1
+    assert.equal(dopo.nodi.length, primaNodi + 1);
+    assert.equal(dopo.tratti.length, primaNodi + 1, 'un tratto per ogni nodo, sempre');
+
+    // Il nodo nuovo sta a meta' del tratto vecchio: deve trovarsi SULLA forma
+    // di prima, non da qualche altra parte.
+    const nuovo = dopo.nodi[2];
+    let distanza = Infinity;
+    for (const p of puntiPrima) {
+        distanza = Math.min(distanza, Math.hypot(p.x - nuovo.x, p.z - nuovo.z));
+    }
+    assert.ok(distanza < 1, `il nodo nuovo dista ${distanza.toFixed(2)} dalla curva di prima`);
+});
+
+test('inserisci: spezzare una retta lascia due rette', () => {
+    let g = TS.raddrizza(cinqueNodi(), 0);
+    g.nodi[0].dirManuale = true;
+    g.nodi[1].dirManuale = true;
+    const dopo = TS.inserisci(g, 0);
+    assert.equal(dopo.tratti[0].tipo, 'retta', 'la prima meta resta retta');
+    assert.equal(dopo.tratti[1].tipo, 'retta', 'e anche la seconda');
+    // e il rettilineo non si e' incurvato: i tre nodi sono allineati
+    const [a, b, c] = [dopo.nodi[0], dopo.nodi[1], dopo.nodi[2]];
+    const area2 = Math.abs((b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z));
+    assert.ok(area2 < 1e-6, `i tre nodi non sono allineati (area ${area2})`);
+});
+
+test('inserisci: spezzare una curva non ne cambia la forma', () => {
+    const g = cinqueNodi();
+    const prima = TS.cuoci(g, 1);
+    const dopo = TS.cuoci(TS.inserisci(g, 2), 1);
+    // Ogni punto della curva nuova deve stare su quella vecchia: spezzare e'
+    // un'operazione che aggiunge un appiglio, non che ridisegna.
+    let peggio = 0;
+    for (const p of dopo) {
+        let minimo = Infinity;
+        for (const q of prima) minimo = Math.min(minimo, Math.hypot(p.x - q.x, p.z - q.z));
+        peggio = Math.max(peggio, minimo);
+    }
+    assert.ok(peggio < 2, `la forma si e spostata di ${peggio.toFixed(2)} unita`);
+});
