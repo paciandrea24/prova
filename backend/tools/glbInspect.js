@@ -110,4 +110,63 @@ function inspectGlb(absPath) {
     };
 }
 
-module.exports = { inspectGlb, readGlbJson };
+// LA LUCE INTERNA DI UN PORTALE, misurata sul modello e non sul commento.
+// Un portale poggia su due piedi e in mezzo ci passa la pista: il numero che
+// conta e' la distanza dall'asse del punto piu' INTERNO dei piedi. Il ponte
+// dei semafori ha i piloni a ±15 larghi 3 (filo interno 13.5) ma i plinti di
+// cemento larghi 4.5 (filo interno 12.75), e chi dimensionava la campata
+// usava il pilone: alla scala 2.39 di shanghai i 0.75 di differenza
+// diventano 1.79 e il plinto entrava nella barriera. Segnalato dall'utente
+// in gioco il 2026-08-24, col tasto M.
+//
+// `yMax` limita la misura alla parte BASSA del modello: e' li' che il portale
+// tocca terra, mentre in alto la campata passa sopra la pista ed e' giusto
+// che invada.
+//
+// A differenza del resto del file questa funzione LEGGE i vertici: i min/max
+// degli accessor non bastano, perche' i due piedi stanno spesso nello stesso
+// nodo e la loro bounding box comune non ha il vuoto in mezzo.
+function luceInterna(absPath, yMax) {
+    const buf = fs.readFileSync(absPath);
+    const jsonLen = buf.readUInt32LE(12);
+    const gltf = JSON.parse(buf.slice(20, 20 + jsonLen).toString('utf8'));
+    // Il chunk BIN segue quello JSON, che e' allineato a 4 byte.
+    const binStart = 20 + jsonLen + 8;
+
+    function leggiPosizioni(accIdx) {
+        const acc = gltf.accessors[accIdx];
+        const bv = gltf.bufferViews[acc.bufferView];
+        const base = binStart + (bv.byteOffset || 0) + (acc.byteOffset || 0);
+        const stride = bv.byteStride || 12;
+        const out = [];
+        for (let i = 0; i < acc.count; i++) {
+            const o = base + i * stride;
+            out.push([buf.readFloatLE(o), buf.readFloatLE(o + 4), buf.readFloatLE(o + 8)]);
+        }
+        return out;
+    }
+
+    const scene = gltf.scenes[gltf.scene || 0];
+    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    const stack = (scene.nodes || []).map(i => ({ idx: i, parent: null }));
+    let sinistra = -Infinity, destra = Infinity;
+
+    while (stack.length) {
+        const { idx, parent } = stack.pop();
+        const node = gltf.nodes[idx];
+        const world = mul(parent || identity, trs(node));
+        for (const child of node.children || []) stack.push({ idx: child, parent: world });
+        if (node.mesh === undefined) continue;
+        for (const prim of gltf.meshes[node.mesh].primitives) {
+            for (const p of leggiPosizioni(prim.attributes.POSITION)) {
+                const w = apply(world, p);
+                if (w[1] > yMax) continue;
+                if (w[0] < 0 && w[0] > sinistra) sinistra = w[0];
+                else if (w[0] >= 0 && w[0] < destra) destra = w[0];
+            }
+        }
+    }
+    return { sinistra: Math.abs(sinistra), destra, semiluce: Math.min(Math.abs(sinistra), destra) };
+}
+
+module.exports = { inspectGlb, readGlbJson, luceInterna };

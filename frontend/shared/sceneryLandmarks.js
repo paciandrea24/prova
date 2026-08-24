@@ -14,11 +14,23 @@
     }
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryAssetSizes, TrackGravel) {
 
-    // Semiluce interna dei due asset che scavalcano la pista, misurata sui
-    // .glb: il gantry ha i piloni a ±15 larghi 3 (filo interno 13.5), la
-    // passerella le torri a ±16 larghe 4 (filo interno 14).
-    const GANTRY_NATIVE_HALF_SPAN = 13.5;
-    const FOOTBRIDGE_NATIVE_HALF_SPAN = 14;
+    // Semiluce interna dei due asset che scavalcano la pista: la distanza
+    // dall'asse del punto piu' INTERNO di cio' che poggia a terra.
+    //
+    // ⚠️ NON e' il fusto, e' IL PIEDE. Il gantry ha i piloni a ±15 larghi 3
+    // (filo interno 13.5) ma sotto ha i plinti di cemento larghi 4.5 (filo
+    // interno 12.75); la passerella ha le torri 4x4 a ±16 (filo interno 14)
+    // su plinti 4.5x4.5 (filo interno 13.75). Dimensionando la campata sul
+    // fusto, i 0.75 di sporgenza del plinto diventano 1.79 alla scala 2.39 di
+    // shanghai — piu' del margine — e il plinto entrava nella barriera.
+    // Segnalato dall'utente in gioco col tasto M il 2026-08-24, su melbourne
+    // e shanghai: cioe' esattamente e solo le due piste dove la scala supera
+    // 2, che e' dove 0.75 * scala supera SPAN_CLEARANCE.
+    //
+    // I due numeri non sono a mano: `glbInspect.luceInterna` li rimisura sul
+    // modello e un test li confronta (scenografiaInvarianti.test.js).
+    const GANTRY_NATIVE_HALF_SPAN = 12.75;
+    const FOOTBRIDGE_NATIVE_HALF_SPAN = 13.75;
     // Margine fra il filo interno del pilone e la barriera. Il vincolo è
     // scavalcare la BARRIERA, non la carreggiata: dimensionando sulla sola
     // larghezza pista i piloni finirebbero dentro le barriere su tutti i

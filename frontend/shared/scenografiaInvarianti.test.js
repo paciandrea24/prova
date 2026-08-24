@@ -261,6 +261,23 @@ for (const id of PISTE) {
 // Il test enumera gli asset che il layout PIAZZA DAVVERO, su tutte le piste:
 // un asset nuovo e' coperto il giorno che qualcuno lo mette in scena, senza
 // che nessuno debba ricordarsi di aggiungerlo qui.
+// La campata di un portale si dimensiona sul PIEDE, non sul fusto. Il numero
+// scritto in sceneryLandmarks deve essere quello del modello: se qualcuno
+// rigenera il .glb con plinti diversi, questo test lo dice prima che un
+// pilastro finisca nella barriera.
+test('la semiluce dei portali e quella del loro PIEDE, misurata sul .glb', () => {
+    const { luceInterna } = require(path.join(ROOT, 'backend/tools/glbInspect.js'));
+    const Landmarks = require('./sceneryLandmarks.js');
+    // yMax: solo la parte bassa. Piu' su la campata passa sopra la pista, ed
+    // e' il suo mestiere.
+    const gantry = luceInterna(path.join(ROOT, 'frontend/assets/custom/circuit/startGantry.glb'), 2);
+    const passerella = luceInterna(path.join(ROOT, 'frontend/assets/custom/circuit/footbridge.glb'), 1.5);
+    assert.equal(Landmarks.GANTRY_NATIVE_HALF_SPAN, gantry.semiluce,
+        `il ponte semafori poggia a ${gantry.semiluce} dall'asse, non a ${Landmarks.GANTRY_NATIVE_HALF_SPAN}`);
+    assert.equal(Landmarks.FOOTBRIDGE_NATIVE_HALF_SPAN, passerella.semiluce,
+        `la passerella poggia a ${passerella.semiluce} dall'asse, non a ${Landmarks.FOOTBRIDGE_NATIVE_HALF_SPAN}`);
+});
+
 test('ogni asset piazzato ha un ingombro dichiarato, e coincide col .glb', () => {
     const { inspectGlb } = require(path.join(ROOT, 'backend/tools/glbInspect.js'));
     const usati = new Set();
