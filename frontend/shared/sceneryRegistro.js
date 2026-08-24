@@ -64,7 +64,20 @@
     // del paddock entravano nella corsia box fino a 4.29 unita'.
     const FILE_CONTIGUE = new Set(['grandstand', 'grandstand-main', 'paddock', 'safety']);
 
+    // La VEGETAZIONE si intreccia: due chiome che si toccano sono un bosco,
+    // non un difetto. L'esenzione e' diventata necessaria il 2026-08-24, col
+    // passaggio dall'ingombro finto (6x6, il fallback) a quello vero: una
+    // chioma misura fino a 10.3 unita' e gli alberi si piazzano a 7 di passo,
+    // quindi senza questa riga la porta scartava mezzo bosco — due test lo
+    // hanno detto subito («i boschi formano macchie fitte, non un prato
+    // spennacchiato», «quanto circuito resta senza niente di fianco»).
+    //
+    // 'nature' e 'woods' sono la stessa famiglia e non due file separate: un
+    // albero sparso a ridosso di un bosco e' il margine del bosco.
+    const VEGETAZIONE = new Set(['nature', 'woods']);
+
     function stessaFila(a, b) {
+        if (VEGETAZIONE.has(a.category) && VEGETAZIONE.has(b.category)) return true;
         return a.category === b.category && FILE_CONTIGUE.has(a.category);
     }
 
@@ -180,5 +193,5 @@
         };
     }
 
-    return { crea, profondita, SCAVALCANO, FILE_CONTIGUE, stessaFila, MAX_DENTRO_PISTA, MAX_DENTRO_BOX, MAX_COMPENETRAZIONE };
+    return { crea, profondita, SCAVALCANO, FILE_CONTIGUE, VEGETAZIONE, stessaFila, MAX_DENTRO_PISTA, MAX_DENTRO_BOX, MAX_COMPENETRAZIONE };
 });

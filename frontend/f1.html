@@ -638,43 +638,48 @@
         </div>
     </div>
 
-    <!-- PREMIAZIONE — l'annata che scorre. Sopra la panoramica del circuito:
-         una gara alla volta, e in basso il duello per il titolo che si
-         ricostruisce. E' il pezzo che una cerimonia di fine gara non puo'
-         avere: racconta la stagione, non il pomeriggio. -->
+    <!-- PREMIAZIONE — l'annata che scorre, una gara alla volta.
+         NON un pannello: la stessa PAGINA della scelta mescole, con le sue
+         classi (.mescole-*) e la sua palette. Al centro, dove li' c'e'
+         l'anteprima 3D del circuito, qui c'e' la FOTO di quella stessa
+         anteprima, scattata quando quel circuito si e' corso. -->
     <div id="premiazione-annata" style="display:none;">
-        <div class="pa-foglio">
-            <header class="pa-testata">
-                <span class="pa-numero" id="pa-numero">Gara 1</span>
-                <h2 class="pa-pista" id="pa-pista">&mdash;</h2>
+        <div class="mescole-foglio">
+
+            <header class="mescole-testata">
+                <span class="mescole-eyebrow" id="pa-numero">Gara 1</span>
+                <h2 class="mescole-titolo">
+                    <span id="pa-pista">&mdash;</span>
+                    <span class="mescole-titolo-sep"></span>
+                    <span class="mescole-titolo-sub">L&rsquo;annata</span>
+                </h2>
             </header>
-            <div class="pa-schermo">
+
+            <div class="mescole-schermo">
+
                 <!-- SINISTRA — il circuito, con gli stessi dati della pagina
                      mescole (F1ProfiloCircuito), calcolati sulla geometria vera
                      di quella pista e non su quella caricata in scena. -->
-                <section class="pa-col">
-                    <div class="pa-sezione">Il circuito</div>
-                    <dl class="pa-dati">
+                <section class="mescole-col">
+                    <div class="mescole-sezione">Il circuito</div>
+                    <dl class="mescole-dati">
                         <div><dt>Giri</dt><dd id="pa-giri">&mdash;</dd></div>
-                        <div><dt>Distanza</dt><dd id="pa-distanza">&mdash;</dd></div>
+                        <div><dt>Distanza di gara</dt><dd id="pa-distanza">&mdash;</dd></div>
                         <div><dt>Lunghezza</dt><dd id="pa-lunghezza">&mdash;</dd></div>
                     </dl>
-                    <div class="pa-sezione">Carattere</div>
-                    <div class="pa-barrette" id="pa-barrette"></div>
+                    <div class="mescole-sezione">Carattere</div>
+                    <div class="mescole-barrette" id="pa-barrette"></div>
                 </section>
 
-                <!-- CENTRO — la mappa, che e' la cosa che cambia. Un canvas e
-                     non la scena 3D: qui i circuiti da mostrare sono tutti
-                     quelli del calendario, e in scena ne esiste uno solo. -->
-                <section class="pa-col pa-col-mappa">
+                <!-- CENTRO — la veduta, che e' la cosa che cambia ad ogni
+                     tappa. E' l'immagine dell'anteprima vera di quel circuito;
+                     il canvas sotto e' il ripiego (planimetria) e si vede solo
+                     per una pista mai vista in gioco. -->
+                <section class="mescole-col mescole-col-pista">
                     <div class="pa-cornice">
-                        <!-- La VEDUTA del circuito, renderizzata prima della
-                             cerimonia: la stessa inquadratura della pagina
-                             mescole. Il canvas sotto e' il ripiego, e si vede
-                             solo se quel render non e' riuscito. -->
                         <img id="pa-vista" alt="">
-                        <canvas id="pa-mappa" width="620" height="460" style="display:none;"></canvas>
-                        <!-- Velo per lo stacco fra una mappa e l'altra: un
+                        <canvas id="pa-mappa" width="896" height="504" style="display:none;"></canvas>
+                        <!-- Velo per lo stacco fra una veduta e l'altra: un
                              cambio secco si legge come un difetto. -->
                         <div class="pa-velo" id="pa-velo"></div>
                     </div>
@@ -686,10 +691,11 @@
                 </section>
 
                 <!-- DESTRA — il campionato a quel punto della stagione. -->
-                <section class="pa-col">
-                    <div class="pa-sezione">Campionato</div>
+                <section class="mescole-col">
+                    <div class="mescole-sezione">Campionato</div>
                     <ol class="pa-classifica" id="pa-classifica"></ol>
                 </section>
+
             </div>
         </div>
     </div>
@@ -901,8 +907,8 @@
     <script src="shared/sceneryHills.js?v=20260810d"></script>
     <script src="shared/sceneryChunks.js?v=20260816a"></script>
     <script src="shared/trackMeshBuilder.js?v=20260818a"></script>
-    <script src="shared/sceneryAssetSizes.js?v=20260817a"></script>
-    <script src="shared/sceneryRegistro.js?v=20260824b"></script>
+    <script src="shared/sceneryAssetSizes.js?v=20260824c"></script>
+    <script src="shared/sceneryRegistro.js?v=20260824c"></script>
     <!-- Inquadrature dell'anteprima nella schermata mescole: modulo puro,
          ma dipende da trackGeometry E da sceneryAssetSizes, che devono quindi
          venire prima. Le sue camere scansano la scenografia gia' piazzata e

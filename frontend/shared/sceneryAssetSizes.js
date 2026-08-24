@@ -53,10 +53,29 @@
         spectatorA:        { w: 0.6,  h: 1.4,  d: 0.7 },
         spectatorB:        { w: 0.6,  h: 1.4,  d: 0.7 },
         spectatorC:        { w: 0.6,  h: 1.4,  d: 0.7 },
-        // Alberi Kenney, unici asset non custom rimasti: dimensioni già
-        // moltiplicate per KENNEY_MODEL_SCALE = 6.
-        treeLarge:         { w: 2.1,  h: 9.0,  d: 2.5 },
-        treeSmall:         { w: 1.4,  h: 5.4,  d: 1.5 },
+        // Paddock e area logistica. Mancavano tutti: erano giudicati col
+        // FALLBACK, cioè come cubi 6x6x6. Il camion è lungo 19.1 e ne
+        // dichiarava 6, il container 7.7 e ne dichiarava 6 — ed è cosi' che
+        // due container sono finiti dentro la pista di monte-rosso senza che
+        // nessun test se ne accorgesse (2026-08-24).
+        containerStack:    { w: 7.7,  h: 6.4,  d: 3.4 },
+        motorhome:         { w: 15.2, h: 4.5,  d: 5.1 },
+        truck:             { w: 19.1, h: 5.0,  d: 4.0 },
+        parkedCarRed:      { w: 5.2,  h: 2.2,  d: 2.3 },
+        parkedCarBlue:     { w: 5.2,  h: 2.2,  d: 2.3 },
+        parkedCarWhite:    { w: 5.2,  h: 2.2,  d: 2.3 },
+        // Lo striscione è sottile come un cartellone: 0.3 di profondità, non
+        // 6. Col fallback occupava venti volte il suo spessore reale.
+        banner:            { w: 9.6,  h: 3.0,  d: 0.3 },
+        // Vegetazione e massi. La misura è quella della CHIOMA, non del
+        // tronco: è cio' che si vede sporgere sull'asfalto. Fra loro le
+        // chiome possono intrecciarsi — vedi VEGETAZIONE in sceneryRegistro.
+        treeBroad:         { w: 10.3, h: 11.0, d: 9.7 },
+        treeRound:         { w: 9.3,  h: 9.6,  d: 9.7 },
+        treeYoung:         { w: 6.9,  h: 6.9,  d: 7.1 },
+        treePine:          { w: 5.8,  h: 16.8, d: 5.2 },
+        rockCluster:       { w: 4.6,  h: 2.2,  d: 3.7 },
+        rockSingle:        { w: 3.1,  h: 1.6,  d: 2.9 },
     };
 
     const FALLBACK = { w: 6, h: 6, d: 6 };

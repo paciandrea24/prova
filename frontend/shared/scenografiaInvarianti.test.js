@@ -202,3 +202,37 @@ for (const id of PISTE) {
         assert.deepEqual(scoperte, []);
     });
 }
+
+// L'INGOMBRO DICHIARATO E' QUELLO VERO. Un asset senza riga in
+// sceneryAssetSizes non fa rumore: viene giudicato col FALLBACK 6x6x6, e da
+// lì la porta decide su un oggetto che non esiste. E' cosi' che i due
+// container sono finiti dentro la pista di monte-rosso il 2026-08-24 — il
+// modello vero e' 7.7 x 3.4, giudicato 6 x 6 entrava in carreggiata di 0.40
+// (sotto la soglia di 0.5, quindi «a posto») mentre in gioco ne entrava 1.16.
+//
+// Il test enumera gli asset che il layout PIAZZA DAVVERO, su tutte le piste:
+// un asset nuovo e' coperto il giorno che qualcuno lo mette in scena, senza
+// che nessuno debba ricordarsi di aggiungerlo qui.
+test('ogni asset piazzato ha un ingombro dichiarato, e coincide col .glb', () => {
+    const { inspectGlb } = require(path.join(ROOT, 'backend/tools/glbInspect.js'));
+    const usati = new Set();
+    for (const id of PISTE) for (const v of scenografiaDi(id).layout) if (v.asset) usati.add(v.asset);
+
+    const senzaTaglia = [], scostati = [];
+    for (const asset of [...usati].sort()) {
+        const dich = Sizes.sizeOf(asset);
+        const file = path.join(ROOT, 'frontend/assets/custom/circuit', asset + '.glb');
+        if (!fs.existsSync(file)) continue;   // asset non custom: niente da misurare
+        const [w, h, d] = inspectGlb(file).size;
+        // Il fallback e' 6x6x6: un asset che lo riceve non e' dichiarato.
+        if (dich.w === 6 && dich.h === 6 && dich.d === 6 && Math.abs(w - 6) + Math.abs(d - 6) > 0.2) {
+            senzaTaglia.push(`${asset} (vero ${w.toFixed(1)} x ${d.toFixed(1)}, h ${h.toFixed(1)})`);
+            continue;
+        }
+        if (Math.abs(dich.w - w) > 0.2 || Math.abs(dich.d - d) > 0.2 || Math.abs(dich.h - h) > 0.2) {
+            scostati.push(`${asset}: dichiarato ${dich.w} x ${dich.d} (h ${dich.h}), misurato ${w.toFixed(1)} x ${d.toFixed(1)} (h ${h.toFixed(1)})`);
+        }
+    }
+    assert.deepEqual(senzaTaglia, [], 'asset piazzati senza ingombro dichiarato');
+    assert.deepEqual(scostati, [], 'ingombro dichiarato diverso dal modello');
+});
