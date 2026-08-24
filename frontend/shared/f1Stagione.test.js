@@ -606,3 +606,20 @@ test("ricambiDelBot: non propone mai l'ala", () => {
     let s = conUnaGara(stagioneDaSeiGare(), { frontWing: 100, engine: 10 });
     assert.deepEqual(F1Stagione.ricambiDelBot(s, 'p1'), []);
 });
+
+test('officinaAperta: resta aperta anche dopo aver deciso, per cambiare idea', () => {
+    // Il permesso e il flusso sono due domande diverse: dopo aver deciso non
+    // ci si va piu' da soli (officinaDaFare falsa), ma se ci si torna si puo'
+    // ancora cambiare — il weekend successivo non e' partito.
+    let s = conUnaGara(stagioneDaSeiGare(), { engine: 80 });
+    s = F1Stagione.registraOfficina(s, { ricambi: { p1: ['engine'] } });
+    assert.equal(F1Stagione.officinaDaFare(s), false);
+    assert.equal(F1Stagione.officinaAperta(s), true);
+});
+
+test('officinaAperta: prima della prima gara e a stagione finita, no', () => {
+    assert.equal(F1Stagione.officinaAperta(stagioneDaSeiGare()), false);
+    let s = F1Stagione.creaStagione({ nome: 'x', creataDa: 'u', piloti: [{ uid: 'u', colore: 'red' }], calendario: ['a'] });
+    s = F1Stagione.registraRisultato(s, { ordine: ['p1'], usura: { p1: { engine: 90 } } });
+    assert.equal(F1Stagione.officinaAperta(s), false, 'stagione finita');
+});

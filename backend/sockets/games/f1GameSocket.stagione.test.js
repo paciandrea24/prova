@@ -283,6 +283,11 @@ test('un weekend abbandonato a meta non conta: la stagione resta ferma', async (
     // La regola dettata dall'utente: chi chiude il browser a meta' weekend
     // perde il weekend, non la stagione. Si ottiene NON salvando mai a meta' —
     // e questo test protegge proprio l'assenza di un salvataggio.
+    //
+    // Dal 2026-08-23 esiste una seconda scrittura sul documento — l'officina
+    // fra due gare (POST /api/f1/stagioni/:id/officina) — e non la contraddice:
+    // l'invariante e' "il WEEKEND scrive una volta sola, alla bandiera", e
+    // l'officina non e' il weekend.
     t.after(pulisci);
     const seasonStore = require('../../store/seasonStore.js');
     t.after(() => seasonStore._svuota());

@@ -213,15 +213,27 @@
         return out;
     }
 
-    // L'officina NON e' un momento, e' uno STATO: "questa stagione e' fra due
-    // gare e per l'ultima corsa non risulta ancora una decisione". Chi chiude
-    // il browser la ritrova riaprendo la stagione, senza aver perso la gara
-    // appena corsa — e "nessun ricambio" e' comunque una decisione, che e' cio'
-    // che la chiude.
+    // Due domande diverse sull'officina, e tenerle separate conta.
     //
-    // A stagione finita non si apre: non c'e' nessuna gara dopo da preparare.
+    // APERTA = "si puo' ancora mettere le mani sulla macchina": siamo fra due
+    // gare. Vale anche dopo aver deciso, perche' finche' il weekend successivo
+    // non parte si deve poter cambiare idea — e registraOfficina sostituisce
+    // la decisione invece di sommarla proprio per questo. E' il PERMESSO, ed e'
+    // quello che guarda la rotta.
+    //
+    // DA FARE = "c'e' ancora una decisione da prendere". E' il FLUSSO: e' cio'
+    // che manda il giocatore in officina invece che al calendario dopo il
+    // riepilogo, e cio' che ce lo riporta se chiude il browser a meta'.
+    // "Nessun ricambio" e' comunque una decisione, ed e' cio' che la chiude.
+    //
+    // A stagione finita nessuna delle due: non c'e' nessuna gara dopo da
+    // preparare.
+    function officinaAperta(stagione) {
+        return !!stagione && !!(stagione.risultati || []).length && !finita(stagione);
+    }
+
     function officinaDaFare(stagione) {
-        if (!stagione || !(stagione.risultati || []).length || finita(stagione)) return false;
+        if (!officinaAperta(stagione)) return false;
         const ultima = stagione.risultati[stagione.risultati.length - 1];
         return !ultima.ricambiDopo;
     }
@@ -518,7 +530,8 @@
         idPilota, creaStagione, garaCorrente, finita, registraRisultato,
         COMPONENTI, COMPONENTI_PARCO_CHIUSO, vetturaNuova, statoVettura,
         DOTAZIONE_OGNI_N_GARE, PENALITA_GRIGLIA, dotazione,
-        ricambiUsati, ricambiRimasti, registraOfficina, officinaDaFare, penalitaGriglia,
+        ricambiUsati, ricambiRimasti, registraOfficina,
+        officinaAperta, officinaDaFare, penalitaGriglia,
         SOGLIA_BOT_CON_DOTAZIONE, SOGLIA_BOT_SENZA_DOTAZIONE, ricambiDelBot,
         classifica, vittorie, riepilogoGara, garaDaRiepilogare,
         albo, numeriDi, cronaca, siPuoRiprendere,

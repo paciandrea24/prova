@@ -347,3 +347,109 @@ test('una stagione non si crea se in pista c e qualcuno senza account', async (t
     assert.match(String(r.dati.error), /account/i);
     assert.deepEqual(r.dati.senzaAccount, ['#3498db'], 'e deve dire CHI, per colore');
 });
+
+// L'officina e' una SECONDA scrittura sul documento, e va bene: non e' il
+// weekend, e' un'azione esplicita dell'utente fra due weekend, come creare la
+// stagione. L'invariante che resta e' piu' precisa di prima: il weekend scrive
+// una volta sola, alla bandiera.
+// Rif. docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md
+const F1Stagione = require('../../frontend/shared/f1Stagione.js');
+
+// Una stagione con UNA gara gia' corsa e il motore quasi finito: e' lo stato
+// in cui l'officina ha senso.
+async function stagioneConUnaGara() {
+    let s = F1Stagione.creaStagione({
+        nome: 'Officina', creataDa: 'uid-andrea',
+        piloti: [{ uid: 'uid-andrea', colore: 'red' }, { colore: 'blue', bot: true }],
+        calendario: ['prova', 'new-monza', 'monte-rosso'],
+    });
+    s = F1Stagione.registraRisultato(s, {
+        ordine: ['p1', 'p2'],
+        usura: {
+            p1: { frontWing: 30, floor: 20, engine: 90, suspension: 5 },
+            p2: { frontWing: 10, floor: 10, engine: 95, suspension: 0 },
+        },
+    });
+    return seasonStore.salva(s);
+}
+
+test('POST officina: registra i ricambi del richiedente e quelli dei bot', async (t) => {
+    // I bot li decide il SERVER: se arrivassero dal client, uno potrebbe
+    // regalare motori nuovi ai rivali o lasciarli a piedi.
+    t.after(() => seasonStore._svuota());
+    const server = await avviaServer();
+    t.after(() => server.close());
+    const s = await stagioneConUnaGara();
+
+    const r = await chiedi(server, {
+        metodo: 'POST', percorso: `/api/f1/stagioni/${s._id}/officina`,
+        uid: 'uid-andrea', corpo: { ricambi: ['engine'] },
+    });
+    assert.equal(r.stato, 200);
+
+    const dopo = await seasonStore.leggi(s._id);
+    assert.deepEqual(dopo.risultati[0].ricambiDopo.p1, ['engine']);
+    assert.deepEqual(dopo.risultati[0].ricambiDopo.p2, ['engine'],
+        'il bot col motore al 95% lo sostituisce da solo');
+});
+
+test("POST officina: un estraneo non puo' toccare la stagione", async (t) => {
+    t.after(() => seasonStore._svuota());
+    const server = await avviaServer();
+    t.after(() => server.close());
+    const s = await stagioneConUnaGara();
+
+    const r = await chiedi(server, {
+        metodo: 'POST', percorso: `/api/f1/stagioni/${s._id}/officina`,
+        uid: 'uid-estraneo', corpo: { ricambi: ['engine'] },
+    });
+    assert.equal(r.stato, 403);
+});
+
+test('POST officina: la seconda chiamata SOSTITUISCE la decisione, non la somma', async (t) => {
+    // Riaprire l'officina e cambiare idea non deve consumare due ricambi.
+    t.after(() => seasonStore._svuota());
+    const server = await avviaServer();
+    t.after(() => server.close());
+    const s = await stagioneConUnaGara();
+
+    await chiedi(server, { metodo: 'POST', percorso: `/api/f1/stagioni/${s._id}/officina`, uid: 'uid-andrea', corpo: { ricambi: ['engine'] } });
+    await chiedi(server, { metodo: 'POST', percorso: `/api/f1/stagioni/${s._id}/officina`, uid: 'uid-andrea', corpo: { ricambi: [] } });
+
+    const dopo = await seasonStore.leggi(s._id);
+    assert.deepEqual(dopo.risultati[0].ricambiDopo.p1, []);
+    assert.equal(F1Stagione.ricambiUsati(dopo, 'p1').engine, 0);
+});
+
+test("POST officina: prima della prima gara non c'e' niente da preparare", async (t) => {
+    t.after(() => seasonStore._svuota());
+    const server = await avviaServer();
+    t.after(() => server.close());
+    const nuova = await seasonStore.salva(F1Stagione.creaStagione({
+        nome: 'Vergine', creataDa: 'uid-andrea',
+        piloti: [{ uid: 'uid-andrea', colore: 'red' }],
+        calendario: ['prova', 'new-monza'],
+    }));
+
+    const r = await chiedi(server, {
+        metodo: 'POST', percorso: `/api/f1/stagioni/${nuova._id}/officina`,
+        uid: 'uid-andrea', corpo: { ricambi: ['engine'] },
+    });
+    assert.equal(r.stato, 409);
+});
+
+test('POST officina: un componente inventato viene ignorato, non fa fallire', async (t) => {
+    t.after(() => seasonStore._svuota());
+    const server = await avviaServer();
+    t.after(() => server.close());
+    const s = await stagioneConUnaGara();
+
+    const r = await chiedi(server, {
+        metodo: 'POST', percorso: `/api/f1/stagioni/${s._id}/officina`,
+        uid: 'uid-andrea', corpo: { ricambi: ['turbina', 'engine', 'frontWing'] },
+    });
+    assert.equal(r.stato, 200);
+    const dopo = await seasonStore.leggi(s._id);
+    assert.deepEqual(dopo.risultati[0].ricambiDopo.p1, ['engine'],
+        "turbina non esiste, e l'ala non e' del parco chiuso");
+});

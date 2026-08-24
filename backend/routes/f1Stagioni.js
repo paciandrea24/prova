@@ -173,6 +173,53 @@ function creaRouter(opzioni) {
         }
     });
 
+    // L'officina fra due gare. E' la SECONDA scrittura sul documento di una
+    // stagione, e va bene: non e' il weekend, e' un'azione esplicita
+    // dell'utente fra due weekend, come crearla. L'invariante che resta —
+    // "il weekend scrive una volta sola, alla bandiera" — non e' toccata.
+    //
+    // I ricambi dei BOT li decide il server: se arrivassero dal client uno
+    // potrebbe regalare motori nuovi ai rivali, o lasciarli a piedi.
+    //
+    // ⚠️ MULTIGIOCATORE: registraOfficina SOSTITUISCE l'intera mappa dei
+    // ricambi, quindi due umani che decidessero uno dopo l'altro si
+    // cancellerebbero a vicenda. In questa versione decide CHI OSPITA — e'
+    // coerente con come funziona gia' "Corri" — e il campo degli altri umani
+    // resta vuoto. E' la prima cosa da riprendere se il multigiocatore in
+    // stagione diventa comune.
+    router.post('/api/f1/stagioni/:id/officina', autentica, express.json(), async (req, res) => {
+        try {
+            const stagione = await seasonStore.leggi(req.params.id);
+            if (!stagione) return res.status(404).json({ error: 'Stagione non trovata' });
+
+            const mio = (stagione.piloti || []).find(p => !p.bot && p.uid === req.uid);
+            if (!mio) return res.status(403).json({ error: 'Non corri in questa stagione' });
+
+            // APERTA, non DA FARE: chi ha gia' deciso deve poter cambiare
+            // idea finche' il weekend successivo non e' partito. Vedi i due
+            // predicati in f1Stagione.js.
+            if (!F1Stagione.officinaAperta(stagione)) {
+                return res.status(409).json({ error: "Non c'e' nessuna gara da preparare" });
+            }
+
+            const ricambi = {};
+            ricambi[mio.id] = Array.isArray(req.body && req.body.ricambi) ? req.body.ricambi : [];
+            for (const p of stagione.piloti) {
+                if (p.id === mio.id) continue;
+                // Gli altri umani decidono per se' con la propria chiamata; i
+                // bot li decide la regola.
+                if (p.bot) ricambi[p.id] = F1Stagione.ricambiDelBot(stagione, p.id);
+            }
+
+            const dopo = F1Stagione.registraOfficina(stagione, { ricambi });
+            await seasonStore.salva(dopo);
+            res.json({ stagione: dopo });
+        } catch (err) {
+            console.error('POST /api/f1/stagioni/:id/officina:', err);
+            res.status(500).json({ error: 'Impossibile registrare i ricambi' });
+        }
+    });
+
     // Cancellare una stagione: solo chi l'ha CREATA.
     //
     // In multiplayer una stagione appartiene a tutti quelli che ci corrono —
