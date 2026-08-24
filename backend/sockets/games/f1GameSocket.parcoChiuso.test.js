@@ -90,3 +90,68 @@ test('durata sosta: cambiare l\'ala costa un tempo fisso piu\' il proporzionale'
     const atteso = physics.COSTO_CAMBIO_ALA_MS + 50 * physics.REPAIR_MS_PER_DAMAGE_PCT;
     assert.equal(physics.tempoRiparazioneMs(p), atteso);
 });
+
+// Il motore si consuma dai CHILOMETRI, non solo dagli urti. Senza, chi guida
+// pulito arriverebbe all'ultima gara con la macchina nuova e la dotazione non
+// morderebbe mai. E' la decisione che accende tutta l'economia.
+function autoInStagione() {
+    return {
+        damage: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 },
+        usuraIniziale: { frontWing: 0, floor: 0, engine: 0, suspension: 0 },
+    };
+}
+
+const PISTA = { lapLength: 1000, totalLaps: 5 };   // 5000 unita' di gara
+
+test('consumaMotore: una gara intera costa circa USURA_MOTORE_PER_GARA', () => {
+    const p = autoInStagione();
+    // Tutta la distanza di gara, un pezzo alla volta come farebbe il tick.
+    for (let i = 0; i < 5000; i++) physics.consumaMotore(p, 1, PISTA);
+    assert.ok(Math.abs(p.damageParts.engine - physics.USURA_MOTORE_PER_GARA) < 0.5,
+        `atteso ~${physics.USURA_MOTORE_PER_GARA}, ottenuto ${p.damageParts.engine}`);
+});
+
+test('consumaMotore: un motore non copre una stagione intera', () => {
+    // E' cio' che rende la dotazione una scelta invece di una formalita': su
+    // sei gare il ricambio serve, e con UN solo ricambio gratis il momento in
+    // cui spenderlo lo decidi tu.
+    const p = autoInStagione();
+    for (let i = 0; i < 6 * 5000; i++) physics.consumaMotore(p, 1, PISTA);
+    assert.ok(p.damageParts.engine > 99, 'dopo sei gare e\' finito');
+});
+
+test('consumaMotore: dopo una gara si resta dentro il ventaglio dei bot', () => {
+    // Il metro vero: fra il bot piu' lento e il piu' veloce ci sono 7 punti
+    // (BOT_SPEED_FACTOR_MIN/MAX in f1Bot.js). Se una gara sola costasse di
+    // piu', il giocatore uscirebbe dal gruppo invece di scivolarci dentro —
+    // ed e' la ragione per cui questo numero e' 18 e non 35.
+    const { getEnginePowerPenalty } = require('./physics/DamageModel.js');
+    const p = autoInStagione();
+    for (let i = 0; i < 5000; i++) physics.consumaMotore(p, 1, PISTA);
+    const persa = getEnginePowerPenalty(p.damageParts) * 100;
+    assert.ok(persa < 7, `dopo una gara si perde il ${persa.toFixed(1)}%, il ventaglio dei bot e' 7%`);
+});
+
+test('consumaMotore: in gara veloce non consuma niente', () => {
+    const p = { damage: 0, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
+    for (let i = 0; i < 5000; i++) physics.consumaMotore(p, 1, PISTA);
+    assert.equal(p.damageParts.engine, 0);
+});
+
+test('consumaMotore: aggiorna p.damage, che l\'HUD mostra', () => {
+    const p = autoInStagione();
+    for (let i = 0; i < 2500; i++) physics.consumaMotore(p, 1, PISTA);
+    assert.equal(p.damage, p.damageParts.engine);
+});
+
+test('consumaMotore: una pista senza totalLaps non produce NaN', () => {
+    const p = autoInStagione();
+    physics.consumaMotore(p, 10, { lapLength: 1000 });
+    assert.ok(Number.isFinite(p.damageParts.engine));
+});
+
+test('consumaMotore: da fermo non consuma', () => {
+    const p = autoInStagione();
+    physics.consumaMotore(p, 0, PISTA);
+    assert.equal(p.damageParts.engine, 0);
+});

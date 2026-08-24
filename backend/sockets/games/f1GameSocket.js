@@ -20,7 +20,7 @@ const {
     MIN_COLLISION_SEVERITY, DAMAGE_CAP_PER_HIT, COLLISION_PENALTY_CAP_MS,
     applyDamageSteerNoise, collisionDamageAmount, applyCollisionPenalty,
     applyCarCollisionDamage, applyBarrierDamage,
-    createDamageParts, FRONT_WING_STEER_PENALTY_MAX,
+    createDamageParts, addComponentDamage, FRONT_WING_STEER_PENALTY_MAX,
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
     applyOffTrackFloorDamage
 } = DamageModel;
@@ -308,6 +308,40 @@ function tempoRiparazioneMs(p) {
     const quanto = inParcoChiuso(p) ? (p.damageParts ? p.damageParts.frontWing : 0) : p.damage;
     if (!quanto) return 0;
     return (inParcoChiuso(p) ? COSTO_CAMBIO_ALA_MS : 0) + quanto * REPAIR_MS_PER_DAMAGE_PCT;
+}
+
+// Il motore si consuma dai CHILOMETRI, non solo dagli urti — l'unica
+// componente che nella F1 vera si logora da sola. Senza, chi guida pulito
+// arriverebbe all'ultima gara con la macchina nuova e l'economia della
+// stagione resterebbe spenta.
+//
+// ⚠️ IL NUMERO E' TARATO SU QUANTO RALLENTA, non su quanto "sembra" tanto.
+// getEnginePowerPenalty e' lineare: 1% di motore = -0,3% di velocita' massima
+// (DAMAGE_SPEED_PENALTY_MAX). Il metro di paragone e' il ventaglio dei bot,
+// che fra il piu' lento e il piu' veloce e' il 7% (BOT_SPEED_FACTOR_MIN/MAX):
+// una perdita che lo supera dopo una sola gara non e' "usura", e' esclusione
+// dalla corsa. A 18 si perde il 5,4% a gara — dentro il ventaglio, quindi
+// scivoli nel gruppo invece di uscirne. (Il piano diceva 35, cioe' -10,5%
+// dopo UNA gara: sotto il bot piu' lento. Misurato e corretto, scelta
+// dell'utente 2026-08-24.)
+//
+// A 18 un motore non copre una stagione da sei gare, e gia' dalla terza sei
+// abbastanza lento da volerlo cambiare: e' li' che la dotazione diventa una
+// scelta. Il freno e' la dotazione stretta (vedi DOTAZIONE_OGNI_N_GARE in
+// f1Stagione.js), non la lentezza.
+//
+// Vale SOLO in stagione (`inParcoChiuso`): in gara veloce la macchina rinasce
+// ad ogni via, e l'utente ha detto esplicitamente che li' va bene com'e'.
+//
+// Passa da addComponentDamage e non tocca damageParts.engine a mano: e' quello
+// che ridiriva p.damage, che l'HUD mostra.
+const USURA_MOTORE_PER_GARA = 18;
+
+function consumaMotore(p, dist, track) {
+    if (!inParcoChiuso(p) || !dist) return;
+    const distanzaDiGara = (track.totalLaps || 1) * track.lapLength;
+    if (!distanzaDiGara) return;
+    addComponentDamage(p, dist * (USURA_MOTORE_PER_GARA / distanzaDiGara), { engine: 1 });
 }
 
 function applicaRiparazione(p) {
@@ -2027,6 +2061,10 @@ function tickGame(io, lobbyId, game) {
         // Usura e cronometraggio si fermano al traguardo: il giro di
         // rientro non consuma gomme e non ha settori da misurare.
         if (game.phase === 'race' && !p.finished) applyTyreWear(p, offTrack, game.track);
+        // Il motore si consuma dai chilometri. Come l'usura vale SOLO in gara:
+        // il giro di rientro dopo la bandiera non deve costare niente, e la
+        // qualifica non entra in stagione (vedi resetStatoAuto).
+        if (game.phase === 'race' && !p.finished) consumaMotore(p, Math.hypot(p.vx, p.vz), game.track);
         // Il fondo si rovina fuori pista. Come l'usura vale SOLO in gara: in
         // qualifica la macchina e' quella con cui si arriva al weekend, e il
         // giro di rientro dopo la bandiera non deve costare niente.
@@ -2952,6 +2990,7 @@ module.exports.physics = {
     circularWithin, checkpointWindowFor, finishWindowFor,
     assignGridSpawns, resetPlayers, resetStatoAuto, aggiornaCarburante,
     COSTO_CAMBIO_ALA_MS, REPAIR_MS_PER_DAMAGE_PCT, inParcoChiuso, tempoRiparazioneMs, applicaRiparazione,
+    USURA_MOTORE_PER_GARA, consumaMotore,
     MIN_COLLISION_SEVERITY, DAMAGE_CAP_PER_HIT, COLLISION_PENALTY_CAP_MS,
     collisionDamageAmount, applyCarCollisionDamage, applyBarrierDamage, applyCollisionPenalty,
     resolveCollisions,
