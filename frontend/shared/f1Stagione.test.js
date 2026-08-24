@@ -572,3 +572,37 @@ test("penalitaGriglia: piu' ricambi oltre dotazione si sommano", () => {
     assert.equal(F1Stagione.penalitaGriglia(s, 'p1'),
         F1Stagione.PENALITA_GRIGLIA.engine + F1Stagione.PENALITA_GRIGLIA.floor);
 });
+
+// I bot subiscono la stessa economia del giocatore. Se ripartissero nuovi ogni
+// volta il campionato diventerebbe una discesa: piu' vai avanti piu' sei in
+// svantaggio, e riparare smetterebbe di essere una scelta per diventare un
+// obbligo. La regola e' dichiarata e leggibile, non un'IA.
+test('ricambiDelBot: sotto soglia non sostituisce niente', () => {
+    let s = conUnaGara(stagioneDaSeiGare(), { engine: 30, floor: 10 });
+    assert.deepEqual(F1Stagione.ricambiDelBot(s, 'p1'), []);
+});
+
+test("ricambiDelBot: sopra soglia sostituisce, finche' ha dotazione", () => {
+    let s = conUnaGara(stagioneDaSeiGare(), { engine: 70, floor: 10 });
+    assert.deepEqual(F1Stagione.ricambiDelBot(s, 'p1'), ['engine']);
+});
+
+test("ricambiDelBot: esaurita la dotazione alza l'asticella", () => {
+    // Senza la seconda soglia si autopenalizzerebbe ogni gara per un fondo
+    // mezzo consumato.
+    let s = stagioneDaSeiGare();
+    s = F1Stagione.registraRisultato(s, { ordine: ['p1', 'p2'], usura: { p1: { engine: 95 } } });
+    s = F1Stagione.registraOfficina(s, { ricambi: { p1: ['engine'] } });
+    assert.equal(F1Stagione.ricambiRimasti(s, 'p1').engine, 0);
+    s = F1Stagione.registraRisultato(s, { ordine: ['p1', 'p2'], usura: { p1: { engine: 70 } } });
+    assert.deepEqual(F1Stagione.ricambiDelBot(s, 'p1'), [], "70% non basta piu'");
+    let t = F1Stagione.registraRisultato(
+        F1Stagione.registraOfficina(s, { ricambi: {} }),
+        { ordine: ['p1', 'p2'], usura: { p1: { engine: 90 } } });
+    assert.deepEqual(F1Stagione.ricambiDelBot(t, 'p1'), ['engine'], "90% si, penalita' compresa");
+});
+
+test("ricambiDelBot: non propone mai l'ala", () => {
+    let s = conUnaGara(stagioneDaSeiGare(), { frontWing: 100, engine: 10 });
+    assert.deepEqual(F1Stagione.ricambiDelBot(s, 'p1'), []);
+});

@@ -277,6 +277,27 @@
         return posizioni;
     }
 
+    // Cosa sostituisce un bot fra una gara e l'altra. Regola dichiarata, non
+    // un'IA: sopra la prima soglia finche' ha dotazione, sopra la seconda
+    // anche accettando la penalita'. La seconda soglia serve a impedire che si
+    // autopenalizzi ogni gara per un fondo mezzo consumato.
+    //
+    // La differenziazione per livello di difficolta' appartiene al blocco H
+    // (bot competitivi) e qui non si fa.
+    const SOGLIA_BOT_CON_DOTAZIONE = 60;
+    const SOGLIA_BOT_SENZA_DOTAZIONE = 85;
+
+    function ricambiDelBot(stagione, idPilota) {
+        const stato = statoVettura(stagione, idPilota);
+        const rimasti = ricambiRimasti(stagione, idPilota);
+        const scelti = [];
+        for (const c of COMPONENTI_PARCO_CHIUSO) {
+            const soglia = rimasti[c] > 0 ? SOGLIA_BOT_CON_DOTAZIONE : SOGLIA_BOT_SENZA_DOTAZIONE;
+            if (stato[c] > soglia) scelti.push(c);
+        }
+        return scelti;
+    }
+
     // Registra il risultato della gara corrente e avanza. `ordine` è l'elenco
     // degli id dei piloti dal primo all'ultimo.
     //
@@ -498,6 +519,7 @@
         COMPONENTI, COMPONENTI_PARCO_CHIUSO, vetturaNuova, statoVettura,
         DOTAZIONE_OGNI_N_GARE, PENALITA_GRIGLIA, dotazione,
         ricambiUsati, ricambiRimasti, registraOfficina, officinaDaFare, penalitaGriglia,
+        SOGLIA_BOT_CON_DOTAZIONE, SOGLIA_BOT_SENZA_DOTAZIONE, ricambiDelBot,
         classifica, vittorie, riepilogoGara, garaDaRiepilogare,
         albo, numeriDi, cronaca, siPuoRiprendere,
     };
