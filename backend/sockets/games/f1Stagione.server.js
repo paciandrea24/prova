@@ -51,6 +51,14 @@ function impostazioniPerLaProssimaGara(stagione, settingsCorrenti) {
             if (p.colore) acc[p.colore] = F1Stagione.statoVettura(stagione, p.id);
             return acc;
         }, {}),
+        // Quante posizioni perde ognuno sulla griglia di QUESTA gara, per
+        // colore. Calcolata qui una volta: il weekend non deve rileggere la
+        // stagione da Mongo per saperlo.
+        penalitaGriglia: (stagione.piloti || []).reduce((acc, p) => {
+            const n = F1Stagione.penalitaGriglia(stagione, p.id);
+            if (p.colore && n > 0) acc[p.colore] = n;
+            return acc;
+        }, {}),
     });
 }
 

@@ -155,3 +155,43 @@ test('consumaMotore: da fermo non consuma', () => {
     physics.consumaMotore(p, 0, PISTA);
     assert.equal(p.damageParts.engine, 0);
 });
+
+// "Hai fatto la pole e parti terzo": la penalita' si applica DOPO la
+// qualifica, prima che la griglia venga mostrata. La sequenza qualifica →
+// griglia esiste gia', va solo alimentata.
+test("penalita' in griglia: senza penalita' l'ordine e' quello della qualifica", () => {
+    const ordine = ['red', 'blue', 'green'];
+    assert.deepEqual(physics.applicaPenalitaGriglia(ordine, {}), ordine);
+});
+
+test("penalita' in griglia: chi e' penalizzato scala di N posizioni", () => {
+    const ordine = ['red', 'blue', 'green', 'yellow'];
+    assert.deepEqual(
+        physics.applicaPenalitaGriglia(ordine, { red: 2 }),
+        ['blue', 'green', 'red', 'yellow']
+    );
+});
+
+test("penalita' in griglia: non si scende sotto l'ultima piazzola", () => {
+    const ordine = ['red', 'blue', 'green'];
+    assert.deepEqual(
+        physics.applicaPenalitaGriglia(ordine, { red: 99 }),
+        ['blue', 'green', 'red']
+    );
+});
+
+test("penalita' in griglia: con piu' penalizzati si applica prima la piu' grande", () => {
+    // E' la regola della F1 vera, e senza un ordine dichiarato il risultato
+    // dipenderebbe da come e' scritto un ciclo.
+    const ordine = ['red', 'blue', 'green', 'yellow'];
+    const dopo = physics.applicaPenalitaGriglia(ordine, { red: 2, blue: 5 });
+    assert.equal(dopo.indexOf('blue'), 3, "blue, penalizzato di piu', finisce ultimo");
+    assert.ok(dopo.indexOf('red') > 0, 'red comunque arretra');
+    assert.equal(dopo.length, 4, 'nessuno sparisce e nessuno si duplica');
+    assert.equal(new Set(dopo).size, 4);
+});
+
+test("penalita' in griglia: un colore che non corre viene ignorato", () => {
+    const ordine = ['red', 'blue'];
+    assert.deepEqual(physics.applicaPenalitaGriglia(ordine, { viola: 5 }), ['red', 'blue']);
+});

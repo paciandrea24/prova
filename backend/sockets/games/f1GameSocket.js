@@ -344,6 +344,31 @@ function consumaMotore(p, dist, track) {
     addComponentDamage(p, dist * (USURA_MOTORE_PER_GARA / distanzaDiGara), { engine: 1 });
 }
 
+// La penalita' in griglia: chi ha sostituito oltre la dotazione arretra di N
+// posizioni sulla griglia della gara successiva.
+//
+// Quando piu' piloti sono penalizzati si applica PRIMA la penalita' piu'
+// grande, come nella F1 vera: senza un ordine dichiarato il risultato
+// dipenderebbe da come e' scritto un ciclo, e "come capita" in un campionato
+// vuol dire che la griglia cambia a seconda del giorno.
+//
+// Chi sfora oltre l'ultima piazzola si ferma all'ultima.
+function applicaPenalitaGriglia(ordine, penalitaPerColore) {
+    const penalizzati = Object.keys(penalitaPerColore || {})
+        .filter(c => (penalitaPerColore[c] || 0) > 0 && ordine.indexOf(c) >= 0)
+        .sort((a, b) => penalitaPerColore[b] - penalitaPerColore[a]);
+
+    const out = ordine.slice();
+    for (const colore of penalizzati) {
+        const da = out.indexOf(colore);
+        if (da < 0) continue;
+        out.splice(da, 1);
+        const a = Math.min(out.length, da + penalitaPerColore[colore]);
+        out.splice(a, 0, colore);
+    }
+    return out;
+}
+
 function applicaRiparazione(p) {
     if (!p.pendingRepair) return;
     if (inParcoChiuso(p)) {
@@ -490,6 +515,9 @@ module.exports = function (io, socket) {
                 // botStagione e per la stessa ragione: createBots e joinF1Game
                 // sono sincrone e non possono aspettare Mongo.
                 usuraStagione: garaDiCampionato ? (impostazioniLobby.usuraStagione || null) : null,
+                // Quante posizioni perde ognuno sulla griglia di QUESTA gara,
+                // per colore. Applicata da endQualifying.
+                penalitaGriglia: garaDiCampionato ? (impostazioniLobby.penalitaGriglia || null) : null,
                 // stagione -> tyre_select -> qualifying -> grid_display -> race -> race_end
                 // ('stagione' solo in formato stagione, e solo prima del primo weekend)
                 phase: (formatoRichiesto === 'stagione' && !garaDiCampionato) ? 'stagione' : 'tyre_select',
@@ -1332,7 +1360,15 @@ function endQualifying(io, lobbyId, game) {
         if (b.time === null) return -1;
         return a.time - b.time;
     });
-    game.grid = ranked.map(p => p.color);
+    // La griglia e' il risultato della qualifica, PIU' le penalita' del parco
+    // chiuso: "hai fatto la pole e parti terzo" e' un momento di scena che la
+    // sequenza qualifica → griglia offre gratis, e va alimentato qui — prima
+    // che il pannello della griglia venga costruito, non dopo.
+    //
+    // Le penalita' viaggiano dentro l'oggetto partita come usuraStagione e
+    // botStagione, e per la stessa ragione: qui la lobby non c'e', e non si
+    // aggiunge un secondo modo di leggere le impostazioni.
+    game.grid = applicaPenalitaGriglia(ranked.map(p => p.color), game.penalitaGriglia || {});
     // Catturati QUI, prima di assignGridSpawns qui sotto: quella funzione
     // azzera p.time in preparazione della gara (stessi oggetti giocatore
     // referenziati da `ranked`), quindi leggerlo dopo restituirebbe sempre
@@ -2991,6 +3027,7 @@ module.exports.physics = {
     assignGridSpawns, resetPlayers, resetStatoAuto, aggiornaCarburante,
     COSTO_CAMBIO_ALA_MS, REPAIR_MS_PER_DAMAGE_PCT, inParcoChiuso, tempoRiparazioneMs, applicaRiparazione,
     USURA_MOTORE_PER_GARA, consumaMotore,
+    applicaPenalitaGriglia,
     MIN_COLLISION_SEVERITY, DAMAGE_CAP_PER_HIT, COLLISION_PENALTY_CAP_MS,
     collisionDamageAmount, applyCarCollisionDamage, applyBarrierDamage, applyCollisionPenalty,
     resolveCollisions,
