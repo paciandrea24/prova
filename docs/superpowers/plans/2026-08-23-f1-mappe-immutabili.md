@@ -40,11 +40,11 @@ Un modulo puro che possiede tutto ciò che riguarda il formato. È il pezzo che 
   - `espandi(file) -> layout` (l'elenco di voci `{ asset, category, x, y, z, rotY, scale }`)
   - `motivoDiRifiuto(file, trackData, gridSize) -> string | null` — `null` significa «si può usare»
 
-- [ ] **Step 1: Registrare i rossi preesistenti**
+- [x] **Step 1: Registrare i rossi preesistenti**
 
 Run: `node --test backend/ 2>&1 | grep "^not ok"` — salvare l'elenco (attesi 9, uno intermittente).
 
-- [ ] **Step 2: Scrivere i test che falliscono**
+- [x] **Step 2: Scrivere i test che falliscono**
 
 Creare `frontend/shared/scenografiaCotta.test.js`:
 
@@ -161,12 +161,12 @@ test('motivoDiRifiuto: file assente o spazzatura non fa esplodere niente', () =>
 });
 ```
 
-- [ ] **Step 3: Eseguire i test e verificare che falliscano**
+- [x] **Step 3: Eseguire i test e verificare che falliscano**
 
 Run: `node --test frontend/shared/scenografiaCotta.test.js`
 Expected: FAIL con "Cannot find module './scenografiaCotta.js'".
 
-- [ ] **Step 4: Scrivere il modulo**
+- [x] **Step 4: Scrivere il modulo**
 
 Creare `frontend/shared/scenografiaCotta.js`, copiando l'intestazione UMD di `frontend/shared/f1Stagione.js`:
 
@@ -279,12 +279,12 @@ Creare `frontend/shared/scenografiaCotta.js`, copiando l'intestazione UMD di `fr
 });
 ```
 
-- [ ] **Step 5: Eseguire i test e verificare che passino**
+- [x] **Step 5: Eseguire i test e verificare che passino**
 
 Run: `node --test frontend/shared/scenografiaCotta.test.js`
 Expected: PASS, tutti e 12.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/shared/scenografiaCotta.js frontend/shared/scenografiaCotta.test.js
@@ -315,13 +315,13 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Consumes: `comprimi`, `improntaDi` dal Task 1.
 - Produces: `cuoci(trackId, gridSize) -> file` (l'oggetto, non lo scrive); la CLI scrive `frontend/tracks/<id>-scenografia.json`.
 
-- [ ] **Step 1: Copiare la ricetta headless che esiste già**
+- [x] **Step 1: Copiare la ricetta headless che esiste già**
 
 Run: `sed -n '13,40p;71,78p' backend/tools/f1-costo-scenografia.js`
 
 Quel file genera già il layout fuori dal browser. Il cuocitore **copia quella chiamata**, non ne inventa un'altra: se le due divergessero, il file cotto non corrisponderebbe a ciò che il gioco disegna.
 
-- [ ] **Step 2: Scrivere il test che fallisce**
+- [x] **Step 2: Scrivere il test che fallisce**
 
 Creare `backend/tools/f1-cuoci-scenografia.test.js`:
 
@@ -368,12 +368,12 @@ test('cuoci: gridSize diversi producono cotture diverse', () => {
 });
 ```
 
-- [ ] **Step 3: Eseguire il test e verificare che fallisca**
+- [x] **Step 3: Eseguire il test e verificare che fallisca**
 
 Run: `node --test backend/tools/f1-cuoci-scenografia.test.js`
 Expected: FAIL — modulo inesistente.
 
-- [ ] **Step 4: Scrivere il cuocitore**
+- [x] **Step 4: Scrivere il cuocitore**
 
 Creare `backend/tools/f1-cuoci-scenografia.js`:
 
@@ -442,12 +442,12 @@ if (require.main === module) main();
 module.exports = { cuoci };
 ```
 
-- [ ] **Step 5: Eseguire i test e verificare che passino**
+- [x] **Step 5: Eseguire i test e verificare che passino**
 
 Run: `node --test backend/tools/f1-cuoci-scenografia.test.js`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ⚠️ **Non** cuocere ancora `prova`: il file arriva nel Task 4, quando c'è chi lo legge.
 
@@ -476,11 +476,11 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ⚠️ **L'utente lavora su questi file.** Salvare la sua patch prima di editare (vedi Global Constraints).
 
-- [ ] **Step 1: Leggere il punto di aggancio**
+- [x] **Step 1: Leggere il punto di aggancio**
 
 Run: `grep -n "generateLayout" -B 8 -A 4 frontend/f1.js`
 
-- [ ] **Step 2: Aggiungere il modulo alla pagina**
+- [x] **Step 2: Aggiungere il modulo alla pagina**
 
 In `frontend/f1.html`, accanto agli altri `<script src="shared/...">`, **prima** di `f1.js`:
 
@@ -490,7 +490,7 @@ In `frontend/f1.html`, accanto agli altri `<script src="shared/...">`, **prima**
 
 E alzare il `?v=` di `f1.js`.
 
-- [ ] **Step 3: Provare la cottura prima di generare**
+- [x] **Step 3: Provare la cottura prima di generare**
 
 In `frontend/f1.js`, dove oggi c'è `const sceneryLayout = TrackScenery.generateLayout(...)`:
 
@@ -532,13 +532,13 @@ In `frontend/f1.js`, dove oggi c'è `const sceneryLayout = TrackScenery.generate
 1. che il punto sia dentro una funzione `async` (il `fetch` lo richiede). Se non lo è, il caricamento della scenografia va spostato dove lo è, oppure si usa la stessa forma con cui `f1.js:42` legge già `/tracks/<id>.json`.
 2. che `gridSize` sia già in scope lì: è lo stesso valore che viene passato a `generateLayout` nella riga di oggi.
 
-- [ ] **Step 4: Verificare che una pista NON congelata non cambi**
+- [x] **Step 4: Verificare che una pista NON congelata non cambi**
 
 Nessun file cotto esiste ancora, quindi con il server acceso ogni pista deve comportarsi esattamente come prima e la console non deve dire niente di anomalo (il 404 è atteso e silenzioso).
 
 Avviare `node server.js` da `backend/`, aprire una gara veloce su una pista qualsiasi, e controllare che la scenografia ci sia e la console sia pulita.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Con la tecnica dei soli hunk propri.
 
@@ -564,11 +564,11 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ⚠️ È un file dentro `frontend/tracks/`, che è dell'utente: aggiungerlo **per nome**, mai con un `git add` della cartella.
 
-- [ ] **Step 1: Chiedere il gridSize**
+- [x] **Step 1: Chiedere il gridSize**
 
 La cottura vale per un gridSize solo. Prima di cuocere, **chiedere all'utente con quanti piloti gioca di solito** — cuocere per il valore sbagliato significa che il file verrà rifiutato ad ogni partita e il congelamento non servirà a niente, silenziosamente.
 
-- [ ] **Step 2: Cuocere**
+- [x] **Step 2: Cuocere**
 
 ```bash
 node backend/tools/f1-cuoci-scenografia.js prova --grid=<quello concordato>
@@ -576,7 +576,7 @@ node backend/tools/f1-cuoci-scenografia.js prova --grid=<quello concordato>
 
 Attesi ~7667 oggetti, 46 asset distinti, ~264 KB (64 KB serviti, ora che il server comprime).
 
-- [ ] **Step 3: Verificare che sia indistinguibile**
+- [x] **Step 3: Verificare che sia indistinguibile**
 
 Due controlli, uno automatico e uno a occhio.
 
@@ -592,7 +592,7 @@ Confrontare i totali con quelli della cottura (`file.voci.length` e il conteggio
 
 Poi **rinominare temporaneamente** il file (così viene ignorato), riaprire, e confrontare. Devono essere identici.
 
-- [ ] **Step 4: Provare che il congelamento funzioni davvero**
+- [x] **Step 4: Provare che il congelamento funzioni davvero**
 
 È il punto di tutto il blocco, e va visto succedere:
 
@@ -603,7 +603,7 @@ Poi **rinominare temporaneamente** il file (così viene ignorato), riaprire, e c
 
 Se al punto 3 `prova` cambia, il file non viene usato: leggere il motivo in console.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/tracks/prova-scenografia.json
@@ -627,3 +627,58 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 `prova` è al sicuro, e il **blocco C** (i bug di scenografia: asset dentro la pista, pilastri del ponte, grandstand senza rete, buchi d'erba) diventa aggredibile senza rischiare la pista che funziona.
 
 Una cosa da ricordare quando si aprirà il blocco D (editor): l'utente ha chiesto che il congelamento sia un'azione dell'editor — «creo → valido → rendo immutabile». Qui è una riga di comando; lì diventerà un pulsante che chiama lo stesso cuocitore.
+
+## Come e' andata (eseguito il 2026-08-24)
+
+Tutti e quattro i task, un commit ciascuno, da `1126975` a `4d74374` sul branch
+`f1-stagioni`. `prova` e' congelata a **gridSize 6** (scelto dall'utente: e'
+con quanti piloti gioca di solito). Nessun rosso NUOVO: gli 8 preesistenti
+sono rimasti quelli.
+
+I numeri della spec sono confermati esattamente: **7667 oggetti, 264 KB**.
+Gli asset distinti sono **45**, non 46 — vedi lo scostamento 2.
+
+**Due scostamenti dal piano, tutti e due trovati misurando.**
+
+1. **Le cotture stanno in `frontend/tracks/scenografie/`, non accanto al
+   `.json` della pista** come diceva la spec. In `frontend/tracks/` vige un
+   contratto implicito — «ogni `.json` qui dentro e' una pista» — su cui
+   contano **undici** enumerazioni fra codice e test (`readdirSync` +
+   `.endsWith('.json')`). Il file cotto li' dentro veniva caricato come se
+   fosse un tracciato: **otto rossi nuovi** al primo giro di suite dopo la
+   cottura. (`listTracks` lo scartava da solo, quindi in gioco non sarebbe mai
+   comparsa una pista fantasma — ma i test enumerano per conto loro.) Toppare
+   undici filtri sarebbe stato fragile e ogni futuro enumeratore avrebbe
+   dovuto ricordarsene; una sottocartella non finisce in `.json` e nessuno la
+   vede.
+
+2. **`comprimi` normalizza a `null` l'asset assente.** Confrontando voce per
+   voce la cottura vera con cio' che il gioco calcolerebbe: **1 differenza su
+   7667**. Non era non-determinismo (due generazioni consecutive sono
+   identiche): il laghetto arriva con `asset: undefined` e il parcheggio con
+   `asset: null` — due scritture della stessa cosa — e `JSON.stringify`
+   trasforma `undefined` in `null`. Al gioco non cambiava niente
+   (`loadScenery` salta quelle due categorie prima di guardare l'asset), ma un
+   formato che non torna esatto e' un formato di cui non ci si puo' fidare, e
+   il test che promette una cottura esatta prometteva piu' di quanto
+   verificava. Normalizzato e pinnato con un test.
+
+**Verifiche fatte oltre ai test**, tutte headless:
+
+- **La cottura e' esatta**: 0 differenze su 7667 fra il file su disco e cio'
+  che il gioco calcolerebbe, e 0 scarti sulle 14 categorie.
+- **Il congelamento morde davvero** (Step 4 del Task 4): alterato
+  `MARSHAL_MARGIN` in `sceneryTrackside.js`, la `prova` **ricalcolata** cambia
+  in 7459 voci, ma la cottura resta accettata e il gioco continuerebbe a
+  usarla; `new-monza`, non congelata, la modifica la subisce. Costante
+  ripristinata e verificato che il file torni a coincidere.
+- **Col server acceso**: la cottura e' servita (200, 264 KB) e accettata; una
+  pista non congelata da' 404 e il fallback scatta in silenzio.
+- **Nel browser vero** (Chrome headless): il modulo UMD si registra come
+  globale `ScenografiaCotta` e i tre rifiuti funzionano — non dedotto dal
+  pattern.
+
+⚠️ **Da sapere:** l'impronta e' stata calcolata sul `frontend/tracks/prova.json`
+del WORKING TREE, che l'utente aveva modificato e non committato. Se quel file
+cambia ancora, la cottura viene **ignorata** (non usata a meta') e va rifatta
+con lo stesso comando.
