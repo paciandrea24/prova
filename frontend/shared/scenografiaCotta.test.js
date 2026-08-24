@@ -119,3 +119,17 @@ test('motivoDiRifiuto: file assente o spazzatura non fa esplodere niente', () =>
         assert.equal(typeof Cotta.motivoDiRifiuto(f, PISTA, 6), 'string');
     }
 });
+
+test('comprimi: una voce SENZA asset sopravvive al giro su JSON', () => {
+    // E' il laghetto (categoria 'pond'): nessun modello da caricare, quindi
+    // `asset` arriva undefined. JSON lo trasformerebbe in null dentro l'array
+    // degli asset, e la cottura riletta non sarebbe piu' identica a quella
+    // appena fatta. Trovato confrontando voce per voce la cottura vera di
+    // prova: 1 su 7667.
+    const conLaghetto = [{ category: 'pond', x: 5, y: 0, z: 6, rotY: 0, scale: 1 }];
+    const f = cuoci(conLaghetto);
+    const dopoIlFile = JSON.parse(JSON.stringify(f));
+    assert.deepEqual(Cotta.espandi(dopoIlFile), Cotta.espandi(f),
+        'la cottura riletta da file deve essere identica a quella in memoria');
+    assert.equal(Cotta.espandi(f)[0].asset, null);
+});

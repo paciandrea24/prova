@@ -1495,7 +1495,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // sempre e si dice perche'.
     let sceneryLayout = null;
     try {
-        const risposta = await fetch(`/tracks/${trackId}-scenografia.json`);
+        const risposta = await fetch(`/tracks/scenografie/${trackId}.json`);
         if (risposta.ok) {
             const cotta = await risposta.json();
             const motivo = ScenografiaCotta.motivoDiRifiuto(cotta, trackData, gridSize);

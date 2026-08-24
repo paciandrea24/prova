@@ -22,6 +22,14 @@ const TrackScenery = require(path.join(ROOT, 'frontend/shared/trackScenery.js'))
 const Cotta = require(path.join(ROOT, 'frontend/shared/scenografiaCotta.js'));
 const { loadTrack } = require(path.join(ROOT, 'backend/sockets/games/trackLoader.js'));
 
+// ⚠️ Le cotture stanno in una CARTELLA LORO, non accanto al .json della pista.
+// In `frontend/tracks/` vige un contratto implicito — «ogni .json qui dentro e'
+// una pista» — su cui contano undici enumerazioni fra codice e test. Un file
+// cotto li' dentro veniva caricato come se fosse un tracciato e faceva
+// otto rossi nuovi. Una sottocartella non finisce in `.json`, quindi nessuna
+// di quelle enumerazioni la vede, oggi e in futuro.
+const CARTELLA_COTTURE = path.join(ROOT, 'frontend/tracks/scenografie');
+
 const seats = require(path.join(ROOT, 'frontend/assets/custom/circuit/grandStandSeats.json')).seats;
 const terraceAnchors = require(path.join(ROOT, 'frontend/assets/custom/circuit/terraceAnchors.json')).anchors;
 
@@ -52,7 +60,8 @@ function main() {
     }
 
     const file = cuoci(trackId, gridSize);
-    const dove = path.join(ROOT, 'frontend/tracks', trackId + '-scenografia.json');
+    fs.mkdirSync(CARTELLA_COTTURE, { recursive: true });
+    const dove = path.join(CARTELLA_COTTURE, trackId + '.json');
     fs.writeFileSync(dove, JSON.stringify(file));
     const kb = (fs.statSync(dove).size / 1024).toFixed(0);
     console.log(`${trackId} congelata: ${file.voci.length} oggetti, ${file.assets.length} asset distinti, gridSize ${gridSize}`);

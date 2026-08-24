@@ -58,8 +58,17 @@
             if (i < 0) { i = elenco.length; elenco.push(v); }
             return i;
         };
+        // Il laghetto e l'asfalto del parcheggio non hanno un modello: la loro
+        // voce arriva con `asset` undefined. JSON non sa scrivere undefined
+        // dentro un array e lo trasforma in null, quindi senza questa
+        // normalizzazione la cottura NON tornerebbe identica al giro su file —
+        // e il test che promette una cottura esatta prometterebbe piu' di
+        // quanto verifica. Al gioco non cambia niente (loadScenery salta
+        // quelle due categorie prima di guardare l'asset), ma un formato che
+        // non torna esatto e' un formato di cui non ci si puo' fidare.
+        const nullo = (v) => (v === undefined ? null : v);
         const voci = (layout || []).map((v) => [
-            indice(assets, v.asset), indice(categorie, v.category),
+            indice(assets, nullo(v.asset)), indice(categorie, nullo(v.category)),
             r(v.x), r(v.y), r(v.z), r(v.rotY), r(v.scale),
         ]);
         return {
