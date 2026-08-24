@@ -41,13 +41,13 @@ Il primo mattone, tutto dentro le regole pure. Un risultato di gara smette di es
   - `COMPONENTI_PARCO_CHIUSO` (array `['floor', 'engine', 'suspension']`)
   - `statoVettura(stagione, idPilota) -> { frontWing, floor, engine, suspension }`
 
-- [ ] **Step 1: Registrare i rossi preesistenti**
+- [x] **Step 1: Registrare i rossi preesistenti**
 
 Run: `node --test backend/ 2>&1 | grep "^not ok"`
 
 Salvare l'output. Attesi 9 (uno intermittente). Se ce ne sono di più, FERMARSI e segnalarlo.
 
-- [ ] **Step 2: Scrivere i test che falliscono**
+- [x] **Step 2: Scrivere i test che falliscono**
 
 Aggiungere in fondo a `frontend/shared/f1Stagione.test.js`:
 
@@ -131,12 +131,12 @@ test('statoVettura: valori fuori scala vengono limitati a 0-100', () => {
 
 Se il file non ha già `F1Stagione` importato come oggetto intero, aggiungere in cima `const F1Stagione = require('./f1Stagione.js');`.
 
-- [ ] **Step 3: Eseguire i test e verificare che falliscano**
+- [x] **Step 3: Eseguire i test e verificare che falliscano**
 
 Run: `node --test frontend/shared/f1Stagione.test.js`
 Expected: FAIL — `F1Stagione.statoVettura is not a function`.
 
-- [ ] **Step 4: Scrivere le regole**
+- [x] **Step 4: Scrivere le regole**
 
 In `frontend/shared/f1Stagione.js`, dentro la factory, prima di `registraRisultato`:
 
@@ -221,19 +221,19 @@ E cambiare `registraRisultato` perché porti l'usura:
 
 Aggiungere all'oggetto restituito dalla factory: `COMPONENTI, COMPONENTI_PARCO_CHIUSO, vetturaNuova, statoVettura,`.
 
-- [ ] **Step 5: Eseguire i test e verificare che passino**
+- [x] **Step 5: Eseguire i test e verificare che passino**
 
 Run: `node --test frontend/shared/f1Stagione.test.js`
 Expected: PASS, tutti.
 
-- [ ] **Step 6: Verificare che nessun test esistente sia diventato rosso**
+- [x] **Step 6: Verificare che nessun test esistente sia diventato rosso**
 
 Run: `node --test backend/ 2>&1 | grep "^not ok"`
 Expected: lo stesso elenco dello Step 1.
 
 `registraRisultato` ha una firma compatibile (il campo `usura` è facoltativo), quindi i chiamanti esistenti non cambiano.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add frontend/shared/f1Stagione.js frontend/shared/f1Stagione.test.js
@@ -263,7 +263,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Consumes: `registraRisultato(..., { usura })` dal Task 1.
 - Produces: `usuraDeiPiloti(stagione, players) -> { [idPilota]: {frontWing, floor, engine, suspension} }`; `registraGara(stagione, podium, players)` — **terzo parametro nuovo**.
 
-- [ ] **Step 1: Scrivere i test che falliscono**
+- [x] **Step 1: Scrivere i test che falliscono**
 
 Aggiungere in fondo a `backend/sockets/games/f1Stagione.server.test.js`:
 
@@ -314,12 +314,12 @@ test('usuraDeiPiloti: un giocatore senza damageParts non produce NaN', () => {
 });
 ```
 
-- [ ] **Step 2: Eseguire i test e verificare che falliscano**
+- [x] **Step 2: Eseguire i test e verificare che falliscano**
 
 Run: `node --test backend/sockets/games/f1Stagione.server.test.js`
 Expected: FAIL — `Stagione.usuraDeiPiloti is not a function`.
 
-- [ ] **Step 3: Scrivere la funzione**
+- [x] **Step 3: Scrivere la funzione**
 
 In `backend/sockets/games/f1Stagione.server.js`, dopo `ordineDelPodio`:
 
@@ -356,7 +356,7 @@ async function registraGara(stagione, podium, players) {
 
 Aggiungere `usuraDeiPiloti` a `module.exports`.
 
-- [ ] **Step 4: Passare i giocatori dal punto di salvataggio**
+- [x] **Step 4: Passare i giocatori dal punto di salvataggio**
 
 In `backend/sockets/games/f1GameSocket.js`, alla chiamata (riga ~2693):
 
@@ -364,17 +364,17 @@ In `backend/sockets/games/f1GameSocket.js`, alla chiamata (riga ~2693):
                 const dopo = await Stagione.registraGara(stagione, podium, game.players);
 ```
 
-- [ ] **Step 5: Eseguire i test e verificare che passino**
+- [x] **Step 5: Eseguire i test e verificare che passino**
 
 Run: `node --test backend/sockets/games/f1Stagione.server.test.js`
 Expected: PASS.
 
-- [ ] **Step 6: Verificare tutta la suite**
+- [x] **Step 6: Verificare tutta la suite**
 
 Run: `node --test backend/ 2>&1 | grep "^not ok"`
 Expected: lo stesso elenco del Task 1 Step 1.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/sockets/games/f1Stagione.server.js backend/sockets/games/f1Stagione.server.test.js backend/sockets/games/f1GameSocket.js
@@ -401,13 +401,13 @@ Il giro si chiude: quello che la gara ha scritto, il weekend successivo lo legge
 - Consumes: `statoVettura` dal Task 1.
 - Produces: `p.usuraIniziale` (oggetto a 4 componenti, o assente); `impostazioniPerLaProssimaGara` porta `usuraStagione: { [colore]: {...} }`.
 
-- [ ] **Step 1: Capire come le impostazioni arrivano al weekend**
+- [x] **Step 1: Capire come le impostazioni arrivano al weekend**
 
 Run: `grep -n "botStagione\|stagioneInCorso" backend/sockets/games/f1GameSocket.js | head -20`
 
 `impostazioniPerLaProssimaGara` scrive dentro `lobby.gameSettings`, il client ricarica la pagina, e `joinF1Game` legge quelle impostazioni. `botStagione` viaggia già così ed è il modello da copiare: **l'usura segue la stessa strada, per COLORE**, perché al momento del join il colore è l'unica cosa che il server ha in mano per entrambi (umani e bot).
 
-- [ ] **Step 2: Scrivere i test che falliscono**
+- [x] **Step 2: Scrivere i test che falliscono**
 
 Creare `backend/sockets/games/f1GameSocket.parcoChiuso.test.js`:
 
@@ -471,14 +471,14 @@ test('resetStatoAuto: l\'oggetto usuraIniziale non viene condiviso per riferimen
 });
 ```
 
-- [ ] **Step 3: Eseguire i test e verificare che falliscano**
+- [x] **Step 3: Eseguire i test e verificare che falliscano**
 
 Run: `node --test backend/sockets/games/f1GameSocket.parcoChiuso.test.js`
 Expected: FAIL — o `resetStatoAuto` non è esportata, o l'usura ereditata viene ignorata.
 
 Se non è esportata, aggiungerla a `module.exports.physics` accanto ad `assignGridSpawns` (è lo stesso namespace usato dagli altri test di fisica).
 
-- [ ] **Step 4: `resetStatoAuto` ripristina invece di azzerare**
+- [x] **Step 4: `resetStatoAuto` ripristina invece di azzerare**
 
 In `backend/sockets/games/f1GameSocket.js`, sostituire le due righe del danno dentro `resetStatoAuto` (righe ~1130-1131):
 
@@ -508,7 +508,7 @@ In `backend/sockets/games/f1GameSocket.js`, sostituire le due righe del danno de
 
 ⚠️ `p.damage` va ricalcolato, non lasciato a 0: è derivato dal massimo dei quattro, e l'HUD lo mostra. Lasciarlo a zero darebbe un indicatore che dice «macchina sana» su una macchina consumata.
 
-- [ ] **Step 5: L'usura viaggia con le impostazioni**
+- [x] **Step 5: L'usura viaggia con le impostazioni**
 
 In `backend/sockets/games/f1Stagione.server.js`, dentro `impostazioniPerLaProssimaGara`, accanto a `botStagione`:
 
@@ -524,7 +524,7 @@ In `backend/sockets/games/f1Stagione.server.js`, dentro `impostazioniPerLaProssi
         }, {}),
 ```
 
-- [ ] **Step 6: I giocatori ricevono la loro usura entrando**
+- [x] **Step 6: I giocatori ricevono la loro usura entrando**
 
 Ci sono **due** posti dove nasce un giocatore, e vanno toccati entrambi: se uno resta indietro, in una stessa gara metà griglia parte consumata e metà nuova.
 
@@ -556,17 +556,17 @@ function usuraStagioneDi(settings, colore) {
 
 ⚠️ `gameSettings` viaggia come oggetto in memoria fra lobby e partita, quindi `usuraStagione` resta un oggetto e non va serializzato in stringa come `gridSize`/`botsEnabled` (quelli sono stringhe perché li scrive la lobby dal client — vedi il commento in `impostazioniPerLaProssimaGara`).
 
-- [ ] **Step 7: Eseguire i test e verificare che passino**
+- [x] **Step 7: Eseguire i test e verificare che passino**
 
 Run: `node --test backend/sockets/games/f1GameSocket.parcoChiuso.test.js`
 Expected: PASS.
 
-- [ ] **Step 8: Verificare tutta la suite**
+- [x] **Step 8: Verificare tutta la suite**
 
 Run: `node --test backend/ 2>&1 | grep "^not ok"`
 Expected: lo stesso elenco del Task 1 Step 1.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add backend/sockets/games/f1GameSocket.js backend/sockets/games/f1Stagione.server.js backend/sockets/games/f1GameSocket.parcoChiuso.test.js
@@ -597,13 +597,13 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Consumes: `p.usuraIniziale` come segno che si è in stagione (l'unico campo che distingue le due modalità sul giocatore).
 - Produces: `COSTO_CAMBIO_ALA_MS` (costante).
 
-- [ ] **Step 1: Leggere il codice della sosta**
+- [x] **Step 1: Leggere il codice della sosta**
 
 Run: `sed -n '1655,1680p;1715,1735p' backend/sockets/games/f1GameSocket.js`
 
 Serve a vedere la forma esatta di come `pendingRepair` entra nella durata e come viene applicato, prima di cambiarli.
 
-- [ ] **Step 2: Scrivere i test che falliscono**
+- [x] **Step 2: Scrivere i test che falliscono**
 
 Aggiungere a `backend/sockets/games/f1GameSocket.parcoChiuso.test.js`:
 
@@ -644,12 +644,12 @@ test('durata sosta: cambiare l\'ala costa un tempo fisso piu\' il proporzionale'
 });
 ```
 
-- [ ] **Step 3: Eseguire i test e verificare che falliscano**
+- [x] **Step 3: Eseguire i test e verificare che falliscano**
 
 Run: `node --test backend/sockets/games/f1GameSocket.parcoChiuso.test.js`
 Expected: FAIL — `physics.applicaRiparazione is not a function`.
 
-- [ ] **Step 4: Estrarre le due decisioni in funzioni proprie**
+- [x] **Step 4: Estrarre le due decisioni in funzioni proprie**
 
 Oggi la durata e l'applicazione sono due righe inline dentro il flusso della sosta. Estrarle serve a poterle provare senza montare una gara — e a tenere in un posto solo la regola «in stagione solo l'ala».
 
@@ -704,7 +704,7 @@ function tempoRiparazioneMs(p) {
 }
 ```
 
-- [ ] **Step 5: Usarle nel flusso della sosta**
+- [x] **Step 5: Usarle nel flusso della sosta**
 
 Sostituire la riga ~1664:
 
@@ -722,19 +722,19 @@ e la riga ~1724:
 
 Aggiungere `COSTO_CAMBIO_ALA_MS, REPAIR_MS_PER_DAMAGE_PCT, tempoRiparazioneMs, applicaRiparazione` a `module.exports.physics`.
 
-- [ ] **Step 6: Eseguire i test e verificare che passino**
+- [x] **Step 6: Eseguire i test e verificare che passino**
 
 Run: `node --test backend/sockets/games/f1GameSocket.parcoChiuso.test.js`
 Expected: PASS.
 
-- [ ] **Step 7: Verificare tutta la suite**
+- [x] **Step 7: Verificare tutta la suite**
 
 Run: `node --test backend/ 2>&1 | grep "^not ok"`
 Expected: lo stesso elenco del Task 1 Step 1.
 
 ⚠️ Controllare in particolare `f1GameSocket.pitReazione.test.js` e `f1Bot.pitStop.test.js`: toccano la durata della sosta. Se un valore atteso cambia, verificare che sia per la gara veloce (non dovrebbe: lì `usuraIniziale` non esiste e il comportamento è identico).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/sockets/games/f1GameSocket.js backend/sockets/games/f1GameSocket.parcoChiuso.test.js
@@ -768,7 +768,7 @@ Vale **solo in stagione**, e non è una scappatoia: in gara veloce l'utente ha d
 - Consumes: `inParcoChiuso(p)` dal Task 4.
 - Produces: `USURA_MOTORE_PER_GARA` (35), `consumaMotore(p, dist, track)`.
 
-- [ ] **Step 1: Scrivere i test che falliscono**
+- [x] **Step 1: Scrivere i test che falliscono**
 
 Aggiungere a `backend/sockets/games/f1GameSocket.parcoChiuso.test.js`:
 
@@ -826,12 +826,12 @@ test('consumaMotore: da fermo non consuma', () => {
 });
 ```
 
-- [ ] **Step 2: Eseguire i test e verificare che falliscano**
+- [x] **Step 2: Eseguire i test e verificare che falliscano**
 
 Run: `node --test backend/sockets/games/f1GameSocket.parcoChiuso.test.js`
 Expected: FAIL — `physics.consumaMotore is not a function`.
 
-- [ ] **Step 3: Scrivere la funzione**
+- [x] **Step 3: Scrivere la funzione**
 
 A livello di modulo in `backend/sockets/games/f1GameSocket.js`:
 
@@ -856,7 +856,7 @@ function consumaMotore(p, dist, track) {
 }
 ```
 
-- [ ] **Step 4: Chiamarla nel tick**
+- [x] **Step 4: Chiamarla nel tick**
 
 Nel ciclo di `tickGame`, accanto ad `applyTyreWear` (che riceve già la stessa distanza percorsa nel tick):
 
@@ -870,12 +870,12 @@ Nel ciclo di `tickGame`, accanto ad `applyTyreWear` (che riceve già la stessa d
 
 Aggiungere `USURA_MOTORE_PER_GARA, consumaMotore` a `module.exports.physics`.
 
-- [ ] **Step 5: Eseguire i test e verificare che passino**
+- [x] **Step 5: Eseguire i test e verificare che passino**
 
 Run: `node --test backend/sockets/games/f1GameSocket.parcoChiuso.test.js`
 Expected: PASS.
 
-- [ ] **Step 6: Misurare quanto costa in pista, non solo in percentuale**
+- [x] **Step 6: Misurare quanto costa in pista, non solo in percentuale**
 
 35% di motore è un numero astratto finché non si sa **quanto rallenta**. Misurarlo:
 
@@ -893,12 +893,12 @@ for (const e of [35, 70, 100]) {
 
 **Criterio:** a fine PRIMA gara (35%) la perdita di velocità massima deve essere **percettibile ma non punitiva** — indicativamente fra l'1% e il 4%. Sotto l'1% la dotazione non ha peso e tanto vale non farla; sopra il 4% la prima gara di ogni motore è già una zavorra. Se è fuori, il numero da toccare è `USURA_MOTORE_PER_GARA` (non `DAMAGE_SPEED_PENALTY_MAX`, che governa anche il danno da urto). Riportare i valori nel commit.
 
-- [ ] **Step 7: Verificare tutta la suite**
+- [x] **Step 7: Verificare tutta la suite**
 
 Run: `node --test backend/ 2>&1 | grep "^not ok"`
 Expected: lo stesso elenco del Task 1 Step 1. In gara veloce non cambia nulla: `usuraIniziale` non esiste.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/sockets/games/f1GameSocket.js backend/sockets/games/f1GameSocket.parcoChiuso.test.js
@@ -942,7 +942,7 @@ Il cuore della decisione. Tutto in `f1Stagione.js`, tutto provabile senza server
   - `officinaDaFare(stagione) -> boolean`
   - `penalitaGriglia(stagione, idPilota) -> number`
 
-- [ ] **Step 1: Scrivere i test che falliscono**
+- [x] **Step 1: Scrivere i test che falliscono**
 
 Aggiungere in fondo a `frontend/shared/f1Stagione.test.js`:
 
@@ -1066,12 +1066,12 @@ test('penalitaGriglia: piu\' ricambi oltre dotazione si sommano', () => {
 });
 ```
 
-- [ ] **Step 2: Eseguire i test e verificare che falliscano**
+- [x] **Step 2: Eseguire i test e verificare che falliscano**
 
 Run: `node --test frontend/shared/f1Stagione.test.js`
 Expected: FAIL — `F1Stagione.dotazione is not a function`.
 
-- [ ] **Step 3: Scrivere le regole**
+- [x] **Step 3: Scrivere le regole**
 
 In `frontend/shared/f1Stagione.js`, dopo `statoVettura`:
 
@@ -1191,17 +1191,17 @@ In `frontend/shared/f1Stagione.js`, dopo `statoVettura`:
 
 Aggiungere all'oggetto restituito: `DOTAZIONE_OGNI_N_GARE, PENALITA_GRIGLIA, dotazione, ricambiUsati, ricambiRimasti, registraOfficina, officinaDaFare, penalitaGriglia,`.
 
-- [ ] **Step 4: Eseguire i test e verificare che passino**
+- [x] **Step 4: Eseguire i test e verificare che passino**
 
 Run: `node --test frontend/shared/f1Stagione.test.js`
 Expected: PASS, tutti.
 
-- [ ] **Step 5: Verificare tutta la suite**
+- [x] **Step 5: Verificare tutta la suite**
 
 Run: `node --test backend/ 2>&1 | grep "^not ok"`
 Expected: lo stesso elenco del Task 1 Step 1.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/shared/f1Stagione.js frontend/shared/f1Stagione.test.js
@@ -1235,7 +1235,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Consumes: `statoVettura`, `ricambiRimasti` dal Task 5.
 - Produces: `SOGLIA_BOT_CON_DOTAZIONE` (60), `SOGLIA_BOT_SENZA_DOTAZIONE` (85), `ricambiDelBot(stagione, idPilota) -> string[]`
 
-- [ ] **Step 1: Scrivere i test che falliscono**
+- [x] **Step 1: Scrivere i test che falliscono**
 
 Aggiungere a `frontend/shared/f1Stagione.test.js`:
 
@@ -1277,12 +1277,12 @@ test('ricambiDelBot: non propone mai l\'ala', () => {
 });
 ```
 
-- [ ] **Step 2: Eseguire i test e verificare che falliscano**
+- [x] **Step 2: Eseguire i test e verificare che falliscano**
 
 Run: `node --test frontend/shared/f1Stagione.test.js`
 Expected: FAIL — `F1Stagione.ricambiDelBot is not a function`.
 
-- [ ] **Step 3: Scrivere la regola**
+- [x] **Step 3: Scrivere la regola**
 
 In `frontend/shared/f1Stagione.js`, dopo `penalitaGriglia`:
 
@@ -1311,12 +1311,12 @@ In `frontend/shared/f1Stagione.js`, dopo `penalitaGriglia`:
 
 Aggiungere all'oggetto restituito: `SOGLIA_BOT_CON_DOTAZIONE, SOGLIA_BOT_SENZA_DOTAZIONE, ricambiDelBot,`.
 
-- [ ] **Step 4: Eseguire i test e verificare che passino**
+- [x] **Step 4: Eseguire i test e verificare che passino**
 
 Run: `node --test frontend/shared/f1Stagione.test.js`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/shared/f1Stagione.js frontend/shared/f1Stagione.test.js
@@ -1347,7 +1347,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Consumes: `registraOfficina`, `officinaDaFare`, `ricambiDelBot` dai Task 5-6.
 - Produces: `POST /api/f1/stagioni/:id/officina` con body `{ ricambi: string[] }` (i propri, non quelli degli altri).
 
-- [ ] **Step 1: Scrivere i test che falliscono**
+- [x] **Step 1: Scrivere i test che falliscono**
 
 Aggiungere a `backend/routes/f1Stagioni.test.js`. Il file ha già gli helper `avviaServer()` e `chiedi(server, { metodo, percorso, uid, corpo })`, che restituisce `{ stato, dati }` — usare quelli, non inventarne altri.
 
@@ -1461,12 +1461,12 @@ test('POST officina: un componente inventato viene ignorato, non fa fallire', as
 
 ⚠️ Se `seasonStore.salva` non restituisce il documento con `_id`, leggere come fanno i test già presenti nel file e adeguarsi: non inventare un secondo modo di ricavare l'id.
 
-- [ ] **Step 2: Eseguire i test e verificare che falliscano**
+- [x] **Step 2: Eseguire i test e verificare che falliscano**
 
 Run: `node --test backend/routes/f1Stagioni.test.js`
 Expected: FAIL con 404 (la rotta non esiste).
 
-- [ ] **Step 3: Scrivere la rotta**
+- [x] **Step 3: Scrivere la rotta**
 
 In `backend/routes/f1Stagioni.js`, accanto alle altre:
 
@@ -1511,7 +1511,7 @@ In `backend/routes/f1Stagioni.js`, accanto alle altre:
 
 ⚠️ In multigiocatore ogni umano dovrebbe poter decidere per sé, ma `registraOfficina` **sostituisce** l'intera mappa: la seconda chiamata cancellerebbe la scelta del primo. Nella versione di questo task la decisione la fa **chi ospita** — è coerente con come funziona già «Corri» — e il campo degli altri umani resta vuoto. Va scritto nel commento della rotta, ed è la prima cosa da riprendere se il multigiocatore in stagione diventa comune.
 
-- [ ] **Step 4: Aggiornare deliberatamente l'invariante**
+- [x] **Step 4: Aggiornare deliberatamente l'invariante**
 
 In `backend/sockets/games/f1GameSocket.stagione.test.js`, il test `'un weekend abbandonato a meta non conta: la stagione resta ferma'` (~riga 282): aggiornare il commento perché dica la regola nuova, senza cambiare cosa verifica (quel test riguarda il weekend, non l'officina):
 
@@ -1526,17 +1526,17 @@ In `backend/sockets/games/f1GameSocket.stagione.test.js`, il test `'un weekend a
     // l'officina non e' il weekend.
 ```
 
-- [ ] **Step 5: Eseguire i test e verificare che passino**
+- [x] **Step 5: Eseguire i test e verificare che passino**
 
 Run: `node --test backend/routes/f1Stagioni.test.js`
 Expected: PASS.
 
-- [ ] **Step 6: Verificare tutta la suite**
+- [x] **Step 6: Verificare tutta la suite**
 
 Run: `node --test backend/ 2>&1 | grep "^not ok"`
 Expected: lo stesso elenco del Task 1 Step 1.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/routes/f1Stagioni.js backend/routes/f1Stagioni.test.js backend/sockets/games/f1GameSocket.stagione.test.js
@@ -1571,14 +1571,14 @@ Fra il riepilogo della gara e il calendario. Sorella delle altre schermate della
 
 ⚠️ **L'utente lavora su questi file.** Prima di editare: `git diff frontend/f1.html frontend/shared/f1StagioneSchermate.js frontend/styles/f1.css > /tmp/utente.patch`, e committare con la tecnica descritta nei Global Constraints.
 
-- [ ] **Step 1: Leggere come sono fatte le sorelle**
+- [x] **Step 1: Leggere come sono fatte le sorelle**
 
 Run: `grep -n "function disegnaRiepilogo" -A 40 frontend/shared/f1StagioneSchermate.js`
 Run: `grep -n "function mostraVista" -A 30 frontend/shared/f1StagioneSchermate.js`
 
 L'officina è una vista in più nello stesso meccanismo. Non inventare un secondo modo di mostrare/nascondere pannelli.
 
-- [ ] **Step 2: Il pannello**
+- [x] **Step 2: Il pannello**
 
 In `frontend/f1.html`, accanto agli altri pannelli della stagione, un `<div id="stagione-officina" style="display:none;">` con:
 - testata in stile `.mescole-testata`: eyebrow «Fra una gara e l'altra», titolo «Officina»;
@@ -1587,7 +1587,7 @@ In `frontend/f1.html`, accanto agli altri pannelli della stagione, un `<div id="
 
 L'ala **non compare**: è già nuova ad ogni via.
 
-- [ ] **Step 3: Disegnarla**
+- [x] **Step 3: Disegnarla**
 
 In `frontend/shared/f1StagioneSchermate.js`, una `disegnaOfficina(stagione)` che:
 1. legge `F1Stagione.statoVettura`, `ricambiRimasti`, `dotazione`;
@@ -1597,19 +1597,19 @@ In `frontend/shared/f1StagioneSchermate.js`, una `disegnaOfficina(stagione)` che
 
 E in `mostraVista` aggiungere il caso `'officina'`.
 
-- [ ] **Step 4: Agganciarla al flusso**
+- [x] **Step 4: Agganciarla al flusso**
 
 Dopo il riepilogo di fine gara, invece di andare dritti al calendario: se `F1Stagione.officinaDaFare(stagione)` è vera, si passa dall'officina.
 
 E all'apertura di una stagione salvata: se `officinaDaFare` è vera, si apre lì. È quello che rende vero «chi chiude il browser in officina la ritrova».
 
-- [ ] **Step 5: Alzare il cache-busting**
+- [x] **Step 5: Alzare il cache-busting**
 
 Run: `grep -n "f1StagioneSchermate.js?v=" frontend/f1.html`
 
 Incrementare la versione.
 
-- [ ] **Step 6: Verificare a schermo**
+- [x] **Step 6: Verificare a schermo**
 
 ⚠️ Chrome headless è installato e la UI si può vedere davvero — non fidarsi della lettura del codice per una schermata nuova.
 
@@ -1622,7 +1622,7 @@ La tecnica che ha già funzionato: uno script Node che estrae il markup **vero**
 
 Controllare: le tre righe stanno tutte nel foglio, la penalità totale si legge, e un componente **senza** ricambi rimasti si distingue a colpo d'occhio da uno che ne ha.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Con la tecnica dei soli hunk propri (vedi Global Constraints), poi:
 
@@ -1655,7 +1655,7 @@ L'ultimo pezzo, e il più visibile: «hai fatto la pole e parti terzo».
 - Consumes: `penalitaGriglia` dal Task 5.
 - Produces: `applicaPenalitaGriglia(ordine, penalitaPerColore) -> string[]`; `impostazioniPerLaProssimaGara` porta `penalitaGriglia: { [colore]: number }`.
 
-- [ ] **Step 1: Scrivere i test che falliscono**
+- [x] **Step 1: Scrivere i test che falliscono**
 
 Aggiungere a `backend/sockets/games/f1GameSocket.parcoChiuso.test.js`:
 
@@ -1701,12 +1701,12 @@ test('penalita\' in griglia: un colore che non corre viene ignorato', () => {
 });
 ```
 
-- [ ] **Step 2: Eseguire i test e verificare che falliscano**
+- [x] **Step 2: Eseguire i test e verificare che falliscano**
 
 Run: `node --test backend/sockets/games/f1GameSocket.parcoChiuso.test.js`
 Expected: FAIL — `physics.applicaPenalitaGriglia is not a function`.
 
-- [ ] **Step 3: Scrivere la funzione**
+- [x] **Step 3: Scrivere la funzione**
 
 A livello di modulo in `backend/sockets/games/f1GameSocket.js`:
 
@@ -1737,7 +1737,7 @@ function applicaPenalitaGriglia(ordine, penalitaPerColore) {
 }
 ```
 
-- [ ] **Step 4: Applicarla dopo la qualifica**
+- [x] **Step 4: Applicarla dopo la qualifica**
 
 In `endQualifying` (riga ~1236):
 
@@ -1754,7 +1754,7 @@ In `endQualifying` (riga ~1236):
 
 ⚠️ Verificare come `endQualifying` accede alla lobby: se non ha `lobbyId` sottomano, passare la mappa delle penalità dentro `game` al momento del join, insieme a `usuraStagione`. **Non** aggiungere un secondo modo di leggere le impostazioni.
 
-- [ ] **Step 5: La penalità viaggia con le impostazioni**
+- [x] **Step 5: La penalità viaggia con le impostazioni**
 
 In `backend/sockets/games/f1Stagione.server.js`, accanto a `usuraStagione`:
 
@@ -1769,19 +1769,19 @@ In `backend/sockets/games/f1Stagione.server.js`, accanto a `usuraStagione`:
         }, {}),
 ```
 
-- [ ] **Step 6: Eseguire i test e verificare che passino**
+- [x] **Step 6: Eseguire i test e verificare che passino**
 
 Run: `node --test backend/sockets/games/f1GameSocket.parcoChiuso.test.js`
 Expected: PASS.
 
-- [ ] **Step 7: Verificare tutta la suite**
+- [x] **Step 7: Verificare tutta la suite**
 
 Run: `node --test backend/ 2>&1 | grep "^not ok"`
 Expected: lo stesso elenco del Task 1 Step 1.
 
 ⚠️ Attenzione a `f1GameSocket.sequenzaGriglia.test.js` e `f1GameSocket.gridSpawn.test.js`: senza penalità l'ordine deve restare identico a prima.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/sockets/games/f1GameSocket.js backend/sockets/games/f1Stagione.server.js backend/sockets/games/f1GameSocket.parcoChiuso.test.js
@@ -1816,3 +1816,37 @@ Se al punto 2 la scelta è ovvia in un senso o nell'altro, i numeri da toccare s
 
 - **Ogni umano decide per sé** in multigiocatore (vedi la nota nel Task 7): in questa versione l'officina la fa chi ospita.
 - **Soldi, budget, componenti nuove, differenziazione dei bot per difficoltà**: fuori, come da spec.
+
+## Come e' andata (eseguito il 2026-08-24)
+
+Tutti i task fatti, un commit ciascuno, da `4993756` a `a33f281` sul branch
+`f1-stagioni`. Nessun rosso NUOVO: gli 8-9 preesistenti sono rimasti quelli
+(il nono, `prova-notturno: i bot entrano davvero in corsia box`, e'
+l'intermittente gia' annotato). Resta da fare il playtest qui sopra.
+
+**Tre scostamenti dal piano, tutti motivati da una misura.**
+
+1. **`USURA_MOTORE_PER_GARA` e' 18, non 35.** Lo Step 6 del Task 4b chiedeva di
+   misurare quanto costa in pista, con criterio 1-4% di velocita' persa dopo la
+   prima gara: a 35 se ne perdeva il **10,5%**, e il ventaglio di ritmo fra i
+   bot e' il **7%** (`BOT_SPEED_FACTOR_MIN/MAX`) — cioe' dopo una sola gara si
+   finiva sotto il bot piu' lento. A 18 se ne perde il 5,4%: si scivola nel
+   gruppo invece di uscirne. Scelta dell'utente fra tre opzioni misurate.
+
+2. **`DOTAZIONE_OGNI_N_GARE` e' 6, non 3** — conseguenza diretta della prima.
+   Il piano dava per scontato che con 35%/gara servissero piu' ricambi della
+   dotazione; a 18 una dotazione da due su sei gare non sarebbe MAI stata
+   raggiunta e la penalita' non sarebbe scattata mai. Dotazione e usura sono la
+   stessa manopola vista da due lati: cambiarne una sola spegneva l'economia in
+   silenzio. Ora su sei gare c'e' UN ricambio gratis, e il secondo costa.
+
+3. **`officinaAperta` si e' separata da `officinaDaFare`.** Il piano usava un
+   predicato solo, e la rotta rifiutava con 409 la seconda chiamata — cioe'
+   proprio il ripensamento che `registraOfficina` esiste per permettere (e che
+   un test del piano stesso pretendeva). APERTA e' il permesso (siamo fra due
+   gare), DA FARE e' il flusso (c'e' ancora da decidere).
+
+Verificato oltre ai test unitari: la **schermata** con Chrome headless sul
+markup vero (il bordo da solo non distingueva un componente senza ricambi), e
+la **catena intera** con una sonda che cuce gara -> usura -> officina ->
+impostazioni -> giocatore che entra -> griglia, 19 controlli passati.
