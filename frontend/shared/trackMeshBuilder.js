@@ -977,13 +977,29 @@
                     // fra l'asfalto inclinato e il terreno resterebbe una
                     // fessura, e da sotto si vedrebbe il vuoto.
                     //
-                    // L'alzata si congela al pianoro (`plateauEnd`), esattamente
-                    // come fa TrackGeometry.terrainHeightAt: la mesh che si vede
-                    // e la quota che gli oggetti scenici interrogano devono
-                    // essere la stessa superficie, o le tribune galleggiano.
-                    const mezzaQui = mezzaAl(trackPts, i, plateauEnd);
+                    // ⚠️ L'alzata si congela al BORDO DEL NASTRO, esattamente come
+                    // fa TrackGeometry.terrainHeightAt: la mesh che si vede e la
+                    // quota che gli oggetti scenici interrogano devono essere la
+                    // stessa superficie, o le tribune galleggiano.
+                    //
+                    // Congelarla al PIANORO (com'era) faceva salire la terra con
+                    // la pendenza della parabolica per 45 unita': accanto alla
+                    // curva a 35 gradi cresceva una collina di 37 unita' dove il
+                    // bordo alto dell'asfalto ne aveva 13.7, e la pista ci
+                    // spariva dentro. Visto in gioco il 2026-08-25.
+                    // ⚠️ Il ripiego di mezzaAl era `plateauEnd`, cioe' 45 unita'
+                    // dove la mezza carreggiata ne vale 12: un punto senza
+                    // halfWidth faceva alzare il cuneo di sin(rollio)*90 invece
+                    // che *24. Il ripiego giusto e' la mezza vera, che si ricava
+                    // da innerEdge (bordo esterno del cordolo) togliendo il
+                    // cordolo. In gioco non si attiva — il caricatore garantisce
+                    // halfWidth su ogni campione — ma un ripiego sbagliato non
+                    // resta mai innocuo a lungo.
+                    const mezzaQui = mezzaAl(trackPts, i,
+                        Math.max(1, innerEdge - TrackGeometry.CUNEO_OLTRE_IL_BORDO));
+                    const piedeCuneo = Math.min(plateauEnd, mezzaQui + TrackGeometry.CUNEO_OLTRE_IL_BORDO);
                     const baseY = (p.y || 0)
-                        + TrackGeometry.alzataLaterale(trackPts, i, mezzaQui, side * plateauEnd);
+                        + TrackGeometry.alzataLaterale(trackPts, i, mezzaQui, side * piedeCuneo);
                     const limite = (side > 0 ? limiti.pos : limiti.neg)[i];
                     // Quota a cui il terreno riprende oltre il confine: quella
                     // del tratto vicino, degradata come degrada la sua, così

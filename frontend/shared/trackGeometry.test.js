@@ -1137,3 +1137,64 @@ test('rollioEfficaceAt: e\' la stessa condizione con cui si alza il bordo', () =
             `raggio ${raggio}: efficace ${efficace}, latoAlto ${latoAlto}`);
     }
 });
+
+// --- il cuneo sotto la sopraelevata e' un cuneo, non una collina -----------
+//
+// ⚠️ VISTO IN GIOCO il 2026-08-25: accanto alla curva a 35 gradi era cresciuta
+// una montagna verde piu' alta della pista, e l'asfalto ci spariva dentro.
+// Il terreno continuava a salire con la pendenza del nastro fino al PIANORO del
+// terrapieno (49 unita' dall'asse), arrivando a 37 di quota dove il bordo alto
+// dell'asfalto ne aveva 13.7. Il cuneo deve fermarsi dove finisce il nastro.
+
+function cerchioSopraelevato(raggio, n, gradi) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * raggio, z: Math.sin(a) * raggio, y: 0,
+                   rollio: gradi * Math.PI / 180, halfWidth: 12 });
+    }
+    return pts;
+}
+
+test('il terreno accanto a una sopraelevata non sale sopra il bordo del nastro', () => {
+    const R = 200, MEZZA = 12, GRADI = 35;
+    const pts = cerchioSopraelevato(R, 200, GRADI);
+    const PLATEAU = 49, OUTER = 94;
+    const { dyAlto, latoAlto } = TrackGeometry.rialzoBordi(pts, 10, MEZZA);
+    const { nx, nz } = TrackGeometry.normalAt(pts, 10, true);
+    const p = pts[10];
+    // Il tetto: la quota del bordo alto (dyAlto), piu' il poco che il cordolo
+    // prosegue oltre il bordo con la stessa pendenza — dyAlto/(2*mezza) per
+    // unita'.
+    const tetto = dyAlto * (1 + TrackGeometry.CUNEO_OLTRE_IL_BORDO / (2 * MEZZA)) + 1e-9;
+    for (const dist of [MEZZA, 15, 20, 30, 40, 48, 49]) {
+        const x = p.x + nx * latoAlto * dist, z = p.z + nz * latoAlto * dist;
+        const y = TrackGeometry.terrainHeightAt(pts, x, z, PLATEAU, OUTER);
+        assert.ok(y <= tetto,
+            `a ${dist} unita' dall'asse il terreno sta a ${y.toFixed(2)}, sopra il tetto di ${tetto.toFixed(2)}`);
+    }
+});
+
+test('il terreno sotto il bordo alto lo regge davvero: nessuna fessura', () => {
+    // L'altra meta' della stessa regola: fermare il cuneo non deve farlo
+    // sprofondare sotto l'asfalto, o fra nastro e terra resta un buco aperto.
+    const R = 200, MEZZA = 12, GRADI = 35;
+    const pts = cerchioSopraelevato(R, 200, GRADI);
+    const { dyAlto, latoAlto } = TrackGeometry.rialzoBordi(pts, 10, MEZZA);
+    const { nx, nz } = TrackGeometry.normalAt(pts, 10, true);
+    const p = pts[10];
+    const x = p.x + nx * latoAlto * MEZZA, z = p.z + nz * latoAlto * MEZZA;
+    const y = TrackGeometry.terrainHeightAt(pts, x, z, 49, 94);
+    assert.ok(Math.abs(y - dyAlto) < 1e-6,
+        `sotto il bordo alto (${dyAlto.toFixed(2)}) il terreno sta a ${y.toFixed(2)}`);
+});
+
+test('su una pista piana il terreno non cambia di un millimetro', () => {
+    const pts = cerchioSopraelevato(200, 200, 0);
+    for (const p of pts) p.y = 7;      // pista in quota, ma piana
+    const { nx, nz } = TrackGeometry.normalAt(pts, 10, true);
+    for (const dist of [12, 20, 40, 49]) {
+        const x = pts[10].x + nx * dist, z = pts[10].z + nz * dist;
+        assert.equal(TrackGeometry.terrainHeightAt(pts, x, z, 49, 94), 7);
+    }
+});

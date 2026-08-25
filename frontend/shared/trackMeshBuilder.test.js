@@ -806,3 +806,23 @@ test('i cordoli seguono il nastro inclinato', () => {
     assert.ok(Math.max(...yBanked) > Math.max(...yPiano) + 1,
         `i cordoli non si sono alzati: max ${Math.max(...yBanked).toFixed(2)} contro ${Math.max(...yPiano).toFixed(2)}`);
 });
+
+test('il terrapieno del lato alto non sale sopra il bordo del nastro', () => {
+    // ⚠️ VISTO IN GIOCO il 2026-08-25: il cuneo continuava a salire con la
+    // pendenza della parabolica fino al PIANORO del terrapieno, e accanto alla
+    // curva a 35 gradi era cresciuta una collina piu' alta della pista, con
+    // l'asfalto che ci spariva dentro. Il cuneo e' la terra che REGGE il
+    // nastro: finisce dove finisce il nastro.
+    const MEZZA = 11, GRADI = 35, PLATEAU = 45, OUTER = 90;
+    const c = contenitore();
+    TrackMeshBuilder.buildEmbankment(c, cerchioBanked(GRADI), MEZZA, PLATEAU, OUTER);
+    const dyAlto = Math.sin(GRADI * Math.PI / 180) * 2 * MEZZA;
+    const tetto = dyAlto * (1 + TrackGeometry.CUNEO_OLTRE_IL_BORDO / (2 * MEZZA)) + 1e-6;
+    let maxY = -Infinity;
+    for (const mesh of c.children) {
+        const pos = mesh.geometry.attributes.position.array;
+        for (let v = 1; v < pos.length; v += 3) maxY = Math.max(maxY, pos[v]);
+    }
+    assert.ok(maxY <= tetto,
+        `il terrapieno arriva a ${maxY.toFixed(2)}, il bordo alto del nastro sta a ${dyAlto.toFixed(2)} (tetto ${tetto.toFixed(2)})`);
+});

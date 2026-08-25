@@ -206,10 +206,19 @@
         // gli oggetti scenici galleggerebbero — lo stesso difetto del prato
         // sopra le discese.
         //
-        // L'alzata si congela a `embankStart`: da lì in fuori comincia la
-        // discesa verso il prato, e il cuneo non deve continuare a salire
-        // all'infinito. Su una pista piana `alzataLaterale` vale zero e questo
-        // blocco non cambia un solo valore.
+        // ⚠️ L'alzata si congela al BORDO DEL NASTRO, non al pianoro del
+        // terrapieno. Congelarla al pianoro (49 unità dall'asse su una pista
+        // normale) faceva salire il terreno con la pendenza della parabolica
+        // per tutta quella distanza: accanto a una curva a 35 gradi cresceva
+        // una collina di 37 unità dove il bordo alto dell'asfalto ne aveva
+        // 13.7, e la pista ci spariva dentro. Visto in gioco il 2026-08-25.
+        //
+        // Il cuneo e' la terra che REGGE il nastro: finisce dove finisce il
+        // nastro, e da lì in fuori il terreno resta a quella quota fino al
+        // pianoro, poi degrada al prato come sempre.
+        //
+        // Su una pista piana `alzataLaterale` vale zero e questo blocco non
+        // cambia un solo valore.
         let y = vicino.y;
         const p = groundPts[index];
         if (p && p.rollio > 0) {
@@ -218,7 +227,7 @@
             // Da che parte si è usciti, e quanto lontano — fermandosi al piede
             // del cuneo.
             const lato = ((x - p.x) * nx + (z - p.z) * nz) >= 0 ? 1 : -1;
-            y += alzataLaterale(groundPts, index, mezza, lato * Math.min(dist, embankStart));
+            y += alzataLaterale(groundPts, index, mezza, lato * Math.min(dist, mezza + CUNEO_OLTRE_IL_BORDO));
         }
         if (dist <= embankStart) return y;
         if (dist >= embankOuter) return 0;
@@ -396,6 +405,14 @@
     // sepolto e il terreno andrebbe scavato. La sopraelevazione si costruisce
     // ALZANDO l'esterno (decisione D1), non scavando l'interno, quindi da
     // quella parte l'alzata si ferma a zero.
+    // Di quanto il cuneo di terra prosegue oltre il bordo dell'asfalto, prima
+    // di smettere di salire. Vale la larghezza del cordolo, che sul lato alto
+    // continua la stessa pendenza del nastro: fermare la terra esattamente al
+    // bordo lascerebbe il cordolo scoperto di sin(rollio) per la sua larghezza.
+    // ⚠️ E' lo stesso numero di CURB_W in f1Scena.js, e un test li tiene legati:
+    // se il cordolo cambia larghezza, il cuneo lo segue.
+    const CUNEO_OLTRE_IL_BORDO = 2.8;
+
     function alzataLaterale(points, i, mezza, offset) {
         const { dyAlto, latoAlto } = rialzoBordi(points, i, mezza);
         if (!latoAlto || !(mezza > 0)) return 0;
@@ -1408,7 +1425,7 @@
         normalAt,
         pendenzaAt,
         rialzoBordi, rollioEfficaceAt,
-        alzataLaterale,
+        alzataLaterale, CUNEO_OLTRE_IL_BORDO,
         ribbonFacingAt,
         curvatureAt,
         bridgeHeightAt,
