@@ -413,7 +413,14 @@ ed è un difetto: fermarsi e capire.
 
 - [ ] **Step 2: Ricuocere le piste cambiate**
 
-Run: `node backend/tools/f1-cuoci-scenografia.js nuova-pista test suzuka prova-notturno shanghai`
+⚠️ **CORREZIONE 2026-08-25, a esecuzione fatta**: `frontend/tracks/scenografie/`
+contiene **un solo file, `prova.json`**. Tutte le altre piste generano la
+scenografia al volo e hanno gia' le nuove proporzioni senza fare niente. Quindi
+questo passo si riduce a `prova`, e `prova` e' congelata: **serve
+l'autorizzazione dell'utente**. Finche' non arriva, `prova` resta l'unica pista
+che al playtest NON mostra la differenza.
+
+Run: `node backend/tools/f1-cuoci-scenografia.js prova`
 
 ⚠️ **`prova` NON va ricotta senza autorizzazione esplicita dell'utente**: è
 congelata ([[project_f1_mappe_immutabili]]). E se autorizzata, prima
