@@ -1228,6 +1228,18 @@ test('senza p.pendenza la fisica resta quella di prima', () => {
     });
 });
 
+test('updateTrackIndex porta anche il rollio del campione su p', () => {
+    // Serve alla fisica (la tenuta in curva). Al client NON si manda: ha gia'
+    // trackIndex e i punti pista, quindi il rollio se lo legge da li' — una
+    // cosa, una misura, e nessun byte in piu' venti volte al secondo.
+    const { physics } = f1GameSocket;
+    const { loadTrack } = require('./trackLoader.js');
+    const track = loadTrack('prova');
+    const p = { x: track.points[10].x, z: track.points[10].z, trackIndex: 10 };
+    physics.updateTrackIndex(p, track);
+    assert.equal(p.rollio, track.points[p.trackIndex].rollio);
+});
+
 test('updateTrackIndex porta la pendenza del campione su p', () => {
     const { physics } = f1GameSocket;
     const { loadTrack } = require('./trackLoader.js');

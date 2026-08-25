@@ -15,16 +15,13 @@ const DEFAULT_OPTS = { speedFactor: 1, paceMult: 1, precisionNoise: 0, safetyCap
 // tracciato nuovo — ma la soglia fisica calcolata da GravitaNastro: se domani
 // G_NASTRO cambia, le piste rientrano o escono da sole. Oggi lascia fuori solo
 // `test`, che ha pendenze dell'89% (una parete) ed è un tracciato di prova.
-const { pendenzaMassimaInSalita } = require('../sockets/games/physics/GravitaNastro.js');
-const ACCEL_NOMINALE = 0.186;
-const PENDENZA_LIMITE = pendenzaMassimaInSalita(ACCEL_NOMINALE);
+const { pistaPercorribile } = require('../sockets/games/physics/GravitaNastro.js');
 
 for (const { id } of listTracks()) {
     test(`simulateLap: ${id} completa il giro entro il tetto di sicurezza (tuning di default)`, (t) => {
         const track = loadTrack(id);
-        const pendenzaMax = Math.max(...track.points.map(p => p.pendenza || 0));
-        if (pendenzaMax > PENDENZA_LIMITE) {
-            t.skip(`${id}: salita del ${(Math.tan(pendenzaMax) * 100).toFixed(0)}%, oltre il ${(Math.tan(PENDENZA_LIMITE) * 100).toFixed(0)}% che l'auto riesce a salire`);
+        if (!pistaPercorribile(track.points)) {
+            t.skip(`${id}: ha una salita che nessuna auto sale, con la gravità lungo il nastro attiva`);
             return;
         }
         const result = simulateLap(track, DEFAULT_OPTS);

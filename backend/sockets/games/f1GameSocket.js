@@ -2309,6 +2309,10 @@ function updateTrackIndex(p, track) {
     // serve nessun ripiego — e se mancasse, sarebbe un difetto del caricatore,
     // non qualcosa da tappare a valle.
     p.pendenza = track.points[p.trackIndex].pendenza;
+    // Anche la sopraelevazione, per la stessa ragione: la usa la tenuta in
+    // curva. Al client non si manda — ha già `trackIndex` e i punti pista, e il
+    // rollio se lo legge da lì.
+    p.rollio = track.points[p.trackIndex].rollio;
 }
 
 function checkpointWindowFor(track) {

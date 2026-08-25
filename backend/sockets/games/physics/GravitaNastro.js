@@ -94,4 +94,29 @@ function pendenzaMassimaInSalita(accelDisponibile) {
     return Math.asin(rapporto);
 }
 
-module.exports = { G_NASTRO, isGravitaNastroActive, accelerazionePendenza, pendenzaMassimaInSalita };
+// Accelerazione nominale del motore (PowertrainModel.ACCEL), ricopiata qui per
+// non creare una dipendenza circolare fra i due moduli. Serve solo come valore
+// di riferimento per la domanda «questa pista si può percorrere?».
+const ACCEL_NOMINALE = 0.186;
+
+// Se una pista ha una salita che nessuna auto sale, non è percorribile: sopra
+// `pendenzaMassimaInSalita` la macchina rallenta fino a fermarsi e riscende.
+//
+// Serve ai test che pretendono un giro completo: pretenderlo da una parete è
+// pretendere l'impossibile. Il criterio sta QUI e non in un elenco di piste da
+// saltare, perché un elenco divergerebbe al primo tracciato nuovo e non si
+// aggiornerebbe da solo se G_NASTRO cambiasse.
+function pistaPercorribile(points, accelDisponibile) {
+    if (!isGravitaNastroActive()) return true;
+    const limite = pendenzaMassimaInSalita(
+        typeof accelDisponibile === 'number' ? accelDisponibile : ACCEL_NOMINALE);
+    for (const p of points) {
+        if ((p.pendenza || 0) > limite) return false;
+    }
+    return true;
+}
+
+module.exports = {
+    G_NASTRO, ACCEL_NOMINALE, isGravitaNastroActive, accelerazionePendenza,
+    pendenzaMassimaInSalita, pistaPercorribile
+};
