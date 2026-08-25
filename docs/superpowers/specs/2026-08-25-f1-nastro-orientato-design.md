@@ -99,6 +99,19 @@ diventa un pezzo suo (fase 1a) con interruttore e banco di prova, non un effetto
 collaterale del banking. Precedente da non ripetere: `TyreSlipModel` e' stato
 ribocciato al playtest perche' acceso senza taratura.
 
+### D6 — Il verso della sopraelevazione **lo decide il sistema**
+
+Nell'editor si scrive solo *quanto* (18 gradi), mai da che parte: si alza sempre
+il lato **esterno della curva**, ricavato dal segno di
+`TrackGeometry.curvatureAt(points, i).turnSigned`. L'autore non puo' sbagliare
+verso, ed e' quello che vuole nel 99% dei casi.
+
+Su un tratto **dritto** non esiste un esterno: li' il rollio non ha effetto, e il
+validatore lo segnala invece di lasciare una sopraelevazione che non si vede.
+Scartato il campo con segno esplicito (facile da sbagliare in curva, e una pista
+che «butta fuori» invece di tenere) e la versione ibrida, dove lo stesso campo
+avrebbe voluto dire due cose a seconda di come lo si compila.
+
 ### D5 — Il loop e' un **tipo di tratto parametrico**, non si disegna a mano
 
 Visto dall'alto un loop e' un puntino: l'editor 2D non lo mostrerebbe. Si sceglie
@@ -136,6 +149,14 @@ parametro in piu', non un modello nuovo.
 ---
 
 ## FASE 1b — Il banking
+
+⚠️ **Spezzata in due il 2026-08-25**, perche' una fase sola non era provabile in
+pista a meta':
+- **1b-1 — il rollio esiste, si vede e si sente**: il dato, il nastro e i cordoli
+  inclinati, il cuneo di terra sotto (senza, la pista galleggia e il playtest e'
+  falsato), auto e camera che ruotano, la tenuta in curva, il campo nell'editor.
+- **1b-2 — il mondo attorno**: muro alto subito dopo il cordolo, scenografia sul
+  bordo del cuneo alla quota giusta, ghiaia, controlli del validatore.
 
 ### Il dato
 
