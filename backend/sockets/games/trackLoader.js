@@ -149,6 +149,43 @@ function buildTrack(id, raw) {
             p.halfWidth = raw.roadHalfWidth;
         }
     }
+
+    // LA PENDENZA LOCALE, GARANTITA SU OGNI CAMPIONE.
+    //
+    // Stessa regola della larghezza qui sopra: si calcola qui, una volta, e da
+    // valle in poi `p.pendenza` c'e' sempre — la fisica non deve chiedersi «e
+    // se mancasse?» ne' ricalcolarla ad ogni tick per ogni auto.
+    //
+    // La misura e' quella di TrackGeometry.pendenzaAt: la stessa funzione con
+    // cui il client inclina l'auto (trackPitchAt in f1.js, col segno girato).
+    // Il giocatore vede una salita e la fisica ne sente un'altra solo se le
+    // misure sono due.
+    //
+    // Il ciclo LEGGE la quota dei campioni vicini e SCRIVE la pendenza: campi
+    // diversi, quindi calcolare in place e' corretto e non serve una copia.
+    for (let i = 0; i < points.length; i++) {
+        points[i].pendenza = TrackGeometry.pendenzaAt(points, i, true);
+    }
+
+    // LA SOPRAELEVAZIONE, GARANTITA SU OGNI CAMPIONE. Terza applicazione della
+    // stessa regola (larghezza, pendenza, rollio): da valle in poi il campo
+    // c'e' sempre e vale zero dove la pista e' piana.
+    //
+    // Le piste disegnate prima del banking non hanno il campo e prendono zero
+    // ovunque: si comportano esattamente come prima. Il valore dice solo
+    // QUANTO ci si alza; QUALE bordo salga lo decide TrackGeometry.rialzoBordi
+    // dalla curvatura, e in nessun altro posto.
+    for (const p of points) {
+        if (typeof p.rollio !== 'number' || !(p.rollio > 0)) p.rollio = 0;
+    }
+    // ...e vale zero anche dove non c'e' una curva su cui appoggiarlo. Un
+    // tratto puo' portarsi dietro una sopraelevazione pur essendo quasi dritto:
+    // li' la mesh non inclina niente, e se la fisica leggesse il valore
+    // dichiarato l'auto terrebbe di piu' dove la pista si vede piatta. La
+    // condizione non e' ricopiata qui: la decide rollioEfficaceAt, la stessa
+    // che decide se il bordo si alza.
+    const efficaci = points.map((_, i) => TrackGeometry.rollioEfficaceAt(points, i));
+    for (let i = 0; i < points.length; i++) points[i].rollio = efficaci[i];
     const lapLength = TrackGeometry.lapLength(points);
     const totalLaps = TrackGeometry.lapsForDistance(lapLength, raw.targetKm);
 
@@ -413,6 +450,16 @@ function validateTrackData(data) {
         }
         if (!g.tratti.every(t => t && (t.tipo === 'retta' || t.tipo === 'curva'))) {
             return 'geometria: tipo di tratto sconosciuto (attesi "retta" o "curva")';
+        }
+        // La sopraelevazione è facoltativa (assente = tratto piano), ma se c'è
+        // dev'essere un numero fra 0 e il massimo: oltre, il cuneo di terra
+        // sotto la pista diventa una parete. Si ferma QUI, prima che finisca
+        // nel file — un valore assurdo scoperto in gara è molto più caro.
+        const ROLLIO_MAX_GRADI = 45;
+        if (!g.tratti.every(t => t.rollioGradi === undefined
+            || (typeof t.rollioGradi === 'number' && Number.isFinite(t.rollioGradi)
+                && t.rollioGradi >= 0 && t.rollioGradi <= ROLLIO_MAX_GRADI))) {
+            return `geometria: sopraelevazione fuori scala (attesi 0-${ROLLIO_MAX_GRADI} gradi)`;
         }
     }
     return null;

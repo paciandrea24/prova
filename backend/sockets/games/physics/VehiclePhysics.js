@@ -14,6 +14,7 @@ const AerodynamicsModel = require('./AerodynamicsModel');
 const CorneringGripModel = require('./CorneringGripModel');
 const { integratePosition, applyOffTrackDrag } = require('./VehicleMotionModel');
 const { isCorneringGripModelActive, CORNERING_EXCESS_PENALTY_MAX } = require('./TyreSlipModel');
+const { isGravitaNastroActive, accelerazionePendenza } = require('./GravitaNastro');
 
 const { MAX_SPEED, ACCEL, FRICTION, effectiveMaxSpeed, effectiveAccel } = PowertrainModel;
 const { BRAKE_MULT, effectiveBrakeMult } = BrakingModel;
@@ -39,6 +40,21 @@ function updateVelocity(p, isQuali, slipstreamMult) {
     if (inputs.throttle > 0) PowertrainModel.applyThrottle(p, isQuali, maxSpeed);
     else if (inputs.brake > 0) BrakingModel.applyBrake(p, isQuali, maxSpeed, effectiveAccel(p, isQuali));
     else PowertrainModel.applyCoast(p);
+
+    // Gravità lungo il nastro (fase 1a, flag F1_GRAVITA_NASTRO): salire costa
+    // velocità, scendere la restituisce. La pendenza arriva su `p`, scritta da
+    // updateTrackIndex — che nel tick gira DOPO di qui (vedi tickGame), quindi
+    // il valore è quello del tick precedente: 50 ms di ritardo su una grandezza
+    // che cambia lentamente, in cambio del fatto che nessun chiamante di
+    // updateVelocity (compresi f1LapSimulator e f1RaceLineOptimizer) deve
+    // conoscere la pista.
+    //
+    // Sta PRIMA del tetto di velocità apposta: in discesa la gravità non deve
+    // poter spingere oltre il massimo della mescola. In salita p.speed può
+    // invece andare sotto zero, ed è voluto — ci si ferma e si riscende
+    // all'indietro, che è ciò che nella fase 2 impedirà di percorrere un giro
+    // della morte a passo d'uomo.
+    if (isGravitaNastroActive()) p.speed += accelerazionePendenza(p.pendenza);
 
     // Il tetto di velocità può essersi abbassato (usura aumentata da fermo non
     // succede, ma cambiando mescola in futuro pit stop sì): non lasciare mai

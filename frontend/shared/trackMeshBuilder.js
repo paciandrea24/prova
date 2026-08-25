@@ -69,9 +69,15 @@
             const p = pts[i];
             const y = (p.y || 0) + 0.02;
             const w = (typeof p.halfWidth === 'number' && p.halfWidth > 0) ? p.halfWidth : halfW;
+            // Sopraelevazione: si alza il bordo ESTERNO della curva, l'interno
+            // resta alla quota del punto — così il nastro si appoggia sul
+            // terreno che c'è già invece di sprofondarci dentro. Di quanto salga
+            // ogni bordo lo dice alzataLaterale, mai un calcolo fatto qui:
+            // cordoli, ghiaia e barriere chiedono alla stessa funzione, o un
+            // giorno l'asfalto si alzerebbe da una parte e il cordolo dall'altra.
             const b = i * 6;
-            pos[b]     = p.x + nx * w; pos[b + 1] = y; pos[b + 2] = p.z + nz * w;
-            pos[b + 3] = p.x - nx * w; pos[b + 4] = y; pos[b + 5] = p.z - nz * w;
+            pos[b]     = p.x + nx * w; pos[b + 1] = y + TrackGeometry.alzataLaterale(pts, i, w, w);  pos[b + 2] = p.z + nz * w;
+            pos[b + 3] = p.x - nx * w; pos[b + 4] = y + TrackGeometry.alzataLaterale(pts, i, w, -w); pos[b + 5] = p.z - nz * w;
 
             const u = i / (n - 1);
             const ub = i * 4;
@@ -170,9 +176,14 @@
                     gapped[i] = TrackGeometry.nearestPoint(mergePoints, mx, mz).dist < CURB_PIT_GAP_THRESHOLD;
                 }
 
+                // Il cordolo prosegue il piano del nastro: sul lato alto di una
+                // curva sopraelevata sale con l'asfalto e continua a salire
+                // oltre il bordo, come su una parabolica vera. Senza, resterebbe
+                // orizzontale mentre la pista si inclina — cioè mezzo sepolto
+                // all'interno e sospeso all'esterno.
                 const b = i * 6;
-                pos[b]     = p.x + nx * inner; pos[b + 1] = y; pos[b + 2] = p.z + nz * inner;
-                pos[b + 3] = p.x + nx * outer; pos[b + 4] = y; pos[b + 5] = p.z + nz * outer;
+                pos[b]     = p.x + nx * inner; pos[b + 1] = y + TrackGeometry.alzataLaterale(pts, i, mezza, inner); pos[b + 2] = p.z + nz * inner;
+                pos[b + 3] = p.x + nx * outer; pos[b + 4] = y + TrackGeometry.alzataLaterale(pts, i, mezza, outer); pos[b + 5] = p.z + nz * outer;
 
                 if (i > 0) { dist += stepLen; if (dist >= STRIPE) { dist = 0; flip = !flip; } }
                 flipAt[i] = flip;
@@ -260,6 +271,18 @@
     // delle tre superfici compenetra le altre. La ghiaia esiste solo dove il
     // terreno è in piano (vedi trackGravel.js), quindi non c'è dislivello da
     // raccordare col terrapieno.
+    // Di quanto la ghiaia sta sopra il terreno che la regge.
+    //
+    // ⚠️ Erano 3 centesimi, e a tre centesimi le due superfici si contendono il
+    // pixel: all'esterno della curva sopraelevata si vedevano denti verdi dentro
+    // la sabbia (segnalato in gioco il 2026-08-25). Non e' una questione di
+    // banking — la ghiaia e il terrapieno sono sempre stati complanari — ma di
+    // DISTANZA: la precisione del depth buffer peggiora col quadrato, e a
+    // duecento unita' tre centesimi non bastano piu' a decidere chi sta davanti.
+    // Un dito e mezzo di scarto regge fino a lontano e non fa scalino: la ghiaia
+    // confina col cordolo, che e' piu' alto.
+    const GHIAIA_SOPRA_TERRENO = 0.15;
+
     function buildGravel(container, pts, roadHalf, curbW, profile) {
         const n = pts.length;
         const pos = [];
@@ -283,7 +306,7 @@
             for (let i = 0; i < n; i++) {
                 const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
                 const p = pts[i];
-                const y = (p.y || 0) + 0.03;
+                const y = (p.y || 0) + GHIAIA_SOPRA_TERRENO;
                 const mezza = mezzaAl(pts, i, roadHalf);
                 const inner = (mezza + curbW) * side;
                 const outer = (mezza + curbW + banda[i]) * side;
@@ -291,8 +314,15 @@
 
                 const ix = p.x + nx * inner, iz = p.z + nz * inner;
                 const ox = p.x + nx * outer, oz = p.z + nz * outer;
-                pos.push(ix, y, iz);
-                pos.push(ox, y, oz);
+                // Sopraelevazione: la ghiaia sta sul terreno, e sul lato alto
+                // il terreno e' il cuneo. Restando piatta sprofondava sotto
+                // l'asfalto da una parte e restava appesa dall'altra. Stessa
+                // funzione del terrapieno e del piede delle barriere: una
+                // superficie sola.
+                const yIn = y + TrackGeometry.alzataTerreno(pts, i, mezza, inner);
+                const yOut = y + TrackGeometry.alzataTerreno(pts, i, mezza, outer);
+                pos.push(ix, yIn, iz);
+                pos.push(ox, yOut, oz);
                 coloreTerreno(col, GRAVEL_COLOR, ix, iz, GRASS_COLOR, versoErba);
                 coloreTerreno(col, GRAVEL_COLOR, ox, oz, GRASS_COLOR, versoErba);
             }
@@ -463,7 +493,14 @@
 
         for (let s = 0; s < STRIPES; s++) {
             const off = -mezza + stripeW * s + stripeW / 2;
-            dummy.position.set(p0.x + nx * off, (p0.y || 0) + 0.06, p0.z + nz * off);
+            // Ogni striscia sta alla quota dell'asfalto sotto di sé: se il
+            // traguardo cade in un tratto sopraelevato, una scacchiera piatta
+            // sparirebbe da un lato e resterebbe sospesa dall'altro.
+            dummy.position.set(
+                p0.x + nx * off,
+                (p0.y || 0) + 0.06 + TrackGeometry.alzataLaterale(pts, startIndex, mezza, off),
+                p0.z + nz * off
+            );
             dummy.rotation.y = angle;
             dummy.updateMatrix();
             if (s % 2 === 0) imB.setMatrixAt(iB++, dummy.matrix);
@@ -953,7 +990,34 @@
                     const i = indices[k];
                     const { nx, nz } = TrackGeometry.normalAt(trackPts, i, run.closed);
                     const p = trackPts[i];
-                    const baseY = p.y || 0;
+                    // IL CUNEO SOTTO UNA CURVA SOPRAELEVATA. Il terrapieno del
+                    // lato alto non parte dalla quota dell'asse ma da quella del
+                    // bordo alzato: è la terra che regge la parabolica. Senza,
+                    // fra l'asfalto inclinato e il terreno resterebbe una
+                    // fessura, e da sotto si vedrebbe il vuoto.
+                    //
+                    // ⚠️ L'alzata si congela al BORDO DEL NASTRO, esattamente come
+                    // fa TrackGeometry.terrainHeightAt: la mesh che si vede e la
+                    // quota che gli oggetti scenici interrogano devono essere la
+                    // stessa superficie, o le tribune galleggiano.
+                    //
+                    // Congelarla al PIANORO (com'era) faceva salire la terra con
+                    // la pendenza della parabolica per 45 unita': accanto alla
+                    // curva a 35 gradi cresceva una collina di 37 unita' dove il
+                    // bordo alto dell'asfalto ne aveva 13.7, e la pista ci
+                    // spariva dentro. Visto in gioco il 2026-08-25.
+                    // ⚠️ Il ripiego di mezzaAl era `plateauEnd`, cioe' 45 unita'
+                    // dove la mezza carreggiata ne vale 12: un punto senza
+                    // halfWidth faceva alzare il cuneo di sin(rollio)*90 invece
+                    // che *24. Il ripiego giusto e' la mezza vera, che si ricava
+                    // da innerEdge (bordo esterno del cordolo) togliendo il
+                    // cordolo. In gioco non si attiva — il caricatore garantisce
+                    // halfWidth su ogni campione — ma un ripiego sbagliato non
+                    // resta mai innocuo a lungo.
+                    const mezzaQui = mezzaAl(trackPts, i,
+                        Math.max(1, innerEdge - TrackGeometry.CUNEO_OLTRE_IL_BORDO));
+                    const baseY = (p.y || 0)
+                        + TrackGeometry.alzataTerreno(trackPts, i, mezzaQui, side * plateauEnd);
                     const limite = (side > 0 ? limiti.pos : limiti.neg)[i];
                     // Quota a cui il terreno riprende oltre il confine: quella
                     // del tratto vicino, degradata come degrada la sua, così
@@ -1136,10 +1200,27 @@
                 // solo al confine, altrimenti le colline — che stanno più in
                 // là e più in alto — verrebbero schiacciate a zero.
                 if (embankPlateau !== undefined && d < embankOuter + GROUND_GRID_CELL) {
+                    let sporge = false;
                     for (const [ax, az] of [[x0, z0], [x1, z0], [x1, z1], [x0, z1]]) {
                         y = Math.min(y, TrackGeometry.terrainHeightAt(
                             groundPts, ax, az, embankPlateau, embankOuter));
+                        // ⚠️ La cella sporge se ci arriva un ANGOLO, non il suo
+                        // centro: guardando il centro restavano complanari
+                        // proprio le celle di bordo, che sono tutto il problema.
+                        if (TrackGeometry.nearestPoint(groundPts, ax, az).dist < embankOuter) sporge = true;
                     }
+                    // ...e un dito PIU' GIU' della superficie che ha trovato,
+                    // se la cella sporge davvero sul terrapieno.
+                    //
+                    // ⚠️ Alla stessa quota le due superfici non si nascondono a
+                    // vicenda: si contendono il pixel, e all'esterno della curva
+                    // sopraelevata si vedeva una frangia dentellata verde dentro
+                    // il terreno chiaro (segnalata in gioco il 2026-08-25).
+                    // Sporgere sotto invece che complanari costa una gonnella
+                    // sepolta — che nessuno vede, perche' sopra c'e' il
+                    // terrapieno — ed e' lo stesso rimedio del piede della
+                    // parete di confine qui sopra.
+                    if (sporge) y -= PIEDE_AFFONDO;
                 }
                 cellY.set(key(cx, cz), y);
             }

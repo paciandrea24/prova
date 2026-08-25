@@ -122,3 +122,16 @@ test('senza TrackMeshBuilder lo dice, invece di fallire dentro', async () => {
         () => F1Scena.costruisciCircuito(scenaFinta(), pista('prova'), {}),
         /TrackMeshBuilder/);
 });
+
+// ⚠️ DUE NUMERI CHE DEVONO RESTARE UNO. Il cuneo di terra sotto una curva
+// sopraelevata prosegue oltre il bordo dell'asfalto esattamente quanto il
+// cordolo, che su quel lato continua la stessa pendenza del nastro. Se il
+// cordolo si allargasse e il cuneo no, resterebbe scoperto di sin(rollio) per
+// la differenza; se fosse il contrario, il terreno spunterebbe sopra il
+// cordolo. Il numero vive in TrackGeometry (che non conosce la scenografia) e
+// qui si controlla che sia ancora lo stesso.
+test('il cuneo del banking prosegue oltre il bordo quanto il cordolo', () => {
+    const TrackGeometry = require('./trackGeometry.js');
+    assert.equal(TrackGeometry.CUNEO_OLTRE_IL_BORDO, F1Scena.CURB_W,
+        'CUNEO_OLTRE_IL_BORDO e CURB_W sono lo stesso bordo: vanno cambiati insieme');
+});

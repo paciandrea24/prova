@@ -581,13 +581,64 @@ document.addEventListener('DOMContentLoaded', async () => {
     // rotazione attorno all'asse locale dell'auto DOPO l'imbardata (vedi
     // rotation.order = 'YXZ' in animate()) — così il muso si alza in salita e
     // si abbassa in discesa indipendentemente dalla direzione di marcia.
+    //
+    // È la STESSA misura che la fisica del server usa per la gravità lungo il
+    // nastro (TrackGeometry.pendenzaAt), NEGATA perché lì positiva vuol dire
+    // "si sale" mentre qui una rotazione X positiva abbassa il muso. Qui c'era
+    // una copia della formula: due copie della stessa misura finiscono per
+    // divergere, e quel giorno non si sa a chi credere.
     function trackPitchAt(idx) {
-        const n = trackPts.length;
-        const prev = trackPts[(idx - 1 + n) % n];
-        const next = trackPts[(idx + 1) % n];
-        const dy = (next.y || 0) - (prev.y || 0);
-        const horiz = Math.hypot(next.x - prev.x, next.z - prev.z) || 1e-6;
-        return -Math.atan2(dy, horiz);
+        return -TrackGeometry.pendenzaAt(trackPts, idx, true);
+    }
+
+    // Di quanto si corica l'auto in una curva sopraelevata, pronto per
+    // `rotation.z` (ordine YXZ: la Z si applica per prima, cioè attorno
+    // all'asse longitudinale dell'auto).
+    //
+    // Quale bordo sia alto lo dice TrackGeometry.rialzoBordi, la STESSA
+    // funzione con cui è stato inclinato l'asfalto — non un secondo calcolo che
+    // un giorno direbbe il contrario.
+    //
+    // ⚠️ SEGNO. Una `rotation.z` positiva alza il fianco +X locale; la normale
+    // della pista punta dalla parte opposta all'asse X dell'auto quando questa
+    // va nel verso di marcia. Da qui il meno. Ma l'auto può essere girata (in
+    // testacoda, contromano, in retromarcia): allora l'asse X locale si
+    // ribalta, e con un segno fisso l'auto si coricherebbe verso il muro invece
+    // che verso l'interno. Il verso vero si ricava proiettando la normale
+    // sull'asse X dell'auto, quindi vale in qualunque posizione.
+    function rollioAutoAt(idx, angle) {
+        const mezza = trackPts[idx].halfWidth || ROAD_HALF;
+        const { latoAlto } = TrackGeometry.rialzoBordi(trackPts, idx, mezza);
+        if (!latoAlto) return 0;
+        const rollio = trackPts[idx].rollio || 0;
+        if (!rollio) return 0;
+        const { nx, nz } = TrackGeometry.normalAt(trackPts, idx, true);
+        // Asse X locale dell'auto (la rotazione Y di `angle` manda (1,0,0) in
+        // questo versore).
+        const ax = Math.cos(angle), az = -Math.sin(angle);
+        const versoAuto = (ax * nx + az * nz) >= 0 ? 1 : -1;
+        return latoAlto * rollio * versoAuto;
+    }
+
+    // A che quota sta l'ASFALTO sotto un'auto ferma in (x, z), sul campione idx.
+    //
+    // ⚠️ Non basta la quota del punto pista: su una curva sopraelevata il punto
+    // sta sul bordo BASSO (decisione D1 — si alza l'esterno, il nastro si
+    // appoggia sul terreno esistente), quindi l'asfalto sotto l'auto e' piu' in
+    // alto di quanto l'auto sia spostata verso l'esterno. Usando la sola quota
+    // del punto, in mezzo a una parabolica a 35 gradi l'auto viaggiava sette
+    // unita' SOTTO l'asfalto: si vedeva passare attraverso la pista, segnalato
+    // dall'utente il 2026-08-25.
+    //
+    // L'alzata la da' la stessa funzione con cui e' stato disegnato il nastro:
+    // il piano su cui l'auto appare e quello che si vede sono lo stesso piano.
+    // Su una pista piana `alzataLaterale` vale zero e la quota resta identica.
+    function quotaAutoAt(idx, x, z) {
+        const p = trackPts[idx];
+        const mezza = p.halfWidth || ROAD_HALF;
+        const { nx, nz } = TrackGeometry.normalAt(trackPts, idx, true);
+        const offset = (x - p.x) * nx + (z - p.z) * nz;
+        return (p.y || 0) + TrackGeometry.alzataLaterale(trackPts, idx, mezza, offset);
     }
 
 
@@ -5896,12 +5947,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             _camOff.set(sc.dx, 5.5 + m.dy + sc.dy, (back ? 13 : -13) + m.dz);
             _camOff.applyQuaternion(q);
             camera.position.copy(pos).add(_camOff);
+            // Prima di mirare, non dopo: alzare la camera a lookAt gia' fatto la
+            // lascerebbe puntata dove stava prima, cioe' sopra l'auto.
+            tieniLaCameraFuoriDalTerreno();
             _lookTgt.copy(pos).add(new THREE.Vector3(0, 1.2, 0));
             mescolaSguardoSemaforo(_lookTgt);
             camera.lookAt(_lookTgt);
             // Il rollio va DOPO lookAt: ruota attorno all'asse di vista, che
             // lookAt ha appena finito di stabilire.
-            if (sc.rollRad) camera.rotateZ(sc.rollRad);
+            //
+            // Due rollii sommati, e sono cose diverse: `sc.rollRad` è lo
+            // scossone (senso di velocità), `camRollBanking` è la pista che si
+            // inclina davvero sotto le ruote. Si prende dallo stesso stato
+            // visivo dell'auto (`v.roll`), già smorzato: la camera e la macchina
+            // devono coricarsi insieme, non ognuna per conto suo.
+            const rollTot = (sc.rollRad || 0) + camRollBanking();
+            if (rollTot) camera.rotateZ(rollTot);
         } else {
             // Halo-cam broadcast (F1 TV pod): misurato sulla mesh reale (non
             // dedotto) analizzando il profilo di altezza lungo la lunghezza
@@ -5952,8 +6013,44 @@ document.addEventListener('DOMContentLoaded', async () => {
             // esattamente ciò che vede chi ha la testa dentro l'abitacolo.
             if (scHalo.pitchRad) camera.rotateX(scHalo.pitchRad);
             if (scHalo.yawRad) camera.rotateY(scHalo.yawRad);
-            if (scHalo.rollRad) camera.rotateZ(scHalo.rollRad);
+            // Come nell'inseguimento: lo scossone e la sopraelevazione della
+            // pista si sommano. Dall'abitacolo il banking si sente ancora di
+            // più, perché l'orizzonte si inclina davanti agli occhi.
+            const rollHalo = (scHalo.rollRad || 0) + camRollBanking();
+            if (rollHalo) camera.rotateZ(rollHalo);
         }
+    }
+
+    // La camera d'inseguimento sta 5.5 unità sopra l'auto — ma sopra l'AUTO,
+    // che su una parabolica è coricata: quelle 5.5 unità vengono ruotate col
+    // telaio e diventano anche uno spostamento di lato. Su una curva a 27 gradi
+    // sono 2.5 unità verso il fianco, e se l'auto e' girata di traverso (dopo un
+    // testacoda, o guidando contromano) la camera esce oltre il bordo alto, dove
+    // il cuneo di terra e' alto quanto il bordo: si ritrova DENTRO la collina, e
+    // chi gioca vede la propria macchina tagliata a meta' da una parete verde.
+    // Segnalato in gioco il 2026-08-26, col punto marcato col tasto M: auto
+    // ferma a 6.5 unita' dall'asse, terreno di fianco a 13.5 mentre l'auto
+    // stava a 9.3.
+    //
+    // Rimedio: la camera non scende mai sotto il terreno che ha sotto di se'.
+    // Vale ovunque, non solo sul banking — in fondo a una discesa ripida il
+    // problema era lo stesso, solo piu' raro.
+    const CAM_SOPRA_IL_TERRENO = 1.6;
+    function tieniLaCameraFuoriDalTerreno() {
+        if (!groundPts || !groundPts.length) return;
+        const suolo = TrackGeometry.terrainHeightAt(
+            groundPts, camera.position.x, camera.position.z, EMBANK_PLATEAU, EMBANK_OUTER);
+        const minimo = suolo + CAM_SOPRA_IL_TERRENO;
+        if (camera.position.y < minimo) camera.position.y = minimo;
+    }
+
+    // Quanto è coricata la camera per la sopraelevazione: è lo stesso rollio
+    // già calcolato e smorzato per l'auto del giocatore, non un secondo
+    // calcolo. Se le due divergessero, l'abitacolo si inclinerebbe rispetto
+    // alla macchina che lo contiene.
+    function camRollBanking() {
+        const v = myColor ? visualState[myColor] : null;
+        return (v && v.roll) || 0;
     }
 
     // Contorno pista/corsia box: generato una tantum come prima. I marker
@@ -6149,14 +6246,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                 _offBridgeEdgeState[color] = offBridgeEdge;
                 const targetY = offBridgeEdge
                     ? TrackGeometry.terrainHeightAt(groundPts, target.x, target.z, EMBANK_PLATEAU, EMBANK_OUTER)
-                    : (trackPts[idx].y || 0);
+                    : quotaAutoAt(idx, target.x, target.z);
 
                 v.y = (v.y || 0) + (targetY - (v.y || 0)) * LERP;
                 v.pitch = (v.pitch || 0) + (trackPitchAt(idx) - (v.pitch || 0)) * LERP;
+                // Rollio: in una curva sopraelevata l'auto si corica col nastro.
+                // Il valore non arriva dal server — sarebbe un secondo numero
+                // per la stessa cosa: si legge dal punto pista, con la stessa
+                // funzione che ha inclinato l'asfalto. Smorzato come quota e
+                // beccheggio, o a 20 stati al secondo ogni cambio di campione
+                // si vedrebbe come uno scatto. Fuori pista (sul prato oltre il
+                // cuneo) l'auto torna dritta.
+                const rollioTarget = offBridgeEdge ? 0 : rollioAutoAt(idx, v.angle || 0);
+                v.roll = (v.roll || 0) + (rollioTarget - (v.roll || 0)) * LERP;
                 carGroup.position.set(v.x, v.y, v.z);
                 carGroup.rotation.order = 'YXZ';
                 carGroup.rotation.x = v.pitch;
                 carGroup.rotation.y = v.angle;
+                carGroup.rotation.z = v.roll;
                 // Rotazione ruote basata sulla velocità
                 if (carGroup.userData.wheels && carGroup.userData.wheels.length > 0) {
                     carGroup.userData.wheelRot = (carGroup.userData.wheelRot || 0) + Math.abs(target.speed || 0) * 1.4;

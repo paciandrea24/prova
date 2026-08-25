@@ -26,6 +26,7 @@ const fs = require('fs');
 const { lobbies, creaGettone } = require('../../store/lobbies.js');
 const { activeGames } = require('../../store/activeGames.js');
 const f1 = require('./f1GameSocket.js');
+const { pistaPercorribile } = require('./physics/GravitaNastro.js');
 
 const TRACCIATI = fs
     .readdirSync(path.join(__dirname, '..', '..', '..', 'frontend', 'tracks'))
@@ -81,6 +82,15 @@ function pulisci(lobbyId) {
 
 for (const id of TRACCIATI) {
     test(`${id}: i bot entrano davvero in corsia box`, (t) => {
+        // Con la gravità lungo il nastro attiva, una pista che ha una salita
+        // oltre il limite fisico non si percorre: i bot ci arrancano e non
+        // arrivano mai ai box. Pretendere la sosta da una parete è pretendere
+        // l'impossibile — il criterio è calcolato da G_NASTRO, non un elenco
+        // di piste scritto a mano.
+        if (!pistaPercorribile(require('./trackLoader.js').loadTrack(id).points)) {
+            t.skip(`${id}: ha una salita che nessuna auto sale`);
+            return;
+        }
         // Il tempo è virtuale: la reazione al pit stop passa da setTimeout, e
         // un ciclo di tick sincrono non la farebbe mai scattare (il primo
         // probe diceva "nessuna sosta" anche per questo motivo, oltre che per

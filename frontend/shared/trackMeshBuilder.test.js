@@ -693,3 +693,223 @@ test('sopra una discesa le celle di prato di confine scendono col terreno', () =
     const lontano = { x: basso.x * (1 + 400 / dir), z: basso.z * (1 + 400 / dir) };
     assert.equal(TrackGeometry.terrainHeightAt(pts, lontano.x, lontano.z, PLATEAU, OUTER), 0);
 });
+
+// --- il nastro si inclina nelle curve sopraelevate (fase 1b-1) ---
+
+// Lo stesso cerchio, con una sopraelevazione costante su ogni punto.
+function cerchioBanked(gradi, n = 200) {
+    const pts = cerchio(n);
+    for (const p of pts) p.rollio = gradi * Math.PI / 180;
+    return pts;
+}
+
+test('senza sopraelevazione i due bordi del nastro stanno alla stessa quota', () => {
+    // La pista di oggi non deve cambiare di un millimetro.
+    const c = contenitore();
+    const pts = cerchio();
+    const mesh = TrackMeshBuilder.buildRibbon(c, pts, 11, {});
+    const pos = mesh.geometry.attributes.position.array;
+    for (let i = 0; i < pts.length; i++) {
+        assert.strictEqual(pos[i * 6 + 1], pos[i * 6 + 4], `campione ${i}: bordi a quote diverse`);
+    }
+});
+
+test('con la sopraelevazione un bordo sale e l\'altro resta dov\'era', () => {
+    const gradi = 18;
+    const c = contenitore();
+    const pts = cerchioBanked(gradi);
+    const mesh = TrackMeshBuilder.buildRibbon(c, pts, 11, {});
+    const pos = mesh.geometry.attributes.position.array;
+    const alzataAttesa = Math.tan(gradi * Math.PI / 180) * 22;
+    for (let i = 0; i < pts.length; i++) {
+        const b = i * 6;
+        const alto = Math.max(pos[b + 1], pos[b + 4]);
+        const basso = Math.min(pos[b + 1], pos[b + 4]);
+        assert.ok(Math.abs((alto - basso) - alzataAttesa) < 1e-6,
+            `campione ${i}: alzata ${(alto - basso).toFixed(3)} invece di ${alzataAttesa.toFixed(3)}`);
+        // Il bordo basso resta alla quota del punto: il nastro si APPOGGIA sul
+        // terreno esistente, non ci sprofonda dentro.
+        assert.ok(Math.abs(basso - ((pts[i].y || 0) + 0.02)) < 1e-9,
+            `campione ${i}: il bordo basso e' sceso a ${basso.toFixed(3)}`);
+    }
+});
+
+test('il bordo che sale e\' quello esterno, lontano dal centro della curva', () => {
+    const c = contenitore();
+    const pts = cerchioBanked(18);
+    const mesh = TrackMeshBuilder.buildRibbon(c, pts, 11, {});
+    const pos = mesh.geometry.attributes.position.array;
+    for (const i of [0, 37, 99, 150]) {
+        const b = i * 6;
+        // Il cerchio e' centrato nell'origine: il vertice piu' alto dev'essere
+        // anche il piu' lontano dal centro.
+        const d1 = Math.hypot(pos[b], pos[b + 2]);
+        const d2 = Math.hypot(pos[b + 3], pos[b + 5]);
+        const piuAlto = pos[b + 1] > pos[b + 4] ? d1 : d2;
+        const piuBasso = pos[b + 1] > pos[b + 4] ? d2 : d1;
+        assert.ok(piuAlto > piuBasso,
+            `campione ${i}: il vertice alto dista ${piuAlto.toFixed(1)}, quello basso ${piuBasso.toFixed(1)}`);
+    }
+});
+
+test('il terrapieno del lato alto parte dalla quota del bordo alzato', () => {
+    // Senza, fra l'asfalto inclinato e la terra resta una fessura e da sotto si
+    // vede il vuoto. E la mesh deve combaciare con TrackGeometry.terrainHeightAt,
+    // che e' la quota su cui vengono posati gli oggetti scenici: due superfici
+    // diverse vorrebbero dire tribune che galleggiano.
+    const PLATEAU = 14, OUTER = 60;
+    const piano = contenitore(), banked = contenitore();
+    TrackMeshBuilder.buildEmbankment(piano, cerchio(), 11, PLATEAU, OUTER);
+    TrackMeshBuilder.buildEmbankment(banked, cerchioBanked(18), 11, PLATEAU, OUTER);
+    const maxY = (c) => {
+        let m = -Infinity;
+        for (const mesh of c.children) {
+            const pos = mesh.geometry.attributes.position.array;
+            for (let v = 1; v < pos.length; v += 3) m = Math.max(m, pos[v]);
+        }
+        return m;
+    };
+    assert.ok(maxY(banked) > maxY(piano) + 1,
+        `il cuneo non si e' alzato: ${maxY(banked).toFixed(2)} contro ${maxY(piano).toFixed(2)}`);
+});
+
+test('senza sopraelevazione il terrapieno e\' identico a prima', () => {
+    const PLATEAU = 14, OUTER = 60;
+    const a = contenitore(), b = contenitore();
+    TrackMeshBuilder.buildEmbankment(a, cerchio(), 11, PLATEAU, OUTER);
+    TrackMeshBuilder.buildEmbankment(b, cerchioBanked(0), 11, PLATEAU, OUTER);
+    assert.equal(a.children.length, b.children.length);
+    for (let m = 0; m < a.children.length; m++) {
+        const pa = a.children[m].geometry.attributes.position.array;
+        const pb = b.children[m].geometry.attributes.position.array;
+        assert.equal(pa.length, pb.length);
+        for (let v = 0; v < pa.length; v++) assert.strictEqual(pa[v], pb[v], `vertice ${v} diverso`);
+    }
+});
+
+test('i cordoli seguono il nastro inclinato', () => {
+    // Se l'asfalto si alza e il cordolo no, il cordolo sparisce dentro la pista
+    // o resta appeso: sono lo stesso bordo, devono stare alla stessa quota.
+    const piano = contenitore(), banked = contenitore();
+    TrackMeshBuilder.buildCurbs(piano, cerchio(), 11, 2.8, null);
+    TrackMeshBuilder.buildCurbs(banked, cerchioBanked(18), 11, 2.8, null);
+    const quote = (c) => {
+        const ys = [];
+        for (const mesh of c.children) {
+            const pos = mesh.geometry.attributes.position.array;
+            for (let v = 1; v < pos.length; v += 3) ys.push(pos[v]);
+        }
+        return ys;
+    };
+    const yPiano = quote(piano), yBanked = quote(banked);
+    assert.equal(yPiano.length, yBanked.length, 'stesso numero di vertici');
+    assert.ok(Math.max(...yBanked) > Math.max(...yPiano) + 1,
+        `i cordoli non si sono alzati: max ${Math.max(...yBanked).toFixed(2)} contro ${Math.max(...yPiano).toFixed(2)}`);
+});
+
+test('il terrapieno del lato alto non sale sopra il bordo del nastro', () => {
+    // ⚠️ VISTO IN GIOCO il 2026-08-25: il cuneo continuava a salire con la
+    // pendenza della parabolica fino al PIANORO del terrapieno, e accanto alla
+    // curva a 35 gradi era cresciuta una collina piu' alta della pista, con
+    // l'asfalto che ci spariva dentro. Il cuneo e' la terra che REGGE il
+    // nastro: finisce dove finisce il nastro.
+    const MEZZA = 11, GRADI = 35, PLATEAU = 45, OUTER = 90;
+    const c = contenitore();
+    TrackMeshBuilder.buildEmbankment(c, cerchioBanked(GRADI), MEZZA, PLATEAU, OUTER);
+    const dyAlto = Math.tan(GRADI * Math.PI / 180) * 2 * MEZZA;
+    const tetto = dyAlto * (1 + TrackGeometry.CUNEO_OLTRE_IL_BORDO / (2 * MEZZA)) + 1e-6;
+    let maxY = -Infinity;
+    for (const mesh of c.children) {
+        const pos = mesh.geometry.attributes.position.array;
+        for (let v = 1; v < pos.length; v += 3) maxY = Math.max(maxY, pos[v]);
+    }
+    assert.ok(maxY <= tetto,
+        `il terrapieno arriva a ${maxY.toFixed(2)}, il bordo alto del nastro sta a ${dyAlto.toFixed(2)} (tetto ${tetto.toFixed(2)})`);
+});
+
+test('la ghiaia del lato alto sale col nastro', () => {
+    // La banda di ghiaia sta fra il cordolo e la barriera: se resta piatta
+    // mentre il nastro si alza, sul lato alto sprofonda sotto l'asfalto e
+    // sull'altro resta appesa in aria.
+    const MEZZA = 11, GRADI = 35, CURB_W = 2.8;
+    const banda = new Array(200).fill(8);
+    const profilo = { left: banda, right: banda };
+    const c = contenitore();
+    const pts = cerchioBanked(GRADI);
+    TrackMeshBuilder.buildGravel(c, pts, MEZZA, CURB_W, profilo);
+    const { latoAlto } = TrackGeometry.rialzoBordi(pts, 10, MEZZA);
+    const { nx, nz } = TrackGeometry.normalAt(pts, 10, true);
+    const p = pts[10];
+    // Il vertice di ghiaia piu' vicino al bordo alto e quello piu' vicino al
+    // bordo basso, allo stesso campione.
+    const vicino = (lato) => {
+        const bx = p.x + nx * lato * (MEZZA + CURB_W), bz = p.z + nz * lato * (MEZZA + CURB_W);
+        let best = null, bestD = Infinity;
+        for (const mesh of c.children) {
+            const a = mesh.geometry.attributes.position.array;
+            for (let v = 0; v < a.length; v += 3) {
+                const d = Math.hypot(a[v] - bx, a[v + 2] - bz);
+                if (d < bestD) { bestD = d; best = a[v + 1]; }
+            }
+        }
+        return best;
+    };
+    const alto = vicino(latoAlto), basso = vicino(-latoAlto);
+    const alzataAttesa = Math.tan(GRADI * Math.PI / 180) * 2 * MEZZA;
+    assert.ok(alto > basso + alzataAttesa * 0.8,
+        `ghiaia: lato alto ${alto.toFixed(2)}, lato basso ${basso.toFixed(2)}, attesa una differenza di ~${alzataAttesa.toFixed(2)}`);
+});
+
+test('le celle di prato al confine stanno SOTTO il terrapieno, non alla sua stessa quota', () => {
+    // ⚠️ VISTO IN GIOCO il 2026-08-25: all'esterno della curva sopraelevata una
+    // frangia dentellata verde dentro il terreno chiaro. Non e' la ghiaia che
+    // sborda: sono il prato e il terrapieno alla STESSA quota, e il depth
+    // buffer che non sa quale dei due sta davanti. Le celle di confine
+    // sporgono sul terrapieno di mezza diagonale — e' voluto e va bene finche'
+    // restano SOTTO: coperte, invisibili. Complanari, sfarfallano.
+    const PLATEAU = 14, OUTER = 60;
+    const c = contenitore();
+    const pts = cerchio();
+    TrackMeshBuilder.buildGround(c, pts, OUTER, 600, PLATEAU);
+    let complanari = 0, sopra = 0, esaminati = 0;
+    for (const mesh of c.children) {
+        const attr = mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.position;
+        if (!attr) continue;                 // le colline usano altre geometrie
+        const a = attr.array;
+        for (let v = 0; v < a.length; v += 3) {
+            const { dist } = TrackGeometry.nearestPoint(pts, a[v], a[v + 2]);
+            if (dist >= OUTER) continue;         // fuori dalla zona del terrapieno
+            esaminati++;
+            const yTerra = TrackGeometry.terrainHeightAt(pts, a[v], a[v + 2], PLATEAU, OUTER);
+            const d = a[v + 1] - yTerra;
+            if (d > 0.01) sopra++;
+            else if (d > -0.05) complanari++;
+        }
+    }
+    assert.ok(esaminati > 0, 'nessuna cella di confine da esaminare: il test non prova niente');
+    assert.equal(sopra, 0, `${sopra} vertici di prato bucano il terrapieno da sopra`);
+    assert.equal(complanari, 0,
+        `${complanari} vertici di prato stanno alla stessa quota del terrapieno: e' li' che sfarfalla`);
+});
+
+test('la ghiaia sta sopra il terreno di un margine che regge anche da lontano', () => {
+    // ⚠️ Non basta che stia sopra: la precisione del depth buffer peggiora col
+    // quadrato della distanza, e i tre centesimi di prima si vedevano come denti
+    // verdi dentro la sabbia all'esterno della curva sopraelevata. Il margine e'
+    // una costante dichiarata, e questo test la difende dal prossimo "tanto e'
+    // uguale".
+    const MEZZA = 11, CURB_W = 2.8;
+    const banda = new Array(200).fill(8);
+    const c = contenitore();
+    const pts = cerchio();
+    for (const p of pts) p.y = 3;                     // pista in quota, piana
+    TrackMeshBuilder.buildGravel(c, pts, MEZZA, CURB_W, { left: banda, right: banda });
+    let minimo = Infinity;
+    for (const mesh of c.children) {
+        const attr = mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.position;
+        if (!attr) continue;
+        for (let v = 1; v < attr.array.length; v += 3) minimo = Math.min(minimo, attr.array[v] - 3);
+    }
+    assert.ok(minimo >= 0.1,
+        `la ghiaia sta solo ${minimo.toFixed(3)} sopra il terreno: a distanza le due superfici si contendono il pixel`);
+});

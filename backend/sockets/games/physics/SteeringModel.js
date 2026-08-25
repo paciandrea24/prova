@@ -8,6 +8,7 @@
 // nessuna formula cambiata.
 const { getFrontWingSteerPenalty, getSuspensionNoise } = require('./DamageModel');
 const { fuelCorneringFactor } = require('./FuelModel');
+const { fattoreBanking } = require('./Sopraelevazione');
 const { brakingFactor } = require('./TyreForceModel');
 const { isTyreSlipModelActive, brakingExcess, STEER_LOCKUP_PENALTY_MAX } = require('./TyreSlipModel');
 
@@ -50,6 +51,16 @@ function applySteering(p, isQuali, maxSpeed) {
         // sottosterzo da ala rotta, tre righe sopra. In curva il peso conta
         // la meta' (FUEL_CORNERING_SHARE): vedi FuelModel.js.
         turnRate /= fuelCorneringFactor(p);
+        // Sopraelevazione: su una curva banked parte del peso spinge l'auto
+        // verso l'interno, quindi gira più stretto a parità di velocità — che è
+        // ciò che chi guida sente come «tiene di più». Sta QUI per la stessa
+        // ragione del carburante due righe sopra: è il posto dove «l'auto gira
+        // di più» ha un significato non ambiguo.
+        //
+        // Stesso fattore che CorneringGripModel dà al bot per decidere quanto
+        // frenare: se i due divergessero, il bot entrerebbe in curva contando
+        // su un'aderenza che qui non gli viene data.
+        turnRate *= fattoreBanking(p.rollio);
         if (isTyreSlipModelActive()) {
             const lockupExcess = brakingExcess(inputs.brake, speedFrac, brakingFactor(p.tyreWear, isQuali));
             turnRate *= 1 - lockupExcess * STEER_LOCKUP_PENALTY_MAX;

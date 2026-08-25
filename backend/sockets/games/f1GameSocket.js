@@ -2303,6 +2303,16 @@ const RANK_SWAP_HYSTERESIS_M = 2.5;
 
 function updateTrackIndex(p, track) {
     p.trackIndex = TrackGeometry.nearestIndexNear(track.points, p.trackIndex || 0, p.x, p.z, TRACK_INDEX_WINDOW);
+    // La pendenza sotto l'auto viaggia su `p` accanto all'indice, scritta da un
+    // posto solo: è lo stesso schema con cui arriverà il rollio nella fase 1b.
+    // Il campo è garantito su ogni campione da trackLoader, quindi qui non
+    // serve nessun ripiego — e se mancasse, sarebbe un difetto del caricatore,
+    // non qualcosa da tappare a valle.
+    p.pendenza = track.points[p.trackIndex].pendenza;
+    // Anche la sopraelevazione, per la stessa ragione: la usa la tenuta in
+    // curva. Al client non si manda — ha già `trackIndex` e i punti pista, e il
+    // rollio se lo legge da lì.
+    p.rollio = track.points[p.trackIndex].rollio;
 }
 
 function checkpointWindowFor(track) {

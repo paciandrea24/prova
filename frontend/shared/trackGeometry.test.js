@@ -848,3 +848,434 @@ test('senza larghezza sui punti di controllo il campo non compare', () => {
         assert.equal(p.halfWidth, undefined);
     }
 });
+
+// --- pendenzaAt (fase 1a: gravita' lungo il nastro) ---
+
+// Una rampa dritta lungo z, che sale di 1 ogni 10 unita' = 10% = atan(0.1).
+function rampa(pendenzaPct, n) {
+    const pts = [];
+    for (let i = 0; i < n; i++) pts.push({ x: 0, z: i * 10, y: i * 10 * pendenzaPct / 100 });
+    return pts;
+}
+
+test('pendenzaAt e\' positiva in salita e vale atan della pendenza', () => {
+    const pts = rampa(10, 20);
+    const attesa = Math.atan2(1, 10);   // +10%
+    for (let i = 1; i < pts.length - 1; i++) {
+        assert.ok(Math.abs(TrackGeometry.pendenzaAt(pts, i, false) - attesa) < 1e-9,
+            `campione ${i}: ${TrackGeometry.pendenzaAt(pts, i, false)} invece di ${attesa}`);
+    }
+});
+
+test('pendenzaAt e\' negativa in discesa, simmetrica alla salita', () => {
+    const su = rampa(10, 20), giu = rampa(-10, 20);
+    assert.ok(Math.abs(TrackGeometry.pendenzaAt(su, 5, false) + TrackGeometry.pendenzaAt(giu, 5, false)) < 1e-12);
+});
+
+test('pendenzaAt e\' zero su un tracciato piatto, anche senza il campo y', () => {
+    const piatto = [{ x: 0, z: 0 }, { x: 0, z: 10 }, { x: 0, z: 20 }, { x: 0, z: 30 }];
+    assert.equal(TrackGeometry.pendenzaAt(piatto, 1, false), 0);
+    assert.equal(TrackGeometry.pendenzaAt(piatto, 2, true), 0);
+});
+
+// Su un giro chiuso il campione 0 guarda l'ultimo campione, non se stesso:
+// senza il wrap la pendenza al traguardo sarebbe sempre meta' di quella vera.
+test('pendenzaAt chiude il giro: il campione 0 usa l\'ultimo campione', () => {
+    const anello = [
+        { x: 0, z: 0, y: 0 }, { x: 10, z: 0, y: 1 },
+        { x: 10, z: 10, y: 2 }, { x: 0, z: 10, y: 1 }
+    ];
+    const p0 = TrackGeometry.pendenzaAt(anello, 0, true);
+    // Fra il campione 3 (y=1) e il campione 1 (y=1) il dislivello e' nullo.
+    assert.ok(Math.abs(p0) < 1e-12, `pendenza al traguardo: ${p0}`);
+});
+
+// --- rialzoBordi (fase 1b-1: banking) ---
+
+// Un cerchio percorso ad angolo crescente, con rollio costante su ogni punto.
+function cerchioConRollio(raggio, n, rollio) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * raggio, z: Math.sin(a) * raggio, y: 0, rollio });
+    }
+    return pts;
+}
+
+test('senza sopraelevazione nessun bordo si alza', () => {
+    const pts = cerchioConRollio(200, 120, 0);
+    const r = TrackGeometry.rialzoBordi(pts, 30, 11);
+    assert.equal(r.dyAlto, 0);
+    assert.equal(r.latoAlto, 0);
+});
+
+test('con la sopraelevazione un bordo sale di tan(rollio) per la carreggiata', () => {
+    const rollio = 18 * Math.PI / 180;
+    const pts = cerchioConRollio(200, 120, rollio);
+    const r = TrackGeometry.rialzoBordi(pts, 30, 11);
+    // TANGENTE: la carreggiata resta larga uguale in pianta, quindi perche' il
+    // piano sia inclinato dei gradi dichiarati l'alzata e' tan, non sin. Col
+    // seno il nastro saliva di 29.8 gradi invece di 35 e l'auto, coricata dei
+    // 35 pieni, ci affondava dentro con la ruota bassa.
+    assert.ok(Math.abs(r.dyAlto - Math.tan(rollio) * 22) < 1e-9,
+        `alzata ${r.dyAlto} invece di ${Math.tan(rollio) * 22}`);
+    // La verifica che conta: il piano inclinato quanto dice il numero.
+    assert.ok(Math.abs(Math.atan(r.dyAlto / 22) - rollio) < 1e-12,
+        `il nastro e' inclinato di ${(Math.atan(r.dyAlto / 22) * 180 / Math.PI).toFixed(1)}° invece di 18°`);
+    assert.notEqual(r.latoAlto, 0);
+});
+
+// Il cuore della decisione D6: si alza sempre l'ESTERNO. Verificato contro la
+// geometria vera (il bordo piu' lontano dal centro del cerchio), non dedotto
+// dalla convenzione di segno di normalAt.
+test('si alza il bordo esterno, quello lontano dal centro della curva', () => {
+    const rollio = 18 * Math.PI / 180;
+    const pts = cerchioConRollio(200, 120, rollio);
+    const i = 30, mezza = 11;
+    const { latoAlto } = TrackGeometry.rialzoBordi(pts, i, mezza);
+    const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
+    const p = pts[i];
+    // Il centro del cerchio e' l'origine: il bordo alto deve esserne piu' lontano.
+    const distAlto  = Math.hypot(p.x + nx * mezza * latoAlto, p.z + nz * mezza * latoAlto);
+    const distBasso = Math.hypot(p.x - nx * mezza * latoAlto, p.z - nz * mezza * latoAlto);
+    assert.ok(distAlto > distBasso,
+        `il bordo alto dista ${distAlto.toFixed(1)} dal centro, quello basso ${distBasso.toFixed(1)}`);
+});
+
+test('curve di verso opposto alzano bordi opposti', () => {
+    const rollio = 18 * Math.PI / 180;
+    const orario = cerchioConRollio(200, 120, rollio);
+    const antiorario = [...orario].reverse();
+    const a = TrackGeometry.rialzoBordi(orario, 30, 11);
+    const b = TrackGeometry.rialzoBordi(antiorario, 30, 11);
+    assert.equal(a.latoAlto, -b.latoAlto, 'le due curve alzano lo stesso lato');
+});
+
+test('alzataLaterale: zero sul bordo basso, tutta l\'alzata su quello alto', () => {
+    const rollio = 18 * Math.PI / 180;
+    const pts = cerchioConRollio(200, 120, rollio);
+    const i = 30, mezza = 11;
+    const { dyAlto, latoAlto } = TrackGeometry.rialzoBordi(pts, i, mezza);
+    assert.ok(Math.abs(TrackGeometry.alzataLaterale(pts, i, mezza, -latoAlto * mezza)) < 1e-12);
+    assert.ok(Math.abs(TrackGeometry.alzataLaterale(pts, i, mezza, latoAlto * mezza) - dyAlto) < 1e-12);
+    assert.ok(Math.abs(TrackGeometry.alzataLaterale(pts, i, mezza, 0) - dyAlto / 2) < 1e-12,
+        'in mezzeria deve valere meta\' dell\'alzata');
+});
+
+test('alzataLaterale prosegue oltre il bordo con la stessa pendenza', () => {
+    // È ciò che serve al cordolo, che sta FUORI dalla carreggiata: su una
+    // parabolica prosegue il piano inclinato, non torna piatto.
+    const rollio = 18 * Math.PI / 180;
+    const pts = cerchioConRollio(200, 120, rollio);
+    const i = 30, mezza = 11, curbW = 2.8;
+    const { latoAlto } = TrackGeometry.rialzoBordi(pts, i, mezza);
+    const alBordo = TrackGeometry.alzataLaterale(pts, i, mezza, latoAlto * mezza);
+    const oltre = TrackGeometry.alzataLaterale(pts, i, mezza, latoAlto * (mezza + curbW));
+    assert.ok(Math.abs((oltre - alBordo) - Math.tan(rollio) * curbW) < 1e-12,
+        `il cordolo sale di ${(oltre - alBordo).toFixed(4)} invece di ${(Math.tan(rollio) * curbW).toFixed(4)}`);
+});
+
+test('alzataLaterale non scende MAI sotto zero, oltre il bordo basso', () => {
+    // La sopraelevazione si costruisce alzando l'esterno, non scavando
+    // l'interno: prolungare il piano da quella parte seppellirebbe il cordolo
+    // interno e vorrebbe una trincea nel terreno.
+    const rollio = 30 * Math.PI / 180;
+    const pts = cerchioConRollio(200, 120, rollio);
+    const i = 30, mezza = 11;
+    const { latoAlto } = TrackGeometry.rialzoBordi(pts, i, mezza);
+    for (const oltre of [mezza, mezza + 2.8, mezza + 20, mezza + 100]) {
+        assert.equal(TrackGeometry.alzataLaterale(pts, i, mezza, -latoAlto * oltre), 0,
+            `a ${oltre} unita' oltre il bordo basso l'alzata deve restare zero`);
+    }
+});
+
+test('alzataLaterale e\' zero ovunque su una pista piana', () => {
+    const pts = cerchioConRollio(200, 120, 0);
+    for (const off of [-20, -11, 0, 11, 20]) {
+        assert.equal(TrackGeometry.alzataLaterale(pts, 30, 11, off), 0);
+    }
+});
+
+// --- il cuneo di terra sotto una curva sopraelevata ---
+
+test('terrainHeightAt: sul lato alto il terreno parte dalla quota del bordo alzato', () => {
+    // Senza, fra l'asfalto inclinato e la terra resta una fessura aperta — ed è
+    // lo stesso difetto del prato che galleggiava sopra le discese: la quota
+    // del terreno deve conoscere il rilievo, o gli oggetti ci restano appesi.
+    const rollio = 18 * Math.PI / 180;
+    const pts = cerchioConRollio(200, 120, rollio);
+    const i = 30, mezza = 11, PLATEAU = 14, OUTER = 60;
+    for (const p of pts) p.halfWidth = mezza;
+    const { latoAlto } = TrackGeometry.rialzoBordi(pts, i, mezza);
+    const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
+    // Un punto appena fuori dal cordolo, sul lato alto.
+    const x = pts[i].x + nx * latoAlto * PLATEAU;
+    const z = pts[i].z + nz * latoAlto * PLATEAU;
+    const y = TrackGeometry.terrainHeightAt(pts, x, z, PLATEAU, OUTER);
+    const atteso = TrackGeometry.alzataLaterale(pts, i, mezza, latoAlto * PLATEAU);
+    assert.ok(Math.abs(y - atteso) < 0.3, `terreno a ${y.toFixed(2)} invece di ${atteso.toFixed(2)}`);
+    assert.ok(y > 2, 'il cuneo deve alzarsi davvero, non restare a filo del prato');
+});
+
+test('terrainHeightAt: sul lato basso il terreno resta dov\'era', () => {
+    const rollio = 18 * Math.PI / 180;
+    const pts = cerchioConRollio(200, 120, rollio);
+    const i = 30, mezza = 11, PLATEAU = 14, OUTER = 60;
+    for (const p of pts) p.halfWidth = mezza;
+    const { latoAlto } = TrackGeometry.rialzoBordi(pts, i, mezza);
+    const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
+    const x = pts[i].x - nx * latoAlto * PLATEAU;
+    const z = pts[i].z - nz * latoAlto * PLATEAU;
+    assert.ok(Math.abs(TrackGeometry.terrainHeightAt(pts, x, z, PLATEAU, OUTER)) < 1e-9,
+        'il lato interno di una curva sopraelevata resta alla quota che aveva');
+});
+
+test('terrainHeightAt: lontano dalla pista il cuneo e\' finito', () => {
+    const pts = cerchioConRollio(200, 120, 18 * Math.PI / 180);
+    for (const p of pts) p.halfWidth = 11;
+    const { nx, nz } = TrackGeometry.normalAt(pts, 30, true);
+    const x = pts[30].x + nx * 200, z = pts[30].z + nz * 200;
+    assert.equal(TrackGeometry.terrainHeightAt(pts, x, z, 14, 60), 0);
+});
+
+test('terrainHeightAt: senza sopraelevazione i valori sono quelli di prima', () => {
+    // Regressione: le piste piane non devono cambiare di un millimetro.
+    const piano = cerchioConRollio(200, 120, 0);
+    for (const p of piano) { p.halfWidth = 11; p.y = 3; }
+    const { nx, nz } = TrackGeometry.normalAt(piano, 30, true);
+    for (const off of [5, 14, 30, 60, 120]) {
+        const x = piano[30].x + nx * off, z = piano[30].z + nz * off;
+        const atteso = off <= 14 ? 3 : (off >= 60 ? 0 : null);
+        const y = TrackGeometry.terrainHeightAt(piano, x, z, 14, 60);
+        if (atteso !== null) assert.ok(Math.abs(y - atteso) < 0.3, `a ${off}: ${y} invece di ${atteso}`);
+        else assert.ok(y > 0 && y < 3, `a ${off}: ${y} fuori dalla rampa`);
+    }
+});
+
+test('su un tratto dritto la sopraelevazione non ha effetto', () => {
+    // Un rettilineo non ha un esterno: senza una curva, "si alza l'esterno" non
+    // vuol dire niente. Il validatore lo segnalera' invece di lasciare una
+    // sopraelevazione che non si vede.
+    const dritto = [];
+    for (let i = 0; i < 60; i++) dritto.push({ x: 0, z: i * 10, y: 0, rollio: 0.3 });
+    const r = TrackGeometry.rialzoBordi(dritto, 30, 11);
+    assert.equal(r.latoAlto, 0, 'un rettilineo non ha un lato esterno');
+    assert.equal(r.dyAlto, 0);
+});
+
+// Il beccheggio visivo dell'auto e' la pendenza NEGATA (in Three una rotazione
+// X positiva abbassa il muso). Questo test blocca il segno: se pendenzaAt
+// cambiasse verso, l'auto si inclinerebbe al contrario sulle salite e nessun
+// altro test se ne accorgerebbe.
+test('il beccheggio visivo e\' la pendenza negata (formula storica di f1.js)', () => {
+    const anello = [
+        { x: 0, z: 0, y: 0 }, { x: 10, z: 0, y: 1 }, { x: 20, z: 0, y: 3 },
+        { x: 30, z: 0, y: 3 }, { x: 40, z: 0, y: 1 }, { x: 50, z: 0, y: 0 }
+    ];
+    for (let i = 0; i < anello.length; i++) {
+        const n = anello.length;
+        const prev = anello[(i - 1 + n) % n], next = anello[(i + 1) % n];
+        const dy = (next.y || 0) - (prev.y || 0);
+        const horiz = Math.hypot(next.x - prev.x, next.z - prev.z) || 1e-6;
+        const storica = -Math.atan2(dy, horiz);     // trackPitchAt di f1.js
+        assert.equal(-TrackGeometry.pendenzaAt(anello, i, true), storica);
+    }
+});
+
+// --- rollioEfficaceAt: il rollio che si vede e' quello che si sente ---------
+//
+// Un tratto quasi dritto puo' avere una sopraelevazione dichiarata (l'editor
+// avverte solo sui tratti tipizzati 'retta', non su una curva dolcissima). La
+// mesh li' non inclina niente, perche' non c'e' un bordo esterno. Se la fisica
+// leggesse comunque il valore dichiarato, l'auto terrebbe di piu' in un punto
+// dove la pista si vede piatta: aderenza invisibile, la cosa peggiore da
+// spiegare a chi gioca.
+
+function anelloConRollio(raggio, n, rollio) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * raggio, z: Math.sin(a) * raggio, y: 0, rollio });
+    }
+    return pts;
+}
+
+test('rollioEfficaceAt: in curva vale il rollio dichiarato', () => {
+    const rollio = 18 * Math.PI / 180;
+    const pts = anelloConRollio(200, 60, rollio);
+    assert.equal(TrackGeometry.rollioEfficaceAt(pts, 10), rollio);
+});
+
+test('rollioEfficaceAt: su un tratto dritto vale zero, per quanto sia dichiarato', () => {
+    // ⚠️ La pista dev'essere un ANELLO CHIUSO, come lo sono tutte in gioco:
+    // curvatureAt guarda un campione prima e uno dopo con l'indice che gira
+    // (`% n`), e su una polilinea aperta il campione «prima» del decimo e' in
+    // fondo alla retta — l'angolo risulta di 180° e un rettilineo sembra un
+    // tornante. Costato un test rosso che accusava il codice giusto.
+    const ovale = [];
+    const RETT = 400, R = 100;
+    for (let i = 0; i < 200; i++) {
+        const t = i / 200;
+        let x, z;
+        if (t < 0.25) { x = R; z = -RETT / 2 + RETT * (t / 0.25); }
+        else if (t < 0.5) { const a = (t - 0.25) / 0.25 * Math.PI; x = R * Math.cos(a); z = RETT / 2 + R * Math.sin(a); }
+        else if (t < 0.75) { x = -R; z = RETT / 2 - RETT * ((t - 0.5) / 0.25); }
+        else { const a = (t - 0.75) / 0.25 * Math.PI; x = -R * Math.cos(a); z = -RETT / 2 - R * Math.sin(a); }
+        ovale.push({ x, z, y: 0, rollio: 0.3 });
+    }
+    const suRettilineo = 25;    // meta' del primo rettilineo
+    assert.ok(TrackGeometry.curvatureAt(ovale, suRettilineo).radius > 1000,
+        "il campione scelto non sta su un rettilineo");
+    assert.equal(TrackGeometry.rollioEfficaceAt(ovale, suRettilineo), 0);
+    // ...e in curva invece vale, sulla stessa pista.
+    assert.equal(TrackGeometry.rollioEfficaceAt(ovale, 75), 0.3);
+});
+
+test('rollioEfficaceAt: e\' la stessa condizione con cui si alza il bordo', () => {
+    // Il legame che conta: dove il bordo non si alza, il rollio non ha effetto.
+    // Se un giorno le due condizioni divergessero, l'auto guadagnerebbe
+    // aderenza su un pezzo di pista disegnato piatto.
+    const rollio = 25 * Math.PI / 180;
+    for (const raggio of [60, 90, 150, 300, 380, 420, 800, 5000]) {
+        const pts = anelloConRollio(raggio, 200, rollio);
+        const efficace = TrackGeometry.rollioEfficaceAt(pts, 20);
+        const { latoAlto } = TrackGeometry.rialzoBordi(pts, 20, 11);
+        assert.equal(efficace > 0, latoAlto !== 0,
+            `raggio ${raggio}: efficace ${efficace}, latoAlto ${latoAlto}`);
+    }
+});
+
+// --- il cuneo sotto la sopraelevata e' un cuneo, non una collina -----------
+//
+// ⚠️ VISTO IN GIOCO il 2026-08-25: accanto alla curva a 35 gradi era cresciuta
+// una montagna verde piu' alta della pista, e l'asfalto ci spariva dentro.
+// Il terreno continuava a salire con la pendenza del nastro fino al PIANORO del
+// terrapieno (49 unita' dall'asse), arrivando a 37 di quota dove il bordo alto
+// dell'asfalto ne aveva 13.7. Il cuneo deve fermarsi dove finisce il nastro.
+
+function cerchioSopraelevato(raggio, n, gradi) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * raggio, z: Math.sin(a) * raggio, y: 0,
+                   rollio: gradi * Math.PI / 180, halfWidth: 12 });
+    }
+    return pts;
+}
+
+test('il terreno accanto a una sopraelevata non sale sopra il bordo del nastro', () => {
+    const R = 200, MEZZA = 12, GRADI = 35;
+    const pts = cerchioSopraelevato(R, 200, GRADI);
+    const PLATEAU = 49, OUTER = 94;
+    const { dyAlto, latoAlto } = TrackGeometry.rialzoBordi(pts, 10, MEZZA);
+    const { nx, nz } = TrackGeometry.normalAt(pts, 10, true);
+    const p = pts[10];
+    // Il tetto: la quota del bordo alto (dyAlto), piu' il poco che il cordolo
+    // prosegue oltre il bordo con la stessa pendenza — dyAlto/(2*mezza) per
+    // unita'.
+    const tetto = dyAlto * (1 + TrackGeometry.CUNEO_OLTRE_IL_BORDO / (2 * MEZZA)) + 1e-9;
+    for (const dist of [MEZZA, 15, 20, 30, 40, 48, 49]) {
+        const x = p.x + nx * latoAlto * dist, z = p.z + nz * latoAlto * dist;
+        const y = TrackGeometry.terrainHeightAt(pts, x, z, PLATEAU, OUTER);
+        assert.ok(y <= tetto,
+            `a ${dist} unita' dall'asse il terreno sta a ${y.toFixed(2)}, sopra il tetto di ${tetto.toFixed(2)}`);
+    }
+});
+
+test('il terreno sotto il bordo alto lo regge davvero: nessuna fessura', () => {
+    // L'altra meta' della stessa regola: fermare il cuneo non deve farlo
+    // sprofondare sotto l'asfalto, o fra nastro e terra resta un buco aperto.
+    const R = 200, MEZZA = 12, GRADI = 35;
+    const pts = cerchioSopraelevato(R, 200, GRADI);
+    const { dyAlto, latoAlto } = TrackGeometry.rialzoBordi(pts, 10, MEZZA);
+    const { nx, nz } = TrackGeometry.normalAt(pts, 10, true);
+    const p = pts[10];
+    const x = p.x + nx * latoAlto * MEZZA, z = p.z + nz * latoAlto * MEZZA;
+    const y = TrackGeometry.terrainHeightAt(pts, x, z, 49, 94);
+    assert.ok(Math.abs(y - dyAlto) < 1e-6,
+        `sotto il bordo alto (${dyAlto.toFixed(2)}) il terreno sta a ${y.toFixed(2)}`);
+});
+
+test('su una pista piana il terreno non cambia di un millimetro', () => {
+    const pts = cerchioSopraelevato(200, 200, 0);
+    for (const p of pts) p.y = 7;      // pista in quota, ma piana
+    const { nx, nz } = TrackGeometry.normalAt(pts, 10, true);
+    for (const dist of [12, 20, 40, 49]) {
+        const x = pts[10].x + nx * dist, z = pts[10].z + nz * dist;
+        assert.equal(TrackGeometry.terrainHeightAt(pts, x, z, 49, 94), 7);
+    }
+});
+
+test('la barriera del lato alto poggia sul cuneo, non a terra', () => {
+    // terrainTopAt e' la quota su cui f1Scena posa il piede delle barriere.
+    // Ignorando il cuneo, sul lato alto di una parabolica il muro resta sepolto
+    // sotto la terra che regge il nastro — e chi guida vede la barriera sparire
+    // dentro la collina.
+    const R = 200, MEZZA = 12, GRADI = 35;
+    const pts = cerchioSopraelevato(R, 200, GRADI);
+    const { dyAlto, latoAlto } = TrackGeometry.rialzoBordi(pts, 10, MEZZA);
+    const { nx, nz } = TrackGeometry.normalAt(pts, 10, true);
+    const p = pts[10];
+    const dist = MEZZA + 4;                       // appena oltre il cordolo
+    const x = p.x + nx * latoAlto * dist, z = p.z + nz * latoAlto * dist;
+    const y = TrackGeometry.terrainTopAt(pts, 10, x, z, 49);
+    assert.ok(y > dyAlto - 1,
+        `la barriera poggia a ${y.toFixed(2)} mentre il bordo alto del nastro sta a ${dyAlto.toFixed(2)}`);
+    // E dal lato basso resta dov'era: il cuneo non solleva tutto il circuito.
+    const xb = p.x - nx * latoAlto * dist, zb = p.z - nz * latoAlto * dist;
+    assert.ok(Math.abs(TrackGeometry.terrainTopAt(pts, 10, xb, zb, 49)) < 1e-6);
+});
+// ⚠️ VISTO IN GIOCO il 2026-08-25: «la curva banking non sembra una bella
+// curva, ma un po' strana». All'ingresso il rollio saltava da 0 a 5.5 gradi in
+// un campione: la soglia «questo tratto e' dritto» leggeva una curvatura
+// calcolata su una finestra STRETTA, che nel raccordo e' rumore puro — sulla
+// pista di prova il raggio faceva 3313, 3574, 4456, 14236, 4574, 1582, 848,
+// 537, 384 in nove campioni consecutivi. Con una finestra larga la stessa
+// sequenza scende monotona: 386, 359, 336, 314, 293, 275, 258, 242, 227.
+//
+// Il test percorre la strada VERA — geometria a tratti, cottura, poi
+// ricampionamento come fa il gioco — perche' e' li' che il difetto viveva.
+test("il rollio efficace non fa scalini all'ingresso di una curva", () => {
+    const TS = require('./trackSegmenti.js');
+    const R = 90, RETT = 420, PASSO = 28;
+    const contorno = [];
+    for (let x = 0; x < RETT / 2; x += 4) contorno.push({ x, z: -R, curva: -1 });
+    for (let k = 0; k < 40; k++) { const a = -Math.PI / 2 + (Math.PI * k / 40);
+        contorno.push({ x: RETT / 2 + Math.cos(a) * R, z: Math.sin(a) * R, curva: 0 }); }
+    for (let x = RETT / 2; x > -RETT / 2; x -= 4) contorno.push({ x, z: R, curva: -1 });
+    for (let k = 0; k < 40; k++) { const a = Math.PI / 2 + (Math.PI * k / 40);
+        contorno.push({ x: -RETT / 2 + Math.cos(a) * R, z: Math.sin(a) * R, curva: 1 }); }
+    for (let x = -RETT / 2; x < 0; x += 4) contorno.push({ x, z: -R, curva: -1 });
+
+    const nodi = [], tratti = [], curvaDelNodo = [];
+    let percorso = 0;
+    for (let k = 0; k < contorno.length; k++) {
+        if (k > 0) percorso += Math.hypot(contorno[k].x - contorno[k - 1].x, contorno[k].z - contorno[k - 1].z);
+        if (k === 0 || percorso >= PASSO) {
+            nodi.push({ x: contorno[k].x, z: contorno[k].z, y: 0, dir: 0 });
+            curvaDelNodo.push(contorno[k].curva);
+            percorso = 0;
+        }
+    }
+    for (let k = 0; k < nodi.length; k++) {
+        const a = curvaDelNodo[k], b = curvaDelNodo[(k + 1) % nodi.length];
+        tratti.push(a === 0 && b === 0 ? { tipo: 'curva', rollioGradi: 30 } : { tipo: 'curva' });
+    }
+    const g = TS.riallinea({ versione: 1, nodi, tratti });
+    const cotti = TS.cuoci(g, TS.PASSO_COTTURA, 12);
+    const pts = TrackGeometry.sampleLoop(cotti, 1000);
+    for (const p of pts) p.halfWidth = 12;
+
+    const efficaci = pts.map((_, k) => TrackGeometry.rollioEfficaceAt(pts, k));
+    assert.ok(Math.max(...efficaci) > 20 * Math.PI / 180,
+        `la sopraelevazione non arriva in pista: massimo ${(Math.max(...efficaci) * 180 / Math.PI).toFixed(1)} gradi`);
+
+    const passo = TrackGeometry.lapLength(pts) / pts.length;
+    let salto = 0, dove = -1;
+    for (let k = 0; k < pts.length; k++) {
+        const d = Math.abs(efficaci[k] - efficaci[(k - 1 + pts.length) % pts.length]) * 180 / Math.PI / passo;
+        if (d > salto) { salto = d; dove = k; }
+    }
+    assert.ok(salto < 1.0,
+        `campione ${dove}: il rollio efficace cambia di ${salto.toFixed(2)} gradi per unita' di pista, e' uno scalino`);
+});

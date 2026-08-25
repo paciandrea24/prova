@@ -1146,3 +1146,105 @@ test('l\'autopilota d\'ingresso resta dentro la corsia box su tutte le piste', (
             `${id}: l'auto si è allontanata di ${worst.toFixed(2)} dalla linea della corsia (semilarghezza ${track.pitRoadHalf})`);
     }
 });
+
+// --- gravità lungo il nastro (fase 1a) ---
+
+// ⚠️ La gravità è ACCESA di default: per spegnerla serve '0', non basta
+// togliere la variabile (passare null qui la lascia accesa).
+function conFlagGravita(valore, fn) {
+    const prima = process.env.F1_GRAVITA_NASTRO;
+    if (valore === null) delete process.env.F1_GRAVITA_NASTRO;
+    else process.env.F1_GRAVITA_NASTRO = valore;
+    try { return fn(); }
+    finally {
+        if (prima === undefined) delete process.env.F1_GRAVITA_NASTRO;
+        else process.env.F1_GRAVITA_NASTRO = prima;
+    }
+}
+
+// Un giocatore lanciato a metà velocità col gas premuto, su una pendenza data:
+// si guarda solo quanto vale p.speed dopo UN tick di updateVelocity.
+function velocitaDopoUnTick(pendenza, flag) {
+    const { physics } = f1GameSocket;
+    return conFlagGravita(flag, () => {
+        const p = {
+            speed: 3, vx: 0, vz: 3, angle: 0, x: 0, z: 0,
+            inputs: { throttle: 1, brake: 0, steer: 0 },
+            compound: 'medium', tyreWear: 0, pendenza
+        };
+        physics.updateVelocity(p, true, 1);
+        return p.speed;
+    });
+}
+
+test('a flag spento la pendenza non cambia niente', () => {
+    const piano = velocitaDopoUnTick(0, '0');
+    assert.equal(velocitaDopoUnTick(0.2, '0'), piano);
+    assert.equal(velocitaDopoUnTick(-0.2, '0'), piano);
+});
+
+test('a flag acceso la salita toglie velocità e la discesa la aggiunge', () => {
+    const piano = velocitaDopoUnTick(0, '1');
+    const salita = velocitaDopoUnTick(0.2, '1');
+    const discesa = velocitaDopoUnTick(-0.2, '1');
+    assert.ok(salita < piano, `salita ${salita} non è sotto piano ${piano}`);
+    assert.ok(discesa > piano, `discesa ${discesa} non è sopra piano ${piano}`);
+    assert.ok(Math.abs((piano - salita) - (discesa - piano)) < 1e-12,
+        'salita e discesa non sono simmetriche');
+});
+
+// In discesa il tetto di velocità resta quello dell'auto: la gravità non deve
+// poter spingere nessuno oltre il massimo della sua mescola.
+test('la discesa non fa superare la velocità massima', () => {
+    const { physics } = f1GameSocket;
+    conFlagGravita('1', () => {
+        // Il tetto NON è una costante esposta (physics.MAX_SPEED non esiste):
+        // dipende da mescola e usura, e lo dice effectiveMaxSpeed.
+        const p = {
+            speed: 0, vx: 0, vz: 0, angle: 0, x: 0, z: 0,
+            inputs: { throttle: 1, brake: 0, steer: 0 },
+            compound: 'medium', tyreWear: 0, pendenza: -0.4
+        };
+        const massimo = physics.effectiveMaxSpeed(p, true);
+        p.speed = massimo; p.vz = massimo;
+        physics.updateVelocity(p, true, 1);
+        assert.ok(p.speed <= massimo + 1e-12, `${p.speed} oltre il massimo ${massimo}`);
+    });
+});
+
+// Un giocatore senza il campo (test storici, strumenti offline che non chiamano
+// updateTrackIndex) deve comportarsi come in piano, mai NaN.
+test('senza p.pendenza la fisica resta quella di prima', () => {
+    const { physics } = f1GameSocket;
+    conFlagGravita('1', () => {
+        const p = {
+            speed: 3, vx: 0, vz: 3, angle: 0, x: 0, z: 0,
+            inputs: { throttle: 1, brake: 0, steer: 0 },
+            compound: 'medium', tyreWear: 0
+        };
+        physics.updateVelocity(p, true, 1);
+        assert.ok(Number.isFinite(p.speed));
+        assert.equal(p.speed, velocitaDopoUnTick(0, '1'));
+    });
+});
+
+test('updateTrackIndex porta anche il rollio del campione su p', () => {
+    // Serve alla fisica (la tenuta in curva). Al client NON si manda: ha gia'
+    // trackIndex e i punti pista, quindi il rollio se lo legge da li' — una
+    // cosa, una misura, e nessun byte in piu' venti volte al secondo.
+    const { physics } = f1GameSocket;
+    const { loadTrack } = require('./trackLoader.js');
+    const track = loadTrack('prova');
+    const p = { x: track.points[10].x, z: track.points[10].z, trackIndex: 10 };
+    physics.updateTrackIndex(p, track);
+    assert.equal(p.rollio, track.points[p.trackIndex].rollio);
+});
+
+test('updateTrackIndex porta la pendenza del campione su p', () => {
+    const { physics } = f1GameSocket;
+    const { loadTrack } = require('./trackLoader.js');
+    const track = loadTrack('prova');
+    const p = { x: track.points[10].x, z: track.points[10].z, trackIndex: 10 };
+    physics.updateTrackIndex(p, track);
+    assert.equal(p.pendenza, track.points[p.trackIndex].pendenza);
+});

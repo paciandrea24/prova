@@ -24,6 +24,7 @@ const { corneringGripFactor } = require('./TyreForceModel');
 const { corneringExcess } = require('./TyreSlipModel');
 const AerodynamicsModel = require('./AerodynamicsModel');
 const { fuelCorneringFactor } = require('./FuelModel');
+const { fattoreBanking, BANKING_GUADAGNO_MAX } = require('./Sopraelevazione');
 
 // Contributo relativo alla capacità laterale (moltiplicatore adimensionale
 // ~1 = nominale, <1 = usura, fino a +15% con downforce ad alta velocità,
@@ -45,12 +46,26 @@ function corneringCapacity(p, isQuali, maxSpeed) {
     // bot DECIDE quanto frenare per la curva, li' la sterzata si ESEGUE.
     // Stessa separazione gia' documentata per downforceFactor.
     capacity /= fuelCorneringFactor(p);
+    // SOPRAELEVAZIONE. Su una curva banked una parte del peso dell'auto spinge
+    // verso l'interno invece che di lato, quindi la gomma ha più margine prima
+    // di scivolare. Questa funzione la consulta anche il bot per decidere
+    // quanto frenare, quindi il banking arriva anche a lui senza che f1Bot.js
+    // sappia cos'è un rollio.
+    //
+    // ⚠️ Consumatore INDIPENDENTE dello stesso fatto fisico agganciato in
+    // SteeringModel.applySteering: qui il bot DECIDE quanto frenare, lì la
+    // sterzata si ESEGUE. Nessun doppio conteggio, ed è obbligatorio che siano
+    // entrambi — con il fattore solo da questa parte il bot entra in curva
+    // credendo di avere un'aderenza che la fisica non gli dà, va lungo, ed è
+    // stato misurato un giro più LENTO del 12% col banking acceso.
+    capacity *= fattoreBanking(p.rollio);
     return capacity;
 }
+
 
 function lateralExcess(p, isQuali, maxSpeed) {
     const speedFrac = Math.min(1, Math.abs(p.speed) / maxSpeed);
     return corneringExcess(p.inputs.steer, speedFrac, corneringCapacity(p, isQuali, maxSpeed));
 }
 
-module.exports = { lateralExcess, corneringCapacity };
+module.exports = { lateralExcess, corneringCapacity, fattoreBanking, BANKING_GUADAGNO_MAX };

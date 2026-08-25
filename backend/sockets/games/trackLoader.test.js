@@ -422,3 +422,162 @@ test('saveTrack: una pista senza geometria resta valida', () => {
         deleteTrack('test-scratch-track');
     }
 });
+
+// --- pendenza per campione (fase 1a: gravita' lungo il nastro) ---
+
+test('ogni campione ha una pendenza finita, su tutte le piste', () => {
+    for (const t of listTracks()) {
+        const id = t.id || t;
+        const track = loadTrack(id);
+        for (let i = 0; i < track.points.length; i++) {
+            assert.equal(typeof track.points[i].pendenza, 'number',
+                `${id} campione ${i}: pendenza mancante`);
+            assert.ok(Number.isFinite(track.points[i].pendenza),
+                `${id} campione ${i}: pendenza non finita`);
+        }
+    }
+});
+
+test('una pista senza dislivelli ha pendenza zero ovunque', () => {
+    const track = loadTrack('monte-rosso');
+    for (const p of track.points) assert.ok(Math.abs(p.pendenza) < 1e-9);
+});
+
+// prova sale e scende davvero (quota da 0 a 11.5): se la pendenza fosse sempre
+// zero il campo ci sarebbe ma non direbbe niente, ed e' proprio il modo in cui
+// un valore di ripiego passa inosservato.
+test('prova ha pendenze vere, in salita e in discesa', () => {
+    const track = loadTrack('prova');
+    const pct = track.points.map(p => Math.tan(p.pendenza) * 100);
+    assert.ok(Math.max(...pct) > 5, `salita massima ${Math.max(...pct).toFixed(1)}%`);
+    assert.ok(Math.min(...pct) < -5, `discesa massima ${Math.min(...pct).toFixed(1)}%`);
+});
+
+// --- la sopraelevazione nel file salvato ---
+
+function geometriaMinima(rollioGradi) {
+    return {
+        nodi: [
+            { x: 0, z: 0, dir: 0 },
+            { x: 100, z: 0, dir: 1.5 },
+            { x: 100, z: 100, dir: 3 }
+        ],
+        tratti: [
+            { tipo: 'curva', rollioGradi },
+            { tipo: 'curva' },
+            { tipo: 'curva' }
+        ]
+    };
+}
+
+test('saveTrack accetta una sopraelevazione entro i 45 gradi', () => {
+    try {
+        saveTrack(minimalValidTrackData({ geometria: geometriaMinima(18) }));   // non deve lanciare
+        const riletta = JSON.parse(fs.readFileSync(path.join(TRACKS_DIR, 'test-scratch-track.json'), 'utf8'));
+        assert.equal(riletta.geometria.tratti[0].rollioGradi, 18,
+            'la sopraelevazione non e\' sopravvissuta al salvataggio');
+    } finally {
+        deleteTrack('test-scratch-track');
+    }
+});
+
+test('saveTrack rifiuta una sopraelevazione fuori scala', () => {
+    // Meglio fermarla qui che scoprirla in gara: oltre i 45 gradi il cuneo di
+    // terra sotto la pista diventa una parete.
+    for (const cattiva of [90, -5, NaN, 'venti']) {
+        assert.throws(
+            () => saveTrack(minimalValidTrackData({ geometria: geometriaMinima(cattiva) })),
+            /sopraelevazione fuori scala/,
+            `${cattiva} non doveva passare`);
+    }
+});
+
+// --- sopraelevazione per campione (fase 1b-1: banking) ---
+
+test('ogni campione ha un rollio finito e non negativo, su tutte le piste', () => {
+    for (const t of listTracks()) {
+        const id = t.id || t;
+        const track = loadTrack(id);
+        for (let i = 0; i < track.points.length; i++) {
+            const r = track.points[i].rollio;
+            assert.equal(typeof r, 'number', `${id} campione ${i}: rollio mancante`);
+            assert.ok(Number.isFinite(r) && r >= 0, `${id} campione ${i}: rollio ${r}`);
+        }
+    }
+});
+
+test('una pista risulta sopraelevata solo se la sua geometria lo dichiara', () => {
+    // Se una lo diventasse per sbaglio — un campo copiato, un default finito a
+    // 1 — questo test lo direbbe subito, invece di lasciarlo scoprire in gara.
+    //
+    // ⚠️ Non si elencano le piste piane: l'elenco andrebbe aggiornato a ogni
+    // pista nuova, e il giorno che qualcuno se ne dimentica il test diventa
+    // muto. Si confronta invece il DATO col suo unico posto legittimo di
+    // nascita: `rollioGradi` sui tratti della geometria. Una pista che non lo
+    // dichiara non puo' avere campioni sopraelevati; una che lo dichiara non
+    // puo' superarlo.
+    for (const t of listTracks()) {
+        const id = t.id || t;
+        const track = loadTrack(id);
+        const massimoCampioni = Math.max(...track.points.map(p => p.rollio));
+        const grezza = JSON.parse(fs.readFileSync(path.join(TRACKS_DIR, `${id}.json`), 'utf8'));
+        const tratti = (grezza.geometria && grezza.geometria.tratti) || [];
+        const dichiarato = Math.max(0, ...tratti.map(s => (s && s.rollioGradi) || 0)) * Math.PI / 180;
+        if (!dichiarato) {
+            assert.equal(massimoCampioni, 0, `${id} risulta sopraelevata senza dichiararlo`);
+        } else {
+            assert.ok(massimoCampioni <= dichiarato + 1e-9,
+                `${id}: campioni fino a ${massimoCampioni} rad, dichiarati ${dichiarato}`);
+        }
+    }
+});
+
+test('la pendenza cotta e\' esattamente quella di TrackGeometry.pendenzaAt', () => {
+    const track = loadTrack('prova');
+    for (let i = 0; i < track.points.length; i += 37) {
+        assert.equal(track.points[i].pendenza, TrackGeometry.pendenzaAt(track.points, i, true));
+    }
+});
+
+// --- il rollio che arriva alla fisica e' quello che si vede ------------------
+
+test('il rollio dichiarato su un pezzo dritto non arriva al gioco', () => {
+    // Un tratto puo' portarsi dietro una sopraelevazione pur essendo quasi
+    // dritto. La mesh li' non inclina niente (non c'e' un bordo esterno da
+    // alzare); se la fisica leggesse il valore dichiarato, l'auto terrebbe di
+    // piu' dove la pista si vede piatta. Il rollio dei campioni e quello del
+    // disegno devono essere lo STESSO numero, e lo decide
+    // TrackGeometry.rollioEfficaceAt per tutti e due.
+    const RETT = 400, R = 100, N = 120;
+    const anello = [];
+    for (let i = 0; i < N; i++) {
+        const t = i / N;
+        let x, z;
+        if (t < 0.25) { x = R; z = -RETT / 2 + RETT * (t / 0.25); }
+        else if (t < 0.5) { const a = (t - 0.25) / 0.25 * Math.PI; x = R * Math.cos(a); z = RETT / 2 + R * Math.sin(a); }
+        else if (t < 0.75) { x = -R; z = RETT / 2 - RETT * ((t - 0.5) / 0.25); }
+        else { const a = (t - 0.75) / 0.25 * Math.PI; x = -R * Math.cos(a); z = -RETT / 2 - R * Math.sin(a); }
+        // Sopraelevazione dichiarata OVUNQUE, rettilinei compresi.
+        anello.push({ x, z, rollio: 20 * Math.PI / 180 });
+    }
+    saveTrack(minimalValidTrackData({ controlPoints: anello, targetKm: 3 }));
+    try {
+        const track = loadTrack('test-scratch-track');
+        let inCurva = 0, suDritto = 0;
+        for (let i = 0; i < track.points.length; i++) {
+            // ⚠️ «Dritto» con la STESSA finestra che usa il modello (80 unita'
+            // di pista): con quella stretta, di default, nel raccordo il raggio
+            // rimbalza fino a 14000 e questo test chiamava dritti dei campioni
+            // che stanno in piena curva d'ingresso.
+            const passo = TrackGeometry.lapLength(track.points) / track.points.length;
+            const span = Math.max(4, Math.round(TrackGeometry.FINESTRA_CURVA_UNITA / passo));
+            const dritto = TrackGeometry.curvatureAt(track.points, i, span).radius > 1000;
+            if (dritto) { if (track.points[i].rollio > 0) suDritto++; }
+            else if (track.points[i].rollio > 0) inCurva++;
+        }
+        assert.equal(suDritto, 0, `${suDritto} campioni dritti hanno un rollio che nessuno disegna`);
+        assert.ok(inCurva > 0, 'in curva il rollio deve restare');
+    } finally {
+        deleteTrack('test-scratch-track');
+    }
+});

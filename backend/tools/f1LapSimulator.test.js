@@ -6,9 +6,24 @@ const { simulateLap, slowestPoints } = require('./f1LapSimulator.js');
 
 const DEFAULT_OPTS = { speedFactor: 1, paceMult: 1, precisionNoise: 0, safetyCapS: 60 };
 
+// Da quando esiste la gravità lungo il nastro (fase 1a), una pista può avere
+// una salita che NESSUNA auto sale: sopra un certo angolo la gravità supera
+// tutta l'accelerazione del motore, la macchina si ferma e riscende. Pretendere
+// che il bot chiuda comunque il giro sarebbe pretendere l'impossibile.
+//
+// Il limite non è un elenco di piste da saltare — quello divergerebbe al primo
+// tracciato nuovo — ma la soglia fisica calcolata da GravitaNastro: se domani
+// G_NASTRO cambia, le piste rientrano o escono da sole. Oggi lascia fuori solo
+// `test`, che ha pendenze dell'89% (una parete) ed è un tracciato di prova.
+const { pistaPercorribile } = require('../sockets/games/physics/GravitaNastro.js');
+
 for (const { id } of listTracks()) {
-    test(`simulateLap: ${id} completa il giro entro il tetto di sicurezza (tuning di default)`, () => {
+    test(`simulateLap: ${id} completa il giro entro il tetto di sicurezza (tuning di default)`, (t) => {
         const track = loadTrack(id);
+        if (!pistaPercorribile(track.points)) {
+            t.skip(`${id}: ha una salita che nessuna auto sale, con la gravità lungo il nastro attiva`);
+            return;
+        }
         const result = simulateLap(track, DEFAULT_OPTS);
         assert.ok(result.finished, `${id}: giro non completato entro ${DEFAULT_OPTS.safetyCapS}s simulati`);
         assert.ok(result.timeMs > 0, `${id}: tempo non valido (${result.timeMs})`);

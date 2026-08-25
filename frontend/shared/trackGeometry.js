@@ -66,6 +66,16 @@
             out.halfWidth = w1 + (w2 - w1) * ue;
         } else if (typeof w1 === 'number') { out.halfWidth = w1; }
         else if (typeof w2 === 'number') { out.halfWidth = w2; }
+        // La SOPRAELEVAZIONE viaggia sul punto e si raccorda con la stessa
+        // smoothstep: una curva banked che iniziasse di colpo sarebbe uno
+        // scalino da saltare, non una curva da prendere. Vale la stessa regola
+        // della larghezza — il campo si mette solo se c'è, e a riempirlo su
+        // ogni campione è UN posto solo, il caricatore di pista.
+        const r1 = p1.rollio, r2 = p2.rollio;
+        if (typeof r1 === 'number' && typeof r2 === 'number') {
+            out.rollio = r1 + (r2 - r1) * ue;
+        } else if (typeof r1 === 'number') { out.rollio = r1; }
+        else if (typeof r2 === 'number') { out.rollio = r2; }
         return out;
     }
 
@@ -132,6 +142,15 @@
             if (typeof a.halfWidth === 'number' && typeof b.halfWidth === 'number') {
                 punto.halfWidth = a.halfWidth + (b.halfWidth - a.halfWidth) * f;
             } else if (typeof a.halfWidth === 'number') { punto.halfWidth = a.halfWidth; }
+            // ⚠️ E la sopraelevazione con lei. Questo punto è FACILE da
+            // dimenticare: `resample` non copia i punti, li RICOSTRUISCE campo
+            // per campo, quindi un campo nuovo che non compare qui sparisce in
+            // silenzio fra i punti cotti e quelli che il gioco usa davvero.
+            // È successo proprio così, e se n'è accorta solo una prova
+            // end-to-end: i punti cotti avevano il rollio, quelli campionati no.
+            if (typeof a.rollio === 'number' && typeof b.rollio === 'number') {
+                punto.rollio = a.rollio + (b.rollio - a.rollio) * f;
+            } else if (typeof a.rollio === 'number') { punto.rollio = a.rollio; }
             out.push(punto);
         }
         return out;
@@ -178,7 +197,29 @@
     // posizionare oggetti scenici sia per la quota visiva dell'auto fuori
     // pista sia per costruire la mesh del terrapieno.
     function terrainHeightAt(groundPts, x, z, embankStart, embankOuter) {
-        const { y, dist } = nearestPoint(groundPts, x, z);
+        const vicino = nearestPoint(groundPts, x, z);
+        const { dist, index } = vicino;
+        // IL CUNEO SOTTO UNA CURVA SOPRAELEVATA. Il terreno vicino alla pista
+        // non sta alla quota dell'ASSE ma a quella del BORDO da cui si esce: sul
+        // lato alto di una parabolica è parecchi metri più su. Senza questo,
+        // fra l'asfalto inclinato e la terra resterebbe una fessura aperta, e
+        // gli oggetti scenici galleggerebbero — lo stesso difetto del prato
+        // sopra le discese.
+        //
+        // ⚠️ L'alzata si congela al BORDO DEL NASTRO, non al pianoro del
+        // terrapieno. Congelarla al pianoro (49 unità dall'asse su una pista
+        // normale) faceva salire il terreno con la pendenza della parabolica
+        // per tutta quella distanza: accanto a una curva a 35 gradi cresceva
+        // una collina di 37 unità dove il bordo alto dell'asfalto ne aveva
+        // 13.7, e la pista ci spariva dentro. Visto in gioco il 2026-08-25.
+        //
+        // Il cuneo e' la terra che REGGE il nastro: finisce dove finisce il
+        // nastro, e da lì in fuori il terreno resta a quella quota fino al
+        // pianoro, poi degrada al prato come sempre.
+        //
+        // Su una pista piana `alzataLaterale` vale zero e questo blocco non
+        // cambia un solo valore.
+        const y = vicino.y + alzataTerrenoIn(groundPts, index, x, z);
         if (dist <= embankStart) return y;
         if (dist >= embankOuter) return 0;
         const t = (dist - embankStart) / (embankOuter - embankStart);
@@ -266,6 +307,189 @@
     function normalAt(points, i, closed) {
         const { tx, tz } = tangentAt(points, i, closed);
         return { nx: -tz, nz: tx };
+    }
+
+    // Pendenza del tracciato al campione `i`, in RADIANTI e POSITIVA IN
+    // SALITA. Stessa finestra di tangentAt (campione prima / campione dopo):
+    // la direzione e la pendenza devono parlare dello stesso pezzo di pista,
+    // o su un tratto corto raccontano due cose diverse.
+    //
+    // ⚠️ SEGNO. Qui positiva = si sale, che è ciò che serve alla fisica (la
+    // gravità frena chi sale). Chi la usa per RUOTARE una mesh deve NEGARLA:
+    // in Three una rotazione X positiva abbassa il muso. Vedi trackPitchAt in
+    // f1.js, che è la stessa misura col segno girato — e non una seconda
+    // copia della formula.
+    function pendenzaAt(points, i, closed) {
+        const n = points.length;
+        const next = closed ? points[(i + 1) % n] : points[Math.min(i + 1, n - 1)];
+        const prev = closed ? points[(i - 1 + n) % n] : points[Math.max(i - 1, 0)];
+        const dy = (next.y || 0) - (prev.y || 0);
+        const horiz = Math.hypot(next.x - prev.x, next.z - prev.z) || 1e-6;
+        return Math.atan2(dy, horiz);
+    }
+
+    // Oltre questo raggio un tratto è dritto: non ha un lato esterno, e una
+    // sopraelevazione lì non vuol dire niente. 400 unità su piste che vanno da
+    // 2000 a 5000 di sviluppo — una curva vera sta molto sotto.
+    const RETTILINEO_RAGGIO_MIN = 400;
+
+    // Di quanto si alza il bordo alto di un tratto sopraelevato, e QUALE bordo
+    // è. È l'unico posto in cui il verso della sopraelevazione viene deciso:
+    // nastro, cordoli, terrapieno, fisica ed editor lo chiedono qui invece di
+    // ricavarselo, o un giorno l'asfalto si alzerebbe da una parte e il cordolo
+    // dall'altra. (Rif. decisione D6 della spec del nastro orientato.)
+    //
+    // Si alza sempre l'ESTERNO della curva: il bordo interno resta alla quota
+    // che ha, così il nastro si appoggia sul terreno esistente senza bucarlo.
+    // Su un tratto dritto non esiste un esterno, e il rollio non ha effetto.
+    //
+    // `latoAlto` è +1 se sale il bordo dalla parte della normale, -1 dall'altra,
+    // 0 se non si alza niente. `dyAlto` è l'alzata TOTALE del bordo alto
+    // rispetto a quello basso.
+    //
+    // ⚠️ TANGENTE, non seno. La carreggiata resta larga uguale IN PIANTA — la
+    // fisica del server è in due dimensioni e continua a misurare la pista lì —
+    // quindi il nastro è un piano largo `2*mezza` in orizzontale e alto
+    // `dyAlto`: la sua pendenza è atan(dyAlto / 2*mezza), e perché valga
+    // esattamente il rollio dichiarato ci vuole la tangente.
+    // Col seno il nastro veniva su di 29.8 gradi invece dei 35 scritti
+    // nell'editor, mentre l'auto si coricava dei 35 pieni: la ruota bassa
+    // affondava nell'asfalto di un decimo di unità. Segnalato in gioco il
+    // 2026-08-25 («le ruote entrano dentro l'asfalto»).
+    //
+    // ⚠️ Il segno è stato VERIFICATO, non dedotto: su un cerchio percorso ad
+    // angolo crescente `turnSigned` è positivo e il bordo lontano dal centro è
+    // quello CONTRO normale (misurato: 211 unità dal centro contro 189). Da lì
+    // `latoAlto = -sign(turnSigned)`. Il test «si alza il bordo esterno» rifà
+    // questa misura contro la geometria vera, non contro la convenzione.
+    // Il rollio che ha DAVVERO effetto al campione `i`: quello dichiarato, ma
+    // solo dove c'e' una curva su cui appoggiarlo.
+    //
+    // ⚠️ Esiste perche' il dato e l'effetto devono essere lo STESSO numero. Un
+    // tratto puo' portarsi dietro una sopraelevazione dichiarata pur essendo
+    // quasi dritto — l'editor avverte sui tratti tipizzati 'retta', non su una
+    // curva dolcissima. La mesh li' non inclina niente (non c'e' un bordo
+    // esterno da alzare), e se la fisica leggesse comunque il valore dichiarato
+    // l'auto terrebbe di piu' dove la pista si vede piatta: aderenza
+    // invisibile, il tipo di difetto che chi gioca descrive come «non capisco
+    // come funziona». Chiedono qui: la mesh, la fisica del server, il rollio
+    // mandato al client per coricare l'auto.
+    // ⚠️ SU QUANTA PISTA si guarda per decidere «qui c'e' una curva, e gira di
+    // qua». Ottanta unita', la stessa scala su cui il rollio si raccorda: una
+    // sopraelevazione e' una proprieta' del TRATTO, non del singolo campione.
+    //
+    // La finestra di default di curvatureAt (12 campioni) e' tarata per la
+    // scenografia e nel raccordo d'ingresso di una curva e' rumore puro: sulla
+    // pista di prova dava 3313, 3574, 4456, 14236, 4574, 1582, 848, 537, 384 in
+    // nove campioni consecutivi, e la soglia «tratto dritto» ci inciampava
+    // dentro — il rollio saltava da zero a 5.5 gradi in un campione, e la curva
+    // «non sembrava una bella curva» (visto in gioco il 2026-08-25). Con
+    // ottanta unita' la stessa sequenza scende monotona: 386, 359, 336, 314,
+    // 293, 275, 258, 242, 227.
+    //
+    // In UNITA' e non in campioni, o su una pista campionata piu' fitta
+    // misurerebbe un pezzo di curva piu' corto: e' la stessa regola delle altre
+    // soglie geometriche del progetto.
+    const FINESTRA_CURVA_UNITA = 80;
+    function spanCurvaRollio(points, i) {
+        const n = points.length;
+        const a = points[(i - 1 + n) % n], b = points[(i + 1) % n];
+        const passo = Math.hypot(b.x - a.x, b.z - a.z) / 2;
+        if (!(passo > 1e-6)) return 12;
+        return Math.max(4, Math.min(Math.floor(n / 4), Math.round(FINESTRA_CURVA_UNITA / passo)));
+    }
+
+    // Da dritto a curvo non si passa con un interruttore: fra il raggio oltre il
+    // quale un tratto e' dritto (nessun bordo esterno da alzare) e quello sotto
+    // il quale e' curva piena, la sopraelevazione entra con la solita
+    // smoothstep. Senza, sulla pista di prova restava un gradino di 1.85 gradi
+    // proprio dove la soglia veniva attraversata — piccolo, ma nel punto in cui
+    // l'occhio guarda: l'ingresso della parabolica.
+    const RAGGIO_CURVA_PIENA = RETTILINEO_RAGGIO_MIN / 2;
+    function fattoreCurva(radius) {
+        if (!(radius < RETTILINEO_RAGGIO_MIN)) return 0;
+        if (radius <= RAGGIO_CURVA_PIENA) return 1;
+        const t = (RETTILINEO_RAGGIO_MIN - radius) / (RETTILINEO_RAGGIO_MIN - RAGGIO_CURVA_PIENA);
+        return t * t * (3 - 2 * t);
+    }
+
+    function rollioEfficaceAt(points, i) {
+        const p = points[i];
+        const rollio = (p && typeof p.rollio === 'number' && p.rollio > 0) ? p.rollio : 0;
+        if (!rollio) return 0;
+        const { radius, turnSigned } = curvatureAt(points, i, spanCurvaRollio(points, i));
+        if (turnSigned === 0) return 0;
+        return rollio * fattoreCurva(radius);
+    }
+
+    function rialzoBordi(points, i, mezza) {
+        const rollio = rollioEfficaceAt(points, i);
+        if (!rollio) return { dyAlto: 0, latoAlto: 0 };
+        // ⚠️ Stessa finestra con cui si e' deciso CHE c'e' una curva: col verso
+        // preso dalla finestra stretta, nel raccordo turnSigned cambiava segno
+        // (misurati -0.007 e poi +0.005 a due campioni di distanza) e il nastro
+        // si sarebbe alzato dalla parte sbagliata per qualche metro.
+        const { turnSigned } = curvatureAt(points, i, spanCurvaRollio(points, i));
+        return { dyAlto: Math.tan(rollio) * 2 * mezza, latoAlto: turnSigned > 0 ? -1 : 1 };
+    }
+
+    // Di quanto è alzato il piano del nastro a `offset` unità dall'asse pista,
+    // misurate lungo la normale (positive dalla parte di `normalAt`).
+    //
+    // Serve a tutto ciò che non sta esattamente sul bordo: i cordoli, che
+    // proseguono oltre la carreggiata, la ghiaia, le barriere. Il nastro
+    // sopraelevato è un piano inclinato, quindi l'alzata è lineare: zero sul
+    // bordo basso, `dyAlto` su quello alto, e prosegue oltre con la stessa
+    // pendenza — che è esattamente ciò che fa un cordolo su una parabolica.
+    //
+    // Un posto solo per tutti: se il cordolo si calcolasse la sua inclinazione,
+    // un giorno resterebbe appeso sopra l'asfalto o ci sprofonderebbe dentro.
+    // ⚠️ Mai negativa. Il piano inclinato, prolungato oltre il bordo BASSO,
+    // scenderebbe sotto la quota del punto: il cordolo interno finirebbe
+    // sepolto e il terreno andrebbe scavato. La sopraelevazione si costruisce
+    // ALZANDO l'esterno (decisione D1), non scavando l'interno, quindi da
+    // quella parte l'alzata si ferma a zero.
+    // Di quanto il cuneo di terra prosegue oltre il bordo dell'asfalto, prima
+    // di smettere di salire. Vale la larghezza del cordolo, che sul lato alto
+    // continua la stessa pendenza del nastro: fermare la terra esattamente al
+    // bordo lascerebbe il cordolo scoperto di tan(rollio) per la sua larghezza.
+    // ⚠️ E' lo stesso numero di CURB_W in f1Scena.js, e un test li tiene legati:
+    // se il cordolo cambia larghezza, il cuneo lo segue.
+    const CUNEO_OLTRE_IL_BORDO = 2.8;
+
+    function alzataLaterale(points, i, mezza, offset) {
+        const { dyAlto, latoAlto } = rialzoBordi(points, i, mezza);
+        if (!latoAlto || !(mezza > 0)) return 0;
+        return Math.max(0, (offset * latoAlto + mezza) * (dyAlto / (2 * mezza)));
+    }
+
+    // L'alzata del TERRENO a `offset` dall'asse: sotto il nastro segue il piano
+    // inclinato come tutto il resto, ma oltre il bordo (piu' il cordolo) SMETTE
+    // di salire. Il cuneo e' la terra che regge la parabolica: finisce dove
+    // finisce il nastro.
+    //
+    // ⚠️ Senza questo limite il terreno saliva con la pendenza della curva fino
+    // al pianoro del terrapieno — 49 unita' dall'asse — e accanto a una curva a
+    // 35 gradi cresceva una collina di 37 unita' dove il bordo alto
+    // dell'asfalto ne aveva 13.7: la pista ci spariva dentro (visto in gioco il
+    // 2026-08-25). Chiedono qui: la quota del terreno in un punto qualunque, la
+    // mesh del terrapieno, la ghiaia, il piede delle barriere.
+    function alzataTerreno(points, i, mezza, offset) {
+        const piede = mezza + CUNEO_OLTRE_IL_BORDO;
+        return alzataLaterale(points, i, mezza, Math.max(-piede, Math.min(piede, offset)));
+    }
+
+    // Quanto il campione `j` alza il terreno nel punto (x, z) del mondo: zero se
+    // non e' sopraelevato. Sta qui perche' chi ragiona per punti del mondo
+    // (terrainHeightAt, terrainTopAt) non debba rifarsi la proiezione sulla
+    // normale ognuno a modo suo.
+    function alzataTerrenoIn(points, j, x, z) {
+        const p = points[j];
+        if (!p || !(p.rollio > 0)) return 0;
+        const mezza = (typeof p.halfWidth === 'number' && p.halfWidth > 0) ? p.halfWidth : 0;
+        if (!(mezza > 0)) return 0;
+        const { nx, nz } = normalAt(points, j, true);
+        return alzataTerreno(points, j, mezza, (x - p.x) * nx + (z - p.z) * nz);
     }
 
     // Direzione in cui deve guardare un oggetto posato su un nastro parallelo
@@ -1216,7 +1440,12 @@
                 // quote come fa la mesh, che fra un campione e l'altro tira
                 // dritto.
                 const t = (a - b) > 1e-9 ? a / (a - b) : 0;
-                const y = (trackPts[j].y || 0) * (1 - t) + (trackPts[succ].y || 0) * t;
+                // Il cuneo conta anche qui: su una parabolica il piede della
+                // barriera sta sulla terra che regge il nastro, non a quota
+                // zero, o il muro resta sepolto dentro il cuneo.
+                const yj = (trackPts[j].y || 0) + alzataTerrenoIn(trackPts, j, x, z);
+                const ys = (trackPts[succ].y || 0) + alzataTerrenoIn(trackPts, succ, x, z);
+                const y = yj * (1 - t) + ys * t;
                 if (top === null || y > top) top = y;
             }
         }
@@ -1272,6 +1501,10 @@
         splitByBridge,
         tangentAt,
         normalAt,
+        pendenzaAt,
+        rialzoBordi, rollioEfficaceAt,
+        alzataLaterale, alzataTerreno, alzataTerrenoIn, CUNEO_OLTRE_IL_BORDO,
+        FINESTRA_CURVA_UNITA,
         ribbonFacingAt,
         curvatureAt,
         bridgeHeightAt,

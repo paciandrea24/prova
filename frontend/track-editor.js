@@ -632,6 +632,21 @@ document.addEventListener('DOMContentLoaded', () => {
             (typeof propria === 'number' && propria > 0)
                 ? `carreggiata ${(propria * 2).toFixed(1)} unita' (la pista ne ha ${(nominale * 2).toFixed(1)})`
                 : `vuoto = come la pista: ${(nominale * 2).toFixed(1)} unita'`;
+        // Sopraelevazione. Si scrive solo QUANTO: quale bordo si alzi lo decide
+        // la curva (sempre l'esterno), e per questo il campo non ha segno.
+        // ⚠️ Su un rettilineo non esiste un esterno, quindi il valore non ha
+        // effetto: va detto qui, o si passa il pomeriggio a chiedersi perché la
+        // pista non si inclina.
+        const gradi = geometria.tratti[trattoSelezionato].rollioGradi;
+        const haRollio = typeof gradi === 'number' && gradi > 0;
+        document.getElementById('trattoRollio').value = haRollio ? gradi : '';
+        document.getElementById('trattoRollioNota').textContent = !haRollio
+            ? 'vuoto = piana. Si alza sempre il bordo esterno della curva.'
+            : (tipo === 'retta'
+                ? `⚠️ ${gradi}° su un rettilineo non hanno effetto: senza curva non c'è un bordo esterno`
+                : `il bordo esterno sale di ${(Math.tan(gradi * Math.PI / 180) * (
+                    (typeof propria === 'number' && propria > 0 ? propria : nominale) * 2)).toFixed(1)} unita'`);
+
         document.getElementById('trattoMisure').textContent = tipo === 'retta'
             ? 'dritto — nessun raggio'
             : `gira di ${(m.angolo * 180 / Math.PI).toFixed(0)}° · raggio minimo ${
@@ -1878,6 +1893,33 @@ document.addEventListener('DOMContentLoaded', () => {
         tratti[trattoSelezionato] = Object.assign({}, tratti[trattoSelezionato]);
         if (testo === '') delete tratti[trattoSelezionato].larghezza;
         else tratti[trattoSelezionato].larghezza = v;
+        geometria = Object.assign({}, geometria, { tratti });
+        dopoModificaMain();
+        rebuild();
+        aggiornaRiquadroTratto();
+    });
+
+    // La sopraelevazione del tratto scelto, in gradi. Vuoto = piana, ed e' il
+    // modo per toglierla. Si scrive solo QUANTO: il bordo che si alza e' sempre
+    // l'esterno della curva, quindi non c'e' un segno da azzeccare.
+    document.getElementById('trattoRollio').addEventListener('change', (ev) => {
+        if (!inSegmenti() || trattoSelezionato < 0) return;
+        const testo = ev.target.value.trim();
+        const v = parseFloat(testo);
+        // ⚠️ Oltre i 45 gradi il cuneo di terra sotto la pista diventa una
+        // parete: si rifiuta invece di lasciar disegnare una pista che poi non
+        // si regge. Il campo torna a com'era, cosi' si vede che il valore non
+        // e' stato preso. Stesso trattamento della mezza carreggiata sotto le
+        // 4 unita'.
+        if (testo !== '' && (!Number.isFinite(v) || v < 0 || v > 45)) {
+            aggiornaRiquadroTratto();
+            return;
+        }
+        salvaStato();
+        const tratti = geometria.tratti.slice();
+        tratti[trattoSelezionato] = Object.assign({}, tratti[trattoSelezionato]);
+        if (testo === '' || v === 0) delete tratti[trattoSelezionato].rollioGradi;
+        else tratti[trattoSelezionato].rollioGradi = v;
         geometria = Object.assign({}, geometria, { tratti });
         dopoModificaMain();
         rebuild();
