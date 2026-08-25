@@ -220,7 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
         campo.type = 'number';
         campo.step = '0.5';
         campo.value = quote[0].toFixed(1);
-        campo.title = 'Quota a cui portare tutti i nodi scelti';
+        campo.title = 'Quota a cui portare tutti i nodi scelti (parte dalla quota del primo)';
         const aQuota = document.createElement('button');
         aQuota.type = 'button';
         aQuota.textContent = 'porta tutti qui';
@@ -233,16 +233,13 @@ document.addEventListener('DOMContentLoaded', () => {
         riga.appendChild(aQuota);
         box.appendChild(riga);
 
+        // ⚠️ «livella al primo» C'ERA, ed è stato tolto al playtest del
+        // 2026-08-25: faceva esattamente quello che fa «porta tutti qui» col
+        // campo lasciato com'è, perché il campo nasce già sulla quota del
+        // primo nodo. Due bottoni per la stessa azione fanno solo chiedere
+        // quale sia la differenza.
         const riga2 = document.createElement('div');
         riga2.className = 'riga';
-        const alPrimo = document.createElement('button');
-        alPrimo.type = 'button';
-        alPrimo.textContent = 'livella al primo';
-        alPrimo.title = 'Porta tutti alla quota del nodo con indice più basso';
-        alPrimo.addEventListener('click', () => applicaAlGruppo((ids) => {
-            const y = geometria.nodi[ids[0]].y || 0;
-            for (const i of ids) geometria.nodi[i].y = y;
-        }));
         const rampa = document.createElement('button');
         rampa.type = 'button';
         rampa.textContent = 'rampa';
@@ -265,7 +262,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 geometria.nodi[i].y = +(y0 + (y1 - y0) * (passi[k] / totale)).toFixed(2);
             });
         }));
-        riga2.appendChild(alPrimo);
         riga2.appendChild(rampa);
         box.appendChild(riga2);
 
@@ -1027,16 +1023,30 @@ document.addEventListener('DOMContentLoaded', () => {
         // centinaia e non si trascinano — sono il prodotto, non il disegno.
         // Più grandi, perché sono pochi e ognuno conta.
         const selMat = new THREE.MeshBasicMaterial({ color: 0x2ecc71 });
-        // Un colore SUO per la selezione multipla: se usasse lo stesso verde
-        // del nodo corrente non si distinguerebbe piu' quale nodo comanda il
-        // pannello del tratto.
-        const multiMat = new THREE.MeshBasicMaterial({ color: 0xf5c451 });
+        // ⚠️ LA SELEZIONE MULTIPLA NON SI SEGNA COL COLORE.
+        //
+        // Il colore del nodo È GIÀ la sua quota (giallo 0xf1c40f a zero, rosso
+        // in salita, blu in discesa). Il primo tentativo usava un giallo
+        // dedicato: su una pista in piano i nodi erano già di quel colore e la
+        // selezione risultava INVISIBILE — «non vedo differenze», playtest del
+        // 2026-08-25. Un secondo segnale sullo stesso canale non è un segnale.
+        //
+        // L'anello è ortogonale: sta attorno al nodo, si vede a qualunque
+        // quota, e lascia il colore a dire quello che diceva prima.
+        const anelloMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.95 });
+        const anelloGeo = new THREE.RingGeometry(2.9, 4.0, 20);
         listaDi('main').forEach((p, i) => {
             const y = p.y || 0;
             const scelto = inSegmenti() && i === nodoSelezionato;
-            const inGruppo = inSegmenti() && nodiSelezionati.has(i);
-            const m = new THREE.Mesh(geo, scelto ? selMat
-                : inGruppo ? multiMat : (p.bridge ? bridgeMat : materialForY(y)));
+            const m = new THREE.Mesh(geo, scelto ? selMat : (p.bridge ? bridgeMat : materialForY(y)));
+            if (inSegmenti() && nodiSelezionati.has(i)) {
+                const anello = new THREE.Mesh(anelloGeo, anelloMat);
+                anello.rotation.x = -Math.PI / 2;   // piatto: la camera guarda dall'alto
+                anello.position.set(p.x, y + 1.2, p.z);
+                anello.scale.setScalar(scaleForY(y) * 1.4);
+                markerGroup.add(anello);
+            }
             m.scale.setScalar(scaleForY(y) * (inSegmenti() ? 1.4 : 1));
             m.position.set(p.x, y + 1, p.z);
             m.userData = { list: 'main', index: i };
@@ -1099,6 +1109,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (startFinish && mainPoints.length < 3) startFinish = null;
         updateStartFinishMeshes();
+        // Il percorso coperto dalla selezione multipla: sta qui perché
+        // dipende sia dalla geometria sia da chi è scelto, e rebuild è
+        // l'unico punto in cui si sa che entrambe sono aggiornate.
+        disegnaPercorsoGruppo();
 
         updateEntryTriggerVisual();
         aggiornaAbrasivita();
@@ -1371,6 +1385,44 @@ document.addEventListener('DOMContentLoaded', () => {
             if (sx >= xMin && sx <= xMax && sy >= yMin && sy <= yMax) dentro.add(i);
         });
         return dentro;
+    }
+
+    // IL PERCORSO COPERTO DALLA SELEZIONE.
+    //
+    // Segnalato al playtest: con più nodi scelti non si capiva più quale
+    // pezzo di pista fosse in gioco. Gli anelli dicono DOVE sono i nodi, ma
+    // non che cosa c'è in mezzo — e le operazioni di quota agiscono proprio
+    // su quello che c'è in mezzo.
+    //
+    // Si disegna solo fra nodi CONSECUTIVI: una selezione a buchi (Ctrl+clic
+    // su nodi sparsi) non ha un percorso continuo, e inventarne uno direbbe
+    // una cosa falsa.
+    let percorsoGruppo = null;
+
+    function disegnaPercorsoGruppo() {
+        if (percorsoGruppo) {
+            scene.remove(percorsoGruppo);
+            percorsoGruppo.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+            percorsoGruppo = null;
+        }
+        if (!inSegmenti() || nodiSelezionati.size < 2) return;
+        const idx = [...nodiSelezionati].sort((a, b) => a - b);
+        const n = geometria.nodi.length;
+        percorsoGruppo = new THREE.Group();
+        const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+        for (const i of idx) {
+            if (!nodiSelezionati.has((i + 1) % n)) continue;   // il prossimo non è del gruppo
+            const a = geometria.nodi[i], b = geometria.nodi[(i + 1) % n];
+            const punti = [];
+            for (let k = 0; k <= 20; k++) {
+                const q = TrackSegmenti.valutaTratto(a, b, (geometria.tratti || [])[i] || { tipo: 'curva' }, k / 20);
+                const y = (a.y || 0) + ((b.y || 0) - (a.y || 0)) * (k / 20);
+                punti.push(new THREE.Vector3(q.x, y + 0.7, q.z));
+            }
+            percorsoGruppo.add(new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints(punti), mat));
+        }
+        scene.add(percorsoGruppo);
     }
 
     let dragging = null;
@@ -1678,6 +1730,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 disegnaRettangolo();
                 rebuild();
                 aggiornaPannelloQuota();
+                // L'evidenziazione del tratto si aggiorna sul MOVIMENTO del
+                // mouse, e dopo un rilascio il mouse sta fermo: senza questo
+                // la linea non ricompare finché non lo si muove, e sembra
+                // sparita.
+                if (lastMouseClient) {
+                    evidenzaIndice = -1;
+                    const sopra = pickMarker(lastMouseClient)
+                        ? null : presaSulNastro(worldFromEvent(lastMouseClient));
+                    evidenziaTratto(sopra ? sopra.indice : -1);
+                }
             } else {
                 rettangolo = null;
                 disegnaRettangolo();
