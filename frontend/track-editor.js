@@ -460,6 +460,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('controllaBtn').addEventListener('click', controllaLaPista);
 
+    // La mezza carreggiata del circuito: il campo globale. E' il valore che
+    // prendono i tratti che non ne dichiarano uno proprio.
+    function larghezzaNominale() {
+        return parseFloat(document.getElementById('roadHalfWidth').value) || 11;
+    }
+
     function aggiornaRiquadroTratto() {
         const sez = document.getElementById('trattoSection');
         const segno = document.getElementById('segnoTratto');
@@ -473,6 +479,8 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('trattoTipo').textContent = 'Nessun tratto scelto: clicca un nodo in scena.';
             document.getElementById('trattoMisure').textContent = '';
             document.getElementById('trattoLunghezza').value = '';
+            document.getElementById('trattoLarghezza').value = '';
+            document.getElementById('trattoLarghezzaNota').textContent = '';
             return;
         }
         const m = TrackSegmenti.misureTratto(geometria, trattoSelezionato);
@@ -480,6 +488,17 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('trattoTipo').textContent =
             `dal nodo ${trattoSelezionato} al ${(trattoSelezionato + 1) % geometria.nodi.length} · ${tipo}`;
         document.getElementById('trattoLunghezza').value = m.lunghezza.toFixed(1);
+        // Vuoto vuol dire «come la pista»: e' un'informazione diversa da «larga
+        // quanto la pista», perche' cambiando il campo globale il tratto
+        // segue invece di restare indietro.
+        const propria = geometria.tratti[trattoSelezionato].larghezza;
+        const nominale = larghezzaNominale();
+        document.getElementById('trattoLarghezza').value =
+            (typeof propria === 'number' && propria > 0) ? propria : '';
+        document.getElementById('trattoLarghezzaNota').textContent =
+            (typeof propria === 'number' && propria > 0)
+                ? `carreggiata ${(propria * 2).toFixed(1)} unita' (la pista ne ha ${(nominale * 2).toFixed(1)})`
+                : `vuoto = come la pista: ${(nominale * 2).toFixed(1)} unita'`;
         document.getElementById('trattoMisure').textContent = tipo === 'retta'
             ? 'dritto — nessun raggio'
             : `gira di ${(m.angolo * 180 / Math.PI).toFixed(0)}° · raggio minimo ${
@@ -532,7 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function rigeneraDaGeometria() {
         mainPoints = geometria.nodi.length >= 3
-            ? TrackSegmenti.cuoci(geometria, TrackSegmenti.PASSO_COTTURA)
+            ? TrackSegmenti.cuoci(geometria, TrackSegmenti.PASSO_COTTURA, larghezzaNominale())
             : [];
     }
 
@@ -1509,6 +1528,42 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!(v > 0) || !inSegmenti() || trattoSelezionato < 0) return;
         salvaStato();
         geometria = TrackSegmenti.impostaLunghezza(geometria, trattoSelezionato, v);
+        dopoModificaMain();
+        rebuild();
+        aggiornaRiquadroTratto();
+    });
+
+    // La mezza carreggiata del tratto scelto. Vuoto = «come la pista», ed e'
+    // il modo per TOGLIERE una larghezza propria: cancellare il campo rimette
+    // il tratto al seguito di quella globale.
+    document.getElementById('trattoLarghezza').addEventListener('change', (ev) => {
+        if (!inSegmenti() || trattoSelezionato < 0) return;
+        const testo = ev.target.value.trim();
+        const v = parseFloat(testo);
+        // ⚠️ Sotto le 4 unita' di mezza carreggiata non ci passa un'auto
+        // affiancata: si rifiuta invece di lasciar disegnare una pista su cui
+        // poi non si corre. Il campo torna a com'era, cosi' si vede che il
+        // valore non e' stato preso.
+        if (testo !== '' && (!(v >= 4) || !Number.isFinite(v))) {
+            aggiornaRiquadroTratto();
+            return;
+        }
+        salvaStato();
+        const tratti = geometria.tratti.slice();
+        tratti[trattoSelezionato] = Object.assign({}, tratti[trattoSelezionato]);
+        if (testo === '') delete tratti[trattoSelezionato].larghezza;
+        else tratti[trattoSelezionato].larghezza = v;
+        geometria = Object.assign({}, geometria, { tratti });
+        dopoModificaMain();
+        rebuild();
+        aggiornaRiquadroTratto();
+    });
+
+    // Cambiare la larghezza della PISTA cambia anche tutti i tratti che la
+    // seguono: senza questo, il nastro resterebbe disegnato con la vecchia
+    // finche' non si tocca un nodo.
+    document.getElementById('roadHalfWidth').addEventListener('change', () => {
+        if (!inSegmenti()) return;
         dopoModificaMain();
         rebuild();
         aggiornaRiquadroTratto();

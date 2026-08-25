@@ -143,6 +143,17 @@
     // 68°, praticamente frontale.
     const MAX_SLOPE = 1.0;
 
+    // La mezza carreggiata SOTTO UN CAMPIONE. `roadHalf` resta il valore
+    // nominale del circuito; da quando un tratto puo' essere piu' largo degli
+    // altri, la ghiaia e il muro devono partire dal bordo VERO di quel punto,
+    // altrimenti su un rettilineo allargato il cordolo cadrebbe in mezzo
+    // all'asfalto e il muro dentro la pista.
+    // Rif. «larghezza variabile», blocco D, 2026-08-25.
+    function mezzaAl(trackPts, i, roadHalf) {
+        const p = trackPts[i];
+        return (p && typeof p.halfWidth === 'number' && p.halfWidth > 0) ? p.halfWidth : roadHalf;
+    }
+
     function gravelProfile(trackPts, opts) {
         const n = trackPts.length;
         const { roadHalf, curbW = CURB_W, pitLanePts = null, pitRoadHalf = 0 } = opts;
@@ -151,7 +162,7 @@
 
         const stepLen = TrackGeometry.lapLength(trackPts) / n;
         const leadSamples = Math.max(1, Math.round(CORNER_LEAD / stepLen));
-        const base = roadHalf + curbW + BARRIER_GAP;
+        const baseAl = (i) => mezzaAl(trackPts, i, roadHalf) + curbW + BARRIER_GAP;
 
         for (const corner of TrackGeometry.findCorners(trackPts)) {
             const banda = corner.side > 0 ? out.right : out.left;
@@ -191,9 +202,10 @@
                     // già la larghezza massima ammessa, il margine è dentro la
                     // soglia. (Sottrarlo di nuovo qui lo conterebbe due volte
                     // e stringerebbe la ghiaia senza motivo.)
+                    const partenza = baseAl(i);
                     for (let d = 0; d <= larghezze[s]; d += 1) {
-                        const x = p.x + nx * (base + d) * corner.side;
-                        const z = p.z + nz * (base + d) * corner.side;
+                        const x = p.x + nx * (partenza + d) * corner.side;
+                        const z = p.z + nz * (partenza + d) * corner.side;
                         if (TrackGeometry.nearestPoint(pitLanePts, x, z).dist < pitRoadHalf + PIT_CLEARANCE) {
                             larghezze[s] = d;
                             break;
@@ -339,8 +351,8 @@
         if (!n) return out;
 
         const gravel = gravelProfile(trackPts, opts);
-        const bordoCordolo = roadHalf + curbW;
-        const storica = bordoCordolo + BARRIER_GAP;   // dov'era prima di tutto questo
+        const bordoCordoloAl = (i) => mezzaAl(trackPts, i, roadHalf) + curbW;
+        const storicaAl = (i) => bordoCordoloAl(i) + BARRIER_GAP;   // dov'era prima di tutto questo
         const stepLen = TrackGeometry.lapLength(trackPts) / n;
 
         // Prima passata: la via di fuga di BASE, cioè quella che spetta al
@@ -354,13 +366,13 @@
             const p = trackPts[i];
             let d;
             if (p.bridge) {
-                d = roadHalf + BRIDGE_MARGIN;
+                d = mezzaAl(trackPts, i, roadHalf) + BRIDGE_MARGIN;
             } else if (pitLanePts && pitLanePts.length
                        && TrackGeometry.nearestPoint(pitLanePts, p.x, p.z).dist < PIT_STRAIGHT_REACH) {
-                d = storica;
+                d = storicaAl(i);
                 zonaBox[i] = true;
             } else {
-                d = bordoCordolo + RUNOFF_MIN;
+                d = bordoCordoloAl(i) + RUNOFF_MIN;
             }
             base.left[i] = d;
             base.right[i] = d;
@@ -418,7 +430,7 @@
                 // valore che il campione ha già: la spinta può solo fermarsi,
                 // mai peggiorare la situazione di partenza.
                 const limite = Math.max(banda[i], tettoGeometrico(trackPts, i, side, BARRIER_MIN_ADVANCE));
-                banda[i] = Math.max(banda[i], Math.min(bordoCordolo + larghezza, limite));
+                banda[i] = Math.max(banda[i], Math.min(bordoCordoloAl(i) + larghezza, limite));
             }
         }
 
@@ -455,11 +467,12 @@
                 const { nx, nz } = TrackGeometry.normalAt(trackPts, i, true);
                 for (const side of [-1, 1]) {
                     const banda = side > 0 ? base.right : base.left;
-                    for (let d = 0; d <= banda[i] - bordoCordolo; d += 1) {
-                        const x = p.x + nx * (bordoCordolo + d) * side;
-                        const z = p.z + nz * (bordoCordolo + d) * side;
+                    const bordo = bordoCordoloAl(i);
+                    for (let d = 0; d <= banda[i] - bordo; d += 1) {
+                        const x = p.x + nx * (bordo + d) * side;
+                        const z = p.z + nz * (bordo + d) * side;
                         if (TrackGeometry.nearestPoint(pitLanePts, x, z).dist < pitRoadHalf + PIT_CLEARANCE) {
-                            banda[i] = Math.max(storica, bordoCordolo + d);
+                            banda[i] = Math.max(storicaAl(i), bordo + d);
                             break;
                         }
                     }
@@ -484,21 +497,31 @@
         //
         // ⚠️ I ponti restano fuori: lì la barriera è a bordo strada e sotto
         // non c'è terreno da contendere, c'è l'impalcato.
-        let piuLontana = storica;
+        let piuLontana = 0;
+        // ⚠️ Il PAVIMENTO passato a neighbourLimits e' un numero solo, ma la
+        // pista puo' avere larghezze diverse: si prende il piu' BASSO delle
+        // storiche: e' la scelta cauta, perche' fa considerare anche i vicini
+        // che stanno appena oltre il bordo del tratto piu' stretto. Su una
+        // pista a larghezza costante minimo e massimo coincidono e non cambia
+        // niente.
+        let storicaMinima = Infinity;
         for (let i = 0; i < n; i++) {
             piuLontana = Math.max(piuLontana, base.left[i], base.right[i]);
+            storicaMinima = Math.min(storicaMinima, storicaAl(i));
         }
+        if (!Number.isFinite(storicaMinima)) storicaMinima = roadHalf + curbW + BARRIER_GAP;
+        piuLontana = Math.max(piuLontana, storicaMinima);
         // Il tetto passato a neighbourLimits è anche il valore che restituisce
         // dove non c'è nessun vicino: va tenuto un margine sopra la barriera
         // più lontana del giro, altrimenti la sottrazione qui sotto
         // arretrerebbe di due unità l'intero tracciato invece dei soli punti
         // contesi.
-        const territorio = TrackGeometry.neighbourLimits(trackPts, storica,
+        const territorio = TrackGeometry.neighbourLimits(trackPts, storicaMinima,
             piuLontana + BARRIER_NEIGHBOUR_MARGIN);
         for (let i = 0; i < n; i++) {
             if (trackPts[i].bridge) continue;
-            base.right[i] = Math.max(storica, Math.min(base.right[i], territorio.pos[i] - BARRIER_NEIGHBOUR_MARGIN));
-            base.left[i] = Math.max(storica, Math.min(base.left[i], territorio.neg[i] - BARRIER_NEIGHBOUR_MARGIN));
+            base.right[i] = Math.max(storicaAl(i), Math.min(base.right[i], territorio.pos[i] - BARRIER_NEIGHBOUR_MARGIN));
+            base.left[i] = Math.max(storicaAl(i), Math.min(base.left[i], territorio.neg[i] - BARRIER_NEIGHBOUR_MARGIN));
         }
 
         // Quarta passata e tre quarti: niente cuspidi sul lato interno.
@@ -552,11 +575,13 @@
                 minimo = Math.min(minimo, tettoGeometrico(trackPts, i, dentro, BARRIER_MIN_ADVANCE));
             }
             if (!isFinite(minimo)) continue;
-            const limite = Math.max(storica, minimo);
             const banda = dentro > 0 ? base.right : base.left;
             for (let s = 0; s <= arco; s++) {
                 const i = (corner.startIdx + s) % n;
                 if (trackPts[i].bridge) continue;
+                // Il pavimento e' quello DEL CAMPIONE: su un tratto allargato
+                // la barriera non puo' scendere sotto il bordo del suo cordolo.
+                const limite = Math.max(storicaAl(i), minimo);
                 if (banda[i] > limite) banda[i] = limite;
             }
         }
@@ -573,7 +598,7 @@
                 const tetto = tettoGeometrico(trackPts, i, side, BARRIER_MIN_ADVANCE);
                 if (!isFinite(tetto)) continue;   // lato esterno: si allunga, nessun rischio
                 const banda = side > 0 ? base.right : base.left;
-                const limite = Math.max(storica, tetto);
+                const limite = Math.max(storicaAl(i), tetto);
                 if (banda[i] > limite) banda[i] = limite;
             }
         }
@@ -602,8 +627,8 @@
         // altrimenti disegno e muro possono contraddirsi.
         out.gravel = { left: new Float64Array(n), right: new Float64Array(n) };
         for (let i = 0; i < n; i++) {
-            out.gravel.left[i] = Math.max(0, Math.min(gravel.left[i], out.left[i] - bordoCordolo));
-            out.gravel.right[i] = Math.max(0, Math.min(gravel.right[i], out.right[i] - bordoCordolo));
+            out.gravel.left[i] = Math.max(0, Math.min(gravel.left[i], out.left[i] - bordoCordoloAl(i)));
+            out.gravel.right[i] = Math.max(0, Math.min(gravel.right[i], out.right[i] - bordoCordoloAl(i)));
         }
         return out;
     }

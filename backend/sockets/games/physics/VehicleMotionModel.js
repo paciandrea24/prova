@@ -35,10 +35,22 @@ function nearestTrackDist(track, x, z) {
 // serve un'esenzione qui: la zona di trigger d'ingresso e' comunque abbastanza
 // vicina al bordo pista normale da non scattare mai.)
 function applyOffTrackDrag(p, track) {
-    const dist = nearestTrackDist(track, p.x, p.z);
-    const offTrack = dist > track.roadHalf + 2;
+    // ⚠️ UNA sola ricerca del campione piu' vicino, non due: gira per ogni
+    // auto a ogni tick (50/s) ed e' O(1000) sui punti della pista. Serve sia
+    // la distanza sia l'indice — la distanza per sapere se si e' fuori,
+    // l'indice per sapere quanto e' larga la pista PROPRIO LI'.
+    const vicino = TrackGeometry.nearestPoint(track.points, p.x, p.z);
+    const dist = vicino.dist;
+    // La mezza carreggiata DI QUI, non quella nominale: da quando un tratto
+    // puo' essere piu' largo degli altri, `track.roadHalf` descrive la pista
+    // media e non quella sotto le ruote. Il caricatore garantisce il campo su
+    // ogni campione, quindi qui non serve un ripiego.
+    const sotto = track.points[vicino.index];
+    const mezza = (sotto && typeof sotto.halfWidth === 'number')
+        ? sotto.halfWidth : track.roadHalf;
+    const offTrack = dist > mezza + 2;
     if (!offTrack) return { offTrack: false, profondita: 0 };
-    const k = Math.min(1, (dist - track.roadHalf - 2) / 8);   // 0..1 in funzione della profondità
+    const k = Math.min(1, (dist - mezza - 2) / 8);   // 0..1 in funzione della profondità
     const drag = 0.04 + k * 0.08;
     p.speed *= (1 - drag);
     p.vx   *= (1 - drag);

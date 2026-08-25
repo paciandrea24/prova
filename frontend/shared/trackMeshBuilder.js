@@ -45,6 +45,19 @@
         return out;
     }
 
+    // La mezza carreggiata sotto un campione: quella del punto se ce l'ha,
+    // altrimenti la nominale. Un posto solo per tutto il disegno — se ogni
+    // funzione se la ricavasse per conto suo, un giorno l'asfalto e il cordolo
+    // userebbero due numeri diversi e il cordolo finirebbe dentro la pista.
+    function mezzaAl(pts, i, roadHalf) {
+        const p = pts[i];
+        return (p && typeof p.halfWidth === 'number' && p.halfWidth > 0) ? p.halfWidth : roadHalf;
+    }
+
+    // `halfW` e' la mezza carreggiata NOMINALE. Dove un punto porta la sua
+    // (`p.halfWidth`, messa dai tratti dell'editor e garantita dal caricatore)
+    // vince quella: e' cosi' che un rettilineo puo' essere piu' largo di una
+    // curva senza che nessun altro modulo debba saperlo.
     function buildRibbon(container, pts, halfW, material) {
         const n = pts.length;
         const pos = new Float32Array(n * 2 * 3);
@@ -55,9 +68,10 @@
             const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
             const p = pts[i];
             const y = (p.y || 0) + 0.02;
+            const w = (typeof p.halfWidth === 'number' && p.halfWidth > 0) ? p.halfWidth : halfW;
             const b = i * 6;
-            pos[b]     = p.x + nx * halfW; pos[b + 1] = y; pos[b + 2] = p.z + nz * halfW;
-            pos[b + 3] = p.x - nx * halfW; pos[b + 4] = y; pos[b + 5] = p.z - nz * halfW;
+            pos[b]     = p.x + nx * w; pos[b + 1] = y; pos[b + 2] = p.z + nz * w;
+            pos[b + 3] = p.x - nx * w; pos[b + 4] = y; pos[b + 5] = p.z - nz * w;
 
             const u = i / (n - 1);
             const ub = i * 4;
@@ -148,7 +162,8 @@
                 const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
                 const p = pts[i];
                 const y = (p.y || 0) + 0.04;
-                const inner = roadHalf * side, outer = (roadHalf + curbW) * side;
+                const mezza = mezzaAl(pts, i, roadHalf);
+                const inner = mezza * side, outer = (mezza + curbW) * side;
 
                 if (mergePoints) {
                     const mx = p.x + nx * outer, mz = p.z + nz * outer;
@@ -269,8 +284,9 @@
                 const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
                 const p = pts[i];
                 const y = (p.y || 0) + 0.03;
-                const inner = (roadHalf + curbW) * side;
-                const outer = (roadHalf + curbW + banda[i]) * side;
+                const mezza = mezzaAl(pts, i, roadHalf);
+                const inner = (mezza + curbW) * side;
+                const outer = (mezza + curbW + banda[i]) * side;
                 const versoErba = Math.max(0, 1 - banda[i] / PIENA);
 
                 const ix = p.x + nx * inner, iz = p.z + nz * inner;
@@ -431,7 +447,11 @@
         const { nx, nz } = TrackGeometry.normalAt(pts, startIndex, true);
 
         const STRIPES = 10;
-        const stripeW = (roadHalf * 2) / STRIPES;
+        // La scacchiera prende TUTTA la carreggiata del suo punto: su un
+        // traguardo posto in un tratto allargato, la nominale lascerebbe due
+        // strisce d'asfalto scoperte ai lati.
+        const mezza = mezzaAl(pts, startIndex, roadHalf);
+        const stripeW = (mezza * 2) / STRIPES;
         const dummy = new THREE.Object3D();
         const geoS  = new THREE.BoxGeometry(stripeW - 0.1, 0.02, 2.5);
         const matB  = new THREE.MeshStandardMaterial({ color: 0xffffff });
@@ -442,7 +462,7 @@
         let iB = 0, iK = 0;
 
         for (let s = 0; s < STRIPES; s++) {
-            const off = -roadHalf + stripeW * s + stripeW / 2;
+            const off = -mezza + stripeW * s + stripeW / 2;
             dummy.position.set(p0.x + nx * off, (p0.y || 0) + 0.06, p0.z + nz * off);
             dummy.rotation.y = angle;
             dummy.updateMatrix();

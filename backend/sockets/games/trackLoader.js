@@ -132,6 +132,23 @@ function normalizzaAbrasivita(valore) {
 
 function buildTrack(id, raw) {
     const points = TrackGeometry.sampleLoop(raw.controlPoints, SAMPLES);
+
+    // LA LARGHEZZA LOCALE, GARANTITA SU OGNI CAMPIONE.
+    //
+    // Qui, e in nessun altro posto. Da valle in poi `p.halfWidth` c'e' sempre:
+    // la fisica, i bot, la scenografia e il disegno non devono mai chiedersi
+    // «e se mancasse?» ne' inventarsi un ripiego per conto loro. Un valore di
+    // ripiego sparso e' esattamente cio' che ha fatto giudicare tredici asset
+    // come cubi 6x6x6 con tutti i test verdi.
+    //
+    // Le piste disegnate prima della larghezza variabile non hanno il campo
+    // sui loro punti di controllo: prendono la nominale ovunque, e si
+    // comportano esattamente come prima.
+    for (const p of points) {
+        if (typeof p.halfWidth !== 'number' || !(p.halfWidth > 0)) {
+            p.halfWidth = raw.roadHalfWidth;
+        }
+    }
     const lapLength = TrackGeometry.lapLength(points);
     const totalLaps = TrackGeometry.lapsForDistance(lapLength, raw.targetKm);
 
