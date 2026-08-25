@@ -581,13 +581,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // rotazione attorno all'asse locale dell'auto DOPO l'imbardata (vedi
     // rotation.order = 'YXZ' in animate()) — così il muso si alza in salita e
     // si abbassa in discesa indipendentemente dalla direzione di marcia.
+    //
+    // È la STESSA misura che la fisica del server usa per la gravità lungo il
+    // nastro (TrackGeometry.pendenzaAt), NEGATA perché lì positiva vuol dire
+    // "si sale" mentre qui una rotazione X positiva abbassa il muso. Qui c'era
+    // una copia della formula: due copie della stessa misura finiscono per
+    // divergere, e quel giorno non si sa a chi credere.
     function trackPitchAt(idx) {
-        const n = trackPts.length;
-        const prev = trackPts[(idx - 1 + n) % n];
-        const next = trackPts[(idx + 1) % n];
-        const dy = (next.y || 0) - (prev.y || 0);
-        const horiz = Math.hypot(next.x - prev.x, next.z - prev.z) || 1e-6;
-        return -Math.atan2(dy, horiz);
+        return -TrackGeometry.pendenzaAt(trackPts, idx, true);
     }
 
 
