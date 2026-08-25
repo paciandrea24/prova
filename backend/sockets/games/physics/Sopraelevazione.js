@@ -19,8 +19,25 @@
 const ROLLIO_MAX = 45 * Math.PI / 180;
 
 // Quanto in più tiene l'auto sulla sopraelevazione più ripida ammessa (45°).
-// Tarato in pista: vedi il piano della fase 1b-1.
-const BANKING_GUADAGNO_MAX = 0.35;
+//
+// Tarato col banco `node backend/tools/f1-banking-taratura.js`, che misura la
+// velocità massima in curva a parità di raggio — non il tempo sul giro, che a
+// queste differenze è tutto rumore. Con 0.40:
+//
+//        raggio        18°         35°         45°
+//            60     +14%        +25%        +30%
+//            80     +13%        +23%        +28%
+//           100     +12%     in pieno    in pieno
+//
+// I confini sono stati toccati tutti e due, non stimati: a 0.20 il guadagno a
+// 18° scende al 7% (14 km/h su 202: sotto la soglia in cui si sente), a 0.80
+// sale al 27% e una curva da 80 metri a 35° si prende in pieno, cioè smette di
+// essere una curva. 0.40 sta dentro i due, verso il generoso — una
+// sopraelevazione deve farsi sentire.
+//
+// Sopra i ~120 di raggio la curva si passava già in pieno da piana: lì il
+// banking non aggiunge niente, ed è giusto così.
+const BANKING_GUADAGNO_MAX = 0.40;
 
 // Un rollio assente o malformato vale piano, mai NaN: un NaN qui si
 // propagherebbe alla traiettoria senza un errore che lo dica.

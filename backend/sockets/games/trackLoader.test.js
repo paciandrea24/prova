@@ -506,13 +506,29 @@ test('ogni campione ha un rollio finito e non negativo, su tutte le piste', () =
     }
 });
 
-test('nessuna pista di oggi risulta sopraelevata', () => {
+test('una pista risulta sopraelevata solo se la sua geometria lo dichiara', () => {
     // Se una lo diventasse per sbaglio — un campo copiato, un default finito a
     // 1 — questo test lo direbbe subito, invece di lasciarlo scoprire in gara.
+    //
+    // ⚠️ Non si elencano le piste piane: l'elenco andrebbe aggiornato a ogni
+    // pista nuova, e il giorno che qualcuno se ne dimentica il test diventa
+    // muto. Si confronta invece il DATO col suo unico posto legittimo di
+    // nascita: `rollioGradi` sui tratti della geometria. Una pista che non lo
+    // dichiara non puo' avere campioni sopraelevati; una che lo dichiara non
+    // puo' superarlo.
     for (const t of listTracks()) {
         const id = t.id || t;
         const track = loadTrack(id);
-        assert.equal(Math.max(...track.points.map(p => p.rollio)), 0, `${id} risulta sopraelevata`);
+        const massimoCampioni = Math.max(...track.points.map(p => p.rollio));
+        const grezza = JSON.parse(fs.readFileSync(path.join(TRACKS_DIR, `${id}.json`), 'utf8'));
+        const tratti = (grezza.geometria && grezza.geometria.tratti) || [];
+        const dichiarato = Math.max(0, ...tratti.map(s => (s && s.rollioGradi) || 0)) * Math.PI / 180;
+        if (!dichiarato) {
+            assert.equal(massimoCampioni, 0, `${id} risulta sopraelevata senza dichiararlo`);
+        } else {
+            assert.ok(massimoCampioni <= dichiarato + 1e-9,
+                `${id}: campioni fino a ${massimoCampioni} rad, dichiarati ${dichiarato}`);
+        }
     }
 });
 
