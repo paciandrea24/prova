@@ -752,6 +752,41 @@ test('il bordo che sale e\' quello esterno, lontano dal centro della curva', () 
     }
 });
 
+test('il terrapieno del lato alto parte dalla quota del bordo alzato', () => {
+    // Senza, fra l'asfalto inclinato e la terra resta una fessura e da sotto si
+    // vede il vuoto. E la mesh deve combaciare con TrackGeometry.terrainHeightAt,
+    // che e' la quota su cui vengono posati gli oggetti scenici: due superfici
+    // diverse vorrebbero dire tribune che galleggiano.
+    const PLATEAU = 14, OUTER = 60;
+    const piano = contenitore(), banked = contenitore();
+    TrackMeshBuilder.buildEmbankment(piano, cerchio(), 11, PLATEAU, OUTER);
+    TrackMeshBuilder.buildEmbankment(banked, cerchioBanked(18), 11, PLATEAU, OUTER);
+    const maxY = (c) => {
+        let m = -Infinity;
+        for (const mesh of c.children) {
+            const pos = mesh.geometry.attributes.position.array;
+            for (let v = 1; v < pos.length; v += 3) m = Math.max(m, pos[v]);
+        }
+        return m;
+    };
+    assert.ok(maxY(banked) > maxY(piano) + 1,
+        `il cuneo non si e' alzato: ${maxY(banked).toFixed(2)} contro ${maxY(piano).toFixed(2)}`);
+});
+
+test('senza sopraelevazione il terrapieno e\' identico a prima', () => {
+    const PLATEAU = 14, OUTER = 60;
+    const a = contenitore(), b = contenitore();
+    TrackMeshBuilder.buildEmbankment(a, cerchio(), 11, PLATEAU, OUTER);
+    TrackMeshBuilder.buildEmbankment(b, cerchioBanked(0), 11, PLATEAU, OUTER);
+    assert.equal(a.children.length, b.children.length);
+    for (let m = 0; m < a.children.length; m++) {
+        const pa = a.children[m].geometry.attributes.position.array;
+        const pb = b.children[m].geometry.attributes.position.array;
+        assert.equal(pa.length, pb.length);
+        for (let v = 0; v < pa.length; v++) assert.strictEqual(pa[v], pb[v], `vertice ${v} diverso`);
+    }
+});
+
 test('i cordoli seguono il nastro inclinato', () => {
     // Se l'asfalto si alza e il cordolo no, il cordolo sparisce dentro la pista
     // o resta appeso: sono lo stesso bordo, devono stare alla stessa quota.

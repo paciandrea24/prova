@@ -968,10 +968,80 @@ test('alzataLaterale prosegue oltre il bordo con la stessa pendenza', () => {
         `il cordolo sale di ${(oltre - alBordo).toFixed(4)} invece di ${(Math.sin(rollio) * curbW).toFixed(4)}`);
 });
 
+test('alzataLaterale non scende MAI sotto zero, oltre il bordo basso', () => {
+    // La sopraelevazione si costruisce alzando l'esterno, non scavando
+    // l'interno: prolungare il piano da quella parte seppellirebbe il cordolo
+    // interno e vorrebbe una trincea nel terreno.
+    const rollio = 30 * Math.PI / 180;
+    const pts = cerchioConRollio(200, 120, rollio);
+    const i = 30, mezza = 11;
+    const { latoAlto } = TrackGeometry.rialzoBordi(pts, i, mezza);
+    for (const oltre of [mezza, mezza + 2.8, mezza + 20, mezza + 100]) {
+        assert.equal(TrackGeometry.alzataLaterale(pts, i, mezza, -latoAlto * oltre), 0,
+            `a ${oltre} unita' oltre il bordo basso l'alzata deve restare zero`);
+    }
+});
+
 test('alzataLaterale e\' zero ovunque su una pista piana', () => {
     const pts = cerchioConRollio(200, 120, 0);
     for (const off of [-20, -11, 0, 11, 20]) {
         assert.equal(TrackGeometry.alzataLaterale(pts, 30, 11, off), 0);
+    }
+});
+
+// --- il cuneo di terra sotto una curva sopraelevata ---
+
+test('terrainHeightAt: sul lato alto il terreno parte dalla quota del bordo alzato', () => {
+    // Senza, fra l'asfalto inclinato e la terra resta una fessura aperta — ed è
+    // lo stesso difetto del prato che galleggiava sopra le discese: la quota
+    // del terreno deve conoscere il rilievo, o gli oggetti ci restano appesi.
+    const rollio = 18 * Math.PI / 180;
+    const pts = cerchioConRollio(200, 120, rollio);
+    const i = 30, mezza = 11, PLATEAU = 14, OUTER = 60;
+    for (const p of pts) p.halfWidth = mezza;
+    const { latoAlto } = TrackGeometry.rialzoBordi(pts, i, mezza);
+    const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
+    // Un punto appena fuori dal cordolo, sul lato alto.
+    const x = pts[i].x + nx * latoAlto * PLATEAU;
+    const z = pts[i].z + nz * latoAlto * PLATEAU;
+    const y = TrackGeometry.terrainHeightAt(pts, x, z, PLATEAU, OUTER);
+    const atteso = TrackGeometry.alzataLaterale(pts, i, mezza, latoAlto * PLATEAU);
+    assert.ok(Math.abs(y - atteso) < 0.3, `terreno a ${y.toFixed(2)} invece di ${atteso.toFixed(2)}`);
+    assert.ok(y > 2, 'il cuneo deve alzarsi davvero, non restare a filo del prato');
+});
+
+test('terrainHeightAt: sul lato basso il terreno resta dov\'era', () => {
+    const rollio = 18 * Math.PI / 180;
+    const pts = cerchioConRollio(200, 120, rollio);
+    const i = 30, mezza = 11, PLATEAU = 14, OUTER = 60;
+    for (const p of pts) p.halfWidth = mezza;
+    const { latoAlto } = TrackGeometry.rialzoBordi(pts, i, mezza);
+    const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
+    const x = pts[i].x - nx * latoAlto * PLATEAU;
+    const z = pts[i].z - nz * latoAlto * PLATEAU;
+    assert.ok(Math.abs(TrackGeometry.terrainHeightAt(pts, x, z, PLATEAU, OUTER)) < 1e-9,
+        'il lato interno di una curva sopraelevata resta alla quota che aveva');
+});
+
+test('terrainHeightAt: lontano dalla pista il cuneo e\' finito', () => {
+    const pts = cerchioConRollio(200, 120, 18 * Math.PI / 180);
+    for (const p of pts) p.halfWidth = 11;
+    const { nx, nz } = TrackGeometry.normalAt(pts, 30, true);
+    const x = pts[30].x + nx * 200, z = pts[30].z + nz * 200;
+    assert.equal(TrackGeometry.terrainHeightAt(pts, x, z, 14, 60), 0);
+});
+
+test('terrainHeightAt: senza sopraelevazione i valori sono quelli di prima', () => {
+    // Regressione: le piste piane non devono cambiare di un millimetro.
+    const piano = cerchioConRollio(200, 120, 0);
+    for (const p of piano) { p.halfWidth = 11; p.y = 3; }
+    const { nx, nz } = TrackGeometry.normalAt(piano, 30, true);
+    for (const off of [5, 14, 30, 60, 120]) {
+        const x = piano[30].x + nx * off, z = piano[30].z + nz * off;
+        const atteso = off <= 14 ? 3 : (off >= 60 ? 0 : null);
+        const y = TrackGeometry.terrainHeightAt(piano, x, z, 14, 60);
+        if (atteso !== null) assert.ok(Math.abs(y - atteso) < 0.3, `a ${off}: ${y} invece di ${atteso}`);
+        else assert.ok(y > 0 && y < 3, `a ${off}: ${y} fuori dalla rampa`);
     }
 });
 

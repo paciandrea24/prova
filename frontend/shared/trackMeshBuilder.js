@@ -971,7 +971,19 @@
                     const i = indices[k];
                     const { nx, nz } = TrackGeometry.normalAt(trackPts, i, run.closed);
                     const p = trackPts[i];
-                    const baseY = p.y || 0;
+                    // IL CUNEO SOTTO UNA CURVA SOPRAELEVATA. Il terrapieno del
+                    // lato alto non parte dalla quota dell'asse ma da quella del
+                    // bordo alzato: è la terra che regge la parabolica. Senza,
+                    // fra l'asfalto inclinato e il terreno resterebbe una
+                    // fessura, e da sotto si vedrebbe il vuoto.
+                    //
+                    // L'alzata si congela al pianoro (`plateauEnd`), esattamente
+                    // come fa TrackGeometry.terrainHeightAt: la mesh che si vede
+                    // e la quota che gli oggetti scenici interrogano devono
+                    // essere la stessa superficie, o le tribune galleggiano.
+                    const mezzaQui = mezzaAl(trackPts, i, plateauEnd);
+                    const baseY = (p.y || 0)
+                        + TrackGeometry.alzataLaterale(trackPts, i, mezzaQui, side * plateauEnd);
                     const limite = (side > 0 ? limiti.pos : limiti.neg)[i];
                     // Quota a cui il terreno riprende oltre il confine: quella
                     // del tratto vicino, degradata come degrada la sua, così

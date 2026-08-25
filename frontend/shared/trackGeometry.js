@@ -188,7 +188,29 @@
     // posizionare oggetti scenici sia per la quota visiva dell'auto fuori
     // pista sia per costruire la mesh del terrapieno.
     function terrainHeightAt(groundPts, x, z, embankStart, embankOuter) {
-        const { y, dist } = nearestPoint(groundPts, x, z);
+        const vicino = nearestPoint(groundPts, x, z);
+        const { dist, index } = vicino;
+        // IL CUNEO SOTTO UNA CURVA SOPRAELEVATA. Il terreno vicino alla pista
+        // non sta alla quota dell'ASSE ma a quella del BORDO da cui si esce: sul
+        // lato alto di una parabolica è parecchi metri più su. Senza questo,
+        // fra l'asfalto inclinato e la terra resterebbe una fessura aperta, e
+        // gli oggetti scenici galleggerebbero — lo stesso difetto del prato
+        // sopra le discese.
+        //
+        // L'alzata si congela a `embankStart`: da lì in fuori comincia la
+        // discesa verso il prato, e il cuneo non deve continuare a salire
+        // all'infinito. Su una pista piana `alzataLaterale` vale zero e questo
+        // blocco non cambia un solo valore.
+        let y = vicino.y;
+        const p = groundPts[index];
+        if (p && p.rollio > 0) {
+            const mezza = (typeof p.halfWidth === 'number' && p.halfWidth > 0) ? p.halfWidth : embankStart;
+            const { nx, nz } = normalAt(groundPts, index, true);
+            // Da che parte si è usciti, e quanto lontano — fermandosi al piede
+            // del cuneo.
+            const lato = ((x - p.x) * nx + (z - p.z) * nz) >= 0 ? 1 : -1;
+            y += alzataLaterale(groundPts, index, mezza, lato * Math.min(dist, embankStart));
+        }
         if (dist <= embankStart) return y;
         if (dist >= embankOuter) return 0;
         const t = (dist - embankStart) / (embankOuter - embankStart);
@@ -343,10 +365,15 @@
     //
     // Un posto solo per tutti: se il cordolo si calcolasse la sua inclinazione,
     // un giorno resterebbe appeso sopra l'asfalto o ci sprofonderebbe dentro.
+    // ⚠️ Mai negativa. Il piano inclinato, prolungato oltre il bordo BASSO,
+    // scenderebbe sotto la quota del punto: il cordolo interno finirebbe
+    // sepolto e il terreno andrebbe scavato. La sopraelevazione si costruisce
+    // ALZANDO l'esterno (decisione D1), non scavando l'interno, quindi da
+    // quella parte l'alzata si ferma a zero.
     function alzataLaterale(points, i, mezza, offset) {
         const { dyAlto, latoAlto } = rialzoBordi(points, i, mezza);
         if (!latoAlto || !(mezza > 0)) return 0;
-        return (offset * latoAlto + mezza) * (dyAlto / (2 * mezza));
+        return Math.max(0, (offset * latoAlto + mezza) * (dyAlto / (2 * mezza)));
     }
 
     // Direzione in cui deve guardare un oggetto posato su un nastro parallelo
