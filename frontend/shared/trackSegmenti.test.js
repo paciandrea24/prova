@@ -486,6 +486,71 @@ test('una larghezza non valida non passa: si ricade sulla nominale', () => {
     }
 });
 
+// ---- sopraelevazione per tratto (fase 1b-1: banking) ----
+//
+// Stessa strada della larghezza: il campo nasce sul TRATTO, viaggia sul PUNTO,
+// e dice solo QUANTO ci si alza. Quale bordo salga lo decide la curva, molto
+// piu' a valle (TrackGeometry.rialzoBordi), perche' e' una proprieta' della
+// geometria e non dell'intenzione dell'autore.
+test('una pista senza sopraelevazioni non guadagna il campo', () => {
+    const g = anelloDiProva();
+    for (const p of TS.cuoci(g, TS.PASSO_COTTURA, 11)) {
+        assert.equal(p.rollio, undefined);
+    }
+});
+
+test('il rollio di un tratto arriva sui suoi punti, in radianti', () => {
+    const g = anelloDiProva();
+    g.tratti[2] = { tipo: 'curva', rollioGradi: 18 };
+    const punti = TS.cuoci(g, TS.PASSO_COTTURA, 11);
+    const atteso = 18 * Math.PI / 180;
+    const conRollio = punti.filter(p => p.rollio);
+    assert.ok(conRollio.length > 0, 'il tratto sopraelevato non ha lasciato traccia');
+    for (const p of conRollio) assert.ok(Math.abs(p.rollio - atteso) < 1e-12);
+    // Gli altri tratti restano piani, col campo esplicito a zero: un campo
+    // assente accanto a uno pieno farebbe interpolare l'evalSegment su una
+    // sola sponda, e il raccordo direbbe una cosa inventata.
+    assert.ok(punti.some(p => p.rollio === 0), 'i tratti piani devono avere rollio 0');
+});
+
+test('il rollio non supera ROLLIO_MAX', () => {
+    const g = anelloDiProva();
+    g.tratti[1] = { tipo: 'curva', rollioGradi: 80 };
+    const punti = TS.cuoci(g, TS.PASSO_COTTURA, 11);
+    const max = Math.max(...punti.map(p => p.rollio || 0));
+    assert.ok(max <= TS.ROLLIO_MAX + 1e-12, `${max} oltre il massimo ${TS.ROLLIO_MAX}`);
+    assert.ok(Math.abs(max - TS.ROLLIO_MAX) < 1e-12, 'ottanta gradi devono saturare al massimo');
+});
+
+test('una sopraelevazione non valida vale piano, mai NaN', () => {
+    // Se nessun tratto e' sopraelevato il campo non compare affatto (la pista
+    // resta quella di prima), quindi il valore buono e' `undefined` oppure 0 —
+    // ma mai NaN, che si propagherebbe fino alla mesh e alla tenuta in curva.
+    const g = anelloDiProva();
+    for (const cattiva of [-5, NaN, null, 'venti', Infinity]) {
+        g.tratti[1] = { tipo: 'curva', rollioGradi: cattiva };
+        const punti = TS.cuoci(g, TS.PASSO_COTTURA, 11);
+        assert.ok(punti.every(p => p.rollio === undefined || p.rollio === 0),
+            `sopraelevazione ${cattiva} non doveva passare`);
+    }
+});
+
+test('un valore assurdo accanto a uno buono vale zero, non contagia il vicino', () => {
+    // Qui il campo c'e' per forza (un tratto e' davvero sopraelevato): il
+    // tratto malformato deve valere ZERO, e soprattutto non deve prendersi il
+    // rollio del vicino ne' diventare NaN.
+    const g = anelloDiProva();
+    g.tratti[2] = { tipo: 'curva', rollioGradi: 18 };
+    for (const cattiva of [-5, NaN, null, 'venti', Infinity]) {
+        g.tratti[1] = { tipo: 'curva', rollioGradi: cattiva };
+        const punti = TS.cuoci(g, TS.PASSO_COTTURA, 11);
+        assert.ok(punti.every(p => Number.isFinite(p.rollio)), `${cattiva}: rollio non finito`);
+        const valori = [...new Set(punti.map(p => p.rollio))].sort((a, b) => a - b);
+        assert.deepEqual(valori, [0, 18 * Math.PI / 180],
+            `${cattiva}: attesi solo zero e il tratto sopraelevato`);
+    }
+});
+
 // ---- la quota lungo un tratto ----
 //
 // La linea che l'editor disegna sopra l'asfalto deve stare alla quota

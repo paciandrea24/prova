@@ -28,6 +28,24 @@
     // il GIOCO vede coincide con quella disegnata»).
     const PASSO_COTTURA = 5;
 
+    // Sopraelevazione massima. Oltre i 45 gradi il cuneo di terra sotto la
+    // pista diventa una parete e la proiezione sul piano si stringe troppo.
+    // Prende Zandvoort (18 gradi) e la Monza vecchia (~38).
+    const ROLLIO_MAX = 45 * Math.PI / 180;
+
+    // Quanto e' sopraelevato un tratto, in radianti e sempre >= 0. Dice solo
+    // QUANTO: quale bordo si alzi lo decide la curva molto piu' a valle
+    // (TrackGeometry.rialzoBordi), perche' e' una proprieta' della geometria e
+    // non dell'intenzione di chi disegna.
+    //
+    // Un valore assurdo (negativo, NaN, testo) vale piano: un NaN qui si
+    // propagherebbe in silenzio fino alla mesh e alla tenuta in curva.
+    function rollioDiTratto(tratto) {
+        const gradi = tratto && tratto.rollioGradi;
+        if (typeof gradi !== 'number' || !Number.isFinite(gradi) || gradi <= 0) return 0;
+        return Math.min(ROLLIO_MAX, gradi * Math.PI / 180);
+    }
+
     // Versore della direzione di un nodo. Convenzione del progetto:
     // dir = atan2(dx, dz), quindi dx = sin(dir) e dz = cos(dir).
     function versore(dir) {
@@ -122,6 +140,15 @@
         const tratti = geometria.tratti || [];
         const step = passo || PASSO_COTTURA;
         const conLarghezza = typeof larghezzaNominale === 'number' && larghezzaNominale > 0;
+        // Il campo `rollio` compare solo se ALMENO UN tratto e' sopraelevato —
+        // come la larghezza, che compare solo se le si passa la nominale. Su
+        // una pista tutta piana i punti restano identici a prima, campo per
+        // campo, e non c'e' niente da ricuocere.
+        //
+        // Dove compare, compare OVUNQUE (zero sui tratti piani): se un punto
+        // avesse il campo e il suo vicino no, il raccordo di evalSegment
+        // interpolerebbe su una sola sponda e direbbe una cosa inventata.
+        const conRollio = tratti.some(t => rollioDiTratto(t) > 0);
         const out = [];
         for (let i = 0; i < nodi.length; i++) {
             const a = nodi[i], b = nodi[(i + 1) % nodi.length];
@@ -131,8 +158,10 @@
                 ? (typeof tratto.larghezza === 'number' && tratto.larghezza > 0
                     ? tratto.larghezza : larghezzaNominale)
                 : null;
+            const rollio = conRollio ? rollioDiTratto(tratto) : null;
             for (const p of punti) {
                 if (w !== null) p.halfWidth = w;
+                if (rollio !== null) p.rollio = rollio;
                 out.push(p);
             }
         }
@@ -369,6 +398,7 @@
         // linea di evidenziazione usava la quota del primo nodo e su un tratto
         // in salita finiva sotto l'asfalto (playtest 2026-08-25).
         cuoci, campionaTratto, valutaTratto, versore, PASSO_COTTURA,
+        ROLLIO_MAX, rollioDiTratto,
         misureTratto, raddrizza, impostaLunghezza, direzioneAutomatica, riallinea, inserisci,
         trattoVicinoA, spostaTratto,
     };

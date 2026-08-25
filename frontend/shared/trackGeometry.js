@@ -66,6 +66,16 @@
             out.halfWidth = w1 + (w2 - w1) * ue;
         } else if (typeof w1 === 'number') { out.halfWidth = w1; }
         else if (typeof w2 === 'number') { out.halfWidth = w2; }
+        // La SOPRAELEVAZIONE viaggia sul punto e si raccorda con la stessa
+        // smoothstep: una curva banked che iniziasse di colpo sarebbe uno
+        // scalino da saltare, non una curva da prendere. Vale la stessa regola
+        // della larghezza — il campo si mette solo se c'è, e a riempirlo su
+        // ogni campione è UN posto solo, il caricatore di pista.
+        const r1 = p1.rollio, r2 = p2.rollio;
+        if (typeof r1 === 'number' && typeof r2 === 'number') {
+            out.rollio = r1 + (r2 - r1) * ue;
+        } else if (typeof r1 === 'number') { out.rollio = r1; }
+        else if (typeof r2 === 'number') { out.rollio = r2; }
         return out;
     }
 
