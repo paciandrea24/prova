@@ -485,3 +485,28 @@ test('una larghezza non valida non passa: si ricade sulla nominale', () => {
             `larghezza ${cattiva} non doveva passare`);
     }
 });
+
+// ---- la quota lungo un tratto ----
+//
+// La linea che l'editor disegna sopra l'asfalto deve stare alla quota
+// dell'asfalto. La prima versione usava la quota del PRIMO nodo per tutta la
+// linea, e su un tratto in salita finiva sotto la pista - segnalato al
+// playtest del 2026-08-25. Il punto e' che la quota si interpola sulla
+// LUNGHEZZA D'ARCO, e quella formula deve stare in un posto solo.
+test('campionaTratto porta la quota, interpolata lungo il tratto', () => {
+    const a = { x: 0, z: 0, y: 0, dir: 0 };
+    const b = { x: 0, z: 200, y: 10, dir: 0 };
+    const punti = TS.campionaTratto(a, b, { tipo: 'retta' }, 5);
+    assert.ok(punti.length > 10, 'troppo pochi campioni per giudicare');
+    assert.ok(Math.abs(punti[0].y - 0) < 1e-6, 'il primo campione parte dalla quota di a');
+    // Sale, e non a scatti: ogni campione non e' piu' basso del precedente.
+    for (let i = 1; i < punti.length; i++) {
+        assert.ok(punti[i].y >= punti[i - 1].y - 1e-9,
+            `il campione ${i} scende: ${punti[i - 1].y} -> ${punti[i].y}`);
+    }
+    // A meta' del rettilineo la quota e' a meta' del dislivello.
+    const meta = punti[Math.floor(punti.length / 2)];
+    assert.ok(Math.abs(meta.y - 5) < 0.4, `a meta' la quota e' ${meta.y}, attesa ~5`);
+    // E l'ultimo campione NON e' il nodo di arrivo: lo mette il tratto dopo.
+    assert.ok(punti[punti.length - 1].y < 10, 'l\'ultimo campione non deve essere il nodo b');
+});

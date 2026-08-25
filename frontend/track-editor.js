@@ -1314,6 +1314,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let evidenza = null;
     let evidenzaIndice = -1;
 
+    // I punti di un tratto come li genera la cottura, con la quota vera, piu'
+    // il nodo di arrivo — che `campionaTratto` non include perche' lo mette il
+    // tratto successivo, ma una linea che si ferma prima sembra interrotta.
+    function puntiDelTratto(i) {
+        const n = geometria.nodi.length;
+        const a = geometria.nodi[i], b = geometria.nodi[(i + 1) % n];
+        if (!a || !b) return [];
+        const tratto = (geometria.tratti || [])[i] || { tipo: 'curva' };
+        const punti = TrackSegmenti.campionaTratto(a, b, tratto, TrackSegmenti.PASSO_COTTURA);
+        punti.push({ x: b.x, y: b.y || 0, z: b.z });
+        return punti;
+    }
+
     function evidenziaTratto(i) {
         if (i === evidenzaIndice) return;
         evidenzaIndice = i;
@@ -1322,13 +1335,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const n = geometria.nodi.length;
         const a = geometria.nodi[i], b = geometria.nodi[(i + 1) % n];
         if (!a || !b) return;
-        const punti = [];
-        for (let k = 0; k <= 24; k++) {
-            const p = TrackSegmenti.valutaTratto(a, b, (geometria.tratti || [])[i] || { tipo: 'curva' }, k / 24);
-            // Sopra l'asfalto ma sotto i marker: si deve vedere senza coprire
-            // i pallini che restano il bersaglio principale.
-            punti.push(new THREE.Vector3(p.x, (a.y || 0) + 0.45, p.z));
-        }
+        // ⚠️ Gli stessi punti che genera l'asfalto, QUOTA COMPRESA. La prima
+        // versione usava `valutaTratto` (che da' solo x e z) e la quota del
+        // primo nodo per tutta la linea: su un tratto in salita la linea
+        // restava in basso e spariva sotto la pista — segnalato al playtest
+        // del 2026-08-25 («la linea verde e' interrotta»).
+        const punti = puntiDelTratto(i).map(
+            q => new THREE.Vector3(q.x, q.y + 0.45, q.z));
         evidenza = new THREE.Line(
             new THREE.BufferGeometry().setFromPoints(punti),
             new THREE.LineBasicMaterial({ color: 0x6fd3a0 }));
@@ -1413,12 +1426,8 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const i of idx) {
             if (!nodiSelezionati.has((i + 1) % n)) continue;   // il prossimo non è del gruppo
             const a = geometria.nodi[i], b = geometria.nodi[(i + 1) % n];
-            const punti = [];
-            for (let k = 0; k <= 20; k++) {
-                const q = TrackSegmenti.valutaTratto(a, b, (geometria.tratti || [])[i] || { tipo: 'curva' }, k / 20);
-                const y = (a.y || 0) + ((b.y || 0) - (a.y || 0)) * (k / 20);
-                punti.push(new THREE.Vector3(q.x, y + 0.7, q.z));
-            }
+            const punti = puntiDelTratto(i).map(
+                q => new THREE.Vector3(q.x, q.y + 0.7, q.z));
             percorsoGruppo.add(new THREE.Line(
                 new THREE.BufferGeometry().setFromPoints(punti), mat));
         }

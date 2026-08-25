@@ -361,7 +361,14 @@
     }
 
     return {
-        cuoci, valutaTratto, versore, PASSO_COTTURA,
+        // `campionaTratto` e' esportata perche' l'editor deve poter disegnare
+        // una linea ESATTAMENTE dove passa l'asfalto, quota compresa: la
+        // quota lungo un tratto e' interpolata sulla LUNGHEZZA D'ARCO, non sul
+        // parametro, e riscrivere quella formula altrove significa avere due
+        // misure della stessa cosa che un giorno divergono. E' successo: la
+        // linea di evidenziazione usava la quota del primo nodo e su un tratto
+        // in salita finiva sotto l'asfalto (playtest 2026-08-25).
+        cuoci, campionaTratto, valutaTratto, versore, PASSO_COTTURA,
         misureTratto, raddrizza, impostaLunghezza, direzioneAutomatica, riallinea, inserisci,
         trattoVicinoA, spostaTratto,
     };
