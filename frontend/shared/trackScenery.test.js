@@ -1649,3 +1649,32 @@ test('le schiere di tribune non hanno un tetto: seguono il giro', () => {
     // E niente tetto: una pista lunga il doppio ne chiede il doppio.
     assert.equal(TrackScenery.schiereDaTentare(14970), 68);
 });
+
+// ---- il verde in proporzione al giro ----
+//
+// Alberi, rocce, macchie e laghetti avevano un budget PER PISTA: 430 alberi
+// tanto su monte-rosso (giro 1177) quanto su shanghai (7485). Rif. spec
+// 2026-08-25-f1-densita-scenografia-design.md
+test('il fattore del giro non scende mai sotto 1', () => {
+    // Sotto il riferimento non cambia niente: le piste gia' approvate
+    // (monte-rosso, melbourne, new-monza) restano identiche, cotture comprese.
+    assert.equal(TrackScenery.fattoreGiro(1177), 1);
+    assert.equal(TrackScenery.fattoreGiro(3182), 1);   // melbourne
+    assert.equal(TrackScenery.fattoreGiro(3205), 1);   // new-monza
+    assert.equal(TrackScenery.fattoreGiro(3250), 1);
+    // Sopra, cresce in proporzione.
+    assert.ok(Math.abs(TrackScenery.fattoreGiro(6500) - 2) < 1e-9);
+    assert.ok(Math.abs(TrackScenery.fattoreGiro(7485) - 7485 / 3250) < 1e-9);
+});
+
+test('una pista lunga riceve piu\' verde di una corta', () => {
+    const corta = circuitoVero('melbourne');   // 3182, fattore 1
+    const lunga = circuitoVero('shanghai');    // 7485, fattore 2.34
+    const conta = (l, cat) => l.layout.filter(v => v.category === cat).length;
+    // Il tetto degli alberi era 430 su TUTTE le piste: l'uguaglianza esatta
+    // era la firma del difetto.
+    assert.ok(conta(lunga, 'woods') > conta(corta, 'woods') * 1.5,
+        `alberi: ${conta(corta, 'woods')} su melbourne, ${conta(lunga, 'woods')} su shanghai`);
+    assert.ok(conta(lunga, 'rock') > conta(corta, 'rock') * 1.5,
+        `rocce: ${conta(corta, 'rock')} su melbourne, ${conta(lunga, 'rock')} su shanghai`);
+});

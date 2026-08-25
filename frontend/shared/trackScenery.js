@@ -112,6 +112,27 @@
         { asset: 'rockSingle',  weight: 3, scale: CUSTOM_MODEL_SCALE },
         { asset: 'rockCluster', weight: 1, scale: CUSTOM_MODEL_SCALE },
     ];
+    // Il fattore che aggancia le quantita' sparse alla lunghezza del giro.
+    //
+    // 3250 sta appena sopra melbourne (3182) e new-monza (3205): le due piste
+    // col vuoto quasi nullo, la densita' che l'utente ha approvato. Sotto
+    // quella lunghezza vale 1, e le piste gia' cotte non cambiano di un oggetto
+    // — con 3200 new-monza ne guadagnava UNO e andava ricotta per niente — e' la regola che tiene
+    // basso il rischio: **i tetti si alzano, mai si abbassano**.
+    //
+    // ⚠️ CODA APERTA (2026-08-25, scelta dell'utente: si procede cosi' e si
+    // rivede in futuro). Per gli scatter il fattore giusto sarebbe l'AREA, non
+    // il giro: sono estrazioni uniformi dentro `trackBounds`, e una pista puo'
+    // essere lunga ma compatta. `nuova-pista` fa 4389 di giro dentro un'area
+    // piu' PICCOLA di melbourne (660k contro 755k) perche' serpeggia, e ha gia'
+    // piu' alberi per unita' d'area (0.65 contro 0.57): con questo fattore ne
+    // riceve un 37% che non le serve. Sulle tribune invece il giro e' la
+    // misura giusta, e li' resta.
+    const GIRO_RIFERIMENTO = 3250;
+    function fattoreGiro(lapLen) {
+        return Math.max(1, lapLen / GIRO_RIFERIMENTO);
+    }
+
     const ROCK_ATTEMPTS    = 220;
     const ROCK_MIN_MARGIN  = 60;   // oltre barrierDist: fuori dalla fascia della ghiaia
     const ROCK_MAX_MARGIN  = 330;  // arriva sui primi pendii collinari
@@ -1221,8 +1242,9 @@
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist);
+        const tentativi = Math.round(NATURE_ATTEMPTS * fattoreGiro(TrackGeometry.lapLength(trackPts)));
 
-        for (let i = 0; i < NATURE_ATTEMPTS; i++) {
+        for (let i = 0; i < tentativi; i++) {
             const x = xMin + rng() * (xMax - xMin);
             const z = zMin + rng() * (zMax - zMin);
 
@@ -1268,7 +1290,9 @@
         const groundPts = trackPts.filter(p => !p.bridge);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist + ROCK_MAX_MARGIN);
 
-        for (let i = 0; i < ROCK_ATTEMPTS; i++) {
+        const tentativi = Math.round(ROCK_ATTEMPTS * fattoreGiro(TrackGeometry.lapLength(trackPts)));
+
+        for (let i = 0; i < tentativi; i++) {
             const x = xMin + rng() * (xMax - xMin);
             const z = zMin + rng() * (zMax - zMin);
 
@@ -1306,7 +1330,11 @@
         const outer = embankOuter + SceneryHills.HILL_START_MARGIN + SceneryHills.HILL_RAMP;
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, outer);
 
-        for (let c = 0; c < WOOD_CLUSTERS && layout.length < WOOD_MAX_TREES; c++) {
+        const f = fattoreGiro(TrackGeometry.lapLength(trackPts));
+        const macchie = Math.round(WOOD_CLUSTERS * f);
+        const maxAlberi = Math.round(WOOD_MAX_TREES * f);
+
+        for (let c = 0; c < macchie && layout.length < maxAlberi; c++) {
             const cxp = xMin + rng() * (xMax - xMin);
             const czp = zMin + rng() * (zMax - zMin);
             // Il centro della macchia deve cadere fuori dalla fascia di uscita
@@ -1314,7 +1342,7 @@
             // di spostarle, così la distribuzione resta uniforme.
             if (TrackGeometry.nearestPoint(groundPts, cxp, czp).dist < embankOuter + WOOD_MIN_MARGIN) continue;
 
-            for (let k = 0; k < WOOD_PER_CLUSTER && layout.length < WOOD_MAX_TREES; k++) {
+            for (let k = 0; k < WOOD_PER_CLUSTER && layout.length < maxAlberi; k++) {
                 const a = rng() * Math.PI * 2;
                 const r = Math.sqrt(rng()) * WOOD_CLUSTER_RADIUS;   // sqrt: distribuzione uniforme sul disco
                 const x = cxp + Math.cos(a) * r, z = czp + Math.sin(a) * r;
@@ -1353,7 +1381,9 @@
         const groundPts = trackPts.filter(p => !p.bridge);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist);
 
-        for (let i = 0; i < POND_ATTEMPTS; i++) {
+        const tentativi = Math.round(POND_ATTEMPTS * fattoreGiro(TrackGeometry.lapLength(trackPts)));
+
+        for (let i = 0; i < tentativi; i++) {
             const x = xMin + rng() * (xMax - xMin);
             const z = zMin + rng() * (zMax - zMin);
 
@@ -1895,7 +1925,7 @@
     }
 
     return {
-        generateLayout, embankmentStart, hashString, mulberry32, schiereDaTentare,
+        generateLayout, embankmentStart, hashString, mulberry32, schiereDaTentare, fattoreGiro,
         PIT_BUILDING_OFFSET_MARGIN,
         playerBoxFootprintCorners, playerBoxApronCorners,
         insidePlayerBoxFootprint, PLAYER_BOX_MAX_COUNT,
