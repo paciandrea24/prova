@@ -5947,6 +5947,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             _camOff.set(sc.dx, 5.5 + m.dy + sc.dy, (back ? 13 : -13) + m.dz);
             _camOff.applyQuaternion(q);
             camera.position.copy(pos).add(_camOff);
+            // Prima di mirare, non dopo: alzare la camera a lookAt gia' fatto la
+            // lascerebbe puntata dove stava prima, cioe' sopra l'auto.
+            tieniLaCameraFuoriDalTerreno();
             _lookTgt.copy(pos).add(new THREE.Vector3(0, 1.2, 0));
             mescolaSguardoSemaforo(_lookTgt);
             camera.lookAt(_lookTgt);
@@ -6016,6 +6019,29 @@ document.addEventListener('DOMContentLoaded', async () => {
             const rollHalo = (scHalo.rollRad || 0) + camRollBanking();
             if (rollHalo) camera.rotateZ(rollHalo);
         }
+    }
+
+    // La camera d'inseguimento sta 5.5 unità sopra l'auto — ma sopra l'AUTO,
+    // che su una parabolica è coricata: quelle 5.5 unità vengono ruotate col
+    // telaio e diventano anche uno spostamento di lato. Su una curva a 27 gradi
+    // sono 2.5 unità verso il fianco, e se l'auto e' girata di traverso (dopo un
+    // testacoda, o guidando contromano) la camera esce oltre il bordo alto, dove
+    // il cuneo di terra e' alto quanto il bordo: si ritrova DENTRO la collina, e
+    // chi gioca vede la propria macchina tagliata a meta' da una parete verde.
+    // Segnalato in gioco il 2026-08-26, col punto marcato col tasto M: auto
+    // ferma a 6.5 unita' dall'asse, terreno di fianco a 13.5 mentre l'auto
+    // stava a 9.3.
+    //
+    // Rimedio: la camera non scende mai sotto il terreno che ha sotto di se'.
+    // Vale ovunque, non solo sul banking — in fondo a una discesa ripida il
+    // problema era lo stesso, solo piu' raro.
+    const CAM_SOPRA_IL_TERRENO = 1.6;
+    function tieniLaCameraFuoriDalTerreno() {
+        if (!groundPts || !groundPts.length) return;
+        const suolo = TrackGeometry.terrainHeightAt(
+            groundPts, camera.position.x, camera.position.z, EMBANK_PLATEAU, EMBANK_OUTER);
+        const minimo = suolo + CAM_SOPRA_IL_TERRENO;
+        if (camera.position.y < minimo) camera.position.y = minimo;
     }
 
     // Quanto è coricata la camera per la sopraelevazione: è lo stesso rollio
