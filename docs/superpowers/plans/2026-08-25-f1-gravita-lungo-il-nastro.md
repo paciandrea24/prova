@@ -18,7 +18,8 @@
 - **Niente `git add -A`**: aggiungere solo i file per nome. L'utente lavora in parallelo e ha file non tracciati suoi (`frontend/tracks/nuova-pista.json`, `backend/tools/prova-*-raceline.json`) che non vanno mai committati.
 - **Commit ad ogni task**, in italiano, con `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>` in fondo.
 - **Unita' di misura**: le pendenze sono in **radianti**, **positive in salita**. Le soglie geometriche vanno espresse in unita' di pista, mai in campioni.
-- **Baseline dei test** (da riconfermare all'apertura del worktree, prima di iniziare): `node --test frontend/shared/` → 5 rossi preesistenti; `node --test backend/` → 8 rossi preesistenti. Un rosso in piu' rispetto a questa baseline e' una regressione, non "un test che era gia' cosi'".
+- **Baseline dei test**, misurata nel worktree il 2026-08-25 prima di iniziare: `node --test frontend/shared/` → **4 rossi**; `node --test backend/` → **8 rossi**. Un rosso in piu' rispetto a questa baseline e' una regressione, non "un test che era gia' cosi'".
+  ⚠️ Sono 4 e non 5 come sulla working copy dell'utente: il quinto rosso e' quello di `nuova-pista`, che sta solo sul suo disco e non nel repo. Nel worktree quel file non esiste, quindi quel test non fallisce.
 
 ---
 

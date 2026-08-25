@@ -848,3 +848,63 @@ test('senza larghezza sui punti di controllo il campo non compare', () => {
         assert.equal(p.halfWidth, undefined);
     }
 });
+
+// --- pendenzaAt (fase 1a: gravita' lungo il nastro) ---
+
+// Una rampa dritta lungo z, che sale di 1 ogni 10 unita' = 10% = atan(0.1).
+function rampa(pendenzaPct, n) {
+    const pts = [];
+    for (let i = 0; i < n; i++) pts.push({ x: 0, z: i * 10, y: i * 10 * pendenzaPct / 100 });
+    return pts;
+}
+
+test('pendenzaAt e\' positiva in salita e vale atan della pendenza', () => {
+    const pts = rampa(10, 20);
+    const attesa = Math.atan2(1, 10);   // +10%
+    for (let i = 1; i < pts.length - 1; i++) {
+        assert.ok(Math.abs(TrackGeometry.pendenzaAt(pts, i, false) - attesa) < 1e-9,
+            `campione ${i}: ${TrackGeometry.pendenzaAt(pts, i, false)} invece di ${attesa}`);
+    }
+});
+
+test('pendenzaAt e\' negativa in discesa, simmetrica alla salita', () => {
+    const su = rampa(10, 20), giu = rampa(-10, 20);
+    assert.ok(Math.abs(TrackGeometry.pendenzaAt(su, 5, false) + TrackGeometry.pendenzaAt(giu, 5, false)) < 1e-12);
+});
+
+test('pendenzaAt e\' zero su un tracciato piatto, anche senza il campo y', () => {
+    const piatto = [{ x: 0, z: 0 }, { x: 0, z: 10 }, { x: 0, z: 20 }, { x: 0, z: 30 }];
+    assert.equal(TrackGeometry.pendenzaAt(piatto, 1, false), 0);
+    assert.equal(TrackGeometry.pendenzaAt(piatto, 2, true), 0);
+});
+
+// Su un giro chiuso il campione 0 guarda l'ultimo campione, non se stesso:
+// senza il wrap la pendenza al traguardo sarebbe sempre meta' di quella vera.
+test('pendenzaAt chiude il giro: il campione 0 usa l\'ultimo campione', () => {
+    const anello = [
+        { x: 0, z: 0, y: 0 }, { x: 10, z: 0, y: 1 },
+        { x: 10, z: 10, y: 2 }, { x: 0, z: 10, y: 1 }
+    ];
+    const p0 = TrackGeometry.pendenzaAt(anello, 0, true);
+    // Fra il campione 3 (y=1) e il campione 1 (y=1) il dislivello e' nullo.
+    assert.ok(Math.abs(p0) < 1e-12, `pendenza al traguardo: ${p0}`);
+});
+
+// Il beccheggio visivo dell'auto e' la pendenza NEGATA (in Three una rotazione
+// X positiva abbassa il muso). Questo test blocca il segno: se pendenzaAt
+// cambiasse verso, l'auto si inclinerebbe al contrario sulle salite e nessun
+// altro test se ne accorgerebbe.
+test('il beccheggio visivo e\' la pendenza negata (formula storica di f1.js)', () => {
+    const anello = [
+        { x: 0, z: 0, y: 0 }, { x: 10, z: 0, y: 1 }, { x: 20, z: 0, y: 3 },
+        { x: 30, z: 0, y: 3 }, { x: 40, z: 0, y: 1 }, { x: 50, z: 0, y: 0 }
+    ];
+    for (let i = 0; i < anello.length; i++) {
+        const n = anello.length;
+        const prev = anello[(i - 1 + n) % n], next = anello[(i + 1) % n];
+        const dy = (next.y || 0) - (prev.y || 0);
+        const horiz = Math.hypot(next.x - prev.x, next.z - prev.z) || 1e-6;
+        const storica = -Math.atan2(dy, horiz);     // trackPitchAt di f1.js
+        assert.equal(-TrackGeometry.pendenzaAt(anello, i, true), storica);
+    }
+});

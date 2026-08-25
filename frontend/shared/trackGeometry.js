@@ -268,6 +268,25 @@
         return { nx: -tz, nz: tx };
     }
 
+    // Pendenza del tracciato al campione `i`, in RADIANTI e POSITIVA IN
+    // SALITA. Stessa finestra di tangentAt (campione prima / campione dopo):
+    // la direzione e la pendenza devono parlare dello stesso pezzo di pista,
+    // o su un tratto corto raccontano due cose diverse.
+    //
+    // ⚠️ SEGNO. Qui positiva = si sale, che è ciò che serve alla fisica (la
+    // gravità frena chi sale). Chi la usa per RUOTARE una mesh deve NEGARLA:
+    // in Three una rotazione X positiva abbassa il muso. Vedi trackPitchAt in
+    // f1.js, che è la stessa misura col segno girato — e non una seconda
+    // copia della formula.
+    function pendenzaAt(points, i, closed) {
+        const n = points.length;
+        const next = closed ? points[(i + 1) % n] : points[Math.min(i + 1, n - 1)];
+        const prev = closed ? points[(i - 1 + n) % n] : points[Math.max(i - 1, 0)];
+        const dy = (next.y || 0) - (prev.y || 0);
+        const horiz = Math.hypot(next.x - prev.x, next.z - prev.z) || 1e-6;
+        return Math.atan2(dy, horiz);
+    }
+
     // Direzione in cui deve guardare un oggetto posato su un nastro parallelo
     // alla pista a distanza `distanzaA(idx, side)`: perpendicolare al NASTRO,
     // non alla pista.
@@ -1272,6 +1291,7 @@
         splitByBridge,
         tangentAt,
         normalAt,
+        pendenzaAt,
         ribbonFacingAt,
         curvatureAt,
         bridgeHeightAt,
