@@ -422,3 +422,40 @@ test('saveTrack: una pista senza geometria resta valida', () => {
         deleteTrack('test-scratch-track');
     }
 });
+
+// --- pendenza per campione (fase 1a: gravita' lungo il nastro) ---
+
+test('ogni campione ha una pendenza finita, su tutte le piste', () => {
+    for (const t of listTracks()) {
+        const id = t.id || t;
+        const track = loadTrack(id);
+        for (let i = 0; i < track.points.length; i++) {
+            assert.equal(typeof track.points[i].pendenza, 'number',
+                `${id} campione ${i}: pendenza mancante`);
+            assert.ok(Number.isFinite(track.points[i].pendenza),
+                `${id} campione ${i}: pendenza non finita`);
+        }
+    }
+});
+
+test('una pista senza dislivelli ha pendenza zero ovunque', () => {
+    const track = loadTrack('monte-rosso');
+    for (const p of track.points) assert.ok(Math.abs(p.pendenza) < 1e-9);
+});
+
+// prova sale e scende davvero (quota da 0 a 11.5): se la pendenza fosse sempre
+// zero il campo ci sarebbe ma non direbbe niente, ed e' proprio il modo in cui
+// un valore di ripiego passa inosservato.
+test('prova ha pendenze vere, in salita e in discesa', () => {
+    const track = loadTrack('prova');
+    const pct = track.points.map(p => Math.tan(p.pendenza) * 100);
+    assert.ok(Math.max(...pct) > 5, `salita massima ${Math.max(...pct).toFixed(1)}%`);
+    assert.ok(Math.min(...pct) < -5, `discesa massima ${Math.min(...pct).toFixed(1)}%`);
+});
+
+test('la pendenza cotta e\' esattamente quella di TrackGeometry.pendenzaAt', () => {
+    const track = loadTrack('prova');
+    for (let i = 0; i < track.points.length; i += 37) {
+        assert.equal(track.points[i].pendenza, TrackGeometry.pendenzaAt(track.points, i, true));
+    }
+});

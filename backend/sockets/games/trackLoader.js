@@ -149,6 +149,23 @@ function buildTrack(id, raw) {
             p.halfWidth = raw.roadHalfWidth;
         }
     }
+
+    // LA PENDENZA LOCALE, GARANTITA SU OGNI CAMPIONE.
+    //
+    // Stessa regola della larghezza qui sopra: si calcola qui, una volta, e da
+    // valle in poi `p.pendenza` c'e' sempre — la fisica non deve chiedersi «e
+    // se mancasse?» ne' ricalcolarla ad ogni tick per ogni auto.
+    //
+    // La misura e' quella di TrackGeometry.pendenzaAt: la stessa funzione con
+    // cui il client inclina l'auto (trackPitchAt in f1.js, col segno girato).
+    // Il giocatore vede una salita e la fisica ne sente un'altra solo se le
+    // misure sono due.
+    //
+    // Il ciclo LEGGE la quota dei campioni vicini e SCRIVE la pendenza: campi
+    // diversi, quindi calcolare in place e' corretto e non serve una copia.
+    for (let i = 0; i < points.length; i++) {
+        points[i].pendenza = TrackGeometry.pendenzaAt(points, i, true);
+    }
     const lapLength = TrackGeometry.lapLength(points);
     const totalLaps = TrackGeometry.lapsForDistance(lapLength, raw.targetKm);
 
