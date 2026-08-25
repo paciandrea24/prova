@@ -620,6 +620,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         return latoAlto * rollio * versoAuto;
     }
 
+    // A che quota sta l'ASFALTO sotto un'auto ferma in (x, z), sul campione idx.
+    //
+    // ⚠️ Non basta la quota del punto pista: su una curva sopraelevata il punto
+    // sta sul bordo BASSO (decisione D1 — si alza l'esterno, il nastro si
+    // appoggia sul terreno esistente), quindi l'asfalto sotto l'auto e' piu' in
+    // alto di quanto l'auto sia spostata verso l'esterno. Usando la sola quota
+    // del punto, in mezzo a una parabolica a 35 gradi l'auto viaggiava sette
+    // unita' SOTTO l'asfalto: si vedeva passare attraverso la pista, segnalato
+    // dall'utente il 2026-08-25.
+    //
+    // L'alzata la da' la stessa funzione con cui e' stato disegnato il nastro:
+    // il piano su cui l'auto appare e quello che si vede sono lo stesso piano.
+    // Su una pista piana `alzataLaterale` vale zero e la quota resta identica.
+    function quotaAutoAt(idx, x, z) {
+        const p = trackPts[idx];
+        const mezza = p.halfWidth || ROAD_HALF;
+        const { nx, nz } = TrackGeometry.normalAt(trackPts, idx, true);
+        const offset = (x - p.x) * nx + (z - p.z) * nz;
+        return (p.y || 0) + TrackGeometry.alzataLaterale(trackPts, idx, mezza, offset);
+    }
+
 
     // ====================================================
     // STILE CEL-SHADED — conversione dei materiali generati qui
@@ -6199,7 +6220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 _offBridgeEdgeState[color] = offBridgeEdge;
                 const targetY = offBridgeEdge
                     ? TrackGeometry.terrainHeightAt(groundPts, target.x, target.z, EMBANK_PLATEAU, EMBANK_OUTER)
-                    : (trackPts[idx].y || 0);
+                    : quotaAutoAt(idx, target.x, target.z);
 
                 v.y = (v.y || 0) + (targetY - (v.y || 0)) * LERP;
                 v.pitch = (v.pitch || 0) + (trackPitchAt(idx) - (v.pitch || 0)) * LERP;
