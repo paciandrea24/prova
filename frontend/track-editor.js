@@ -1109,6 +1109,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // La perpendicolare al tratto, presa fra i suoi due capi. Serve allo
     // spostamento con Shift: «di lato» vuol dire rispetto al tratto, non
     // rispetto allo schermo.
+    // Se un punto del mondo sta sul tratto `i`. Usata per decidere se il
+    // traguardo deve viaggiare col tratto che si sta spostando.
+    function appartieneAlTratto(punto, i) {
+        if (!punto || !inSegmenti()) return false;
+        const mezza = parseFloat(document.getElementById('roadHalfWidth').value) || 11;
+        const suo = TrackSegmenti.trattoVicinoA(geometria, punto.x, punto.z, mezza);
+        return !!suo && suo.indice === i;
+    }
+
     function normaleDelTratto(i) {
         if (!inSegmenti()) return null;
         const n = geometria.nodi.length;
@@ -1234,7 +1243,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const preso = presaSulNastro(hit);
         if (preso) {
             salvaStato();
-            trattoDrag = { indice: preso.indice, ultimoX: hit.x, ultimoZ: hit.z };
+            trattoDrag = {
+                indice: preso.indice, ultimoX: hit.x, ultimoZ: hit.z,
+                // ⚠️ IL TRAGUARDO VIAGGIA COL SUO TRATTO.
+                //
+                // `startFinish` e' una posizione assoluta, non un indice: il
+                // gioco ci aggancia il campione piu' vicino
+                // (trackLoader::startFinishIndex) e da li' dipendono griglia,
+                // conteggio dei giri, settori e traguardo. Se il tratto si
+                // sposta e il triangolo resta, il via scivola su un altro
+                // punto della pista senza che nessuno lo dica.
+                // Segnalato dall'utente al playtest del 2026-08-25.
+                //
+                // Deciso ORA e non a ogni movimento: a meta' trascinamento il
+                // tratto piu' vicino al traguardo puo' cambiare, e il
+                // triangolo si staccherebbe o si aggancerebbe da solo.
+                portaIlTraguardo: appartieneAlTratto(startFinish, preso.indice),
+            };
             trattoSelezionato = preso.indice;
             nodoSelezionato = preso.indice;
             mostraPagina('tratto');
@@ -1347,6 +1372,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             geometria = TrackSegmenti.spostaTratto(geometria, trattoDrag.indice, dx, dz);
+            if (trattoDrag.portaIlTraguardo && startFinish) {
+                // L'angolo NON si tocca: spostare un tratto non lo gira, e il
+                // verso di marcia resta quello che l'autore ha scelto.
+                startFinish.x = +(startFinish.x + dx).toFixed(2);
+                startFinish.z = +(startFinish.z + dz).toFixed(2);
+            }
             trattoDrag.ultimoX = h.x;
             trattoDrag.ultimoZ = h.z;
             dopoModificaMain();
