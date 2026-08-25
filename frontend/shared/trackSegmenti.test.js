@@ -608,3 +608,55 @@ test('campionaTratto porta la quota, interpolata lungo il tratto', () => {
     // E l'ultimo campione NON e' il nodo di arrivo: lo mette il tratto dopo.
     assert.ok(punti[punti.length - 1].y < 10, 'l\'ultimo campione non deve essere il nodo b');
 });
+
+// ⚠️ VISTO IN GIOCO il 2026-08-25 (secondo playtest): su una curva a 35 gradi
+// costruita con UN SOLO tratto, il rollio saliva piano fino a 20.8° e poi
+// saltava a 35° in un campione — quattordici gradi in cinque unita' di pista.
+// Il cordolo si impennava, e chi guidava vedeva uno scalino in cima alla
+// parabolica.
+//
+// La causa: il raccordo si spalma su 80 unita', quaranta per lato del confine.
+// Su un tratto piu' corto di ottanta le due finestre — quella d'ingresso e
+// quella d'uscita — si sovrappongono, e l'ultima scritta cancella meta' della
+// prima. Un tratto corto puo' benissimo non arrivare al valore dichiarato (in
+// venti metri non si costruisce una parabolica di 35 gradi), ma non deve MAI
+// arrivarci di scatto.
+function anelloConTrattoCorto(gradi) {
+    // Otto nodi su un anello largo — tratti da ~157 unita' — ma il nodo 3
+    // portato vicino al 2: il tratto 2 diventa corto (~40 unita'), i suoi
+    // vicini restano lunghi. E' la situazione vera: una curva sopraelevata
+    // disegnata con UN tratto solo, fra due tratti lunghi.
+    const R = 200, nodi = [], tratti = [];
+    for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        nodi.push({ x: Math.sin(a) * R, z: Math.cos(a) * R, y: 0, dir: 0 });
+        tratti.push({ tipo: 'curva' });
+    }
+    const a3 = (2 / 8) * Math.PI * 2 + 0.2;
+    nodi[3] = { x: Math.sin(a3) * R, z: Math.cos(a3) * R, y: 0, dir: 0 };
+    tratti[2] = { tipo: 'curva', rollioGradi: gradi };
+    return TS.riallinea({ versione: 1, nodi, tratti });
+}
+
+test("un tratto sopraelevato piu' corto del raccordo non fa scalini", () => {
+    const punti = TS.cuoci(anelloConTrattoCorto(35), TS.PASSO_COTTURA, 11);
+    let salto = 0, dove = -1;
+    for (let i = 0; i < punti.length; i++) {
+        const prec = punti[(i - 1 + punti.length) % punti.length];
+        const d = Math.abs(punti[i].rollio - prec.rollio);
+        if (d > salto) { salto = d; dove = i; }
+    }
+    const gradiPerUnita = (salto * 180 / Math.PI) / TS.PASSO_COTTURA;
+    assert.ok(gradiPerUnita < 0.9,
+        `campione ${dove}: il rollio cambia di ${gradiPerUnita.toFixed(2)} gradi per unita' di pista, e' uno scalino`);
+});
+
+test("su un tratto corto la sopraelevazione si accontenta, invece di scattare", () => {
+    // Puo' anche non arrivare ai 35 gradi dichiarati — in quaranta metri non si
+    // costruisce una parabolica intera — ma quello che c'e' dev'essere una
+    // salita continua, non un gradino ammorbidito.
+    const punti = TS.cuoci(anelloConTrattoCorto(35), TS.PASSO_COTTURA, 11);
+    const max = Math.max(...punti.map(p => p.rollio || 0)) * 180 / Math.PI;
+    assert.ok(max > 20, `il tratto arriva solo a ${max.toFixed(1)} gradi: il raccordo se l'e' mangiato tutto`);
+    assert.ok(max <= 35 + 1e-9, `${max.toFixed(1)} gradi, oltre i 35 dichiarati`);
+});

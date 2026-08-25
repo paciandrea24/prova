@@ -59,31 +59,91 @@
     // si sente arrivare, non si subisce.
     const RACCORDO_ROLLIO = 80;
 
+    // Quanto puo' cambiare la sopraelevazione per unita' di pista, al massimo.
+    // È la pendenza di picco di una transizione di lunghezza piena col salto
+    // piu' grande ammesso (la smoothstep ha pendenza massima 1.5*Δ/L al centro):
+    // cosi' una transizione normale non viene MAI toccata da questo limite, e
+    // le piste che ci sono non cambiano di un millesimo. Serve solo dove il
+    // tratto e' troppo corto per contenere la transizione — li' la
+    // sopraelevazione arriva a meno gradi invece di scattare.
+    const PENDENZA_ROLLIO_MAX = 1.5 * ROLLIO_MAX / RACCORDO_ROLLIO;
+
     // Spalma la transizione fra due tratti con sopraelevazione diversa su
     // RACCORDO_ROLLIO unità, metà di qua e metà di là dal confine, con la
     // stessa smoothstep usata per quota e larghezza (derivata nulla ai due
     // estremi: nessuno spigolo da sentire sotto le ruote).
     //
-    // Su tratti corti la transizione si accorcia da sé: si mescola sempre e
-    // solo dentro la finestra, e due confini vicini si sovrappongono senza
-    // creare gradini — l'ultimo valore scritto vince, ed è quello del confine
-    // più vicino, che è il comportamento voluto.
+    // ⚠️ SU UN TRATTO CORTO LA FINESTRA SI ACCORCIA, e non e' un dettaglio: su
+    // un tratto piu' corto del raccordo le due transizioni — quella d'ingresso
+    // e quella d'uscita — si sovrappongono, e l'ultima scritta cancella meta'
+    // della prima. Il risultato e' esattamente il gradino che il raccordo
+    // esiste per evitare: su una curva a 35 gradi larga un tratto solo il
+    // rollio saliva piano fino a 20.8° e poi saltava a 35° in un campione,
+    // quattordici gradi in cinque unita' di pista. Il cordolo si impennava, e
+    // si vedeva in gioco (2026-08-25).
+    //
+    // Ogni confine si prende quindi al massimo META' del tratto che ha di qua e
+    // di la': cosi' due finestre vicine al massimo si TOCCANO, mai si
+    // sovrappongono. Un tratto corto non arriva al valore dichiarato — in venti
+    // metri non si costruisce una parabolica di 35 gradi — ma la salita resta
+    // continua, che e' la cosa che si sente sotto le ruote.
     function raccordaRollio(punti, valori, passo) {
         const n = punti.length;
         if (!n) return;
         const meta = Math.max(1, Math.round((RACCORDO_ROLLIO / 2) / (passo || PASSO_COTTURA)));
         const originali = valori.slice();
+        // I confini, in ordine: dove il valore cambia rispetto al campione
+        // precedente.
+        const confini = [];
         for (let i = 0; i < n; i++) {
+            if (originali[i] !== originali[(i - 1 + n) % n]) confini.push(i);
+        }
+        if (!confini.length) return;   // nessun cambio: niente da raccordare
+        for (let c = 0; c < confini.length; c++) {
+            const i = confini[c];
             const prec = originali[(i - 1 + n) % n];
-            if (originali[i] === prec) continue;   // nessun confine qui
-            // Confine fra i-1 e i: si mescola su `meta` campioni per lato.
-            for (let k = -meta; k <= meta; k++) {
+            // Quanto dista il confine precedente e quello successivo (in
+            // campioni, girando): la meta' di quella distanza e' il massimo che
+            // questa finestra puo' prendersi da quel lato.
+            const primaDi = confini.length > 1
+                ? ((i - confini[(c - 1 + confini.length) % confini.length]) % n + n) % n
+                : n;
+            const dopoDi = confini.length > 1
+                ? ((confini[(c + 1) % confini.length] - i) % n + n) % n
+                : n;
+            const metaPrima = Math.max(1, Math.min(meta, Math.floor(primaDi / 2)));
+            const metaDopo = Math.max(1, Math.min(meta, Math.floor(dopoDi / 2)));
+            for (let k = -metaPrima; k <= metaDopo; k++) {
                 const idx = ((i + k) % n + n) % n;
                 // t va da 0 (inizio finestra, valore del tratto precedente) a 1
-                // (fine finestra, valore del tratto nuovo).
-                const t = (k + meta) / (2 * meta);
+                // (fine finestra, valore del tratto nuovo), col confine a meta'.
+                const t = k < 0 ? (1 + k / metaPrima) / 2 : 0.5 + (k / metaDopo) / 2;
                 const te = t * t * (3 - 2 * t);
                 valori[idx] = prec + (originali[i] - prec) * te;
+            }
+        }
+        // ...e comunque nessun campione sale piu' di PENDENZA_ROLLIO_MAX
+        // rispetto al vicino. Le finestre accorciate tolgono i gradini, ma su un
+        // tratto molto corto restano ripide: 35 gradi presi in venti unita' di
+        // pista si vedono ancora come un'impennata del cordolo. Qui la
+        // sopraelevazione si accontenta di quello che la lunghezza consente —
+        // che e' anche cio' che succede su una pista vera.
+        //
+        // Due passate, avanti e indietro, ripetute perche' l'anello si chiude:
+        // ogni passata abbassa solo, quindi il risultato non dipende da dove si
+        // comincia. Una transizione di lunghezza piena non viene mai toccata (la
+        // sua pendenza massima e' 1.5*Δ/RACCORDO, e la soglia e' quella del
+        // salto piu' grande possibile), quindi le piste esistenti non cambiano.
+        const passoVero = passo || PASSO_COTTURA;
+        const gradino = PENDENZA_ROLLIO_MAX * passoVero;
+        for (let giro = 0; giro < 2; giro++) {
+            for (let i = 0; i < n; i++) {
+                const prec = (i - 1 + n) % n;
+                if (valori[i] > valori[prec] + gradino) valori[i] = valori[prec] + gradino;
+            }
+            for (let i = n - 1; i >= 0; i--) {
+                const succ = (i + 1) % n;
+                if (valori[i] > valori[succ] + gradino) valori[i] = valori[succ] + gradino;
             }
         }
         for (let i = 0; i < n; i++) punti[i].rollio = valori[i];
@@ -443,7 +503,7 @@
         // linea di evidenziazione usava la quota del primo nodo e su un tratto
         // in salita finiva sotto l'asfalto (playtest 2026-08-25).
         cuoci, campionaTratto, valutaTratto, versore, PASSO_COTTURA,
-        ROLLIO_MAX, rollioDiTratto, RACCORDO_ROLLIO,
+        ROLLIO_MAX, rollioDiTratto, RACCORDO_ROLLIO, PENDENZA_ROLLIO_MAX,
         misureTratto, raddrizza, impostaLunghezza, direzioneAutomatica, riallinea, inserisci,
         trattoVicinoA, spostaTratto,
     };

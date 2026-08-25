@@ -24,7 +24,14 @@ const GRADI_B = parseFloat(process.argv[3] || '35');   // la "parabolica"
 
 const RAGGIO = 90;
 const LATO_X = 420, LATO_Z = 300;      // fra i centri delle curve
-const PASSO_NODI = 45;                 // un nodo ogni ~45 unita' di contorno
+// ⚠️ Un nodo ogni 28 unita', non ogni 45: la sopraelevazione vive sui TRATTI
+// che hanno entrambi i capi dentro la curva, e con nodi radi l'arco da 141
+// unita' ne conteneva UNO SOLO, da 45. Il raccordo del rollio ne vuole 80, e su
+// un tratto piu' corto la transizione non ci sta: la curva arrivava ai 35 gradi
+// di scatto, col cordolo che si impennava (visto in gioco il 2026-08-25). Con
+// nodi piu' fitti la curva ha tre tratti sopraelevati e la transizione e'
+// quella vera.
+const PASSO_NODI = 28;
 const MEZZA = 12;
 
 // Il contorno: quattro archi da 90° uniti da quattro rettilinei. Si percorre in
@@ -106,7 +113,11 @@ function main() {
     // rendeva i box irraggiungibili.
     const n = controlPoints.length;
     const iTraguardo = 0;
-    const DA = Math.round(n * 0.80), A = Math.round(n * 0.98);   // ultimo tratto prima del via
+    // ⚠️ La corsia box finisce ben PRIMA del traguardo, non gli arriva addosso:
+    // occupando il fianco fino al via non restava un posto libero dove posare il
+    // ponte semafori, che deve stare davanti a tutta la griglia. Con la corsia
+    // fino al 98% il gantry finiva a 44 unita' dalla linea, dentro la griglia.
+    const DA = Math.round(n * 0.72), A = Math.round(n * 0.90);
     const LATERALE = MEZZA + 9;                                  // oltre il bordo pista
     const corsia = [];
     for (let i = DA; i <= A; i += 4) {
