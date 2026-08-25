@@ -538,3 +538,40 @@ test('la pendenza cotta e\' esattamente quella di TrackGeometry.pendenzaAt', () 
         assert.equal(track.points[i].pendenza, TrackGeometry.pendenzaAt(track.points, i, true));
     }
 });
+
+// --- il rollio che arriva alla fisica e' quello che si vede ------------------
+
+test('il rollio dichiarato su un pezzo dritto non arriva al gioco', () => {
+    // Un tratto puo' portarsi dietro una sopraelevazione pur essendo quasi
+    // dritto. La mesh li' non inclina niente (non c'e' un bordo esterno da
+    // alzare); se la fisica leggesse il valore dichiarato, l'auto terrebbe di
+    // piu' dove la pista si vede piatta. Il rollio dei campioni e quello del
+    // disegno devono essere lo STESSO numero, e lo decide
+    // TrackGeometry.rollioEfficaceAt per tutti e due.
+    const RETT = 400, R = 100, N = 120;
+    const anello = [];
+    for (let i = 0; i < N; i++) {
+        const t = i / N;
+        let x, z;
+        if (t < 0.25) { x = R; z = -RETT / 2 + RETT * (t / 0.25); }
+        else if (t < 0.5) { const a = (t - 0.25) / 0.25 * Math.PI; x = R * Math.cos(a); z = RETT / 2 + R * Math.sin(a); }
+        else if (t < 0.75) { x = -R; z = RETT / 2 - RETT * ((t - 0.5) / 0.25); }
+        else { const a = (t - 0.75) / 0.25 * Math.PI; x = -R * Math.cos(a); z = -RETT / 2 - R * Math.sin(a); }
+        // Sopraelevazione dichiarata OVUNQUE, rettilinei compresi.
+        anello.push({ x, z, rollio: 20 * Math.PI / 180 });
+    }
+    saveTrack(minimalValidTrackData({ controlPoints: anello, targetKm: 3 }));
+    try {
+        const track = loadTrack('test-scratch-track');
+        let inCurva = 0, suDritto = 0;
+        for (let i = 0; i < track.points.length; i++) {
+            const dritto = TrackGeometry.curvatureAt(track.points, i).radius > 1000;
+            if (dritto) { if (track.points[i].rollio > 0) suDritto++; }
+            else if (track.points[i].rollio > 0) inCurva++;
+        }
+        assert.equal(suDritto, 0, `${suDritto} campioni dritti hanno un rollio che nessuno disegna`);
+        assert.ok(inCurva > 0, 'in curva il rollio deve restare');
+    } finally {
+        deleteTrack('test-scratch-track');
+    }
+});

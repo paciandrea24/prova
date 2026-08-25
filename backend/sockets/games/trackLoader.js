@@ -178,6 +178,14 @@ function buildTrack(id, raw) {
     for (const p of points) {
         if (typeof p.rollio !== 'number' || !(p.rollio > 0)) p.rollio = 0;
     }
+    // ...e vale zero anche dove non c'e' una curva su cui appoggiarlo. Un
+    // tratto puo' portarsi dietro una sopraelevazione pur essendo quasi dritto:
+    // li' la mesh non inclina niente, e se la fisica leggesse il valore
+    // dichiarato l'auto terrebbe di piu' dove la pista si vede piatta. La
+    // condizione non e' ricopiata qui: la decide rollioEfficaceAt, la stessa
+    // che decide se il bordo si alza.
+    const efficaci = points.map((_, i) => TrackGeometry.rollioEfficaceAt(points, i));
+    for (let i = 0; i < points.length; i++) points[i].rollio = efficaci[i];
     const lapLength = TrackGeometry.lapLength(points);
     const totalLaps = TrackGeometry.lapsForDistance(lapLength, raw.targetKm);
 

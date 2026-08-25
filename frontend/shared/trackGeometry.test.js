@@ -1074,3 +1074,66 @@ test('il beccheggio visivo e\' la pendenza negata (formula storica di f1.js)', (
         assert.equal(-TrackGeometry.pendenzaAt(anello, i, true), storica);
     }
 });
+
+// --- rollioEfficaceAt: il rollio che si vede e' quello che si sente ---------
+//
+// Un tratto quasi dritto puo' avere una sopraelevazione dichiarata (l'editor
+// avverte solo sui tratti tipizzati 'retta', non su una curva dolcissima). La
+// mesh li' non inclina niente, perche' non c'e' un bordo esterno. Se la fisica
+// leggesse comunque il valore dichiarato, l'auto terrebbe di piu' in un punto
+// dove la pista si vede piatta: aderenza invisibile, la cosa peggiore da
+// spiegare a chi gioca.
+
+function anelloConRollio(raggio, n, rollio) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * raggio, z: Math.sin(a) * raggio, y: 0, rollio });
+    }
+    return pts;
+}
+
+test('rollioEfficaceAt: in curva vale il rollio dichiarato', () => {
+    const rollio = 18 * Math.PI / 180;
+    const pts = anelloConRollio(200, 60, rollio);
+    assert.equal(TrackGeometry.rollioEfficaceAt(pts, 10), rollio);
+});
+
+test('rollioEfficaceAt: su un tratto dritto vale zero, per quanto sia dichiarato', () => {
+    // ⚠️ La pista dev'essere un ANELLO CHIUSO, come lo sono tutte in gioco:
+    // curvatureAt guarda un campione prima e uno dopo con l'indice che gira
+    // (`% n`), e su una polilinea aperta il campione «prima» del decimo e' in
+    // fondo alla retta — l'angolo risulta di 180° e un rettilineo sembra un
+    // tornante. Costato un test rosso che accusava il codice giusto.
+    const ovale = [];
+    const RETT = 400, R = 100;
+    for (let i = 0; i < 200; i++) {
+        const t = i / 200;
+        let x, z;
+        if (t < 0.25) { x = R; z = -RETT / 2 + RETT * (t / 0.25); }
+        else if (t < 0.5) { const a = (t - 0.25) / 0.25 * Math.PI; x = R * Math.cos(a); z = RETT / 2 + R * Math.sin(a); }
+        else if (t < 0.75) { x = -R; z = RETT / 2 - RETT * ((t - 0.5) / 0.25); }
+        else { const a = (t - 0.75) / 0.25 * Math.PI; x = -R * Math.cos(a); z = -RETT / 2 - R * Math.sin(a); }
+        ovale.push({ x, z, y: 0, rollio: 0.3 });
+    }
+    const suRettilineo = 25;    // meta' del primo rettilineo
+    assert.ok(TrackGeometry.curvatureAt(ovale, suRettilineo).radius > 1000,
+        "il campione scelto non sta su un rettilineo");
+    assert.equal(TrackGeometry.rollioEfficaceAt(ovale, suRettilineo), 0);
+    // ...e in curva invece vale, sulla stessa pista.
+    assert.equal(TrackGeometry.rollioEfficaceAt(ovale, 75), 0.3);
+});
+
+test('rollioEfficaceAt: e\' la stessa condizione con cui si alza il bordo', () => {
+    // Il legame che conta: dove il bordo non si alza, il rollio non ha effetto.
+    // Se un giorno le due condizioni divergessero, l'auto guadagnerebbe
+    // aderenza su un pezzo di pista disegnato piatto.
+    const rollio = 25 * Math.PI / 180;
+    for (const raggio of [60, 90, 150, 300, 380, 420, 800, 5000]) {
+        const pts = anelloConRollio(raggio, 200, rollio);
+        const efficace = TrackGeometry.rollioEfficaceAt(pts, 20);
+        const { latoAlto } = TrackGeometry.rialzoBordi(pts, 20, 11);
+        assert.equal(efficace > 0, latoAlto !== 0,
+            `raggio ${raggio}: efficace ${efficace}, latoAlto ${latoAlto}`);
+    }
+});

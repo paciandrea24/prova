@@ -352,14 +352,31 @@
     // quello CONTRO normale (misurato: 211 unità dal centro contro 189). Da lì
     // `latoAlto = -sign(turnSigned)`. Il test «si alza il bordo esterno» rifà
     // questa misura contro la geometria vera, non contro la convenzione.
-    function rialzoBordi(points, i, mezza) {
+    // Il rollio che ha DAVVERO effetto al campione `i`: quello dichiarato, ma
+    // solo dove c'e' una curva su cui appoggiarlo.
+    //
+    // ⚠️ Esiste perche' il dato e l'effetto devono essere lo STESSO numero. Un
+    // tratto puo' portarsi dietro una sopraelevazione dichiarata pur essendo
+    // quasi dritto — l'editor avverte sui tratti tipizzati 'retta', non su una
+    // curva dolcissima. La mesh li' non inclina niente (non c'e' un bordo
+    // esterno da alzare), e se la fisica leggesse comunque il valore dichiarato
+    // l'auto terrebbe di piu' dove la pista si vede piatta: aderenza
+    // invisibile, il tipo di difetto che chi gioca descrive come «non capisco
+    // come funziona». Chiedono qui: la mesh, la fisica del server, il rollio
+    // mandato al client per coricare l'auto.
+    function rollioEfficaceAt(points, i) {
         const p = points[i];
         const rollio = (p && typeof p.rollio === 'number' && p.rollio > 0) ? p.rollio : 0;
-        if (!rollio) return { dyAlto: 0, latoAlto: 0 };
+        if (!rollio) return 0;
         const { radius, turnSigned } = curvatureAt(points, i);
-        if (!(radius < RETTILINEO_RAGGIO_MIN) || turnSigned === 0) {
-            return { dyAlto: 0, latoAlto: 0 };
-        }
+        if (!(radius < RETTILINEO_RAGGIO_MIN) || turnSigned === 0) return 0;
+        return rollio;
+    }
+
+    function rialzoBordi(points, i, mezza) {
+        const rollio = rollioEfficaceAt(points, i);
+        if (!rollio) return { dyAlto: 0, latoAlto: 0 };
+        const { turnSigned } = curvatureAt(points, i);
         return { dyAlto: Math.sin(rollio) * 2 * mezza, latoAlto: turnSigned > 0 ? -1 : 1 };
     }
 
@@ -1390,7 +1407,7 @@
         tangentAt,
         normalAt,
         pendenzaAt,
-        rialzoBordi,
+        rialzoBordi, rollioEfficaceAt,
         alzataLaterale,
         ribbonFacingAt,
         curvatureAt,
