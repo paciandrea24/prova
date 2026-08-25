@@ -184,3 +184,41 @@ test('una fila del traguardo vuota viene vista', () => {
     const c = V.controllaScenografia(raw, senzaPrincipale, contesto).problemi.map(p => p.codice);
     assert.ok(c.includes('niente-tribuna-principale'), c.join(', '));
 });
+
+// ---- l'elenco su cui offrire «togli questo» ----
+//
+// Il validatore continua a dire e a non aggiustare (e' scritto in testa al
+// modulo): `oggetti` serve solo a dare all'editor su COSA offrire il pulsante.
+// Chi toglie e' l'autore, e la scelta finisce in `scenografiaEsclusi`.
+// Rif. docs/superpowers/specs/2026-08-25-f1-densita-scenografia-design.md
+const SceneryEsclusioni = require('./sceneryEsclusioni.js');
+
+test('una segnalazione su oggetti li elenca tutti, non solo il peggiore', () => {
+    const { raw, layout, contesto } = scenografiaDi('prova');
+    const a = contesto.trackPts[100], b = contesto.trackPts[300];
+    const sporco = layout.concat([
+        { asset: 'containerStack', category: 'paddock-life', x: a.x, z: a.z, y: 0, rotY: 0, scale: 1 },
+        { asset: 'containerStack', category: 'paddock-life', x: b.x, z: b.z, y: 0, rotY: 0, scale: 1 },
+    ]);
+    const p = V.controllaScenografia(raw, sporco, contesto).problemi
+        .find(x => x.codice === 'oggetti-in-pista');
+    assert.ok(p.oggetti, 'la segnalazione deve portare gli oggetti');
+    assert.equal(p.oggetti.length, 2, 'due container in pista, due righe da togliere');
+    // L'id e' la STESSA stringa che il filtro si aspetta: una cosa, una misura.
+    for (const o of p.oggetti) {
+        assert.ok(o.id && o.asset && typeof o.x === 'number' && typeof o.z === 'number');
+        const voce = sporco.find(v => SceneryEsclusioni.idDi(v) === o.id);
+        assert.ok(voce, `l'id ${o.id} non corrisponde a nessuna voce del layout`);
+    }
+});
+
+test('le segnalazioni che non parlano di oggetti non portano un elenco', () => {
+    // «il traguardo non ha la sua tribuna» non si cura togliendo qualcosa:
+    // offrire un pulsante li' sarebbe peggio che non offrirlo.
+    const { raw, layout, contesto } = scenografiaDi('prova');
+    const senzaPrincipale = layout.filter(v => v.category !== 'grandstand-main');
+    const p = V.controllaScenografia(raw, senzaPrincipale, contesto).problemi
+        .find(x => x.codice === 'niente-tribuna-principale');
+    assert.ok(p, 'la tribuna principale mancante deve essere segnalata');
+    assert.equal(p.oggetti, null);
+});

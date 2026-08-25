@@ -27,12 +27,15 @@
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
         module.exports = factory(require('./trackGeometry.js'), require('./trackGravel.js'),
-                                 require('./sceneryAssetSizes.js'), require('./sceneryRegistro.js'));
+                                 require('./sceneryAssetSizes.js'), require('./sceneryRegistro.js'),
+                                 require('./sceneryEsclusioni.js'));
     } else {
         root.TrackValidatore = factory(root.TrackGeometry, root.TrackGravel,
-                                       root.SceneryAssetSizes, root.SceneryRegistro);
+                                       root.SceneryAssetSizes, root.SceneryRegistro,
+                                       root.SceneryEsclusioni);
     }
-})(typeof self !== 'undefined' ? self : this, function (TrackGeometry, TrackGravel, SceneryAssetSizes, SceneryRegistro) {
+})(typeof self !== 'undefined' ? self : this, function (TrackGeometry, TrackGravel, SceneryAssetSizes,
+                                                        SceneryRegistro, SceneryEsclusioni) {
 
     // --- Le soglie, e da dove vengono ------------------------------------
     // Misurate sulle piste esistenti il 2026-08-24, non scelte a naso.
@@ -69,8 +72,21 @@
 
     const N_CAMPIONI = 500;        // per le misure: 1000 non cambia i numeri
 
-    function problema(livello, codice, messaggio, dove) {
-        return { livello, codice, messaggio, dove: dove || null };
+    // `oggetti` c'e' solo sulle segnalazioni che parlano di COSE, e serve a
+    // una cosa sola: dare all'editor un elenco su cui offrire «togli questo».
+    // Il validatore continua a dire e a non aggiustare — chi toglie e' chi
+    // legge, e la scelta finisce nel .json della pista.
+    function problema(livello, codice, messaggio, dove, oggetti) {
+        return { livello, codice, messaggio, dove: dove || null, oggetti: oggetti || null };
+    }
+
+    // Da una voce del layout alla riga che l'editor mostra. `id` e' la stessa
+    // stringa che finisce in `scenografiaEsclusi`: una cosa, una misura.
+    function daTogliere(voce, quanto) {
+        const r = { id: SceneryEsclusioni.idDi(voce), asset: voce.asset,
+                    x: voce.x, z: voce.z };
+        if (quanto !== undefined) r.quanto = quanto;
+        return r;
     }
 
     // Raggio del cerchio per tre punti: R = (abc) / (4·area). Su punti
@@ -299,7 +315,8 @@
             aggiungi('impedisce', 'oggetti-in-pista',
                 `${inPista.length} ${inPista.length === 1 ? 'oggetto è' : 'oggetti sono'} dentro la carreggiata`
                 + ` (il peggiore: ${peggio.v.asset}, dentro di ${peggio.p.toFixed(1)} unità).`,
-                { x: peggio.v.x, z: peggio.v.z });
+                { x: peggio.v.x, z: peggio.v.z },
+                inPista.map(x => daTogliere(x.v, x.p)));
         }
 
         // 2. Dentro la VIA DI FUGA: per chi guida è pista anche quella. Esente
@@ -313,7 +330,8 @@
             aggiungi('da guardare', 'oggetti-in-via-di-fuga',
                 `${inFuga.length} ${inFuga.length === 1 ? 'oggetto sta' : 'oggetti stanno'} fra il muro e l'asfalto`
                 + ` (il peggiore: ${peggio.v.asset}).`,
-                { x: peggio.v.x, z: peggio.v.z });
+                { x: peggio.v.x, z: peggio.v.z },
+                inFuga.map(x => daTogliere(x.v, x.p)));
         }
 
         // 3. Dentro la CORSIA BOX: i garage la lambiscono per mestiere, il
@@ -328,7 +346,8 @@
                 aggiungi('da guardare', 'oggetti-in-corsia-box',
                     `${inBox.length} ${inBox.length === 1 ? 'oggetto è' : 'oggetti sono'} dentro la corsia box`
                     + ` (il peggiore: ${peggio.v.asset}).`,
-                    { x: peggio.v.x, z: peggio.v.z });
+                    { x: peggio.v.x, z: peggio.v.z },
+                    inBox.map(x => daTogliere(x.v, x.p)));
             }
         }
 

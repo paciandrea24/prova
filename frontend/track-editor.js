@@ -58,6 +58,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Una pista NUOVA nasce invece a segmenti: è il modo in cui si disegna da
     // qui in avanti.
     let geometria = { versione: 1, nodi: [], tratti: [] };
+    // Gli oggetti di scenografia che l'autore ha tolto a mano, per id
+    // (`SceneryEsclusioni.idDi`). Vivono nel .json della pista: la scenografia
+    // e' generata, non salvata, quindi l'unica cosa da conservare e' la
+    // DECISIONE di togliere, non l'oggetto.
+    let scenografiaEsclusi = [];
     let nodoSelezionato = -1;
     let trattoSelezionato = -1;
 
@@ -346,7 +351,69 @@ document.addEventListener('DOMContentLoaded', () => {
                 riga.style.cursor = 'default';
             }
             elenco.appendChild(riga);
+
+            // «TOGLI QUESTO OGGETTO», sulle sole segnalazioni che parlano di
+            // cose. Il validatore dice e non aggiusta: qui non si sposta
+            // niente da soli, e' l'autore che decide oggetto per oggetto.
+            if (p.oggetti && p.oggetti.length) {
+                for (const o of p.oggetti) {
+                    const voce = document.createElement('div');
+                    voce.className = 'problemaOggetto';
+                    const dove = document.createElement('span');
+                    dove.className = 'problemaOggettoNome';
+                    dove.textContent = o.asset
+                        + (o.quanto !== undefined ? ` (dentro di ${o.quanto.toFixed(1)})` : '');
+                    dove.title = 'Clicca per andarci';
+                    dove.addEventListener('click', () => portaLaVistaSu({ x: o.x, z: o.z }));
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'togliOggetto';
+                    btn.textContent = 'togli';
+                    btn.title = 'Toglie questo oggetto dalla scenografia di questa pista';
+                    btn.addEventListener('click', () => togliOggetto(o));
+                    voce.appendChild(dove);
+                    voce.appendChild(btn);
+                    elenco.appendChild(voce);
+                }
+            }
         }
+    }
+
+    // Il riepilogo di cio' che si e' tolto, con la via d'uscita. Senza,
+    // l'unico modo di annullare sarebbe riscrivere il .json a mano — ed e'
+    // proprio il genere di vicolo cieco che fa smettere di usare uno
+    // strumento.
+    function mostraOggettiTolti() {
+        const box = document.getElementById('oggettiTolti');
+        if (!box) return;
+        box.innerHTML = '';
+        if (!scenografiaEsclusi.length) return;
+        const n = scenografiaEsclusi.length;
+        box.textContent = `${n} ${n === 1 ? 'oggetto tolto' : 'oggetti tolti'} a mano `
+            + `da questa pista, ${n === 1 ? 'salvato' : 'salvati'} nel suo file.`;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = 'rimetti tutti';
+        btn.addEventListener('click', rimettiTuttiGliOggetti);
+        box.appendChild(btn);
+    }
+
+    // Togliere non genera di nuovo la scenografia da solo: rilancia il
+    // controllo, che e' l'unico posto dove la scenografia si ricostruisce.
+    // Cosi' l'autore VEDE sparire la segnalazione invece di doversi fidare.
+    function togliOggetto(o) {
+        if (!o || !o.id || scenografiaEsclusi.includes(o.id)) return;
+        scenografiaEsclusi.push(o.id);
+        controllaLaPista();
+    }
+
+    // Rimette tutto: serve quando si e' tolto qualcosa per sbaglio, e serve
+    // sopratutto perche' senza, l'unico modo di annullare sarebbe riscrivere
+    // il .json a mano.
+    function rimettiTuttiGliOggetti() {
+        if (!scenografiaEsclusi.length) return;
+        scenografiaEsclusi = [];
+        controllaLaPista();
     }
 
     async function controllaLaPista() {
@@ -383,6 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 trackPts: pts, pitPts, barrierProfile, barrierDist,
             }).problemi;
             mostraProblemi(problemi.concat(daScenografia), true);
+            mostraOggettiTolti();
         } catch (e) {
             mostraProblemi(problemi, false);
             document.getElementById('controllaEsito').textContent +=
@@ -1428,6 +1496,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('targetKm').value = data.targetKm ?? 5;
         document.getElementById('roadHalfWidth').value = data.roadHalfWidth ?? 11;
         document.getElementById('abrasivita').value = data.abrasivita ?? 1;
+        scenografiaEsclusi = Array.isArray(data.scenografiaEsclusi)
+            ? data.scenografiaEsclusi.slice() : [];
         // Giorno o notte e' una proprieta' del circuito e sta nel suo file:
         // qualifica e gara la leggono dalla stessa fonte, quindi non possono
         // finire una di giorno e una di notte.
@@ -1577,6 +1647,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // L'intenzione accanto al risultato: `geometria` è dell'editor,
             // `controlPoints` è del gioco e resta il suo prodotto cotto.
             geometria: geometria && geometria.nodi.length >= 3 ? geometria : undefined,
+            // Assente quando non c'e' niente da togliere: un campo vuoto in
+            // ogni .json e' rumore che poi qualcuno interpreta.
+            scenografiaEsclusi: scenografiaEsclusi.length ? scenografiaEsclusi.slice() : undefined,
             controlPoints: mainPoints,
             pit: {
                 roadHalfWidth: parseFloat(document.getElementById('pitRoadHalfWidth').value) || 5,

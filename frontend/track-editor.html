@@ -132,6 +132,42 @@
         .problema.sapere    { border-left-color: var(--spento); }
         .problema b { display: block; font-size: 10px; letter-spacing: 0.06em;
                       text-transform: uppercase; color: var(--spento); margin-bottom: 2px; }
+        /* Le righe dei singoli oggetti che si possono togliere. Rientrate
+           sotto la loro segnalazione: appartengono a quella, non sono difetti
+           per conto loro. */
+        .problemaOggetto {
+            display: flex; align-items: center; gap: 6px;
+            margin: 3px 0 0 14px; padding: 3px 6px;
+            background: var(--sezione); border-radius: 4px;
+            font-size: 10px; color: var(--spento);
+        }
+        /* ⚠️ `white-space: nowrap` + `min-width: 0`: senza, il nome va a capo
+           su due righe appena il bottone si prende spazio, e l'elenco diventa
+           una scala. */
+        .problemaOggettoNome {
+            flex: 1 1 auto; min-width: 0; cursor: pointer;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .problemaOggettoNome:hover { color: var(--testo); text-decoration: underline; }
+        /* ⚠️ `width: auto` e `margin-top: 0` NON sono ridondanti: la regola
+           generica `button` del pannello impone width 100% e margine sopra,
+           ed e' pensata per i bottoni a tutta larghezza delle azioni. Senza
+           annullarla, il «togli» si mangia la riga e spinge via il nome —
+           visto in un render headless prima che lo vedesse l'utente. */
+        .togliOggetto {
+            flex: 0 0 auto; width: auto; margin-top: 0;
+            padding: 1px 8px; font-size: 10px; line-height: 1.6;
+            background: transparent; border: 1px solid var(--bordo);
+            color: var(--spento); border-radius: 3px; cursor: pointer;
+        }
+        .togliOggetto:hover { border-color: var(--pericolo); color: var(--pericolo); }
+        #oggettiTolti { margin-top: 8px; font-size: 10px; color: var(--spento); }
+        #oggettiTolti button {
+            width: auto; margin-top: 0;
+            padding: 1px 8px; font-size: 10px; margin-left: 6px;
+            background: transparent; border: 1px solid var(--bordo);
+            color: var(--spento); border-radius: 3px; cursor: pointer;
+        }
         .tuttoBene { color: var(--accento); }
         #azioni .primaria { background: var(--accento); border-color: var(--accento); color: #102417; font-weight: 600; }
     </style>
@@ -190,6 +226,7 @@
                         <button id="controllaBtn" class="primaria">Controlla adesso</button>
                         <div id="controllaEsito" class="nota">Nessun controllo ancora fatto.</div>
                         <div id="controllaElenco"></div>
+                        <div id="oggettiTolti"></div>
                     </div>
                 </section>
 
@@ -294,6 +331,7 @@
          nello stesso ordine di f1.html. -->
     <script src="shared/sceneryAssetSizes.js?v=20260824c"></script>
     <script src="shared/sceneryRegistro.js?v=20260824d"></script>
+    <script src="shared/sceneryEsclusioni.js?v=20260825a"></script>
     <script src="shared/sceneryHills.js?v=20260810d"></script>
     <script src="shared/sceneryChunks.js?v=20260816a"></script>
     <script src="shared/sceneryGaps.js?v=20260813a"></script>
@@ -302,8 +340,8 @@
     <script src="shared/sceneryCrowd.js?v=20260825a"></script>
     <script src="shared/sceneryPaddock.js?v=20260824e"></script>
     <script src="shared/sceneryInfrastructure.js?v=20260816a"></script>
-    <script src="shared/trackScenery.js?v=20260825a"></script>
-    <script src="shared/trackValidatore.js?v=20260825a"></script>
-    <script src="track-editor.js?v=20260825a"></script>
+    <script src="shared/trackScenery.js?v=20260825b"></script>
+    <script src="shared/trackValidatore.js?v=20260825b"></script>
+    <script src="track-editor.js?v=20260825b"></script>
 </body>
 </html>
