@@ -163,8 +163,23 @@ Prende Zandvoort (18) e la Monza vecchia (~38).
   diversa sui due lati.
 - **Muro**: sul lato alto il profilo barriera si porta subito dopo il cordolo
   (regola dei ponti); sul lato basso invariato.
-- **Scenografia ed erba non salgono sul fianco**: sul tratto banked valgono le
-  esclusioni dei ponti (`splitByBridge`).
+- **Scenografia: due livelli, non uno.** ⚠️ La prima stesura di questa spec
+  diceva «valgono le esclusioni dei ponti», cioe' niente scenografia sul tratto.
+  Sbagliato, e l'ha visto l'utente: **un ponte e' sospeso nel vuoto, una
+  sopraelevazione poggia sulla terra** — il cuneo e' una collinetta. Con quella
+  regola una curva banked diventerebbe un buco spoglio in mezzo alla
+  scenografia, che e' il difetto che si nota di piu'.
+  - **Sul fianco inclinato** (il cuneo): niente asset. Gli asset sanno stare
+    solo su una superficie orizzontale; su una parete al 40% escono storti o
+    mezzi sepolti.
+  - **Oltre il cuneo**, dove il terreno torna piano: asset normali, **alla quota
+    del bordo alto**. Qui sta il costo: la quota del terreno deve conoscere il
+    cuneo, o le tribune del lato esterno restano appese a quota zero — che e'
+    **esattamente** il difetto del prato che galleggiava sopra le discese
+    (`9181c77`), dove `hillHeightAt` rispondeva zero in tutta la fascia vicina.
+    Si riusa quella cura: la quota si prende ai quattro angoli della cella.
+  - Se al playtest della 1b il cuneo risultasse comunque spoglio o sbagliato, il
+    ripiego prudente resta la regola dei ponti — ma e' un ripiego, non il piano.
 
 ### La guida
 
@@ -174,7 +189,10 @@ Prende Zandvoort (18) e la Monza vecchia (~38).
   (`updateTrackIndex`).
 - **Auto e camera** ruotano del rollio: si riusa il `rotateZ` dopo `lookAt` che
   l'halo-cam gia' fa (`f1.js:5902-5904`) — il rollio va DOPO `lookAt`, o ruota
-  attorno all'asse sbagliato.
+  attorno all'asse sbagliato. Sull'auto il rollio si somma a `rotation.z` con
+  l'ordine `YXZ` gia' impostato, e si **smorza col LERP** come gia' succede a
+  quota e beccheggio: il server manda il suo stato 20 volte al secondo, e senza
+  smorzamento ogni cambio di campione si vedrebbe come uno scatto.
 
 ### Limite dichiarato in anticipo
 
