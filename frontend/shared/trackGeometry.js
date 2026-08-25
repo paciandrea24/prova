@@ -297,6 +297,41 @@
         return Math.atan2(dy, horiz);
     }
 
+    // Oltre questo raggio un tratto è dritto: non ha un lato esterno, e una
+    // sopraelevazione lì non vuol dire niente. 400 unità su piste che vanno da
+    // 2000 a 5000 di sviluppo — una curva vera sta molto sotto.
+    const RETTILINEO_RAGGIO_MIN = 400;
+
+    // Di quanto si alza il bordo alto di un tratto sopraelevato, e QUALE bordo
+    // è. È l'unico posto in cui il verso della sopraelevazione viene deciso:
+    // nastro, cordoli, terrapieno, fisica ed editor lo chiedono qui invece di
+    // ricavarselo, o un giorno l'asfalto si alzerebbe da una parte e il cordolo
+    // dall'altra. (Rif. decisione D6 della spec del nastro orientato.)
+    //
+    // Si alza sempre l'ESTERNO della curva: il bordo interno resta alla quota
+    // che ha, così il nastro si appoggia sul terreno esistente senza bucarlo.
+    // Su un tratto dritto non esiste un esterno, e il rollio non ha effetto.
+    //
+    // `latoAlto` è +1 se sale il bordo dalla parte della normale, -1 dall'altra,
+    // 0 se non si alza niente. `dyAlto` è l'alzata TOTALE del bordo alto
+    // rispetto a quello basso: sin(rollio) per la carreggiata intera (2 mezze).
+    //
+    // ⚠️ Il segno è stato VERIFICATO, non dedotto: su un cerchio percorso ad
+    // angolo crescente `turnSigned` è positivo e il bordo lontano dal centro è
+    // quello CONTRO normale (misurato: 211 unità dal centro contro 189). Da lì
+    // `latoAlto = -sign(turnSigned)`. Il test «si alza il bordo esterno» rifà
+    // questa misura contro la geometria vera, non contro la convenzione.
+    function rialzoBordi(points, i, mezza) {
+        const p = points[i];
+        const rollio = (p && typeof p.rollio === 'number' && p.rollio > 0) ? p.rollio : 0;
+        if (!rollio) return { dyAlto: 0, latoAlto: 0 };
+        const { radius, turnSigned } = curvatureAt(points, i);
+        if (!(radius < RETTILINEO_RAGGIO_MIN) || turnSigned === 0) {
+            return { dyAlto: 0, latoAlto: 0 };
+        }
+        return { dyAlto: Math.sin(rollio) * 2 * mezza, latoAlto: turnSigned > 0 ? -1 : 1 };
+    }
+
     // Direzione in cui deve guardare un oggetto posato su un nastro parallelo
     // alla pista a distanza `distanzaA(idx, side)`: perpendicolare al NASTRO,
     // non alla pista.
@@ -1302,6 +1337,7 @@
         tangentAt,
         normalAt,
         pendenzaAt,
+        rialzoBordi,
         ribbonFacingAt,
         curvatureAt,
         bridgeHeightAt,

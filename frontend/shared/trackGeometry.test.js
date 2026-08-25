@@ -890,6 +890,71 @@ test('pendenzaAt chiude il giro: il campione 0 usa l\'ultimo campione', () => {
     assert.ok(Math.abs(p0) < 1e-12, `pendenza al traguardo: ${p0}`);
 });
 
+// --- rialzoBordi (fase 1b-1: banking) ---
+
+// Un cerchio percorso ad angolo crescente, con rollio costante su ogni punto.
+function cerchioConRollio(raggio, n, rollio) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * raggio, z: Math.sin(a) * raggio, y: 0, rollio });
+    }
+    return pts;
+}
+
+test('senza sopraelevazione nessun bordo si alza', () => {
+    const pts = cerchioConRollio(200, 120, 0);
+    const r = TrackGeometry.rialzoBordi(pts, 30, 11);
+    assert.equal(r.dyAlto, 0);
+    assert.equal(r.latoAlto, 0);
+});
+
+test('con la sopraelevazione un bordo sale di sin(rollio) per la carreggiata', () => {
+    const rollio = 18 * Math.PI / 180;
+    const pts = cerchioConRollio(200, 120, rollio);
+    const r = TrackGeometry.rialzoBordi(pts, 30, 11);
+    assert.ok(Math.abs(r.dyAlto - Math.sin(rollio) * 22) < 1e-9,
+        `alzata ${r.dyAlto} invece di ${Math.sin(rollio) * 22}`);
+    assert.notEqual(r.latoAlto, 0);
+});
+
+// Il cuore della decisione D6: si alza sempre l'ESTERNO. Verificato contro la
+// geometria vera (il bordo piu' lontano dal centro del cerchio), non dedotto
+// dalla convenzione di segno di normalAt.
+test('si alza il bordo esterno, quello lontano dal centro della curva', () => {
+    const rollio = 18 * Math.PI / 180;
+    const pts = cerchioConRollio(200, 120, rollio);
+    const i = 30, mezza = 11;
+    const { latoAlto } = TrackGeometry.rialzoBordi(pts, i, mezza);
+    const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
+    const p = pts[i];
+    // Il centro del cerchio e' l'origine: il bordo alto deve esserne piu' lontano.
+    const distAlto  = Math.hypot(p.x + nx * mezza * latoAlto, p.z + nz * mezza * latoAlto);
+    const distBasso = Math.hypot(p.x - nx * mezza * latoAlto, p.z - nz * mezza * latoAlto);
+    assert.ok(distAlto > distBasso,
+        `il bordo alto dista ${distAlto.toFixed(1)} dal centro, quello basso ${distBasso.toFixed(1)}`);
+});
+
+test('curve di verso opposto alzano bordi opposti', () => {
+    const rollio = 18 * Math.PI / 180;
+    const orario = cerchioConRollio(200, 120, rollio);
+    const antiorario = [...orario].reverse();
+    const a = TrackGeometry.rialzoBordi(orario, 30, 11);
+    const b = TrackGeometry.rialzoBordi(antiorario, 30, 11);
+    assert.equal(a.latoAlto, -b.latoAlto, 'le due curve alzano lo stesso lato');
+});
+
+test('su un tratto dritto la sopraelevazione non ha effetto', () => {
+    // Un rettilineo non ha un esterno: senza una curva, "si alza l'esterno" non
+    // vuol dire niente. Il validatore lo segnalera' invece di lasciare una
+    // sopraelevazione che non si vede.
+    const dritto = [];
+    for (let i = 0; i < 60; i++) dritto.push({ x: 0, z: i * 10, y: 0, rollio: 0.3 });
+    const r = TrackGeometry.rialzoBordi(dritto, 30, 11);
+    assert.equal(r.latoAlto, 0, 'un rettilineo non ha un lato esterno');
+    assert.equal(r.dyAlto, 0);
+});
+
 // Il beccheggio visivo dell'auto e' la pendenza NEGATA (in Three una rotazione
 // X positiva abbassa il muso). Questo test blocca il segno: se pendenzaAt
 // cambiasse verso, l'auto si inclinerebbe al contrario sulle salite e nessun
