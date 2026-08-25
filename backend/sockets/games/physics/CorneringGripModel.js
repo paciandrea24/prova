@@ -45,7 +45,33 @@ function corneringCapacity(p, isQuali, maxSpeed) {
     // bot DECIDE quanto frenare per la curva, li' la sterzata si ESEGUE.
     // Stessa separazione gia' documentata per downforceFactor.
     capacity /= fuelCorneringFactor(p);
+    // SOPRAELEVAZIONE. Su una curva banked una parte del peso dell'auto spinge
+    // verso l'interno invece che di lato, quindi la gomma ha più margine prima
+    // di scivolare. Qui e in nessun altro posto: questa funzione la consulta
+    // anche il bot per decidere quanto frenare (vedi la nota sopra su
+    // corneringCapacity estratta apposta), quindi il banking arriva anche a lui
+    // senza che f1Bot.js debba sapere cos'è un rollio.
+    //
+    // Il guadagno cresce col seno del rollio — è la componente di peso che si
+    // riversa sulla curva — normalizzato sul rollio massimo, così vale
+    // esattamente BANKING_GUADAGNO_MAX sulla parabolica più ripida ammessa e
+    // non oltre: una curva non deve mai diventare gratis.
+    capacity *= fattoreBanking(p.rollio);
     return capacity;
+}
+
+// Quanto in più tiene l'auto sulla sopraelevazione più ripida ammessa (45°).
+// Da tarare in pista: vedi il piano della fase 1b-1.
+const BANKING_GUADAGNO_MAX = 0.35;
+const ROLLIO_MAX = 45 * Math.PI / 180;
+
+// Un rollio assente o malformato vale piano, mai NaN: un NaN qui si
+// propagherebbe alla tenuta in curva e da lì alla traiettoria, senza un errore
+// che lo dica.
+function fattoreBanking(rollio) {
+    if (typeof rollio !== 'number' || !Number.isFinite(rollio) || rollio <= 0) return 1;
+    const quota = Math.min(1, Math.sin(rollio) / Math.sin(ROLLIO_MAX));
+    return 1 + BANKING_GUADAGNO_MAX * quota;
 }
 
 function lateralExcess(p, isQuali, maxSpeed) {
@@ -53,4 +79,4 @@ function lateralExcess(p, isQuali, maxSpeed) {
     return corneringExcess(p.inputs.steer, speedFrac, corneringCapacity(p, isQuali, maxSpeed));
 }
 
-module.exports = { lateralExcess, corneringCapacity };
+module.exports = { lateralExcess, corneringCapacity, fattoreBanking, BANKING_GUADAGNO_MAX };

@@ -207,3 +207,50 @@ test('lateralExcess: dopo l\'estrazione, produce ancora lo stesso risultato di c
         assertClose(lateralExcess(p, false, 6.2), expected, `lateralExcess deve derivare da corneringCapacity per speed=${p.speed}, wear=${p.tyreWear}`);
     }
 });
+
+// --- sopraelevazione (fase 1b-1: banking) ---
+//
+// L'innesto e' UNO: questa funzione. La consulta anche il bot per decidere
+// quanto frenare, quindi il banking arriva anche a lui senza che f1Bot.js
+// sappia niente di rollio.
+
+test('corneringCapacity: senza sopraelevazione la capacita\' e\' quella di sempre', () => {
+    // Le piste di oggi non devono cambiare di una virgola.
+    const senza = makePlayer(1, 6.2, 0);
+    const conZero = { ...makePlayer(1, 6.2, 0), rollio: 0 };
+    assertClose(corneringCapacity(conZero, false, 6.2), corneringCapacity(senza, false, 6.2),
+        'rollio 0 deve valere come rollio assente');
+});
+
+test('corneringCapacity: una curva sopraelevata da\' piu\' capacita\' laterale', () => {
+    const piano = { ...makePlayer(1, 6.2, 0), rollio: 0 };
+    const banked = { ...makePlayer(1, 6.2, 0), rollio: 18 * Math.PI / 180 };
+    assert.ok(corneringCapacity(banked, false, 6.2) > corneringCapacity(piano, false, 6.2),
+        'la sopraelevazione deve aumentare la tenuta');
+});
+
+test('corneringCapacity: piu\' sopraelevazione, piu\' tenuta', () => {
+    const a = { ...makePlayer(1, 6.2, 0), rollio: 10 * Math.PI / 180 };
+    const b = { ...makePlayer(1, 6.2, 0), rollio: 30 * Math.PI / 180 };
+    assert.ok(corneringCapacity(b, false, 6.2) > corneringCapacity(a, false, 6.2));
+});
+
+test('corneringCapacity: al massimo rollio il guadagno resta entro il tetto', () => {
+    // Una curva non deve mai diventare gratis: il guadagno e' limitato, e il
+    // valore lo dice la costante, non un numero ricopiato qui.
+    const { BANKING_GUADAGNO_MAX } = require('./CorneringGripModel');
+    const piano = { ...makePlayer(1, 6.2, 0), rollio: 0 };
+    const estremo = { ...makePlayer(1, 6.2, 0), rollio: 45 * Math.PI / 180 };
+    const rapporto = corneringCapacity(estremo, false, 6.2) / corneringCapacity(piano, false, 6.2);
+    assert.ok(Math.abs(rapporto - (1 + BANKING_GUADAGNO_MAX)) < 1e-9,
+        `al massimo rollio il rapporto e' ${rapporto}, atteso ${1 + BANKING_GUADAGNO_MAX}`);
+});
+
+test('corneringCapacity: un rollio malformato vale piano, mai NaN', () => {
+    const piano = { ...makePlayer(1, 6.2, 0), rollio: 0 };
+    const atteso = corneringCapacity(piano, false, 6.2);
+    for (const cattivo of [undefined, null, NaN, -0.3, 'venti']) {
+        const p = { ...makePlayer(1, 6.2, 0), rollio: cattivo };
+        assertClose(corneringCapacity(p, false, 6.2), atteso, `rollio ${cattivo}`);
+    }
+});
