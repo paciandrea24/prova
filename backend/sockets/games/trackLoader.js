@@ -443,6 +443,16 @@ function validateTrackData(data) {
         if (!g.tratti.every(t => t && (t.tipo === 'retta' || t.tipo === 'curva'))) {
             return 'geometria: tipo di tratto sconosciuto (attesi "retta" o "curva")';
         }
+        // La sopraelevazione è facoltativa (assente = tratto piano), ma se c'è
+        // dev'essere un numero fra 0 e il massimo: oltre, il cuneo di terra
+        // sotto la pista diventa una parete. Si ferma QUI, prima che finisca
+        // nel file — un valore assurdo scoperto in gara è molto più caro.
+        const ROLLIO_MAX_GRADI = 45;
+        if (!g.tratti.every(t => t.rollioGradi === undefined
+            || (typeof t.rollioGradi === 'number' && Number.isFinite(t.rollioGradi)
+                && t.rollioGradi >= 0 && t.rollioGradi <= ROLLIO_MAX_GRADI))) {
+            return `geometria: sopraelevazione fuori scala (attesi 0-${ROLLIO_MAX_GRADI} gradi)`;
+        }
     }
     return null;
 }

@@ -142,6 +142,15 @@
             if (typeof a.halfWidth === 'number' && typeof b.halfWidth === 'number') {
                 punto.halfWidth = a.halfWidth + (b.halfWidth - a.halfWidth) * f;
             } else if (typeof a.halfWidth === 'number') { punto.halfWidth = a.halfWidth; }
+            // ⚠️ E la sopraelevazione con lei. Questo punto è FACILE da
+            // dimenticare: `resample` non copia i punti, li RICOSTRUISCE campo
+            // per campo, quindi un campo nuovo che non compare qui sparisce in
+            // silenzio fra i punti cotti e quelli che il gioco usa davvero.
+            // È successo proprio così, e se n'è accorta solo una prova
+            // end-to-end: i punti cotti avevano il rollio, quelli campionati no.
+            if (typeof a.rollio === 'number' && typeof b.rollio === 'number') {
+                punto.rollio = a.rollio + (b.rollio - a.rollio) * f;
+            } else if (typeof a.rollio === 'number') { punto.rollio = a.rollio; }
             out.push(punto);
         }
         return out;

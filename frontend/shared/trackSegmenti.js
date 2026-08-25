@@ -46,6 +46,49 @@
         return Math.min(ROLLIO_MAX, gradi * Math.PI / 180);
     }
 
+    // Su quante unità di pista la sopraelevazione passa da un valore all'altro.
+    //
+    // ⚠️ Serve, e non è un dettaglio estetico: senza, il rollio salta dal
+    // valore di un tratto a quello del vicino in UN passo di cottura, cioè
+    // 18 gradi in cinque unità — misurati 8.8 gradi fra due campioni adiacenti.
+    // L'auto si coricherebbe di colpo, come su uno scalino. Su un circuito vero
+    // l'ingresso di una parabolica è lungo, ed è ciò che si sta riproducendo.
+    // 80 unità: su una parabolica vera l'ingresso è lungo un'ottantina di metri.
+    // A 18 gradi vuol dire circa 0.34 gradi per unità di pista nel punto più
+    // ripido della transizione — a 200 km/h, una ventina di gradi al secondo:
+    // si sente arrivare, non si subisce.
+    const RACCORDO_ROLLIO = 80;
+
+    // Spalma la transizione fra due tratti con sopraelevazione diversa su
+    // RACCORDO_ROLLIO unità, metà di qua e metà di là dal confine, con la
+    // stessa smoothstep usata per quota e larghezza (derivata nulla ai due
+    // estremi: nessuno spigolo da sentire sotto le ruote).
+    //
+    // Su tratti corti la transizione si accorcia da sé: si mescola sempre e
+    // solo dentro la finestra, e due confini vicini si sovrappongono senza
+    // creare gradini — l'ultimo valore scritto vince, ed è quello del confine
+    // più vicino, che è il comportamento voluto.
+    function raccordaRollio(punti, valori, passo) {
+        const n = punti.length;
+        if (!n) return;
+        const meta = Math.max(1, Math.round((RACCORDO_ROLLIO / 2) / (passo || PASSO_COTTURA)));
+        const originali = valori.slice();
+        for (let i = 0; i < n; i++) {
+            const prec = originali[(i - 1 + n) % n];
+            if (originali[i] === prec) continue;   // nessun confine qui
+            // Confine fra i-1 e i: si mescola su `meta` campioni per lato.
+            for (let k = -meta; k <= meta; k++) {
+                const idx = ((i + k) % n + n) % n;
+                // t va da 0 (inizio finestra, valore del tratto precedente) a 1
+                // (fine finestra, valore del tratto nuovo).
+                const t = (k + meta) / (2 * meta);
+                const te = t * t * (3 - 2 * t);
+                valori[idx] = prec + (originali[i] - prec) * te;
+            }
+        }
+        for (let i = 0; i < n; i++) punti[i].rollio = valori[i];
+    }
+
     // Versore della direzione di un nodo. Convenzione del progetto:
     // dir = atan2(dx, dz), quindi dx = sin(dir) e dz = cos(dir).
     function versore(dir) {
@@ -150,6 +193,7 @@
         // interpolerebbe su una sola sponda e direbbe una cosa inventata.
         const conRollio = tratti.some(t => rollioDiTratto(t) > 0);
         const out = [];
+        const rollioDelPunto = [];
         for (let i = 0; i < nodi.length; i++) {
             const a = nodi[i], b = nodi[(i + 1) % nodi.length];
             const tratto = tratti[i] || { tipo: 'curva' };
@@ -161,10 +205,11 @@
             const rollio = conRollio ? rollioDiTratto(tratto) : null;
             for (const p of punti) {
                 if (w !== null) p.halfWidth = w;
-                if (rollio !== null) p.rollio = rollio;
+                if (rollio !== null) rollioDelPunto.push(rollio);
                 out.push(p);
             }
         }
+        if (conRollio) raccordaRollio(out, rollioDelPunto, step);
         return out;
     }
 
@@ -398,7 +443,7 @@
         // linea di evidenziazione usava la quota del primo nodo e su un tratto
         // in salita finiva sotto l'asfalto (playtest 2026-08-25).
         cuoci, campionaTratto, valutaTratto, versore, PASSO_COTTURA,
-        ROLLIO_MAX, rollioDiTratto,
+        ROLLIO_MAX, rollioDiTratto, RACCORDO_ROLLIO,
         misureTratto, raddrizza, impostaLunghezza, direzioneAutomatica, riallinea, inserisci,
         trattoVicinoA, spostaTratto,
     };

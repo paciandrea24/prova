@@ -504,13 +504,39 @@ test('il rollio di un tratto arriva sui suoi punti, in radianti', () => {
     g.tratti[2] = { tipo: 'curva', rollioGradi: 18 };
     const punti = TS.cuoci(g, TS.PASSO_COTTURA, 11);
     const atteso = 18 * Math.PI / 180;
-    const conRollio = punti.filter(p => p.rollio);
-    assert.ok(conRollio.length > 0, 'il tratto sopraelevato non ha lasciato traccia');
-    for (const p of conRollio) assert.ok(Math.abs(p.rollio - atteso) < 1e-12);
+    const max = Math.max(...punti.map(p => p.rollio));
+    assert.ok(Math.abs(max - atteso) < 1e-12,
+        `il tratto sopraelevato tocca ${(max * 180 / Math.PI).toFixed(1)}° invece di 18°`);
     // Gli altri tratti restano piani, col campo esplicito a zero: un campo
     // assente accanto a uno pieno farebbe interpolare l'evalSegment su una
     // sola sponda, e il raccordo direbbe una cosa inventata.
     assert.ok(punti.some(p => p.rollio === 0), 'i tratti piani devono avere rollio 0');
+});
+
+test('la sopraelevazione entra e esce gradualmente, non a scalino', () => {
+    // ⚠️ Senza raccordo il rollio salta dal valore di un tratto a quello del
+    // vicino in un passo di cottura: misurati 8.8 gradi fra due campioni, cioe'
+    // 18 gradi in tre metri di pista. L'auto si coricherebbe di colpo.
+    const g = anelloDiProva();
+    g.tratti[2] = { tipo: 'curva', rollioGradi: 18 };
+    const punti = TS.cuoci(g, TS.PASSO_COTTURA, 11);
+    // ⚠️ La misura e' in gradi per UNITA' DI PISTA, non per campione: una
+    // soglia per campione varrebbe cose diverse su ogni pista, a seconda del
+    // passo di cottura.
+    let salto = 0;
+    for (let i = 0; i < punti.length; i++) {
+        const prec = punti[(i - 1 + punti.length) % punti.length];
+        salto = Math.max(salto, Math.abs(punti[i].rollio - prec.rollio));
+    }
+    const gradiPerUnita = (salto * 180 / Math.PI) / TS.PASSO_COTTURA;
+    assert.ok(gradiPerUnita < 0.5,
+        `il rollio cambia di ${gradiPerUnita.toFixed(2)}° per unita' di pista: e' uno scalino`);
+
+    // E la transizione dura davvero, invece di essere un gradino ammorbidito.
+    const inTransizione = punti.filter(p => p.rollio > 1e-9 && p.rollio < 18 * Math.PI / 180 - 1e-9).length;
+    const unitaDiTransizione = inTransizione * TS.PASSO_COTTURA;
+    assert.ok(unitaDiTransizione > TS.RACCORDO_ROLLIO,
+        `la transizione totale dura ${unitaDiTransizione} unita', attese piu' di ${TS.RACCORDO_ROLLIO}`);
 });
 
 test('il rollio non supera ROLLIO_MAX', () => {
@@ -545,9 +571,16 @@ test('un valore assurdo accanto a uno buono vale zero, non contagia il vicino', 
         g.tratti[1] = { tipo: 'curva', rollioGradi: cattiva };
         const punti = TS.cuoci(g, TS.PASSO_COTTURA, 11);
         assert.ok(punti.every(p => Number.isFinite(p.rollio)), `${cattiva}: rollio non finito`);
-        const valori = [...new Set(punti.map(p => p.rollio))].sort((a, b) => a - b);
-        assert.deepEqual(valori, [0, 18 * Math.PI / 180],
-            `${cattiva}: attesi solo zero e il tratto sopraelevato`);
+        // Col raccordo esistono anche i valori intermedi della transizione: il
+        // punto e' che nessuno esca dall'intervallo fra piano e il tratto
+        // sopraelevato — cioe' il tratto malformato non si prende il rollio del
+        // vicino ne' inventa un valore suo.
+        const max = 18 * Math.PI / 180;
+        assert.ok(punti.every(p => p.rollio >= 0 && p.rollio <= max + 1e-12),
+            `${cattiva}: qualche punto e' fuori dall'intervallo [0, 18°]`);
+        assert.ok(Math.abs(Math.max(...punti.map(p => p.rollio)) - max) < 1e-12,
+            `${cattiva}: il tratto buono non tocca piu' i suoi 18°`);
+        assert.ok(punti.some(p => p.rollio === 0), `${cattiva}: nessun punto e' rimasto piano`);
     }
 });
 

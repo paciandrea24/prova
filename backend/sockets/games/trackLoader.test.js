@@ -453,6 +453,45 @@ test('prova ha pendenze vere, in salita e in discesa', () => {
     assert.ok(Math.min(...pct) < -5, `discesa massima ${Math.min(...pct).toFixed(1)}%`);
 });
 
+// --- la sopraelevazione nel file salvato ---
+
+function geometriaMinima(rollioGradi) {
+    return {
+        nodi: [
+            { x: 0, z: 0, dir: 0 },
+            { x: 100, z: 0, dir: 1.5 },
+            { x: 100, z: 100, dir: 3 }
+        ],
+        tratti: [
+            { tipo: 'curva', rollioGradi },
+            { tipo: 'curva' },
+            { tipo: 'curva' }
+        ]
+    };
+}
+
+test('saveTrack accetta una sopraelevazione entro i 45 gradi', () => {
+    try {
+        saveTrack(minimalValidTrackData({ geometria: geometriaMinima(18) }));   // non deve lanciare
+        const riletta = JSON.parse(fs.readFileSync(path.join(TRACKS_DIR, 'test-scratch-track.json'), 'utf8'));
+        assert.equal(riletta.geometria.tratti[0].rollioGradi, 18,
+            'la sopraelevazione non e\' sopravvissuta al salvataggio');
+    } finally {
+        deleteTrack('test-scratch-track');
+    }
+});
+
+test('saveTrack rifiuta una sopraelevazione fuori scala', () => {
+    // Meglio fermarla qui che scoprirla in gara: oltre i 45 gradi il cuneo di
+    // terra sotto la pista diventa una parete.
+    for (const cattiva of [90, -5, NaN, 'venti']) {
+        assert.throws(
+            () => saveTrack(minimalValidTrackData({ geometria: geometriaMinima(cattiva) })),
+            /sopraelevazione fuori scala/,
+            `${cattiva} non doveva passare`);
+    }
+});
+
 // --- sopraelevazione per campione (fase 1b-1: banking) ---
 
 test('ogni campione ha un rollio finito e non negativo, su tutte le piste', () => {
