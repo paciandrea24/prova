@@ -345,7 +345,17 @@
     //
     // `latoAlto` è +1 se sale il bordo dalla parte della normale, -1 dall'altra,
     // 0 se non si alza niente. `dyAlto` è l'alzata TOTALE del bordo alto
-    // rispetto a quello basso: sin(rollio) per la carreggiata intera (2 mezze).
+    // rispetto a quello basso.
+    //
+    // ⚠️ TANGENTE, non seno. La carreggiata resta larga uguale IN PIANTA — la
+    // fisica del server è in due dimensioni e continua a misurare la pista lì —
+    // quindi il nastro è un piano largo `2*mezza` in orizzontale e alto
+    // `dyAlto`: la sua pendenza è atan(dyAlto / 2*mezza), e perché valga
+    // esattamente il rollio dichiarato ci vuole la tangente.
+    // Col seno il nastro veniva su di 29.8 gradi invece dei 35 scritti
+    // nell'editor, mentre l'auto si coricava dei 35 pieni: la ruota bassa
+    // affondava nell'asfalto di un decimo di unità. Segnalato in gioco il
+    // 2026-08-25 («le ruote entrano dentro l'asfalto»).
     //
     // ⚠️ Il segno è stato VERIFICATO, non dedotto: su un cerchio percorso ad
     // angolo crescente `turnSigned` è positivo e il bordo lontano dal centro è
@@ -377,7 +387,7 @@
         const rollio = rollioEfficaceAt(points, i);
         if (!rollio) return { dyAlto: 0, latoAlto: 0 };
         const { turnSigned } = curvatureAt(points, i);
-        return { dyAlto: Math.sin(rollio) * 2 * mezza, latoAlto: turnSigned > 0 ? -1 : 1 };
+        return { dyAlto: Math.tan(rollio) * 2 * mezza, latoAlto: turnSigned > 0 ? -1 : 1 };
     }
 
     // Di quanto è alzato il piano del nastro a `offset` unità dall'asse pista,
@@ -399,7 +409,7 @@
     // Di quanto il cuneo di terra prosegue oltre il bordo dell'asfalto, prima
     // di smettere di salire. Vale la larghezza del cordolo, che sul lato alto
     // continua la stessa pendenza del nastro: fermare la terra esattamente al
-    // bordo lascerebbe il cordolo scoperto di sin(rollio) per la sua larghezza.
+    // bordo lascerebbe il cordolo scoperto di tan(rollio) per la sua larghezza.
     // ⚠️ E' lo stesso numero di CURB_W in f1Scena.js, e un test li tiene legati:
     // se il cordolo cambia larghezza, il cuneo lo segue.
     const CUNEO_OLTRE_IL_BORDO = 2.8;

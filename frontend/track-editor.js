@@ -644,7 +644,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ? 'vuoto = piana. Si alza sempre il bordo esterno della curva.'
             : (tipo === 'retta'
                 ? `⚠️ ${gradi}° su un rettilineo non hanno effetto: senza curva non c'è un bordo esterno`
-                : `il bordo esterno sale di ${(Math.sin(gradi * Math.PI / 180) * (
+                : `il bordo esterno sale di ${(Math.tan(gradi * Math.PI / 180) * (
                     (typeof propria === 'number' && propria > 0 ? propria : nominale) * 2)).toFixed(1)} unita'`);
 
         document.getElementById('trattoMisure').textContent = tipo === 'retta'

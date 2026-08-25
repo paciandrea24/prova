@@ -909,12 +909,19 @@ test('senza sopraelevazione nessun bordo si alza', () => {
     assert.equal(r.latoAlto, 0);
 });
 
-test('con la sopraelevazione un bordo sale di sin(rollio) per la carreggiata', () => {
+test('con la sopraelevazione un bordo sale di tan(rollio) per la carreggiata', () => {
     const rollio = 18 * Math.PI / 180;
     const pts = cerchioConRollio(200, 120, rollio);
     const r = TrackGeometry.rialzoBordi(pts, 30, 11);
-    assert.ok(Math.abs(r.dyAlto - Math.sin(rollio) * 22) < 1e-9,
-        `alzata ${r.dyAlto} invece di ${Math.sin(rollio) * 22}`);
+    // TANGENTE: la carreggiata resta larga uguale in pianta, quindi perche' il
+    // piano sia inclinato dei gradi dichiarati l'alzata e' tan, non sin. Col
+    // seno il nastro saliva di 29.8 gradi invece di 35 e l'auto, coricata dei
+    // 35 pieni, ci affondava dentro con la ruota bassa.
+    assert.ok(Math.abs(r.dyAlto - Math.tan(rollio) * 22) < 1e-9,
+        `alzata ${r.dyAlto} invece di ${Math.tan(rollio) * 22}`);
+    // La verifica che conta: il piano inclinato quanto dice il numero.
+    assert.ok(Math.abs(Math.atan(r.dyAlto / 22) - rollio) < 1e-12,
+        `il nastro e' inclinato di ${(Math.atan(r.dyAlto / 22) * 180 / Math.PI).toFixed(1)}° invece di 18°`);
     assert.notEqual(r.latoAlto, 0);
 });
 
@@ -964,8 +971,8 @@ test('alzataLaterale prosegue oltre il bordo con la stessa pendenza', () => {
     const { latoAlto } = TrackGeometry.rialzoBordi(pts, i, mezza);
     const alBordo = TrackGeometry.alzataLaterale(pts, i, mezza, latoAlto * mezza);
     const oltre = TrackGeometry.alzataLaterale(pts, i, mezza, latoAlto * (mezza + curbW));
-    assert.ok(Math.abs((oltre - alBordo) - Math.sin(rollio) * curbW) < 1e-12,
-        `il cordolo sale di ${(oltre - alBordo).toFixed(4)} invece di ${(Math.sin(rollio) * curbW).toFixed(4)}`);
+    assert.ok(Math.abs((oltre - alBordo) - Math.tan(rollio) * curbW) < 1e-12,
+        `il cordolo sale di ${(oltre - alBordo).toFixed(4)} invece di ${(Math.tan(rollio) * curbW).toFixed(4)}`);
 });
 
 test('alzataLaterale non scende MAI sotto zero, oltre il bordo basso', () => {

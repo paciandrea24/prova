@@ -720,7 +720,7 @@ test('con la sopraelevazione un bordo sale e l\'altro resta dov\'era', () => {
     const pts = cerchioBanked(gradi);
     const mesh = TrackMeshBuilder.buildRibbon(c, pts, 11, {});
     const pos = mesh.geometry.attributes.position.array;
-    const alzataAttesa = Math.sin(gradi * Math.PI / 180) * 22;
+    const alzataAttesa = Math.tan(gradi * Math.PI / 180) * 22;
     for (let i = 0; i < pts.length; i++) {
         const b = i * 6;
         const alto = Math.max(pos[b + 1], pos[b + 4]);
@@ -816,7 +816,7 @@ test('il terrapieno del lato alto non sale sopra il bordo del nastro', () => {
     const MEZZA = 11, GRADI = 35, PLATEAU = 45, OUTER = 90;
     const c = contenitore();
     TrackMeshBuilder.buildEmbankment(c, cerchioBanked(GRADI), MEZZA, PLATEAU, OUTER);
-    const dyAlto = Math.sin(GRADI * Math.PI / 180) * 2 * MEZZA;
+    const dyAlto = Math.tan(GRADI * Math.PI / 180) * 2 * MEZZA;
     const tetto = dyAlto * (1 + TrackGeometry.CUNEO_OLTRE_IL_BORDO / (2 * MEZZA)) + 1e-6;
     let maxY = -Infinity;
     for (const mesh of c.children) {
@@ -855,7 +855,7 @@ test('la ghiaia del lato alto sale col nastro', () => {
         return best;
     };
     const alto = vicino(latoAlto), basso = vicino(-latoAlto);
-    const alzataAttesa = Math.sin(GRADI * Math.PI / 180) * 2 * MEZZA;
+    const alzataAttesa = Math.tan(GRADI * Math.PI / 180) * 2 * MEZZA;
     assert.ok(alto > basso + alzataAttesa * 0.8,
         `ghiaia: lato alto ${alto.toFixed(2)}, lato basso ${basso.toFixed(2)}, attesa una differenza di ~${alzataAttesa.toFixed(2)}`);
 });
@@ -890,4 +890,26 @@ test('le celle di prato al confine stanno SOTTO il terrapieno, non alla sua stes
     assert.equal(sopra, 0, `${sopra} vertici di prato bucano il terrapieno da sopra`);
     assert.equal(complanari, 0,
         `${complanari} vertici di prato stanno alla stessa quota del terrapieno: e' li' che sfarfalla`);
+});
+
+test('la ghiaia sta sopra il terreno di un margine che regge anche da lontano', () => {
+    // ⚠️ Non basta che stia sopra: la precisione del depth buffer peggiora col
+    // quadrato della distanza, e i tre centesimi di prima si vedevano come denti
+    // verdi dentro la sabbia all'esterno della curva sopraelevata. Il margine e'
+    // una costante dichiarata, e questo test la difende dal prossimo "tanto e'
+    // uguale".
+    const MEZZA = 11, CURB_W = 2.8;
+    const banda = new Array(200).fill(8);
+    const c = contenitore();
+    const pts = cerchio();
+    for (const p of pts) p.y = 3;                     // pista in quota, piana
+    TrackMeshBuilder.buildGravel(c, pts, MEZZA, CURB_W, { left: banda, right: banda });
+    let minimo = Infinity;
+    for (const mesh of c.children) {
+        const attr = mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.position;
+        if (!attr) continue;
+        for (let v = 1; v < attr.array.length; v += 3) minimo = Math.min(minimo, attr.array[v] - 3);
+    }
+    assert.ok(minimo >= 0.1,
+        `la ghiaia sta solo ${minimo.toFixed(3)} sopra il terreno: a distanza le due superfici si contendono il pixel`);
 });
