@@ -64,6 +64,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // DECISIONE di togliere, non l'oggetto.
     let scenografiaEsclusi = [];
     let nodoSelezionato = -1;
+    // I nodi scelti INSIEME, per le operazioni di quota. Un Set e non un
+    // array: l'ordine non conta e l'appartenenza si chiede a ogni marker
+    // disegnato. Vuoto = nessuna selezione multipla in corso, e tutto si
+    // comporta come prima.
+    // Rif. richiesta utente: «tutti i punti selezionati portati allo stesso
+    // livello» (blocco D, profilo altimetrico).
+    let nodiSelezionati = new Set();
     let trattoSelezionato = -1;
 
     function inSegmenti() { return geometria !== null; }
@@ -117,6 +124,12 @@ document.addEventListener('DOMContentLoaded', () => {
         geometria = JSON.parse(daDove.pop());
         // Un nodo può non esistere più: la selezione va rimessa in sicurezza.
         if (nodoSelezionato >= geometria.nodi.length) nodoSelezionato = -1;
+        // Anche il GRUPPO va potato: un nodo cancellato lascerebbe nel Set un
+        // indice che ora ne indica un altro, e le operazioni di quota
+        // finirebbero sul nodo sbagliato senza dire niente.
+        for (const i of [...nodiSelezionati]) {
+            if (i >= geometria.nodi.length) nodiSelezionati.delete(i);
+        }
         if (trattoSelezionato >= geometria.tratti.length) trattoSelezionato = -1;
         rigeneraDaGeometria();
         rebuild();
@@ -153,7 +166,131 @@ document.addEventListener('DOMContentLoaded', () => {
     // salita ho messo?». Qui il numero c'e', insieme alla PENDENZA verso il
     // nodo successivo, che e' cio' che conta davvero per chi guida: una salita
     // di 10 unita' su 500 e' pianura, su 40 e' un muro.
+    // ====================================================
+    // LE OPERAZIONI SUL GRUPPO DI NODI.
+    //
+    // Richiesta dell'utente: «tutti i punti selezionati portati allo stesso
+    // livello». Le tre che servono davvero a costruire un'altimetria:
+    // livellare a una quota scelta, livellare a quella del primo, e la RAMPA
+    // — che è come si fa una salita vera, non mettendo ogni nodo a mano.
+    //
+    // ⚠️ «Primo» e «ultimo» sono per INDICE lungo il giro, non per ordine di
+    // click: una rampa deve seguire il senso di marcia, altrimenti scende
+    // dove l'autore la voleva in salita.
+    // ====================================================
+    function nodiDelGruppo() {
+        return [...nodiSelezionati].filter(i => geometria.nodi[i]).sort((a, b) => a - b);
+    }
+
+    function applicaAlGruppo(operazione) {
+        const idx = nodiDelGruppo();
+        if (!idx.length) return;
+        salvaStato();
+        operazione(idx);
+        dopoModificaMain();
+        rebuild();
+        aggiornaPannelloQuota();
+        aggiornaRiquadroTratto();
+    }
+
+    function aggiornaPannelloGruppo() {
+        const box = document.getElementById('quotaGruppo');
+        if (!box) return;
+        box.innerHTML = '';
+        const idx = nodiDelGruppo();
+        if (!inSegmenti() || !idx.length) {
+            if (inSegmenti()) {
+                box.innerHTML = '<div class="nota">Trascina sul vuoto per scegliere più nodi'
+                    + ' · <kbd>Ctrl</kbd>+clic per aggiungerne o toglierne uno</div>';
+            }
+            return;
+        }
+        const quote = idx.map(i => geometria.nodi[i].y || 0);
+        const min = Math.min(...quote), max = Math.max(...quote);
+        const testa = document.createElement('div');
+        testa.className = 'nota';
+        testa.innerHTML = `<b>${idx.length} nodi scelti</b> · quote da `
+            + `<span class="valore">${min.toFixed(1)}</span> a `
+            + `<span class="valore">${max.toFixed(1)}</span>`;
+        box.appendChild(testa);
+
+        const riga = document.createElement('div');
+        riga.className = 'riga';
+        const campo = document.createElement('input');
+        campo.type = 'number';
+        campo.step = '0.5';
+        campo.value = quote[0].toFixed(1);
+        campo.title = 'Quota a cui portare tutti i nodi scelti';
+        const aQuota = document.createElement('button');
+        aQuota.type = 'button';
+        aQuota.textContent = 'porta tutti qui';
+        aQuota.addEventListener('click', () => {
+            const v = parseFloat(campo.value);
+            if (!Number.isFinite(v)) return;
+            applicaAlGruppo((ids) => { for (const i of ids) geometria.nodi[i].y = v; });
+        });
+        riga.appendChild(campo);
+        riga.appendChild(aQuota);
+        box.appendChild(riga);
+
+        const riga2 = document.createElement('div');
+        riga2.className = 'riga';
+        const alPrimo = document.createElement('button');
+        alPrimo.type = 'button';
+        alPrimo.textContent = 'livella al primo';
+        alPrimo.title = 'Porta tutti alla quota del nodo con indice più basso';
+        alPrimo.addEventListener('click', () => applicaAlGruppo((ids) => {
+            const y = geometria.nodi[ids[0]].y || 0;
+            for (const i of ids) geometria.nodi[i].y = y;
+        }));
+        const rampa = document.createElement('button');
+        rampa.type = 'button';
+        rampa.textContent = 'rampa';
+        rampa.title = 'Distribuisce le quote dal primo all’ultimo, in proporzione alla distanza percorsa';
+        rampa.addEventListener('click', () => applicaAlGruppo((ids) => {
+            if (ids.length < 2) return;
+            const y0 = geometria.nodi[ids[0]].y || 0;
+            const y1 = geometria.nodi[ids[ids.length - 1]].y || 0;
+            // ⚠️ In proporzione alla DISTANZA percorsa, non al numero di nodi:
+            // i nodi non sono equidistanti, e ripartire il dislivello in parti
+            // uguali darebbe una rampa a pendenza variabile — che e'
+            // esattamente cio' che si sta cercando di evitare.
+            const passi = [0];
+            for (let k = 1; k < ids.length; k++) {
+                const a = geometria.nodi[ids[k - 1]], b = geometria.nodi[ids[k]];
+                passi.push(passi[k - 1] + Math.hypot(b.x - a.x, b.z - a.z));
+            }
+            const totale = passi[passi.length - 1] || 1;
+            ids.forEach((i, k) => {
+                geometria.nodi[i].y = +(y0 + (y1 - y0) * (passi[k] / totale)).toFixed(2);
+            });
+        }));
+        riga2.appendChild(alPrimo);
+        riga2.appendChild(rampa);
+        box.appendChild(riga2);
+
+        // La pendenza che ne esce: e' il numero che dice se la rampa e'
+        // percorribile. Oltre il 15% il validatore la segnala.
+        if (idx.length >= 2) {
+            let orizzontale = 0;
+            for (let k = 1; k < idx.length; k++) {
+                const a = geometria.nodi[idx[k - 1]], b = geometria.nodi[idx[k]];
+                orizzontale += Math.hypot(b.x - a.x, b.z - a.z);
+            }
+            const dislivello = (geometria.nodi[idx[idx.length - 1]].y || 0) - (geometria.nodi[idx[0]].y || 0);
+            const pend = orizzontale > 0 ? (dislivello / orizzontale) * 100 : 0;
+            const nota = document.createElement('div');
+            nota.className = 'nota';
+            nota.innerHTML = `dal primo all’ultimo: <span class="valore">${dislivello >= 0 ? '+' : ''}`
+                + `${dislivello.toFixed(1)}</span> su ${orizzontale.toFixed(0)} · pendenza `
+                + `<span class="valore">${pend.toFixed(1)}%</span>`
+                + (Math.abs(pend) > 15 ? ' — oltre il limite del validatore' : '');
+            box.appendChild(nota);
+        }
+    }
+
     function aggiornaPannelloQuota() {
+        aggiornaPannelloGruppo();
         const el = document.getElementById('quotaStato');
         if (!el) return;
         const lista = listaDi('main');
@@ -890,10 +1027,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // centinaia e non si trascinano — sono il prodotto, non il disegno.
         // Più grandi, perché sono pochi e ognuno conta.
         const selMat = new THREE.MeshBasicMaterial({ color: 0x2ecc71 });
+        // Un colore SUO per la selezione multipla: se usasse lo stesso verde
+        // del nodo corrente non si distinguerebbe piu' quale nodo comanda il
+        // pannello del tratto.
+        const multiMat = new THREE.MeshBasicMaterial({ color: 0xf5c451 });
         listaDi('main').forEach((p, i) => {
             const y = p.y || 0;
             const scelto = inSegmenti() && i === nodoSelezionato;
-            const m = new THREE.Mesh(geo, scelto ? selMat : (p.bridge ? bridgeMat : materialForY(y)));
+            const inGruppo = inSegmenti() && nodiSelezionati.has(i);
+            const m = new THREE.Mesh(geo, scelto ? selMat
+                : inGruppo ? multiMat : (p.bridge ? bridgeMat : materialForY(y)));
             m.scale.setScalar(scaleForY(y) * (inSegmenti() ? 1.4 : 1));
             m.position.set(p.x, y + 1, p.z);
             m.userData = { list: 'main', index: i };
@@ -1179,6 +1322,57 @@ document.addEventListener('DOMContentLoaded', () => {
         scene.add(evidenza);
     }
 
+    // IL RETTANGOLO DI SELEZIONE.
+    //
+    // È un div in sovrimpressione e non una mesh: sta in coordinate SCHERMO,
+    // dove l'utente lo sta disegnando, e non deve seguire zoom o inclinazione
+    // della camera mentre lo si traccia.
+    let rettangolo = null;
+    let rettangoloDiv = null;
+    // Sotto questo spostamento in pixel il gesto è un CLICK, non un
+    // trascinamento: senza una soglia, un tremolio della mano trasformerebbe
+    // ogni posa di un nodo in una selezione vuota.
+    const SOGLIA_TRASCINAMENTO = 4;
+
+    function disegnaRettangolo() {
+        if (!rettangolo) {
+            if (rettangoloDiv) { rettangoloDiv.remove(); rettangoloDiv = null; }
+            return;
+        }
+        if (!rettangoloDiv) {
+            rettangoloDiv = document.createElement('div');
+            rettangoloDiv.id = 'rettangoloSelezione';
+            document.body.appendChild(rettangoloDiv);
+        }
+        const x = Math.min(rettangolo.x0, rettangolo.x1);
+        const y = Math.min(rettangolo.y0, rettangolo.y1);
+        rettangoloDiv.style.left = x + 'px';
+        rettangoloDiv.style.top = y + 'px';
+        rettangoloDiv.style.width = Math.abs(rettangolo.x1 - rettangolo.x0) + 'px';
+        rettangoloDiv.style.height = Math.abs(rettangolo.y1 - rettangolo.y0) + 'px';
+    }
+
+    // Quali nodi cadono dentro il rettangolo. Si proiettano i NODI sullo
+    // schermo invece di trasformare il rettangolo nel mondo: con la camera
+    // inclinata un rettangolo sullo schermo non è un rettangolo a terra, e
+    // finirebbe per prendere nodi che l'utente non ha cerchiato.
+    function nodiNelRettangolo() {
+        const dentro = new Set();
+        if (!rettangolo || !inSegmenti()) return dentro;
+        const xMin = Math.min(rettangolo.x0, rettangolo.x1);
+        const xMax = Math.max(rettangolo.x0, rettangolo.x1);
+        const yMin = Math.min(rettangolo.y0, rettangolo.y1);
+        const yMax = Math.max(rettangolo.y0, rettangolo.y1);
+        const v = new THREE.Vector3();
+        geometria.nodi.forEach((p, i) => {
+            v.set(p.x, (p.y || 0) + 1, p.z).project(camera);
+            const sx = (v.x + 1) / 2 * window.innerWidth;
+            const sy = (-v.y + 1) / 2 * window.innerHeight;
+            if (sx >= xMin && sx <= xMax && sy >= yMin && sy <= yMax) dentro.add(i);
+        });
+        return dentro;
+    }
+
     let dragging = null;
     let panning = false;
     let panLast = { x: 0, y: 0 };
@@ -1230,6 +1424,18 @@ document.addEventListener('DOMContentLoaded', () => {
             salvaStato();
             dragging = marker.userData;
             if (marker.userData.maniglia !== undefined) return;   // la maniglia non seleziona
+            // Ctrl (o Cmd) su un nodo: lo aggiunge o lo toglie dal gruppo,
+            // senza trascinarlo. È il modo per rifinire una selezione fatta
+            // col rettangolo, che prende per forza anche qualcosa di troppo.
+            if (inSegmenti() && marker.userData.list === 'main' && (ev.ctrlKey || ev.metaKey)) {
+                dragging = null;
+                const i = marker.userData.index;
+                if (nodiSelezionati.has(i)) nodiSelezionati.delete(i);
+                else nodiSelezionati.add(i);
+                rebuild();
+                aggiornaPannelloQuota();
+                return;
+            }
             // Cliccare un nodo lo sceglie, e sceglie il tratto che ne PARTE:
             // è quello che si vede davanti quando lo si guarda.
             if (inSegmenti() && marker.userData.list === 'main') {
@@ -1251,6 +1457,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const hit = worldFromEvent(ev);
+
+        // PREMERE SUL VUOTO PUÒ ESSERE DUE COSE, e si distinguono dal
+        // MOVIMENTO, non da un tasto: un click fermo posa un nodo (com'è
+        // sempre stato), un trascinamento traccia il rettangolo di selezione.
+        // La decisione si prende al rilascio; qui si prende solo nota.
+        if (inSegmenti() && !document.getElementById('pitMode').checked
+            && !presaSulNastro(hit)) {
+            rettangolo = {
+                x0: ev.clientX, y0: ev.clientY, x1: ev.clientX, y1: ev.clientY,
+                mondo0: hit, aggiunge: ev.ctrlKey || ev.metaKey, mosso: false,
+            };
+            return;
+        }
 
         // PREMERE SUL NASTRO PRENDE IL TRATTO, e non aggiunge un nodo.
         //
@@ -1286,17 +1505,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // In modalità segmenti si posa un NODO, non un punto di controllo: i
-        // punti li produce la cottura. La corsia box resta a punti — ha una
-        // geometria sua, che questo progetto non tocca.
-        if (inSegmenti() && !document.getElementById('pitMode').checked) {
-            salvaStato();
-            geometria.nodi.push({ x: +hit.x.toFixed(2), z: +hit.z.toFixed(2), y: 0, dir: 0 });
-            geometria.tratti.push({ tipo: 'curva' });
-            dopoModificaMain();
-            rebuild();
-            return;
-        }
+        // Qui ci arriva solo la CORSIA BOX e la modalità punti: in segmenti la
+        // posa di un nodo è passata al rilascio del mouse, perché lo stesso
+        // gesto può essere un click (posa) o un trascinamento (rettangolo di
+        // selezione) e la differenza si vede solo alla fine.
         activeList().push({ x: +hit.x.toFixed(2), z: +hit.z.toFixed(2) });
         rebuild();
     });
@@ -1308,6 +1520,20 @@ document.addEventListener('DOMContentLoaded', () => {
         // lì il tratto è già preso, e ricalcolarlo farebbe saltare
         // l'evidenziazione sull'oggetto sbagliato appena il mouse esce dal
         // nastro.
+        // Il rettangolo si allarga col mouse. `mosso` scatta una volta sola e
+        // non torna più indietro: un gesto che è diventato trascinamento non
+        // deve ridiventare un click se la mano torna al punto di partenza.
+        if (rettangolo) {
+            rettangolo.x1 = ev.clientX;
+            rettangolo.y1 = ev.clientY;
+            if (Math.abs(rettangolo.x1 - rettangolo.x0) > SOGLIA_TRASCINAMENTO
+                || Math.abs(rettangolo.y1 - rettangolo.y0) > SOGLIA_TRASCINAMENTO) {
+                rettangolo.mosso = true;
+            }
+            if (rettangolo.mosso) disegnaRettangolo();
+            return;
+        }
+
         // ⚠️ `inSegmenti()` PRIMA di tutto: senza, ogni movimento del mouse
         // farebbe un raycast su tutti i marker, e sulle piste vecchie a punti
         // sono centinaia. In modalità punti non c'è niente da afferrare
@@ -1440,6 +1666,33 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.addEventListener('mouseup', () => {
+        // Qui si decide che gesto è stato: un click posa un nodo, un
+        // trascinamento sceglie i nodi cerchiati.
+        if (rettangolo) {
+            const r = rettangolo;
+            if (r.mosso) {
+                const presi = nodiNelRettangolo();
+                if (r.aggiunge) for (const i of presi) nodiSelezionati.add(i);
+                else nodiSelezionati = presi;
+                rettangolo = null;
+                disegnaRettangolo();
+                rebuild();
+                aggiornaPannelloQuota();
+            } else {
+                rettangolo = null;
+                disegnaRettangolo();
+                // Click fermo sul vuoto: com'è sempre stato, posa un nodo. E
+                // sgancia la selezione, che riferita ai vecchi indici non
+                // vorrebbe più dire niente.
+                salvaStato();
+                nodiSelezionati.clear();
+                geometria.nodi.push({ x: +r.mondo0.x.toFixed(2), z: +r.mondo0.z.toFixed(2), y: 0, dir: 0 });
+                geometria.tratti.push({ tipo: 'curva' });
+                dopoModificaMain();
+                rebuild();
+                aggiornaPannelloQuota();
+            }
+        }
         dragging = null; panning = false; imageDrag = null; triggerDrag = null;
         startFinishDrag = null; trattoDrag = null;
     });
@@ -1455,6 +1708,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (inSegmenti() && marker.userData.list === 'main') {
             geometria.tratti.splice(marker.userData.index, 1);
             nodoSelezionato = -1;
+            nodiSelezionati.clear();
             trattoSelezionato = -1;
         }
         dopoModificaMain();
@@ -1585,6 +1839,7 @@ document.addEventListener('DOMContentLoaded', () => {
             try { sessionStorage.removeItem('f1AnteprimaPista'); } catch (e) { /* modalità privata */ }
             geometria = { versione: 1, nodi: [], tratti: [] };
             nodoSelezionato = -1;
+            nodiSelezionati.clear();
             trattoSelezionato = -1;
             mainPoints = [];
         } else {
@@ -1629,6 +1884,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 geometria.nodi.pop();
                 geometria.tratti.pop();
                 nodoSelezionato = -1;
+                nodiSelezionati.clear();
                 trattoSelezionato = -1;
                 dopoModificaMain();
             } else {
@@ -1745,6 +2001,7 @@ document.addEventListener('DOMContentLoaded', () => {
         geometria = (data.geometria && Array.isArray(data.geometria.nodi)
                      && data.geometria.nodi.length >= 3) ? data.geometria : null;
         nodoSelezionato = -1;
+        nodiSelezionati.clear();
         trattoSelezionato = -1;
         if (geometria) rigeneraDaGeometria();
         aggiornaRiquadroTratto();

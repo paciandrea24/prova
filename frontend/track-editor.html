@@ -168,6 +168,17 @@
             background: transparent; border: 1px solid var(--bordo);
             color: var(--spento); border-radius: 3px; cursor: pointer;
         }
+        /* Il rettangolo di selezione: in coordinate schermo, sopra la scena.
+           `pointer-events: none` o si mangerebbe il mouseup che lo chiude. */
+        #rettangoloSelezione {
+            position: fixed; pointer-events: none; z-index: 50;
+            border: 1px solid var(--accento);
+            background: rgba(110, 231, 160, 0.12);
+        }
+        #quotaGruppo { margin-top: 8px; }
+        #quotaGruppo .riga { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+        #quotaGruppo input { width: 70px; margin-top: 0; }
+        #quotaGruppo button { width: auto; margin-top: 0; padding: 3px 10px; font-size: 11px; }
         .tuttoBene { color: var(--accento); }
         #azioni .primaria { background: var(--accento); border-color: var(--accento); color: #102417; font-weight: 600; }
     </style>
@@ -217,6 +228,7 @@
                         <div id="trattoLarghezzaNota" class="nota"></div>
                         <div id="trattoMisure" class="nota"></div>
                         <div id="quotaStato" class="nota" style="margin-top:8px;"></div>
+                        <div id="quotaGruppo"></div>
                         <div class="nota" style="margin-top:8px;"><kbd>R</kbd> rendi retto · <kbd>C</kbd> rendi curvo · <kbd>I</kbd> spezza in due</div>
                         <div class="nota">Rotellina sul nodo: alza o abbassa · <kbd>B</kbd> ponte</div>
                     </div>
@@ -344,6 +356,6 @@
     <script src="shared/sceneryInfrastructure.js?v=20260816a"></script>
     <script src="shared/trackScenery.js?v=20260825b"></script>
     <script src="shared/trackValidatore.js?v=20260825b"></script>
-    <script src="track-editor.js?v=20260825e"></script>
+    <script src="track-editor.js?v=20260825g"></script>
 </body>
 </html>
