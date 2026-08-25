@@ -826,3 +826,36 @@ test('il terrapieno del lato alto non sale sopra il bordo del nastro', () => {
     assert.ok(maxY <= tetto,
         `il terrapieno arriva a ${maxY.toFixed(2)}, il bordo alto del nastro sta a ${dyAlto.toFixed(2)} (tetto ${tetto.toFixed(2)})`);
 });
+
+test('la ghiaia del lato alto sale col nastro', () => {
+    // La banda di ghiaia sta fra il cordolo e la barriera: se resta piatta
+    // mentre il nastro si alza, sul lato alto sprofonda sotto l'asfalto e
+    // sull'altro resta appesa in aria.
+    const MEZZA = 11, GRADI = 35, CURB_W = 2.8;
+    const banda = new Array(200).fill(8);
+    const profilo = { left: banda, right: banda };
+    const c = contenitore();
+    const pts = cerchioBanked(GRADI);
+    TrackMeshBuilder.buildGravel(c, pts, MEZZA, CURB_W, profilo);
+    const { latoAlto } = TrackGeometry.rialzoBordi(pts, 10, MEZZA);
+    const { nx, nz } = TrackGeometry.normalAt(pts, 10, true);
+    const p = pts[10];
+    // Il vertice di ghiaia piu' vicino al bordo alto e quello piu' vicino al
+    // bordo basso, allo stesso campione.
+    const vicino = (lato) => {
+        const bx = p.x + nx * lato * (MEZZA + CURB_W), bz = p.z + nz * lato * (MEZZA + CURB_W);
+        let best = null, bestD = Infinity;
+        for (const mesh of c.children) {
+            const a = mesh.geometry.attributes.position.array;
+            for (let v = 0; v < a.length; v += 3) {
+                const d = Math.hypot(a[v] - bx, a[v + 2] - bz);
+                if (d < bestD) { bestD = d; best = a[v + 1]; }
+            }
+        }
+        return best;
+    };
+    const alto = vicino(latoAlto), basso = vicino(-latoAlto);
+    const alzataAttesa = Math.sin(GRADI * Math.PI / 180) * 2 * MEZZA;
+    assert.ok(alto > basso + alzataAttesa * 0.8,
+        `ghiaia: lato alto ${alto.toFixed(2)}, lato basso ${basso.toFixed(2)}, attesa una differenza di ~${alzataAttesa.toFixed(2)}`);
+});

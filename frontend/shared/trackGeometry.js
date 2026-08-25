@@ -219,16 +219,7 @@
         //
         // Su una pista piana `alzataLaterale` vale zero e questo blocco non
         // cambia un solo valore.
-        let y = vicino.y;
-        const p = groundPts[index];
-        if (p && p.rollio > 0) {
-            const mezza = (typeof p.halfWidth === 'number' && p.halfWidth > 0) ? p.halfWidth : embankStart;
-            const { nx, nz } = normalAt(groundPts, index, true);
-            // Da che parte si è usciti, e quanto lontano — fermandosi al piede
-            // del cuneo.
-            const lato = ((x - p.x) * nx + (z - p.z) * nz) >= 0 ? 1 : -1;
-            y += alzataLaterale(groundPts, index, mezza, lato * Math.min(dist, mezza + CUNEO_OLTRE_IL_BORDO));
-        }
+        const y = vicino.y + alzataTerrenoIn(groundPts, index, x, z);
         if (dist <= embankStart) return y;
         if (dist >= embankOuter) return 0;
         const t = (dist - embankStart) / (embankOuter - embankStart);
@@ -417,6 +408,35 @@
         const { dyAlto, latoAlto } = rialzoBordi(points, i, mezza);
         if (!latoAlto || !(mezza > 0)) return 0;
         return Math.max(0, (offset * latoAlto + mezza) * (dyAlto / (2 * mezza)));
+    }
+
+    // L'alzata del TERRENO a `offset` dall'asse: sotto il nastro segue il piano
+    // inclinato come tutto il resto, ma oltre il bordo (piu' il cordolo) SMETTE
+    // di salire. Il cuneo e' la terra che regge la parabolica: finisce dove
+    // finisce il nastro.
+    //
+    // ⚠️ Senza questo limite il terreno saliva con la pendenza della curva fino
+    // al pianoro del terrapieno — 49 unita' dall'asse — e accanto a una curva a
+    // 35 gradi cresceva una collina di 37 unita' dove il bordo alto
+    // dell'asfalto ne aveva 13.7: la pista ci spariva dentro (visto in gioco il
+    // 2026-08-25). Chiedono qui: la quota del terreno in un punto qualunque, la
+    // mesh del terrapieno, la ghiaia, il piede delle barriere.
+    function alzataTerreno(points, i, mezza, offset) {
+        const piede = mezza + CUNEO_OLTRE_IL_BORDO;
+        return alzataLaterale(points, i, mezza, Math.max(-piede, Math.min(piede, offset)));
+    }
+
+    // Quanto il campione `j` alza il terreno nel punto (x, z) del mondo: zero se
+    // non e' sopraelevato. Sta qui perche' chi ragiona per punti del mondo
+    // (terrainHeightAt, terrainTopAt) non debba rifarsi la proiezione sulla
+    // normale ognuno a modo suo.
+    function alzataTerrenoIn(points, j, x, z) {
+        const p = points[j];
+        if (!p || !(p.rollio > 0)) return 0;
+        const mezza = (typeof p.halfWidth === 'number' && p.halfWidth > 0) ? p.halfWidth : 0;
+        if (!(mezza > 0)) return 0;
+        const { nx, nz } = normalAt(points, j, true);
+        return alzataTerreno(points, j, mezza, (x - p.x) * nx + (z - p.z) * nz);
     }
 
     // Direzione in cui deve guardare un oggetto posato su un nastro parallelo
@@ -1367,7 +1387,12 @@
                 // quote come fa la mesh, che fra un campione e l'altro tira
                 // dritto.
                 const t = (a - b) > 1e-9 ? a / (a - b) : 0;
-                const y = (trackPts[j].y || 0) * (1 - t) + (trackPts[succ].y || 0) * t;
+                // Il cuneo conta anche qui: su una parabolica il piede della
+                // barriera sta sulla terra che regge il nastro, non a quota
+                // zero, o il muro resta sepolto dentro il cuneo.
+                const yj = (trackPts[j].y || 0) + alzataTerrenoIn(trackPts, j, x, z);
+                const ys = (trackPts[succ].y || 0) + alzataTerrenoIn(trackPts, succ, x, z);
+                const y = yj * (1 - t) + ys * t;
                 if (top === null || y > top) top = y;
             }
         }
@@ -1425,7 +1450,7 @@
         normalAt,
         pendenzaAt,
         rialzoBordi, rollioEfficaceAt,
-        alzataLaterale, CUNEO_OLTRE_IL_BORDO,
+        alzataLaterale, alzataTerreno, alzataTerrenoIn, CUNEO_OLTRE_IL_BORDO,
         ribbonFacingAt,
         curvatureAt,
         bridgeHeightAt,

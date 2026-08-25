@@ -1198,3 +1198,23 @@ test('su una pista piana il terreno non cambia di un millimetro', () => {
         assert.equal(TrackGeometry.terrainHeightAt(pts, x, z, 49, 94), 7);
     }
 });
+
+test('la barriera del lato alto poggia sul cuneo, non a terra', () => {
+    // terrainTopAt e' la quota su cui f1Scena posa il piede delle barriere.
+    // Ignorando il cuneo, sul lato alto di una parabolica il muro resta sepolto
+    // sotto la terra che regge il nastro — e chi guida vede la barriera sparire
+    // dentro la collina.
+    const R = 200, MEZZA = 12, GRADI = 35;
+    const pts = cerchioSopraelevato(R, 200, GRADI);
+    const { dyAlto, latoAlto } = TrackGeometry.rialzoBordi(pts, 10, MEZZA);
+    const { nx, nz } = TrackGeometry.normalAt(pts, 10, true);
+    const p = pts[10];
+    const dist = MEZZA + 4;                       // appena oltre il cordolo
+    const x = p.x + nx * latoAlto * dist, z = p.z + nz * latoAlto * dist;
+    const y = TrackGeometry.terrainTopAt(pts, 10, x, z, 49);
+    assert.ok(y > dyAlto - 1,
+        `la barriera poggia a ${y.toFixed(2)} mentre il bordo alto del nastro sta a ${dyAlto.toFixed(2)}`);
+    // E dal lato basso resta dov'era: il cuneo non solleva tutto il circuito.
+    const xb = p.x - nx * latoAlto * dist, zb = p.z - nz * latoAlto * dist;
+    assert.ok(Math.abs(TrackGeometry.terrainTopAt(pts, 10, xb, zb, 49)) < 1e-6);
+});

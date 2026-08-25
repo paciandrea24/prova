@@ -302,8 +302,15 @@
 
                 const ix = p.x + nx * inner, iz = p.z + nz * inner;
                 const ox = p.x + nx * outer, oz = p.z + nz * outer;
-                pos.push(ix, y, iz);
-                pos.push(ox, y, oz);
+                // Sopraelevazione: la ghiaia sta sul terreno, e sul lato alto
+                // il terreno e' il cuneo. Restando piatta sprofondava sotto
+                // l'asfalto da una parte e restava appesa dall'altra. Stessa
+                // funzione del terrapieno e del piede delle barriere: una
+                // superficie sola.
+                const yIn = y + TrackGeometry.alzataTerreno(pts, i, mezza, inner);
+                const yOut = y + TrackGeometry.alzataTerreno(pts, i, mezza, outer);
+                pos.push(ix, yIn, iz);
+                pos.push(ox, yOut, oz);
                 coloreTerreno(col, GRAVEL_COLOR, ix, iz, GRASS_COLOR, versoErba);
                 coloreTerreno(col, GRAVEL_COLOR, ox, oz, GRASS_COLOR, versoErba);
             }
@@ -997,9 +1004,8 @@
                     // resta mai innocuo a lungo.
                     const mezzaQui = mezzaAl(trackPts, i,
                         Math.max(1, innerEdge - TrackGeometry.CUNEO_OLTRE_IL_BORDO));
-                    const piedeCuneo = Math.min(plateauEnd, mezzaQui + TrackGeometry.CUNEO_OLTRE_IL_BORDO);
                     const baseY = (p.y || 0)
-                        + TrackGeometry.alzataLaterale(trackPts, i, mezzaQui, side * piedeCuneo);
+                        + TrackGeometry.alzataTerreno(trackPts, i, mezzaQui, side * plateauEnd);
                     const limite = (side > 0 ? limiti.pos : limiti.neg)[i];
                     // Quota a cui il terreno riprende oltre il confine: quella
                     // del tratto vicino, degradata come degrada la sua, così
