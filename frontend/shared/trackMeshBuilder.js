@@ -1188,10 +1188,27 @@
                 // solo al confine, altrimenti le colline — che stanno più in
                 // là e più in alto — verrebbero schiacciate a zero.
                 if (embankPlateau !== undefined && d < embankOuter + GROUND_GRID_CELL) {
+                    let sporge = false;
                     for (const [ax, az] of [[x0, z0], [x1, z0], [x1, z1], [x0, z1]]) {
                         y = Math.min(y, TrackGeometry.terrainHeightAt(
                             groundPts, ax, az, embankPlateau, embankOuter));
+                        // ⚠️ La cella sporge se ci arriva un ANGOLO, non il suo
+                        // centro: guardando il centro restavano complanari
+                        // proprio le celle di bordo, che sono tutto il problema.
+                        if (TrackGeometry.nearestPoint(groundPts, ax, az).dist < embankOuter) sporge = true;
                     }
+                    // ...e un dito PIU' GIU' della superficie che ha trovato,
+                    // se la cella sporge davvero sul terrapieno.
+                    //
+                    // ⚠️ Alla stessa quota le due superfici non si nascondono a
+                    // vicenda: si contendono il pixel, e all'esterno della curva
+                    // sopraelevata si vedeva una frangia dentellata verde dentro
+                    // il terreno chiaro (segnalata in gioco il 2026-08-25).
+                    // Sporgere sotto invece che complanari costa una gonnella
+                    // sepolta — che nessuno vede, perche' sopra c'e' il
+                    // terrapieno — ed e' lo stesso rimedio del piede della
+                    // parete di confine qui sopra.
+                    if (sporge) y -= PIEDE_AFFONDO;
                 }
                 cellY.set(key(cx, cz), y);
             }

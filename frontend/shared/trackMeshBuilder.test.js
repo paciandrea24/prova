@@ -859,3 +859,35 @@ test('la ghiaia del lato alto sale col nastro', () => {
     assert.ok(alto > basso + alzataAttesa * 0.8,
         `ghiaia: lato alto ${alto.toFixed(2)}, lato basso ${basso.toFixed(2)}, attesa una differenza di ~${alzataAttesa.toFixed(2)}`);
 });
+
+test('le celle di prato al confine stanno SOTTO il terrapieno, non alla sua stessa quota', () => {
+    // ⚠️ VISTO IN GIOCO il 2026-08-25: all'esterno della curva sopraelevata una
+    // frangia dentellata verde dentro il terreno chiaro. Non e' la ghiaia che
+    // sborda: sono il prato e il terrapieno alla STESSA quota, e il depth
+    // buffer che non sa quale dei due sta davanti. Le celle di confine
+    // sporgono sul terrapieno di mezza diagonale — e' voluto e va bene finche'
+    // restano SOTTO: coperte, invisibili. Complanari, sfarfallano.
+    const PLATEAU = 14, OUTER = 60;
+    const c = contenitore();
+    const pts = cerchio();
+    TrackMeshBuilder.buildGround(c, pts, OUTER, 600, PLATEAU);
+    let complanari = 0, sopra = 0, esaminati = 0;
+    for (const mesh of c.children) {
+        const attr = mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.position;
+        if (!attr) continue;                 // le colline usano altre geometrie
+        const a = attr.array;
+        for (let v = 0; v < a.length; v += 3) {
+            const { dist } = TrackGeometry.nearestPoint(pts, a[v], a[v + 2]);
+            if (dist >= OUTER) continue;         // fuori dalla zona del terrapieno
+            esaminati++;
+            const yTerra = TrackGeometry.terrainHeightAt(pts, a[v], a[v + 2], PLATEAU, OUTER);
+            const d = a[v + 1] - yTerra;
+            if (d > 0.01) sopra++;
+            else if (d > -0.05) complanari++;
+        }
+    }
+    assert.ok(esaminati > 0, 'nessuna cella di confine da esaminare: il test non prova niente');
+    assert.equal(sopra, 0, `${sopra} vertici di prato bucano il terrapieno da sopra`);
+    assert.equal(complanari, 0,
+        `${complanari} vertici di prato stanno alla stessa quota del terrapieno: e' li' che sfarfalla`);
+});
