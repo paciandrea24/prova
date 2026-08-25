@@ -565,7 +565,13 @@ test('il rollio dichiarato su un pezzo dritto non arriva al gioco', () => {
         const track = loadTrack('test-scratch-track');
         let inCurva = 0, suDritto = 0;
         for (let i = 0; i < track.points.length; i++) {
-            const dritto = TrackGeometry.curvatureAt(track.points, i).radius > 1000;
+            // ⚠️ «Dritto» con la STESSA finestra che usa il modello (80 unita'
+            // di pista): con quella stretta, di default, nel raccordo il raggio
+            // rimbalza fino a 14000 e questo test chiamava dritti dei campioni
+            // che stanno in piena curva d'ingresso.
+            const passo = TrackGeometry.lapLength(track.points) / track.points.length;
+            const span = Math.max(4, Math.round(TrackGeometry.FINESTRA_CURVA_UNITA / passo));
+            const dritto = TrackGeometry.curvatureAt(track.points, i, span).radius > 1000;
             if (dritto) { if (track.points[i].rollio > 0) suDritto++; }
             else if (track.points[i].rollio > 0) inCurva++;
         }

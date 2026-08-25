@@ -374,19 +374,62 @@
     // invisibile, il tipo di difetto che chi gioca descrive come «non capisco
     // come funziona». Chiedono qui: la mesh, la fisica del server, il rollio
     // mandato al client per coricare l'auto.
+    // ⚠️ SU QUANTA PISTA si guarda per decidere «qui c'e' una curva, e gira di
+    // qua». Ottanta unita', la stessa scala su cui il rollio si raccorda: una
+    // sopraelevazione e' una proprieta' del TRATTO, non del singolo campione.
+    //
+    // La finestra di default di curvatureAt (12 campioni) e' tarata per la
+    // scenografia e nel raccordo d'ingresso di una curva e' rumore puro: sulla
+    // pista di prova dava 3313, 3574, 4456, 14236, 4574, 1582, 848, 537, 384 in
+    // nove campioni consecutivi, e la soglia «tratto dritto» ci inciampava
+    // dentro — il rollio saltava da zero a 5.5 gradi in un campione, e la curva
+    // «non sembrava una bella curva» (visto in gioco il 2026-08-25). Con
+    // ottanta unita' la stessa sequenza scende monotona: 386, 359, 336, 314,
+    // 293, 275, 258, 242, 227.
+    //
+    // In UNITA' e non in campioni, o su una pista campionata piu' fitta
+    // misurerebbe un pezzo di curva piu' corto: e' la stessa regola delle altre
+    // soglie geometriche del progetto.
+    const FINESTRA_CURVA_UNITA = 80;
+    function spanCurvaRollio(points, i) {
+        const n = points.length;
+        const a = points[(i - 1 + n) % n], b = points[(i + 1) % n];
+        const passo = Math.hypot(b.x - a.x, b.z - a.z) / 2;
+        if (!(passo > 1e-6)) return 12;
+        return Math.max(4, Math.min(Math.floor(n / 4), Math.round(FINESTRA_CURVA_UNITA / passo)));
+    }
+
+    // Da dritto a curvo non si passa con un interruttore: fra il raggio oltre il
+    // quale un tratto e' dritto (nessun bordo esterno da alzare) e quello sotto
+    // il quale e' curva piena, la sopraelevazione entra con la solita
+    // smoothstep. Senza, sulla pista di prova restava un gradino di 1.85 gradi
+    // proprio dove la soglia veniva attraversata — piccolo, ma nel punto in cui
+    // l'occhio guarda: l'ingresso della parabolica.
+    const RAGGIO_CURVA_PIENA = RETTILINEO_RAGGIO_MIN / 2;
+    function fattoreCurva(radius) {
+        if (!(radius < RETTILINEO_RAGGIO_MIN)) return 0;
+        if (radius <= RAGGIO_CURVA_PIENA) return 1;
+        const t = (RETTILINEO_RAGGIO_MIN - radius) / (RETTILINEO_RAGGIO_MIN - RAGGIO_CURVA_PIENA);
+        return t * t * (3 - 2 * t);
+    }
+
     function rollioEfficaceAt(points, i) {
         const p = points[i];
         const rollio = (p && typeof p.rollio === 'number' && p.rollio > 0) ? p.rollio : 0;
         if (!rollio) return 0;
-        const { radius, turnSigned } = curvatureAt(points, i);
-        if (!(radius < RETTILINEO_RAGGIO_MIN) || turnSigned === 0) return 0;
-        return rollio;
+        const { radius, turnSigned } = curvatureAt(points, i, spanCurvaRollio(points, i));
+        if (turnSigned === 0) return 0;
+        return rollio * fattoreCurva(radius);
     }
 
     function rialzoBordi(points, i, mezza) {
         const rollio = rollioEfficaceAt(points, i);
         if (!rollio) return { dyAlto: 0, latoAlto: 0 };
-        const { turnSigned } = curvatureAt(points, i);
+        // ⚠️ Stessa finestra con cui si e' deciso CHE c'e' una curva: col verso
+        // preso dalla finestra stretta, nel raccordo turnSigned cambiava segno
+        // (misurati -0.007 e poi +0.005 a due campioni di distanza) e il nastro
+        // si sarebbe alzato dalla parte sbagliata per qualche metro.
+        const { turnSigned } = curvatureAt(points, i, spanCurvaRollio(points, i));
         return { dyAlto: Math.tan(rollio) * 2 * mezza, latoAlto: turnSigned > 0 ? -1 : 1 };
     }
 
@@ -1461,6 +1504,7 @@
         pendenzaAt,
         rialzoBordi, rollioEfficaceAt,
         alzataLaterale, alzataTerreno, alzataTerrenoIn, CUNEO_OLTRE_IL_BORDO,
+        FINESTRA_CURVA_UNITA,
         ribbonFacingAt,
         curvatureAt,
         bridgeHeightAt,

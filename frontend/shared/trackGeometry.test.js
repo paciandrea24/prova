@@ -1225,3 +1225,57 @@ test('la barriera del lato alto poggia sul cuneo, non a terra', () => {
     const xb = p.x - nx * latoAlto * dist, zb = p.z - nz * latoAlto * dist;
     assert.ok(Math.abs(TrackGeometry.terrainTopAt(pts, 10, xb, zb, 49)) < 1e-6);
 });
+// ⚠️ VISTO IN GIOCO il 2026-08-25: «la curva banking non sembra una bella
+// curva, ma un po' strana». All'ingresso il rollio saltava da 0 a 5.5 gradi in
+// un campione: la soglia «questo tratto e' dritto» leggeva una curvatura
+// calcolata su una finestra STRETTA, che nel raccordo e' rumore puro — sulla
+// pista di prova il raggio faceva 3313, 3574, 4456, 14236, 4574, 1582, 848,
+// 537, 384 in nove campioni consecutivi. Con una finestra larga la stessa
+// sequenza scende monotona: 386, 359, 336, 314, 293, 275, 258, 242, 227.
+//
+// Il test percorre la strada VERA — geometria a tratti, cottura, poi
+// ricampionamento come fa il gioco — perche' e' li' che il difetto viveva.
+test("il rollio efficace non fa scalini all'ingresso di una curva", () => {
+    const TS = require('./trackSegmenti.js');
+    const R = 90, RETT = 420, PASSO = 28;
+    const contorno = [];
+    for (let x = 0; x < RETT / 2; x += 4) contorno.push({ x, z: -R, curva: -1 });
+    for (let k = 0; k < 40; k++) { const a = -Math.PI / 2 + (Math.PI * k / 40);
+        contorno.push({ x: RETT / 2 + Math.cos(a) * R, z: Math.sin(a) * R, curva: 0 }); }
+    for (let x = RETT / 2; x > -RETT / 2; x -= 4) contorno.push({ x, z: R, curva: -1 });
+    for (let k = 0; k < 40; k++) { const a = Math.PI / 2 + (Math.PI * k / 40);
+        contorno.push({ x: -RETT / 2 + Math.cos(a) * R, z: Math.sin(a) * R, curva: 1 }); }
+    for (let x = -RETT / 2; x < 0; x += 4) contorno.push({ x, z: -R, curva: -1 });
+
+    const nodi = [], tratti = [], curvaDelNodo = [];
+    let percorso = 0;
+    for (let k = 0; k < contorno.length; k++) {
+        if (k > 0) percorso += Math.hypot(contorno[k].x - contorno[k - 1].x, contorno[k].z - contorno[k - 1].z);
+        if (k === 0 || percorso >= PASSO) {
+            nodi.push({ x: contorno[k].x, z: contorno[k].z, y: 0, dir: 0 });
+            curvaDelNodo.push(contorno[k].curva);
+            percorso = 0;
+        }
+    }
+    for (let k = 0; k < nodi.length; k++) {
+        const a = curvaDelNodo[k], b = curvaDelNodo[(k + 1) % nodi.length];
+        tratti.push(a === 0 && b === 0 ? { tipo: 'curva', rollioGradi: 30 } : { tipo: 'curva' });
+    }
+    const g = TS.riallinea({ versione: 1, nodi, tratti });
+    const cotti = TS.cuoci(g, TS.PASSO_COTTURA, 12);
+    const pts = TrackGeometry.sampleLoop(cotti, 1000);
+    for (const p of pts) p.halfWidth = 12;
+
+    const efficaci = pts.map((_, k) => TrackGeometry.rollioEfficaceAt(pts, k));
+    assert.ok(Math.max(...efficaci) > 20 * Math.PI / 180,
+        `la sopraelevazione non arriva in pista: massimo ${(Math.max(...efficaci) * 180 / Math.PI).toFixed(1)} gradi`);
+
+    const passo = TrackGeometry.lapLength(pts) / pts.length;
+    let salto = 0, dove = -1;
+    for (let k = 0; k < pts.length; k++) {
+        const d = Math.abs(efficaci[k] - efficaci[(k - 1 + pts.length) % pts.length]) * 180 / Math.PI / passo;
+        if (d > salto) { salto = d; dove = k; }
+    }
+    assert.ok(salto < 1.0,
+        `campione ${dove}: il rollio efficace cambia di ${salto.toFixed(2)} gradi per unita' di pista, e' uno scalino`);
+});
