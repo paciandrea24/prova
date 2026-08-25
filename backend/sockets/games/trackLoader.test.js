@@ -453,6 +453,30 @@ test('prova ha pendenze vere, in salita e in discesa', () => {
     assert.ok(Math.min(...pct) < -5, `discesa massima ${Math.min(...pct).toFixed(1)}%`);
 });
 
+// --- sopraelevazione per campione (fase 1b-1: banking) ---
+
+test('ogni campione ha un rollio finito e non negativo, su tutte le piste', () => {
+    for (const t of listTracks()) {
+        const id = t.id || t;
+        const track = loadTrack(id);
+        for (let i = 0; i < track.points.length; i++) {
+            const r = track.points[i].rollio;
+            assert.equal(typeof r, 'number', `${id} campione ${i}: rollio mancante`);
+            assert.ok(Number.isFinite(r) && r >= 0, `${id} campione ${i}: rollio ${r}`);
+        }
+    }
+});
+
+test('nessuna pista di oggi risulta sopraelevata', () => {
+    // Se una lo diventasse per sbaglio — un campo copiato, un default finito a
+    // 1 — questo test lo direbbe subito, invece di lasciarlo scoprire in gara.
+    for (const t of listTracks()) {
+        const id = t.id || t;
+        const track = loadTrack(id);
+        assert.equal(Math.max(...track.points.map(p => p.rollio)), 0, `${id} risulta sopraelevata`);
+    }
+});
+
 test('la pendenza cotta e\' esattamente quella di TrackGeometry.pendenzaAt', () => {
     const track = loadTrack('prova');
     for (let i = 0; i < track.points.length; i += 37) {

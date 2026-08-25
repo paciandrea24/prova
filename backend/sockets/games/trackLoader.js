@@ -166,6 +166,18 @@ function buildTrack(id, raw) {
     for (let i = 0; i < points.length; i++) {
         points[i].pendenza = TrackGeometry.pendenzaAt(points, i, true);
     }
+
+    // LA SOPRAELEVAZIONE, GARANTITA SU OGNI CAMPIONE. Terza applicazione della
+    // stessa regola (larghezza, pendenza, rollio): da valle in poi il campo
+    // c'e' sempre e vale zero dove la pista e' piana.
+    //
+    // Le piste disegnate prima del banking non hanno il campo e prendono zero
+    // ovunque: si comportano esattamente come prima. Il valore dice solo
+    // QUANTO ci si alza; QUALE bordo salga lo decide TrackGeometry.rialzoBordi
+    // dalla curvatura, e in nessun altro posto.
+    for (const p of points) {
+        if (typeof p.rollio !== 'number' || !(p.rollio > 0)) p.rollio = 0;
+    }
     const lapLength = TrackGeometry.lapLength(points);
     const totalLaps = TrackGeometry.lapsForDistance(lapLength, raw.targetKm);
 
