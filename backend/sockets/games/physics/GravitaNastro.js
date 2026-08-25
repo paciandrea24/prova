@@ -16,16 +16,42 @@
 // salita del 10% toglierebbe circa l'1% dell'accelerazione disponibile:
 // invisibile, e la fase 1a sarebbe stata implementata per niente.
 //
-// Il valore parte quindi dal RAPPORTO, non dal numero assoluto: in un'auto
-// vera l'accelerazione longitudinale di punta vale poco più di 1 g, quindi
-// G_NASTRO ~ ACCEL / 1.2. Da qui la taratura (Task 7 del piano) lo sposta.
+// Il valore era partito dal RAPPORTO con un'auto vera (~1 g, cioè ACCEL / 1.2
+// = 0.155). ⚠️ La misura l'ha smentito: a 0.155 l'effetto era di -2 km/h su un
+// tratto in salita dove l'auto ne guadagna 120, cioè dentro il rumore. Il
+// motivo è che i tratti in pendenza di `prova` coincidono con uscite di curva e
+// frenate, dove comandano acceleratore e freno — non la pendenza.
 //
-// ⚠️ Controllo incrociato con la fase 2: dentro un giro della morte la
-// velocità minima per non fermarsi in cima vale circa sqrt(G_NASTRO * R). Con
-// R = 30 unità e questo valore servono ~2.2 u/tick, poco più di un terzo della
-// velocità massima: il loop diventa una cosa da prendere bene, non un muro. Se
-// la taratura abbassa molto G_NASTRO, quel conto va rifatto.
-const G_NASTRO = 0.155;
+// TARATURA DEL 2026-08-25, su `prova`, 30 giri per configurazione
+// (backend/tools/f1-gravita-taratura.js). Scala provata fino a superare il
+// limite, che è l'unico modo per sapere da che parte sta:
+//
+//   G      salita        discesa      tempo sul giro   giudizio
+//   0.155  -2.0 km/h     -0.1 km/h    +0.8%            invisibile
+//   0.5    -6.6 km/h     +16.1 km/h   +0.7%            si inizia a sentire
+//   0.8    -12.6 km/h    +19.0 km/h   +1.2%            SCELTO
+//   1.2    -37.6 km/h    +13.1 km/h   +1.2%            troppo, l'auto arranca
+//
+// (variazione di velocità DENTRO il tratto, ingresso -> uscita: la media
+// semplice in salita mescola l'effetto locale con la storia accumulata prima e
+// non serve a tarare.)
+//
+// A 0.8, sui 30 giri: velocità media in salita -10.3%, in discesa +2.1%, in
+// piano -0.1% (invariata, come dev'essere), 30/30 giri completati.
+//
+// ⚠️ I BOT NON ARRIVANO LUNGHI, verificato a questo valore: le curve più lente
+// restano le stesse e le loro velocità minime SCENDONO (97.4 -> 90.2 km/h al
+// 76.5% del giro), perché la salita rallenta anche loro. Il rischio dichiarato
+// nella spec — `cornerTargetSpeed` non conosce la pendenza, quindi in fondo a
+// una discesa il bot frenerebbe tardi — non si manifesta su `prova`. Chi
+// alzasse G_NASTRO deve rifare questo controllo.
+//
+// ⚠️ Controllo incrociato con la fase 2: dentro un giro della morte la velocità
+// minima per non fermarsi in cima vale circa sqrt(G_NASTRO * R). A 0.8 servono
+// 4.9 u/tick per un loop di raggio 30, cioè il 79% della velocità massima:
+// tanto. I loop andranno tenuti stretti (raggio 15-25) o quel numero diventa un
+// muro. Con G più basso il conto si allenta.
+const G_NASTRO = 0.8;
 
 function isGravitaNastroActive() {
     return process.env.F1_GRAVITA_NASTRO === '1';
