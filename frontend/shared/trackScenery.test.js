@@ -1532,11 +1532,34 @@ test('niente scenografia dentro gli asset che scavalcano la pista', () => {
 // struttura che prima stava lì.
 //
 // Soglie: valore misurato il 2026-08-14, arrotondato per eccesso del 10%.
+//
+// ⚠️ STRETTE il 2026-08-25, dopo che tribune e verde hanno smesso di avere un
+// tetto (spec 2026-08-25-f1-densita-scenografia-design.md). Le soglie si
+// stringono, mai si allargano: sono i valori misurati dopo la cura, con il 10%
+// di margine.
+//
+//                  peggiore prima → dopo      quota peggiore prima → dopo
+//     monte-rosso        0 →   0                    0% →  0%
+//     melbourne         92 →  92                    3% →  3%
+//     new-monza         80 →  80                    3% →  3%
+//     prova            284 → 248                   23% → 10%
+//
+// ⚠️ I numeri qui sopra sono quelli che misura QUESTO test, che ricostruisce
+// il barrierProfile da sé: una sonda che usa quello di `loadTrack` dà valori
+// vicini ma non uguali (207 invece di 248 su `prova`). Tarare sulla sonda e
+// non sul test fa nascere un rosso al primo giro.
+//
+// ⚠️ `nuova-pista` (540) e `suzuka` (395) NON hanno una riga di proposito, e
+// restano ROSSE sotto VUOTI_DI_GUARDIA. Il loro difetto non è la densità — su
+// nuova-pista il buco è rimasto identico a prima della cura, 540 unità tonde —
+// ed è un buco di STRUTTURE, che ha una causa sua da riprodurre. Dare loro una
+// riga misurata qui vorrebbe dire far sparire dal radar il difetto invece di
+// curarlo.
 const VUOTI_ATTESI = {
-    'prova':       { peggiore: 330, quota: 0.30 },
-    'new-monza':   { peggiore: 110, quota: 0.12 },
-    'monte-rosso': { peggiore: 130, quota: 0.13 },
-    'baku':        { peggiore: 10,  quota: 0.85 },
+    'prova':       { peggiore: 275, quota: 0.11 },
+    'melbourne':   { peggiore: 102, quota: 0.04 },
+    'new-monza':   { peggiore:  90, quota: 0.04 },
+    'monte-rosso': { peggiore:  10, quota: 0.01 },
 };
 
 // Soglia per le piste che la tabella non conosce ancora. Senza, il primo
