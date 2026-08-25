@@ -99,3 +99,30 @@ test("applySteering: F1_TYRE_SLIP_MODEL='1' -> la penalità è limitata, non ann
         delete process.env.F1_TYRE_SLIP_MODEL;
     }
 });
+
+// ---- Sopraelevazione (fase 1b-1: banking) ----
+// Su una curva banked parte del peso spinge l'auto verso l'interno: gira piu'
+// stretto a parita' di velocita'. Il fattore e' lo STESSO che CorneringGripModel
+// da' al bot per decidere quanto frenare (vedi Sopraelevazione.test.js): se i
+// due divergessero, il bot entrerebbe in curva contando su un'aderenza che qui
+// non gli viene data — misurato un giro piu' lento del 12%.
+
+test('applySteering: senza rollio il comportamento e\' identico a prima', () => {
+    // Le piste di oggi non devono cambiare di una virgola: un campo assente e
+    // un rollio zero devono dare lo stesso identico angle del baseline storico.
+    for (const rollio of [undefined, 0]) {
+        const p = { speed: 3, vx: 0, vz: 0, angle: 0, rollio, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 }, inputs: { steer: 1 } };
+        applySteering(p, false, 6.2);
+        assert.ok(Math.abs(p.angle - 0.06387096774193549) < 1e-12, `rollio ${String(rollio)}: ${p.angle}`);
+    }
+});
+
+test('applySteering: su una curva sopraelevata l\'auto gira piu\' stretto', () => {
+    const { fattoreBanking } = require('./Sopraelevazione');
+    const rollio = 18 * Math.PI / 180;
+    const p = { speed: 3, vx: 0, vz: 0, angle: 0, rollio, damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 }, inputs: { steer: 1 } };
+    applySteering(p, false, 6.2);
+    const atteso = 0.06387096774193549 * fattoreBanking(rollio);
+    assert.ok(p.angle > 0.06387096774193549, 'il banking deve far girare di piu\', non di meno');
+    assert.ok(Math.abs(p.angle - atteso) < 1e-12, `atteso ${atteso}, ottenuto ${p.angle}`);
+});
