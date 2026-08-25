@@ -96,7 +96,7 @@
         await respira();
 
         const primaDelPrato = scene.children.length;
-        builder.buildGround(scene, trackPts, embankOuter, 3000);
+        builder.buildGround(scene, trackPts, embankOuter, 3000, embankPlateau);
         // buildGround non restituisce le sue mesh: si prendono per differenza.
         // Servono al gioco, che le stilizza a parte (il prato dipinto).
         const mesheTerreno = scene.children.slice(primaDelPrato);

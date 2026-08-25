@@ -648,3 +648,48 @@ test('senza profilo delle barriere resta il criterio a distanza costante', () =>
     assert.ok(piloni.length > 20,
         `senza profilo il viadotto ha solo ${piloni.length} piloni`);
 });
+
+// ---- il prato non galleggia sopra una discesa ----
+//
+// Difetto segnalato dall'utente il 2026-08-25 con uno screenshot: dove aveva
+// messo una discesa, la pista spariva sotto un prato piatto. Le celle di
+// confine sporgono sul terrapieno di mezza diagonale, e `hillHeightAt`
+// risponde zero in tutta la fascia vicina: sopra una discesa restavano a
+// quota zero mentre il terrapieno sotto era sceso.
+test('sopra una discesa le celle di prato di confine scendono col terreno', () => {
+    // Una pista che scende a -12 su un tratto.
+    const pts = [];
+    const N = 400, R = 350;
+    for (let i = 0; i < N; i++) {
+        const a = (i / N) * Math.PI * 2;
+        // la discesa sta fra un quarto e mezzo giro
+        const t = i / N;
+        const y = (t > 0.25 && t < 0.5) ? -12 : 0;
+        pts.push({ x: Math.sin(a) * R, y, z: Math.cos(a) * R });
+    }
+    const PLATEAU = 14, OUTER = 59;
+
+    // Il punto più basso, e una cella di confine appena fuori dal buco.
+    const basso = pts.reduce((b, p) => (p.y < b.y ? p : b), pts[0]);
+    const dir = Math.hypot(basso.x, basso.z) || 1;
+    const fuori = { x: basso.x * (1 + (OUTER - 5) / dir), z: basso.z * (1 + (OUTER - 5) / dir) };
+
+    // ⚠️ Il CENTRO della cella dice poco: a 54 unità il raccordo è quasi
+    // risalito a zero (-0.41 misurato). È l'ANGOLO INTERNO che conta — la
+    // cella sporge di mezza diagonale verso la pista, ~14 unità su una cella
+    // di 20, e lì il terreno è molto più basso. Misurare il centro era
+    // esattamente l'errore che nascondeva il difetto.
+    const yCentro = TrackGeometry.terrainHeightAt(pts, fuori.x, fuori.z, PLATEAU, OUTER);
+    const dentro = { x: basso.x * (1 + (OUTER - 19) / dir), z: basso.z * (1 + (OUTER - 19) / dir) };
+    const yAngolo = TrackGeometry.terrainHeightAt(pts, dentro.x, dentro.z, PLATEAU, OUTER);
+    assert.ok(yAngolo < -2,
+        `l'angolo interno della cella dovrebbe essere sceso, invece è ${yAngolo.toFixed(2)}`);
+    assert.ok(yAngolo < yCentro - 1,
+        `angolo ${yAngolo.toFixed(2)} e centro ${yCentro.toFixed(2)}: senza questa `
+        + `differenza il test non proverebbe niente`);
+
+    // E lontano dalla pista il raccordo torna a zero: la correzione non deve
+    // schiacciare le colline.
+    const lontano = { x: basso.x * (1 + 400 / dir), z: basso.z * (1 + 400 / dir) };
+    assert.equal(TrackGeometry.terrainHeightAt(pts, lontano.x, lontano.z, PLATEAU, OUTER), 0);
+});

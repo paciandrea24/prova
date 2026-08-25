@@ -1045,7 +1045,11 @@
     // Prato "lontano": un unico piano piatto senza fori, abbastanza lontano
     // dalla griglia da non potersi mai sovrapporre al terrapieno o tagliare
     // una discesa.
-    function buildGround(container, trackPts, embankOuter, worldSize) {
+    // `embankPlateau` (opzionale) e' il raggio fin dove il terreno sta alla
+    // QUOTA DELLA PISTA prima di degradare al piano. Serve solo alla
+    // correzione delle celle di confine qui sotto: chi non lo passa ottiene
+    // il comportamento di prima, riga per riga.
+    function buildGround(container, trackPts, embankOuter, worldSize, embankPlateau) {
         const groundPts = trackPts.filter(p => !p.bridge);
         const material = new THREE.MeshStandardMaterial({
             color: 0xffffff, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide
@@ -1112,9 +1116,32 @@
                 // colpa della risoluzione della griglia.
                 const d = TrackGeometry.nearestPoint(groundPts, cxCenter, czCenter).dist;
                 if (d < embankOuter - GROUND_GRID_CELL / 2) continue;
-                cellY.set(key(cx, cz),
-                          SceneryHills ? SceneryHills.hillHeightAt(cxCenter, czCenter, d, embankOuter,
-                              TrackGeometry.isInsideLoop(groundPts, cxCenter, czCenter)) : 0);
+                let y = SceneryHills ? SceneryHills.hillHeightAt(cxCenter, czCenter, d, embankOuter,
+                            TrackGeometry.isInsideLoop(groundPts, cxCenter, czCenter)) : 0;
+
+                // ⚠️ LE CELLE DI CONFINE SPORGONO SUL TERRAPIENO, di mezza
+                // diagonale (14 unita' su una cella di 20) — è voluto, e il
+                // commento qui sopra dice che la sovrapposizione è invisibile
+                // perché il colore è lo stesso. Vero in PIANO. Dove la pista
+                // scende, il terrapieno scende con lei mentre `hillHeightAt`
+                // continua a rispondere zero in tutta la fascia vicina: la
+                // cella resta a quota zero e galleggia SOPRA la pista, che
+                // sparisce sotto un prato piatto.
+                // Segnalato dall'utente il 2026-08-25 con uno screenshot:
+                // «nel punto dove c'è tutto verde ho messo una discesa».
+                //
+                // Si prende la quota del terreno raccordato ai QUATTRO ANGOLI
+                // e si tiene la più bassa: è lì che la cella tocca il
+                // terrapieno, e il centro non lo sa. Solo verso il basso e
+                // solo al confine, altrimenti le colline — che stanno più in
+                // là e più in alto — verrebbero schiacciate a zero.
+                if (embankPlateau !== undefined && d < embankOuter + GROUND_GRID_CELL) {
+                    for (const [ax, az] of [[x0, z0], [x1, z0], [x1, z1], [x0, z1]]) {
+                        y = Math.min(y, TrackGeometry.terrainHeightAt(
+                            groundPts, ax, az, embankPlateau, embankOuter));
+                    }
+                }
+                cellY.set(key(cx, cz), y);
             }
         }
 
