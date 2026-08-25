@@ -332,6 +332,23 @@
         return { dyAlto: Math.sin(rollio) * 2 * mezza, latoAlto: turnSigned > 0 ? -1 : 1 };
     }
 
+    // Di quanto è alzato il piano del nastro a `offset` unità dall'asse pista,
+    // misurate lungo la normale (positive dalla parte di `normalAt`).
+    //
+    // Serve a tutto ciò che non sta esattamente sul bordo: i cordoli, che
+    // proseguono oltre la carreggiata, la ghiaia, le barriere. Il nastro
+    // sopraelevato è un piano inclinato, quindi l'alzata è lineare: zero sul
+    // bordo basso, `dyAlto` su quello alto, e prosegue oltre con la stessa
+    // pendenza — che è esattamente ciò che fa un cordolo su una parabolica.
+    //
+    // Un posto solo per tutti: se il cordolo si calcolasse la sua inclinazione,
+    // un giorno resterebbe appeso sopra l'asfalto o ci sprofonderebbe dentro.
+    function alzataLaterale(points, i, mezza, offset) {
+        const { dyAlto, latoAlto } = rialzoBordi(points, i, mezza);
+        if (!latoAlto || !(mezza > 0)) return 0;
+        return (offset * latoAlto + mezza) * (dyAlto / (2 * mezza));
+    }
+
     // Direzione in cui deve guardare un oggetto posato su un nastro parallelo
     // alla pista a distanza `distanzaA(idx, side)`: perpendicolare al NASTRO,
     // non alla pista.
@@ -1338,6 +1355,7 @@
         normalAt,
         pendenzaAt,
         rialzoBordi,
+        alzataLaterale,
         ribbonFacingAt,
         curvatureAt,
         bridgeHeightAt,

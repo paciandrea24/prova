@@ -944,6 +944,37 @@ test('curve di verso opposto alzano bordi opposti', () => {
     assert.equal(a.latoAlto, -b.latoAlto, 'le due curve alzano lo stesso lato');
 });
 
+test('alzataLaterale: zero sul bordo basso, tutta l\'alzata su quello alto', () => {
+    const rollio = 18 * Math.PI / 180;
+    const pts = cerchioConRollio(200, 120, rollio);
+    const i = 30, mezza = 11;
+    const { dyAlto, latoAlto } = TrackGeometry.rialzoBordi(pts, i, mezza);
+    assert.ok(Math.abs(TrackGeometry.alzataLaterale(pts, i, mezza, -latoAlto * mezza)) < 1e-12);
+    assert.ok(Math.abs(TrackGeometry.alzataLaterale(pts, i, mezza, latoAlto * mezza) - dyAlto) < 1e-12);
+    assert.ok(Math.abs(TrackGeometry.alzataLaterale(pts, i, mezza, 0) - dyAlto / 2) < 1e-12,
+        'in mezzeria deve valere meta\' dell\'alzata');
+});
+
+test('alzataLaterale prosegue oltre il bordo con la stessa pendenza', () => {
+    // È ciò che serve al cordolo, che sta FUORI dalla carreggiata: su una
+    // parabolica prosegue il piano inclinato, non torna piatto.
+    const rollio = 18 * Math.PI / 180;
+    const pts = cerchioConRollio(200, 120, rollio);
+    const i = 30, mezza = 11, curbW = 2.8;
+    const { latoAlto } = TrackGeometry.rialzoBordi(pts, i, mezza);
+    const alBordo = TrackGeometry.alzataLaterale(pts, i, mezza, latoAlto * mezza);
+    const oltre = TrackGeometry.alzataLaterale(pts, i, mezza, latoAlto * (mezza + curbW));
+    assert.ok(Math.abs((oltre - alBordo) - Math.sin(rollio) * curbW) < 1e-12,
+        `il cordolo sale di ${(oltre - alBordo).toFixed(4)} invece di ${(Math.sin(rollio) * curbW).toFixed(4)}`);
+});
+
+test('alzataLaterale e\' zero ovunque su una pista piana', () => {
+    const pts = cerchioConRollio(200, 120, 0);
+    for (const off of [-20, -11, 0, 11, 20]) {
+        assert.equal(TrackGeometry.alzataLaterale(pts, 30, 11, off), 0);
+    }
+});
+
 test('su un tratto dritto la sopraelevazione non ha effetto', () => {
     // Un rettilineo non ha un esterno: senza una curva, "si alza l'esterno" non
     // vuol dire niente. Il validatore lo segnalera' invece di lasciare una

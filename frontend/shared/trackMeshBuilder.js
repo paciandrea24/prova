@@ -69,9 +69,15 @@
             const p = pts[i];
             const y = (p.y || 0) + 0.02;
             const w = (typeof p.halfWidth === 'number' && p.halfWidth > 0) ? p.halfWidth : halfW;
+            // Sopraelevazione: si alza il bordo ESTERNO della curva, l'interno
+            // resta alla quota del punto — così il nastro si appoggia sul
+            // terreno che c'è già invece di sprofondarci dentro. Di quanto salga
+            // ogni bordo lo dice alzataLaterale, mai un calcolo fatto qui:
+            // cordoli, ghiaia e barriere chiedono alla stessa funzione, o un
+            // giorno l'asfalto si alzerebbe da una parte e il cordolo dall'altra.
             const b = i * 6;
-            pos[b]     = p.x + nx * w; pos[b + 1] = y; pos[b + 2] = p.z + nz * w;
-            pos[b + 3] = p.x - nx * w; pos[b + 4] = y; pos[b + 5] = p.z - nz * w;
+            pos[b]     = p.x + nx * w; pos[b + 1] = y + TrackGeometry.alzataLaterale(pts, i, w, w);  pos[b + 2] = p.z + nz * w;
+            pos[b + 3] = p.x - nx * w; pos[b + 4] = y + TrackGeometry.alzataLaterale(pts, i, w, -w); pos[b + 5] = p.z - nz * w;
 
             const u = i / (n - 1);
             const ub = i * 4;
@@ -170,9 +176,14 @@
                     gapped[i] = TrackGeometry.nearestPoint(mergePoints, mx, mz).dist < CURB_PIT_GAP_THRESHOLD;
                 }
 
+                // Il cordolo prosegue il piano del nastro: sul lato alto di una
+                // curva sopraelevata sale con l'asfalto e continua a salire
+                // oltre il bordo, come su una parabolica vera. Senza, resterebbe
+                // orizzontale mentre la pista si inclina — cioè mezzo sepolto
+                // all'interno e sospeso all'esterno.
                 const b = i * 6;
-                pos[b]     = p.x + nx * inner; pos[b + 1] = y; pos[b + 2] = p.z + nz * inner;
-                pos[b + 3] = p.x + nx * outer; pos[b + 4] = y; pos[b + 5] = p.z + nz * outer;
+                pos[b]     = p.x + nx * inner; pos[b + 1] = y + TrackGeometry.alzataLaterale(pts, i, mezza, inner); pos[b + 2] = p.z + nz * inner;
+                pos[b + 3] = p.x + nx * outer; pos[b + 4] = y + TrackGeometry.alzataLaterale(pts, i, mezza, outer); pos[b + 5] = p.z + nz * outer;
 
                 if (i > 0) { dist += stepLen; if (dist >= STRIPE) { dist = 0; flip = !flip; } }
                 flipAt[i] = flip;
@@ -463,7 +474,14 @@
 
         for (let s = 0; s < STRIPES; s++) {
             const off = -mezza + stripeW * s + stripeW / 2;
-            dummy.position.set(p0.x + nx * off, (p0.y || 0) + 0.06, p0.z + nz * off);
+            // Ogni striscia sta alla quota dell'asfalto sotto di sé: se il
+            // traguardo cade in un tratto sopraelevato, una scacchiera piatta
+            // sparirebbe da un lato e resterebbe sospesa dall'altro.
+            dummy.position.set(
+                p0.x + nx * off,
+                (p0.y || 0) + 0.06 + TrackGeometry.alzataLaterale(pts, startIndex, mezza, off),
+                p0.z + nz * off
+            );
             dummy.rotation.y = angle;
             dummy.updateMatrix();
             if (s % 2 === 0) imB.setMatrixAt(iB++, dummy.matrix);

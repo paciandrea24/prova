@@ -693,3 +693,81 @@ test('sopra una discesa le celle di prato di confine scendono col terreno', () =
     const lontano = { x: basso.x * (1 + 400 / dir), z: basso.z * (1 + 400 / dir) };
     assert.equal(TrackGeometry.terrainHeightAt(pts, lontano.x, lontano.z, PLATEAU, OUTER), 0);
 });
+
+// --- il nastro si inclina nelle curve sopraelevate (fase 1b-1) ---
+
+// Lo stesso cerchio, con una sopraelevazione costante su ogni punto.
+function cerchioBanked(gradi, n = 200) {
+    const pts = cerchio(n);
+    for (const p of pts) p.rollio = gradi * Math.PI / 180;
+    return pts;
+}
+
+test('senza sopraelevazione i due bordi del nastro stanno alla stessa quota', () => {
+    // La pista di oggi non deve cambiare di un millimetro.
+    const c = contenitore();
+    const pts = cerchio();
+    const mesh = TrackMeshBuilder.buildRibbon(c, pts, 11, {});
+    const pos = mesh.geometry.attributes.position.array;
+    for (let i = 0; i < pts.length; i++) {
+        assert.strictEqual(pos[i * 6 + 1], pos[i * 6 + 4], `campione ${i}: bordi a quote diverse`);
+    }
+});
+
+test('con la sopraelevazione un bordo sale e l\'altro resta dov\'era', () => {
+    const gradi = 18;
+    const c = contenitore();
+    const pts = cerchioBanked(gradi);
+    const mesh = TrackMeshBuilder.buildRibbon(c, pts, 11, {});
+    const pos = mesh.geometry.attributes.position.array;
+    const alzataAttesa = Math.sin(gradi * Math.PI / 180) * 22;
+    for (let i = 0; i < pts.length; i++) {
+        const b = i * 6;
+        const alto = Math.max(pos[b + 1], pos[b + 4]);
+        const basso = Math.min(pos[b + 1], pos[b + 4]);
+        assert.ok(Math.abs((alto - basso) - alzataAttesa) < 1e-6,
+            `campione ${i}: alzata ${(alto - basso).toFixed(3)} invece di ${alzataAttesa.toFixed(3)}`);
+        // Il bordo basso resta alla quota del punto: il nastro si APPOGGIA sul
+        // terreno esistente, non ci sprofonda dentro.
+        assert.ok(Math.abs(basso - ((pts[i].y || 0) + 0.02)) < 1e-9,
+            `campione ${i}: il bordo basso e' sceso a ${basso.toFixed(3)}`);
+    }
+});
+
+test('il bordo che sale e\' quello esterno, lontano dal centro della curva', () => {
+    const c = contenitore();
+    const pts = cerchioBanked(18);
+    const mesh = TrackMeshBuilder.buildRibbon(c, pts, 11, {});
+    const pos = mesh.geometry.attributes.position.array;
+    for (const i of [0, 37, 99, 150]) {
+        const b = i * 6;
+        // Il cerchio e' centrato nell'origine: il vertice piu' alto dev'essere
+        // anche il piu' lontano dal centro.
+        const d1 = Math.hypot(pos[b], pos[b + 2]);
+        const d2 = Math.hypot(pos[b + 3], pos[b + 5]);
+        const piuAlto = pos[b + 1] > pos[b + 4] ? d1 : d2;
+        const piuBasso = pos[b + 1] > pos[b + 4] ? d2 : d1;
+        assert.ok(piuAlto > piuBasso,
+            `campione ${i}: il vertice alto dista ${piuAlto.toFixed(1)}, quello basso ${piuBasso.toFixed(1)}`);
+    }
+});
+
+test('i cordoli seguono il nastro inclinato', () => {
+    // Se l'asfalto si alza e il cordolo no, il cordolo sparisce dentro la pista
+    // o resta appeso: sono lo stesso bordo, devono stare alla stessa quota.
+    const piano = contenitore(), banked = contenitore();
+    TrackMeshBuilder.buildCurbs(piano, cerchio(), 11, 2.8, null);
+    TrackMeshBuilder.buildCurbs(banked, cerchioBanked(18), 11, 2.8, null);
+    const quote = (c) => {
+        const ys = [];
+        for (const mesh of c.children) {
+            const pos = mesh.geometry.attributes.position.array;
+            for (let v = 1; v < pos.length; v += 3) ys.push(pos[v]);
+        }
+        return ys;
+    };
+    const yPiano = quote(piano), yBanked = quote(banked);
+    assert.equal(yPiano.length, yBanked.length, 'stesso numero di vertici');
+    assert.ok(Math.max(...yBanked) > Math.max(...yPiano) + 1,
+        `i cordoli non si sono alzati: max ${Math.max(...yBanked).toFixed(2)} contro ${Math.max(...yPiano).toFixed(2)}`);
+});
