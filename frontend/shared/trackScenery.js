@@ -299,6 +299,27 @@
     // distanze vere delle schiere sane (misurate 17.4-24.1) e taglia quelle
     // delle schiere accartocciate in curva (10.6-16.1).
     const ROW_MIN_SPACING_RATIO = 0.9;
+    // Quante SCHIERE di tribune tentare lungo il giro: una ogni 220 unità.
+    //
+    // ⚠️ NIENTE TETTO, ed è una lezione pagata due volte. Era 10, poi 18
+    // (2026-08-13, «vorrei vederlo bello pieno»): tutte e due le volte bastava
+    // per le piste di allora e cadeva sulla prima pista più lunga. Su shanghai
+    // (giro 7485) la formula ne chiedeva 34 e il tetto ne lasciava passare 18
+    // — una schiera ogni 416 unità, metà della densità di melbourne, ed è il
+    // «in proporzione il circuito è più vuoto» segnalato dall'utente il
+    // 2026-08-25. Un tetto assoluto su una quantità distribuita lungo il giro
+    // descrive densità diverse su piste diverse: va tolto come concetto, non
+    // ritoccato come numero.
+    // Rif. docs/superpowers/specs/2026-08-25-f1-densita-scenografia-design.md
+    //
+    // Il PAVIMENTO invece resta, e conta sui circuiti corti: su monte-rosso
+    // (1177) la formula chiede 5. Lì la densità cresce allungando le schiere
+    // (ROW_MAX_COLS), non moltiplicandole.
+    const SCHIERA_OGNI  = 220;
+    const SCHIERE_MINIME = 6;
+    function schiereDaTentare(lapLen) {
+        return Math.max(SCHIERE_MINIME, Math.round(lapLen / SCHIERA_OGNI));
+    }
     // 1 livello e non 2: impilare due moduli era un'idea nata coi Kenney,
     // alti 5.38, dove serviva a dare volume. Col modulo custom alto 12.3 il
     // secondo livello si legge come due tribune sovrapposte — bocciato
@@ -878,17 +899,9 @@
         const layout = [];
         const groundPts = trackPts.filter(p => !p.bridge);
         const lapLen = TrackGeometry.lapLength(trackPts);
-        // Quante SCHIERE tentare lungo il giro. Il tetto era 10: su `prova`
-        // (giro 5170) la formula ne chiedeva 23 e il tetto ne lasciava passare
-        // 10, di cui 8 trovavano posto — un circuito con lunghi tratti spogli.
-        // Alzato a 18 su richiesta dell'utente ("vorrei vederlo bello pieno",
-        // 2026-08-13), scelto su una tabella misurata di quattro densità.
-        //
-        // ⚠️ Il PAVIMENTO (6) è quello che conta sui circuiti corti: su
-        // monte-rosso, giro 1177, la formula chiede 5 e il tetto non tocca
-        // nulla. Lì la densità cresce solo allungando le schiere
-        // (ROW_MAX_COLS), non alzando questo numero.
-        const count = Math.max(6, Math.min(18, Math.round(lapLen / 220)));
+        // Quante SCHIERE tentare lungo il giro: la formula, senza tetto, sta
+        // in `schiereDaTentare` accanto alle altre costanti delle tribune.
+        const count = schiereDaTentare(lapLen);
         const n = trackPts.length;
         const step = n / count;
         const searchWindow = Math.max(10, Math.floor(n / (count * 2)));
@@ -1882,7 +1895,8 @@
     }
 
     return {
-        generateLayout, embankmentStart, hashString, mulberry32, PIT_BUILDING_OFFSET_MARGIN,
+        generateLayout, embankmentStart, hashString, mulberry32, schiereDaTentare,
+        PIT_BUILDING_OFFSET_MARGIN,
         playerBoxFootprintCorners, playerBoxApronCorners,
         insidePlayerBoxFootprint, PLAYER_BOX_MAX_COUNT,
         PLAYER_BOX_OFFSET_MARGIN, PLAYER_BOX_LOCAL_BOUNDS

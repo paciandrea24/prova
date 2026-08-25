@@ -1028,12 +1028,27 @@ test('scenografia: i moduli di una fila stanno tutti alla stessa distanza dalla 
                     }
                 }
             }
+            // L'INVARIANTE VERA, verificata in modo esatto: tutti i moduli
+            // della fila hanno lo stesso margine dal muro. È ciò che il codice
+            // garantisce e ciò che l'utente ha chiesto — la fila è una linea
+            // di confine dritta.
+            const margini = new Set(fila.map(m => m.v.margineDalMuro));
+            assert.equal(margini.size, 1,
+                `${id}: la fila al campione ${fila[0].idx} mescola margini diversi `
+                + `(${[...margini].join(', ')})`);
             const dist = fila.map(m => m.dist);
             const gradino = Math.max(...dist) - Math.min(...dist);
-            // 0.5 e non 0: i moduli intermedi cadono interpolati fra due
-            // campioni, e la distanza misurata dal campione più vicino oscilla
-            // di qualche decimo. Il difetto vero valeva 11.7 e 14.8.
-            assert.ok(gradino < 0.5,
+            // 1.5 e non 0: `nearestPoint` NON misura l'offset lungo la
+            // normale, e sulle curve strette le due cose divergono — i moduli
+            // di testa e di coda trovano un campione più vicino di sbieco.
+            // Misurato il 2026-08-25 su shanghai: una fila di 8 moduli che
+            // ruota di 62° mostra 1.43 di scarto con margineDalMuro identico
+            // (10) su tutti. La soglia era 0.5, tarata su un campione di piste
+            // senza curve così strette; il difetto VERO — un modulo che prende
+            // il muro per conto suo — valeva 11.7 e 14.8, e resta lontanissimo.
+            // ⚠️ Il gradino vero è un SALTO; questo è un profilo liscio.
+            // Rif. [[feedback_la_misura_sbagliata_sembra_un_bug]]
+            assert.ok(gradino < 1.5,
                 `${id}: la fila di ${fila.length} moduli al campione ${fila[0].idx} scalina di `
                 + `${gradino.toFixed(1)} unità (da ${Math.min(...dist).toFixed(1)} a ${Math.max(...dist).toFixed(1)})`);
         }
@@ -1615,3 +1630,22 @@ for (const id of TRACCIATI) {
         });
     }
 }
+
+// ---- le schiere di tribune seguono il giro ----
+//
+// Il tetto di 18 dimezzava la densita' sulle piste lunghe: shanghai (7485) ne
+// chiedeva 34 e ne riceveva 18, cioe' una schiera ogni 416 unita' invece di
+// ogni 220. Alzare il numero non basta - era gia' stato alzato da 10 a 18 il
+// 2026-08-13, ed e' ricaduto sulla prima pista piu' lunga.
+// Rif. docs/superpowers/specs/2026-08-25-f1-densita-scenografia-design.md
+test('le schiere di tribune non hanno un tetto: seguono il giro', () => {
+    // Il pavimento resta: sotto le sei schiere un circuito corto sembra vuoto.
+    assert.equal(TrackScenery.schiereDaTentare(600), 6);
+    assert.equal(TrackScenery.schiereDaTentare(1177), 6);
+    // Sopra, una schiera ogni 220 unita', sempre.
+    assert.equal(TrackScenery.schiereDaTentare(3182), 14);
+    assert.equal(TrackScenery.schiereDaTentare(5170), 24);
+    assert.equal(TrackScenery.schiereDaTentare(7485), 34);
+    // E niente tetto: una pista lunga il doppio ne chiede il doppio.
+    assert.equal(TrackScenery.schiereDaTentare(14970), 68);
+});
