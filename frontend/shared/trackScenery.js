@@ -12,21 +12,22 @@
                                  require('./sceneryAssetSizes.js'), require('./sceneryHills.js'),
                                  require('./sceneryPaddock.js'), require('./trackGravel.js'),
                                  require('./sceneryInfrastructure.js'),
-                                 require('./sceneryRegistro.js'));
+                                 require('./sceneryRegistro.js'),
+                                 require('./sceneryEsclusioni.js'));
     } else {
         root.TrackScenery = factory(root.TrackGeometry, root.SceneryLandmarks,
                                     root.SceneryTrackside, root.SceneryCrowd,
                                     root.SceneryAssetSizes, root.SceneryHills,
                                     root.SceneryPaddock, root.TrackGravel,
                                     root.SceneryInfrastructure,
-                                    root.SceneryRegistro);
+                                    root.SceneryRegistro, root.SceneryEsclusioni);
     }
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryLandmarks,
                                                         SceneryTrackside, SceneryCrowd,
                                                         SceneryAssetSizes, SceneryHills,
                                                         SceneryPaddock, TrackGravel,
                                                         SceneryInfrastructure,
-                                                        SceneryRegistro) {
+                                                        SceneryRegistro, SceneryEsclusioni) {
 
     // Le categorie senza un modello solido: superfici piane e folla, che non
     // hanno un ingombro da far rispettare a nessuno. La folla in particolare
@@ -1873,7 +1874,7 @@
         const intoccabili = layout.filter(
             v => v.asset === 'startGantry' || NON_SCARTABILI.has(v.category));
         registro.aggiungiTutti(intoccabili);
-        const passate = [];
+        let passate = [];
         let scartate = 0;
         for (const voce of layout) {
             if (!voce.asset || SENZA_INGOMBRO.has(voce.category)) { passate.push(voce); continue; }
@@ -1888,6 +1889,29 @@
         // i dettagli ha scenografiaInvarianti.test.js.
         if (scartate && typeof console !== 'undefined' && console.debug) {
             console.debug(`[scenografia] ${scartate} oggetti scartati dalla porta su ${layout.length}`);
+        }
+
+        // GLI OGGETTI TOLTI A MANO DALL'AUTORE, se la pista ne elenca.
+        //
+        // Stanno QUI e non dopo il `return` per un motivo preciso: togliendoli
+        // prima del taglio degli orfani, una tribuna esclusa si porta via la
+        // sua rete e i suoi spettatori con il meccanismo che esiste gia' —
+        // invece di lasciare in piedi una rete da sola e centootto persone
+        // sedute nel vuoto.
+        //
+        // E stanno dentro generateLayout, non nei chiamanti, perche' i
+        // chiamanti sono cinque (il gioco, l'editor, l'anteprima, la cottura,
+        // il conto dei costi): una porta sola, come per il registro.
+        // Rif. spec 2026-08-25-f1-densita-scenografia-design.md
+        if (trackData.scenografiaEsclusi && trackData.scenografiaEsclusi.length) {
+            const esito = SceneryEsclusioni.applica(passate, trackData.scenografiaEsclusi);
+            passate = esito.layout;
+            // ⚠️ Un'esclusione che non trova piu' il suo oggetto va DETTA:
+            // vuol dire che l'oggetto si e' spostato ed e' ancora in pista.
+            if (esito.nonTrovate.length && typeof console !== 'undefined' && console.warn) {
+                console.warn(`[scenografia] ${esito.nonTrovate.length} oggetti da togliere non `
+                    + `sono stati trovati (si sono spostati?): ${esito.nonTrovate.join(', ')}`);
+            }
         }
 
         // Tribuna e rete restano una cosa sola anche QUI, in uscita: se la

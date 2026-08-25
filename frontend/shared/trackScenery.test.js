@@ -1701,3 +1701,72 @@ test('una pista lunga riceve piu\' verde di una corta', () => {
     assert.ok(conta(lunga, 'rock') > conta(corta, 'rock') * 1.5,
         `rocce: ${conta(corta, 'rock')} su melbourne, ${conta(lunga, 'rock')} su shanghai`);
 });
+
+// ---- gli oggetti tolti a mano dall'autore ----
+//
+// Il filtro sta DENTRO generateLayout, prima del taglio degli orfani: una
+// tribuna esclusa deve portarsi via la sua rete e i suoi spettatori, non
+// lasciare una rete in piedi da sola e centootto persone sedute nel vuoto.
+// Rif. docs/superpowers/specs/2026-08-25-f1-densita-scenografia-design.md
+//
+// ⚠️ Qui NON si puo' usare `circuitoVero`: passa `null` per i posti a sedere,
+// quindi non genera folla, e meta' di cio' che questi test devono provare
+// sparirebbe senza che nessuno se ne accorga.
+const SceneryEsclusioni = require('./sceneryEsclusioni.js');
+const POSTI = require('../assets/custom/circuit/grandStandSeats.json').seats;
+const ANCORE_TERRAZZE = require('../assets/custom/circuit/terraceAnchors.json').anchors;
+
+function circuitoConFolla(id, esclusi) {
+    const raw = JSON.parse(fsAllineamento.readFileSync(pathAllineamento.join(
+        __dirname, '..', 'tracks', `${id}.json`), 'utf8'));
+    const trackPts = TrackGeometry.sampleLoop(raw.controlPoints, 1000);
+    const pitPath = TrackGeometry.snapPitPathEnds(raw.pit.path, trackPts, raw.roadHalfWidth);
+    const pitLanePts = TrackGeometry.sampleOpenPath(pitPath, 300);
+    const barrierProfile = TrackGravel.barrierProfile(trackPts, {
+        roadHalf: raw.roadHalfWidth, pitLanePts, pitRoadHalf: raw.pit.roadHalfWidth });
+    const dati = esclusi ? Object.assign({}, raw, { scenografiaEsclusi: esclusi }) : raw;
+    return TrackScenery.generateLayout(dati, trackPts, pitLanePts,
+        raw.roadHalfWidth + 2.8 + 1.2, 45, POSTI, barrierProfile, ANCORE_TERRAZZE,
+        { gridSize: 6 });
+}
+
+test('un oggetto elencato fra gli esclusi non compare nella scenografia', () => {
+    const prima = circuitoConFolla('monte-rosso', null);
+    const albero = prima.find(v => v.category === 'woods');
+    assert.ok(albero, 'nessun albero da togliere: il test non proverebbe niente');
+    const id = SceneryEsclusioni.idDi(albero);
+
+    const dopo = circuitoConFolla('monte-rosso', [id]);
+    assert.ok(!dopo.some(v => SceneryEsclusioni.idDi(v) === id),
+        `l'oggetto ${id} e' ancora nella scenografia`);
+    // E non deve portarsi via mezzo circuito: un albero e' un albero.
+    assert.ok(prima.length - dopo.length < 5,
+        `tolto 1 albero, spariti ${prima.length - dopo.length} oggetti`);
+});
+
+test('togliere una tribuna si porta via la sua rete e i suoi spettatori', () => {
+    const prima = circuitoConFolla('monte-rosso', null);
+    // Una tribuna normale, non quella del traguardo: la principale e' una fila
+    // continua, e toglierne un modulo lascerebbe un buco che si vede.
+    const tribuna = prima.find(v => v.category === 'grandstand');
+    assert.ok(tribuna, 'nessuna tribuna da togliere');
+    const chiave = tribuna.x.toFixed(2) + ',' + tribuna.z.toFixed(2);
+    const suoi = prima.filter(v => v.category === 'crowd' && v.daTribuna === chiave).length;
+    assert.ok(suoi > 0, 'la tribuna scelta non ha spettatori: il test non proverebbe niente');
+
+    const dopo = circuitoConFolla('monte-rosso', [SceneryEsclusioni.idDi(tribuna)]);
+    assert.equal(dopo.filter(v => v.category === 'crowd' && v.daTribuna === chiave).length, 0,
+        `${suoi} spettatori sono rimasti seduti nel vuoto`);
+    assert.equal(dopo.filter(v => v.asset === 'catchFence' && v.daTribuna === chiave).length, 0,
+        'la rete e\' rimasta in piedi da sola');
+});
+
+test('una pista senza esclusioni genera esattamente cio\' che generava prima', () => {
+    // La rete di sicurezza del lavoro: il campo nuovo non deve cambiare
+    // niente su nessuna delle piste che esistono.
+    for (const id of TRACCIATI) {
+        const senzaCampo = circuitoConFolla(id, null);
+        const conListaVuota = circuitoConFolla(id, []);
+        assert.equal(conListaVuota.length, senzaCampo.length, id);
+    }
+});
