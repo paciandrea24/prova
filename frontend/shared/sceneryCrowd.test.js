@@ -104,17 +104,87 @@ test('le terrazze hanno un budget proprio, separato da quello delle tribune', ()
     for (let i = 0; i < 200; i++) {
         terrazze.push({ asset: 'hospitalityDeck', x: i * 40, y: 0, z: 0, rotY: 0 });
     }
-    // 200 terrazze × 20 posti = 4000 richiesti contro un tetto di 900.
-    //
     // ⚠️ Qui serve un rng UNIFORME, non una costante. Il filtro è
     // `rng() > fill`: un rng che ritorna sempre 0 passa qualunque soglia e il
-    // test non potrebbe fallire. Il tetto è statistico come quello delle
-    // tribune, non un taglio netto — da qui il 15% di tolleranza.
+    // test non potrebbe fallire. Il tetto è statistico, non un taglio netto —
+    // da qui le tolleranze larghe.
     let s = 12345;
     const rng = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+
+    // Il budget è SEPARATO da quello delle tribune: nessuna tribuna è passata
+    // a questa chiamata, eppure le terrazze si popolano.
     const out = SceneryCrowd.buildTerraceCrowd(terrazze, ancore, rng);
-    assert.ok(out.length <= SceneryCrowd.MAX_TERRACE * 1.15,
-        `${out.length} figure, sopra il tetto di ${SceneryCrowd.MAX_TERRACE}`);
-    assert.ok(out.length > SceneryCrowd.MAX_TERRACE * 0.5,
-        `${out.length} figure: il budget non viene nemmeno avvicinato`);
+    assert.ok(out.length > 0, 'nessuno spettatore sulle terrazze');
+
+    // E dal 2026-08-25 il budget SCALA col numero di terrazze, come quello
+    // delle tribune scala col numero di tribune: 200 terrazze non devono
+    // ritrovarsi con le stesse 900 figure che ne servivano 29, o si svuotano
+    // tutte insieme. Rif. spec 2026-08-25-f1-densita-scenografia-design.md
+    const poche = [];
+    for (let i = 0; i < 29; i++) {
+        poche.push({ asset: 'hospitalityDeck', x: i * 40, y: 0, z: 0, rotY: 0 });
+    }
+    let s2 = 12345;
+    const rng2 = () => { s2 = (s2 * 9301 + 49297) % 233280; return s2 / 233280; };
+    const pochi = SceneryCrowd.buildTerraceCrowd(poche, ancore, rng2);
+    const riempPoche = pochi.length / (29 * 20);
+    const riempTante = out.length / (200 * 20);
+    assert.ok(riempTante > riempPoche * 0.9,
+        `riempimento terrazze: ${(riempPoche * 100).toFixed(0)}% con 29, `
+        + `${(riempTante * 100).toFixed(0)}% con 200`);
+
+    // Sotto il riferimento il tetto resta quello di prima: si alza, mai si
+    // abbassa.
+    assert.ok(pochi.length <= SceneryCrowd.MAX_TERRACE * 1.15,
+        `${pochi.length} figure con 29 terrazze, sopra il tetto di ${SceneryCrowd.MAX_TERRACE}`);
+});
+
+// ---- il budget della folla segue le tribune ----
+//
+// MAX_TOTAL non e' un numero di spettatori: e' un budget spalmato su tutte le
+// tribune (fillCap = MAX_TOTAL / capienza). Con un numero fisso, piu' tribune
+// significa tribune piu' vuote - misurato il 2026-08-25: 100% pieno su
+// monte-rosso (50 tribune), 62% su melbourne (90), 40% su shanghai (139), e
+// 25% su shanghai appena le schiere hanno smesso di avere un tetto (243).
+//
+// L'utente: «io non toccherei gli spettatori o li scalerei con le tribune,
+// niente di diverso. girando in velocita' nella pista non e' che si nota se
+// una tribuna e' piu' piena o meno». Quindi la folla cresce PERCHE' le tribune
+// sono di piu', non perche' ognuna e' piu' piena.
+// Rif. docs/superpowers/specs/2026-08-25-f1-densita-scenografia-design.md
+function tribuneFinte(quante) {
+    const out = [];
+    for (let i = 0; i < quante; i++) {
+        out.push({ asset: 'grandStand', category: 'grandstand',
+                   x: i * 200, y: 0, z: 0, rotY: 0, scale: 1 });
+    }
+    return out;
+}
+
+function riempimento(quante) {
+    const t = tribuneFinte(quante);
+    const crowd = SceneryCrowd.buildCrowd(t, seatData.seats, rngFactory());
+    return crowd.length / (quante * seatData.seats.length);
+}
+
+test('raddoppiando le tribune il riempimento non crolla', () => {
+    const a = riempimento(111);
+    const b = riempimento(222);
+    assert.ok(b > a * 0.9,
+        `riempimento: ${(a * 100).toFixed(0)}% con 111 tribune, `
+        + `${(b * 100).toFixed(0)}% con 222`);
+});
+
+test('sotto il riferimento il budget della folla non cambia', () => {
+    // 90 tribune (melbourne) e 50 (monte-rosso) devono dare esattamente cio'
+    // che davano prima: il tetto si alza, mai si abbassa.
+    for (const quante of [50, 90, 111]) {
+        const t = tribuneFinte(quante);
+        const crowd = SceneryCrowd.buildCrowd(t, seatData.seats, rngFactory());
+        // 3% di tolleranza: il budget e' un tetto MEDIO, non esatto - ogni
+        // posto e' un'estrazione (`if (rng() > fill) continue`), quindi il
+        // totale oscilla attorno a capienza x fillCap.
+        assert.ok(crowd.length <= 6000 * 1.03,
+            `${quante} tribune: ${crowd.length} spettatori, sopra il budget di 6000`);
+    }
 });

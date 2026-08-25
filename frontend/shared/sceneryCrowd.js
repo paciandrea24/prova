@@ -39,6 +39,25 @@
     // cioè piene come sono sempre state.
     const MAX_TOTAL = 6000;
 
+    // ⚠️ E dal 2026-08-25 il tetto SCALA COL NUMERO DI TRIBUNE, perché il
+    // commento qui sopra descriveva un difetto invece di curarlo: «alzando le
+    // tribune senza alzare questo le tribune si SVUOTANO» è esattamente ciò
+    // che è successo. Da quando le schiere non hanno più un tetto, shanghai è
+    // passata da 139 a 243 tribune e il riempimento dal 40% al 25%.
+    //
+    // 111 sono le tribune di new-monza, la pista più fornita fra quelle su cui
+    // 6000 bastava. Sotto quel numero non cambia niente — monte-rosso resta al
+    // 100%, melbourne al 62% — e le loro cotture restano valide: il tetto si
+    // alza, mai si abbassa. Sopra, la folla cresce SOLO perché le tribune sono
+    // di più, non perché ognuna è più piena: a 300 all'ora non si vede se una
+    // tribuna è piena a metà o a tre quarti, si vede quanto circuito ha
+    // qualcosa di fianco (scelta dell'utente, 2026-08-25).
+    // Rif. docs/superpowers/specs/2026-08-25-f1-densita-scenografia-design.md
+    const TRIBUNE_RIFERIMENTO = 111;
+    function tettoFolla(numeroTribune) {
+        return MAX_TOTAL * Math.max(1, numeroTribune / TRIBUNE_RIFERIMENTO);
+    }
+
     function buildCrowd(grandstands, seatAnchors, rng) {
         if (!seatAnchors || !seatAnchors.length) return [];
         const layout = [];
@@ -47,7 +66,9 @@
         // FILL_MAX e non cambia nulla, con molte cala per tutte insieme invece
         // di lasciare deserte le ultime della lista.
         const capacity = grandstands.length * seatAnchors.length;
-        const fillCap = capacity > 0 ? Math.min(FILL_MAX, MAX_TOTAL / capacity) : FILL_MAX;
+        const fillCap = capacity > 0
+            ? Math.min(FILL_MAX, tettoFolla(grandstands.length) / capacity)
+            : FILL_MAX;
 
         for (const stand of grandstands) {
             const isMain = stand.category === 'grandstand-main';
@@ -94,6 +115,10 @@
     const TERRACE_VARIANTS = ['spectatorStandA', 'spectatorStandB'];
     const TERRACE_FILL_MIN = 0.5;
     const MAX_TERRACE = 900;
+    // Stessa regola delle tribune: le terrazze nascono dalle infrastrutture,
+    // che seguono già il giro, quindi su una pista lunga sono di più. 29 sono
+    // quelle di new-monza, misurate il 2026-08-25.
+    const TERRAZZE_RIFERIMENTO = 29;
 
     function buildTerraceCrowd(terrazze, ancorePerAsset, rng) {
         if (!terrazze || !terrazze.length || !ancorePerAsset) return [];
@@ -105,7 +130,8 @@
             if (a) capacity += a.length;
         }
         if (!capacity) return [];
-        const fillCap = Math.min(FILL_MAX, MAX_TERRACE / capacity);
+        const fillCap = Math.min(FILL_MAX,
+            MAX_TERRACE * Math.max(1, terrazze.length / TERRAZZE_RIFERIMENTO) / capacity);
 
         for (const t of terrazze) {
             const ancore = ancorePerAsset[t.asset];
