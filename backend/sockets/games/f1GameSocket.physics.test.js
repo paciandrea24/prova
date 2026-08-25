@@ -1149,6 +1149,8 @@ test('l\'autopilota d\'ingresso resta dentro la corsia box su tutte le piste', (
 
 // --- gravità lungo il nastro (fase 1a) ---
 
+// ⚠️ La gravità è ACCESA di default: per spegnerla serve '0', non basta
+// togliere la variabile (passare null qui la lascia accesa).
 function conFlagGravita(valore, fn) {
     const prima = process.env.F1_GRAVITA_NASTRO;
     if (valore === null) delete process.env.F1_GRAVITA_NASTRO;
@@ -1176,9 +1178,9 @@ function velocitaDopoUnTick(pendenza, flag) {
 }
 
 test('a flag spento la pendenza non cambia niente', () => {
-    const piano = velocitaDopoUnTick(0, null);
-    assert.equal(velocitaDopoUnTick(0.2, null), piano);
-    assert.equal(velocitaDopoUnTick(-0.2, null), piano);
+    const piano = velocitaDopoUnTick(0, '0');
+    assert.equal(velocitaDopoUnTick(0.2, '0'), piano);
+    assert.equal(velocitaDopoUnTick(-0.2, '0'), piano);
 });
 
 test('a flag acceso la salita toglie velocità e la discesa la aggiunge', () => {

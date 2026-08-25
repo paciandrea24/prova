@@ -48,7 +48,10 @@ function main() {
     const ripetizioni = parseInt(process.argv[3], 10) || 30;
     const track = loadTrack(pista);
 
-    delete process.env.F1_GRAVITA_NASTRO;
+    // ⚠️ Per spegnere serve '0': dal playtest del 2026-08-25 la gravità è accesa
+    // di default, quindi togliere la variabile la lascerebbe accesa e il banco
+    // confronterebbe due volte la stessa configurazione senza dirlo.
+    process.env.F1_GRAVITA_NASTRO = '0';
     const spento = misura(track, pista, ripetizioni);
     process.env.F1_GRAVITA_NASTRO = '1';
     const acceso = misura(track, pista, ripetizioni);

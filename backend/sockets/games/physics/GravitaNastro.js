@@ -53,8 +53,13 @@
 // muro. Con G più basso il conto si allenta.
 const G_NASTRO = 0.8;
 
+// ACCESA DI DEFAULT dal playtest del 2026-08-25, approvato dall'utente. Al
+// contrario degli altri modelli dietro flag (F1_TYRE_SLIP_MODEL e compagnia,
+// che restano percorsi di confronto spenti), questa è ormai la fisica normale
+// del gioco: si spegne solo esplicitamente, con F1_GRAVITA_NASTRO=0, per
+// confrontare o per isolare un problema.
 function isGravitaNastroActive() {
-    return process.env.F1_GRAVITA_NASTRO === '1';
+    return process.env.F1_GRAVITA_NASTRO !== '0';
 }
 
 // Negativa in salita (frena), positiva in discesa (spinge). Una pendenza
@@ -70,4 +75,23 @@ function accelerazionePendenza(pendenza) {
     return a === 0 ? 0 : a;
 }
 
-module.exports = { G_NASTRO, isGravitaNastroActive, accelerazionePendenza };
+// Oltre questa pendenza (radianti) l'auto non sale più: la gravità lungo il
+// nastro supera tutta l'accelerazione che il motore può dare, quindi la
+// macchina rallenta fino a fermarsi e poi riscende all'indietro.
+//
+// Non è una regola a parte: è una conseguenza diretta di G_NASTRO, e per questo
+// vive qui e non in una costante scritta a mano da qualche altra parte. Col
+// valore attuale e l'ACCEL nominale il limite sta attorno al 24% di pendenza —
+// mentre il validatore segnala già tutto ciò che supera il 15%, quindi una
+// pista valida resta percorribile con margine.
+//
+// `accelDisponibile` è l'accelerazione del motore in u/tick^2: ACCEL nominale,
+// o quella effettiva se si vuole tenere conto di usura e danni.
+function pendenzaMassimaInSalita(accelDisponibile) {
+    const rapporto = accelDisponibile / G_NASTRO;
+    if (!(rapporto > 0)) return 0;
+    if (rapporto >= 1) return Math.PI / 2;   // gravità irrilevante: si sale tutto
+    return Math.asin(rapporto);
+}
+
+module.exports = { G_NASTRO, isGravitaNastroActive, accelerazionePendenza, pendenzaMassimaInSalita };
