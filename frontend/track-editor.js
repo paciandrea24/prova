@@ -1090,10 +1090,76 @@ document.addEventListener('DOMContentLoaded', () => {
         return hits.length > 0 ? hits[0].object : null;
     }
 
+    // Il tratto sotto un punto del mondo, se il punto sta sul nastro.
+    //
+    // ⚠️ Il raggio è la MEZZA CARREGGIATA vera della pista, non un numero
+    // fisso: la stessa soglia su una pista larga 22 e una larga 40 direbbe
+    // cose diverse. È la lezione delle soglie geometriche per unità di pista.
+    //
+    // In modalità punti (le piste vecchie, senza `geometria`) non si prende
+    // niente: lì i tratti non esistono, e afferrare qualcosa che non c'è
+    // sarebbe peggio che non poterlo afferrare.
+    function presaSulNastro(hit) {
+        if (!inSegmenti() || geometria.nodi.length < 3) return null;
+        if (document.getElementById('pitMode').checked) return null;
+        const mezza = parseFloat(document.getElementById('roadHalfWidth').value) || 11;
+        return TrackSegmenti.trattoVicinoA(geometria, hit.x, hit.z, mezza);
+    }
+
+    // La perpendicolare al tratto, presa fra i suoi due capi. Serve allo
+    // spostamento con Shift: «di lato» vuol dire rispetto al tratto, non
+    // rispetto allo schermo.
+    function normaleDelTratto(i) {
+        if (!inSegmenti()) return null;
+        const n = geometria.nodi.length;
+        const a = geometria.nodi[i], b = geometria.nodi[(i + 1) % n];
+        if (!a || !b) return null;
+        const dx = b.x - a.x, dz = b.z - a.z;
+        const len = Math.hypot(dx, dz);
+        if (len < 1e-6) return null;
+        return { nx: -dz / len, nz: dx / len };
+    }
+
+    // L'EVIDENZIAZIONE del tratto che si sta per prendere.
+    //
+    // ⚠️ Si ricostruisce solo quando cambia il TRATTO sotto il mouse, non a
+    // ogni pixel: rifare la linea a ogni movimento vorrebbe dire allocare
+    // geometrie Three trenta volte al secondo mentre si muove il mouse sopra
+    // una pista, per disegnare sempre la stessa cosa.
+    let evidenza = null;
+    let evidenzaIndice = -1;
+
+    function evidenziaTratto(i) {
+        if (i === evidenzaIndice) return;
+        evidenzaIndice = i;
+        if (evidenza) { scene.remove(evidenza); evidenza.geometry.dispose(); evidenza = null; }
+        if (i < 0 || !inSegmenti()) return;
+        const n = geometria.nodi.length;
+        const a = geometria.nodi[i], b = geometria.nodi[(i + 1) % n];
+        if (!a || !b) return;
+        const punti = [];
+        for (let k = 0; k <= 24; k++) {
+            const p = TrackSegmenti.valutaTratto(a, b, (geometria.tratti || [])[i] || { tipo: 'curva' }, k / 24);
+            // Sopra l'asfalto ma sotto i marker: si deve vedere senza coprire
+            // i pallini che restano il bersaglio principale.
+            punti.push(new THREE.Vector3(p.x, (a.y || 0) + 0.45, p.z));
+        }
+        evidenza = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(punti),
+            new THREE.LineBasicMaterial({ color: 0x6fd3a0 }));
+        evidenza.renderOrder = 5;
+        scene.add(evidenza);
+    }
+
     let dragging = null;
     let panning = false;
     let panLast = { x: 0, y: 0 };
     let triggerDrag = null; // { startHitX, startHitZ, startX, startZ }
+    // Trascinamento di un TRATTO intero: { indice, ultimoX, ultimoZ }.
+    // Si tiene l'ultima posizione invece dello scostamento totale dall'inizio,
+    // così ogni movimento è uno spostamento incrementale e non serve
+    // conservare una copia della geometria di partenza.
+    let trattoDrag = null;
     let startFinishDrag = null;
 
     // Tenuta aggiornata per poter "riusare" pickMarker anche da un evento
@@ -1157,6 +1223,25 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const hit = worldFromEvent(ev);
+
+        // PREMERE SUL NASTRO PRENDE IL TRATTO, e non aggiunge un nodo.
+        //
+        // È il gesto scelto dall'utente il 2026-08-25 per «sposta segmenti
+        // aggregati». Il conflitto con «cliccare aggiunge un nodo» si risolve
+        // dallo spazio e non da un tasto: dentro la carreggiata si afferra,
+        // fuori si posa — ed è già come si lavora, perché la pista la si
+        // estende cliccando fuori da sé.
+        const preso = presaSulNastro(hit);
+        if (preso) {
+            salvaStato();
+            trattoDrag = { indice: preso.indice, ultimoX: hit.x, ultimoZ: hit.z };
+            trattoSelezionato = preso.indice;
+            nodoSelezionato = preso.indice;
+            mostraPagina('tratto');
+            aggiornaRiquadroTratto();
+            return;
+        }
+
         // In modalità segmenti si posa un NODO, non un punto di controllo: i
         // punti li produce la cottura. La corsia box resta a punti — ha una
         // geometria sua, che questo progetto non tocca.
@@ -1174,6 +1259,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     renderer.domElement.addEventListener('mousemove', (ev) => {
         lastMouseClient = { clientX: ev.clientX, clientY: ev.clientY };
+
+        // Che cosa si prenderebbe premendo qui. Non durante un trascinamento:
+        // lì il tratto è già preso, e ricalcolarlo farebbe saltare
+        // l'evidenziazione sull'oggetto sbagliato appena il mouse esce dal
+        // nastro.
+        // ⚠️ `inSegmenti()` PRIMA di tutto: senza, ogni movimento del mouse
+        // farebbe un raycast su tutti i marker, e sulle piste vecchie a punti
+        // sono centinaia. In modalità punti non c'è niente da afferrare
+        // comunque — i tratti non esistono.
+        if (inSegmenti() && !trattoDrag && !dragging && !panning) {
+            const sopra = pickMarker(ev) ? null : presaSulNastro(worldFromEvent(ev));
+            evidenziaTratto(sopra ? sopra.indice : -1);
+            renderer.domElement.style.cursor = sopra ? 'move' : '';
+        }
         if (panning) {
             const dx = ev.clientX - panLast.x;
             const dy = ev.clientY - panLast.y;
@@ -1230,6 +1329,36 @@ document.addEventListener('DOMContentLoaded', () => {
             aggiornaPannelloTraguardo();
             return;
         }
+        // Il tratto intero si sposta di quanto si è mosso il mouse da
+        // com'era all'ultimo evento: incrementale, così trascinare e tornare
+        // indietro riporta il tratto dov'era.
+        if (trattoDrag) {
+            const h = worldFromEvent(ev);
+            let dx = h.x - trattoDrag.ultimoX;
+            let dz = h.z - trattoDrag.ultimoZ;
+            // Shift: solo di lato, perpendicolare al tratto. È il caso d'uso
+            // vero — allargare o stringere un rettilineo senza girarlo.
+            if (ev.shiftKey) {
+                const n = normaleDelTratto(trattoDrag.indice);
+                if (n) {
+                    const lungo = dx * n.nx + dz * n.nz;
+                    dx = n.nx * lungo;
+                    dz = n.nz * lungo;
+                }
+            }
+            geometria = TrackSegmenti.spostaTratto(geometria, trattoDrag.indice, dx, dz);
+            trattoDrag.ultimoX = h.x;
+            trattoDrag.ultimoZ = h.z;
+            dopoModificaMain();
+            rebuild();
+            aggiornaRiquadroTratto();
+            // L'evidenza si è mossa col tratto: va rifatta, e per farlo va
+            // prima invalidata (si ricostruisce solo al cambio di indice).
+            evidenzaIndice = -1;
+            evidenziaTratto(trattoDrag.indice);
+            return;
+        }
+
         if (!dragging) return;
         const hit = worldFromEvent(ev);
 
@@ -1260,7 +1389,10 @@ document.addEventListener('DOMContentLoaded', () => {
         rebuild();
     });
 
-    window.addEventListener('mouseup', () => { dragging = null; panning = false; imageDrag = null; triggerDrag = null; startFinishDrag = null; });
+    window.addEventListener('mouseup', () => {
+        dragging = null; panning = false; imageDrag = null; triggerDrag = null;
+        startFinishDrag = null; trattoDrag = null;
+    });
 
     renderer.domElement.addEventListener('contextmenu', (ev) => {
         ev.preventDefault();

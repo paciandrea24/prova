@@ -294,8 +294,58 @@
         return g;
     }
 
+    // --- Spostare un tratto intero ---------------------------------------
+    //
+    // «Sposta segmenti aggregati» della carrellata del 2026-08-23: prendere un
+    // rettilineo e spostarlo di lato senza doverne trascinare i due capi uno
+    // per volta, sperando di muoverli della stessa quantità.
+    //
+    // Quale tratto sta sotto un punto del mondo. Si campiona invece di
+    // risolvere: un tratto è una Bézier, la distanza esatta da una cubica non
+    // si scrive in forma chiusa, e con venti nodi e un passo grosso questo
+    // costa niente anche a ogni movimento del mouse.
+    //
+    // ⚠️ `raggio` NON ha un valore di ripiego: chi chiama sa quanto è larga la
+    // pista e lo passa. Un default qui direbbe la cosa sbagliata su ogni pista
+    // che non ha quella larghezza — è la lezione delle soglie geometriche per
+    // unità di pista.
+    function trattoVicinoA(geometria, x, z, raggio, passo) {
+        if (!geometria || !Array.isArray(geometria.nodi) || geometria.nodi.length < 3) return null;
+        const nodi = geometria.nodi;
+        const tratti = geometria.tratti || [];
+        const step = passo || PASSO_COTTURA * 4;   // più grosso della cottura: qui basta sapere QUALE
+        let vicino = null;
+        for (let i = 0; i < nodi.length; i++) {
+            const a = nodi[i], b = nodi[(i + 1) % nodi.length];
+            for (const p of campionaTratto(a, b, tratti[i] || { tipo: 'curva' }, step)) {
+                const d = Math.hypot(p.x - x, p.z - z);
+                if (d <= raggio && (!vicino || d < vicino.distanza)) vicino = { indice: i, distanza: d };
+            }
+        }
+        return vicino;
+    }
+
+    // Sposta i due capi del tratto `i` della stessa quantità. I tratti
+    // adiacenti si deformano di conseguenza, ed è l'effetto voluto: sono loro
+    // a raccordare, il rettilineo no.
+    //
+    // ⚠️ Le DIREZIONI dei nodi non si toccano. Muovere un rettilineo di lato
+    // non deve girarlo, e un riallineamento automatico qui lo farebbe ruotare
+    // a ogni pixel di trascinamento.
+    function spostaTratto(geometria, i, dx, dz) {
+        const g = copia(geometria);
+        const n = g.nodi.length;
+        if (!(i >= 0 && i < n)) return g;
+        for (const k of [i, (i + 1) % n]) {
+            g.nodi[k].x = +(g.nodi[k].x + dx).toFixed(2);
+            g.nodi[k].z = +(g.nodi[k].z + dz).toFixed(2);
+        }
+        return g;
+    }
+
     return {
         cuoci, valutaTratto, versore, PASSO_COTTURA,
         misureTratto, raddrizza, impostaLunghezza, direzioneAutomatica, riallinea, inserisci,
+        trattoVicinoA, spostaTratto,
     };
 });

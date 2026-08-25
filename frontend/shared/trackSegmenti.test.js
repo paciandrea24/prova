@@ -371,3 +371,77 @@ test('inserisci: spezzare una curva non ne cambia la forma', () => {
     }
     assert.ok(peggio < 2, `la forma si e spostata di ${peggio.toFixed(2)} unita`);
 });
+
+// ---- spostare un tratto intero ----
+//
+// «Sposta segmenti aggregati» della carrellata del 2026-08-23: prendere un
+// rettilineo e spostarlo di lato senza trascinarne i capi uno per volta.
+// ⚠️ Tolleranza al centesimo e non 1e-6: le coordinate si arrotondano a due
+// decimali, come fa il trascinamento dei nodi in tutto l'editor. Su un anello
+// di prova con coordinate irrazionali (sin/cos per 200) l'arrotondamento vale
+// fino a mezzo centesimo per capo.
+const CENTESIMO = 0.011;
+
+function anelloDiProva() {
+    const R = 200, nodi = [], tratti = [];
+    for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        nodi.push({ x: Math.sin(a) * R, z: Math.cos(a) * R, y: 0, dir: 0 });
+        tratti.push({ tipo: 'curva' });
+    }
+    return TS.riallinea({ versione: 1, nodi, tratti });
+}
+
+test('trattoVicinoA trova il tratto sotto un punto del nastro', () => {
+    const g = anelloDiProva();
+    // Un punto preso a meta' del primo tratto: deve tornare proprio quello.
+    const meta = TS.valutaTratto(g.nodi[0], g.nodi[1], g.tratti[0], 0.5);
+    const trovato = TS.trattoVicinoA(g, meta.x, meta.z, 12);
+    assert.ok(trovato, 'nessun tratto trovato dove passa la pista');
+    assert.equal(trovato.indice, 0);
+});
+
+test('trattoVicinoA non trova niente lontano dalla pista', () => {
+    const g = anelloDiProva();
+    // In mezzo all'anello: li' la pista non passa, e cliccare deve continuare
+    // ad aggiungere un nodo invece di afferrare un tratto a caso.
+    assert.equal(TS.trattoVicinoA(g, 0, 0, 12), null);
+    assert.equal(TS.trattoVicinoA(g, 9000, 9000, 12), null);
+});
+
+test('spostaTratto muove i due capi della STESSA quantita\'', () => {
+    const g = anelloDiProva();
+    const a0 = { x: g.nodi[2].x, z: g.nodi[2].z };
+    const b0 = { x: g.nodi[3].x, z: g.nodi[3].z };
+    const dopo = TS.spostaTratto(g, 2, 10, -4);
+    assert.ok(Math.abs(dopo.nodi[2].x - (a0.x + 10)) < CENTESIMO);
+    assert.ok(Math.abs(dopo.nodi[2].z - (a0.z - 4)) < CENTESIMO);
+    assert.ok(Math.abs(dopo.nodi[3].x - (b0.x + 10)) < CENTESIMO);
+    assert.ok(Math.abs(dopo.nodi[3].z - (b0.z - 4)) < CENTESIMO);
+    // E si muovono della STESSA quantita': e' il punto del tratto aggregato.
+    assert.ok(Math.abs((dopo.nodi[2].x - a0.x) - (dopo.nodi[3].x - b0.x)) < CENTESIMO);
+    // Gli altri nodi non si muovono: e' un TRATTO che si sposta, non la pista.
+    assert.equal(dopo.nodi[0].x, g.nodi[0].x);
+    assert.equal(dopo.nodi[5].z, g.nodi[5].z);
+    // E la geometria di partenza non si tocca: annulla/rifai conta su questo.
+    assert.equal(g.nodi[2].x, a0.x);
+});
+
+test('spostare un tratto non ne gira le direzioni', () => {
+    // Muovere un rettilineo di lato non deve ruotarlo: se le direzioni si
+    // riallineassero, il tratto girerebbe a ogni pixel di trascinamento.
+    const g = anelloDiProva();
+    const dirPrima = g.nodi.map(n => n.dir);
+    const dopo = TS.spostaTratto(g, 1, 25, 25);
+    assert.deepEqual(dopo.nodi.map(n => n.dir), dirPrima);
+});
+
+test('spostare l\'ultimo tratto prende anche il nodo zero', () => {
+    // Il giro e' chiuso: l'ultimo tratto va dall'ultimo nodo al primo.
+    const g = anelloDiProva();
+    const ultimo = g.nodi.length - 1;
+    const x0 = g.nodi[0].x;
+    const dopo = TS.spostaTratto(g, ultimo, 7, 0);
+    assert.ok(Math.abs(dopo.nodi[0].x - (x0 + 7)) < CENTESIMO, 'il nodo 0 doveva muoversi');
+    assert.ok(Math.abs(dopo.nodi[ultimo].x - (g.nodi[ultimo].x + 7)) < CENTESIMO);
+});
