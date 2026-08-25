@@ -271,6 +271,18 @@
     // delle tre superfici compenetra le altre. La ghiaia esiste solo dove il
     // terreno è in piano (vedi trackGravel.js), quindi non c'è dislivello da
     // raccordare col terrapieno.
+    // Di quanto la ghiaia sta sopra il terreno che la regge.
+    //
+    // ⚠️ Erano 3 centesimi, e a tre centesimi le due superfici si contendono il
+    // pixel: all'esterno della curva sopraelevata si vedevano denti verdi dentro
+    // la sabbia (segnalato in gioco il 2026-08-25). Non e' una questione di
+    // banking — la ghiaia e il terrapieno sono sempre stati complanari — ma di
+    // DISTANZA: la precisione del depth buffer peggiora col quadrato, e a
+    // duecento unita' tre centesimi non bastano piu' a decidere chi sta davanti.
+    // Un dito e mezzo di scarto regge fino a lontano e non fa scalino: la ghiaia
+    // confina col cordolo, che e' piu' alto.
+    const GHIAIA_SOPRA_TERRENO = 0.15;
+
     function buildGravel(container, pts, roadHalf, curbW, profile) {
         const n = pts.length;
         const pos = [];
@@ -294,7 +306,7 @@
             for (let i = 0; i < n; i++) {
                 const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
                 const p = pts[i];
-                const y = (p.y || 0) + 0.03;
+                const y = (p.y || 0) + GHIAIA_SOPRA_TERRENO;
                 const mezza = mezzaAl(pts, i, roadHalf);
                 const inner = (mezza + curbW) * side;
                 const outer = (mezza + curbW + banda[i]) * side;
