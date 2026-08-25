@@ -811,3 +811,40 @@ test('pitLaneSlots copre la corsia per intero', () => {
     assert.equal(slot.length, attese,
         `su 300 unita' a passo ${TrackGeometry.PIT_BOX_SPACING} attese ${attese} posizioni`);
 });
+
+// ---- la larghezza si interpola come la quota ----
+//
+// Fra un tratto largo e uno stretto deve nascere un RACCORDO, non uno
+// scalino: i circuiti veri non cambiano larghezza di colpo.
+// Rif. «larghezza variabile», blocco D, 2026-08-25.
+test('il ricampionamento porta e interpola la mezza carreggiata', () => {
+    const controlPoints = [];
+    for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        controlPoints.push({
+            x: Math.sin(a) * 200, y: 0, z: Math.cos(a) * 200,
+            halfWidth: i < 6 ? 11 : 20,
+        });
+    }
+    const pts = TrackGeometry.sampleLoop(controlPoints, 400);
+    assert.ok(pts.every(p => typeof p.halfWidth === 'number'), 'un punto ha perso la larghezza');
+    const min = Math.min(...pts.map(p => p.halfWidth));
+    const max = Math.max(...pts.map(p => p.halfWidth));
+    assert.ok(min >= 10.9 && max <= 20.1, `larghezze fuori dai due valori: ${min}..${max}`);
+    // Il raccordo: devono esistere valori INTERMEDI, altrimenti e' uno scalino.
+    assert.ok(pts.some(p => p.halfWidth > 12 && p.halfWidth < 19),
+        'nessun valore intermedio: il cambio di larghezza e\' a scalino');
+});
+
+test('senza larghezza sui punti di controllo il campo non compare', () => {
+    // Le piste vecchie non devono guadagnare un campo dal nulla: a riempirlo
+    // e' un posto solo, il caricatore di pista.
+    const controlPoints = [];
+    for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        controlPoints.push({ x: Math.sin(a) * 200, y: 0, z: Math.cos(a) * 200 });
+    }
+    for (const p of TrackGeometry.sampleLoop(controlPoints, 100)) {
+        assert.equal(p.halfWidth, undefined);
+    }
+});

@@ -51,7 +51,22 @@
         // punti di transizione (rampa) restano a terra, il terrapieno della
         // Fase 1 continua a coprirli normalmente.
         const bridge = !!p1.bridge && !!p2.bridge;
-        return { x: xz.x, y: y1 + (y2 - y1) * ue, z: xz.z, bridge };
+        // La MEZZA CARREGGIATA viaggia sul punto, come la quota, e si
+        // interpola con la stessa smoothstep: fra un tratto largo e uno
+        // stretto nasce un raccordo invece di uno scalino, che è come sono
+        // fatti i circuiti veri. Rif. «larghezza variabile», blocco D.
+        //
+        // ⚠️ Il campo si mette solo se c'è: le piste disegnate prima di questa
+        // feature non ce l'hanno, e inventare qui un valore di ripiego lo
+        // spargerebbe su tutto il sistema senza che nessuno sappia da dove
+        // viene. A riempirlo è UN posto solo, il caricatore di pista.
+        const out = { x: xz.x, y: y1 + (y2 - y1) * ue, z: xz.z, bridge };
+        const w1 = p1.halfWidth, w2 = p2.halfWidth;
+        if (typeof w1 === 'number' && typeof w2 === 'number') {
+            out.halfWidth = w1 + (w2 - w1) * ue;
+        } else if (typeof w1 === 'number') { out.halfWidth = w1; }
+        else if (typeof w2 === 'number') { out.halfWidth = w2; }
+        return out;
     }
 
     // Valuta la curva (chiusa o aperta) al parametro globale t in [0,1].
@@ -107,12 +122,17 @@
             const segLen = cum[idx] - cum[idx - 1] || 1e-9;
             const f = (target - cum[idx - 1]) / segLen;
             const a = fine[idx - 1], b = fine[idx];
-            out.push({
+            const punto = {
                 x: a.x + (b.x - a.x) * f,
                 y: (a.y || 0) + ((b.y || 0) - (a.y || 0)) * f,
                 z: a.z + (b.z - a.z) * f,
                 bridge: a.bridge
-            });
+            };
+            // Anche qui: interpolata dove c'è, assente dove non c'è.
+            if (typeof a.halfWidth === 'number' && typeof b.halfWidth === 'number') {
+                punto.halfWidth = a.halfWidth + (b.halfWidth - a.halfWidth) * f;
+            } else if (typeof a.halfWidth === 'number') { punto.halfWidth = a.halfWidth; }
+            out.push(punto);
         }
         return out;
     }

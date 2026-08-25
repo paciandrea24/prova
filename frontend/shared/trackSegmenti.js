@@ -106,18 +106,35 @@
     // Geometria -> punti di controllo. Il primo punto di ogni tratto È il suo
     // nodo di partenza; il nodo di arrivo lo mette il tratto successivo, così
     // nessun punto compare due volte e la catena resta chiusa.
-    function cuoci(geometria, passo) {
+    // `larghezzaNominale` e' la mezza carreggiata della pista, quella del
+    // campo globale. Serve per i tratti che NON hanno una larghezza propria:
+    // senza, un tratto largo accanto a uno senza indicazione produrrebbe un
+    // punto con il campo e uno senza, e l'interpolazione fra i due direbbe una
+    // cosa inventata. Passandola, ogni punto cotto porta la sua larghezza vera.
+    //
+    // Se non la si passa, il campo non compare: le piste disegnate prima di
+    // questa feature restano bit per bit come sono.
+    function cuoci(geometria, passo, larghezzaNominale) {
         if (!geometria || !Array.isArray(geometria.nodi) || geometria.nodi.length < 3) {
             throw new Error('Servono almeno 3 nodi');
         }
         const nodi = geometria.nodi;
         const tratti = geometria.tratti || [];
         const step = passo || PASSO_COTTURA;
+        const conLarghezza = typeof larghezzaNominale === 'number' && larghezzaNominale > 0;
         const out = [];
         for (let i = 0; i < nodi.length; i++) {
             const a = nodi[i], b = nodi[(i + 1) % nodi.length];
-            const punti = campionaTratto(a, b, tratti[i] || { tipo: 'curva' }, step);
-            for (const p of punti) out.push(p);
+            const tratto = tratti[i] || { tipo: 'curva' };
+            const punti = campionaTratto(a, b, tratto, step);
+            const w = conLarghezza
+                ? (typeof tratto.larghezza === 'number' && tratto.larghezza > 0
+                    ? tratto.larghezza : larghezzaNominale)
+                : null;
+            for (const p of punti) {
+                if (w !== null) p.halfWidth = w;
+                out.push(p);
+            }
         }
         return out;
     }

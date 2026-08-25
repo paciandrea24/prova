@@ -445,3 +445,43 @@ test('spostare l\'ultimo tratto prende anche il nodo zero', () => {
     assert.ok(Math.abs(dopo.nodi[0].x - (x0 + 7)) < CENTESIMO, 'il nodo 0 doveva muoversi');
     assert.ok(Math.abs(dopo.nodi[ultimo].x - (g.nodi[ultimo].x + 7)) < CENTESIMO);
 });
+
+// ---- larghezza variabile per tratto ----
+//
+// Blocco D. La mezza carreggiata viaggia SUL PUNTO, come la quota: un secondo
+// array parallelo ai punti sarebbe una cosa in piu' che puo' disallinearsi.
+test('senza larghezza nominale i punti restano come prima', () => {
+    // Le piste disegnate prima di questa feature non devono cambiare di un
+    // campo: e' la condizione per non ricuocere niente.
+    const g = anelloDiProva();
+    for (const p of TS.cuoci(g, TS.PASSO_COTTURA)) {
+        assert.equal(p.halfWidth, undefined);
+    }
+});
+
+test('ogni punto porta la larghezza del suo tratto', () => {
+    const g = anelloDiProva();
+    g.tratti[2] = { tipo: 'curva', larghezza: 20 };
+    const punti = TS.cuoci(g, TS.PASSO_COTTURA, 11);
+    const larghezze = new Set(punti.map(p => p.halfWidth));
+    assert.deepEqual([...larghezze].sort((a, b) => a - b), [11, 20],
+        'devono esserci solo la nominale e quella del tratto largo');
+    assert.ok(punti.some(p => p.halfWidth === 20), 'il tratto largo non ha lasciato traccia');
+});
+
+test('un tratto senza larghezza propria prende la nominale', () => {
+    const g = anelloDiProva();
+    for (const p of TS.cuoci(g, TS.PASSO_COTTURA, 11)) assert.equal(p.halfWidth, 11);
+});
+
+test('una larghezza non valida non passa: si ricade sulla nominale', () => {
+    // Zero e i negativi non sono una carreggiata, e un NaN si propagherebbe
+    // in silenzio fino alla fisica.
+    const g = anelloDiProva();
+    for (const cattiva of [0, -5, NaN, null, 'venti']) {
+        g.tratti[1] = { tipo: 'curva', larghezza: cattiva };
+        const punti = TS.cuoci(g, TS.PASSO_COTTURA, 11);
+        assert.ok(punti.every(p => p.halfWidth === 11),
+            `larghezza ${cattiva} non doveva passare`);
+    }
+});
