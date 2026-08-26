@@ -114,3 +114,81 @@ test('la velocita\' minima per completarlo viene dall\'energia', () => {
     assert.ok(TrackAcrobatico.velocitaMinima(45, 0.2) < 6.2,
         'il raggio massimo del modello deve restare percorribile a velocita\' massima');
 });
+
+// --- i campioni del giro entrano nella spina dorsale ---
+
+const TrackGeometry = require('./trackGeometry.js');
+const TrackSegmenti = require('./trackSegmenti.js');
+
+// Un anello con un tratto acrobatico fra due nodi affiancati.
+function pistaConUnGiro(raggio = 25) {
+    const nodi = [
+        { x: 0, z: -200, y: 0, dir: 0 }, { x: 0, z: 0, y: 0, dir: 0 },
+        { x: 30, z: 0, y: 0, dir: 0 }, { x: 30, z: -200, y: 0, dir: 0 },
+    ];
+    const g = TrackSegmenti.riallinea({ versione: 1, nodi, tratti: [
+        { tipo: 'retta' }, { tipo: 'acrobatico', raggio }, { tipo: 'retta' }, { tipo: 'curva' }] });
+    return { geometria: g, controlPoints: TrackSegmenti.cuoci(g, TrackSegmenti.PASSO_COTTURA, 11) };
+}
+
+test('senza tratti acrobatici i campioni restano identici al bit', () => {
+    const { controlPoints } = pistaConUnGiro();
+    const pts = TrackGeometry.sampleLoop(controlPoints, 400);
+    const piana = { versione: 1, nodi: [], tratti: [{ tipo: 'curva' }] };
+    assert.equal(TrackAcrobatico.inserisciNeiCampioni(pts, piana, 1.2), pts,
+        'senza acrobazie deve tornare LO STESSO array, non una copia');
+});
+
+test('il tubo e\' lungo una circonferenza', () => {
+    // ⚠️ Si misura la lunghezza dei campioni ACROBATICI, non la crescita del
+    // giro: il tubo prende il posto di un pezzo di pianta (i 30 fra i due nodi
+    // affiancati), quindi il giro cresce di 2πR MENO quel pezzo. Misurare la
+    // crescita direbbe «mancano 30 unita'» di una cosa che è giusta.
+    const R = 25;
+    const { geometria, controlPoints } = pistaConUnGiro(R);
+    const pts = TrackGeometry.sampleLoop(controlPoints, 400);
+    const passo = TrackGeometry.lapLength(pts) / pts.length;
+    const conTubo = TrackAcrobatico.inserisciNeiCampioni(pts, geometria, passo);
+    const tubo = conTubo.filter(p => p.acrobatico);
+    assert.ok(tubo.length > 20, 'nessun campione marcato acrobatico');
+    let lunghezza = 0;
+    for (let i = 1; i < tubo.length; i++) {
+        lunghezza += Math.hypot(tubo[i].x - tubo[i - 1].x, tubo[i].y - tubo[i - 1].y, tubo[i].z - tubo[i - 1].z);
+    }
+    lunghezza += lunghezza / (tubo.length - 1);          // il passo di chiusura
+    // ⚠️ Un po' PIU' della circonferenza, e va bene: mentre gira, il tubo si
+    // sposta anche di lato di 30 unita', e quel movimento allunga il percorso
+    // del 2%. Pretendere la circonferenza esatta significherebbe pretendere un
+    // loop che non si sposta — cioe' quello che attraversa se stesso.
+    const attesa = 2 * Math.PI * R;
+    assert.ok(lunghezza > attesa && lunghezza < attesa * 1.05,
+        `il tubo e' lungo ${lunghezza.toFixed(1)}, la circonferenza e' ${attesa.toFixed(1)}`);
+});
+
+test('i campioni del tubo portano la larghezza della pista', () => {
+    // Dentro il tubo la carreggiata NON cambia (decisione dell'utente): se il
+    // campo mancasse, la fisica e la mesh si inventerebbero un ripiego ciascuna.
+    const { geometria, controlPoints } = pistaConUnGiro();
+    const pts = TrackGeometry.sampleLoop(controlPoints, 400);
+    for (const p of pts) if (typeof p.halfWidth !== 'number') p.halfWidth = 11;
+    const passo = TrackGeometry.lapLength(pts) / pts.length;
+    for (const p of TrackAcrobatico.inserisciNeiCampioni(pts, geometria, passo)) {
+        assert.equal(p.halfWidth, 11, 'un campione senza larghezza');
+    }
+});
+
+test('il tubo si aggancia dove la pista arriva, senza salti', () => {
+    const { geometria, controlPoints } = pistaConUnGiro();
+    const pts = TrackGeometry.sampleLoop(controlPoints, 400);
+    // ⚠️ Il passo dei campioni del tubo dev'essere quello della pista, o il
+    // tubo risulta piu' rado del nastro che lo precede e all'aggancio si vede
+    // un salto: e' il passo che il caricatore passa davvero.
+    const passo = TrackGeometry.lapLength(pts) / pts.length;
+    const conTubo = TrackAcrobatico.inserisciNeiCampioni(pts, geometria, passo);
+    for (let i = 0; i < conTubo.length; i++) {
+        const a = conTubo[i], b = conTubo[(i + 1) % conTubo.length];
+        const d = Math.hypot(b.x - a.x, (b.y || 0) - (a.y || 0), b.z - a.z);
+        assert.ok(d < passo * 3,
+            `salto di ${d.toFixed(1)} unita' fra i campioni ${i} e ${i + 1} (passo medio ${passo.toFixed(1)})`);
+    }
+});

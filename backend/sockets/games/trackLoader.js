@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 const TrackGravel = require('../../../frontend/shared/trackGravel.js');
+const TrackAcrobatico = require('../../../frontend/shared/trackAcrobatico.js');
 
 const TRACKS_DIR = path.join(__dirname, '..', '..', '..', 'frontend', 'tracks');
 // backend/tools, NON frontend/tracks: listTracks() scansiona frontend/tracks
@@ -131,7 +132,13 @@ function normalizzaAbrasivita(valore) {
 }
 
 function buildTrack(id, raw) {
-    const points = TrackGeometry.sampleLoop(raw.controlPoints, SAMPLES);
+    const inPianta = TrackGeometry.sampleLoop(raw.controlPoints, SAMPLES);
+    // I GIRI DELLA MORTE ENTRANO QUI, prima che si cuocia qualunque cosa sui
+    // campioni: larghezza, pendenza e rollio devono vederli come punti pista
+    // normali. Una pista senza tratti acrobatici torna indietro identica —
+    // lo stesso array, non una copia.
+    const points = TrackAcrobatico.inserisciNeiCampioni(
+        inPianta, raw.geometria, TrackGeometry.lapLength(inPianta) / inPianta.length);
 
     // LA LARGHEZZA LOCALE, GARANTITA SU OGNI CAMPIONE.
     //
@@ -164,7 +171,11 @@ function buildTrack(id, raw) {
     // Il ciclo LEGGE la quota dei campioni vicini e SCRIVE la pendenza: campi
     // diversi, quindi calcolare in place e' corretto e non serve una copia.
     for (let i = 0; i < points.length; i++) {
-        points[i].pendenza = TrackGeometry.pendenzaAt(points, i, true);
+        // ⚠️ Dentro un giro della morte la pendenza c'e' gia', ed e' l'angolo
+        // percorso sul cerchio. `pendenzaAt` la ricava da dislivello diviso
+        // avanzamento ORIZZONTALE, che li' dentro non ha senso: in cima al loop
+        // l'avanzamento orizzontale e' zero e il rapporto esplode.
+        if (!points[i].acrobatico) points[i].pendenza = TrackGeometry.pendenzaAt(points, i, true);
     }
 
     // LA SOPRAELEVAZIONE, GARANTITA SU OGNI CAMPIONE. Terza applicazione della

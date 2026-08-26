@@ -110,5 +110,74 @@
         return 2 * Math.sqrt(g * raggio);
     }
 
-    return { puntiDelGiro, frameDi, velocitaMinima };
+    // I campioni del giro PRENDONO IL POSTO di quelli in pianta fra i due nodi
+    // del tratto acrobatico.
+    //
+    // ⚠️ DOPO il campionamento e non prima. `TrackGeometry.resample` fa passare
+    // una spline per i punti di controllo, e i punti del loop in pianta si
+    // sovrappongono: la spline oscillerebbe e la pista uscirebbe deformata
+    // anche lontano dal tubo. Così invece la pianta resta quella di sempre e il
+    // tubo è esatto, generato dalla formula.
+    //
+    // ⚠️ Senza acrobazie restituisce LO STESSO array, non una copia: è la
+    // garanzia che una pista normale resti identica al bit, e un test la
+    // verifica per identità.
+    function inserisciNeiCampioni(points, geometria, passo) {
+        const tratti = (geometria && geometria.tratti) || [];
+        const nodi = (geometria && geometria.nodi) || [];
+        const acrobazie = [];
+        for (let t = 0; t < tratti.length; t++) {
+            const a = TrackSegmenti.acrobaziaDi(tratti[t]);
+            if (a && nodi[t] && nodi[(t + 1) % nodi.length]) {
+                acrobazie.push({
+                    raggio: a.raggio, ingresso: nodi[t], uscita: nodi[(t + 1) % nodi.length],
+                    // ⚠️ La direzione viene dal NODO, non dai campioni in pianta.
+                    // È l'invariante del modello a segmenti — «la direzione
+                    // appartiene al nodo» — e qui è l'unica misura sana: in
+                    // pianta il tratto acrobatico è un segmento TRASVERSALE
+                    // alla marcia (collega ingresso e uscita affiancati), quindi
+                    // la spline lì sta già girando verso l'uscita. Misurata sui
+                    // campioni, la direzione d'ingresso veniva (1.90, 0.92)
+                    // invece di (0, 1): il loop partiva storto di 64 gradi.
+                    dir: TrackSegmenti.versore(nodi[t].dir),
+                });
+            }
+        }
+        if (!acrobazie.length) return points;
+
+        // Dall'ultima alla prima: sostituire un pezzo sposta gli indici di
+        // tutto quello che viene dopo.
+        const trovate = acrobazie.map(function (a) {
+            return {
+                raggio: a.raggio, uscita: a.uscita, dir: a.dir,
+                i0: TrackGeometry.nearestPoint(points, a.ingresso.x, a.ingresso.z).index,
+                i1: TrackGeometry.nearestPoint(points, a.uscita.x, a.uscita.z).index,
+            };
+        }).sort(function (p, q) { return q.i0 - p.i0; });
+
+        const out = points.slice();
+        for (const a of trovate) {
+            const dir = { x: a.dir.dx, z: a.dir.dz };
+            const ingresso = out[a.i0];
+            const giro = puntiDelGiro({
+                ingresso,
+                uscita: { x: a.uscita.x, y: ingresso.y || 0, z: a.uscita.z },
+                dirX: dir.x, dirZ: dir.z, raggio: a.raggio, passo,
+            });
+            // I campi che il resto del gioco si aspetta su OGNI campione si
+            // ereditano dal punto di ingresso: dentro il tubo la carreggiata
+            // non cambia (decisione dell'utente) e non c'è sopraelevazione —
+            // il nastro è già orientato dal frame.
+            for (const p of giro) {
+                p.halfWidth = ingresso.halfWidth;
+                p.rollio = 0;
+            }
+            const quanti = (a.i1 - a.i0 + out.length) % out.length;
+            out.splice(a.i0 + 1, Math.max(0, quanti - 1), ...giro);
+        }
+        return out;
+    }
+
+
+    return { puntiDelGiro, frameDi, velocitaMinima, inserisciNeiCampioni };
 });
