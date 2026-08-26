@@ -6066,9 +6066,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // che e' lo stesso dato con cui il server decide il regime di posizione.
     function nelTubo() {
         const v = myColor ? visualState[myColor] : null;
-        if (!v || typeof v.idx !== 'number') return false;
-        const p = trackPts[v.idx];
-        return !!(p && p.acrobatico);
+        // `v.theta` c'e' solo mentre si percorre il tubo, ed e' lo stesso
+        // angolo con cui l'auto viene posizionata: piu' preciso del campione
+        // sotto di lei, che all'ingresso e all'uscita e' gia' cambiato mentre
+        // l'auto sta ancora dall'altra parte del confine.
+        return !!(v && v.theta != null);
     }
 
     // Contorno pista/corsia box: generato una tantum come prima. I marker
@@ -6281,6 +6283,26 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // cuneo) l'auto torna dritta.
                 const rollioTarget = offBridgeEdge ? 0 : rollioAutoAt(idx, v.angle || 0);
                 v.roll = (v.roll || 0) + (rollioTarget - (v.roll || 0)) * LERP;
+
+                // ⚠️ DENTRO IL TUBO LA POSIZIONE VIENE DALL'ANGOLO, non dal
+                // campione. Il server manda `thetaTubo` (continuo) e da lì si
+                // ricavano x, y, z e il frame esatti: dedurli dal campione piu'
+                // vicino faceva saltare l'auto di 2.3 unita' per volta e
+                // ruotare a scatti di 5 gradi — «si vede scattare, la camera non
+                // e' fluida» (playtest 2026-08-26). L'angolo si smorza come
+                // tutto il resto, o a 20 stati al secondo si vedrebbero i
+                // gradini del tick.
+                const tubo = trackPts[idx] && trackPts[idx].tubo;
+                const nelTuboOra = (target.thetaTubo != null) && !!tubo;
+                if (nelTuboOra) {
+                    v.theta = (v.theta == null) ? target.thetaTubo
+                        : v.theta + (target.thetaTubo - v.theta) * LERP;
+                    const q = TrackAcrobatico.puntoAlAngolo(tubo, v.theta);
+                    v.x = q.x; v.y = q.y; v.z = q.z;
+                } else {
+                    v.theta = null;
+                }
+
                 carGroup.position.set(v.x, v.y, v.z);
                 // ⚠️ DENTRO UN GIRO DELLA MORTE L'AUTO SEGUE IL NASTRO, e gli
                 // angoli separati non bastano: un'auto rovesciata non si
@@ -6288,9 +6310,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // il beccheggio passa per i 90 gradi e i tre assi collassano —
                 // gimbal lock). Si costruisce la terna dal frame del tubo, che
                 // e' la stessa che orienta l'asfalto e la camera.
-                const sottoDiLei = trackPts[idx];
-                if (sottoDiLei && sottoDiLei.acrobatico && typeof TrackAcrobatico !== 'undefined') {
-                    const f = TrackAcrobatico.frameDi(sottoDiLei);
+                if (nelTuboOra) {
+                    // Lo STESSO angolo della posizione: se il frame venisse dal
+                    // campione e la posizione dall'angolo, l'auto scivolerebbe
+                    // dentro il proprio orientamento per mezzo campione.
+                    const f = TrackAcrobatico.puntoAlAngolo(tubo, v.theta);
                     const avanti = new THREE.Vector3(f.tan.x, f.tan.y, f.tan.z);
                     const su = new THREE.Vector3(f.su.x, f.su.y, f.su.z);
                     const destra = new THREE.Vector3().crossVectors(su, avanti);

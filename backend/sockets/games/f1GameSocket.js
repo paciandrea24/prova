@@ -2935,6 +2935,13 @@ function buildPublicState(players, raceStarted, track, game) {
         out[color] = {
             x: p.x, z: p.z, angle: p.angle,
             trackIndex: p.trackIndex,
+            // Dentro un giro della morte: l'angolo percorso sul tubo. Il client
+            // ne ricava posizione, quota e orientamento esatti — senza, li
+            // dedurrebbe dal campione piu' vicino e si vedrebbe scattare (e la
+            // quota, che qui non viaggia mai, sarebbe quella del campione
+            // invece della sua). Assente fuori dal tubo, quindi non pesa un
+            // byte sulle piste normali.
+            thetaTubo: p.thetaTubo,
             speed: p.speed,
             steerInput: p.inputs?.steer ?? 0,
             finished: p.finished,

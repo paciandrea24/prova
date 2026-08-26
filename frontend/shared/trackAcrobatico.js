@@ -50,21 +50,24 @@
         const L = dxU * latX + dzU * latZ;                // spostamento laterale VERO, dai nodi
         const avantiNodi = dxU * dirX + dzU * dirZ;       // di solito ~0; se c'è, lo si onora
         const quanti = Math.max(8, Math.round(2 * Math.PI * R / (passo || 4)));
+        // Il tubo, descritto una volta: da qui `puntoAlAngolo` sa ricostruire
+        // QUALUNQUE punto del giro, non solo quelli campionati. Viaggia su ogni
+        // campione perché è lì che lo trovano la fisica e il client.
+        const tubo = {
+            ox: ingresso.x, oy: (ingresso.y || 0), oz: ingresso.z,
+            raggio: R, dirX, dirZ, latX, latZ, avanti: avantiNodi, lato: L,
+        };
         const out = [];
         for (let k = 0; k < quanti; k++) {
             const th = (k / quanti) * 2 * Math.PI;
-            const s = k / quanti;
-            const sm = s * s * (3 - 2 * s);
-            const av = R * Math.sin(th) + avantiNodi * sm;
-            const lt = L * sm;
+            const p = puntoAlAngolo(tubo, th);
             out.push({
-                x: ingresso.x + dirX * av + latX * lt,
-                y: (ingresso.y || 0) + R * (1 - Math.cos(th)),
-                z: ingresso.z + dirZ * av + latZ * lt,
+                x: p.x, y: p.y, z: p.z,
                 acrobatico: true,
                 loopAngolo: th,
                 loopDirX: dirX, loopDirZ: dirZ,
                 loopLatX: latX, loopLatZ: latZ,
+                tubo,
                 // La pendenza del nastro sull'orizzonte È l'angolo percorso, e
                 // questo fa funzionare la gravità della fase 1a qui dentro
                 // senza una formula nuova: accelerazionePendenza chiede solo la
@@ -74,6 +77,30 @@
             });
         }
         return out;
+    }
+
+    // UN PUNTO QUALUNQUE DEL GIRO, non uno dei campionati.
+    //
+    // ⚠️ È questa funzione a rendere fluida la percorrenza. Prima l'auto veniva
+    // posata sul campione più vicino e la frazione di avanzamento buttata via:
+    // con 69 campioni su 160 unità di tubo, si spostava a salti di 2.3 unità e
+    // ruotava a scatti di 5 gradi. L'utente l'ha visto subito — «si vede
+    // scattare, la camera non è fluida» (playtest del 2026-08-26). Con l'angolo
+    // continuo la posizione e il frame sono esatti a ogni frazione di tick.
+    function puntoAlAngolo(tubo, th) {
+        const s = Math.max(0, Math.min(1, th / (2 * Math.PI)));
+        const sm = s * s * (3 - 2 * s);
+        const av = tubo.raggio * Math.sin(th) + tubo.avanti * sm;
+        const lt = tubo.lato * sm;
+        const c = Math.cos(th), sn = Math.sin(th);
+        return {
+            x: tubo.ox + tubo.dirX * av + tubo.latX * lt,
+            y: tubo.oy + tubo.raggio * (1 - c),
+            z: tubo.oz + tubo.dirZ * av + tubo.latZ * lt,
+            tan: versore(tubo.dirX * c, sn, tubo.dirZ * c),
+            su: versore(-tubo.dirX * sn, c, -tubo.dirZ * sn),
+            lat: { x: tubo.latX, y: 0, z: tubo.latZ },
+        };
     }
 
     // Dove punta il nastro (`tan`), dov'è l'alto dell'auto (`su`), da che parte
@@ -193,5 +220,6 @@
         return inserisciNeiCampioni(pts, trackData.geometria, TrackGeometry.lapLength(pts) / pts.length);
     }
 
-    return { puntiDelGiro, frameDi, velocitaMinima, inserisciNeiCampioni, campionaPista };
+    return { puntiDelGiro, puntoAlAngolo, frameDi, velocitaMinima,
+             inserisciNeiCampioni, campionaPista };
 });

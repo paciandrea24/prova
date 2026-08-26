@@ -109,3 +109,43 @@ test('la velocita\' d\'ingresso calcolata basta davvero', () => {
     assert.ok(!sotto.completato,
         'con il 20% in meno del minimo il giro NON deve completarsi');
 });
+
+test('nel tubo l\'auto SCORRE: nessun salto di posizione ne\' di orientamento', () => {
+    // ⚠️ IL TEST CHE MANCAVA. La prima stesura posava l'auto sul campione
+    // raggiunto e buttava via la frazione di avanzamento: la posizione saltava
+    // di 2.3 unita' per volta e l'orientamento di 5 gradi, e in gioco si vedeva
+    // scattare. Nessun test lo diceva perche' guardavano tutti DOVE si arriva,
+    // mai COME ci si arriva.
+    const track = loadTrack('loop-prova');
+    const VELOCITA = 5.0, SOTTOPASSI = 4;      // come COLLISION_SUBSTEPS
+    const p = autoAllIngresso(track, VELOCITA);
+    const n = track.points.length;
+    let ultimo = null, saltoMax = 0, giraMax = 0, dentro = 0;
+    for (let t = 0; t < 3000; t++) {
+        if (!TrattoAcrobatico.entrato(p, track)) {
+            p.trackIndex = (p.trackIndex + 1) % n;
+            const q = track.points[p.trackIndex];
+            p.x = q.x; p.z = q.z; p.y = q.y || 0;
+            continue;
+        }
+        const esito = TrattoAcrobatico.avanza(p, track, 1 / SOTTOPASSI);
+        dentro++;
+        if (ultimo && !esito.uscito) {
+            saltoMax = Math.max(saltoMax, Math.hypot(p.x - ultimo.x, p.y - ultimo.y, p.z - ultimo.z));
+            const c = Math.min(1, p.frame.tan.x * ultimo.tan.x + p.frame.tan.y * ultimo.tan.y
+                                + p.frame.tan.z * ultimo.tan.z);
+            giraMax = Math.max(giraMax, Math.acos(c));
+        }
+        if (esito.uscito) break;
+        ultimo = { x: p.x, y: p.y, z: p.z, tan: p.frame.tan };
+    }
+    assert.ok(dentro > 50, `l'auto e' stata nel tubo solo ${dentro} sottopassi`);
+    // In un sottopasso si percorre VELOCITA/SOTTOPASSI: di piu' e' un salto.
+    const atteso = VELOCITA / SOTTOPASSI;
+    assert.ok(saltoMax < atteso * 1.15,
+        `salto massimo ${saltoMax.toFixed(2)} unita' contro ${atteso.toFixed(2)} percorse: l'auto si teletrasporta`);
+    // E l'orientamento gira al massimo dell'angolo percorso in un sottopasso.
+    const giroAtteso = atteso / 25;            // raggio della pista di prova
+    assert.ok(giraMax < giroAtteso * 1.15,
+        `l'orientamento gira di ${(giraMax * 180 / Math.PI).toFixed(1)}° in un sottopasso, ne servono ${(giroAtteso * 180 / Math.PI).toFixed(1)}`);
+});
