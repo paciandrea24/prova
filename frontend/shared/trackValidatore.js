@@ -28,14 +28,14 @@
     if (typeof module === 'object' && module.exports) {
         module.exports = factory(require('./trackGeometry.js'), require('./trackGravel.js'),
                                  require('./sceneryAssetSizes.js'), require('./sceneryRegistro.js'),
-                                 require('./sceneryEsclusioni.js'));
+                                 require('./sceneryEsclusioni.js'), require('./trackSegmenti.js'));
     } else {
         root.TrackValidatore = factory(root.TrackGeometry, root.TrackGravel,
                                        root.SceneryAssetSizes, root.SceneryRegistro,
-                                       root.SceneryEsclusioni);
+                                       root.SceneryEsclusioni, root.TrackSegmenti);
     }
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry, TrackGravel, SceneryAssetSizes,
-                                                        SceneryRegistro, SceneryEsclusioni) {
+                                                        SceneryRegistro, SceneryEsclusioni, TrackSegmenti) {
 
     // --- Le soglie, e da dove vengono ------------------------------------
     // Misurate sulle piste esistenti il 2026-08-24, non scelte a naso.
@@ -71,6 +71,17 @@
     const GIRO_CORTO = 800;        // unità
 
     const N_CAMPIONI = 500;        // per le misure: 1000 non cambia i numeri
+
+    // --- Sopraelevazione ---
+    // Sotto questo rollio non c'è niente da discutere: un grado non si vede e
+    // non si sente, e i raccordi ci passano attraverso in continuazione.
+    const ROLLIO_TRASCURABILE = 0.02;   // radianti, poco più di un grado
+    // Quanta parte del rollio DICHIARATO deve arrivare in pista. Su un tratto
+    // troppo corto la cottura non fa lo scalino: si accontenta di meno gradi
+    // (fase 1b-1), e l'autore scrive 35 e in pista ne trova 30 senza saperlo.
+    // Misurato su un anello di prova: tratti da 58 unità portano i 35 gradi
+    // interi, quelli da 29 ne portano 30.2, cioè l'86%.
+    const ROLLIO_ENTRA_MIN = 0.9;
 
     // `oggetti` c'e' solo sulle segnalazioni che parlano di COSE, e serve a
     // una cosa sola: dare all'editor un elenco su cui offrire «togli questo».
@@ -173,6 +184,70 @@
                 `Pendenza massima ${pendenzaMax.toFixed(0)}%, oltre il ${PENDENZA_MASSIMA}%:`
                 + ` lì la macchina fatica a tenere la traiettoria.`,
                 { x: pts[dovePendenza].x, z: pts[dovePendenza].z });
+        }
+
+        // --- Sopraelevazione ---
+        // ⚠️ Le misure sono quelle del GIOCO, non copie: `rollioEfficaceAt` è
+        // la funzione con cui la mesh decide se inclinarsi e la fisica se dare
+        // aderenza, e ROLLIO_MAX/RACCORDO_ROLLIO sono le costanti con cui la
+        // cottura lavora. Un validatore con formule sue direbbe una cosa e la
+        // pista ne farebbe un'altra.
+        const tratti = (trackData.geometria && trackData.geometria.tratti) || [];
+        const nodiG = (trackData.geometria && trackData.geometria.nodi) || [];
+        const ROLLIO_MAX_GRADI = TrackSegmenti.ROLLIO_MAX * 180 / Math.PI;
+        for (let t = 0; t < tratti.length && nodiG.length; t++) {
+            const gradi = tratti[t] && tratti[t].rollioGradi;
+            if (typeof gradi !== 'number' || !(gradi > 0)) continue;
+            const qui = nodiG[t] ? { x: nodiG[t].x, z: nodiG[t].z } : null;
+            if (gradi > ROLLIO_MAX_GRADI + 1e-9) {
+                aggiungi('impedisce', 'sopraelevazione-fuori-scala',
+                    `Il tratto ${t + 1} è sopraelevato di ${gradi.toFixed(0)} gradi, oltre il massimo di`
+                    + ` ${ROLLIO_MAX_GRADI.toFixed(0)}: più in là il cuneo di terra sotto la pista diventa`
+                    + ` una parete. In gioco ne arriveranno ${ROLLIO_MAX_GRADI.toFixed(0)}.`, qui);
+            }
+            // Quanto ne arriva davvero sul tratto: i campioni fra il suo nodo
+            // e il successivo. Un tratto corto non ci sta, e si accontenta.
+            const b = nodiG[(t + 1) % nodiG.length];
+            if (!qui || !b) continue;
+            const dichiarato = Math.min(gradi, ROLLIO_MAX_GRADI) * Math.PI / 180;
+            const i0 = TrackGeometry.nearestPoint(pts, qui.x, qui.z).index;
+            const i1 = TrackGeometry.nearestPoint(pts, b.x, b.z).index;
+            let arrivato = 0;
+            for (let k = i0, passi = 0; passi <= pts.length; k = (k + 1) % pts.length, passi++) {
+                arrivato = Math.max(arrivato, pts[k].rollio || 0);
+                if (k === i1) break;
+            }
+            if (arrivato < dichiarato * ROLLIO_ENTRA_MIN) {
+                aggiungi('da guardare', 'sopraelevazione-non-entra',
+                    `Il tratto ${t + 1} chiede ${gradi.toFixed(0)} gradi di sopraelevazione ma ne prende`
+                    + ` ${(arrivato * 180 / Math.PI).toFixed(0)}: è troppo corto perché la pista ci si`
+                    + ` corichi. Un nodo in meno, o gradi in meno.`, qui);
+            }
+        }
+        // Dichiarata dove non serve: si alza il bordo ESTERNO, e su un tratto
+        // dritto un esterno non c'è — lì non si inclina niente e chi ha scritto
+        // il valore non capisce perché. Si guarda il tratto CONTIGUO più lungo
+        // in cui il rollio è dichiarato e cieco: qualche unità c'è sempre nei
+        // raccordi d'ingresso curva (26 su un ovale sano, 10 su banking-prova),
+        // un rettilineo sopraelevato ne fa 261.
+        {
+            const passoPista = giro / pts.length;
+            let corrente = 0, piuLungo = 0, dovePiuLungo = -1;
+            for (let k = 0; k < pts.length * 2; k++) {
+                const i = k % pts.length;
+                const r = pts[i].rollio || 0;
+                if (r > ROLLIO_TRASCURABILE && TrackGeometry.rollioEfficaceAt(pts, i) < r * 0.5) {
+                    corrente++;
+                    if (corrente > piuLungo) { piuLungo = corrente; dovePiuLungo = i; }
+                } else corrente = 0;
+            }
+            if (piuLungo * passoPista > TrackSegmenti.RACCORDO_ROLLIO) {
+                aggiungi('da guardare', 'sopraelevazione-senza-curva',
+                    `Per ${(piuLungo * passoPista).toFixed(0)} unità c'è una sopraelevazione dichiarata dove`
+                    + ` la pista è quasi dritta: lì non si inclina niente, perché non c'è un bordo esterno`
+                    + ` da alzare.`,
+                    { x: pts[dovePiuLungo].x, z: pts[dovePiuLungo].z });
+            }
         }
 
         // --- Traguardo ---

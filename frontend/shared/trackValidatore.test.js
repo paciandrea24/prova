@@ -222,3 +222,116 @@ test('le segnalazioni che non parlano di oggetti non portano un elenco', () => {
     assert.ok(p, 'la tribuna principale mancante deve essere segnalata');
     assert.equal(p.oggetti, null);
 });
+
+// ═══════════ LA SOPRAELEVAZIONE (fase 1b-2) ═══════════
+
+const TrackSegmenti = require('./trackSegmenti.js');
+const TrackGeometryV = require('./trackGeometry.js');
+
+// Una pista nel formato dell'editor: geometria a segmenti E i controlPoints
+// COTTI da lei, come li riscrive l'editor a ogni modifica. Senza la cottura il
+// rollio scritto nei tratti non arriverebbe mai ai punti e i controlli qui
+// sotto misurerebbero una pista piana.
+function pistaSegmenti(nodi, tratti) {
+    const g = TrackSegmenti.riallinea({ versione: 1, nodi, tratti });
+    const controlPoints = TrackSegmenti.cuoci(g, TrackSegmenti.PASSO_COTTURA, 11);
+    const pts = TrackGeometryV.sampleLoop(controlPoints, 400);
+    const box = [];
+    for (let k = -18; k <= 18; k++) {
+        const i = (k % pts.length + pts.length) % pts.length;
+        const { nx, nz } = TrackGeometryV.normalAt(pts, i, true);
+        box.push({ x: pts[i].x + nx * 24, z: pts[i].z + nz * 24 });
+    }
+    const t = TrackGeometryV.tangentAt(pts, 0, true);
+    return {
+        id: 'segmenti', name: 'Segmenti', targetKm: 4, roadHalfWidth: 11,
+        geometria: g, controlPoints,
+        startFinish: { x: pts[0].x, z: pts[0].z, angle: Math.atan2(t.tx, t.tz) },
+        pit: {
+            roadHalfWidth: 5, boxIndex: 4,
+            entryTrigger: { x: box[1].x, z: box[1].z, halfWidth: 5, halfLength: 6, angle: 0 },
+            path: box,
+        },
+    };
+}
+
+function nodiAnello(n, R) {
+    const nodi = [];
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        nodi.push({ x: Math.sin(a) * R, z: Math.cos(a) * R, y: 0, dir: 0 });
+    }
+    return nodi;
+}
+
+// Ovale: due rettilinei da 400 e due semicerchi da 150. `inCurva[i]` dice se il
+// nodo i sta in curva, così un tratto si dichiara sopraelevato dalla parte
+// giusta.
+function nodiOvale() {
+    const nodi = [], inCurva = [], R = 150, L = 400;
+    const spingi = (x, z, curva) => { nodi.push({ x, z, y: 0, dir: 0 }); inCurva.push(curva); };
+    for (let k = 0; k < 10; k++) spingi(-L / 2 + k * (L / 10), -R, false);
+    for (let k = 0; k < 12; k++) { const a = -Math.PI / 2 + k / 12 * Math.PI; spingi(L / 2 + Math.cos(a) * R, Math.sin(a) * R, true); }
+    for (let k = 0; k < 10; k++) spingi(L / 2 - k * (L / 10), R, false);
+    for (let k = 0; k < 12; k++) { const a = Math.PI / 2 + k / 12 * Math.PI; spingi(-L / 2 + Math.cos(a) * R, Math.sin(a) * R, true); }
+    return { nodi, inCurva };
+}
+
+const soloSopraelevazione = (esito) => esito.problemi.filter(p => p.codice.indexOf('sopraelevazione') === 0);
+
+test('il validatore ferma una sopraelevazione oltre il massimo', () => {
+    const nodi = nodiAnello(24, 220);
+    const tratti = nodi.map((_, i) => (i === 1 ? { tipo: 'curva', rollioGradi: 60 } : { tipo: 'curva' }));
+    const esito = V.controllaGeometria(pistaSegmenti(nodi, tratti));
+    const p = perCodice(esito, 'sopraelevazione-fuori-scala');
+    assert.ok(p, 'nessuna segnalazione per 60 gradi');
+    assert.equal(p.livello, 'impedisce');
+});
+
+test('il validatore segnala una sopraelevazione su un tratto che risulta dritto', () => {
+    // Il valore c'è nel file ma il gioco non lo disegna: si alza il bordo
+    // ESTERNO, e su un rettilineo un esterno non c'è. Senza segnalazione, chi
+    // l'ha messo passa il pomeriggio a chiedersi perché la pista non si
+    // inclina.
+    const { nodi, inCurva } = nodiOvale();
+    const tratti = nodi.map((_, i) => (!inCurva[i] && i >= 2 && i < 7
+        ? { tipo: 'curva', rollioGradi: 25 } : { tipo: 'curva' }));
+    const esito = V.controllaGeometria(pistaSegmenti(nodi, tratti));
+    const p = perCodice(esito, 'sopraelevazione-senza-curva');
+    assert.ok(p, 'nessuna segnalazione per il rollio su un rettilineo');
+    assert.equal(p.livello, 'da guardare');
+    assert.ok(p.dove && typeof p.dove.x === 'number', 'la segnalazione deve essere cliccabile');
+});
+
+test('un ovale con le CURVE sopraelevate non fa scattare niente', () => {
+    // Il controspecchio del test qui sopra: i raccordi d'ingresso curva sono
+    // tratti brevi in cui il rollio è dichiarato e non ancora efficace, e una
+    // soglia troppo stretta li scambierebbe per il difetto. Misurati: 26 unità
+    // contigue qui, 261 sul rettilineo sopraelevato.
+    const { nodi, inCurva } = nodiOvale();
+    const tratti = nodi.map((_, i) => (inCurva[i] && inCurva[(i + 1) % nodi.length]
+        ? { tipo: 'curva', rollioGradi: 25 } : { tipo: 'curva' }));
+    assert.deepEqual(soloSopraelevazione(V.controllaGeometria(pistaSegmenti(nodi, tratti))).map(p => p.codice), []);
+});
+
+test('il validatore dice quando la sopraelevazione non ci sta nel tratto', () => {
+    // Su un tratto corto la cottura NON fa lo scalino: si accontenta di meno
+    // gradi (fase 1b-1). Il difetto quindi non è più un gradino sotto le ruote
+    // — quello non può più arrivare — è che l'autore scrive 35 e in pista ne
+    // trova 30, senza che nessuno glielo dica.
+    const nodi = nodiAnello(48, 220);          // tratti da 29 unità
+    const tratti = nodi.map((_, i) => (i === 2 ? { tipo: 'curva', rollioGradi: 35 } : { tipo: 'curva' }));
+    const p = perCodice(V.controllaGeometria(pistaSegmenti(nodi, tratti)), 'sopraelevazione-non-entra');
+    assert.ok(p, 'nessuna segnalazione per i 35 gradi che diventano 30');
+    assert.equal(p.livello, 'da guardare');
+});
+
+test('una pista piana non guadagna nessuna segnalazione nuova', () => {
+    assert.deepEqual(soloSopraelevazione(V.controllaGeometria(pistaSana())).map(p => p.codice), []);
+});
+
+test('banking-prova è una pista sopraelevata FATTA BENE: nessuna segnalazione', () => {
+    // Un validatore che grida sulla pista di riferimento del banking non
+    // servirebbe a nessuno: quattro curve, due a 18 e 35 gradi, tarate apposta.
+    assert.deepEqual(soloSopraelevazione(V.controllaGeometria(pista('banking-prova'))).map(p => p.codice), []);
+});
