@@ -48,7 +48,7 @@ Il tipo di tratto esiste nel dato e non cambia NIENTE nella cottura: i punti di 
 **Interfaces:**
 - Produces: `TrackSegmenti.RAGGIO_ACROBATICO_DEFAULT = 25`, `TrackSegmenti.RAGGIO_ACROBATICO_MAX = 45`, `TrackSegmenti.acrobaziaDi(tratto)` → `{ raggio }` oppure `null`
 
-- [ ] **Step 1: Scrivere il test che fallisce**
+- [x] **Step 1: Scrivere il test che fallisce**
 
 In fondo a `frontend/shared/trackSegmenti.test.js`, con la forma degli altri test del file:
 
@@ -92,12 +92,12 @@ test('acrobaziaDi legge il raggio, e dice no a chi non e\' acrobatico', () => {
 
 ⚠️ Prima di scriverli, **leggere come il file di test importa i moduli e come costruisce le geometrie**: la forma qui sopra è quella attesa, ma il file è la fonte.
 
-- [ ] **Step 2: Eseguire il test e vederlo fallire**
+- [x] **Step 2: Eseguire il test e vederlo fallire**
 
 Run: `node --test frontend/shared/trackSegmenti.test.js`
 Expected: FAIL — `acrobaziaDi is not a function`.
 
-- [ ] **Step 3: Implementare**
+- [x] **Step 3: Implementare**
 
 In testa al modulo, accanto a `ROLLIO_MAX`:
 
@@ -136,12 +136,12 @@ In `valutaTratto`, il tratto acrobatico è dritto come una retta:
 
 E aggiungere `RAGGIO_ACROBATICO_DEFAULT, RAGGIO_ACROBATICO_MAX, acrobaziaDi` all'oggetto esportato in fondo al modulo (accanto a `ROLLIO_MAX, rollioDiTratto, ...`).
 
-- [ ] **Step 4: Eseguire i test e vederli passare**
+- [x] **Step 4: Eseguire i test e vederli passare**
 
 Run: `node --test frontend/shared/trackSegmenti.test.js`
 Poi: `node --test frontend/shared/` → **4 rossi**, la baseline.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/shared/trackSegmenti.js frontend/shared/trackSegmenti.test.js
@@ -185,7 +185,7 @@ A θ=0 `su` vale (0,1,0) e a θ=π vale (0,−1,0): in cima si è rovesciati, ch
   - `TrackAcrobatico.frameDi(p)` → `{ tan: {x,y,z}, su: {x,y,z}, lat: {x,y,z} }` (versori)
   - `TrackAcrobatico.velocitaMinima(raggio, g)` → `2·sqrt(g·raggio)`
 
-- [ ] **Step 1: Scrivere i test che falliscono**
+- [x] **Step 1: Scrivere i test che falliscono**
 
 ```js
 const test = require('node:test');
@@ -262,12 +262,12 @@ test('la velocita\' minima per completarlo viene dall\'energia', () => {
 });
 ```
 
-- [ ] **Step 2: Eseguire e vedere fallire**
+- [x] **Step 2: Eseguire e vedere fallire**
 
 Run: `node --test frontend/shared/trackAcrobatico.test.js`
 Expected: FAIL — `Cannot find module './trackAcrobatico.js'`.
 
-- [ ] **Step 3: Implementare**
+- [x] **Step 3: Implementare**
 
 Creare `frontend/shared/trackAcrobatico.js` con l'involucro UMD copiato da `trackSegmenti.js` (stessa forma, dipendenza da `./trackSegmenti.js`), e dentro:
 
@@ -332,12 +332,12 @@ Creare `frontend/shared/trackAcrobatico.js` con l'involucro UMD copiato da `trac
 
 ⚠️ La tangente qui **ignora** il contributo laterale della smoothstep: è un'approssimazione che vale perché `L·smoothstep'` è al massimo `1.5·L/2πR` ≈ 0.29 contro `R` = 25, e agli estremi è esattamente zero — che è dove la tangenza conta. Se un test di continuità in ingresso dovesse fallire per pochi centesimi, è qui che si aggiunge il termine, non altrove.
 
-- [ ] **Step 4: Eseguire e vedere passare**
+- [x] **Step 4: Eseguire e vedere passare**
 
 Run: `node --test frontend/shared/trackAcrobatico.test.js`
 Expected: PASS, tutti e sette.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/shared/trackAcrobatico.js frontend/shared/trackAcrobatico.test.js
@@ -361,7 +361,7 @@ La pista si campiona in pianta come sempre; poi, dove la geometria dichiara un t
 - Consumes: `TrackSegmenti.acrobaziaDi`, `TrackAcrobatico.puntiDelGiro`, `TrackGeometry.nearestPoint`
 - Produces: `TrackAcrobatico.inserisciNeiCampioni(points, geometria, passo)` → nuovo array di campioni (l'originale non si tocca)
 
-- [ ] **Step 1: Scrivere i test che falliscono**
+- [x] **Step 1: Scrivere i test che falliscono**
 
 ```js
 const TrackGeometry = require('./trackGeometry.js');
@@ -409,12 +409,12 @@ test('il tubo si aggancia dove la pista arriva, senza salti', () => {
 });
 ```
 
-- [ ] **Step 2: Eseguire e vedere fallire**
+- [x] **Step 2: Eseguire e vedere fallire**
 
 Run: `node --test frontend/shared/trackAcrobatico.test.js`
 Expected: FAIL — `inserisciNeiCampioni is not a function`.
 
-- [ ] **Step 3: Implementare**
+- [x] **Step 3: Implementare**
 
 In `trackAcrobatico.js`:
 
@@ -491,12 +491,12 @@ Poi in `backend/sockets/games/trackLoader.js`, subito dopo la riga che campiona 
         if (!p.acrobatico) p.pendenza = TrackGeometry.pendenzaAt(points, i, true);
 ```
 
-- [ ] **Step 4: Eseguire e vedere passare**
+- [x] **Step 4: Eseguire e vedere passare**
 
 Run: `node --test frontend/shared/trackAcrobatico.test.js`
 Poi: `node --test backend/` → **8 rossi + 2 skip**, la baseline. ⚠️ Se una pista esistente cambia anche di un campione, il difetto è qui: `inserisciNeiCampioni` deve restituire l'array originale quando non ci sono acrobazie.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/shared/trackAcrobatico.js frontend/shared/trackAcrobatico.test.js backend/sockets/games/trackLoader.js
@@ -519,7 +519,7 @@ Come `banking-prova` per il banking: una pista che esiste per rispondere a una d
 **Interfaces:**
 - Consumes: `TrackSegmenti.cuoci/riallinea`, `TrackAcrobatico.velocitaMinima`, `PowertrainModel.MAX_SPEED`
 
-- [ ] **Step 1: Scrivere il test che fallisce**
+- [x] **Step 1: Scrivere il test che fallisce**
 
 ```js
 const test = require('node:test');
@@ -562,12 +562,12 @@ test('il rettilineo prima del giro basta per arrivarci lanciati', () => {
 });
 ```
 
-- [ ] **Step 2: Eseguire e vedere fallire**
+- [x] **Step 2: Eseguire e vedere fallire**
 
 Run: `node --test backend/tools/f1-crea-pista-loop.test.js`
 Expected: FAIL — la pista `loop-prova` non esiste.
 
-- [ ] **Step 3: Implementare**
+- [x] **Step 3: Implementare**
 
 Scrivere `backend/tools/f1-crea-pista-loop.js` sul modello di `backend/tools/f1-crea-pista-banking.js` (**leggerlo prima**: costruisce il contorno, i nodi, i tratti, la corsia box dai campioni veri e scrive il `.json`). Le differenze:
 
@@ -580,12 +580,12 @@ Poi generarla: `node backend/tools/f1-crea-pista-loop.js`
 
 ⚠️ A differenza di `banking-prova` (che nacque non committata e fu aggiunta dopo), questa pista **si committa subito**: i test la caricano.
 
-- [ ] **Step 4: Eseguire e vedere passare**
+- [x] **Step 4: Eseguire e vedere passare**
 
 Run: `node --test backend/tools/f1-crea-pista-loop.test.js`
 Poi: `node --test backend/` → **8 rossi + 2 skip**. ⚠️ Una pista nuova entra anche nelle suite che scansionano la cartella (scenografia, simulatore): se compaiono rossi nuovi su `loop-prova`, **sono difetti veri di questa fase**, non baseline da aggiornare — annotarli e affrontarli nei task seguenti.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/tools/f1-crea-pista-loop.js backend/tools/f1-crea-pista-loop.test.js frontend/tracks/loop-prova.json
@@ -607,7 +607,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 **Interfaces:**
 - Produces: `GravitaNastro.G_ACROBATICO` (= `G_NASTRO / 4`), `accelerazionePendenza(pendenza, g)` con `g` opzionale
 
-- [ ] **Step 1: Scrivere i test che falliscono**
+- [x] **Step 1: Scrivere i test che falliscono**
 
 ```js
 test('dentro il tubo la gravita\' pesa un quarto', () => {
@@ -630,12 +630,12 @@ test('col quarto di gravita\' un loop grande resta percorribile', () => {
 });
 ```
 
-- [ ] **Step 2: Eseguire e vedere fallire**
+- [x] **Step 2: Eseguire e vedere fallire**
 
 Run: `node --test backend/sockets/games/physics/GravitaNastro.test.js`
 Expected: FAIL — `G_ACROBATICO` è `undefined`.
 
-- [ ] **Step 3: Implementare**
+- [x] **Step 3: Implementare**
 
 In `GravitaNastro.js`:
 
@@ -677,12 +677,12 @@ In `updateTrackIndex` (`f1GameSocket.js`), accanto alle righe che portano `pende
     p.acrobatico = !!track.points[p.trackIndex].acrobatico;
 ```
 
-- [ ] **Step 4: Eseguire e vedere passare**
+- [x] **Step 4: Eseguire e vedere passare**
 
 Run: `node --test backend/sockets/games/physics/GravitaNastro.test.js`
 Poi: `node --test backend/` → **8 rossi + 2 skip**.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/sockets/games/physics/GravitaNastro.js backend/sockets/games/physics/GravitaNastro.test.js backend/sockets/games/physics/VehiclePhysics.js backend/sockets/games/f1GameSocket.js
@@ -708,7 +708,7 @@ Il cuore della fase. Fuori dal tubo l'auto si muove in x/z e da lì si ricava il
   - `TrattoAcrobatico.entrato(p, track)` → `true` se l'auto sta nel tubo
   - `TrattoAcrobatico.avanza(p, track, dt)` → muove `p` lungo il nastro; scrive `p.x/y/z`, `p.trackIndex`, `p.frame`; restituisce `{ uscito: bool }`
 
-- [ ] **Step 1: Scrivere i test che falliscono**
+- [x] **Step 1: Scrivere i test che falliscono**
 
 ```js
 const test = require('node:test');
@@ -775,12 +775,12 @@ test('chi arriva piano si ferma e riscende all\'indietro', () => {
 
 ⚠️ Questi test **non applicano la gravità**: la applica `updateVelocity`, che qui non gira. Nel primo e nel secondo `p.speed` resta costante, ed è quello che serve per provare la geometria dell'avanzamento. Il terzo invece pretende la gravità: chiamare `require('./VehiclePhysics.js')`? **No** — invece, dentro il ciclo del terzo test, sommare a mano `p.speed += accelerazionePendenza(p.pendenza, G_ACROBATICO)` con i due nomi importati da `GravitaNastro.js`, così il test misura l'accoppiata avanzamento+gravità senza tirarsi dentro tutta la fisica del veicolo.
 
-- [ ] **Step 2: Eseguire e vedere fallire**
+- [x] **Step 2: Eseguire e vedere fallire**
 
 Run: `node --test backend/sockets/games/physics/TrattoAcrobatico.test.js`
 Expected: FAIL — modulo inesistente.
 
-- [ ] **Step 3: Implementare**
+- [x] **Step 3: Implementare**
 
 ```js
 // backend/sockets/games/physics/TrattoAcrobatico.js
@@ -863,12 +863,12 @@ e nel ciclo successivo, saltare il fuoripista e la ricerca del campione per chi 
 
 ⚠️ Aggiungere `const TrattoAcrobatico = require('./physics/TrattoAcrobatico.js');` in testa a `f1GameSocket.js`, accanto agli altri modelli di fisica, e **leggere i nomi veri delle variabili del ciclo** (`racing`, `players`, `game.track`) prima di scrivere: le righe qui sopra sono la forma attesa, il file è la fonte.
 
-- [ ] **Step 4: Eseguire e vedere passare**
+- [x] **Step 4: Eseguire e vedere passare**
 
 Run: `node --test backend/sockets/games/physics/TrattoAcrobatico.test.js`
 Poi: `node --test backend/` → **8 rossi + 2 skip**.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/sockets/games/physics/TrattoAcrobatico.js backend/sockets/games/physics/TrattoAcrobatico.test.js backend/sockets/games/f1GameSocket.js
@@ -892,7 +892,7 @@ La mesh. Il nastro esiste già come estrusione lungo i campioni: dentro il tubo 
 **Interfaces:**
 - Consumes: `TrackAcrobatico.frameDi`
 
-- [ ] **Step 1: Scrivere il test che fallisce**
+- [x] **Step 1: Scrivere il test che fallisce**
 
 ```js
 test('il nastro del tubo e\' orientato col frame, non con la normale in pianta', () => {
@@ -924,12 +924,12 @@ test('su una pista piana i bordi del nastro non cambiano di un millimetro', () =
 });
 ```
 
-- [ ] **Step 2: Eseguire e vedere fallire**
+- [x] **Step 2: Eseguire e vedere fallire**
 
 Run: `node --test frontend/shared/trackMeshBuilder.test.js`
 Expected: FAIL — `bordiDelNastro is not a function`.
 
-- [ ] **Step 3: Implementare**
+- [x] **Step 3: Implementare**
 
 Estrarre da `buildRibbon` il calcolo dei due bordi in una funzione **pura e testabile senza Three.js**, ed è lei a conoscere il tubo:
 
@@ -978,16 +978,16 @@ In `f1Scena.js`, dove nasce `groundPts`, escludere anche il tubo:
 
 ⚠️ **Cercare TUTTI i `filter(p => !p.bridge)`** nei moduli condivisi (`sceneryTrackside.js`, `trackScenery.js`, `trackGravel.js`, `f1Scena.js`) e aggiungere `&& !p.acrobatico` a ciascuno: è lo stesso elenco di posti che la fase 1b-2 ha imparato a conoscere. Un test del Task 8 lo verifica sulla pista vera.
 
-- [ ] **Step 4: Eseguire e vedere passare**
+- [x] **Step 4: Eseguire e vedere passare**
 
 Run: `node --test frontend/shared/trackMeshBuilder.test.js`
 Poi: `node --test frontend/shared/` → **4 rossi**.
 
-- [ ] **Step 5: Bump del cache-busting**
+- [x] **Step 5: Bump del cache-busting**
 
 `trackMeshBuilder.js`, `f1Scena.js` e il nuovo `trackAcrobatico.js` sono caricati da `f1.html`, `track-preview.html` e `track-editor.html`: aggiungere lo `<script>` del modulo nuovo (**prima** di `f1Scena.js`) e bumpare i `?v=` di quelli toccati.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/shared/trackMeshBuilder.js frontend/shared/trackMeshBuilder.test.js frontend/shared/f1Scena.js frontend/f1.html frontend/track-preview.html frontend/track-editor.html
@@ -1008,7 +1008,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `TrackAcrobatico.frameDi`, `trackPts[idx].acrobatico`
 
-- [ ] **Step 1: Scrivere il test che fallisce**
+- [x] **Step 1: Scrivere il test che fallisce**
 
 In `frontend/shared/trackAcrobatico.test.js` (il pezzo verificabile senza browser è la matrice di orientamento, che va calcolata in un modulo condiviso e non in `f1.js`):
 
@@ -1034,12 +1034,12 @@ test('l\'orientamento dell\'auto nel tubo e\' continuo, senza scatti', () => {
 });
 ```
 
-- [ ] **Step 2: Eseguire e vedere fallire (o passare)**
+- [x] **Step 2: Eseguire e vedere fallire (o passare)**
 
 Run: `node --test frontend/shared/trackAcrobatico.test.js`
 ⚠️ Questo test può passare subito: `frameDi` esiste dal Task 2. Se passa, **è una verifica, non un rosso da inseguire** — ma controllare che il caso di prova non sia vuoto (`pts.length > 20`), altrimenti non sta misurando niente.
 
-- [ ] **Step 3: Implementare**
+- [x] **Step 3: Implementare**
 
 In `f1.js`, dove l'auto viene orientata:
 
@@ -1064,11 +1064,11 @@ In `f1.js`, dove l'auto viene orientata:
 
 Per la camera, nel punto in cui fa `camera.rotateZ(rollTot)`: quando il campione sotto l'auto è acrobatico, la camera si posiziona dietro l'auto lungo `-tan` e con `up` uguale a `su` del frame, invece che con l'alto del mondo. Senza, in cima al loop la camera resta dritta e l'immagine si ribalta di colpo.
 
-- [ ] **Step 4: Guardare la scena**
+- [x] **Step 4: Guardare la scena**
 
 Ricostruire la sonda headless usata nella fase 1b-2 (una pagina in `frontend/`, Three locale, Chrome `--headless=new --enable-unsafe-swiftshader --screenshot`, servita da un server statico) e guardare il tubo di `loop-prova` da fuori e dall'interno. **Poi cancellarla dal repo.**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/f1.js frontend/f1.html frontend/shared/trackAcrobatico.test.js
@@ -1081,11 +1081,11 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ### Task 9: Un giro completo, e nessuna regressione
 
-- [ ] **Step 1: Il bot completa il giro della morte**
+- [x] **Step 1: Il bot completa il giro della morte**
 
 Con `backend/tools/f1LapSimulator.js` (⚠️ è rumoroso: **N=30, mai un run singolo** — vedi il suo test) far girare `loop-prova` e pretendere che il giro si chiuda. Se il bot si ferma nel tubo, il difetto è la velocità d'ingresso: annotarlo come voce per la fase 2b (il bot che non frena prima del loop), **non** alzare la gravità.
 
-- [ ] **Step 2: Le piste vere sono intatte**
+- [x] **Step 2: Le piste vere sono intatte**
 
 ```bash
 node --test frontend/shared/    # 4 rossi, la baseline
@@ -1094,7 +1094,7 @@ node --test backend/            # 8 rossi + 2 skip, la baseline
 
 Più il confronto esplicito, con lo stesso schema usato nella 1b-2 (`git show <commit-prima>:file > __vecchio.js`, si confrontano i due risultati e poi si cancella il file): su `prova`, `melbourne`, `suzuka`, `new-monza`, `monte-rosso`, `shanghai` e `banking-prova` i campioni della pista devono essere **identici al bit**.
 
-- [ ] **Step 3: Consegnare il playtest**
+- [x] **Step 3: Consegnare il playtest**
 
 Dire all'utente: come avviare (`node server.js` dal worktree, hard refresh), su quale pista (**Loop Prova**), cosa guardare — si arriva lanciati, si sale, ci si rovescia, si esce di fianco — e le domande: **il loop si sente giusto o è troppo facile/impossibile? La camera in cima confonde o no? Le dimensioni del tubo sono quelle del tuo disegno?**
 
@@ -1104,7 +1104,57 @@ Dire all'utente: come avviare (`node server.js` dal worktree, hard refresh), su 
 
 ## Verifiche finali (prima di dichiarare chiusa la 2a)
 
-- [ ] `node --test frontend/shared/` → 4 rossi; `node --test backend/` → 8 rossi + 2 skip
-- [ ] Le sette piste esistenti danno campioni identici al bit
-- [ ] `loop-prova` si completa: il giro della morte si percorre e si esce di fianco
-- [ ] `git status` non mostra file dell'utente fra quelli committati, né la sonda headless
+- [x] `node --test frontend/shared/` → 4 rossi; `node --test backend/` → 8 rossi + 2 skip
+- [x] Le sette piste esistenti danno campioni identici al bit
+- [x] `loop-prova` si completa: il giro della morte si percorre e si esce di fianco
+- [x] `git status` non mostra file dell'utente fra quelli committati, né la sonda headless
+
+---
+
+## Com'è andata (2026-08-26)
+
+Nove task, `2c0fe64` → `1735b73`. Baseline test invariata: **4 rossi frontend**
+(più uno noto su `loop-prova`, sotto) e **8 rossi + skip backend**.
+
+### Le quattro cose che il piano non prevedeva
+
+1. **La direzione del tubo viene dal NODO, non dai campioni.** In pianta un
+   tratto acrobatico è un segmento *trasversale* alla marcia — collega ingresso
+   e uscita affiancati — quindi lì la spline sta già girando verso l'uscita:
+   misurata sui campioni, la direzione d'ingresso veniva `(1.90, 0.92)` invece
+   di `(0, 1)`, e il loop partiva storto di 64 gradi.
+
+2. **Server e client si campionavano la pista per conto proprio.** Col tubo in
+   mezzo i due vedevano circuiti diversi, e si è visto da tre sintomi con una
+   causa sola: il muro del server a 18.32 dove il client lo disegnava a 18.37,
+   la griglia che dichiarava un indice a 33 campioni da dove l'auto stava
+   davvero, la scenografia cotta diversa da quella del gioco. Ora esiste
+   `TrackAcrobatico.campionaPista`, e ci passano entrambi.
+
+3. **In pianta il tubo si sovrappone al rettilineo da cui parte.** Cercare «il
+   campione più vicino» fra tutti i punti può quindi agganciare un'auto che
+   corre sull'asfalto a un pezzo di pista venti metri sopra di lei. Il
+   caricatore espone `track.groundPoints` e il fuoripista cerca lì.
+
+4. **Uscire non è completare.** Dal tubo si esce anche all'indietro — chi arriva
+   piano si ferma in salita e riscende — e `avanza` deve dirlo, o si conta come
+   giro fatto chi non ce l'ha fatta.
+
+### Visto con la sonda headless
+
+Il tubo c'è ed è quello del disegno: cerchio verticale alto 50, cordoli lungo i
+due bordi, ingresso dal rettilineo e uscita affiancata. Due difetti trovati
+guardando e corretti subito: il prato saliva **dentro** il loop (il terreno si
+costruiva su tutti i campioni, tubo compreso) e l'auto in cima ora è appesa
+sotto il nastro, come dev'essere.
+
+### Aperto, per la fase 2b
+
+- ⚠️ `loop-prova` viene **saltata dai test del simulatore di giri**: la pendenza
+  dentro il tubo supera il limite di `GravitaNastro.pistaPercorribile`, che non
+  sa ancora del regime acrobatico. Il bot infatti non sa percorrere il loop.
+- ⚠️ Un rosso noto: *«scenografia: tribune e reti restano parallele al muro
+  (loop-prova)»*. Una tribuna posata di fianco al rettilineo viene associata a
+  un campione **del tubo** — sono sovrapposti in pianta — e giudicata storta di
+  83°. È la stessa causa del punto 3, nella catena della scenografia: si chiude
+  facendo lavorare anche lei sui punti a terra. Non tocca nessuna pista vera.
