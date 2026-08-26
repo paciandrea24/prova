@@ -6103,9 +6103,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Il tubo che si sta percorrendo, o null se si è fuori: serve a `updateCamera`,
     // che dentro il giro della morte passa sempre all'halo-cam.
     function statoTubo() {
-        const v = myColor ? visualState[myColor] : null;
-        if (!v || v.theta == null || typeof v.idx !== 'number') return null;
-        const p = trackPts[v.idx];
+        // ⚠️ Si guarda lo stato che ARRIVA DAL SERVER, non quello visivo.
+        //
+        // `visualState` viene aggiornato dentro un `if (carGroup)`: basta un
+        // frame in cui il modello dell'auto non c'è — un caricamento, un cambio
+        // di vettura — e il suo `theta` resta a quello di prima. La camera
+        // passerebbe in halo-cam fuori dal tubo e ci resterebbe, che è come si
+        // vede «la camera si sposta in maniera strana» in mezzo a una pista
+        // dove di acrobatico non c'è niente. Lo stato del server invece viene
+        // RIMPIAZZATO a ogni pacchetto: se l'auto non è nel tubo, `thetaTubo`
+        // non c'è.
+        const s = myColor ? serverState[myColor] : null;
+        if (!s || s.thetaTubo == null || typeof s.trackIndex !== 'number') return null;
+        const p = trackPts[s.trackIndex];
         return (p && p.tubo) ? p.tubo : null;
     }
 
