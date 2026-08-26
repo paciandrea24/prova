@@ -1874,6 +1874,27 @@
         // dislivelli: quattro sonde per oggetto su duemila oggetti si pagano, e
         // qui non comprerebbero niente.
         const terrenoMosso = trackPts.some(p => (p.rollio > 0) || Math.abs(p.y || 0) > 1e-6);
+        // ⚠️ UNA RETE NON BUCA LA TRAVERSA DI UNA CAMPATA. Le reti nascono dalla
+        // tribuna che proteggono e non sanno delle passerelle: dove una
+        // passerella scavalca la pista, una rete alta le passa dentro. Il
+        // rimedio è toglierla — «la sua rete cadrebbe dentro una campata» è già
+        // uno dei motivi ammessi perché una tribuna resti scoperta, e il taglio
+        // degli orfani tiene il resto coerente.
+        //
+        // Le misure sono quelle che il test delle invarianti usa per giudicare:
+        // se divergessero, uno direbbe che va bene e l'altro no.
+        const INTRADOSSO_CAMPATA = { startGantry: 14.25, footbridge: 11.75 };
+        const campate = layout.filter(v => v.asset === 'footbridge' || v.asset === 'startGantry');
+        function reteDentroUnaCampata(voce) {
+            if (voce.asset !== 'catchFence') return false;
+            const alta = SceneryAssetSizes.sizeOf('catchFence').h * (voce.scale || 1);
+            for (const c of campate) {
+                if (!SceneryAssetSizes.itemsOverlap(c, voce)) continue;
+                if (alta > INTRADOSSO_CAMPATA[c.asset] * (c.scale || 1)) return true;
+            }
+            return false;
+        }
+
         function malPosato(voce) {
             if (!terrenoMosso) return false;
             // ⚠️ La rete non sceglie dove stare: nasce attaccata alla sua
@@ -1943,7 +1964,7 @@
             if (voce.asset === 'startGantry' || NON_SCARTABILI.has(voce.category)) {
                 passate.push(voce); continue;   // già registrate sopra
             }
-            if (malPosato(voce)) { scartate++; continue; }
+            if (malPosato(voce) || reteDentroUnaCampata(voce)) { scartate++; continue; }
             if (registro.posa(voce)) { passate.push(voce); continue; }
             scartate++;
         }

@@ -48,7 +48,7 @@
         // Il suolo urbano al posto del prato: più chiaro dell'asfalto della
         // pista, o da dentro l'abitacolo non si capisce più dove finisce la
         // carreggiata.
-        cittaSuolo: 0x8a8f96,
+        cittaSuolo: 0x6f757d,
     };
 
     // Le facciate della città. ⚠️ Fuori da SURFACES perché è un ELENCO, e

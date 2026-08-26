@@ -1432,12 +1432,19 @@
         // attributo renderebbero nero).
         const farGeo = new THREE.PlaneGeometry(worldSize, worldSize);
         const far = new THREE.Mesh(farGeo, new THREE.MeshStandardMaterial({
-            color: GRASS_COLOR, roughness: 1, metalness: 0, side: THREE.DoubleSide
+            // ⚠️ Il colore CORRENTE, non il prato: in città questo piano
+            // restava verde e si vedeva un anello d'erba attorno a tutto il
+            // circuito, dietro le facciate (visto alla prima prova headless).
+            color: suoloCorrente, roughness: 1, metalness: 0, side: THREE.DoubleSide
         }));
         far.rotation.x = -Math.PI / 2;
-        // Leggermente sotto la griglia (a y=0): la griglia resta sempre
-        // sopra al bordo della propria estensione, niente z-fighting.
-        far.position.y = -0.01;
+        // Sotto la griglia (a y=0), e non di un pelo: a un centesimo il depth
+        // buffer non distingue più i due piani a qualche centinaio di unità di
+        // distanza — la precisione peggiora col QUADRATO — e si vedeva un
+        // tratteggio su tutto l'orizzonte. Nel verde passava inosservato
+        // (verde su verde), in città no. Stesso margine già scelto per la
+        // ghiaia contro il terreno.
+        far.position.y = -0.15;
         far.receiveShadow = true;
         container.add(far);
     }
