@@ -43,6 +43,16 @@
         bridge: 0x8b93a0,       // era 0x4a4a4a
         pond: 0x1e63c8,         // era 0x2f6fa8
         curbNeutral: [0.55, 0.57, 0.60],  // era [0.35, 0.35, 0.37] (vertex color)
+
+        // ── La città (blocco G) ───────────────────────────────────────────
+        // Il suolo urbano al posto del prato: più chiaro dell'asfalto della
+        // pista, o da dentro l'abitacolo non si capisce più dove finisce la
+        // carreggiata.
+        cittaSuolo: 0x8a8f96,
+        // Le facciate. Tinte spente e vicine fra loro: sono un fondale, e un
+        // muro di colori accesi attorno a tutto il tracciato mangerebbe
+        // l'attenzione alla pista, che è dove si guarda.
+        cittaFacciate: [0xb9b2a6, 0xa8a294, 0xc6bfae, 0x9aa0a6, 0xb0a89c, 0x8f959b],
     };
 
     // Gradiente del cielo, dall'orizzonte (t=0) allo zenit (t=1).
