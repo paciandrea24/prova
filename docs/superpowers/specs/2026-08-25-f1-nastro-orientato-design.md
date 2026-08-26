@@ -233,6 +233,43 @@ non si nota; a 38 chi si ferma resta appeso sul fianco. Accettato dall'utente.
 
 ## FASE 2 — Il tratto acrobatico (il giro della morte)
 
+### ⚠️ Decisioni operative, 2026-08-26 (prese col brainstorming, dopo la 1b)
+
+Questa sezione e' stata scritta il 25-08 come disegno. Prima di scriverne il
+piano l'utente ha fissato quattro cose, e dove contraddicono il testo sotto
+valgono queste:
+
+1. **Solo il giro della morte**, per cominciare. Il tipo di tratto resta
+   parametrico (raggio, gradi, verso), quindi mezzo loop o un quarto si
+   aggiungono dopo senza rifare niente. Niente avvitamenti, niente salti — un
+   salto contraddirebbe la decisione «non si cade mai».
+2. **In pianta il loop occupa un punto solo**: si entra e si esce dallo stesso
+   posto visto dall'alto, il tracciato 2D non devia. In pianta il percorso si
+   sovrappone a se stesso, ed e' esattamente il motivo per cui li' dentro la
+   posizione non puo' essere (x, z): allo stesso punto in pianta corrispondono
+   la salita e la discesa.
+3. **Le due categorie di pista arrivano DOPO**, in un blocco a se'. Per ora un
+   tratto acrobatico si puo' mettere in qualunque pista.
+4. **La fase 2 si spezza in due**, come la 1b:
+   - **2a — il tubo esiste e ci si passa**: dato, geometria, mesh, regime di
+     posizione, camera. Provabile su una pista di prova generata da script.
+   - **2b — il mondo attorno**: editor, validatore, bot, minimappa.
+
+**La spina dorsale resta UNA.** I campioni del loop entrano nella lista dei punti
+pista, marcati `acrobatico`: cosi' giri, settori, tempi, classifica e distacchi
+continuano a contare su `trackIndex` senza modifiche. Sono esclusi da tutto cio'
+che ragiona in pianta — terreno, prato, scenografia, barriere — con lo stesso
+meccanismo che gia' esiste per `bridge` (`trackPts.filter(p => !p.bridge)`).
+⚠️ E' questa scelta, non il regime (s, u), a impedire che il loop trascini con se'
+mezzo gioco: il regime cambia CHI comanda la posizione dentro un tratto, la
+spina dorsale non cambia mai.
+
+**Il cambio di regime, in concreto.** Fuori: `p.x += vx`, e da (x, z) si ricava
+il campione (`nearestIndexNear`, che gia' cerca in una finestra LOCALE attorno
+all'indice precedente). Dentro: si avanza lungo il nastro e da li' si ricavano
+x, y, z e l'orientamento. Agli estremi le due descrizioni coincidono, perche' il
+tratto comincia e finisce a rollio zero, tangente e con la quota che combacia.
+
 ### Cos'e'
 
 Un tratto del modello a segmenti di tipo `acrobatico`, parametrico: raggio, gradi
