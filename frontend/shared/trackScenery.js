@@ -1697,7 +1697,13 @@
         });
         accepted.push(...infrastrutture);
 
-        const nature = buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
+        // ⚠️ In città non nasce niente di verde: alberi, boschi e laghetto sono
+        // la firma del circuito immerso nella natura, e dietro un muro di
+        // facciate non ci starebbero né si vedrebbero. Il campo `ambientazione`
+        // arriva dal file della pista, garantito dal caricatore.
+        const inCitta = trackData.ambientazione === 'citta';
+        const nature = inCitta ? []
+            : buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
         const paddockLife = SceneryPaddock.buildLayout(rng, trackPts, pitPts, barrierDist, accepted,
             (voce) => itemHitsPlayerBoxZone(voce, playerBoxFootprints));
 
@@ -1712,13 +1718,13 @@
         // sotto la soglia del test, senza che nessun albero avesse cambiato
         // posto per un motivo geometrico. Con un seme suo, i boschi non
         // dipendono più da quante tribune ci sono.
-        const woods  = buildWoodsLayout(mulberry32(hashString(trackData.id + ':woods')),
+        const woods  = inCitta ? [] : buildWoodsLayout(mulberry32(hashString(trackData.id + ':woods')),
                                         trackPts, barrierDist, embankOuter, accepted, fitsUnderBridge);
         // Le rocce dopo gli alberi: si scansano da loro e non viceversa,
         // perché sono molte meno e possono permettersi di cercare posto.
-        const rocce  = buildRockLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf,
+        const rocce  = inCitta ? [] : buildRockLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf,
                                        accepted, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
-        const pond   = findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints);
+        const pond   = inCitta ? null : findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints);
 
         const layout = [...paddock, ...mainStandCoperte, ...grandstandCoperte, ...landmarks,
                         ...trackside, ...infrastrutture,

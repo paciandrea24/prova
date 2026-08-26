@@ -30,8 +30,13 @@ const PISTE = fs.readdirSync(path.join(ROOT, 'frontend/tracks'))
 // in Node non si carica nemmeno («window is not defined»). Il modulo lo prende
 // dal global nel browser e dal chiamante nei test.
 function builderChePrendeNota(registro) {
-    const nomi = ['buildGround', 'buildEmbankment', 'buildBridgeDecks', 'buildRibbon',
-                  'buildCurbs', 'buildGravel', 'buildBarriers', 'buildStartLine',
+    // ⚠️ `impostaSuolo` e `buildCitta` sono qui perché la scena li chiama
+    // sempre: il primo per dire di che colore è il mondo (prato o asfalto
+    // urbano), il secondo solo nelle piste cittadine. Un finto che non li
+    // conosce fa esplodere ogni test di questo file con «is not a function»,
+    // che è come me ne sono accorto.
+    const nomi = ['impostaSuolo', 'buildGround', 'buildEmbankment', 'buildBridgeDecks', 'buildRibbon',
+                  'buildCurbs', 'buildGravel', 'buildBarriers', 'buildCitta', 'buildStartLine',
                   'buildPitLane', 'buildStartingGrid'];
     const finto = {};
     for (const nome of nomi) {
@@ -60,7 +65,11 @@ test('la sequenza di costruzione è quella del gioco, nell ordine del gioco', as
     // L'ordine RIFLETTE LA SEZIONE REALE della pista: terreno, poi asfalto,
     // poi cordolo, poi ghiaia, poi barriera. Cambiarlo cambia cosa si vede —
     // la ghiaia sopra il cordolo, la barriera sotto il prato.
+    // `impostaSuolo` apre la fila perché decide di che colore è il mondo prima
+    // che il mondo esista; `buildCitta` non compare qui perché `prova` è verde —
+    // c'è il suo test apposta più sotto.
     assert.deepEqual(registro.map(r => r.split('(')[0]), [
+        'impostaSuolo',
         'buildGround', 'buildEmbankment', 'buildBridgeDecks',
         'buildRibbon', 'buildCurbs', 'buildGravel', 'buildBarriers',
         'buildStartLine', 'buildPitLane', 'buildStartingGrid',
@@ -97,7 +106,10 @@ test('ogni pista si costruisce senza esplodere', async () => {
         const registro = [];
         await F1Scena.costruisciCircuito(scenaFinta(), pista(id),
             { builder: builderChePrendeNota(registro), gridSize: 6 });
-        assert.equal(registro.length, 10, `${id}: attese 10 chiamate, fatte ${registro.length}`);
+        // 11 con `impostaSuolo`, 12 sulle piste cittadine (che aggiungono
+        // `buildCitta`).
+        const attese = pista(id).ambientazione === 'citta' ? 12 : 11;
+        assert.equal(registro.length, attese, `${id}: attese ${attese} chiamate, fatte ${registro.length}`);
     }
 });
 
@@ -134,4 +146,19 @@ test('il cuneo del banking prosegue oltre il bordo quanto il cordolo', () => {
     const TrackGeometry = require('./trackGeometry.js');
     assert.equal(TrackGeometry.CUNEO_OLTRE_IL_BORDO, F1Scena.CURB_W,
         'CUNEO_OLTRE_IL_BORDO e CURB_W sono lo stesso bordo: vanno cambiati insieme');
+});
+
+test('una pista cittadina costruisce le facciate, una verde no', () => {
+    // L'invariante del blocco G: chi non ha dichiarato la città non deve
+    // accorgersi che esiste.
+    const verde = [], citta = [];
+    return F1Scena.costruisciCircuito(scenaFinta(), pista('prova'),
+        { builder: builderChePrendeNota(verde), gridSize: 6 })
+        .then(() => F1Scena.costruisciCircuito(scenaFinta(),
+            Object.assign({}, pista('prova'), { ambientazione: 'citta' }),
+            { builder: builderChePrendeNota(citta), gridSize: 6 }))
+        .then(() => {
+            assert.ok(!verde.some(r => r.startsWith('buildCitta')), 'la pista verde ha costruito una citta\'');
+            assert.ok(citta.some(r => r.startsWith('buildCitta')), 'la pista cittadina non ha costruito niente');
+        });
 });

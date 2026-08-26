@@ -20,13 +20,14 @@
     if (typeof module === 'object' && module.exports) {
         module.exports = factory(require('./trackGeometry.js'), require('./trackGravel.js'),
                                  require('./trackScenery.js'), require('./toonPalette.js'),
-                                 require('./trackAcrobatico.js'));
+                                 require('./trackAcrobatico.js'), require('./sceneryHills.js'),
+                                 require('./cittaProfilo.js'));
     } else {
         root.F1Scena = factory(root.TrackGeometry, root.TrackGravel, root.TrackScenery, root.ToonPalette,
-                               root.TrackAcrobatico);
+                               root.TrackAcrobatico, root.SceneryHills, root.CittaProfilo);
     }
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry, TrackGravel, TrackScenery, ToonPalette,
-                                                        TrackAcrobatico) {
+                                                        TrackAcrobatico, SceneryHills, CittaProfilo) {
 
     // Il global, per arrivare a TrackMeshBuilder senza richiederlo (vedi sotto).
     const glob = typeof self !== 'undefined' ? self
@@ -109,6 +110,14 @@
         // Sotto un ponte invece il terreno c'è, ed è per questo che serve la
         // lista senza ponti E senza tubi: sono entrambi «pista senza terra
         // sotto», e la quota del suolo lì la decide il territorio attorno.
+        // ── L'AMBIENTAZIONE decide che mondo c'è attorno alla pista ──
+        // Verde: prato, colline, boschi, come è sempre stato. Città: asfalto
+        // fino alle facciate, e niente rilievi — dietro un muro di palazzi non
+        // si vedrebbero comunque, e ogni collina è schermo riempito per niente.
+        const inCitta = trackData.ambientazione === 'citta';
+        builder.impostaSuolo(inCitta ? ToonPalette.SURFACES.cittaSuolo : undefined);
+        SceneryHills.impostaColline(!inCitta);
+
         const puntiATerra = trackPts.filter(p => !p.bridge && !p.acrobatico);
         const primaDelPrato = scene.children.length;
         builder.buildGround(scene, puntiATerra, embankOuter, 3000, embankPlateau);
@@ -172,6 +181,12 @@
             (i, side) => TrackGravel.barrierAt(barrierProfile, i, side),
             pitMergeSamples,
             (i, bx, bz) => TrackGeometry.terrainTopAt(trackPts, i, bx, bz, embankPlateau));
+        // LA CITTÀ, dopo le barriere perché si posa su di loro: la facciata
+        // comincia dove finisce il muro più il marciapiede, e dove la via di
+        // fuga allarga arretra con lei.
+        if (inCitta) {
+            builder.buildCitta(scene, trackPts, CittaProfilo.profilo(trackPts, barrierProfile));
+        }
         builder.buildStartLine(scene, trackPts, roadHalf);
         // drawBoxMarker=false: in gara ogni pilota ha il proprio box 3D
         // colorato, che prende il posto del riquadro giallo unico. Resta true

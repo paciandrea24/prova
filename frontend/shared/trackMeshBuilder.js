@@ -20,6 +20,14 @@
     // (buildGround), per continuità visiva senza cuciture di colore tra i due.
     const GRASS_COLOR = Palette.SURFACES.grass;
 
+    // Il colore del suolo attorno alla pista. Di norma è il prato; in città è
+    // asfalto urbano, e lo dice chi costruisce la scena passandolo qui — così
+    // non esiste un secondo posto che decide di che colore è il mondo.
+    let suoloCorrente = GRASS_COLOR;
+    function impostaSuolo(colore) {
+        suoloCorrente = (typeof colore === 'number') ? colore : GRASS_COLOR;
+    }
+
     // Un singolo campione (o pochissimi di fila) "dentro" una fascia da
     // saltare (cordolo/varco) non basta per interrompere una linea o una
     // superficie: la curva del raccordo pista/corsia box
@@ -1162,7 +1170,7 @@
                         pos[vb]     = p.x + nx * r * side;
                         pos[vb + 1] = y;
                         pos[vb + 2] = p.z + nz * r * side;
-                        coloreTerreno(col, GRASS_COLOR, pos[vb], pos[vb + 2]);
+                        coloreTerreno(col, suoloCorrente, pos[vb], pos[vb + 2]);
                     }
                 }
 
@@ -1263,7 +1271,7 @@
             // Una macchia per cella, non per vertice: i quattro angoli
             // prendono lo stesso colore, così il prato si legge a chiazze
             // piatte come il resto della grafica invece di sfumare.
-            for (let v = 0; v < 4; v++) coloreTerreno(col, GRASS_COLOR, x0 + size / 2, z0 + size / 2);
+            for (let v = 0; v < 4; v++) coloreTerreno(col, suoloCorrente, x0 + size / 2, z0 + size / 2);
             idx.push(base, base + 1, base + 2,  base, base + 2, base + 3);
             if (y <= 0) return;
 
@@ -1278,7 +1286,7 @@
                 if (ny >= y - 0.01) continue;   // vicina più alta o pari: nessuna fessura
                 base = pos.length / 3;
                 pos.push(s.ax, y, s.az,  s.bx, y, s.bz,  s.bx, ny, s.bz,  s.ax, ny, s.az);
-                for (let v = 0; v < 4; v++) coloreTerreno(col, GRASS_COLOR, (s.ax + s.bx) / 2, (s.az + s.bz) / 2);
+                for (let v = 0; v < 4; v++) coloreTerreno(col, suoloCorrente, (s.ax + s.bx) / 2, (s.az + s.bz) / 2);
                 idx.push(base, base + 1, base + 2,  base, base + 2, base + 3);
             }
         }
@@ -1628,5 +1636,5 @@
         }
     }
 
-    root.TrackMeshBuilder = { bordiDelNastro, buildCitta, buildRibbon, buildOpenRibbon, buildCurbs, buildGravel, buildBarriers, buildStartLine, buildStartingGrid, buildPitLane, buildEmbankment, buildGround, buildBridgeDecks };
+    root.TrackMeshBuilder = { bordiDelNastro, buildCitta, impostaSuolo, buildRibbon, buildOpenRibbon, buildCurbs, buildGravel, buildBarriers, buildStartLine, buildStartingGrid, buildPitLane, buildEmbankment, buildGround, buildBridgeDecks };
 })(window);

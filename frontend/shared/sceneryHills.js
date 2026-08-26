@@ -88,7 +88,15 @@
     // Il chiamante calcola il flag con TrackGeometry.isInsideLoop; qui arriva
     // già pronto perché il test costa un ray casting su ~1000 punti e chi
     // disegna il terreno lo fa una volta per cella, non una per consumatore.
+    // Le colline si spengono in città: dietro un muro di facciate non si
+    // vedrebbero, e il terreno sotto di loro deve restare piatto o i palazzi
+    // nascerebbero su una duna. Lo accende e spegne chi costruisce la scena,
+    // una volta per circuito.
+    let collineAccese = true;
+    function impostaColline(accese) { collineAccese = accese !== false; }
+
     function hillHeightAt(x, z, distFromTrack, embankOuter, insideLoop) {
+        if (!collineAccese) return 0;
         if (insideLoop) return 0;
         const start = embankOuter + HILL_START_MARGIN;
         if (distFromTrack <= start) return 0;
@@ -114,5 +122,5 @@
         return ramp * HILL_BASE_HEIGHT * zona * (0.78 + 0.22 * n);
     }
 
-    return { hillHeightAt, HILL_START_MARGIN, HILL_RAMP, HILL_BASE_HEIGHT, HILL_PEAK_HEIGHT };
+    return { hillHeightAt, impostaColline, HILL_START_MARGIN, HILL_RAMP, HILL_BASE_HEIGHT, HILL_PEAK_HEIGHT };
 });

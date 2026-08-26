@@ -1869,3 +1869,26 @@ test('in pendenza ci si sta: le pile di gomme della parabolica restano', () => {
     assert.ok(sulCuneo.length >= 8,
         `sul fianco delle sopraelevate restano solo ${sulCuneo.length} pile di gomme`);
 });
+
+// --- la città (blocco G) ---
+
+test('in citta\' non nasce niente di verde', () => {
+    // Alberi, boschi, rocce e laghetto sono la firma del circuito immerso nella
+    // natura: dietro un muro di facciate non ci starebbero né si vedrebbero.
+    // Misurato su `prova` il 2026-08-26: 946 oggetti di natura su 1602 nel
+    // verde, zero in città.
+    const { raw, trackPts, pitLanePts, barrierProfile, BARRIER_D } = circuitoVero('prova');
+    const citta = TrackScenery.generateLayout(Object.assign({}, raw, { ambientazione: 'citta' }),
+        trackPts, pitLanePts, BARRIER_D, 45, null, barrierProfile, null, null);
+    const verdi = citta.filter(v => ['nature', 'woods', 'pond', 'rock'].indexOf(v.category) >= 0);
+    assert.deepEqual(verdi, [], `${verdi.length} oggetti di natura in una pista cittadina`);
+    assert.ok(citta.length > 100, 'in citta\' deve restare tutto il resto della scenografia');
+});
+
+test('una pista verde non perde un solo oggetto', () => {
+    // L'invariante: chi non ha dichiarato la città non si accorge che esiste.
+    const { raw, trackPts, pitLanePts, barrierProfile, BARRIER_D, layout } = circuitoVero('prova');
+    const ancora = TrackScenery.generateLayout(raw, trackPts, pitLanePts, BARRIER_D, 45, null,
+        barrierProfile, null, null);
+    assert.equal(ancora.length, layout.length);
+});
