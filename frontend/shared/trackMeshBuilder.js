@@ -96,6 +96,73 @@
         return out;
     }
 
+    // LA CITTÀ: un nastro di facciate, non una fila di modelli.
+    //
+    // ⚠️ Perché così, e non con N palazzi: un edificio è un parallelepipedo e il
+    // tracciato gira, quindi ogni giunzione fra due modelli sarebbe uno spigolo
+    // aperto o una compenetrazione. Estruso sul tracciato, il muro segue la
+    // curva PER COSTRUZIONE — ed è una manciata di mesh invece di centinaia di
+    // oggetti, che su un gioco GPU-bound sui pixel come questo è la differenza
+    // fra una città e un tracollo di fps.
+    //
+    // Tre superfici per lato, in una geometria sola:
+    //   base → cima     il fronte del palazzo, quello che si vede guidando
+    //   cima → arretrata  il tetto, o dall'alto e in salita si vedrebbe dentro
+    //
+    // Il colore è vertex color, come il prato dipinto e i cordoli a scacchi.
+    const CITTA_PROFONDITA_TETTO = 14;   // quanto è profondo il tetto visibile
+    const CITTA_SOTTO_TERRA = 1.5;       // la base sprofonda: niente fessura col suolo
+
+    function buildCitta(container, pts, profilo) {
+        if (!pts || !pts.length || !profilo) return;
+        const n = pts.length;
+
+        for (const side of [1, -1]) {
+            const pos = new Float32Array(n * 3 * 3);
+            const col = new Float32Array(n * 3 * 3);
+            const idx = [];
+            for (let i = 0; i < n; i++) {
+                const p = pts[i];
+                const k = i * 2 + (side > 0 ? 0 : 1);
+                const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
+                const d = profilo.distanza[k];
+                const h = profilo.altezza[k];
+                const suolo = (p.y || 0);
+                const x = p.x + nx * d * side, z = p.z + nz * d * side;
+                const xa = p.x + nx * (d + CITTA_PROFONDITA_TETTO) * side;
+                const za = p.z + nz * (d + CITTA_PROFONDITA_TETTO) * side;
+
+                const b = i * 9;
+                pos[b]     = x;  pos[b + 1] = suolo - CITTA_SOTTO_TERRA; pos[b + 2] = z;   // base
+                pos[b + 3] = x;  pos[b + 4] = suolo + h;                 pos[b + 5] = z;   // cima
+                pos[b + 6] = xa; pos[b + 7] = suolo + h;                 pos[b + 8] = za;  // tetto
+
+                // Il fronte un filo più scuro del tetto: senza luci direzionali
+                // forti, è l'unico modo perché lo spigolo si legga.
+                const c = profilo.colore[k];
+                const r = ((c >> 16) & 255) / 255, g = ((c >> 8) & 255) / 255, bl = (c & 255) / 255;
+                col[b]     = r * 0.82; col[b + 1] = g * 0.82; col[b + 2] = bl * 0.82;
+                col[b + 3] = r;        col[b + 4] = g;        col[b + 5] = bl;
+                col[b + 6] = r * 1.06; col[b + 7] = g * 1.06; col[b + 8] = bl * 1.06;
+
+                const a = i * 3, dopo = ((i + 1) % n) * 3;
+                idx.push(a, a + 1, dopo,  dopo, a + 1, dopo + 1);          // fronte
+                idx.push(a + 1, a + 2, dopo + 1,  dopo + 1, a + 2, dopo + 2);  // tetto
+            }
+
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+            geo.setIndex(idx);
+            geo.computeVertexNormals();
+            const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+                color: 0xffffff, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide,
+            }));
+            mesh.name = side > 0 ? 'cittaDestra' : 'cittaSinistra';
+            container.add(mesh);
+        }
+    }
+
     function buildRibbon(container, pts, halfW, material) {
         const n = pts.length;
         const pos = new Float32Array(n * 2 * 3);
@@ -1561,5 +1628,5 @@
         }
     }
 
-    root.TrackMeshBuilder = { bordiDelNastro, buildRibbon, buildOpenRibbon, buildCurbs, buildGravel, buildBarriers, buildStartLine, buildStartingGrid, buildPitLane, buildEmbankment, buildGround, buildBridgeDecks };
+    root.TrackMeshBuilder = { bordiDelNastro, buildCitta, buildRibbon, buildOpenRibbon, buildCurbs, buildGravel, buildBarriers, buildStartLine, buildStartingGrid, buildPitLane, buildEmbankment, buildGround, buildBridgeDecks };
 })(window);

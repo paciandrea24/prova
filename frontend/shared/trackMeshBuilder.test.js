@@ -952,3 +952,64 @@ test('su una pista piana i bordi del nastro non cambiano di un millimetro', () =
         assert.ok(Math.abs(bordi[i][0].y - 0.02) < 1e-9, `campione ${i}: quota ${bordi[i][0].y}`);
     }
 });
+
+// --- la città (blocco G) ---
+
+const CittaProfilo = require('./cittaProfilo.js');
+
+function pistaCittadina() {
+    const pts = [];
+    for (let i = 0; i < 400; i++) {
+        const a = (i / 400) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * 300, z: Math.sin(a) * 300, y: 0, halfWidth: 11 });
+    }
+    const muro = TrackGravel.barrierProfile(pts, { roadHalf: 11, pitLanePts: [], pitRoadHalf: 5 });
+    return { pts, profilo: CittaProfilo.profilo(pts, muro), muro };
+}
+
+test('la facciata e\' un muro continuo: fra due campioni cambia l\'altezza, mai la posizione', () => {
+    // ⚠️ È il difetto che il nastro esiste per evitare: se il fronte saltasse
+    // anche in pianta, fra un palazzo e l'altro si vedrebbe il cielo. Si misura
+    // sui VERTICI prodotti — 3 per campione (base, cima, tetto), come li scrive
+    // buildCitta — non sul codice.
+    const { pts, profilo } = pistaCittadina();
+    const c = contenitore();
+    TrackMeshBuilder.buildCitta(c, pts, profilo);
+    assert.equal(c.children.length, 2, 'una mesh per lato');
+    for (const mesh of c.children) {
+        const pos = mesh.geometry.attributes.position.array;
+        const passo = 2 * Math.PI * 300 / pts.length;
+        for (let i = 1; i < pts.length; i++) {
+            const a = i * 9, b = (i - 1) * 9;
+            const dxz = Math.hypot(pos[a] - pos[b], pos[a + 2] - pos[b + 2]);
+            assert.ok(dxz < passo * 2.5,
+                `${mesh.name}, campione ${i}: la base salta di ${dxz.toFixed(1)} in pianta (passo ${passo.toFixed(1)})`);
+        }
+    }
+});
+
+test('la facciata sta oltre il muro e alla quota che dice il profilo', () => {
+    const { pts, profilo, muro } = pistaCittadina();
+    const c = contenitore();
+    TrackMeshBuilder.buildCitta(c, pts, profilo);
+    for (const mesh of c.children) {
+        const side = mesh.name === 'cittaDestra' ? 1 : -1;
+        const pos = mesh.geometry.attributes.position.array;
+        for (let i = 0; i < pts.length; i += 17) {
+            const b = i * 9;
+            const dallAsse = Math.hypot(pos[b] - pts[i].x, pos[b + 2] - pts[i].z);
+            const atteso = profilo.distanza[i * 2 + (side > 0 ? 0 : 1)];
+            assert.ok(Math.abs(dallAsse - atteso) < 0.01,
+                `${mesh.name}, campione ${i}: base a ${dallAsse.toFixed(1)} invece di ${atteso.toFixed(1)}`);
+            const alta = pos[b + 4] - pos[b + 1];
+            assert.ok(alta > CittaProfilo.ALTEZZA_MIN, `${mesh.name}, campione ${i}: palazzo alto ${alta.toFixed(1)}`);
+        }
+    }
+});
+
+test('senza profilo non si costruisce nessuna citta\'', () => {
+    const c = contenitore();
+    TrackMeshBuilder.buildCitta(c, [], null);
+    TrackMeshBuilder.buildCitta(c, null, {});
+    assert.equal(c.children.length, 0);
+});
