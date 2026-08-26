@@ -89,3 +89,12 @@ test('col quarto di gravita\' il raggio massimo resta percorribile', () => {
     assert.ok(default_ < MAX_SPEED * 0.8,
         `il raggio di default chiede il ${(100 * default_ / MAX_SPEED).toFixed(0)}% della velocita' massima`);
 });
+
+test('la gravita\' del tubo e\' UN numero solo, da tutte e due le parti', () => {
+    // `trackAcrobatico.js` se la ricopia perche' gira anche nel browser, dove
+    // questo modulo non arriva: se i due valori divergessero, l'editor
+    // direbbe a chi disegna una velocita' d'ingresso che in pista non serve.
+    const { G_ACROBATICO } = require('./GravitaNastro.js');
+    const TrackAcrobatico = require('../../../../frontend/shared/trackAcrobatico.js');
+    assert.equal(TrackAcrobatico.GRAVITA_TUBO, G_ACROBATICO);
+});

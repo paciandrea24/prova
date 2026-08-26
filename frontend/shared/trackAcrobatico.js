@@ -137,6 +137,30 @@
         return 2 * Math.sqrt(g * raggio);
     }
 
+    // La gravità che si sente DENTRO il tubo, un quarto di quella della pista.
+    //
+    // ⚠️ Ricopiata da `GravitaNastro.G_ACROBATICO` invece di importarla: quella
+    // sta nel backend, e questo modulo lo carica anche l'editor nel browser —
+    // che deve poter dire a chi disegna «a questo loop ci arrivi a 246 km/h».
+    // Un test in GravitaNastro.test.js verifica che i due numeri siano lo
+    // stesso, ed è lo stesso patto già in uso per MAX_DRIVERS fra trackLoader e
+    // f1Bot.
+    const GRAVITA_TUBO = 0.2;
+
+    // L'accelerazione del motore, ricopiata da `PowertrainModel.ACCEL` con lo
+    // stesso patto (un test la lega). Serve a rispondere alla domanda che si fa
+    // chi disegna: «quanto rettilineo ci vuole prima di questo loop?».
+    const ACCEL_AUTO = 0.186;
+
+    // Quanto rettilineo serve, partendo da fermo, per arrivare al giro con la
+    // velocità che chiede: v² / 2a. Da fermi non ci si arriva mai davvero, ed è
+    // il motivo per cui il validatore ne pretende meno di così prima di
+    // lamentarsi — ma è la misura giusta per dire «qui non ci sta».
+    function spazioPerLanciarsi(raggio) {
+        const v = velocitaMinima(raggio, GRAVITA_TUBO);
+        return (v * v) / (2 * ACCEL_AUTO);
+    }
+
     // I campioni del giro PRENDONO IL POSTO di quelli in pianta fra i due nodi
     // del tratto acrobatico.
     //
@@ -220,6 +244,6 @@
         return inserisciNeiCampioni(pts, trackData.geometria, TrackGeometry.lapLength(pts) / pts.length);
     }
 
-    return { puntiDelGiro, puntoAlAngolo, frameDi, velocitaMinima,
-             inserisciNeiCampioni, campionaPista };
+    return { puntiDelGiro, puntoAlAngolo, frameDi, velocitaMinima, GRAVITA_TUBO,
+             ACCEL_AUTO, spazioPerLanciarsi, inserisciNeiCampioni, campionaPista };
 });

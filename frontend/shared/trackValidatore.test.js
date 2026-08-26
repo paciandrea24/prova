@@ -335,3 +335,70 @@ test('banking-prova è una pista sopraelevata FATTA BENE: nessuna segnalazione',
     // servirebbe a nessuno: quattro curve, due a 18 e 35 gradi, tarate apposta.
     assert.deepEqual(soloSopraelevazione(V.controllaGeometria(pista('banking-prova'))).map(p => p.codice), []);
 });
+
+// ═══════════ IL GIRO DELLA MORTE (fase 2b) ═══════════
+
+const TrackAcrobatico = require('./trackAcrobatico.js');
+
+// Un anello con un tratto acrobatico fra due nodi affiancati, sul modello di
+// `loop-prova`: rettilineo di lancio, i due nodi del tubo, e il resto.
+function pistaConGiro({ raggio = 25, fianco = 30, lancio = 300 } = {}) {
+    const nodi = [], tratti = [];
+    const spingi = (x, z, tipo, extra) => {
+        nodi.push({ x, z, y: 0, dir: 0 });
+        tratti.push(Object.assign({ tipo }, extra || {}));
+    };
+    for (let z = -lancio; z < 0; z += 40) spingi(0, z, 'retta');
+    spingi(0, 0, 'acrobatico', { raggio });
+    spingi(fianco, 0, 'retta');
+    for (let z = 40; z <= 240; z += 40) spingi(fianco, z, 'retta');
+    for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI;
+        spingi(fianco - 160 + Math.cos(a) * 160, 240 + Math.sin(a) * 160, 'curva');
+    }
+    for (let z = 200; z > -lancio; z -= 40) spingi(fianco - 320, z, 'retta');
+    for (let k = 1; k < 8; k++) {
+        const a = Math.PI + (k / 8) * Math.PI;
+        spingi(fianco - 160 + Math.cos(a) * 160, -lancio - 20 + Math.sin(a) * 160, 'curva');
+    }
+    return pistaSegmenti(nodi, tratti);
+}
+
+test('il validatore ferma un giro della morte piu\' grande del percorribile', () => {
+    const dati = pistaConGiro({ raggio: TrackSegmenti.RAGGIO_ACROBATICO_MAX + 20 });
+    const p = perCodice(V.controllaGeometria(dati), 'acrobatico-fuori-scala');
+    assert.ok(p, 'nessuna segnalazione per un raggio oltre il massimo');
+    assert.equal(p.livello, 'impedisce');
+});
+
+test('il validatore ferma un giro della morte che si attraversa da solo', () => {
+    // Ingresso e uscita devono essere AFFIANCATI di almeno una carreggiata: se
+    // stanno quasi sullo stesso punto, il nastro in discesa passa attraverso
+    // quello in salita e l'auto ci finisce dentro. E' il motivo per cui
+    // l'utente ha disegnato l'uscita di fianco.
+    const dati = pistaConGiro({ fianco: 4 });
+    const p = perCodice(V.controllaGeometria(dati), 'acrobatico-si-attraversa');
+    assert.ok(p, 'nessuna segnalazione per ingresso e uscita sovrapposti');
+    assert.equal(p.livello, 'impedisce');
+});
+
+test('il validatore avvisa se prima del giro non c\'e\' spazio per lanciarsi', () => {
+    const dati = pistaConGiro({ lancio: 40 });
+    const p = perCodice(V.controllaGeometria(dati), 'acrobatico-poco-slancio');
+    assert.ok(p, 'nessuna segnalazione per un rettilineo troppo corto');
+    assert.equal(p.livello, 'da guardare');
+    assert.ok(p.dove && typeof p.dove.x === 'number', 'la segnalazione deve essere cliccabile');
+});
+
+test('un giro della morte fatto bene non fa scattare niente', () => {
+    const soloAcrobatico = (esito) => esito.problemi
+        .filter(x => x.codice.indexOf('acrobatico') === 0).map(x => x.codice);
+    assert.deepEqual(soloAcrobatico(V.controllaGeometria(pistaConGiro())), []);
+});
+
+test('loop-prova non ha segnalazioni sul suo giro della morte', () => {
+    // La pista di riferimento della fase 2: se il validatore gridasse su di
+    // lei, chi disegna non saprebbe piu' a cosa credere.
+    const esito = V.controllaGeometria(pista('loop-prova'));
+    assert.deepEqual(esito.problemi.filter(x => x.codice.indexOf('acrobatico') === 0).map(x => x.codice), []);
+});

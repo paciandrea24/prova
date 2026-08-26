@@ -647,6 +647,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 : `il bordo esterno sale di ${(Math.tan(gradi * Math.PI / 180) * (
                     (typeof propria === 'number' && propria > 0 ? propria : nominale) * 2)).toFixed(1)} unita'`);
 
+        // Il giro della morte. A differenza della sopraelevazione non e' un
+        // attributo del tratto: e' il suo TIPO, quindi scriverlo trasforma il
+        // tratto e cancellarlo lo riporta dritto.
+        const acro = TrackSegmenti.acrobaziaDi(geometria.tratti[trattoSelezionato]);
+        document.getElementById('trattoLoop').value = acro ? acro.raggio : '';
+        document.getElementById('trattoLoopNota').textContent = !acro
+            ? 'vuoto = tratto normale. Un raggio lo trasforma in un giro della morte.'
+            : `alto ${(acro.raggio * 2).toFixed(0)} unita', ci si entra a `
+              + `${(TrackAcrobatico.velocitaMinima(acro.raggio, TrackAcrobatico.GRAVITA_TUBO) * 55).toFixed(0)} km/h`
+              + ` — servono ${TrackAcrobatico.spazioPerLanciarsi(acro.raggio).toFixed(0)} unita' di dritto prima`;
+
         document.getElementById('trattoMisure').textContent = tipo === 'retta'
             ? 'dritto — nessun raggio'
             : `gira di ${(m.angolo * 180 / Math.PI).toFixed(0)}° · raggio minimo ${
@@ -1893,6 +1904,33 @@ document.addEventListener('DOMContentLoaded', () => {
         tratti[trattoSelezionato] = Object.assign({}, tratti[trattoSelezionato]);
         if (testo === '') delete tratti[trattoSelezionato].larghezza;
         else tratti[trattoSelezionato].larghezza = v;
+        geometria = Object.assign({}, geometria, { tratti });
+        dopoModificaMain();
+        rebuild();
+        aggiornaRiquadroTratto();
+    });
+
+    // Il giro della morte: un raggio trasforma il tratto, il campo vuoto lo
+    // riporta dritto.
+    //
+    // ⚠️ Serve che i due nodi del tratto siano AFFIANCATI (si entra e si esce
+    // di fianco, o il nastro si attraversa) e che prima ci sia dritto per
+    // lanciarsi: non lo si impedisce qui — l'editor dice, non aggiusta — lo
+    // dice il validatore, che di quei due difetti ha un controllo per ciascuno.
+    document.getElementById('trattoLoop').addEventListener('change', (ev) => {
+        if (!inSegmenti() || trattoSelezionato < 0) return;
+        const testo = ev.target.value.trim();
+        const v = parseFloat(testo);
+        if (testo !== '' && (!Number.isFinite(v) || v <= 0 || v > TrackSegmenti.RAGGIO_ACROBATICO_MAX)) {
+            aggiornaRiquadroTratto();
+            return;
+        }
+        salvaStato();
+        const tratti = geometria.tratti.slice();
+        const prima = tratti[trattoSelezionato] || { tipo: 'curva' };
+        tratti[trattoSelezionato] = (testo === '')
+            ? { tipo: prima.tipo === 'acrobatico' ? 'retta' : prima.tipo }
+            : { tipo: 'acrobatico', raggio: v };
         geometria = Object.assign({}, geometria, { tratti });
         dopoModificaMain();
         rebuild();

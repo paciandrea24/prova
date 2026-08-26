@@ -28,14 +28,17 @@
     if (typeof module === 'object' && module.exports) {
         module.exports = factory(require('./trackGeometry.js'), require('./trackGravel.js'),
                                  require('./sceneryAssetSizes.js'), require('./sceneryRegistro.js'),
-                                 require('./sceneryEsclusioni.js'), require('./trackSegmenti.js'));
+                                 require('./sceneryEsclusioni.js'), require('./trackSegmenti.js'),
+                                 require('./trackAcrobatico.js'));
     } else {
         root.TrackValidatore = factory(root.TrackGeometry, root.TrackGravel,
                                        root.SceneryAssetSizes, root.SceneryRegistro,
-                                       root.SceneryEsclusioni, root.TrackSegmenti);
+                                       root.SceneryEsclusioni, root.TrackSegmenti,
+                                       root.TrackAcrobatico);
     }
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry, TrackGravel, SceneryAssetSizes,
-                                                        SceneryRegistro, SceneryEsclusioni, TrackSegmenti) {
+                                                        SceneryRegistro, SceneryEsclusioni, TrackSegmenti,
+                                                        TrackAcrobatico) {
 
     // --- Le soglie, e da dove vengono ------------------------------------
     // Misurate sulle piste esistenti il 2026-08-24, non scelte a naso.
@@ -82,6 +85,12 @@
     // Misurato su un anello di prova: tratti da 58 unità portano i 35 gradi
     // interi, quelli da 29 ne portano 30.2, cioè l'86%.
     const ROLLIO_ENTRA_MIN = 0.9;
+
+    // Sopra questo raggio una curva non spezza il lancio verso un giro della
+    // morte: la si percorre praticamente in pieno, quindi conta come dritto per
+    // il conto di «quanto spazio ho per prendere velocita'». Sotto, si frena, e
+    // lo slancio riparte da li'.
+    const RAGGIO_RETTILINEO = 150;
 
     // `oggetti` c'e' solo sulle segnalazioni che parlano di COSE, e serve a
     // una cosa sola: dare all'editor un elenco su cui offrire «togli questo».
@@ -247,6 +256,70 @@
                     + ` la pista è quasi dritta: lì non si inclina niente, perché non c'è un bordo esterno`
                     + ` da alzare.`,
                     { x: pts[dovePiuLungo].x, z: pts[dovePiuLungo].z });
+            }
+        }
+
+        // --- Il giro della morte ---
+        // ⚠️ I numeri vengono da `TrackAcrobatico`, che e' anche quello che
+        // costruisce il tubo e lo fa percorrere: se il validatore avesse una
+        // sua idea di quanto si debba correre, direbbe a chi disegna una cosa e
+        // la pista ne farebbe un'altra.
+        for (let t = 0; t < tratti.length && nodiG.length; t++) {
+            if (!tratti[t] || tratti[t].tipo !== 'acrobatico') continue;
+            const a = nodiG[t], b = nodiG[(t + 1) % nodiG.length];
+            const qui = a ? { x: a.x, z: a.z } : null;
+            const raggio = tratti[t].raggio;
+            if (typeof raggio === 'number' && raggio > TrackSegmenti.RAGGIO_ACROBATICO_MAX) {
+                aggiungi('impedisce', 'acrobatico-fuori-scala',
+                    `Il giro della morte del tratto ${t + 1} ha raggio ${raggio.toFixed(0)}, oltre il massimo di`
+                    + ` ${TrackSegmenti.RAGGIO_ACROBATICO_MAX}: salire di due raggi costa piu' velocita' di quanta`
+                    + ` ne esista, e nessuno lo completerebbe.`, qui);
+            }
+            if (!a || !b) continue;
+            const r = TrackSegmenti.acrobaziaDi(tratti[t]).raggio;
+
+            // Ingresso e uscita devono stare AFFIANCATI: se quasi coincidono, il
+            // nastro in discesa attraversa quello in salita.
+            const versore = TrackSegmenti.versore(a.dir);
+            const latX = versore.dz, latZ = -versore.dx;
+            const fianco = Math.abs((b.x - a.x) * latX + (b.z - a.z) * latZ);
+            const minimo = mezza * 2 + 4;
+            if (fianco < minimo) {
+                aggiungi('impedisce', 'acrobatico-si-attraversa',
+                    `Il giro della morte del tratto ${t + 1} esce a ${fianco.toFixed(0)} unita' di fianco`
+                    + ` all'ingresso, ma la pista e' larga ${(mezza * 2).toFixed(0)}: il nastro in discesa`
+                    + ` passerebbe attraverso quello in salita. Sposta il nodo di uscita piu' di lato.`, qui);
+            }
+
+            // E ci si deve poter arrivare lanciati.
+            // Quanto dritto c'e' prima, misurato sui TRATTI del modello e non
+            // sulla pianta.
+            //
+            // ⚠️ In pianta il tratto acrobatico e' un segmento TRASVERSALE alla
+            // marcia — collega ingresso e uscita affiancati — quindi li' il
+            // raggio risulta minuscolo e una misura sui campioni si fermerebbe
+            // dopo due passi, dichiarando «zero rettilineo» anche in fondo a un
+            // chilometro di dritto. E' lo stesso inganno che aveva gia' fatto
+            // partire il tubo storto di 64 gradi.
+            const serve = TrackAcrobatico.spazioPerLanciarsi(r);
+            let dritto = 0;
+            for (let k = 1; k < tratti.length; k++) {
+                const j = ((t - k) % tratti.length + tratti.length) % tratti.length;
+                const prec = tratti[j] || { tipo: 'curva' };
+                if (prec.tipo === 'acrobatico') break;
+                const m = TrackSegmenti.misureTratto(trackData.geometria, j);
+                if (m.raggioMinimo < RAGGIO_RETTILINEO) break;
+                dritto += m.lunghezza;
+            }
+            // La soglia e' lo spazio da FERMO, che e' generoso: al loop non ci
+            // si arriva mai da fermi, e chi ha almeno tanto dritto quanto ne
+            // servirebbe partendo da zero ce la fa di sicuro. Sotto, dipende da
+            // come si arriva — e allora vale la pena dirlo.
+            if (dritto < serve) {
+                aggiungi('da guardare', 'acrobatico-poco-slancio',
+                    `Prima del giro della morte del tratto ${t + 1} ci sono ${dritto.toFixed(0)} unita' di dritto:`
+                    + ` per arrivarci ci vogliono ${(TrackAcrobatico.velocitaMinima(r, TrackAcrobatico.GRAVITA_TUBO) * 55).toFixed(0)} km/h,`
+                    + ` e da fermi ne servirebbero ${serve.toFixed(0)}. Chi non ci arriva si ferma in salita e riscende.`, qui);
             }
         }
 
