@@ -5948,6 +5948,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         // dietro.
         const modo = statoTubo() ? 'first' : cameraMode;
 
+        // ⚠️ L'ALTO DELLA CAMERA SI RIMETTE A POSTO QUI, ogni frame e per tutte
+        // le modalità. Dentro il tubo lo si prende dal telaio (vedi più sotto),
+        // ma quel ramo smette di girare appena si esce: senza questa riga
+        // `camera.up` restava all'ultimo valore inclinato, e da lì in poi TUTTE
+        // le inquadrature nascevano storte — «dopo il loop in base alle curve
+        // che faccio la camera si sposta in maniera sbagliata», e restava così
+        // per sempre. Uno stato globale scritto in un ramo solo si azzera dove
+        // lo leggono tutti, non dove lo si è scritto.
+        camera.up.set(0, 1, 0);
+
         if (modo === 'third') {
             // "Guarda dietro" = specchio esatto della camera normale: stessa
             // altezza e stessa distanza, ma davanti al musetto e con lo
@@ -6045,9 +6055,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Fuori dal tubo si rimette l'alto del mondo: sul banking la camera
             // deve coricarsi col nastro ma non oltre, e quel rollio arriva gia'
             // da camRollBanking().
-            if (statoTubo()) _camUp.set(0, 1, 0).applyQuaternion(q);
-            else _camUp.set(0, 1, 0);
-            camera.up.copy(_camUp);
+            if (statoTubo()) camera.up.copy(_camUp.set(0, 1, 0).applyQuaternion(q));
             camera.lookAt(_lookTgt);
             // Tutte e tre dopo lookAt: sono rotazioni negli assi della camera,
             // che lookAt ha appena finito di stabilire. Tremano insieme il
