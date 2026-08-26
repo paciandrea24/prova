@@ -45,7 +45,7 @@
     // Le tinte delle facciate, dalla palette: un colore scritto a mano qui è un
     // colore che un giorno divergerà dal resto della scena.
     function tinte() {
-        return ToonPalette.SURFACES.cittaFacciate;
+        return ToonPalette.CITTA_FACCIATE;
     }
 
     // Il profilo della città, campione per campione e lato per lato.

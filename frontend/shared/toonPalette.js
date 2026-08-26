@@ -49,11 +49,16 @@
         // pista, o da dentro l'abitacolo non si capisce più dove finisce la
         // carreggiata.
         cittaSuolo: 0x8a8f96,
-        // Le facciate. Tinte spente e vicine fra loro: sono un fondale, e un
-        // muro di colori accesi attorno a tutto il tracciato mangerebbe
-        // l'attenzione alla pista, che è dove si guarda.
-        cittaFacciate: [0xb9b2a6, 0xa8a294, 0xc6bfae, 0x9aa0a6, 0xb0a89c, 0x8f959b],
     };
+
+    // Le facciate della città. ⚠️ Fuori da SURFACES perché è un ELENCO, e
+    // `SURFACES` è fatto di colori singoli — un test lo pretende, e ha ragione:
+    // chi legge una superficie si aspetta un intero, non un array.
+    //
+    // Tinte spente e vicine fra loro: sono un fondale, e un muro di colori
+    // accesi attorno a tutto il tracciato mangerebbe l'attenzione alla pista,
+    // che è dove si guarda.
+    const CITTA_FACCIATE = [0xb9b2a6, 0xa8a294, 0xc6bfae, 0x9aa0a6, 0xb0a89c, 0x8f959b];
 
     // Gradiente del cielo, dall'orizzonte (t=0) allo zenit (t=1).
     //
@@ -358,7 +363,7 @@
     }
 
     return {
-        SURFACES, SKY_STOPS, FOG_DENSITY, SHADOW_TINT, BANDS, SATURATION,
+        SURFACES, CITTA_FACCIATE, SKY_STOPS, FOG_DENSITY, SHADOW_TINT, BANDS, SATURATION,
         ORARI, impostaOrario, orario, eNotte, fogDensity,
         skyColorAt, fogColor, saturate, hexToRgb, rgbToHex,
     };
