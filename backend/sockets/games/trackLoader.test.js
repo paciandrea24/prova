@@ -296,8 +296,14 @@ test('il muro del server sta esattamente dove il client lo disegna', () => {
         const track = loadTrack(id);
         const raw = JSON.parse(fs.readFileSync(path.join(TRACKS_DIR, id + '.json'), 'utf8'));
 
-        // Esattamente quello che fa f1.js prima di disegnare.
-        const trackPts = TrackGeometry.sampleLoop(raw.controlPoints, 1000);
+        // Esattamente quello che fa il client prima di disegnare.
+        // ⚠️ `campionaPista` e non `sampleLoop`: dal 2026-08-26 la scena del
+        // client passa di li' (f1Scena.js), perche' e' quella funzione a
+        // inserire i giri della morte. Rifacendo la catena con sampleLoop
+        // questo test simulerebbe un client che non esiste piu', e su una pista
+        // col tubo direbbe che i due muri divergono quando invece coincidono.
+        const TrackAcrobatico = require('../../../frontend/shared/trackAcrobatico.js');
+        const trackPts = TrackAcrobatico.campionaPista(raw, 1000);
         const pitPath = TrackGeometry.snapPitPathEnds(raw.pit.path, trackPts, raw.roadHalfWidth);
         const pitPts = TrackGeometry.tuckPitEndsToTrack(
             TrackGeometry.sampleOpenPath(pitPath, 300), trackPts);

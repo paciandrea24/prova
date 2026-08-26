@@ -109,7 +109,10 @@ function layoutComeIlClient(trackId) {
     const ROAD_HALF = trackData.roadHalfWidth;
     const CURB_W = 2.8;                                   // f1.js:156
     const BARRIER_D = ROAD_HALF + CURB_W + 1.2;           // f1.js:157
-    const trackPts = TrackGeometry.sampleLoop(trackData.controlPoints, 1000);   // f1.js:170-171
+    // ⚠️ `campionaPista` e non `sampleLoop`: e' la funzione da cui passa la
+    // scena del client (f1Scena.js), ed e' lei a inserire i giri della morte.
+    const trackPts = require('../../frontend/shared/trackAcrobatico.js')
+        .campionaPista(trackData, 1000);
     const PIT_PATH = TrackGeometry.snapPitPathEnds(trackData.pit.path, trackPts, ROAD_HALF);
     const PIT_PTS = TrackGeometry.tuckPitEndsToTrack(
         TrackGeometry.sampleOpenPath(PIT_PATH, 300), trackPts);                 // f1.js:228
