@@ -1832,6 +1832,45 @@
         const terraceCrowd = SceneryCrowd.buildTerraceCrowd(
             terrazze, terraceAnchors || {}, mulberry32(hashString(trackData.id + ':terrace')));
 
+        // ⚠️ IL FIANCO DEL CUNEO NON È UN POSTO. Sul terreno piano oltre il
+        // cuneo gli oggetti ci vanno — una sopraelevazione poggia sulla terra,
+        // non è un ponte — ma sulla rampa con cui il terrapieno scende dal
+        // bordo alto al prato no: gli asset hanno il pivot alla base e stanno
+        // dritti, quindi su una parete escono storti o mezzi sepolti.
+        //
+        // Sta QUI, alla porta, e non nei costruttori: sul banco di prova del
+        // banking gli oggetti finiti sulla parete venivano da DUE moduli
+        // diversi — undici barriere di gomme e un capanno commissari dal
+        // trackside, quattro alberi dalla natura — e un controllo per modulo è
+        // la strada che il modulo nuovo salterà.
+        //
+        // La pendenza si misura come la vede la mesh (due sonde a un passo di
+        // distanza) invece di ricavarla dal rollio: così vale anche per le
+        // discese normali, che hanno lo stesso difetto da sempre — quattro
+        // oggetti su prova e tre su suzuka, misurati il 2026-08-26.
+        const PENDENZA_TERRENO_MAX = 0.25;    // 14 gradi
+        const PASSO_SONDA = 2;
+        const groundPtsPorta = trackPts.filter(p => !p.bridge);
+        // Su una pista in piano e senza sopraelevazioni il terreno non ha
+        // pareti: quattro sonde per oggetto su duemila oggetti si pagano, e
+        // qui non comprerebbero niente.
+        const terrenoMosso = trackPts.some(p => (p.rollio > 0) || Math.abs(p.y || 0) > 1e-6);
+        function suUnaParete(voce) {
+            if (!terrenoMosso) return false;
+            // ⚠️ La rete non sceglie dove stare: nasce attaccata alla sua
+            // tribuna e ne eredita centro e rotazione. Toglierla qui
+            // lascerebbe in piedi una tribuna scoperta che nessuno ha deciso —
+            // il «buco silenzioso» che scenografiaInvarianti pretende non
+            // esista. Se il posto non va bene, a cadere è la tribuna, e la
+            // rete la segue col taglio degli orfani.
+            if (voce.asset === 'catchFence') return false;
+            const q = (dx, dz) => TrackGeometry.terrainHeightAt(
+                groundPtsPorta, voce.x + dx, voce.z + dz, embankStart, embankOuter);
+            const dyX = (q(PASSO_SONDA, 0) - q(-PASSO_SONDA, 0)) / (2 * PASSO_SONDA);
+            const dyZ = (q(0, PASSO_SONDA) - q(0, -PASSO_SONDA)) / (2 * PASSO_SONDA);
+            return Math.hypot(dyX, dyZ) > PENDENZA_TERRENO_MAX;
+        }
+
         // LA PORTA. Tutto ciò che è stato deciso qui sopra passa di qui, una
         // volta, nell'ordine in cui è stato deciso: chi arriva prima ha la
         // precedenza, chi non ci sta non entra.
@@ -1881,6 +1920,7 @@
             if (voce.asset === 'startGantry' || NON_SCARTABILI.has(voce.category)) {
                 passate.push(voce); continue;   // già registrate sopra
             }
+            if (suUnaParete(voce)) { scartate++; continue; }
             if (registro.posa(voce)) { passate.push(voce); continue; }
             scartate++;
         }

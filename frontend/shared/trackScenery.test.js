@@ -1555,7 +1555,18 @@ test('niente scenografia dentro gli asset che scavalcano la pista', () => {
 // ed è un buco di STRUTTURE, che ha una causa sua da riprodurre. Dare loro una
 // riga misurata qui vorrebbe dire far sparire dal radar il difetto invece di
 // curarlo.
+// ⚠️ `test` ha una riga sua dal 2026-08-26, e per un motivo che non è la
+// densità: quella pista sale dell'89% — l'auto non la completa, e i test del
+// simulatore la saltano già per soglia calcolata (GravitaNastro.pistaPercorribile) —
+// quindi il terreno di fianco è una PARETE quasi ovunque. Da quando la porta
+// non posa più oggetti su una parete, 203 dei 213 oggetti che stavano oltre il
+// 35% di pendenza non entrano: metà circuito resta spoglio. Non è un buco da
+// curare, è il prezzo — voluto — di non piantare tribune di traverso su un
+// muro. Sulle piste vere lo stesso controllo non toglie niente (0 oggetti su
+// melbourne, monte-rosso, new-monza, shanghai) o pochissimo (4 su prova, 3 su
+// suzuka), e i loro numeri qui sotto non si muovono.
 const VUOTI_ATTESI = {
+    'test':        { peggiore: 2700, quota: 0.60 },
     'prova':       { peggiore: 275, quota: 0.11 },
     'melbourne':   { peggiore: 102, quota: 0.04 },
     'new-monza':   { peggiore:  90, quota: 0.04 },
@@ -1769,4 +1780,35 @@ test('una pista senza esclusioni genera esattamente cio\' che generava prima', (
         const conListaVuota = circuitoConFolla(id, []);
         assert.equal(conListaVuota.length, senzaCampo.length, id);
     }
+});
+
+// --- il fianco del cuneo non è un posto (fase 1b-2) ---
+
+test('nessun oggetto scenico sta su una parete (banking-prova)', () => {
+    // Gli asset hanno il pivot alla base e stanno dritti: sanno posarsi solo
+    // su una superficie orizzontale. Il fianco del cuneo — la rampa con cui il
+    // terrapieno scende dalla quota del bordo alto al prato — è una parete, e
+    // lì un oggetto esce storto o mezzo sepolto.
+    //
+    // La pendenza del terreno SOTTO l'oggetto si misura come la misura la
+    // mesh: due sonde a un passo di distanza, non una derivata analitica.
+    const { raw, trackPts, layout, BARRIER_D, barrierProfile } = circuitoVero('banking-prova');
+    const embankStart = TrackScenery.embankmentStart(barrierProfile, BARRIER_D);
+    const embankOuter = embankStart + 45;
+    const groundPts = trackPts.filter(p => !p.bridge);
+    const PASSO = 2;                    // unità di pista
+    const PENDENZA_MAX = 0.25;          // 14 gradi: oltre, un oggetto si vede storto
+    const storti = [];
+    for (const v of layout) {
+        const q = (dx, dz) => TrackGeometry.terrainHeightAt(
+            groundPts, v.x + dx, v.z + dz, embankStart, embankOuter);
+        const dyX = (q(PASSO, 0) - q(-PASSO, 0)) / (2 * PASSO);
+        const dyZ = (q(0, PASSO) - q(0, -PASSO)) / (2 * PASSO);
+        const pendenza = Math.hypot(dyX, dyZ);
+        if (pendenza > PENDENZA_MAX) {
+            storti.push(`${v.asset} a (${v.x.toFixed(0)}, ${v.z.toFixed(0)}): ${(pendenza * 100).toFixed(0)}%`);
+        }
+    }
+    assert.deepEqual(storti, [],
+        `${storti.length} oggetti posati su una parete: ${storti.slice(0, 6).join(' | ')}`);
 });
