@@ -46,6 +46,30 @@
         return Math.min(ROLLIO_MAX, gradi * Math.PI / 180);
     }
 
+    // IL GIRO DELLA MORTE, in raggio di unita' di pista.
+    //
+    // Il massimo non e' estetico, e' energia: salire di due raggi costa
+    // v² = 4·G·R, e con la gravita' del tubo (GravitaNastro.G_ACROBATICO, 0.2)
+    // oltre i ~45 di raggio non esiste velocita' nel gioco che basti — l'auto
+    // si fermerebbe in salita e riscenderebbe all'indietro. Un test lega i due
+    // numeri, cosi' il default dell'editor non puo' diventare una trappola.
+    // Il default e' il loop del disegno dell'utente: alto 50, il doppio della
+    // larghezza della pista.
+    const RAGGIO_ACROBATICO_DEFAULT = 25;
+    const RAGGIO_ACROBATICO_MAX = 45;
+
+    // Quanto e' grande il giro della morte di un tratto, o null se quel tratto
+    // non e' acrobatico. Stessa filosofia di rollioDiTratto: un valore assurdo
+    // non diventa NaN — qui varrebbe una mesh piena di NaN e un'auto sparita.
+    function acrobaziaDi(tratto) {
+        if (!tratto || tratto.tipo !== 'acrobatico') return null;
+        const r = tratto.raggio;
+        if (typeof r !== 'number' || !Number.isFinite(r) || r <= 0) {
+            return { raggio: RAGGIO_ACROBATICO_DEFAULT };
+        }
+        return { raggio: Math.min(RAGGIO_ACROBATICO_MAX, r) };
+    }
+
     // Su quante unità di pista la sopraelevazione passa da un valore all'altro.
     //
     // ⚠️ Serve, e non è un dettaglio estetico: senza, il rollio salta dal
@@ -181,7 +205,11 @@
     }
 
     function valutaTratto(a, b, tratto, t) {
-        if (tratto && tratto.tipo === 'retta') {
+        // ⚠️ L'acrobatico e' DRITTO in pianta: va dal nodo di ingresso a quello
+        // di uscita, che gli sta di fianco. Il giro vero lo inserisce
+        // TrackAcrobatico.inserisciNeiCampioni dopo il campionamento, per non
+        // far passare una spline attraverso punti sovrapposti in pianta.
+        if (tratto && (tratto.tipo === 'retta' || tratto.tipo === 'acrobatico')) {
             return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
         }
         return valutaCurva(a, b, t);
@@ -504,6 +532,7 @@
         // in salita finiva sotto l'asfalto (playtest 2026-08-25).
         cuoci, campionaTratto, valutaTratto, versore, PASSO_COTTURA,
         ROLLIO_MAX, rollioDiTratto, RACCORDO_ROLLIO, PENDENZA_ROLLIO_MAX,
+        RAGGIO_ACROBATICO_DEFAULT, RAGGIO_ACROBATICO_MAX, acrobaziaDi,
         misureTratto, raddrizza, impostaLunghezza, direzioneAutomatica, riallinea, inserisci,
         trattoVicinoA, spostaTratto,
     };

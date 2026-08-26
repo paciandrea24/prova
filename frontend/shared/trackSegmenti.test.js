@@ -660,3 +660,41 @@ test("su un tratto corto la sopraelevazione si accontenta, invece di scattare", 
     assert.ok(max > 20, `il tratto arriva solo a ${max.toFixed(1)} gradi: il raccordo se l'e' mangiato tutto`);
     assert.ok(max <= 35 + 1e-9, `${max.toFixed(1)} gradi, oltre i 35 dichiarati`);
 });
+
+// --- il giro della morte (fase 2a) ---
+
+test('un tratto acrobatico si cuoce come una retta: il loop non sta nei punti di controllo', () => {
+    // In pianta il tratto va dal nodo di ingresso a quello di uscita, che gli
+    // sta di fianco. Il giro vero viene inserito dopo il campionamento
+    // (TrackAcrobatico.inserisciNeiCampioni): qui dentro non se ne vede
+    // traccia, ed e' voluto — una spline che passasse per i punti del loop,
+    // che in pianta si sovrappongono, oscillerebbe.
+    const nodi = [
+        { x: 0, z: 0, y: 0, dir: 0 },
+        { x: 0, z: 200, y: 0, dir: 0 },
+        { x: 30, z: 200, y: 0, dir: 0 },
+        { x: 30, z: 0, y: 0, dir: 0 },
+    ];
+    const conLoop = { versione: 1, nodi, tratti: [
+        { tipo: 'retta' }, { tipo: 'acrobatico', raggio: 25 }, { tipo: 'retta' }, { tipo: 'curva' }] };
+    const comeRetta = { versione: 1, nodi, tratti: [
+        { tipo: 'retta' }, { tipo: 'retta' }, { tipo: 'retta' }, { tipo: 'curva' }] };
+    assert.deepEqual(TS.cuoci(conLoop, TS.PASSO_COTTURA, 11),
+                     TS.cuoci(comeRetta, TS.PASSO_COTTURA, 11));
+});
+
+test('acrobaziaDi legge il raggio, e dice no a chi non e\' acrobatico', () => {
+    assert.equal(TS.acrobaziaDi({ tipo: 'curva' }), null);
+    assert.equal(TS.acrobaziaDi(null), null);
+    assert.deepEqual(TS.acrobaziaDi({ tipo: 'acrobatico' }), { raggio: TS.RAGGIO_ACROBATICO_DEFAULT });
+    assert.deepEqual(TS.acrobaziaDi({ tipo: 'acrobatico', raggio: 30 }), { raggio: 30 });
+    // Oltre il massimo si taglia invece di rifiutare, come fa gia'
+    // rollioDiTratto coi 45 gradi: chi disegna vede il valore vero in pista, e
+    // il validatore (fase 2b) glielo dira'.
+    assert.deepEqual(TS.acrobaziaDi({ tipo: 'acrobatico', raggio: 900 }),
+        { raggio: TS.RAGGIO_ACROBATICO_MAX });
+    // Un valore assurdo vale il default, non NaN: un NaN qui arriverebbe fino
+    // alla mesh in silenzio.
+    assert.deepEqual(TS.acrobaziaDi({ tipo: 'acrobatico', raggio: 'venti' }),
+        { raggio: TS.RAGGIO_ACROBATICO_DEFAULT });
+});
