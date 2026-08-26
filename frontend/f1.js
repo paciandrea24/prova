@@ -5778,6 +5778,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const _camOff = new THREE.Vector3();
     const _lookTgt = new THREE.Vector3();
+    // L'alto della camera: nel giro della morte lo prende dal telaio, cosi' la
+    // vettura resta dritta nell'inquadratura e a girare e' il mondo.
+    const _camUp = new THREE.Vector3(0, 1, 0);
 
     // ── Sguardo ai semafori ────────────────────────────────────────────
     // Dalla griglia le luci del ponte sono FUORI inquadratura: la camera
@@ -6027,6 +6030,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             _lookTgt.applyQuaternion(q);
             _lookTgt.add(pos);
             mescolaSguardoSemaforo(_lookTgt);
+            // ⚠️ L'ALTO DELLA CAMERA E' QUELLO DELL'AUTO, non quello del mondo.
+            //
+            // `lookAt` decide il rollio della camera da `camera.up`: lasciandolo
+            // a (0,1,0) la camera si RADDRIZZA sempre, e in cima al giro della
+            // morte l'auto compare capovolta nell'inquadratura mentre il
+            // paesaggio resta dritto. E' quello che l'utente ha visto e non
+            // vuole: «voglio continuare a vedere la macchina sempre dritta, io
+            // sto andando sempre avanti. perche' devo vedermi capovolto?».
+            // Prendendo l'alto dal telaio, la vettura resta ferma davanti
+            // all'obiettivo e a girare e' il mondo — che e' esattamente cosa si
+            // vede dall'abitacolo di un'auto che fa un loop.
+            //
+            // Fuori dal tubo si rimette l'alto del mondo: sul banking la camera
+            // deve coricarsi col nastro ma non oltre, e quel rollio arriva gia'
+            // da camRollBanking().
+            if (statoTubo()) _camUp.set(0, 1, 0).applyQuaternion(q);
+            else _camUp.set(0, 1, 0);
+            camera.up.copy(_camUp);
             camera.lookAt(_lookTgt);
             // Tutte e tre dopo lookAt: sono rotazioni negli assi della camera,
             // che lookAt ha appena finito di stabilire. Tremano insieme il
