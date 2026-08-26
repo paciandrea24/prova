@@ -192,3 +192,28 @@ test('il tubo si aggancia dove la pista arriva, senza salti', () => {
             `salto di ${d.toFixed(1)} unita' fra i campioni ${i} e ${i + 1} (passo medio ${passo.toFixed(1)})`);
     }
 });
+
+test('le piste vere senza acrobazie danno campioni identici al bit', () => {
+    // L'invariante della fase: chi non ha giri della morte non deve accorgersi
+    // che esistono. Si confrontano i campioni veri, pista per pista, non un
+    // conteggio.
+    const fs = require('fs');
+    const path = require('path');
+    const dir = path.join(__dirname, '..', 'tracks');
+    const piste = fs.readdirSync(dir).filter(f => f.endsWith('.json') && !/^(__|test-)/.test(f));
+    let controllate = 0;
+    for (const f of piste) {
+        const raw = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+        const acrobazie = ((raw.geometria || {}).tratti || []).filter(t => t && t.tipo === 'acrobatico');
+        if (acrobazie.length) continue;                       // loop-prova ha il suo test
+        // ⚠️ deepEqual e non equal: `sampleLoop` costruisce un array nuovo ad
+        // ogni chiamata, quindi due chiamate non sono mai lo STESSO oggetto.
+        // Qui interessa il contenuto; che l'array non venga nemmeno copiato
+        // quando non ci sono acrobazie lo prova il test dell'identita' piu' su.
+        const prima = TrackGeometry.sampleLoop(raw.controlPoints, 1000);
+        assert.deepEqual(TrackAcrobatico.campionaPista(raw, 1000), prima,
+            `${f}: i campioni sono cambiati`);
+        controllate++;
+    }
+    assert.ok(controllate >= 7, `controllate solo ${controllate} piste`);
+});

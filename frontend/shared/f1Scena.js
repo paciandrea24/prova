@@ -102,17 +102,25 @@
         passo('Terreno e dislivelli…', 0.20);
         await respira();
 
+        // ⚠️ Il terreno si costruisce sui punti A TERRA, non su tutti: un giro
+        // della morte è sospeso nel vuoto, e passandogli i campioni del tubo il
+        // prato saliva con loro — una collina verde alta cinquanta unità che
+        // riempiva il loop, vista alla prima prova headless del 2026-08-26.
+        // Sotto un ponte invece il terreno c'è, ed è per questo che serve la
+        // lista senza ponti E senza tubi: sono entrambi «pista senza terra
+        // sotto», e la quota del suolo lì la decide il territorio attorno.
+        const puntiATerra = trackPts.filter(p => !p.bridge && !p.acrobatico);
         const primaDelPrato = scene.children.length;
-        builder.buildGround(scene, trackPts, embankOuter, 3000, embankPlateau);
+        builder.buildGround(scene, puntiATerra, embankOuter, 3000, embankPlateau);
         // buildGround non restituisce le sue mesh: si prendono per differenza.
         // Servono al gioco, che le stilizza a parte (il prato dipinto).
         const mesheTerreno = scene.children.slice(primaDelPrato);
         // Tre distanze: attacco alla pista, fine del pianoro, fine della rampa.
-        builder.buildEmbankment(scene, trackPts, embankmentStart, embankPlateau, embankOuter);
+        builder.buildEmbankment(scene, puntiATerra, embankmentStart, embankPlateau, embankOuter);
         // Punti "a terra" (non-ponte): usati sia per i piloni (quota reale
         // sotto un ponte) sia per la quota visiva fuori pista — calcolati una
         // sola volta qui, non ad ogni frame.
-        const groundPts = trackPts.filter(p => !p.bridge && !p.acrobatico);
+        const groundPts = puntiATerra;
         // Ultimo argomento: la barriera VERA del tratto che passa sotto il
         // viadotto. Senza, i piloni si tenevano alla larga da una distanza
         // costante che le vie di fuga hanno reso obsoleta, e su "prova" quattro
