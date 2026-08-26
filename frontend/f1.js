@@ -5922,44 +5922,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         bordiApplicati = val;
     }
 
-    // Quanto sta sopra l'auto la camera dentro il giro della morte, e quanto
-    // lontano guarda. L'altezza è quella dell'halo: si vede la propria vettura
-    // in primo piano, come col tasto C.
-    const TUBO_CAM_ALTEZZA = 2.6;
-    const TUBO_CAM_AVANTI = 34;
-
     function updateCamera() {
         if (!myCarGroup) return;
         const pos = myCarGroup.position;
         const q = myCarGroup.quaternion;
         const back = isLookingBack();
 
-        // ⚠️ DENTRO IL TUBO LA CAMERA SI STACCA DAL TELAIO, e non è una
-        // scorciatoia: è quello che ha chiesto l'utente guardando il playtest —
-        // «quando si è nel loop si imposti automaticamente la visuale come è in
-        // C, cioè quella sull'halo» e «non voglio che mentre passo dentro al
-        // loop la visuale venga invertita».
+        // ⚠️ DENTRO IL GIRO DELLA MORTE SI GUIDA DALL'HALO, sempre: la camera
+        // d'inseguimento sta 5.5 unità sopra l'auto e 13 dietro, e quelle
+        // vengono ruotate col telaio — in cima al loop finisce sotto e davanti
+        // alla vettura, e la scena si ribalta. Richiesta dell'utente al
+        // playtest: «quando si è nel loop si imposti automaticamente la visuale
+        // come è in C, cioè quella sull'halo».
         //
-        // Le due cose insieme si ottengono solo così. Con l'offset ruotato col
-        // telaio (come fanno le altre due camere) in cima al loop la camera
-        // finisce SOTTO e DAVANTI all'auto, e la scena si ribalta: è l'immagine
-        // che lui ha visto capovolgersi. Qui invece la camera resta sopra
-        // l'auto in coordinate MONDO e guarda sempre nella direzione in cui il
-        // tubo è stato imboccato, che è costante: si sale, ci si rovescia e si
-        // riscende con l'orizzonte fermo e la propria vettura in primo piano.
-        const tuboCam = statoTubo();
-        if (tuboCam) {
-            camera.position.set(pos.x, pos.y + TUBO_CAM_ALTEZZA, pos.z);
-            _lookTgt.set(pos.x + tuboCam.dirX * TUBO_CAM_AVANTI,
-                         pos.y + TUBO_CAM_ALTEZZA * 0.6,
-                         pos.z + tuboCam.dirZ * TUBO_CAM_AVANTI);
-            mescolaSguardoSemaforo(_lookTgt);
-            camera.up.set(0, 1, 0);
-            camera.lookAt(_lookTgt);
-            return;
-        }
+        // ⚠️ E la halo-cam resta ESATTAMENTE quella del tasto C, imbullonata al
+        // telaio. Un primo tentativo la staccava — sopra l'auto in coordinate
+        // mondo, sguardo fisso nella direzione d'imbocco — per non far ruotare
+        // l'orizzonte: sbagliato, e lui l'ha visto subito («la visuale è
+        // completamente sbagliata ora... vedo anche il dietro e in qualche
+        // punto l'esterno del loop»). Dall'abitacolo il mondo GIRA, ed è
+        // giusto così: quello che non deve fare è mostrarti la tua auto da
+        // dietro.
+        const modo = statoTubo() ? 'first' : cameraMode;
 
-        if (cameraMode === 'third') {
+        if (modo === 'third') {
             // "Guarda dietro" = specchio esatto della camera normale: stessa
             // altezza e stessa distanza, ma davanti al musetto e con lo
             // sguardo all'indietro (il punto mirato resta l'auto, quindi la
@@ -5984,7 +5970,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // del prato in tutta legittimita' (il nastro e' sospeso e si passa
             // rovesciati), e spingerla su la staccherebbe dall'auto proprio nel
             // punto in cui si guarda.
-            if (!nelTubo()) tieniLaCameraFuoriDalTerreno();
+            tieniLaCameraFuoriDalTerreno();
             _lookTgt.copy(pos).add(new THREE.Vector3(0, 1.2, 0));
             mescolaSguardoSemaforo(_lookTgt);
             camera.lookAt(_lookTgt);
@@ -6085,18 +6071,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // alla macchina che lo contiene.
     function camRollBanking() {
         const v = myColor ? visualState[myColor] : null;
-        // ⚠️ Dentro un giro della morte il rollio della camera e' gia' nel
-        // quaternione dell'auto, che la camera eredita: sommarci anche `v.roll`
-        // — l'ultimo valore rimasto da prima di entrare — la coricherebbe di
-        // quel tanto in piu', per tutto il tubo.
-        if (v && nelTubo()) return 0;
+        // Dentro il tubo non serve un'eccezione: il rollio dei campioni
+        // acrobatici e' zero (il nastro li' e' orientato dal frame, non dalla
+        // sopraelevazione), quindi `v.roll` si smorza a zero da se'.
         return (v && v.roll) || 0;
     }
 
     // L'auto sta dentro un tratto acrobatico? Lo dice il campione sotto di lei,
     // che e' lo stesso dato con cui il server decide il regime di posizione.
-    // Il tubo che si sta percorrendo, o null se si è fuori: serve alla camera,
-    // che dentro il giro della morte ha regole sue.
+    // Il tubo che si sta percorrendo, o null se si è fuori: serve a `updateCamera`,
+    // che dentro il giro della morte passa sempre all'halo-cam.
     function statoTubo() {
         const v = myColor ? visualState[myColor] : null;
         if (!v || v.theta == null || typeof v.idx !== 'number') return null;
@@ -6104,14 +6088,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         return (p && p.tubo) ? p.tubo : null;
     }
 
-    function nelTubo() {
-        const v = myColor ? visualState[myColor] : null;
-        // `v.theta` c'e' solo mentre si percorre il tubo, ed e' lo stesso
-        // angolo con cui l'auto viene posizionata: piu' preciso del campione
-        // sotto di lei, che all'ingresso e all'uscita e' gia' cambiato mentre
-        // l'auto sta ancora dall'altra parte del confine.
-        return !!(v && v.theta != null);
-    }
 
     // Contorno pista/corsia box: generato una tantum come prima. I marker
     // (uno per giocatore, non più solo il proprio) sono <circle> SVG creati
@@ -6282,7 +6258,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ? target.trackIndex
                     : TrackGeometry.nearestPoint(trackPts, v.x, v.z).index;
                 // Tenuto sullo stato visivo perche' serve anche alla camera
-                // (`nelTubo`), che gira in un'altra funzione: senza, dovrebbe
+                // (`statoTubo`), che gira in un'altra funzione: senza, dovrebbe
                 // ricalcolarselo con una seconda misura.
                 v.idx = idx;
                 // Il server aggiorna trackIndex solo al proprio tick (20/s): senza
