@@ -841,6 +841,7 @@ test('con le vie di fuga il layout resta deterministico', () => {
 // l'andamento delle barriere". Fino al 2026-08-13 seguivano la normale della
 // PISTA, che è la stessa cosa solo dove il muro sta a distanza costante.
 const TrackGravel = require('./trackGravel.js');
+const TrackAcrobatico = require('./trackAcrobatico.js');
 const fsAllineamento = require('fs');
 const pathAllineamento = require('path');
 
@@ -858,7 +859,13 @@ const TRACCIATI = require('fs')
 function circuitoVero(id, opzioni) {
     const raw = JSON.parse(fsAllineamento.readFileSync(pathAllineamento.join(
         __dirname, '..', 'tracks', `${id}.json`), 'utf8'));
-    const trackPts = TrackGeometry.sampleLoop(raw.controlPoints, 1000);
+    // ⚠️ `campionaPista` e non `sampleLoop`: e' la funzione da cui passano il
+    // caricatore del server e la scena del client, ed e' lei a inserire i giri
+    // della morte. Con `sampleLoop` questo test costruiva una pista in cui il
+    // tratto acrobatico e' un segmento TRASVERSALE — lo scalino che in gioco il
+    // tubo sostituisce — e giudicava storte le tribune messe attorno a un muro
+    // che non esiste.
+    const trackPts = TrackAcrobatico.campionaPista(raw, 1000);
     // Stessi campionamenti del caricatore di pista (trackLoader.js:14-17):
     // la corsia box non può essere nulla, la scenografia la usa per decidere
     // dove NON mettere le cose.
@@ -873,11 +880,37 @@ function circuitoVero(id, opzioni) {
 }
 
 // Su che lato della pista sta una voce, e a che campione.
+// ⚠️ Si cerca fra i punti A TERRA, e si restituisce l'indice nella lista
+// COMPLETA (quella su cui è indicizzato il profilo del muro).
+//
+// In pianta i campioni di un giro della morte stanno sopra il rettilineo da cui
+// il tubo parte: senza questo filtro, una tribuna posata di fianco a quel
+// rettilineo veniva attribuita a un campione del TUBO e giudicata storta di 83°
+// rispetto a un muro che non era il suo. Il layout era giusto, sbagliava la
+// misura — come per la direzione del tubo e per il conto del rettilineo prima
+// del loop, sempre la stessa trappola.
+const _indiciATerra = new WeakMap();
+function indiciATerra(trackPts) {
+    let cache = _indiciATerra.get(trackPts);
+    if (!cache) {
+        const punti = [], indici = [];
+        for (let i = 0; i < trackPts.length; i++) {
+            if (trackPts[i].acrobatico) continue;
+            punti.push(trackPts[i]); indici.push(i);
+        }
+        cache = { punti, indici };
+        _indiciATerra.set(trackPts, cache);
+    }
+    return cache;
+}
+
 function doveSta(trackPts, voce) {
-    const v = TrackGeometry.nearestPoint(trackPts, voce.x, voce.z);
-    const { nx, nz } = TrackGeometry.normalAt(trackPts, v.index, true);
-    const seg = (voce.x - trackPts[v.index].x) * nx + (voce.z - trackPts[v.index].z) * nz;
-    return { idx: v.index, side: seg >= 0 ? 1 : -1, dist: v.dist };
+    const { punti, indici } = indiciATerra(trackPts);
+    const v = TrackGeometry.nearestPoint(punti, voce.x, voce.z);
+    const idx = indici[v.index];
+    const { nx, nz } = TrackGeometry.normalAt(trackPts, idx, true);
+    const seg = (voce.x - trackPts[idx].x) * nx + (voce.z - trackPts[idx].z) * nz;
+    return { idx, side: seg >= 0 ? 1 : -1, dist: v.dist };
 }
 
 // Quanto una voce devia dalla parallela al nastro del muro, in gradi.
