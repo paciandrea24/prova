@@ -486,3 +486,43 @@ test('nelle curve strette il muro scende su tutto l\'arco, non solo sull\'apice'
             `il muro risale di ${(d - dApice).toFixed(1)} a ${off} campioni dall'apice: è una punta, non un raccordo`);
     }
 });
+
+// --- il muro del lato alto (fase 1b-2) ---
+
+// Un cerchio sopraelevato: stessa forma (e stesso nome) dell'helper di
+// trackGeometry.test.js, cosi' le due suite parlano della stessa geometria.
+// Raggio 200 = RAGGIO_CURVA_PIENA: il rollio efficace e' quello dichiarato,
+// senza lo smorzamento che tocca le curve piu' larghe.
+function cerchioSopraelevato(raggio, n, gradi) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * raggio, z: Math.sin(a) * raggio, y: 0,
+                   rollio: gradi * Math.PI / 180, halfWidth: 12 });
+    }
+    return pts;
+}
+
+test('sul lato alto di una sopraelevata il muro sta subito dopo il cordolo', () => {
+    const pts = cerchioSopraelevato(200, 200, 30);
+    const prof = TrackGravel.barrierProfile(pts, { roadHalf: 12, pitLanePts: [], pitRoadHalf: 5 });
+    const { latoAlto } = TrackGeometry.rialzoBordi(pts, 10, 12);
+    assert.equal(latoAlto !== 0, true, 'il caso di prova deve essere sopraelevato davvero');
+    const alto = TrackGravel.barrierAt(prof, 10, latoAlto);
+    const basso = TrackGravel.barrierAt(prof, 10, -latoAlto);
+    // 12 + 2.8 = bordo del cordolo; oltre quello ci sta solo il margine dei
+    // ponti, non i sedici di via di fuga.
+    assert.ok(alto < 12 + TrackGravel.CURB_W + 4,
+        `il muro alto sta a ${alto.toFixed(1)}: dovrebbe essere appena oltre il cordolo (14.8)`);
+    assert.ok(basso > alto + 8,
+        `il lato basso deve tenere la sua via di fuga: alto ${alto.toFixed(1)}, basso ${basso.toFixed(1)}`);
+});
+
+test('su una pista piana il profilo barriera non cambia di un millimetro', () => {
+    const pts = cerchioSopraelevato(200, 200, 0);
+    const prof = TrackGravel.barrierProfile(pts, { roadHalf: 12, pitLanePts: [], pitRoadHalf: 5 });
+    for (let i = 0; i < pts.length; i++) {
+        assert.equal(TrackGravel.barrierAt(prof, i, 1), TrackGravel.barrierAt(prof, i, -1),
+            `campione ${i}: i due lati sono diversi su una pista piana`);
+    }
+});

@@ -362,6 +362,11 @@
         // prima delle vie di fuga. Segnata qui perché serve anche più sotto:
         // dentro quel tratto la ghiaia non deve spingere fuori il muro.
         const zonaBox = new Array(n).fill(false);
+        // Da che parte sale il nastro, campione per campione (0 = piano).
+        // Deciso QUI una volta sola, e riletto dalla passata della ghiaia: una
+        // seconda misura significherebbe che il muro si avvicina e la ghiaia
+        // non lo sa.
+        const latoAlto = new Int8Array(n);
         for (let i = 0; i < n; i++) {
             const p = trackPts[i];
             let d;
@@ -376,6 +381,23 @@
             }
             base.left[i] = d;
             base.right[i] = d;
+
+            // SUL FIANCO ALTO DI UNA SOPRAELEVATA IL MURO ARRIVA SUBITO.
+            // La via di fuga vale dove c'è terreno su cui fuggire: oltre il
+            // piede del cuneo il terreno smette di salire e ricomincia a
+            // scendere verso il prato, quindi quelle sedici unità sarebbero
+            // una spianata sospesa sul bordo di una collinetta. Stessa regola
+            // dei ponti, e per la stessa ragione. Il lato BASSO resta com'è:
+            // da quella parte il mondo è normale (decisione 2 della spec del
+            // nastro orientato).
+            if (!p.bridge && !zonaBox[i]) {
+                latoAlto[i] = TrackGeometry.rialzoBordi(trackPts, i, mezzaAl(trackPts, i, roadHalf)).latoAlto;
+                if (latoAlto[i] !== 0) {
+                    const vicino = bordoCordoloAl(i) + BRIDGE_MARGIN;
+                    const banda = latoAlto[i] > 0 ? base.right : base.left;
+                    banda[i] = Math.min(banda[i], vicino);
+                }
+            }
         }
 
         // Seconda passata: la ghiaia entra PRIMA del livellamento, non dopo.
@@ -410,6 +432,11 @@
                 continue;
             }
             for (const side of [-1, 1]) {
+                // ⚠️ Sul lato alto no: lì il muro si è appena avvicinato al
+                // cordolo apposta, e la ghiaia lo rispingerebbe fuori dov'era
+                // — la via di fuga tornerebbe sospesa sul cuneo, con la
+                // differenza che stavolta ci sarebbe pure la sabbia sopra.
+                if (side === latoAlto[i]) continue;
                 const larghezza = side > 0 ? gravel.right[i] : gravel.left[i];
                 if (larghezza <= 0) continue;
                 const banda = side > 0 ? base.right : base.left;
