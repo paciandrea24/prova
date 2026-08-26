@@ -52,6 +52,11 @@ const {
     applyTyreWear
 } = VehicleDynamics;
 
+// Il giro della morte: dentro il tubo la posizione la comanda il nastro, non la
+// pianta. Import diretto — e' un regime locale a un tratto, non un pezzo della
+// catena updateVelocity/integratePosition.
+const TrattoAcrobatico = require('./physics/TrattoAcrobatico');
+
 // Fase 4 (Rif. docs/superpowers/specs/2026-07-28-f1-aerodynamics-model-design.md):
 // import diretto (non tramite VehicleDynamics/VehiclePhysics, che restano
 // la facade solo per la catena updateVelocity/integratePosition/...) per
@@ -2076,22 +2081,44 @@ function tickGame(io, lobbyId, game) {
     // restano ostacoli fisici, quindi resolveCollisions lavora su TUTTI i
     // giocatori non-in-qualifica, non solo su chi corre.
     for (let s = 0; s < COLLISION_SUBSTEPS; s++) {
-        for (const p of racing) integratePosition(p, 1 / COLLISION_SUBSTEPS);
+        for (const p of racing) {
+            // ⚠️ Chi e' nel giro della morte NON passa da integratePosition:
+            // li' la posizione la comanda il nastro (in cima al loop
+            // l'avanzamento orizzontale e' zero mentre l'auto va a 200).
+            if (TrattoAcrobatico.entrato(p, game.track)) {
+                TrattoAcrobatico.avanza(p, game.track, 1 / COLLISION_SUBSTEPS);
+            } else {
+                integratePosition(p, 1 / COLLISION_SUBSTEPS);
+            }
+        }
         // Chi ha finito è un FANTASMA: si vede e continua a girare, ma non
         // urta più nessuno e nessuno urta lui. A gara conclusa non rischia
         // più niente, quindi un suo contatto costerebbe la posizione solo
         // all'altro — scelta dell'utente al playtest.
-        if (!isQuali) resolveCollisions(players.filter(p => !p.finished));
+        // ⚠️ E nemmeno da resolveCollisions: le collisioni si risolvono in
+        // pianta, e dentro il tubo due auto a quote diverse — una in cima e una
+        // in fondo — occupano lo stesso punto visto dall'alto. Si urterebbero
+        // senza vedersi.
+        if (!isQuali) resolveCollisions(players.filter(p => !p.finished && !p.acrobatico));
         // A differenza di resolveCollisions (disabilitata in qualifica: le
         // collisioni auto-auto sono una questione di fair-play multiplayer),
         // il muro dei tratti ponte si applica sempre, anche in qualifica —
         // è un limite fisico della pista, non un'interazione tra giocatori.
-        for (const p of racing) applyBarrier(p, game.track, !isQuali);
+        // Il muro dei ponti vale ovunque tranne nel tubo: li' non c'e' un muro
+        // da toccare, e la stessa misura in pianta riporterebbe l'auto sul ramo
+        // sbagliato del loop.
+        for (const p of racing) if (!p.acrobatico) applyBarrier(p, game.track, !isQuali);
     }
 
     for (const p of racing) {
-        const { offTrack, profondita } = applyOffTrackDrag(p, game.track);
-        updateTrackIndex(p, game.track);
+        // Dentro il giro della morte non esiste fuoripista (il tubo e' tutta la
+        // pista che c'e'), e l'indice NON si ricerca in pianta: lo tiene gia'
+        // TrattoAcrobatico.avanza, e `nearestIndexNear` li' dentro sceglierebbe
+        // fra due rami sovrapposti — salita e discesa — quello sbagliato.
+        const { offTrack, profondita } = p.acrobatico
+            ? { offTrack: false, profondita: 0 }
+            : applyOffTrackDrag(p, game.track);
+        if (!p.acrobatico) updateTrackIndex(p, game.track);
         // L'usura conta solo in GARA: in qualifica le gomme restano quelle
         // scelte ma "fresche" fino al via vero (resettate in assignGridSpawns).
         // Usura e cronometraggio si fermano al traguardo: il giro di
