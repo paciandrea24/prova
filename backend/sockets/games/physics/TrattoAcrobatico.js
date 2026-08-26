@@ -63,8 +63,22 @@ function avanza(p, track, dt) {
     // capita, si esce invece di dividere per undefined.
     if (!tubo) { staccati(p); return { uscito: true, completato: false }; }
 
-    // All'ingresso l'angolo parte da quello del campione su cui si è entrati.
-    if (typeof p.thetaTubo !== 'number') p.thetaTubo = q.loopAngolo || 0;
+    // All'ingresso l'angolo parte da quello del campione su cui si è entrati...
+    if (typeof p.thetaTubo !== 'number') {
+        p.thetaTubo = q.loopAngolo || 0;
+        // ...e con lui si conserva DA CHE PARTE della carreggiata si stava.
+        //
+        // ⚠️ Senza, chi imbocca il tubo sul lato destro viene risucchiato al
+        // centro nel primo tick: un salto laterale di mezza carreggiata, che in
+        // gioco si vede come un teletrasporto («poi vengono tipo teletrasportati
+        // nel loop», riscontro dell'utente del 2026-08-26). L'offset è la `u` di
+        // (s, u) che la spec prometteva e che la prima stesura aveva lasciato
+        // indietro, mettendo tutti sull'asse.
+        const dove = TrackAcrobatico.puntoAlAngolo(tubo, p.thetaTubo);
+        const mezza = (typeof q.halfWidth === 'number' && q.halfWidth > 0) ? q.halfWidth : 11;
+        const u = (p.x - dove.x) * dove.lat.x + (p.z - dove.z) * dove.lat.z;
+        p.uTubo = Math.max(-mezza, Math.min(mezza, u));
+    }
     // Da lunghezza d'arco ad angolo. ⚠️ Il raggio, non la lunghezza vera del
     // percorso: lo spostamento laterale allunga il tragitto del 2%, e tenerne
     // conto qui vorrebbe dire un integrale a ogni tick per due centesimi di
@@ -75,7 +89,10 @@ function avanza(p, track, dt) {
     if (p.thetaTubo >= GIRO || p.thetaTubo < 0) {
         const completato = p.thetaTubo >= GIRO;
         const fine = TrackAcrobatico.puntoAlAngolo(tubo, completato ? GIRO : 0);
-        p.x = fine.x; p.y = fine.y; p.z = fine.z;
+        const uFine = p.uTubo || 0;
+        p.x = fine.x + fine.lat.x * uFine;
+        p.y = fine.y + fine.lat.y * uFine;
+        p.z = fine.z + fine.lat.z * uFine;
         p.angle = Math.atan2(fine.tan.x, fine.tan.z);
         p.vx = p.speed * fine.tan.x;
         p.vz = p.speed * fine.tan.z;
@@ -91,7 +108,10 @@ function avanza(p, track, dt) {
     }
 
     const punto = TrackAcrobatico.puntoAlAngolo(tubo, p.thetaTubo);
-    p.x = punto.x; p.y = punto.y; p.z = punto.z;
+    const u = p.uTubo || 0;
+    p.x = punto.x + punto.lat.x * u;
+    p.y = punto.y + punto.lat.y * u;
+    p.z = punto.z + punto.lat.z * u;
     p.frame = { tan: punto.tan, su: punto.su, lat: punto.lat };
     // La pendenza del nastro È l'angolo percorso: la gravità della fase 1a
     // funziona qui dentro senza una formula nuova.
@@ -113,6 +133,7 @@ function avanza(p, track, dt) {
 
 function staccati(p) {
     p.thetaTubo = undefined;
+    p.uTubo = 0;
     p.frame = null;
     p.acrobatico = false;
     p.sTubo = 0;

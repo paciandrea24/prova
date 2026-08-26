@@ -5922,11 +5922,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         bordiApplicati = val;
     }
 
+    // Quanto sta sopra l'auto la camera dentro il giro della morte, e quanto
+    // lontano guarda. L'altezza è quella dell'halo: si vede la propria vettura
+    // in primo piano, come col tasto C.
+    const TUBO_CAM_ALTEZZA = 2.6;
+    const TUBO_CAM_AVANTI = 34;
+
     function updateCamera() {
         if (!myCarGroup) return;
         const pos = myCarGroup.position;
         const q = myCarGroup.quaternion;
         const back = isLookingBack();
+
+        // ⚠️ DENTRO IL TUBO LA CAMERA SI STACCA DAL TELAIO, e non è una
+        // scorciatoia: è quello che ha chiesto l'utente guardando il playtest —
+        // «quando si è nel loop si imposti automaticamente la visuale come è in
+        // C, cioè quella sull'halo» e «non voglio che mentre passo dentro al
+        // loop la visuale venga invertita».
+        //
+        // Le due cose insieme si ottengono solo così. Con l'offset ruotato col
+        // telaio (come fanno le altre due camere) in cima al loop la camera
+        // finisce SOTTO e DAVANTI all'auto, e la scena si ribalta: è l'immagine
+        // che lui ha visto capovolgersi. Qui invece la camera resta sopra
+        // l'auto in coordinate MONDO e guarda sempre nella direzione in cui il
+        // tubo è stato imboccato, che è costante: si sale, ci si rovescia e si
+        // riscende con l'orizzonte fermo e la propria vettura in primo piano.
+        const tuboCam = statoTubo();
+        if (tuboCam) {
+            camera.position.set(pos.x, pos.y + TUBO_CAM_ALTEZZA, pos.z);
+            _lookTgt.set(pos.x + tuboCam.dirX * TUBO_CAM_AVANTI,
+                         pos.y + TUBO_CAM_ALTEZZA * 0.6,
+                         pos.z + tuboCam.dirZ * TUBO_CAM_AVANTI);
+            mescolaSguardoSemaforo(_lookTgt);
+            camera.up.set(0, 1, 0);
+            camera.lookAt(_lookTgt);
+            return;
+        }
 
         if (cameraMode === 'third') {
             // "Guarda dietro" = specchio esatto della camera normale: stessa
@@ -6064,6 +6095,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // L'auto sta dentro un tratto acrobatico? Lo dice il campione sotto di lei,
     // che e' lo stesso dato con cui il server decide il regime di posizione.
+    // Il tubo che si sta percorrendo, o null se si è fuori: serve alla camera,
+    // che dentro il giro della morte ha regole sue.
+    function statoTubo() {
+        const v = myColor ? visualState[myColor] : null;
+        if (!v || v.theta == null || typeof v.idx !== 'number') return null;
+        const p = trackPts[v.idx];
+        return (p && p.tubo) ? p.tubo : null;
+    }
+
     function nelTubo() {
         const v = myColor ? visualState[myColor] : null;
         // `v.theta` c'e' solo mentre si percorre il tubo, ed e' lo stesso
@@ -6083,28 +6123,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const minimapTrackEl = document.getElementById('minimap-track');
     const minimapPitEl = document.getElementById('minimap-pit');
     const minimapT = minimapTransform([...trackPts, ...PIT_PTS]);
-    // ⚠️ IL GIRO DELLA MORTE NON SI DISEGNA IN PIANTA: visto dall'alto il tubo
-    // va avanti e torna indietro sullo stesso segmento, e sulla mappa
-    // diventerebbe uno sgorbio che nessuno sa leggere. Si toglie dal tracciato
-    // — la linea passa dritta, come passa la pista sotto — e al suo posto si
-    // mette un anello, che e' il simbolo con cui i giochi lo indicano da
-    // sempre. (Spec fase 2: «va marcato con un simbolo, non disegnato».)
-    const puntiMappa = trackPts.filter(p => !p.acrobatico);
-    const dPista = minimapPathString(puntiMappa, minimapT, true);
-    for (const p of trackPts) {
-        if (!p.acrobatico || Math.abs((p.loopAngolo || 0) - Math.PI) > 0.1) continue;
-        // Il punto piu' alto del giro: uno solo per tubo. Stessa trasformazione
-        // di minimapPathString, che lavora sui coefficienti e non su una
-        // funzione.
-        const anello = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        anello.setAttribute('cx', (p.x * minimapT.scale + minimapT.offX).toFixed(1));
-        anello.setAttribute('cy', (p.z * minimapT.scale + minimapT.offZ).toFixed(1));
-        anello.setAttribute('r', 3.2);
-        anello.setAttribute('fill', 'none');
-        anello.setAttribute('stroke', '#ffcc33');
-        anello.setAttribute('stroke-width', 1.4);
-        minimapTrackEl.parentNode.appendChild(anello);
-    }
+    // ⚠️ Il giro della morte NON si segna sulla mappa. Ci avevo messo un anello
+    // (la spec diceva «va marcato con un simbolo»), ma l'utente lo ha rifiutato
+    // guardandolo: «non voglio l'anello nella minimappa, ma lasciare il
+    // circuito così come è». In pianta il tubo si sovrappone al rettilineo da
+    // cui parte, quindi il tracciato disegnato resta quello di sempre.
+    const dPista = minimapPathString(trackPts, minimapT, true);
     const dBox = minimapPathString(PIT_PTS, minimapT, false);
     minimapTrackEl.setAttribute('d', dPista);
     minimapPitEl.setAttribute('d', dBox);
@@ -6319,7 +6343,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     v.theta = (v.theta == null) ? target.thetaTubo
                         : v.theta + (target.thetaTubo - v.theta) * LERP;
                     const q = TrackAcrobatico.puntoAlAngolo(tubo, v.theta);
-                    v.x = q.x; v.y = q.y; v.z = q.z;
+                    const u = target.uTubo || 0;
+                    v.x = q.x + q.lat.x * u;
+                    v.y = q.y + q.lat.y * u;
+                    v.z = q.z + q.lat.z * u;
                 } else {
                     v.theta = null;
                 }

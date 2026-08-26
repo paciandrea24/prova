@@ -85,6 +85,30 @@ function steerToward(px, pz, angle, tx, tz, gain = BOT_STEER_GAIN) {
 
 // Indice campionato `lookaheadSamples` avanti (con wrap) rispetto a
 // currentIdx, su un loop di `n` campioni.
+// NON SI MIRA MAI DENTRO NE' OLTRE UN GIRO DELLA MORTE.
+//
+// ⚠️ Visti dall'alto i campioni del tubo si spostano verso l'USCITA, che sta di
+// fianco all'ingresso, e quelli dopo l'uscita ci stanno del tutto: puntandoli,
+// il bot sterza verso l'altra corsia mentre dovrebbe imboccare il loop dritto.
+// Lo ha visto l'utente in gioco — «prima di salire e fare il loop si orientano
+// verso l'altra parte di pista» — e la telemetria gli ha dato ragione: il
+// bersaglio cadeva sui campioni 135-153, dentro il tubo, e l'auto derivava di
+// lato da 0.4 a 7.4 unita' negli ultimi venti campioni.
+//
+// Si guarda TUTTO il tratto fino al bersaglio, non solo il bersaglio: col
+// lookahead lungo il punto mirato scavalca il tubo per intero.
+//
+// Dentro il tubo non c'e' niente da mirare: la traiettoria la impone il nastro.
+function mirinoPrimaDelTubo(track, da, targetIdx) {
+    const n = track.points.length;
+    const quanti = ((targetIdx - da) % n + n) % n;
+    for (let k = 0; k <= quanti; k++) {
+        const i = (da + k) % n;
+        if (track.points[i].acrobatico) return i;    // l'imbocco: sta sull'asse
+    }
+    return targetIdx;
+}
+
 function lookaheadIndex(n, currentIdx, lookaheadSamples) {
     return ((currentIdx + lookaheadSamples) % n + n) % n;
 }
@@ -740,7 +764,15 @@ function computeSoloRacingLineInputs(p, track, rt, maxSpeed, brakeDecel, turnRat
     const speedMs = Math.max(5, botSpeedMs(p.speed));
     const lookM = adaptiveLookaheadMeters(track.racingLine, p.trackIndex || 0, track, rt.adaptiveLookaheadK, speedMs);
     const lookSamples = metersToSamples(lookM, track);
-    const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
+    let targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
+    // ⚠️ NON SI MIRA MAI DENTRO IL TUBO. Visti dall'alto i campioni di un giro
+    // della morte si spostano verso l'USCITA, che sta di fianco all'ingresso:
+    // puntandoli, il bot sterzava verso l'altra corsia invece di imboccare il
+    // loop dritto — «prima di salire e fare il loop si orientano verso l'altra
+    // parte di pista» (visto in gioco dall'utente il 2026-08-26). Si mira
+    // all'imbocco, che sta sull'asse; da lì in poi la traiettoria non è più
+    // affare suo, la impone il nastro.
+    targetIdx = mirinoPrimaDelTubo(track, p.trackIndex || 0, targetIdx);
     const target = track.racingLine[targetIdx];
 
     const steer = steerToward(p.x, p.z, p.angle, target.x, target.z, rt.steerGain);
@@ -1273,7 +1305,8 @@ function updateBotInputs(game, deps) {
             const lookM    = adaptiveLookaheadMeters(track.points, p.trackIndex || 0, track, tuning.adaptiveLookaheadK, speedMs);
             const lookSamples  = metersToSamples(lookM, track);
             const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
-            const targetIdx = lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples);
+            const targetIdx = mirinoPrimaDelTubo(track, p.trackIndex || 0,
+                lookaheadIndex(track.points.length, p.trackIndex || 0, lookSamples));
             const target = track.points[targetIdx];
 
             // Distanza di scansione = il caso peggiore possibile: da tutto
@@ -1388,7 +1421,7 @@ function updateBotInputs(game, deps) {
 module.exports = {
     PALETTE, PALETTE_BOT_EXTRA, MAX_GRID_SIZE, GRID_SIZE_DEFAULT, DEFAULT_TUNING,
     BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS,
-    normalizeAngle, steerToward, lookaheadIndex, apexOffset, windowRadius, cornerApexNear, cornerTargetSpeed, overtakeOffset,
+    normalizeAngle, steerToward, lookaheadIndex, mirinoPrimaDelTubo, apexOffset, windowRadius, cornerApexNear, cornerTargetSpeed, overtakeOffset,
     nearestAheadPlayer, otherCarTargetSpeed, pickPostPitCompound, pickBotColors, estimateFinishTime,
     createBots, updateBotInputs, shouldBotRepair,
     BOT_CURVATURE_LOCAL_M, BOT_APEX_MAX_FRACTION, trajectoryDiagnostics,

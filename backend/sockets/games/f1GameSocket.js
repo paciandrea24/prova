@@ -2942,6 +2942,9 @@ function buildPublicState(players, raceStarted, track, game) {
             // invece della sua). Assente fuori dal tubo, quindi non pesa un
             // byte sulle piste normali.
             thetaTubo: p.thetaTubo,
+            // ...e da che parte della carreggiata si sta: il client disegna
+            // l'auto dove il server la tiene, non sull'asse.
+            uTubo: p.uTubo,
             speed: p.speed,
             steerInput: p.inputs?.steer ?? 0,
             finished: p.finished,

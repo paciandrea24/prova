@@ -996,3 +996,47 @@ test('i colori bastano per venti piloti, e sono tutti diversi', () => {
     assert.equal(new Set(colori.map(c => c.toUpperCase())).size, 19, 'nessun colore ripetuto');
     assert.ok(!colori.some(c => c.toUpperCase() === '#E74C3C'), 'nessun bot col colore dell\'umano');
 });
+
+// --- il giro della morte (fase 2b) ---
+const f1Bot = require('./f1Bot.js');
+
+test('il bot non mira mai dentro ne\' oltre un giro della morte', () => {
+    // ⚠️ IL TEST CHE MANCAVA. Il bot puntava ai campioni del tubo — che in
+    // pianta si spostano verso l'uscita, di fianco — e imboccava il loop
+    // sbandando verso l'altra corsia: «prima di salire e fare il loop si
+    // orientano verso l'altra parte di pista» (visto in gioco, 2026-08-26).
+    // Misurato allora: 7.4 unita' di scarto dall'asse a tre campioni
+    // dall'imbocco; dopo la cura, 0.36.
+    const track = require('./trackLoader.js').loadTrack('loop-prova');
+    const primo = track.points.findIndex(p => p.acrobatico);
+    const n = track.points.length;
+    assert.ok(primo > 0, 'loop-prova deve avere un giro della morte');
+
+    // Da venti campioni prima dell'imbocco, con qualunque lookahead: il
+    // bersaglio non deve mai cadere dentro il tubo ne' oltre.
+    for (let indietro = 1; indietro <= 20; indietro++) {
+        const da = (primo - indietro + n) % n;
+        for (const look of [5, 20, 60, 120]) {
+            const grezzo = f1Bot.lookaheadIndex(n, da, look);
+            const scelto = f1Bot.mirinoPrimaDelTubo(track, da, grezzo);
+            const dentro = track.points[scelto].acrobatico;
+            const oltre = ((scelto - primo) % n + n) % n < n / 2 && !dentro;
+            assert.ok(!oltre, `da ${indietro} campioni prima, lookahead ${look}: mira oltre il tubo (${scelto})`);
+            if (dentro) {
+                assert.equal(scelto, primo,
+                    `da ${indietro} campioni prima, lookahead ${look}: mira al campione ${scelto} dentro il tubo invece che all'imbocco ${primo}`);
+            }
+        }
+    }
+});
+
+test('su una pista senza giri della morte il mirino non cambia di un campione', () => {
+    const track = require('./trackLoader.js').loadTrack('prova');
+    const n = track.points.length;
+    for (const da of [0, 100, 500, 900]) {
+        for (const look of [5, 40, 120]) {
+            const grezzo = f1Bot.lookaheadIndex(n, da, look);
+            assert.equal(f1Bot.mirinoPrimaDelTubo(track, da, grezzo), grezzo);
+        }
+    }
+});
