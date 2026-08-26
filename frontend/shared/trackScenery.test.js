@@ -1559,12 +1559,13 @@ test('niente scenografia dentro gli asset che scavalcano la pista', () => {
 // densità: quella pista sale dell'89% — l'auto non la completa, e i test del
 // simulatore la saltano già per soglia calcolata (GravitaNastro.pistaPercorribile) —
 // quindi il terreno di fianco è una PARETE quasi ovunque. Da quando la porta
-// non posa più oggetti su una parete, 203 dei 213 oggetti che stavano oltre il
-// 35% di pendenza non entrano: metà circuito resta spoglio. Non è un buco da
-// curare, è il prezzo — voluto — di non piantare tribune di traverso su un
-// muro. Sulle piste vere lo stesso controllo non toglie niente (0 oggetti su
-// melbourne, monte-rosso, new-monza, shanghai) o pochissimo (4 su prova, 3 su
-// suzuka), e i loro numeri qui sotto non si muovono.
+// non posa più oggetti che fluttuano o affondano, 185 oggetti su 1384 non
+// entrano e metà circuito resta spoglio: lì non c'è un modo di posarli bene.
+// Non è un buco da curare, è il prezzo — voluto — di non piantare tribune di
+// traverso dentro un muro. Sulle piste vere lo stesso controllo non toglie
+// niente (0 su melbourne, monte-rosso, new-monza, shanghai) o pochissimo (6 su
+// prova, 5 su suzuka, 5 su banking-prova), e i loro numeri qui sotto non si
+// muovono.
 const VUOTI_ATTESI = {
     'test':        { peggiore: 2700, quota: 0.60 },
     'prova':       { peggiore: 275, quota: 0.11 },
@@ -1784,31 +1785,54 @@ test('una pista senza esclusioni genera esattamente cio\' che generava prima', (
 
 // --- il fianco del cuneo non è un posto (fase 1b-2) ---
 
-test('nessun oggetto scenico sta su una parete (banking-prova)', () => {
-    // Gli asset hanno il pivot alla base e stanno dritti: sanno posarsi solo
-    // su una superficie orizzontale. Il fianco del cuneo — la rampa con cui il
-    // terrapieno scende dalla quota del bordo alto al prato — è una parete, e
-    // lì un oggetto esce storto o mezzo sepolto.
-    //
-    // La pendenza del terreno SOTTO l'oggetto si misura come la misura la
-    // mesh: due sonde a un passo di distanza, non una derivata analitica.
-    const { raw, trackPts, layout, BARRIER_D, barrierProfile } = circuitoVero('banking-prova');
+// ⚠️ Non si misura la PENDENZA del terreno ma lo SCARTO agli angoli
+// dell'oggetto, cioè quanto uno spigolo si alza da terra mentre quello opposto
+// affonda. È la decisione dell'utente dopo il playtest del 2026-08-26: in
+// pendenza ci si può stare, purché si stia bene. Una soglia sulla pendenza
+// toglieva pile di gomme con 1.1 unità di scarto e lasciava tribune con 2.7,
+// che è il contrario di quello che si vede in gioco.
+const SCARTO_MAX = 3.0;
+
+function scartoAgliAngoli(v, groundPts, embankStart, embankOuter) {
+    const angoli = SceneryAssetSizes.footprintCorners(v);
+    if (!angoli || !angoli.length) return 0;
+    let minimo = Infinity, massimo = -Infinity;
+    for (const a of angoli) {
+        const y = TrackGeometry.terrainHeightAt(groundPts, a.x, a.z, embankStart, embankOuter);
+        if (y < minimo) minimo = y;
+        if (y > massimo) massimo = y;
+    }
+    return massimo - minimo;
+}
+
+test('nessun oggetto scenico fluttua o affonda nel terreno (banking-prova)', () => {
+    const { trackPts, layout, BARRIER_D, barrierProfile } = circuitoVero('banking-prova');
     const embankStart = TrackScenery.embankmentStart(barrierProfile, BARRIER_D);
     const embankOuter = embankStart + 45;
     const groundPts = trackPts.filter(p => !p.bridge);
-    const PASSO = 2;                    // unità di pista
-    const PENDENZA_MAX = 0.25;          // 14 gradi: oltre, un oggetto si vede storto
     const storti = [];
     for (const v of layout) {
-        const q = (dx, dz) => TrackGeometry.terrainHeightAt(
-            groundPts, v.x + dx, v.z + dz, embankStart, embankOuter);
-        const dyX = (q(PASSO, 0) - q(-PASSO, 0)) / (2 * PASSO);
-        const dyZ = (q(0, PASSO) - q(0, -PASSO)) / (2 * PASSO);
-        const pendenza = Math.hypot(dyX, dyZ);
-        if (pendenza > PENDENZA_MAX) {
-            storti.push(`${v.asset} a (${v.x.toFixed(0)}, ${v.z.toFixed(0)}): ${(pendenza * 100).toFixed(0)}%`);
+        if (!v.asset || v.asset === 'catchFence') continue;
+        const scarto = scartoAgliAngoli(v, groundPts, embankStart, embankOuter);
+        if (scarto > SCARTO_MAX) {
+            storti.push(`${v.asset} a (${v.x.toFixed(0)}, ${v.z.toFixed(0)}): ${scarto.toFixed(1)} unità`);
         }
     }
     assert.deepEqual(storti, [],
-        `${storti.length} oggetti posati su una parete: ${storti.slice(0, 6).join(' | ')}`);
+        `${storti.length} oggetti mal posati: ${storti.slice(0, 6).join(' | ')}`);
+});
+
+test('in pendenza ci si sta: le pile di gomme della parabolica restano', () => {
+    // Il controspecchio del test qui sopra, e la ragione per cui la misura è
+    // cambiata: sul fianco del cuneo a 35 gradi ci sono undici pile di gomme
+    // con 1.1-2.8 unità di scarto — meno delle tribune che l'utente ha
+    // approvato guardandole. Toglierle era il difetto, non la cura.
+    const { trackPts, layout } = circuitoVero('banking-prova');
+    const gomme = layout.filter(v => v.asset === 'tyreStack');
+    const sulCuneo = gomme.filter(v => {
+        const i = TrackGeometry.nearestPoint(trackPts, v.x, v.z).index;
+        return (trackPts[i].rollio || 0) > 0.3;      // oltre 17 gradi
+    });
+    assert.ok(sulCuneo.length >= 8,
+        `sul fianco delle sopraelevate restano solo ${sulCuneo.length} pile di gomme`);
 });

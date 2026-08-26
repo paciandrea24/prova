@@ -1832,30 +1832,43 @@
         const terraceCrowd = SceneryCrowd.buildTerraceCrowd(
             terrazze, terraceAnchors || {}, mulberry32(hashString(trackData.id + ':terrace')));
 
-        // ⚠️ IL FIANCO DEL CUNEO NON È UN POSTO. Sul terreno piano oltre il
-        // cuneo gli oggetti ci vanno — una sopraelevazione poggia sulla terra,
-        // non è un ponte — ma sulla rampa con cui il terrapieno scende dal
-        // bordo alto al prato no: gli asset hanno il pivot alla base e stanno
-        // dritti, quindi su una parete escono storti o mezzi sepolti.
+        // ⚠️ UN OGGETTO NON DEVE FLUTTUARE NÉ ESSERE SEPOLTO. Gli asset hanno
+        // il pivot alla base e stanno dritti: su un terreno inclinato uno
+        // spigolo si alza da terra e quello opposto affonda, di tanto quanto
+        // pendenza × ingombro. È QUESTO che si vede, non la pendenza.
+        //
+        // ⚠️ La misura è stata cambiata il 2026-08-26 dopo il playtest, ed è
+        // una decisione dell'utente: «va bene che ci siano asset in pendenza,
+        // purché siano ben posizionati... non ci sono tribune che fluttuano,
+        // sono correttamente posizionate nel terreno quindi vanno bene». Una
+        // soglia sulla PENDENZA trattava uguale una tribuna e una pila di
+        // gomme, e toglieva pile di gomme con 1.1 unità di scarto mentre
+        // lasciava — giustamente — tribune con 2.7. Ora la soglia è sullo
+        // scarto vero, quindi un oggetto piccolo può stare in pendenza e uno
+        // grande no: è la stessa regola per tutti, applicata al loro ingombro.
         //
         // Sta QUI, alla porta, e non nei costruttori: sul banco di prova del
-        // banking gli oggetti finiti sulla parete venivano da DUE moduli
-        // diversi — undici barriere di gomme e un capanno commissari dal
-        // trackside, quattro alberi dalla natura — e un controllo per modulo è
-        // la strada che il modulo nuovo salterà.
+        // banking gli oggetti mal posati venivano da DUE moduli diversi —
+        // gomme e capanno commissari dal trackside, quattro alberi dalla
+        // natura — e un controllo per modulo è la strada che il modulo nuovo
+        // salterà.
         //
-        // La pendenza si misura come la vede la mesh (due sonde a un passo di
-        // distanza) invece di ricavarla dal rollio: così vale anche per le
-        // discese normali, che hanno lo stesso difetto da sempre — quattro
-        // oggetti su prova e tre su suzuka, misurati il 2026-08-26.
-        const PENDENZA_TERRENO_MAX = 0.25;    // 14 gradi
-        const PASSO_SONDA = 2;
+        // Il terreno si interroga come lo vede la mesh, ai quattro angoli
+        // dell'ingombro: così vale anche per le discese normali, che hanno lo
+        // stesso difetto da sempre (6 oggetti su prova, 5 su suzuka).
+        //
+        // 3.0 unità: appena sopra le 2.74 delle tribune che l'utente ha
+        // approvato in playtest («un piccolo scarto tipo che va a gradino, ma
+        // passando in velocità neanche si vede») e sotto le 3.1 del primo
+        // albero che invece era mezzo sepolto. Il margine è stretto ed è
+        // voluto: la soglia viene da una tolleranza osservata, non da un'idea.
+        const SCARTO_TERRENO_MAX = 3.0;
         const groundPtsPorta = trackPts.filter(p => !p.bridge);
         // Su una pista in piano e senza sopraelevazioni il terreno non ha
-        // pareti: quattro sonde per oggetto su duemila oggetti si pagano, e
+        // dislivelli: quattro sonde per oggetto su duemila oggetti si pagano, e
         // qui non comprerebbero niente.
         const terrenoMosso = trackPts.some(p => (p.rollio > 0) || Math.abs(p.y || 0) > 1e-6);
-        function suUnaParete(voce) {
+        function malPosato(voce) {
             if (!terrenoMosso) return false;
             // ⚠️ La rete non sceglie dove stare: nasce attaccata alla sua
             // tribuna e ne eredita centro e rotazione. Toglierla qui
@@ -1864,11 +1877,15 @@
             // esista. Se il posto non va bene, a cadere è la tribuna, e la
             // rete la segue col taglio degli orfani.
             if (voce.asset === 'catchFence') return false;
-            const q = (dx, dz) => TrackGeometry.terrainHeightAt(
-                groundPtsPorta, voce.x + dx, voce.z + dz, embankStart, embankOuter);
-            const dyX = (q(PASSO_SONDA, 0) - q(-PASSO_SONDA, 0)) / (2 * PASSO_SONDA);
-            const dyZ = (q(0, PASSO_SONDA) - q(0, -PASSO_SONDA)) / (2 * PASSO_SONDA);
-            return Math.hypot(dyX, dyZ) > PENDENZA_TERRENO_MAX;
+            const angoli = SceneryAssetSizes.footprintCorners(voce);
+            if (!angoli || !angoli.length) return false;
+            let minimo = Infinity, massimo = -Infinity;
+            for (const a of angoli) {
+                const y = TrackGeometry.terrainHeightAt(groundPtsPorta, a.x, a.z, embankStart, embankOuter);
+                if (y < minimo) minimo = y;
+                if (y > massimo) massimo = y;
+            }
+            return (massimo - minimo) > SCARTO_TERRENO_MAX;
         }
 
         // LA PORTA. Tutto ciò che è stato deciso qui sopra passa di qui, una
@@ -1920,7 +1937,7 @@
             if (voce.asset === 'startGantry' || NON_SCARTABILI.has(voce.category)) {
                 passate.push(voce); continue;   // già registrate sopra
             }
-            if (suUnaParete(voce)) { scartate++; continue; }
+            if (malPosato(voce)) { scartate++; continue; }
             if (registro.posa(voce)) { passate.push(voce); continue; }
             scartate++;
         }
