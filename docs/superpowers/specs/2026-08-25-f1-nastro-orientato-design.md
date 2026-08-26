@@ -243,11 +243,35 @@ valgono queste:
    parametrico (raggio, gradi, verso), quindi mezzo loop o un quarto si
    aggiungono dopo senza rifare niente. Niente avvitamenti, niente salti — un
    salto contraddirebbe la decisione «non si cade mai».
-2. **In pianta il loop occupa un punto solo**: si entra e si esce dallo stesso
-   posto visto dall'alto, il tracciato 2D non devia. In pianta il percorso si
-   sovrappone a se stesso, ed e' esattamente il motivo per cui li' dentro la
-   posizione non puo' essere (x, z): allo stesso punto in pianta corrispondono
-   la salita e la discesa.
+2. **Si esce DI FIANCO a dove si e' entrati** — disegno dell'utente, 26-08.
+   Il tubo, mentre gira, si sposta di lato di circa una larghezza di pista piu'
+   margine (~30 unita'): senza quello spostamento il nastro in discesa
+   attraverserebbe quello in salita nello stesso punto, e l'auto ci passerebbe
+   dentro. In pianta il tratto acrobatico collega quindi due nodi AFFIANCATI,
+   con la stessa direzione di marcia. Resta vero che il percorso si sovrappone
+   quasi a se stesso, ed e' il motivo per cui li' dentro la posizione non puo'
+   essere (x, z): allo stesso punto in pianta corrispondono salita e discesa.
+   ⚠️ Lo spostamento laterale si distribuisce con una **smoothstep** su tutto il
+   giro, non linearmente: la smoothstep ha derivata nulla agli estremi, ed e'
+   cio' che tiene ingresso e uscita esattamente tangenti alla pista. Con una
+   rampa lineare il nastro entrerebbe storto di 11 gradi.
+
+2-bis. **La carreggiata NON cambia dentro il tubo** (decisione dell'utente):
+   «gia' sara' un tratto difficile da percorrere in gara, se poi restringiamo
+   anche la corsia e' finita».
+
+2-ter. ⚠️ **Dentro il tubo la gravita' lungo il nastro pesa UN QUARTO**
+   (`0.2` invece di `0.8`). Non e' un trucco: e' il vincolo di energia. Salire
+   di due raggi costa `v² = 4·G·R`, e con G a 0.8 il raggio massimo percorribile
+   sarebbe **12** — un loop alto quanto la pista e' larga, che per giunta si
+   completerebbe solo arrivando a 341 km/h esatti. Con G a 0.2 il tetto sale a
+   **~45** e un loop di raggio 25 (alto 50, il doppio della larghezza pista) si
+   imbocca a ~246 km/h, il 72% del massimo. L'utente vuole «loop che idealmente
+   possano essere anche grandi» e ha accettato il quarto di gravita'.
+   ⚠️ La nota della vecchia stesura — «raggio 15-25, un loop di raggio 30 chiede
+   il 79% della velocita' massima» — veniva da una formula SBAGLIATA per questo
+   modello: usava la condizione centripeta di un'auto che si stacca, mentre qui
+   l'auto e' incollata al nastro e conta solo l'energia per salire.
 3. **Le due categorie di pista arrivano DOPO**, in un blocco a se'. Per ora un
    tratto acrobatico si puo' mettere in qualunque pista.
 4. **La fase 2 si spezza in due**, come la 1b:
