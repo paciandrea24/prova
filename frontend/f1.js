@@ -5949,7 +5949,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             camera.position.copy(pos).add(_camOff);
             // Prima di mirare, non dopo: alzare la camera a lookAt gia' fatto la
             // lascerebbe puntata dove stava prima, cioe' sopra l'auto.
-            tieniLaCameraFuoriDalTerreno();
+            // ⚠️ Non dentro il tubo: li' la camera puo' stare sotto il livello
+            // del prato in tutta legittimita' (il nastro e' sospeso e si passa
+            // rovesciati), e spingerla su la staccherebbe dall'auto proprio nel
+            // punto in cui si guarda.
+            if (!nelTubo()) tieniLaCameraFuoriDalTerreno();
             _lookTgt.copy(pos).add(new THREE.Vector3(0, 1.2, 0));
             mescolaSguardoSemaforo(_lookTgt);
             camera.lookAt(_lookTgt);
@@ -6050,7 +6054,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     // alla macchina che lo contiene.
     function camRollBanking() {
         const v = myColor ? visualState[myColor] : null;
+        // ⚠️ Dentro un giro della morte il rollio della camera e' gia' nel
+        // quaternione dell'auto, che la camera eredita: sommarci anche `v.roll`
+        // — l'ultimo valore rimasto da prima di entrare — la coricherebbe di
+        // quel tanto in piu', per tutto il tubo.
+        if (v && nelTubo()) return 0;
         return (v && v.roll) || 0;
+    }
+
+    // L'auto sta dentro un tratto acrobatico? Lo dice il campione sotto di lei,
+    // che e' lo stesso dato con cui il server decide il regime di posizione.
+    function nelTubo() {
+        const v = myColor ? visualState[myColor] : null;
+        if (!v || typeof v.idx !== 'number') return false;
+        const p = trackPts[v.idx];
+        return !!(p && p.acrobatico);
     }
 
     // Contorno pista/corsia box: generato una tantum come prima. I marker
@@ -6216,6 +6234,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const idx = (target.trackIndex != null)
                     ? target.trackIndex
                     : TrackGeometry.nearestPoint(trackPts, v.x, v.z).index;
+                // Tenuto sullo stato visivo perche' serve anche alla camera
+                // (`nelTubo`), che gira in un'altra funzione: senza, dovrebbe
+                // ricalcolarselo con una seconda misura.
+                v.idx = idx;
                 // Il server aggiorna trackIndex solo al proprio tick (20/s): senza
                 // ammorbidire quota e beccheggio come già succede per x/z/angle,
                 // ogni salto di campione si vede come uno scatto, evidente sui
@@ -6260,10 +6282,29 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const rollioTarget = offBridgeEdge ? 0 : rollioAutoAt(idx, v.angle || 0);
                 v.roll = (v.roll || 0) + (rollioTarget - (v.roll || 0)) * LERP;
                 carGroup.position.set(v.x, v.y, v.z);
-                carGroup.rotation.order = 'YXZ';
-                carGroup.rotation.x = v.pitch;
-                carGroup.rotation.y = v.angle;
-                carGroup.rotation.z = v.roll;
+                // ⚠️ DENTRO UN GIRO DELLA MORTE L'AUTO SEGUE IL NASTRO, e gli
+                // angoli separati non bastano: un'auto rovesciata non si
+                // descrive con imbardata + beccheggio + rollio (a meta' salita
+                // il beccheggio passa per i 90 gradi e i tre assi collassano —
+                // gimbal lock). Si costruisce la terna dal frame del tubo, che
+                // e' la stessa che orienta l'asfalto e la camera.
+                const sottoDiLei = trackPts[idx];
+                if (sottoDiLei && sottoDiLei.acrobatico && typeof TrackAcrobatico !== 'undefined') {
+                    const f = TrackAcrobatico.frameDi(sottoDiLei);
+                    const avanti = new THREE.Vector3(f.tan.x, f.tan.y, f.tan.z);
+                    const su = new THREE.Vector3(f.su.x, f.su.y, f.su.z);
+                    const destra = new THREE.Vector3().crossVectors(su, avanti);
+                    carGroup.quaternion.setFromRotationMatrix(
+                        new THREE.Matrix4().makeBasis(destra, su, avanti));
+                } else {
+                    // ⚠️ E all'uscita si torna agli angoli: senza rimettere
+                    // l'ordine, il quaternione appena impostato resterebbe a
+                    // combinarsi con le rotazioni e l'auto uscirebbe storta.
+                    carGroup.rotation.order = 'YXZ';
+                    carGroup.rotation.x = v.pitch;
+                    carGroup.rotation.y = v.angle;
+                    carGroup.rotation.z = v.roll;
+                }
                 // Rotazione ruote basata sulla velocità
                 if (carGroup.userData.wheels && carGroup.userData.wheels.length > 0) {
                     carGroup.userData.wheelRot = (carGroup.userData.wheelRot || 0) + Math.abs(target.speed || 0) * 1.4;
