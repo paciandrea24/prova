@@ -436,7 +436,14 @@
                 // cordolo apposta, e la ghiaia lo rispingerebbe fuori dov'era
                 // — la via di fuga tornerebbe sospesa sul cuneo, con la
                 // differenza che stavolta ci sarebbe pure la sabbia sopra.
-                if (side === latoAlto[i]) continue;
+                // E la banda si azzera invece di farsi rifilare dal muro:
+                // rifilata varrebbe le due unità del margine, cioè la stessa
+                // striscia beige larga un bordino che si è deciso di non
+                // disegnare nel tratto del traguardo.
+                if (side === latoAlto[i]) {
+                    if (side > 0) gravel.right[i] = 0; else gravel.left[i] = 0;
+                    continue;
+                }
                 const larghezza = side > 0 ? gravel.right[i] : gravel.left[i];
                 if (larghezza <= 0) continue;
                 const banda = side > 0 ? base.right : base.left;

@@ -526,3 +526,63 @@ test('su una pista piana il profilo barriera non cambia di un millimetro', () =>
             `campione ${i}: i due lati sono diversi su una pista piana`);
     }
 });
+
+// L'ovale qui sopra con le curve sopraelevate. ⚠️ Serve QUESTO e non il
+// cerchio dove c'è di mezzo la ghiaia: su un cerchio chiuso findCorners non
+// trova nessuna curva (non c'è un rettilineo da cui distinguerla) e la banda
+// resta zero ovunque, quindi un test sulla ghiaia passerebbe sempre.
+// Il rollio si dichiara su tutto il giro e lo smorza fattoreCurva, come fa la
+// pista vera: sui rettilinei (raggio infinito) resta zero da sé.
+function ovaleSopraelevato(gradi) {
+    return ovale().map(p => Object.assign({}, p, { rollio: gradi * Math.PI / 180, halfWidth: 11 }));
+}
+
+test('la ghiaia non rispinge fuori il muro del lato alto', () => {
+    // È il caso che conta davvero: la ghiaia entra PRIMA del livellamento e
+    // può spingere il muro fin dove la curva chiede. Sul fianco alto non deve
+    // farlo, o le sedici unità di via di fuga tornano tutte indietro.
+    const pts = ovaleSopraelevato(30);
+    const prof = TrackGravel.barrierProfile(pts, { roadHalf: 11, pitLanePts: [], pitRoadHalf: 5 });
+    const apice = 130;                       // in mezzo alla prima curva
+    const { latoAlto } = TrackGeometry.rialzoBordi(pts, apice, 11);
+    assert.equal(latoAlto !== 0, true, 'il caso di prova deve essere sopraelevato davvero');
+    const grezza = TrackGravel.gravelProfile(pts, { roadHalf: 11 });
+    const banda = latoAlto > 0 ? grezza.right : grezza.left;
+    assert.ok(banda[apice] > 5, `il caso di prova deve avere ghiaia sul lato alto (${banda[apice].toFixed(1)})`);
+    assert.ok(TrackGravel.barrierAt(prof, apice, latoAlto) < 11 + TrackGravel.CURB_W + 4,
+        `il muro alto sta a ${TrackGravel.barrierAt(prof, apice, latoAlto).toFixed(1)}: la ghiaia l'ha rispinto fuori`);
+});
+
+test('la ghiaia non passa mai oltre il muro del suo lato', () => {
+    // Vale ovunque, non solo sul banking: è l'invariante che tiene insieme le
+    // due bande. Sul lato alto di una sopraelevata, dove il muro si è
+    // avvicinato al cordolo, è l'unica cosa che impedisce alla sabbia di
+    // uscire dal circuito.
+    for (const gradi of [0, 18, 35]) {
+        const pts = ovaleSopraelevato(gradi);
+        const prof = TrackGravel.barrierProfile(pts, { roadHalf: 11, pitLanePts: [], pitRoadHalf: 5 });
+        for (let i = 0; i < pts.length; i++) {
+            for (const side of [-1, 1]) {
+                const muro = TrackGravel.barrierAt(prof, i, side);
+                const banda = side > 0 ? prof.gravel.right[i] : prof.gravel.left[i];
+                const fineGhiaia = 11 + TrackGravel.CURB_W + banda;
+                assert.ok(fineGhiaia <= muro + 1e-9,
+                    `${gradi} gradi, campione ${i}, lato ${side}: la ghiaia arriva a ${fineGhiaia.toFixed(1)}, il muro sta a ${muro.toFixed(1)}`);
+            }
+        }
+    }
+});
+
+test('sul fianco alto non resta un bordino di ghiaia largo un cordolo', () => {
+    // Rifilata sul muro, la banda del lato alto varrebbe le due unità del
+    // margine: una striscia beige larga un bordino, che è esattamente ciò che
+    // si era deciso di non disegnare nel tratto del traguardo.
+    const pts = ovaleSopraelevato(30);
+    const prof = TrackGravel.barrierProfile(pts, { roadHalf: 11, pitLanePts: [], pitRoadHalf: 5 });
+    for (let i = 0; i < pts.length; i++) {
+        const { latoAlto } = TrackGeometry.rialzoBordi(pts, i, 11);
+        if (!latoAlto) continue;
+        const banda = latoAlto > 0 ? prof.gravel.right[i] : prof.gravel.left[i];
+        assert.equal(banda, 0, `campione ${i}: ${banda.toFixed(2)} unità di ghiaia sul fianco alto`);
+    }
+});
