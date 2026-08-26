@@ -2313,6 +2313,10 @@ function updateTrackIndex(p, track) {
     // curva. Al client non si manda — ha già `trackIndex` e i punti pista, e il
     // rollio se lo legge da lì.
     p.rollio = track.points[p.trackIndex].rollio;
+    // E il giro della morte: dentro il tubo la gravita' pesa un quarto e la
+    // posizione la comanda il nastro. Stesso schema degli altri due campi —
+    // scritto qui, letto da chi serve, mai ricalcolato a valle.
+    p.acrobatico = !!track.points[p.trackIndex].acrobatico;
 }
 
 function checkpointWindowFor(track) {

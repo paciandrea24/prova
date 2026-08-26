@@ -65,9 +65,37 @@ function isGravitaNastroActive() {
 // Negativa in salita (frena), positiva in discesa (spinge). Una pendenza
 // assente o malformata vale "piano": un NaN qui finirebbe in p.speed e da lì in
 // posizione, tempi sul giro e classifica, senza un errore che lo dica.
-function accelerazionePendenza(pendenza) {
+// DENTRO IL GIRO DELLA MORTE LA GRAVITA' PESA UN QUARTO.
+//
+// Non e' uno sconto estetico, e' il vincolo di energia: salire di due raggi
+// costa v² = 4·G·R. Con G a 0.8 il raggio massimo percorribile sarebbe 12 — un
+// loop alto quanto la pista e' larga, e per giunta da imboccare a 341 km/h
+// esatti per fermarsi giusto in cima, cioe' mai. Con G a 0.2 il tetto sale a
+// ~45 e un loop di raggio 25 (alto 50, il doppio della larghezza pista) si
+// prende a 246 km/h, il 72% del massimo.
+//
+// Scelta dell'utente il 2026-08-26: «io voglio dei loop che idealmente possano
+// essere anche grandi, quindi accetto la tua proposta di rendere la gravita' un
+// quarto rispetto al resto dentro il loop». Dentro il tubo la fisica e'
+// comunque un regime dichiarato — l'auto e' incollata al nastro e il fuoripista
+// non esiste — quindi non e' una fisica che cambia di nascosto.
+//
+// ⚠️ Un test lega questo numero al raggio massimo del modello dei tratti: se
+// qualcuno alza RAGGIO_ACROBATICO_MAX senza abbassare questo, il default
+// dell'editor diventa un loop che nessuno completa, e il test lo dice.
+const G_ACROBATICO = G_NASTRO / 4;
+
+// Negativa in salita (frena), positiva in discesa (spinge). Una pendenza
+// assente o malformata vale "piano": un NaN qui finirebbe in p.speed e da lì in
+// posizione, tempi sul giro e classifica, senza un errore che lo dica.
+//
+// `g` serve al giro della morte, dove la gravita' pesa un quarto: senza
+// argomento vale quella normale, quindi per tutto il resto della pista non
+// cambia niente.
+function accelerazionePendenza(pendenza, g) {
     if (typeof pendenza !== 'number' || !Number.isFinite(pendenza)) return 0;
-    const a = -G_NASTRO * Math.sin(pendenza);
+    const peso = (typeof g === 'number' && Number.isFinite(g)) ? g : G_NASTRO;
+    const a = -peso * Math.sin(pendenza);
     // In piano Math.sin(0) vale 0 e -G * 0 vale -0: un numero che si comporta
     // come zero dappertutto tranne nei confronti stretti (Object.is(-0, 0) è
     // false). Si normalizza qui, così un -0 non gira per la fisica a far
@@ -117,6 +145,6 @@ function pistaPercorribile(points, accelDisponibile) {
 }
 
 module.exports = {
-    G_NASTRO, ACCEL_NOMINALE, isGravitaNastroActive, accelerazionePendenza,
+    G_NASTRO, G_ACROBATICO, ACCEL_NOMINALE, isGravitaNastroActive, accelerazionePendenza,
     pendenzaMassimaInSalita, pistaPercorribile
 };

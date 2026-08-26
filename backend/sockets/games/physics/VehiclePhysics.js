@@ -14,7 +14,7 @@ const AerodynamicsModel = require('./AerodynamicsModel');
 const CorneringGripModel = require('./CorneringGripModel');
 const { integratePosition, applyOffTrackDrag } = require('./VehicleMotionModel');
 const { isCorneringGripModelActive, CORNERING_EXCESS_PENALTY_MAX } = require('./TyreSlipModel');
-const { isGravitaNastroActive, accelerazionePendenza } = require('./GravitaNastro');
+const { isGravitaNastroActive, accelerazionePendenza, G_ACROBATICO } = require('./GravitaNastro');
 
 const { MAX_SPEED, ACCEL, FRICTION, effectiveMaxSpeed, effectiveAccel } = PowertrainModel;
 const { BRAKE_MULT, effectiveBrakeMult } = BrakingModel;
@@ -54,7 +54,12 @@ function updateVelocity(p, isQuali, slipstreamMult) {
     // invece andare sotto zero, ed è voluto — ci si ferma e si riscende
     // all'indietro, che è ciò che nella fase 2 impedirà di percorrere un giro
     // della morte a passo d'uomo.
-    if (isGravitaNastroActive()) p.speed += accelerazionePendenza(p.pendenza);
+    // ⚠️ Dentro un giro della morte la gravita' pesa un quarto: e' cio' che
+    // rende percorribile un loop grande. Il flag su `p` lo scrive un posto solo
+    // (updateTrackIndex, o TrattoAcrobatico.avanza quando comanda il nastro).
+    if (isGravitaNastroActive()) {
+        p.speed += accelerazionePendenza(p.pendenza, p.acrobatico ? G_ACROBATICO : undefined);
+    }
 
     // Il tetto di velocità può essersi abbassato (usura aumentata da fermo non
     // succede, ma cambiando mescola in futuro pit stop sì): non lasciare mai

@@ -61,3 +61,31 @@ test('la gravita\' e\' accesa salvo un no esplicito', () => {
     if (prima === undefined) delete process.env.F1_GRAVITA_NASTRO;
     else process.env.F1_GRAVITA_NASTRO = prima;
 });
+
+// --- il giro della morte (fase 2a) ---
+
+test('dentro il tubo la gravita\' pesa un quarto', () => {
+    const { G_NASTRO, G_ACROBATICO, accelerazionePendenza } = require('./GravitaNastro.js');
+    assert.equal(G_ACROBATICO, G_NASTRO / 4);
+    assert.ok(Math.abs(accelerazionePendenza(Math.PI / 2, G_ACROBATICO) + G_ACROBATICO) < 1e-12);
+    // Senza il secondo argomento non cambia NIENTE per il resto della pista.
+    assert.equal(accelerazionePendenza(0.3), accelerazionePendenza(0.3, G_NASTRO));
+    assert.equal(accelerazionePendenza(0.3, 'un quarto'), accelerazionePendenza(0.3));
+});
+
+test('col quarto di gravita\' il raggio massimo resta percorribile', () => {
+    // Lega i due numeri: se qualcuno alzasse RAGGIO_ACROBATICO_MAX senza
+    // abbassare G_ACROBATICO, il default dell'editor diventerebbe un loop che
+    // nessuno completa — e questo test lo direbbe subito.
+    const { G_ACROBATICO } = require('./GravitaNastro.js');
+    const { MAX_SPEED } = require('./PowertrainModel.js');
+    const TrackAcrobatico = require('../../../../frontend/shared/trackAcrobatico.js');
+    const TrackSegmenti = require('../../../../frontend/shared/trackSegmenti.js');
+    const serve = TrackAcrobatico.velocitaMinima(TrackSegmenti.RAGGIO_ACROBATICO_MAX, G_ACROBATICO);
+    assert.ok(serve < MAX_SPEED,
+        `il raggio massimo (${TrackSegmenti.RAGGIO_ACROBATICO_MAX}) chiede ${serve.toFixed(2)} u/tick su ${MAX_SPEED}`);
+    // E il default deve avere margine vero, non stare sul filo.
+    const default_ = TrackAcrobatico.velocitaMinima(TrackSegmenti.RAGGIO_ACROBATICO_DEFAULT, G_ACROBATICO);
+    assert.ok(default_ < MAX_SPEED * 0.8,
+        `il raggio di default chiede il ${(100 * default_ / MAX_SPEED).toFixed(0)}% della velocita' massima`);
+});

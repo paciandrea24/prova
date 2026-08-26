@@ -132,13 +132,13 @@ function normalizzaAbrasivita(valore) {
 }
 
 function buildTrack(id, raw) {
-    const inPianta = TrackGeometry.sampleLoop(raw.controlPoints, SAMPLES);
-    // I GIRI DELLA MORTE ENTRANO QUI, prima che si cuocia qualunque cosa sui
-    // campioni: larghezza, pendenza e rollio devono vederli come punti pista
-    // normali. Una pista senza tratti acrobatici torna indietro identica —
-    // lo stesso array, non una copia.
-    const points = TrackAcrobatico.inserisciNeiCampioni(
-        inPianta, raw.geometria, TrackGeometry.lapLength(inPianta) / inPianta.length);
+    // I GIRI DELLA MORTE SONO GIA' DENTRO: `campionaPista` fa il campionamento
+    // in pianta e ci inserisce i tubi, ed e' la stessa funzione che usa la
+    // scena del client — se fossero due, server e client vedrebbero piste
+    // diverse. Una pista senza tratti acrobatici torna indietro identica.
+    // Tutto quello che si cuoce qui sotto (larghezza, pendenza, rollio) deve
+    // vedere i campioni del tubo come punti pista normali.
+    const points = TrackAcrobatico.campionaPista(raw, SAMPLES);
 
     // LA LARGHEZZA LOCALE, GARANTITA SU OGNI CAMPIONE.
     //

@@ -19,11 +19,14 @@
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
         module.exports = factory(require('./trackGeometry.js'), require('./trackGravel.js'),
-                                 require('./trackScenery.js'), require('./toonPalette.js'));
+                                 require('./trackScenery.js'), require('./toonPalette.js'),
+                                 require('./trackAcrobatico.js'));
     } else {
-        root.F1Scena = factory(root.TrackGeometry, root.TrackGravel, root.TrackScenery, root.ToonPalette);
+        root.F1Scena = factory(root.TrackGeometry, root.TrackGravel, root.TrackScenery, root.ToonPalette,
+                               root.TrackAcrobatico);
     }
-})(typeof self !== 'undefined' ? self : this, function (TrackGeometry, TrackGravel, TrackScenery, ToonPalette) {
+})(typeof self !== 'undefined' ? self : this, function (TrackGeometry, TrackGravel, TrackScenery, ToonPalette,
+                                                        TrackAcrobatico) {
 
     // Il global, per arrivare a TrackMeshBuilder senza richiederlo (vedi sotto).
     const glob = typeof self !== 'undefined' ? self
@@ -57,7 +60,11 @@
         // tutto, ora che il prato parte dal terrapieno si vedrebbe il cielo.
         const embankmentStart = roadHalf + CURB_W;
 
-        const trackPts = TrackGeometry.sampleLoop(trackData.controlPoints, N_SAMPLES);
+        // ⚠️ `campionaPista` e non `sampleLoop`: e' la stessa funzione con cui
+        // il server costruisce i suoi campioni, e ci mette dentro i giri della
+        // morte. Campionandosi la pista per conto suo, il client disegnerebbe
+        // un circuito senza tubi mentre la fisica ne percorre uno che ce li ha.
+        const trackPts = TrackAcrobatico.campionaPista(trackData, N_SAMPLES);
         // Aggancia il primo/ultimo punto della corsia box al bordo pista vero,
         // con la stessa funzione che usa il server (trackLoader.js::buildTrack)
         // sugli stessi punti grezzi: il disegno corrisponde ESATTAMENTE alla

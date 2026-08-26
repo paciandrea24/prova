@@ -179,5 +179,19 @@
     }
 
 
-    return { puntiDelGiro, frameDi, velocitaMinima, inserisciNeiCampioni };
+    // I CAMPIONI DELLA PISTA, PER TUTTI: campionamento in pianta più i giri
+    // della morte, in un posto solo.
+    //
+    // ⚠️ Chiamano qui il caricatore del server e la scena del client. Finché il
+    // client si campionava la pista per conto suo, con il tubo in mezzo i due
+    // vedevano piste diverse: il muro del server stava a 18.32 dove il client
+    // lo disegnava a 18.37, la griglia dichiarava un indice a 33 campioni da
+    // dove l'auto si trovava davvero, e la scenografia cotta non era quella del
+    // gioco. Tre sintomi, una causa sola.
+    function campionaPista(trackData, n) {
+        const pts = TrackGeometry.sampleLoop(trackData.controlPoints, n);
+        return inserisciNeiCampioni(pts, trackData.geometria, TrackGeometry.lapLength(pts) / pts.length);
+    }
+
+    return { puntiDelGiro, frameDi, velocitaMinima, inserisciNeiCampioni, campionaPista };
 });
