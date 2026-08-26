@@ -6083,7 +6083,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     const minimapTrackEl = document.getElementById('minimap-track');
     const minimapPitEl = document.getElementById('minimap-pit');
     const minimapT = minimapTransform([...trackPts, ...PIT_PTS]);
-    const dPista = minimapPathString(trackPts, minimapT, true);
+    // ⚠️ IL GIRO DELLA MORTE NON SI DISEGNA IN PIANTA: visto dall'alto il tubo
+    // va avanti e torna indietro sullo stesso segmento, e sulla mappa
+    // diventerebbe uno sgorbio che nessuno sa leggere. Si toglie dal tracciato
+    // — la linea passa dritta, come passa la pista sotto — e al suo posto si
+    // mette un anello, che e' il simbolo con cui i giochi lo indicano da
+    // sempre. (Spec fase 2: «va marcato con un simbolo, non disegnato».)
+    const puntiMappa = trackPts.filter(p => !p.acrobatico);
+    const dPista = minimapPathString(puntiMappa, minimapT, true);
+    for (const p of trackPts) {
+        if (!p.acrobatico || Math.abs((p.loopAngolo || 0) - Math.PI) > 0.1) continue;
+        // Il punto piu' alto del giro: uno solo per tubo. Stessa trasformazione
+        // di minimapPathString, che lavora sui coefficienti e non su una
+        // funzione.
+        const anello = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        anello.setAttribute('cx', (p.x * minimapT.scale + minimapT.offX).toFixed(1));
+        anello.setAttribute('cy', (p.z * minimapT.scale + minimapT.offZ).toFixed(1));
+        anello.setAttribute('r', 3.2);
+        anello.setAttribute('fill', 'none');
+        anello.setAttribute('stroke', '#ffcc33');
+        anello.setAttribute('stroke-width', 1.4);
+        minimapTrackEl.parentNode.appendChild(anello);
+    }
     const dBox = minimapPathString(PIT_PTS, minimapT, false);
     minimapTrackEl.setAttribute('d', dPista);
     minimapPitEl.setAttribute('d', dBox);

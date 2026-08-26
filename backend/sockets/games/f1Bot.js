@@ -252,6 +252,13 @@ function cornerTargetSpeed(points, idx, scanSamples, localSamples, metersPerSamp
     for (let offset = 0; offset <= scanSamples; offset += step) {
         const i1 = lookaheadIndex(n, idx, offset);
         const i2 = lookaheadIndex(n, idx, offset + localSamples);
+        // ⚠️ IL GIRO DELLA MORTE NON E' UNA CURVA DA FRENARE. In pianta il tubo
+        // va avanti e torna indietro sullo stesso segmento, quindi qualunque
+        // finestra che lo tocchi misura un raggio ridicolo e questa funzione
+        // ordinerebbe di rallentare fino a fermarsi — proprio dove invece
+        // bisogna arrivare lanciati, o non si sale. Li' dentro non c'e' niente
+        // da decidere: la traiettoria la impone il nastro.
+        if (points[i1].acrobatico || points[i2].acrobatico) continue;
         const w = windowRadius(points, i1, i2, localArcM);
         if (!w) continue;   // praticamente dritto, nessun raggio significativo da questa finestra
         // gripCapacityFactor arriva già scalato dal chiamante (vedi

@@ -9,6 +9,7 @@
 const path = require('path');
 const fs = require('fs');
 const { physics } = require('../sockets/games/f1GameSocket.js');
+const TrattoAcrobatico = require('../sockets/games/physics/TrattoAcrobatico.js');
 const { updateBotInputs } = require('../sockets/games/f1Bot.js');
 const { loadTrack, listTracks } = require('../sockets/games/trackLoader.js');
 
@@ -73,12 +74,22 @@ function simulateLap(track, opts) {
     for (let tick = 0; tick < maxTicks; tick++) {
         updateBotInputs(game, deps);
         physics.updateVelocity(p, true, 1);
+        // ⚠️ QUESTA E' UNA SECONDA COPIA della catena di f1GameSocket.tickGame,
+        // e va tenuta allineata a mano: quando il giro della morte e' arrivato,
+        // il simulatore non lo sapeva e l'auto proseguiva dritta in pianta
+        // dentro il tubo, senza completare mai il giro.
         for (let s = 0; s < physics.COLLISION_SUBSTEPS; s++) {
-            physics.integratePosition(p, 1 / physics.COLLISION_SUBSTEPS);
-            physics.applyBarrier(p, track);
+            if (TrattoAcrobatico.entrato(p, track)) {
+                TrattoAcrobatico.avanza(p, track, 1 / physics.COLLISION_SUBSTEPS);
+            } else {
+                physics.integratePosition(p, 1 / physics.COLLISION_SUBSTEPS);
+                physics.applyBarrier(p, track);
+            }
         }
-        physics.applyOffTrackDrag(p, track);
-        physics.updateTrackIndex(p, track);
+        if (!p.acrobatico) {
+            physics.applyOffTrackDrag(p, track);
+            physics.updateTrackIndex(p, track);
+        }
 
         const idx = p.trackIndex || 0;
         // distanceFromRacingLine/headingVsTangentDeg/steer/target: già

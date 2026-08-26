@@ -139,6 +139,12 @@ function pistaPercorribile(points, accelDisponibile) {
     const limite = pendenzaMassimaInSalita(
         typeof accelDisponibile === 'number' ? accelDisponibile : ACCEL_NOMINALE);
     for (const p of points) {
+        // ⚠️ Dentro un giro della morte la pendenza arriva a 90 gradi e oltre,
+        // ed e' normale: li' la gravita' pesa un quarto e la posizione la
+        // comanda il nastro, quindi il conto di questa funzione — «con questa
+        // accelerazione, questa salita si sale?» — non descrive niente. Il tubo
+        // ha il suo criterio, TrackAcrobatico.velocitaMinima.
+        if (p.acrobatico) continue;
         if ((p.pendenza || 0) > limite) return false;
     }
     return true;
