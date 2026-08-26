@@ -1,6 +1,10 @@
 // frontend/shared/trackMeshBuilder.js
 (function (root) {
     const TrackGeometry = root.TrackGeometry;
+    // Il giro della morte: dentro il tubo il nastro non è orizzontale, e dove
+    // punta lo dice il frame — mai un calcolo fatto qui, o un giorno il tubo
+    // sarebbe girato di là e l'auto di qua.
+    const TrackAcrobatico = root.TrackAcrobatico;
     // Quota del terreno collinare: stessa funzione usata da trackScenery per
     // piantarci sopra gli alberi dei boschi. Se le due divergessero, gli
     // alberi finirebbero sepolti o sospesi in aria.
@@ -58,26 +62,58 @@
     // (`p.halfWidth`, messa dai tratti dell'editor e garantita dal caricatore)
     // vince quella: e' cosi' che un rettilineo puo' essere piu' largo di una
     // curva senza che nessun altro modulo debba saperlo.
+    // I DUE BORDI DEL NASTRO, campione per campione.
+    //
+    // Estratta da buildRibbon perché il giro della morte l'ha resa una
+    // decisione vera e propria — e perché così si può provare senza Three.js.
+    //
+    // ⚠️ Dentro un tratto acrobatico il nastro NON è orizzontale: il fianco lo
+    // dà il frame del tubo, non la normale in pianta, che in cima al loop
+    // punterebbe da tutt'altra parte e disegnerebbe un nastro piatto dove
+    // l'auto passa a testa in giù.
+    function bordiDelNastro(pts, halfW) {
+        const out = [];
+        for (let i = 0; i < pts.length; i++) {
+            const p = pts[i];
+            const w = (typeof p.halfWidth === 'number' && p.halfWidth > 0) ? p.halfWidth : halfW;
+            if (p.acrobatico && TrackAcrobatico) {
+                const f = TrackAcrobatico.frameDi(p);
+                const alto = 0.02;                       // lo stesso scostamento del nastro normale
+                const cx = p.x + f.su.x * alto, cy = (p.y || 0) + f.su.y * alto, cz = p.z + f.su.z * alto;
+                out.push([
+                    { x: cx + f.lat.x * w, y: cy + f.lat.y * w, z: cz + f.lat.z * w },
+                    { x: cx - f.lat.x * w, y: cy - f.lat.y * w, z: cz - f.lat.z * w },
+                ]);
+                continue;
+            }
+            const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
+            const y = (p.y || 0) + 0.02;
+            out.push([
+                { x: p.x + nx * w, y: y + TrackGeometry.alzataLaterale(pts, i, w, w), z: p.z + nz * w },
+                { x: p.x - nx * w, y: y + TrackGeometry.alzataLaterale(pts, i, w, -w), z: p.z - nz * w },
+            ]);
+        }
+        return out;
+    }
+
     function buildRibbon(container, pts, halfW, material) {
         const n = pts.length;
         const pos = new Float32Array(n * 2 * 3);
         const uv  = new Float32Array(n * 2 * 2);
         const idx = [];
+        const bordi = bordiDelNastro(pts, halfW);
 
         for (let i = 0; i < n; i++) {
-            const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
-            const p = pts[i];
-            const y = (p.y || 0) + 0.02;
-            const w = (typeof p.halfWidth === 'number' && p.halfWidth > 0) ? p.halfWidth : halfW;
-            // Sopraelevazione: si alza il bordo ESTERNO della curva, l'interno
-            // resta alla quota del punto — così il nastro si appoggia sul
-            // terreno che c'è già invece di sprofondarci dentro. Di quanto salga
-            // ogni bordo lo dice alzataLaterale, mai un calcolo fatto qui:
-            // cordoli, ghiaia e barriere chiedono alla stessa funzione, o un
-            // giorno l'asfalto si alzerebbe da una parte e il cordolo dall'altra.
+            // Dove stanno i due bordi lo dice `bordiDelNastro`, e in nessun
+            // altro posto: la sopraelevazione alza il bordo esterno della curva,
+            // il giro della morte ruota tutto il profilo, e cordoli, ghiaia e
+            // barriere chiedono alle stesse funzioni. Con due calcoli separati,
+            // un giorno l'asfalto si alzerebbe da una parte e il cordolo
+            // dall'altra.
             const b = i * 6;
-            pos[b]     = p.x + nx * w; pos[b + 1] = y + TrackGeometry.alzataLaterale(pts, i, w, w);  pos[b + 2] = p.z + nz * w;
-            pos[b + 3] = p.x - nx * w; pos[b + 4] = y + TrackGeometry.alzataLaterale(pts, i, w, -w); pos[b + 5] = p.z - nz * w;
+            const [destro, sinistro] = bordi[i];
+            pos[b]     = destro.x;   pos[b + 1] = destro.y;   pos[b + 2] = destro.z;
+            pos[b + 3] = sinistro.x; pos[b + 4] = sinistro.y; pos[b + 5] = sinistro.z;
 
             const u = i / (n - 1);
             const ub = i * 4;
@@ -182,8 +218,18 @@
                 // orizzontale mentre la pista si inclina — cioè mezzo sepolto
                 // all'interno e sospeso all'esterno.
                 const b = i * 6;
-                pos[b]     = p.x + nx * inner; pos[b + 1] = y + TrackGeometry.alzataLaterale(pts, i, mezza, inner); pos[b + 2] = p.z + nz * inner;
-                pos[b + 3] = p.x + nx * outer; pos[b + 4] = y + TrackGeometry.alzataLaterale(pts, i, mezza, outer); pos[b + 5] = p.z + nz * outer;
+                if (p.acrobatico && TrackAcrobatico) {
+                    // Dentro il giro della morte il cordolo gira col nastro: la
+                    // normale in pianta lo lascerebbe orizzontale mentre
+                    // l'asfalto si rovescia, cioe' a tagliare il tubo a meta'.
+                    const f = TrackAcrobatico.frameDi(p);
+                    const cx = p.x + f.su.x * 0.04, cy = (p.y || 0) + f.su.y * 0.04, cz = p.z + f.su.z * 0.04;
+                    pos[b]     = cx + f.lat.x * inner; pos[b + 1] = cy + f.lat.y * inner; pos[b + 2] = cz + f.lat.z * inner;
+                    pos[b + 3] = cx + f.lat.x * outer; pos[b + 4] = cy + f.lat.y * outer; pos[b + 5] = cz + f.lat.z * outer;
+                } else {
+                    pos[b]     = p.x + nx * inner; pos[b + 1] = y + TrackGeometry.alzataLaterale(pts, i, mezza, inner); pos[b + 2] = p.z + nz * inner;
+                    pos[b + 3] = p.x + nx * outer; pos[b + 4] = y + TrackGeometry.alzataLaterale(pts, i, mezza, outer); pos[b + 5] = p.z + nz * outer;
+                }
 
                 if (i > 0) { dist += stepLen; if (dist >= STRIPE) { dist = 0; flip = !flip; } }
                 flipAt[i] = flip;
@@ -430,6 +476,12 @@
                 const baseY = quotaBase ? quotaBase(i, bx, bz) : (p.y || 0);
 
                 if (mergePoints) gapped[i] = TrackGeometry.nearestPoint(mergePoints, bx, bz).dist < BARRIER_PIT_GAP_THRESHOLD;
+                // ⚠️ NEL TUBO NON C'E' MURO. Un giro della morte e' chiuso per
+                // costruzione — non esiste un fuori da cui trattenere l'auto — e
+                // una barriera disegnata qui resterebbe orizzontale a terra
+                // mentre il nastro si rovescia, tagliando il tubo in due. Si
+                // riusa il meccanismo dei buchi che gia' serve alla corsia box.
+                if (pts[i].acrobatico) gapped[i] = true;
 
                 pos[i * 6]     = bx; pos[i * 6 + 1] = baseY + 0.05;   pos[i * 6 + 2] = bz;
                 pos[i * 6 + 3] = bx; pos[i * 6 + 4] = baseY + HEIGHT; pos[i * 6 + 5] = bz;
@@ -1114,7 +1166,7 @@
     // correzione delle celle di confine qui sotto: chi non lo passa ottiene
     // il comportamento di prima, riga per riga.
     function buildGround(container, trackPts, embankOuter, worldSize, embankPlateau) {
-        const groundPts = trackPts.filter(p => !p.bridge);
+        const groundPts = trackPts.filter(p => !p.bridge && !p.acrobatico);
         const material = new THREE.MeshStandardMaterial({
             color: 0xffffff, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide
         });
@@ -1509,5 +1561,5 @@
         }
     }
 
-    root.TrackMeshBuilder = { buildRibbon, buildOpenRibbon, buildCurbs, buildGravel, buildBarriers, buildStartLine, buildStartingGrid, buildPitLane, buildEmbankment, buildGround, buildBridgeDecks };
+    root.TrackMeshBuilder = { bordiDelNastro, buildRibbon, buildOpenRibbon, buildCurbs, buildGravel, buildBarriers, buildStartLine, buildStartingGrid, buildPitLane, buildEmbankment, buildGround, buildBridgeDecks };
 })(window);

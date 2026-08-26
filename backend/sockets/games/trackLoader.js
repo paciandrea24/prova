@@ -333,6 +333,16 @@ function buildTrack(id, raw) {
         // una di notte, perche' leggono la stessa riga.
         notturno: raw.notturno === true,
         points,
+        // I campioni CHE STANNO A TERRA, cioe' tutti tranne quelli dentro un
+        // giro della morte.
+        //
+        // ⚠️ Servono a chi cerca «il punto di pista piu' vicino» IN PIANTA. In
+        // pianta il tubo si sovrappone al rettilineo da cui parte — si entra e
+        // si esce da posizioni affiancate — quindi una ricerca sui punti
+        // completi puo' agganciare un'auto che corre sull'asfalto a un campione
+        // che sta venti metri sopra di lei, dentro il loop. Il fuoripista
+        // chiedeva proprio quello.
+        groundPoints: points.some(p => p.acrobatico) ? points.filter(p => !p.acrobatico) : points,
         roadHalf: raw.roadHalfWidth,
         barrierProfile,
         pitGapPts,

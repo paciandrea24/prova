@@ -43,6 +43,7 @@ global.THREE = {
 global.window = {
     TrackGeometry: require('./trackGeometry.js'),
     SceneryHills: require('./sceneryHills.js'),
+    TrackAcrobatico: require('./trackAcrobatico.js'),
     ToonPalette: require('./toonPalette.js'),
 };
 require('./trackMeshBuilder.js');
@@ -912,4 +913,42 @@ test('la ghiaia sta sopra il terreno di un margine che regge anche da lontano', 
     }
     assert.ok(minimo >= 0.1,
         `la ghiaia sta solo ${minimo.toFixed(3)} sopra il terreno: a distanza le due superfici si contendono il pixel`);
+});
+
+// --- il giro della morte (fase 2a) ---
+
+test('il nastro del tubo e\' orientato col frame, non con la normale in pianta', () => {
+    // Si misura sulla GEOMETRIA prodotta: in cima al loop il nastro e'
+    // rovesciato ma orizzontale, quindi i suoi due bordi stanno alla stessa
+    // quota e restano larghi quanto la pista.
+    const TrackAcrobatico = global.window.TrackAcrobatico;
+    const pts = TrackAcrobatico.puntiDelGiro({
+        ingresso: { x: 0, y: 0, z: 0 }, uscita: { x: 30, y: 0, z: 0 },
+        dirX: 0, dirZ: 1, raggio: 25, passo: 4,
+    }).map(p => Object.assign(p, { halfWidth: 11 }));
+    const bordi = TrackMeshBuilder.bordiDelNastro(pts, 11);
+    let iCima = 0;
+    for (let i = 1; i < pts.length; i++) if (pts[i].y > pts[iCima].y) iCima = i;
+    const [a, b] = bordi[iCima];
+    assert.ok(Math.abs(a.y - b.y) < 0.2, `in cima i due bordi stanno a ${a.y.toFixed(1)} e ${b.y.toFixed(1)}`);
+    assert.ok(Math.abs(Math.hypot(a.x - b.x, a.z - b.z) - 22) < 0.5,
+        `in cima il nastro e' largo ${Math.hypot(a.x - b.x, a.z - b.z).toFixed(1)}, doveva restare 22`);
+    // E i bordi devono stare SOPRA il centro del tubo (che li' e' in alto):
+    // se il frame fosse ignorato, cadrebbero alla quota del punto.
+    assert.ok(a.y > 45, `il bordo del nastro in cima sta a ${a.y.toFixed(1)}`);
+});
+
+test('su una pista piana i bordi del nastro non cambiano di un millimetro', () => {
+    const pts = [];
+    for (let i = 0; i < 40; i++) {
+        const t = (i / 40) * Math.PI * 2;
+        pts.push({ x: Math.cos(t) * 200, z: Math.sin(t) * 200, y: 0, halfWidth: 11 });
+    }
+    const bordi = TrackMeshBuilder.bordiDelNastro(pts, 11);
+    for (let i = 0; i < pts.length; i++) {
+        const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
+        assert.ok(Math.abs(bordi[i][0].x - (pts[i].x + nx * 11)) < 1e-9, `campione ${i}`);
+        assert.ok(Math.abs(bordi[i][0].z - (pts[i].z + nz * 11)) < 1e-9, `campione ${i}`);
+        assert.ok(Math.abs(bordi[i][0].y - 0.02) < 1e-9, `campione ${i}: quota ${bordi[i][0].y}`);
+    }
 });

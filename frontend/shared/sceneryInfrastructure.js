@@ -64,10 +64,10 @@
         const { trackPts, barrierProfile, barrierDist } = ctx;
         const n = trackPts.length;
         const passo = TrackGeometry.lapLength(trackPts) / n;
-        const groundPts = ctx.groundPts || trackPts.filter(p => !p.bridge);
+        const groundPts = ctx.groundPts || trackPts.filter(p => !p.bridge && !p.acrobatico);
 
         const p = trackPts[idx];
-        const viadotto = !!p.bridge;
+        const viadotto = !!(p.bridge || p.acrobatico);
         // Il dislivello è quello fra la pista e il TERRENO sottostante: è
         // quanto sprofonda un oggetto posato lì di fianco, che prende la
         // quota del terreno e non quella della pista.
@@ -151,7 +151,7 @@
         const n = trackPts.length;
         const giro = TrackGeometry.lapLength(trackPts);
         const passoCampioni = Math.max(1, Math.round(PASSO / (giro / n)));
-        const groundPts = trackPts.filter(p => !p.bridge);
+        const groundPts = trackPts.filter(p => !p.bridge && !p.acrobatico);
         const curve = SceneryTrackside.findCorners(trackPts);
         const fitsUnderBridge = ctx.fitsUnderBridge || (() => true);
         const insideBox = ctx.insidePlayerBoxFootprint || (() => false);

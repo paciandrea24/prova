@@ -116,7 +116,7 @@
                             playerBoxFootprints, insidePlayerBoxFootprint,
                             fitsUnderBridge, pitRoadHalf, accepted, barrierProfile) {
         const layout = [];
-        const groundPts = trackPts.filter(p => !p.bridge);
+        const groundPts = trackPts.filter(p => !p.bridge && !p.acrobatico);
         const n = trackPts.length;
         const fits = fitsUnderBridge || (() => true);
         const pitHalf = pitRoadHalf || 0;
@@ -248,7 +248,7 @@
         let migliore = null;
         for (let d = 0; d < Math.floor(n / 4); d += 4) {
             for (const idx of [(half + d) % n, ((half - d) % n + n) % n]) {
-                if (trackPts[idx].bridge) continue;
+                if (trackPts[idx].bridge || trackPts[idx].acrobatico) continue;
                 const cand = placeAcross(trackPts, idx, groundPts, barrierDist, embankStart, embankOuter,
                                          FOOTBRIDGE_NATIVE_HALF_SPAN, barrierProfile);
                 const topH = SPANNING_HEIGHTS.footbridge * cand.scale;

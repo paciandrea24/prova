@@ -39,13 +39,22 @@ function applyOffTrackDrag(p, track) {
     // auto a ogni tick (50/s) ed e' O(1000) sui punti della pista. Serve sia
     // la distanza sia l'indice — la distanza per sapere se si e' fuori,
     // l'indice per sapere quanto e' larga la pista PROPRIO LI'.
-    const vicino = TrackGeometry.nearestPoint(track.points, p.x, p.z);
+    // ⚠️ I punti A TERRA, non tutti: in pianta i campioni di un giro della
+    // morte si sovrappongono al rettilineo da cui il tubo parte, e cercando fra
+    // tutti si finirebbe agganciati a un pezzo di pista che sta venti metri
+    // sopra — con l'auto dichiarata «in pista» mentre e' nel prato, o
+    // viceversa. Chi e' DAVVERO nel tubo non passa di qui: per lui il
+    // fuoripista non esiste (vedi tickGame).
+    const vicino = TrackGeometry.nearestPoint(track.groundPoints || track.points, p.x, p.z);
     const dist = vicino.dist;
     // La mezza carreggiata DI QUI, non quella nominale: da quando un tratto
     // puo' essere piu' largo degli altri, `track.roadHalf` descrive la pista
     // media e non quella sotto le ruote. Il caricatore garantisce il campo su
     // ogni campione, quindi qui non serve un ripiego.
-    const sotto = track.points[vicino.index];
+    // ⚠️ L'indice viene dalla lista in cui si e' cercato: leggerlo in
+    // `track.points` darebbe un campione diverso su una pista che ha un tubo,
+    // perche' le due liste hanno lunghezze diverse.
+    const sotto = (track.groundPoints || track.points)[vicino.index];
     const mezza = (sotto && typeof sotto.halfWidth === 'number')
         ? sotto.halfWidth : track.roadHalf;
     const offTrack = dist > mezza + 2;

@@ -640,7 +640,7 @@
     // "propria" non condivisa con lo scatter natura.
     function buildPaddockLayout(trackPts, pitPts, barrierDist, pitRoadHalf, mainSide, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge, boxCtx) {
         const layout = [];
-        const groundPts = trackPts.filter(p => !p.bridge);
+        const groundPts = trackPts.filter(p => !p.bridge && !p.acrobatico);
         const n = trackPts.length;
         const stepLen = TrackGeometry.lapLength(trackPts) / n;
         const halfWindowSamples = Math.max(1, Math.round((START_WINDOW_LEN / 2) / stepLen));
@@ -919,7 +919,7 @@
 
     function buildGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, accepted, rng, embankStart, embankOuter, fitsUnderBridge, mainStand, barrierProfile) {
         const layout = [];
-        const groundPts = trackPts.filter(p => !p.bridge);
+        const groundPts = trackPts.filter(p => !p.bridge && !p.acrobatico);
         const lapLen = TrackGeometry.lapLength(trackPts);
         // Quante SCHIERE tentare lungo il giro: la formula, senza tetto, sta
         // in `schiereDaTentare` accanto alle altre costanti delle tribune.
@@ -939,7 +939,7 @@
             // Mai di fianco a un tratto sopraelevato: la tribuna prenderebbe
             // la quota del terreno sottostante e finirebbe a intersecare il
             // viadotto (copertura "corrotta" segnalata dall'utente).
-            if (trackPts[idx].bridge) return false;
+            if (trackPts[idx].bridge || trackPts[idx].acrobatico) return false;
             const { x, z } = slotXZ(idx, side);
             // Il seme deve già guardare la pista che ha davanti: se cade dove
             // due branche si avvicinano, tutta la fila nasce storta e la
@@ -981,7 +981,7 @@
                 trackPts, idx, side, barrierProfile, barrierDist, GRANDSTAND_OFFSET_MARGIN,
                 ROW_MAX_COLS,
                 (m) => {
-                    if (trackPts[m.idx].bridge) return false;
+                    if (trackPts[m.idx].bridge || trackPts[m.idx].acrobatico) return false;
                     if (TrackGeometry.nearestPoint(pitPts, m.x, m.z).dist < pitRoadHalf + GRANDSTAND_PIT_MARGIN) return false;
                     for (const s of (mainStand || [])) {
                         if (Math.hypot(m.x - s.x, m.z - s.z) < MAIN_STAND_ISOLATION) return false;
@@ -1168,7 +1168,7 @@
 
     function buildMainGrandstandLayout(trackPts, pitPts, barrierDist, pitRoadHalf, side, embankStart, embankOuter, fitsUnderBridge, barrierProfile, accepted) {
         const layout = [];
-        const groundPts = trackPts.filter(p => !p.bridge);
+        const groundPts = trackPts.filter(p => !p.bridge && !p.acrobatico);
         const stackHeight = MAIN_STAND_TIER_HEIGHT * MAIN_STAND_TIERS;
         const gia = accepted || [];
 
@@ -1197,7 +1197,7 @@
                 // fa altro, e senza questi si posava su un viadotto (baku:
                 // 6 moduli su 12, che poi restavano senza rete perché la rete
                 // il controllo ce l'ha) o addosso al paddock.
-                if (trackPts[m.idx].bridge) return false;
+                if (trackPts[m.idx].bridge || trackPts[m.idx].acrobatico) return false;
                 if (TrackGeometry.nearestPoint(pitPts, m.x, m.z).dist < pitRoadHalf + GRANDSTAND_PIT_MARGIN) return false;
                 // Se lì sopra passa un cavalcavia, la tribuna lo attraversa.
                 const y = TrackGeometry.terrainHeightAt(groundPts, m.x, m.z, embankStart, embankOuter);
@@ -1241,7 +1241,7 @@
     // dagli altri oggetti già accettati (di qualunque categoria).
     function buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge) {
         const layout = [];
-        const groundPts = trackPts.filter(p => !p.bridge);
+        const groundPts = trackPts.filter(p => !p.bridge && !p.acrobatico);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist);
         const tentativi = Math.round(NATURE_ATTEMPTS * fattoreGiro(TrackGeometry.lapLength(trackPts)));
 
@@ -1288,7 +1288,7 @@
     function buildRockLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted,
                              embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge) {
         const layout = [];
-        const groundPts = trackPts.filter(p => !p.bridge);
+        const groundPts = trackPts.filter(p => !p.bridge && !p.acrobatico);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist + ROCK_MAX_MARGIN);
 
         const tentativi = Math.round(ROCK_ATTEMPTS * fattoreGiro(TrackGeometry.lapLength(trackPts)));
@@ -1327,7 +1327,7 @@
 
     function buildWoodsLayout(rng, trackPts, barrierDist, embankOuter, accepted, fitsUnderBridge) {
         const layout = [];
-        const groundPts = trackPts.filter(p => !p.bridge);
+        const groundPts = trackPts.filter(p => !p.bridge && !p.acrobatico);
         const outer = embankOuter + SceneryHills.HILL_START_MARGIN + SceneryHills.HILL_RAMP;
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, outer);
 
@@ -1379,7 +1379,7 @@
     // punto con un raggio libero sufficiente attorno; se non lo trova entro
     // il budget di tentativi, nessun laghetto su questo tracciato.
     function findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints) {
-        const groundPts = trackPts.filter(p => !p.bridge);
+        const groundPts = trackPts.filter(p => !p.bridge && !p.acrobatico);
         const { xMin, xMax, zMin, zMax } = trackBounds(trackPts, barrierDist);
 
         const tentativi = Math.round(POND_ATTEMPTS * fattoreGiro(TrackGeometry.lapLength(trackPts)));
@@ -1725,7 +1725,7 @@
                         ...nature, ...woods, ...rocce, ...paddockLife];
         if (pond) layout.push(pond);
         traslaOltreLaGhiaia(layout, trackPts, barrierProfile,
-            trackPts.filter(p => !p.bridge), barrierDist, embankStart, embankOuter);
+            trackPts.filter(p => !p.bridge && !p.acrobatico), barrierDist, embankStart, embankOuter);
 
         // DAVANTI A UNA TRIBUNA CI VA SOLO LA SUA RETE.
         //
@@ -1863,7 +1863,7 @@
         // albero che invece era mezzo sepolto. Il margine è stretto ed è
         // voluto: la soglia viene da una tolleranza osservata, non da un'idea.
         const SCARTO_TERRENO_MAX = 3.0;
-        const groundPtsPorta = trackPts.filter(p => !p.bridge);
+        const groundPtsPorta = trackPts.filter(p => !p.bridge && !p.acrobatico);
         // Su una pista in piano e senza sopraelevazioni il terreno non ha
         // dislivelli: quattro sonde per oggetto su duemila oggetti si pagano, e
         // qui non comprerebbero niente.

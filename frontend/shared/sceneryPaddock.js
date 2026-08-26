@@ -219,7 +219,7 @@
         const passoBanner = Math.max(1, Math.round((BANNER_STEP / lapLen) * n));
         for (let i = 0; i < n; i += passoBanner) {
             const p = trackPts[i];
-            if (p.bridge) continue;
+            if (p.bridge || p.acrobatico) continue;
             if (TrackGeometry.nearestPoint(pitPts, p.x, p.z).dist < PIT_CLEARANCE) continue;
             const { nx, nz } = TrackGeometry.normalAt(trackPts, i, true);
             const lato = (Math.floor(i / passoBanner) % 2 === 0) ? 1 : -1;

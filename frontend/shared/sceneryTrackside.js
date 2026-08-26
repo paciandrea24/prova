@@ -90,7 +90,7 @@
                 playerBoxFootprints, insidePlayerBoxFootprint, grandstands, barrierProfile,
                 spanning = [], accepted = [] } = ctx;
         const layout = [];
-        const groundPts = trackPts.filter(p => !p.bridge);
+        const groundPts = trackPts.filter(p => !p.bridge && !p.acrobatico);
         const n = trackPts.length;
         const stepLen = TrackGeometry.lapLength(trackPts) / n;
         const fitsUnderBridge = ctx.fitsUnderBridge || (() => true);
@@ -127,7 +127,9 @@
         // carreggiata. Sul tracciato "prova" ci finivano una barriera di
         // gomme e un capanno commissari (segnalato dall'utente).
         function onBridge(idx) {
-            return !!trackPts[idx].bridge;
+            // Un tratto acrobatico e' sospeso come un ponte: niente scenografia di
+            // fianco, che li' cadrebbe a terra sotto il tubo.
+            return !!(trackPts[idx].bridge || trackPts[idx].acrobatico);
         }
 
         const corners = findCorners(trackPts);

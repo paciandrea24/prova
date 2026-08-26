@@ -112,7 +112,7 @@
         // Punti "a terra" (non-ponte): usati sia per i piloni (quota reale
         // sotto un ponte) sia per la quota visiva fuori pista — calcolati una
         // sola volta qui, non ad ogni frame.
-        const groundPts = trackPts.filter(p => !p.bridge);
+        const groundPts = trackPts.filter(p => !p.bridge && !p.acrobatico);
         // Ultimo argomento: la barriera VERA del tratto che passa sotto il
         // viadotto. Senza, i piloni si tenevano alla larga da una distanza
         // costante che le vie di fuga hanno reso obsoleta, e su "prova" quattro
