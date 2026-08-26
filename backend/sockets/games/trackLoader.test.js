@@ -587,3 +587,31 @@ test('il rollio dichiarato su un pezzo dritto non arriva al gioco', () => {
         deleteTrack('test-scratch-track');
     }
 });
+
+// --- l'ambientazione (blocco G) ---
+
+test('ogni pista dichiara la sua ambientazione, e senza campo e\' verde', () => {
+    assert.strictEqual(loadTrack('prova').ambientazione, 'verde');
+});
+
+test('un\'ambientazione sconosciuta vale verde, non un mondo inventato', () => {
+    // Stessa regola di halfWidth e rollio: un valore malformato non si propaga,
+    // vale il default. Meglio una pista come quelle di sempre che una metà
+    // città e metà campagna decisa da un refuso.
+    const dir = path.join(__dirname, '..', '..', '..', 'frontend', 'tracks');
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, 'prova.json'), 'utf8'));
+    // ⚠️ Un id DIVERSO per ogni caso: `loadTrack` tiene una cache per id, e
+    // riusando lo stesso nome i casi dopo il primo leggerebbero il risultato
+    // vecchio — il test passerebbe per tre valori su quattro senza aver
+    // caricato niente.
+    const casi = [['marte', 'verde'], [undefined, 'verde'], [42, 'verde'], ['citta', 'citta']];
+    casi.forEach(([valore, atteso], k) => {
+        const id = `test-ambientazione-${k}`;
+        fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(Object.assign({}, raw, { id, ambientazione: valore })));
+        try {
+            assert.equal(loadTrack(id).ambientazione, atteso, `con ${JSON.stringify(valore)}`);
+        } finally {
+            fs.unlinkSync(path.join(dir, `${id}.json`));
+        }
+    });
+});

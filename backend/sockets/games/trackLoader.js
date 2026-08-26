@@ -126,6 +126,14 @@ function buildRacingLineFromControls(points, lineControls) {
 const ABRASIVITA_MIN = 0.5;
 const ABRASIVITA_MAX = 2;
 
+// Le ambientazioni che il gioco sa costruire. `verde` e' il mondo di sempre
+// (prato, colline, boschi); `citta` chiude la vista con le facciate.
+const AMBIENTAZIONI = ['verde', 'citta'];
+
+function normalizzaAmbientazione(valore) {
+    return AMBIENTAZIONI.indexOf(valore) >= 0 ? valore : 'verde';
+}
+
 function normalizzaAbrasivita(valore) {
     if (typeof valore !== 'number' || !Number.isFinite(valore)) return 1;
     return Math.max(ABRASIVITA_MIN, Math.min(ABRASIVITA_MAX, valore));
@@ -349,6 +357,15 @@ function buildTrack(id, raw) {
         lapLength,
         totalLaps,
         abrasivita: normalizzaAbrasivita(raw.abrasivita),
+        // L'AMBIENTAZIONE, GARANTITA SU OGNI PISTA. Quarta applicazione della
+        // stessa regola (larghezza, pendenza, rollio, e ora questa): da valle in
+        // poi il campo c'e' sempre, e chi disegna il mondo non deve chiedersi
+        // «e se mancasse?» ne' inventarsi un ripiego per conto suo.
+        //
+        // Un valore che non conosciamo vale verde: meglio una pista come quelle
+        // di sempre che una meta' citta' e meta' campagna decisa da un refuso.
+        // Rif. docs/superpowers/specs/2026-08-26-f1-ambientazione-cittadina-design.md
+        ambientazione: normalizzaAmbientazione(raw.ambientazione),
         pitPath,
         pitLanePts,
         pitEntryIndex,

@@ -684,6 +684,18 @@ document.addEventListener('DOMContentLoaded', () => {
             parseFloat(document.getElementById('targetKm').value) || 5);
     }
 
+    // L'ambientazione decide che mondo c'e' attorno alla pista: il verde di
+    // sempre (prato, colline, boschi) o la citta' che chiude la vista con le
+    // facciate. Qui si dice solo cosa comporta — il mondo lo costruisce
+    // f1Scena leggendo il campo dal caricatore.
+    function aggiornaAmbientazione() {
+        const el = document.getElementById('ambientazioneNota');
+        if (!el) return;
+        el.textContent = document.getElementById('ambientazione').value === 'citta'
+            ? 'i palazzi chiudono la vista appena oltre le barriere: niente prato, colline né boschi'
+            : 'prato, colline e boschi attorno alla pista';
+    }
+
     let ultimaRichiestaAbrasivita = 0;
     async function aggiornaAbrasivita() {
         const el = document.getElementById('abrasivitaInfo');
@@ -1871,6 +1883,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('triggerAutoBtn').addEventListener('click', posizionaTriggerAutomatico);
     document.getElementById('trackOpacity').addEventListener('input', rebuild);
     document.getElementById('abrasivita').addEventListener('input', aggiornaAbrasivita);
+    document.getElementById('ambientazione').addEventListener('change', () => {
+        aggiornaAmbientazione();
+        dopoModificaMain();
+    });
     document.getElementById('targetKm').addEventListener('change', () => { aggiornaAbrasivita(); aggiornaPannelloForma(); });
     document.getElementById('roadHalfWidth').addEventListener('change', () => { rebuild(); });
 
@@ -2121,6 +2137,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('targetKm').value = data.targetKm ?? 5;
         document.getElementById('roadHalfWidth').value = data.roadHalfWidth ?? 11;
         document.getElementById('abrasivita').value = data.abrasivita ?? 1;
+        document.getElementById('ambientazione').value =
+            (data.ambientazione === 'citta') ? 'citta' : 'verde';
+        aggiornaAmbientazione();
         scenografiaEsclusi = Array.isArray(data.scenografiaEsclusi)
             ? data.scenografiaEsclusi.slice() : [];
         // Giorno o notte e' una proprieta' del circuito e sta nel suo file:
@@ -2268,6 +2287,10 @@ document.addEventListener('DOMContentLoaded', () => {
             targetKm: parseFloat(document.getElementById('targetKm').value) || 1,
             roadHalfWidth: parseFloat(document.getElementById('roadHalfWidth').value) || 11,
             abrasivita: parseFloat(document.getElementById('abrasivita').value) || 1,
+            // ⚠️ Nel file solo se DIVERSA da verde: cosi' riaprire e risalvare
+            // una pista di sempre non le cambia un byte, e il campo compare
+            // solo dove significa qualcosa.
+            ...(document.getElementById('ambientazione').value === 'citta' ? { ambientazione: 'citta' } : {}),
             notturno: document.getElementById('notturno').checked,
             startFinish: startFinish ? { x: startFinish.x, z: startFinish.z, angle: startFinish.angle } : undefined,
             // L'intenzione accanto al risultato: `geometria` è dell'editor,
