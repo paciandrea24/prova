@@ -97,9 +97,15 @@
         }
     }
 
-    // L'arredo urbano del marciapiede (fase G2).
+    // L'arredo urbano del marciapiede (fase G2). I primi sei sono del primo
+    // giro; i dodici che seguono del secondo, quando l'utente ha chiesto
+    // «piccoli arredi, ma molti di questi».
     for (const id of ['cittaLampione', 'cittaSemaforo', 'cittaFermata',
-                      'cittaEdicola', 'cittaCassonetti', 'cittaDehors']) {
+                      'cittaEdicola', 'cittaCassonetti', 'cittaDehors',
+                      'cittaDissuasori', 'cittaPanchina', 'cittaCartelli',
+                      'cittaTransenne', 'cittaColonnine', 'cittaBiciclette',
+                      'cittaFioriera', 'cittaCabina', 'cittaAffissioni',
+                      'cittaFontanella', 'cittaBanco', 'cittaTelecamere']) {
         PERCORSI[id] = `/assets/custom/circuit/${id}.glb`;
     }
 

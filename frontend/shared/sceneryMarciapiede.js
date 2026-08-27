@@ -4,8 +4,12 @@
 //
 // In un circuito cittadino, fra il muro e la prima facciata restano una
 // ventina di unità di asfalto: è la strada, e in una città vera non è mai
-// vuota. Qui ci vanno lampioni, semafori, fermate, edicole, cassonetti e
-// tavolini — i modelli sono in `backend/tools/circuitAssets/cittaStrada.py`.
+// vuota. Qui ci vanno diciotto arredi — lampioni, semafori, fermate, edicole,
+// cassonetti, tavolini, e dal secondo giro dissuasori, panchine, cartelli
+// stradali, transenne, parchimetri, rastrelliere, fioriere, cabine
+// telefoniche, colonne dei manifesti, fontanelle, banchi del mercato e pali
+// delle telecamere. I modelli sono in
+// `backend/tools/circuitAssets/cittaStrada.py`.
 // Rif. docs/superpowers/specs/2026-08-27-f1-citta-g2-design.md
 //
 // ⚠️ QUESTA ROBA STA A BORDO PISTA, NON SULLA FACCIATA. Si posa a partire dal
@@ -30,9 +34,24 @@
 
     const CATEGORIA = 'strada';
 
-    // Quanto sta lontano dal muro chi si affaccia sulla strada, e quanto dalla
-    // facciata chi ci si appoggia. Sono le due sponde del marciapiede.
+    // LE TRE CORSIE DEL MARCIAPIEDE.
+    //
+    // Fino al secondo giro erano due, e bastavano per sei arredi: o 4 unità dal
+    // muro, o 6.5 dalla facciata. Con diciotto tipi su due sole sponde la porta
+    // della scenografia avrebbe cominciato a scartarli l'uno contro l'altro —
+    // e «molti di questi» sarebbe diventato «molti di questi, generati e
+    // buttati». Una terza corsia sul filo del muro è ciò che rende posabile
+    // la densità richiesta.
+    //
+    // ⚠️ `strada` è rimasta a 4.0, il valore già validato in playtest: il
+    // lampione ha il braccio che sporge sulla carreggiata (d = 3.1) ed è
+    // tarato lì. La corsia nuova si è infilata SOTTO, non ha spostato quella
+    // che c'era.
     const DAL_MURO = 4.0;
+    // Il filo del cordolo: ci sta solo roba bassa e sottile (la più profonda è
+    // la fioriera, 1.2), quindi il filo verso la pista resta a 1.6 dal muro
+    // anche in curva stretta, dove gli angoli di un pezzo largo si scostano.
+    const DAL_MURO_FILO = 2.2;
     // ⚠️ 6.5 e non 3: la facciata non e' un piano, e' una lastra spessa tre
     // unita' che cresce VERSO la pista, e l'oggetto ha una sua profondita' che
     // conta da meta' in poi — e in curva l'oggetto e' anche ruotato rispetto
@@ -44,16 +63,53 @@
     // arredo REGOLARE — in una strada lo sono davvero, e la loro fila è ciò che
     // dice «questa è una via» anche a 250 km/h. Tutto il resto è raro e
     // sparso: se ricorresse con lo stesso passo si leggerebbe come un motivo.
+    //
+    // ⚠️ L'ORDINE DELLE CHIAVI CONTA, non è alfabetico per caso. Ogni voce
+    // passa dalla porta della scenografia nell'ordine in cui entra nel layout,
+    // e chi arriva prima ha la precedenza: in cima stanno i due arredi che
+    // fanno la strada (lampioni e dissuasori), poi i pezzi grossi e rari — che
+    // se perdessero il posto si vedrebbe — e in fondo il pulviscolo, che di
+    // posti ne ha mille.
+    //
+    // I passi del secondo giro sono NUMERI PRIMI o quasi, e mai multipli l'uno
+    // dell'altro: due passi che si dividono cadono sullo stesso campione ogni
+    // volta che si incontrano, e lì la porta ne scarta sistematicamente uno.
     const PASSI = {
         cittaLampione:   52,
+        cittaDissuasori: 61,
         cittaSemaforo:   190,
-        cittaCassonetti: 230,
-        cittaDehors:     310,
-        cittaEdicola:    360,
+        cittaCartelli:   73,
         cittaFermata:    430,
+        cittaEdicola:    360,
+        cittaBanco:      239,
+        cittaCabina:     211,
+        cittaDehors:     310,
+        cittaAffissioni: 173,
+        cittaPanchina:   97,
+        cittaFioriera:   89,
+        cittaColonnine:  107,
+        cittaTransenne:  127,
+        cittaCassonetti: 230,
+        cittaBiciclette: 163,
+        cittaFontanella: 149,
+        cittaTelecamere: 257,
     };
-    // Chi si appoggia ai palazzi invece di stare sul bordo della strada.
-    const AL_PALAZZO = new Set(['cittaFermata', 'cittaEdicola', 'cittaDehors', 'cittaCassonetti']);
+
+    // A quale corsia appartiene ciascun arredo. Chi non è nominato sta sulla
+    // corsia di mezzo, quella di sempre.
+    //
+    // Il criterio è dove sta la cosa vera: la segnaletica e i dissuasori sul
+    // filo del cordolo, chi aspetta o si siede sul bordo della strada, chi si
+    // appoggia a un muro contro la facciata.
+    const AL_PALAZZO = new Set(['cittaFermata', 'cittaEdicola', 'cittaDehors',
+                                'cittaCassonetti', 'cittaBiciclette', 'cittaCabina',
+                                'cittaAffissioni', 'cittaBanco']);
+    const AL_CORDOLO = new Set(['cittaDissuasori', 'cittaTransenne',
+                                'cittaCartelli', 'cittaFioriera']);
+    // Chi sta su TUTTI E DUE i lati a ogni passo, invece di alternarli: i
+    // lampioni perché una via illuminata da un lato solo non è una via, i
+    // dissuasori perché sono il bordo del marciapiede e il bordo è doppio.
+    const ENTRAMBI_I_LATI = new Set(['cittaLampione', 'cittaDissuasori']);
 
     // Le auto parcheggiate in linea: gruppi di tre o quattro, non una fila
     // infinita — un parcheggio continuo lungo tutto il circuito è irreale
@@ -85,9 +141,9 @@
             // incontrano, e lì sarebbero uno dentro l'altro.
             const sfasa = Math.floor(rng() * ogni);
             for (let i = sfasa; i < n; i += ogni) {
-                // I lampioni stanno su tutti e due i lati; il resto si alterna,
-                // o la strada sembrerebbe arredata da un catalogo.
-                const lati = asset === 'cittaLampione' ? [1, -1]
+                // Lampioni e dissuasori stanno su tutti e due i lati; il resto
+                // si alterna, o la strada sembrerebbe arredata da un catalogo.
+                const lati = ENTRAMBI_I_LATI.has(asset) ? [1, -1]
                     : [Math.floor(i / ogni) % 2 === 0 ? 1 : -1];
                 for (const side of lati) {
                     const voce = posa(asset, trackPts, profilo, barrierProfile, pitPts, i, side);
@@ -129,7 +185,8 @@
         // piazzale: lì l'arredo da strada non c'entra niente.
         if (largo < 12 || largo > 40) return null;
 
-        const d = AL_PALAZZO.has(asset) ? facciata - DAL_PALAZZO : muro + DAL_MURO;
+        const d = AL_PALAZZO.has(asset) ? facciata - DAL_PALAZZO
+            : muro + (AL_CORDOLO.has(asset) ? DAL_MURO_FILO : DAL_MURO);
         const nrm = TrackGeometry.normalAt(trackPts, i, true);
         const x = p.x + nrm.nx * d * side;
         const z = p.z + nrm.nz * d * side;
@@ -145,5 +202,6 @@
         };
     }
 
-    return { buildLayout, CATEGORIA, PASSI, DAL_MURO, DAL_PALAZZO };
+    return { buildLayout, CATEGORIA, PASSI, DAL_MURO, DAL_MURO_FILO, DAL_PALAZZO,
+             AL_PALAZZO, AL_CORDOLO, ENTRAMBI_I_LATI };
 });

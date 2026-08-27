@@ -77,4 +77,17 @@ ASSET_BUILDERS.update({
     'cittaEdicola':    cittaStrada.build_citta_edicola,
     'cittaCassonetti': cittaStrada.build_citta_cassonetti,
     'cittaDehors':     cittaStrada.build_citta_dehors,
+    # Il secondo giro: dodici arredi piccoli, «ma molti di questi».
+    'cittaDissuasori': cittaStrada.build_citta_dissuasori,
+    'cittaPanchina':   cittaStrada.build_citta_panchina,
+    'cittaCartelli':   cittaStrada.build_citta_cartelli,
+    'cittaTransenne':  cittaStrada.build_citta_transenne,
+    'cittaColonnine':  cittaStrada.build_citta_colonnine,
+    'cittaBiciclette': cittaStrada.build_citta_biciclette,
+    'cittaFioriera':   cittaStrada.build_citta_fioriera,
+    'cittaCabina':     cittaStrada.build_citta_cabina,
+    'cittaAffissioni': cittaStrada.build_citta_affissioni,
+    'cittaFontanella': cittaStrada.build_citta_fontanella,
+    'cittaBanco':      cittaStrada.build_citta_banco,
+    'cittaTelecamere': cittaStrada.build_citta_telecamere,
 })

@@ -113,11 +113,27 @@
     // L'arredo urbano del marciapiede (fase G2), misurato sui .glb.
     Object.assign(SIZES, {
         cittaLampione:   { w: 0.9,  h: 9.1,  d: 3.1 },
-        cittaSemaforo:   { w: 0.8,  h: 6.2,  d: 0.9 },
+        cittaSemaforo:   { w: 0.8,  h: 6.3,  d: 0.9 },
         cittaFermata:    { w: 7.3,  h: 3.4,  d: 3.1 },
-        cittaEdicola:    { w: 4.3,  h: 3.8,  d: 3.7 },
-        cittaCassonetti: { w: 5.5,  h: 1.6,  d: 1.4 },
+        cittaEdicola:    { w: 4.3,  h: 3.8,  d: 3.9 },
+        cittaCassonetti: { w: 5.5,  h: 1.6,  d: 1.5 },
         cittaDehors:     { w: 7.5,  h: 2.5,  d: 3.1 },
+        // Il secondo giro di arredi, misurati su glbInspect come i primi sei.
+        // ⚠️ Le ALTEZZE vanno da 1.0 a 5.4 apposta: da dentro l'abitacolo un
+        // arredo si riconosce dalla sagoma, e dodici oggetti alti un metro
+        // sarebbero stati un cordolo continuo, non una strada.
+        cittaDissuasori: { w: 6.4,  h: 1.0,  d: 0.4 },
+        cittaPanchina:   { w: 4.4,  h: 1.2,  d: 1.0 },
+        cittaCartelli:   { w: 1.1,  h: 3.1,  d: 0.5 },
+        cittaTransenne:  { w: 6.9,  h: 1.1,  d: 0.8 },
+        cittaColonnine:  { w: 2.4,  h: 2.0,  d: 0.7 },
+        cittaBiciclette: { w: 3.5,  h: 1.1,  d: 1.9 },
+        cittaFioriera:   { w: 3.4,  h: 1.6,  d: 1.2 },
+        cittaCabina:     { w: 1.6,  h: 3.1,  d: 1.7 },
+        cittaAffissioni: { w: 1.6,  h: 3.5,  d: 1.6 },
+        cittaFontanella: { w: 2.3,  h: 1.6,  d: 1.3 },
+        cittaBanco:      { w: 3.5,  h: 2.5,  d: 1.8 },
+        cittaTelecamere: { w: 0.7,  h: 5.4,  d: 2.2 },
     });
 
 
