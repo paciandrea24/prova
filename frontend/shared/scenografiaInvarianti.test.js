@@ -208,11 +208,24 @@ for (const id of PISTE) {
         const trovati = layout.filter(v => v.category !== 'strada'
             && (LONTANI.has(v.asset) || v.category === 'parkingLot'));
         assert.deepEqual([...new Set(trovati.map(v => v.asset || v.category))], []);
-        assert.ok(layout.some(v => v.asset === 'banner'),
-            'gli striscioni a bordo pista devono restare anche in citta\'');
         // E i garage della corsia box non c'entrano: quelli si vedono eccome.
         assert.ok(layout.some(v => v.asset === 'pitsGarageClosed' || v.asset === 'pitsOffice'),
             'gli edifici della corsia box non vanno tolti');
+    });
+
+    test(`${id}: in citta' non c'e' l'arredo da circuito permanente`, () => {
+        // Elenco dettato dall'utente il 2026-08-27: «dovremmo levare gli asset
+        // superflui dalle piste cittadine, tipo i cartelloni, le bandiere a
+        // scacchi, la torre, il gazebo, le bandierine». Sono oggetti che in
+        // mezzo ai palazzi si leggono come capitati li' per sbaglio.
+        const { t, layout } = scenografiaDi(id);
+        if (t.ambientazione !== 'citta') return;
+        const FUORI = ['billboard', 'billboardLow', 'flagPole', 'pylon', 'paddockTent', 'banner'];
+        assert.deepEqual(layout.filter(v => FUORI.includes(v.asset)).map(v => v.asset), []);
+        // ⚠️ La torre di DIREZIONE GARA invece resta: quella sta al traguardo,
+        // dentro il recinto, e non e' arredo — e' il circuito.
+        assert.ok(layout.some(v => v.asset === 'raceControlTower'),
+            'la torre di direzione gara non va tolta');
     });
 
     test(`${id}: in citta', niente di bordo pista finisce dentro una facciata`, () => {

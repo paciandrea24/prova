@@ -133,9 +133,14 @@ test('le tabelle degli asset conoscono tutti i moduli, e con le misure giuste', 
             : /Tetto$/.test(id) ? CittaProfilo.H_CORONAMENTO : CittaProfilo.H_PIANO;
         assert.equal(size.h, attesa, `${id}: l'ingombro dice ${size.h}, la pila ${attesa}`);
     }
-    // E nessuna tabella nomina un modulo che qui non esiste.
+    // E nessuna tabella nomina un modulo di facciata che qui non esiste.
+    // ⚠️ Il filtro guarda il PEZZO, non il prefisso: dalla fase G2 esistono
+    // anche `cittaLampione`, `cittaFermata` e compagnia, che sono arredo
+    // urbano e non hanno niente a che fare con le colonne dei palazzi.
     const noti = new Set(ids);
     for (const chiave of Object.keys(Paths.PERCORSI)) {
-        if (/^citta[A-Z]/.test(chiave)) assert.ok(noti.has(chiave), `${chiave}: percorso orfano`);
+        if (/^citta[A-Z].*(Base[AB]|Piano[AB]|Tetto)$/.test(chiave)) {
+            assert.ok(noti.has(chiave), `${chiave}: percorso orfano`);
+        }
     }
 });

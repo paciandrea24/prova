@@ -45,6 +45,12 @@
     // no lungo tutto il circuito.
     const SENZA_INGOMBRO = new Set(['pond', 'parkingLot', 'crowd', 'citta']);
 
+    // Gli asset che in citta' non si generano: cartelloni pubblicitari, pennoni
+    // con la bandiera a scacchi, la torre col pannello sponsor, i gazebo del
+    // paddock e gli striscioni a bordo pista.
+    const FUORI_CITTA = new Set(['billboard', 'billboardLow', 'flagPole',
+                                 'pylon', 'paddockTent', 'banner']);
+
     // Il seme deterministico e il suo generatore stanno in `semeStabile.js`:
     // li usa anche chi con la scenografia non c'entra (il profilo della città),
     // e lasciarli qui creava un anello di require. Restano esportati da questo
@@ -1718,10 +1724,23 @@
                                        accepted, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
         const pond   = inCitta ? null : findPondSpot(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints);
 
-        const layout = [...paddock, ...mainStandCoperte, ...grandstandCoperte, ...landmarks,
-                        ...trackside, ...infrastrutture,
-                        ...nature, ...woods, ...rocce, ...paddockLife];
+        let layout = [...paddock, ...mainStandCoperte, ...grandstandCoperte, ...landmarks,
+                      ...trackside, ...infrastrutture,
+                      ...nature, ...woods, ...rocce, ...paddockLife];
         if (pond) layout.push(pond);
+
+        // ⚠️ CIO' CHE IN UNA CITTA' NON C'E'. Sono arredi da circuito
+        // permanente, e in mezzo ai palazzi si leggono come oggetti capitati
+        // li' per sbaglio. Elenco dettato dall'utente il 2026-08-27:
+        // «dovremmo levare gli asset superflui dalle piste cittadine, tipo i
+        // cartelloni, le bandiere a scacchi, la torre, il gazebo, le
+        // bandierine».
+        //
+        // Il filtro sta QUI, in un posto solo, e non nei sei moduli che li
+        // generano: e' un elenco di cose, non una regola di piazzamento, e
+        // spargerlo vorrebbe dire sei posti da ricordare il giorno che se ne
+        // aggiunge una settima.
+        if (inCitta) layout = layout.filter(v => !FUORI_CITTA.has(v.asset));
         traslaOltreLaGhiaia(layout, trackPts, barrierProfile,
             trackPts.filter(p => !p.bridge && !p.acrobatico), barrierDist, embankStart, embankOuter);
 
