@@ -181,7 +181,8 @@
         builder.buildBarriers(scene, trackPts,
             (i, side) => TrackGravel.barrierAt(barrierProfile, i, side),
             pitMergeSamples,
-            (i, bx, bz) => TrackGeometry.terrainTopAt(trackPts, i, bx, bz, embankPlateau));
+            (i, bx, bz) => TrackGeometry.terrainTopAt(trackPts, i, bx, bz, embankPlateau),
+            { sponsor: inCitta });
         // LA CITTÀ, dopo le barriere perché si posa su di loro: la facciata
         // comincia dove finisce il muro più il marciapiede, e dove la via di
         // fuga allarga arretra con lei.

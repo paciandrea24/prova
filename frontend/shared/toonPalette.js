@@ -74,6 +74,25 @@
         { nome: 'Ardesia', colore: 0x8f959b, famiglia: 'nuova' },
     ];
 
+    // I PANNELLI SPONSOR delle barriere cittadine. Marchi inventati: la
+    // decisione dell'utente del 2026-08-26 è «sponsor inventati disegnati da
+    // noi, nessun marchio reale», e qui non ci sono nemmeno scritte — un
+    // pannello è una fascia di colore con una banda chiara al centro, che è
+    // quello che si legge di una pubblicità a bordo pista a 250 km/h.
+    //
+    // Tinte sature, al contrario delle facciate: un cartellone che non si
+    // stacca dal muro non è un cartellone. Ognuna è una coppia — il fondo del
+    // pannello e la banda del «logo» — perché un colore solo darebbe una
+    // barriera a righe, non una fila di insegne.
+    const CITTA_SPONSOR = [
+        { fondo: 0xd63b2f, banda: 0xf6e9d8 },   // rosso e crema
+        { fondo: 0x2f6fb5, banda: 0xf2f6f8 },   // blu e bianco
+        { fondo: 0x1f8a5c, banda: 0xf0efe2 },   // verde e avorio
+        { fondo: 0xe8952a, banda: 0x2a2f38 },   // arancio e antracite
+        { fondo: 0x6b4fa8, banda: 0xf3eef8 },   // viola e lilla chiaro
+        { fondo: 0x18a9b8, banda: 0xf7f4e6 },   // ciano e panna
+    ];
+
     // Gradiente del cielo, dall'orizzonte (t=0) allo zenit (t=1).
     //
     // Quattro tappe e non tre: la banda calda crema-pesca sta APPENA SOPRA
@@ -377,7 +396,7 @@
     }
 
     return {
-        SURFACES, CITTA_FACCIATE, SKY_STOPS, FOG_DENSITY, SHADOW_TINT, BANDS, SATURATION,
+        SURFACES, CITTA_FACCIATE, CITTA_SPONSOR, SKY_STOPS, FOG_DENSITY, SHADOW_TINT, BANDS, SATURATION,
         ORARI, impostaOrario, orario, eNotte, fogDensity,
         skyColorAt, fogColor, saturate, hexToRgb, rgbToHex,
     };

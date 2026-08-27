@@ -568,7 +568,7 @@
     // in curva mentre la pista sale i settori si accavallano e quello più
     // avanti, più alto, seppellisce la barriera di quello indietro. Rif.
     // TrackGeometry.terrainTopAt.
-    function buildBarriers(container, pts, distFromCenter, mergePoints, quotaBase) {
+    function buildBarriers(container, pts, distFromCenter, mergePoints, quotaBase, opzioni) {
         const distAt = typeof distFromCenter === 'function'
             ? distFromCenter
             : () => distFromCenter;
@@ -576,12 +576,29 @@
         const HEIGHT = 1.1;
         const stepLen = TrackGeometry.lapLength(pts) / n;
         const STRIPE = 14;
+        // ⚠️ IN CITTA' LE BARRIERE PORTANO GLI SPONSOR, non il bianco-rosso.
+        // Il bianco-rosso è la barriera di un autodromo; in una via chiusa al
+        // traffico per un weekend, quello che si vede a bordo strada sono
+        // pannelli pubblicitari. Marchi inventati e nessuna scritta: un
+        // pannello è una fascia di colore con una banda chiara al centro, che
+        // è quanto si legge davvero passandoci a 250 km/h.
+        //
+        // Servono QUATTRO vertici per campione invece di due — base, banda
+        // sotto, banda sopra, cima — perché la banda è orizzontale e con due
+        // soli vertici il colore sfumerebbe da terra al bordo superiore.
+        const sponsor = !!(opzioni && opzioni.sponsor) && !!Palette.CITTA_SPONSOR;
+        const perCamp = sponsor ? 4 : 2;
+        // Le quote della banda, in frazione dell'altezza: il pannello sta in
+        // alto, sopra lo zoccolo, come i cartelloni veri.
+        const BANDA = [0.34, 0.72];
+        const insegne = sponsor ? Palette.CITTA_SPONSOR : null;
 
         for (const side of [-1, 1]) {
-            const pos = new Float32Array(n * 2 * 3);
-            const col = new Float32Array(n * 2 * 3);
+            const pos = new Float32Array(n * perCamp * 3);
+            const col = new Float32Array(n * perCamp * 3);
             const idx = [];
             let stripeAcc = 0, isRed = false;
+            let pannello = 0;
             const gapped = new Array(n).fill(false);
 
             for (let i = 0; i < n; i++) {
@@ -600,10 +617,30 @@
                 // riusa il meccanismo dei buchi che gia' serve alla corsia box.
                 if (pts[i].acrobatico) gapped[i] = true;
 
+                if (i > 0) { stripeAcc += stepLen; if (stripeAcc >= STRIPE) { stripeAcc = 0; isRed = !isRed; pannello++; } }
+
+                if (sponsor) {
+                    // Quale insegna: cambia a ogni pannello, e non in ordine —
+                    // sei tinte in fila si leggono come un arcobaleno.
+                    const ins = insegne[(pannello * 5 + (side > 0 ? 2 : 0)) % insegne.length];
+                    const quote = [0.05, HEIGHT * BANDA[0], HEIGHT * BANDA[1], HEIGHT];
+                    const tinte = [ins.fondo, ins.fondo, ins.banda, ins.banda];
+                    for (let v = 0; v < 4; v++) {
+                        const b = (i * 4 + v) * 3;
+                        pos[b] = bx; pos[b + 1] = baseY + quote[v]; pos[b + 2] = bz;
+                        // La banda è il colore del logo, il resto è il fondo: i
+                        // due vertici di mezzo portano tinte diverse perché lo
+                        // stacco sia netto invece che sfumato.
+                        const c = v === 2 ? ins.banda : tinte[v];
+                        col[b] = ((c >> 16) & 255) / 255;
+                        col[b + 1] = ((c >> 8) & 255) / 255;
+                        col[b + 2] = (c & 255) / 255;
+                    }
+                    continue;
+                }
+
                 pos[i * 6]     = bx; pos[i * 6 + 1] = baseY + 0.05;   pos[i * 6 + 2] = bz;
                 pos[i * 6 + 3] = bx; pos[i * 6 + 4] = baseY + HEIGHT; pos[i * 6 + 5] = bz;
-
-                if (i > 0) { stripeAcc += stepLen; if (stripeAcc >= STRIPE) { stripeAcc = 0; isRed = !isRed; } }
                 // Bianco/rosso su TUTTO il giro, ponti compresi. Le barriere
                 // dei ponti erano bianco/arancione perché lì il muro era
                 // rigido mentre altrove il fuoripista si attraversava: quella
@@ -622,9 +659,12 @@
             for (let i = 0; i < n; i++) {
                 const nextI = (i + 1) % n;
                 if (gappedClean[i] || gappedClean[nextI]) continue;   // varco: nessuna faccia vicino alla corsia box
-                const base = i * 2, next = nextI * 2;
-                if (side < 0) idx.push(base, base + 1, next, next, base + 1, next + 1);
-                else          idx.push(base, next, base + 1, next, next + 1, base + 1);
+                const base = i * perCamp, next = nextI * perCamp;
+                for (let v = 0; v < perCamp - 1; v++) {
+                    const a = base + v, b = next + v;
+                    if (side < 0) idx.push(a, a + 1, b, b, a + 1, b + 1);
+                    else          idx.push(a, b, a + 1, b, b + 1, a + 1);
+                }
             }
 
             const geo = new THREE.BufferGeometry();

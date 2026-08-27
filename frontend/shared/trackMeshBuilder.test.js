@@ -1047,3 +1047,42 @@ test('senza profilo non si costruisce nessuna citta\'', () => {
     TrackMeshBuilder.buildCitta(c, null, {});
     assert.equal(c.children.length, 0);
 });
+
+test('in citta\' le barriere portano i pannelli sponsor, nel verde no', () => {
+    // ⚠️ Il bianco-rosso e' la barriera di un autodromo. In una via chiusa al
+    // traffico per un weekend, a bordo strada ci sono i cartelloni: fascia di
+    // colore e banda chiara al centro, marchi inventati e nessuna scritta —
+    // che e' quanto si legge davvero passandoci a 250 km/h.
+    const pts = [];
+    for (let i = 0; i < 300; i++) {
+        const a = (i / 300) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * 200, z: Math.sin(a) * 200, y: 0 });
+    }
+    const verde = contenitore(), citta = contenitore();
+    TrackMeshBuilder.buildBarriers(verde, pts, 15, null, null);
+    TrackMeshBuilder.buildBarriers(citta, pts, 15, null, null, { sponsor: true });
+
+    // Nel verde due vertici per campione, in citta' quattro: la banda e'
+    // orizzontale, e con due soli vertici il colore sfumerebbe da terra in su.
+    const vVerde = verde.children[0].geometry.attributes.position.array.length / 3 / pts.length;
+    const vCitta = citta.children[0].geometry.attributes.position.array.length / 3 / pts.length;
+    assert.equal(vVerde, 2);
+    assert.equal(vCitta, 4);
+
+    // I colori: nel verde solo bianco e rosso, in citta' molti piu' di due.
+    const distinti = (mesh) => {
+        const c = mesh.geometry.attributes.color.array;
+        const set = new Set();
+        for (let i = 0; i < c.length; i += 3) {
+            set.add(`${c[i].toFixed(2)},${c[i + 1].toFixed(2)},${c[i + 2].toFixed(2)}`);
+        }
+        return set;
+    };
+    assert.equal(distinti(verde.children[0]).size, 2, 'la barriera verde e\' bianco-rossa');
+    assert.ok(distinti(citta.children[0]).size >= 6,
+        'la barriera cittadina deve mostrare piu\' insegne diverse');
+
+    // E le facce ci sono tutte: tre fasce per campione invece di una.
+    assert.equal(citta.children[0].geometry.index.length,
+                 verde.children[0].geometry.index.length * 3);
+});
