@@ -22,6 +22,7 @@ const TrackGeometry = require('./trackGeometry.js');
 const { SCAVALCANO, A_BORDO_PISTA, stessaFila } = require('./sceneryRegistro.js');
 const TrackValidatore = require('./trackValidatore.js');
 const TrackGravel = require('./trackGravel.js');
+const CittaProfilo = require('./cittaProfilo.js');
 const { loadTrack } = require('../../backend/sockets/games/trackLoader.js');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -184,6 +185,50 @@ for (const id of PISTE) {
             `il ponte semafori sta a ${unita.toFixed(0)} unita' dalla griglia, attese 75 ± ${FINESTRA_GANTRY}`);
     });
 
+
+    test(`${id}: in citta', niente di bordo pista finisce dentro una facciata`, () => {
+        // ⚠️ SEGNALAZIONE DELL'UTENTE, 2026-08-27: «nella pista di prova dei
+        // circuiti cittadini (e probabilmente anche negli altri che costruiro'
+        // in futuro) la corsia dei box e' fatta male, perche' si entra
+        // attraverso edifici». Il test sta QUI, fra le invarianti che girano su
+        // ogni pista della cartella, proprio per il «anche negli altri»: una
+        // pista cittadina nuova e' coperta il giorno che la si salva.
+        //
+        // Si guarda la roba che deve restare DAVANTI ai palazzi — tribune,
+        // reti, torrette, cartelli, il podio, il ponte dei semafori — e la si
+        // misura contro il profilo della citta'. Il paddock lontano e il
+        // parcheggio non entrano nel conto: quelli stanno dietro la citta', e
+        // in citta' andranno tolti del tutto (fase G2).
+        const { t, layout } = scenografiaDi(id);
+        if (t.ambientazione !== 'citta') return;
+        const prof = CittaProfilo.profilo(t.points, t.barrierProfile, {
+            pitLanePts: t.pitLanePts,
+            pitRoadHalf: t.pitRoadHalf,
+            startFinishIndex: t.startFinishIndex,
+        });
+        const DAVANTI = new Set(['grandstand', 'grandstand-main', 'safety', 'trackside',
+                                 'marshal', 'landmark']);
+        let controllati = 0;
+        const dentro = [];
+        for (const v of layout) {
+            if (!v.asset || !DAVANTI.has(v.category)) continue;
+            const angoli = Sizes.footprintCorners(v);
+            if (!angoli || !angoli.length) continue;
+            controllati++;
+            for (const a of angoli) {
+                const i = TrackGeometry.nearestPoint(t.points, a.x, a.z).index;
+                const nrm = TrackGeometry.normalAt(t.points, i, true);
+                const proj = (a.x - t.points[i].x) * nrm.nx + (a.z - t.points[i].z) * nrm.nz;
+                const facciata = prof.distanza[i * 2 + (proj >= 0 ? 0 : 1)];
+                if (Math.abs(proj) - facciata > MAX_COMPENETRAZIONE) {
+                    dentro.push(`${v.asset} a ${(Math.abs(proj) - facciata).toFixed(1)} dentro il palazzo`);
+                    break;
+                }
+            }
+        }
+        assert.ok(controllati > 50, `solo ${controllati} oggetti di bordo pista: il caso di prova e' vuoto`);
+        assert.deepEqual(dentro, []);
+    });
 
     test(`${id}: ogni tribuna ha la sua rete`, () => {
         // Il difetto non e' che la rete manchi: e' che tribuna e rete possano

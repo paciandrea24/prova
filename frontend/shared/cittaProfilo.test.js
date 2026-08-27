@@ -5,6 +5,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const CittaProfilo = require('./cittaProfilo.js');
 const TrackGravel = require('./trackGravel.js');
+const TrackGeometry = require('./trackGeometry.js');
 
 // Un anello largo, con il suo muro vero: la città si posa su quello.
 //
@@ -24,6 +25,33 @@ function ovaleConMuro(raggio = 300) {
 }
 
 const di = (p, i, side) => i * 2 + (side > 0 ? 0 : 1);
+
+// Lo stesso anello, ma con una corsia box che gli corre accanto per un quarto
+// di giro — la situazione in cui la citta' si e' scoperta cieca.
+function ovaleConBox(raggio = 300, quanto = 20) {
+    const pts = [];
+    for (let i = 0; i < 800; i++) {
+        const a = (i / 800) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * raggio, z: Math.sin(a) * raggio, y: 0, halfWidth: 11 });
+    }
+    const pit = [];
+    for (let i = 100; i <= 300; i++) {
+        const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
+        pit.push({ x: pts[i].x + nx * quanto, z: pts[i].z + nz * quanto });
+    }
+    const muro = TrackGravel.barrierProfile(pts, { roadHalf: 11, pitLanePts: pit, pitRoadHalf: 5 });
+    return { pts, muro, pit };
+}
+
+// Da che parte, e quanto lontano dall'asse, sta un punto della corsia box.
+function rispettoAllAsse(pts, q) {
+    const i = TrackGeometry.nearestPoint(pts, q.x, q.z).index;
+    const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
+    const proj = (q.x - pts[i].x) * nx + (q.z - pts[i].z) * nz;
+    return { i, side: proj >= 0 ? 1 : -1, dist: Math.abs(proj) };
+}
+
+
 
 test('la facciata comincia SUBITO oltre il muro, non a una distanza sua', () => {
     // «la vista è completamente occultata dai palazzi che circondano
@@ -97,4 +125,50 @@ test('i due lati non sono lo stesso identico palazzo', () => {
         if (p.altezza[di(p, i, 1)] !== p.altezza[di(p, i, -1)]) diversi++;
     }
     assert.ok(diversi > pts.length / 3, `i due lati coincidono su ${pts.length - diversi} campioni su ${pts.length}`);
+});
+
+test('la citta\' arretra dove passa la corsia box', () => {
+    // ⚠️ IL DIFETTO CHE HA VISTO L'UTENTE: «nella pista di prova dei circuiti
+    // cittadini la corsia dei box e' fatta male, perche' si entra attraverso
+    // edifici». Nel tratto del traguardo il muro della pista NON arretra — sta
+    // fra la carreggiata e la corsia box, com'e' giusto — quindi una facciata
+    // posata sul muro piu' il marciapiede cade in mezzo alla corsia e dentro i
+    // garage. Misurato su citta-prova prima della cura: 260 punti di corsia su
+    // 300 dentro i palazzi, il peggiore di 4 unita'.
+    //
+    // La citta' deve fare spazio a TUTTO il paddock: la corsia, il grembiule
+    // dove l'auto si ferma, e la fila dei garage dietro.
+    const { pts, muro, pit } = ovaleConBox();
+    const p = CittaProfilo.profilo(pts, muro, { pitLanePts: pit, pitRoadHalf: 5 });
+    for (const q of pit) {
+        const { i, side, dist } = rispettoAllAsse(pts, q);
+        const facciata = p.distanza[di(p, i, side)];
+        const servono = dist + 5 + CittaProfilo.PADDOCK;
+        assert.ok(facciata >= servono,
+            `campione ${i}: la facciata sta a ${facciata.toFixed(1)} e la corsia box arriva a ${servono.toFixed(1)}`);
+    }
+});
+
+test('la citta\' arretra solo DOVE serve, e senza gradini', () => {
+    // Un arretramento a scalino sarebbe un palazzo che rientra di trenta unita'
+    // fra un campione e l'altro: il nastro resta continuo, ma si vedrebbe una
+    // parete piatta perpendicolare alla strada. Si allarga come si allarga il
+    // muro per la ghiaia — con una pendenza, non con un salto.
+    const { pts, muro, pit } = ovaleConBox();
+    const p = CittaProfilo.profilo(pts, muro, { pitLanePts: pit, pitRoadHalf: 5 });
+    const senzaBox = CittaProfilo.profilo(pts, muro, {});
+    const passo = TrackGeometry.lapLength(pts) / pts.length;
+    for (const side of [1, -1]) {
+        for (let i = 0; i < pts.length; i++) {
+            const qui = p.distanza[di(p, i, side)];
+            const dopo = p.distanza[di(p, (i + 1) % pts.length, side)];
+            assert.ok(Math.abs(dopo - qui) <= passo * CittaProfilo.PENDENZA_MAX + 1e-6,
+                `campione ${i} lato ${side}: la facciata salta di ${(dopo - qui).toFixed(1)} in un passo di ${passo.toFixed(1)}`);
+        }
+    }
+    // E dall'altra parte del giro, lontano dai box, la citta' e' quella di prima.
+    for (const side of [1, -1]) {
+        assert.equal(p.distanza[di(p, 600, side)], senzaBox.distanza[di(p, 600, side)],
+            'lontano dalla corsia box la facciata non deve muoversi');
+    }
 });

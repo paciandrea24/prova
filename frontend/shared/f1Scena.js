@@ -185,8 +185,18 @@
         // LA CITTÀ, dopo le barriere perché si posa su di loro: la facciata
         // comincia dove finisce il muro più il marciapiede, e dove la via di
         // fuga allarga arretra con lei.
+        // Il traguardo serve gia' qui e non solo alla griglia: in citta' e' uno
+        // dei due tratti attorno a cui i palazzi stanno larghi, per non murare
+        // il podio e la torre di controllo.
+        const startFinishIndex = trackData.startFinish
+            ? TrackGeometry.nearestPoint(trackPts, trackData.startFinish.x, trackData.startFinish.z).index
+            : 0;
         if (inCitta) {
-            builder.buildCitta(scene, trackPts, CittaProfilo.profilo(trackPts, barrierProfile));
+            builder.buildCitta(scene, trackPts, CittaProfilo.profilo(trackPts, barrierProfile, {
+                pitLanePts: pitPts,
+                pitRoadHalf: trackData.pit.roadHalfWidth,
+                startFinishIndex,
+            }));
         }
         builder.buildStartLine(scene, trackPts, roadHalf);
         // drawBoxMarker=false: in gara ogni pilota ha il proprio box 3D
@@ -200,9 +210,6 @@
         // esplicito se la pista ne ha uno, altrimenti 0. Quante piazzole
         // dipingere non è un dato geometrico ma il numero di piloti scelto in
         // lobby.
-        const startFinishIndex = trackData.startFinish
-            ? TrackGeometry.nearestPoint(trackPts, trackData.startFinish.x, trackData.startFinish.z).index
-            : 0;
         builder.buildStartingGrid(scene, trackPts, startFinishIndex, gridSize);
 
         return {
