@@ -13,51 +13,41 @@
                                  require('./sceneryPaddock.js'), require('./trackGravel.js'),
                                  require('./sceneryInfrastructure.js'),
                                  require('./sceneryRegistro.js'),
-                                 require('./sceneryEsclusioni.js'));
+                                 require('./sceneryEsclusioni.js'), require('./semeStabile.js'),
+                                 require('./cittaProfilo.js'), require('./cittaFacciate.js'));
     } else {
         root.TrackScenery = factory(root.TrackGeometry, root.SceneryLandmarks,
                                     root.SceneryTrackside, root.SceneryCrowd,
                                     root.SceneryAssetSizes, root.SceneryHills,
                                     root.SceneryPaddock, root.TrackGravel,
                                     root.SceneryInfrastructure,
-                                    root.SceneryRegistro, root.SceneryEsclusioni);
+                                    root.SceneryRegistro, root.SceneryEsclusioni, root.SemeStabile,
+                                    root.CittaProfilo, root.CittaFacciate);
     }
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryLandmarks,
                                                         SceneryTrackside, SceneryCrowd,
                                                         SceneryAssetSizes, SceneryHills,
                                                         SceneryPaddock, TrackGravel,
                                                         SceneryInfrastructure,
-                                                        SceneryRegistro, SceneryEsclusioni) {
+                                                        SceneryRegistro, SceneryEsclusioni,
+                                                        SemeStabile, CittaProfilo, CittaFacciate) {
 
     // Le categorie senza un modello solido: superfici piane e folla, che non
     // hanno un ingombro da far rispettare a nessuno. La folla in particolare
     // sono ~6500 voci su 7667, tutte dentro le tribune per costruzione: farle
     // passare dalla porta vorrebbe dire scartarle tutte.
-    const SENZA_INGOMBRO = new Set(['pond', 'parkingLot', 'crowd']);
+    // ⚠️ `citta` sta qui dentro perché le colonne di facciata non sono
+    // scenografia da collocare: sono la superficie di un pezzo di mondo già
+    // deciso dal profilo della città, e due colonne adiacenti si toccano per
+    // mestiere. Farle passare dal registro vorrebbe dire scartarne una sì e una
+    // no lungo tutto il circuito.
+    const SENZA_INGOMBRO = new Set(['pond', 'parkingLot', 'crowd', 'citta']);
 
-    // Hash FNV-1a 32 bit di una stringa: seed deterministico dall'id del
-    // tracciato, così lo stesso tracciato genera sempre lo stesso layout
-    // (tracciati diversi → layout diversi ma stabili nel tempo).
-    function hashString(str) {
-        let h = 0x811c9dc5;
-        for (let i = 0; i < str.length; i++) {
-            h ^= str.charCodeAt(i);
-            h = Math.imul(h, 0x01000193);
-        }
-        return h >>> 0;
-    }
-
-    // PRNG mulberry32: veloce, seedabile, sufficiente per uno scatter
-    // visivo (non serve crittografico).
-    function mulberry32(seed) {
-        let a = seed >>> 0;
-        return function () {
-            a = (a + 0x6D2B79F5) | 0;
-            let t = Math.imul(a ^ (a >>> 15), 1 | a);
-            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-        };
-    }
+    // Il seme deterministico e il suo generatore stanno in `semeStabile.js`:
+    // li usa anche chi con la scenografia non c'entra (il profilo della città),
+    // e lasciarli qui creava un anello di require. Restano esportati da questo
+    // modulo perché i chiamanti di sempre li cercano ancora qui.
+    const { hashString, mulberry32 } = SemeStabile;
 
     function weightedPick(rng, weighted) {
         const total = weighted.reduce((s, w) => s + w.weight, 0);
@@ -1732,6 +1722,15 @@
         if (pond) layout.push(pond);
         traslaOltreLaGhiaia(layout, trackPts, barrierProfile,
             trackPts.filter(p => !p.bridge && !p.acrobatico), barrierDist, embankStart, embankOuter);
+
+        // LE FACCIATE DELLA CITTÀ, dopo la traslazione e non prima: le colonne
+        // sanno già dove stanno — gliel'ha detto il profilo, che parte dal muro
+        // vero — e spostarle «oltre la ghiaia» le staccherebbe dal nastro che
+        // devono vestire. In città, del resto, la ghiaia non c'è.
+        if (inCitta) {
+            layout.push(...CittaFacciate.colonne(trackPts,
+                CittaProfilo.perPista(trackData, trackPts, barrierProfile, pitPts)));
+        }
 
         // DAVANTI A UNA TRIBUNA CI VA SOLO LA SUA RETE.
         //

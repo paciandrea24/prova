@@ -51,6 +51,12 @@ const NON_SOLIDE = new Set(['pond', 'parkingLot', 'crowd']);
 function coppiaLecita(a, b) {
     const tribuna = (v) => v.category === 'grandstand' || v.category === 'grandstand-main';
     const rete = (v) => v.asset === 'catchFence';
+    // Due moduli di facciata si toccano per costruzione: sono le colonne di uno
+    // stesso muro, impilate e affiancate. In curva, per giunta, due colonne
+    // adiacenti sono anche RUOTATE l'una rispetto all'altra e i loro spigoli si
+    // incrociano pur avendo i centri alla distanza giusta — lo stesso fenomeno
+    // già documentato per gli edifici della corsia box.
+    if (a.category === 'citta' && b.category === 'citta') return true;
     return (rete(a) && tribuna(b)) || (rete(b) && tribuna(a));
 }
 

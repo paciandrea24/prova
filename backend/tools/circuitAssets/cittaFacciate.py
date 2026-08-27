@@ -28,10 +28,16 @@ Cinque famiglie-tinta, perche' la citta' e' mista (decisione dell'utente):
 """
 from voxelKit import EPS
 
-# La colonna. La larghezza e' la stessa misura che regolava la textura, e sta
-# scritta anche in cittaProfilo.js: se una delle due cambia, i moduli si
-# sovrappongono o lasciano una fessura.
-W = 9.0
+# La colonna. Il PASSO con cui il gioco le posa e' 9 unita'
+# (`CittaProfilo.MODULO_LARGO`); il corpo e' largo 8.7, tre decimi in meno.
+#
+# ⚠️ Quei tre decimi sono il gioco meccanico, e servono: il passo vero non e'
+# mai esattamente 9 — si stira di poco perche' il giro contenga un numero intero
+# di colonne — e un corpo largo quanto il passo nominale finirebbe per
+# compenetrare il vicino ogni volta che il passo scende sotto. Due lastre piene
+# che si intersecano danno facce complanari, cioe' z-fighting. Una fessura di
+# tre decimi, invece, non si vede: dietro c'e' il nastro, dello stesso colore.
+W = 8.7
 HALF_W = W / 2
 # Profondita' della lastra. Serve solo a dare spessore agli sguanci e a coprire
 # il nastro: il volume del palazzo non lo fa questo pezzo.

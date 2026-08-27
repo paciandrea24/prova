@@ -11,9 +11,12 @@
 // valore sbagliato non rompe nulla in modo evidente, produce solo
 // compenetrazioni che si notano soltanto guardando il circuito.
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory();
-    else root.SceneryAssetSizes = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory(require('./toonPalette.js'));
+    } else {
+        root.SceneryAssetSizes = factory(root.ToonPalette);
+    }
+})(typeof self !== 'undefined' ? self : this, function (ToonPalette) {
 
     const SIZES = {
         grandStand:        { w: 19.2, h: 12.3, d: 12.8 },
@@ -77,6 +80,36 @@
         rockCluster:       { w: 4.6,  h: 2.2,  d: 3.7 },
         rockSingle:        { w: 3.1,  h: 1.6,  d: 2.9 },
     };
+
+    // I moduli di facciata dei circuiti cittadini. L'ingombro non serve a
+    // spartirsi lo spazio — le colonne non passano dal registro, si toccano per
+    // mestiere — ma dichiararlo lo stesso costa una riga e toglie di mezzo il
+    // FALLBACK 6x6x6, che è il modo silenzioso in cui questo progetto ha già
+    // sbagliato una volta (i container dentro la pista di monte-rosso).
+    //
+    // Larghezza: il corpo modellato, 8.7. Profondità: la lastra più ciò che
+    // sporge davanti (tende e balconi arrivano a 1.6 + 1.3). Le altezze sono
+    // quelle della pila.
+    //
+    // ⚠️ I numeri sono ricopiati da `CittaProfilo` invece di essere importati,
+    // e non per pigrizia: importarlo farebbe un anello di require (profilo →
+    // scenografia → questa tabella). A verificare che non divergano pensa un
+    // test — `sceneryAssetSizes.test.js`.
+    // Profondità misurata sul .glb, pezzo per pezzo: quanto sporge davanti alla
+    // lastra cambia parecchio fra una tenda da sole (2.9) e un nastro di vetro
+    // (1.9), e dichiararle tutte uguali faceva scattare l'invariante che
+    // confronta il dichiarato col modello.
+    const CITTA_INGOMBRO = {
+        vecchia: { BaseA: [4.5, 2.9], BaseB: [4.5, 2.9], PianoA: [3.5, 2.4], PianoB: [3.5, 2.5], Tetto: [1.2, 2.9] },
+        nuova:   { BaseA: [4.5, 2.9], BaseB: [4.5, 2.2], PianoA: [3.5, 1.9], PianoB: [3.5, 1.9], Tetto: [1.2, 2.1] },
+    };
+    for (const tinta of ToonPalette.CITTA_FACCIATE) {
+        const famiglia = CITTA_INGOMBRO[tinta.famiglia];
+        for (const pezzo of Object.keys(famiglia)) {
+            SIZES[`citta${tinta.nome}${pezzo}`] = { w: 8.7, h: famiglia[pezzo][0], d: famiglia[pezzo][1] };
+        }
+    }
+
 
     const FALLBACK = { w: 6, h: 6, d: 6 };
 

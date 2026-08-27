@@ -192,11 +192,8 @@
             ? TrackGeometry.nearestPoint(trackPts, trackData.startFinish.x, trackData.startFinish.z).index
             : 0;
         if (inCitta) {
-            builder.buildCitta(scene, trackPts, CittaProfilo.profilo(trackPts, barrierProfile, {
-                pitLanePts: pitPts,
-                pitRoadHalf: trackData.pit.roadHalfWidth,
-                startFinishIndex,
-            }));
+            builder.buildCitta(scene, trackPts,
+                CittaProfilo.perPista(trackData, trackPts, barrierProfile, pitPts));
         }
         builder.buildStartLine(scene, trackPts, roadHalf);
         // drawBoxMarker=false: in gara ogni pilota ha il proprio box 3D

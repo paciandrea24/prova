@@ -55,26 +55,23 @@
     // `SURFACES` è fatto di colori singoli — un test lo pretende, e ha ragione:
     // chi legge una superficie si aspetta un intero, non un array.
     //
-    // Tinte spente: sono un fondale, e un muro di colori accesi attorno a tutto
-    // il tracciato mangerebbe l'attenzione alla pista, che è dove si guarda.
+    // ⚠️ NON È PIÙ SOLO UN COLORE: dalla spec del 2026-08-27 ogni voce è una
+    // FAMIGLIA-TINTA, cioè un gruppo di moduli di facciata modellati in Blender
+    // (`backend/tools/circuitAssets/cittaFacciate.py`) più il colore del nastro
+    // che ci sta dietro. I due valori devono coincidere: nelle curve, fra una
+    // colonna e l'altra, si vede il nastro — e se fosse di un altro colore si
+    // vedrebbe una fessura chiara in mezzo a un palazzo di mattoni.
     //
-    // ⚠️ Ma spente non vuol dire UGUALI. Le prime sei erano sei grigi-beige a
-    // un passo l'uno dall'altro e in gioco davano quello che l'utente ha visto:
-    // «solamente dei blocchi bianchi». Le quattro aggiunte — mattone, cotto,
-    // salvia, ardesia scura — restano desaturate ma cadono in famiglie di tinta
-    // diverse, che è ciò che fa leggere una fila di palazzi come edifici
-    // distinti invece che come un muro unico intonacato.
+    // Le sei tinte precedenti erano sei grigi-beige a un passo l'uno
+    // dall'altro, e in gioco davano quello che l'utente ha visto: «solamente
+    // dei blocchi bianchi». Queste cinque cadono in famiglie di tinta diverse e
+    // portano ciascuna il proprio stile di edificio.
     const CITTA_FACCIATE = [
-        0xb9b2a6,   // pietra chiara
-        0xa8a294,   // sabbia
-        0xc6bfae,   // crema
-        0x9aa0a6,   // grigio azzurro
-        0xb0a89c,   // tortora
-        0x8f959b,   // ardesia
-        0xa97f6a,   // mattone
-        0x8a5f4e,   // cotto scuro
-        0x8b9a86,   // salvia
-        0x6f757b,   // ardesia scura
+        { nome: 'Crema',   colore: 0xc6bfae, famiglia: 'vecchia' },
+        { nome: 'Mattone', colore: 0xa97f6a, famiglia: 'vecchia' },
+        { nome: 'Tortora', colore: 0xb0a89c, famiglia: 'vecchia' },
+        { nome: 'Vetro',   colore: 0x9aa0a6, famiglia: 'nuova' },
+        { nome: 'Ardesia', colore: 0x8f959b, famiglia: 'nuova' },
     ];
 
     // Gradiente del cielo, dall'orizzonte (t=0) allo zenit (t=1).

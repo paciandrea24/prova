@@ -827,6 +827,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         'grandStand', 'grandStandAwning', 'grandStandCovered',
     ]);
 
+    // ⚠️ E TUTTA LA CITTA'. I moduli di facciata sono cinquemila istanze su un
+    // circuito cittadino, e la loro ombra e' quella di un muro continuo alto
+    // trenta unita' — cioe' la meta' della citta' in ombra su se stessa, per
+    // una mappa d'ombra che non ha la risoluzione per raccontarla. Il costo si
+    // paga tutto e non si vede: e' lo stesso conto gia' fatto per le tribune,
+    // con un ordine di grandezza in piu' di oggetti.
+    for (const id of Object.keys(SCENERY_ASSET_PATHS)) {
+        if (/^citta[A-Z]/.test(id)) NO_SHADOW_ASSETS.add(id);
+    }
+
     // Asset la cui ombra è proiettata da una SCATOLA invisibile al posto del
     // modello vero. È la tecnica dei giochi grossi: l'ombra di una tribuna
     // vista da terra è un rettangolo scuro, e per disegnare un rettangolo

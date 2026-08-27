@@ -121,81 +121,34 @@
     const CITTA_PROFONDITA_TETTO = 14;   // quanto e' profondo il tetto visibile
     const CITTA_SOTTO_TERRA = 1.5;       // la base sprofonda: niente fessura col suolo
 
-    // ⚠️ LE FINESTRE SONO UNA TEXTURA, NON DEI VERTICI. Il primo tentativo le
-    // faceva a fasce di vertex color: da dentro l'abitacolo non sembravano
-    // finestre ma tende a coste, perche' il colore di un vertice SFUMA fino al
-    // successivo e una fascia non ha bordi. Duplicare i vertici per avere lo
-    // stacco netto voleva dire 33 vertici per campione — 128 mila triangoli per
-    // la sola citta', contro i 47 mila di tutto il nastro.
+    // ⚠️ IL NASTRO NON HA PIÙ LA FACCIA: gliela danno i moduli.
     //
-    // Un modulo di facciata disegnato una volta su un canvas e ripetuto lungo
-    // il nastro costa una textura di 128x128 e nessun vertice in piu', e le
-    // finestre sono RIQUADRI veri invece che strisce continue. Il colore del
-    // palazzo resta vertex color: la textura e' in scala di grigi e ci si
-    // moltiplica sopra.
-    const CITTA_MODULO_LARGO = 9;        // quanto e' largo un modulo di facciata
-    const CITTA_MODULO_ALTO = 7;         // due piani da tre e mezzo
-
-    // La textura, costruita una volta sola per tutta la sessione: la stessa
-    // immagine serve ogni palazzo di ogni pista, ed e' il colore del vertice a
-    // distinguerli. Fuori dal browser (i test girano in node) non esiste
-    // canvas: la citta' si costruisce lo stesso, senza finestre.
-    let texFacciate;
-    function texturaFacciate() {
-        if (texFacciate !== undefined) return texFacciate;
-        if (typeof document === 'undefined' || !document.createElement || !THREE.CanvasTexture) {
-            texFacciate = null;
-            return texFacciate;
-        }
-        const S = 128;
-        const cv = document.createElement('canvas');
-        cv.width = S; cv.height = S;
-        const g = cv.getContext('2d');
-        g.fillStyle = '#ffffff';
-        g.fillRect(0, 0, S, S);
-        // Due file di finestre per modulo, quattro per fila. I valori sono
-        // MOLTIPLICATORI del colore del palazzo: 0.42 e' il vetro in ombra,
-        // 0.66 il riflesso del cielo nella meta' alta, 0.88 il davanzale.
-        const FILE = [0.10, 0.52];       // dove comincia la fila, in frazione di modulo
-        const ALTA = 0.30, LARGA = 0.17, PASSO = 0.25, PRIMA = 0.055;
-        for (const fila of FILE) {
-            for (let c = 0; c < 4; c++) {
-                const x = (PRIMA + c * PASSO) * S;
-                const y = (1 - fila - ALTA) * S;      // il canvas cresce verso il basso
-                const w = LARGA * S, h = ALTA * S;
-                g.fillStyle = '#6b6b6b';
-                g.fillRect(x, y, w, h);
-                g.fillStyle = '#a8a8a8';
-                g.fillRect(x, y, w, h * 0.42);        // il cielo riflesso, in alto
-                g.fillStyle = '#e0e0e0';
-                g.fillRect(x - w * 0.06, y + h, w * 1.12, S * 0.018);   // il davanzale
-            }
-        }
-        const tex = new THREE.CanvasTexture(cv);
-        tex.wrapS = THREE.RepeatWrapping;
-        tex.wrapT = THREE.RepeatWrapping;
-        texFacciate = tex;
-        return texFacciate;
-    }
+    // Le finestre sono state prima fasce di vertex color, poi una textura
+    // disegnata su canvas. Il giudizio dell'utente sulla seconda: «si capisce
+    // che non sono palazzi veri, cambia il colore ma il pattern sulla facciata
+    // sempre quello è... questo approccio secondo me non va bene». Dal
+    // 2026-08-27 la superficie è fatta di moduli scolpiti in Blender
+    // (`CittaFacciate`), e questo nastro torna al mestiere per cui l'utente lo
+    // vuole tenere — «il nastro è perfetto, è fantastico, davvero»: chiudere la
+    // vista senza un buco, e seguire la curva per costruzione.
+    //
+    // Resta quindi un muro cieco, del colore del palazzo che gli sta davanti.
+    // Lo si vede nelle fessure fra due colonne, sopra i tetti bassi e nei
+    // giunti in curva: per questo il colore deve essere lo STESSO delle
+    // facciate, e infatti viene dalla stessa tabella.
 
     function buildCitta(container, pts, profilo) {
         if (!pts || !pts.length || !profilo) return;
         const n = pts.length;
-        const tex = texturaFacciate();
 
         for (const side of [1, -1]) {
             // Fronte e tetto sono due mesh e non una: il fronte porta la
             // textura delle finestre, il tetto no. Mappare anche il tetto
             // vorrebbe dire finestre coricate sulla copertura.
             const posF = new Float32Array(n * 2 * 3), colF = new Float32Array(n * 2 * 3);
-            const uvF = new Float32Array(n * 2 * 2);
             const posT = new Float32Array(n * 2 * 3), colT = new Float32Array(n * 2 * 3);
             const idxF = [], idxT = [];
 
-            // Quanto si e' percorso lungo la FACCIATA (non lungo l'asse: la
-            // facciata esterna di una curva e' piu' lunga, e misurarla
-            // sull'asse stirerebbe le finestre proprio dove si guardano).
-            const percorso = new Float64Array(n);
             const base = [];
             for (let i = 0; i < n; i++) {
                 const p = pts[i];
@@ -208,24 +161,11 @@
                     za: p.z + nz * (d + CITTA_PROFONDITA_TETTO) * side,
                     suolo: (p.y || 0), h: profilo.altezza[k], c: profilo.colore[k],
                 });
-                if (i > 0) {
-                    percorso[i] = percorso[i - 1]
-                        + Math.hypot(base[i].x - base[i - 1].x, base[i].z - base[i - 1].z);
-                }
             }
-            // Il giro si chiude: se l'ultimo modulo restasse a meta', nel punto
-            // di chiusura si vedrebbe mezza finestra tagliata. Si stira di poco
-            // il passo perche' il perimetro contenga moduli interi.
-            const giro = percorso[n - 1]
-                + Math.hypot(base[0].x - base[n - 1].x, base[0].z - base[n - 1].z);
-            const moduli = Math.max(1, Math.round(giro / CITTA_MODULO_LARGO));
-
             for (let i = 0; i < n; i++) {
                 const b = base[i];
                 const r = ((b.c >> 16) & 255) / 255, g = ((b.c >> 8) & 255) / 255, bl = (b.c & 255) / 255;
-                const u = percorso[i] / giro * moduli;
-
-                const f = i * 6, uu = i * 4;
+                const f = i * 6;
                 // Il fronte: base sotto terra, cima all'altezza del palazzo.
                 posF[f]     = b.x; posF[f + 1] = b.suolo - CITTA_SOTTO_TERRA; posF[f + 2] = b.z;
                 posF[f + 3] = b.x; posF[f + 4] = b.suolo + b.h;               posF[f + 5] = b.z;
@@ -233,9 +173,6 @@
                 // modo perche' il piede del palazzo si stacchi dal marciapiede.
                 colF[f]     = r * 0.82; colF[f + 1] = g * 0.82; colF[f + 2] = bl * 0.82;
                 colF[f + 3] = r;        colF[f + 4] = g;        colF[f + 5] = bl;
-                uvF[uu]     = u; uvF[uu + 1] = -CITTA_SOTTO_TERRA / CITTA_MODULO_ALTO;
-                uvF[uu + 2] = u; uvF[uu + 3] = b.h / CITTA_MODULO_ALTO;
-
                 // Il tetto: dalla cima del fronte all'indietro.
                 posT[f]     = b.x;  posT[f + 1] = b.suolo + b.h; posT[f + 2] = b.z;
                 posT[f + 3] = b.xa; posT[f + 4] = b.suolo + b.h; posT[f + 5] = b.za;
@@ -250,18 +187,15 @@
             const geoF = new THREE.BufferGeometry();
             geoF.setAttribute('position', new THREE.Float32BufferAttribute(posF, 3));
             geoF.setAttribute('color', new THREE.Float32BufferAttribute(colF, 3));
-            geoF.setAttribute('uv', new THREE.Float32BufferAttribute(uvF, 2));
             geoF.setIndex(idxF);
             geoF.computeVertexNormals();
-            const matF = new THREE.MeshStandardMaterial({
+            const fronte = new THREE.Mesh(geoF, new THREE.MeshStandardMaterial({
                 // ⚠️ `flatShading`: senza, le normali si mediano da un campione
-                // all'altro e la fila di palazzi si legge come un'onda continua.
-                // Con, ogni tratto e' una faccia piana — cioe' un palazzo.
+                // all'altro e il muro si legge come un'onda continua invece che
+                // come una spezzata di facciate.
                 color: 0xffffff, vertexColors: true, roughness: 1, metalness: 0,
                 side: THREE.DoubleSide, flatShading: true,
-            });
-            if (tex) matF.map = tex;
-            const fronte = new THREE.Mesh(geoF, matF);
+            }));
             fronte.name = side > 0 ? 'cittaDestra' : 'cittaSinistra';
             container.add(fronte);
 

@@ -21,11 +21,13 @@
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
         module.exports = factory(require('./trackGravel.js'), require('./trackGeometry.js'),
-                                 require('./trackScenery.js'), require('./toonPalette.js'));
+                                 require('./toonPalette.js'), require('./semeStabile.js'));
     } else {
-        root.CittaProfilo = factory(root.TrackGravel, root.TrackGeometry, root.TrackScenery, root.ToonPalette);
+        root.CittaProfilo = factory(root.TrackGravel, root.TrackGeometry, root.ToonPalette,
+                                    root.SemeStabile);
     }
-})(typeof self !== 'undefined' ? self : this, function (TrackGravel, TrackGeometry, TrackScenery, ToonPalette) {
+})(typeof self !== 'undefined' ? self : this, function (TrackGravel, TrackGeometry, ToonPalette,
+                                                        SemeStabile) {
 
     // Quanto marciapiede sta fra il muro e la prima facciata.
     //
@@ -37,18 +39,49 @@
     // piedi» — le tribune finivano dentro le facciate: 87 tribune tagliate a
     // meta' da un muro di mattoni.
     //
+    // 24 e non 20.6, perche' quella e' la distanza RADIALE del punto piu'
+    // sporgente: in curva una tribuna lunga diciannove unita' e una colonna di
+    // facciata sono anche ruotate l'una rispetto all'altra, e i loro spigoli si
+    // incrociano pur avendo i centri alla distanza giusta. Le tre unita' e mezza
+    // di scarto sono il prezzo di quella rotazione, misurato su citta-prova.
+    //
+    // ⚠️ E ci sta dentro anche LO SPESSORE DELLA FACCIATA. Il numero misura la
+    // distanza fra il muro e il NASTRO, ma i moduli si posano sul nastro e
+    // crescono verso la pista: tre unità di lastra, tende da sole e balconi.
+    // Contando solo le 22 delle tribune, la prima fila di moduli arrivava
+    // addosso alla tribuna — vista come compenetrazione di 2.90 su citta-prova.
+    //
     // Abbassarlo si puo', ma non da solo: prima devono restare fuori le tribune.
-    const MARCIAPIEDE = 22;
+    const SPESSORE_FACCIATA = 3;
+    const MARCIAPIEDE = 24 + SPESSORE_FACCIATA;
 
-    // Un palazzo più basso della carreggiata non chiude niente; oltre i 45 si
-    // vede solo muro anche dall'abitacolo, e ogni unità in più è schermo
-    // riempito — che su questo gioco è il costo che conta davvero.
-    const ALTEZZA_MIN = 14;
-    const ALTEZZA_MAX = 45;
+    // ⚠️ L'ALTEZZA DI UN PALAZZO NON È LIBERA: È UNA PILA DI MODULI. Dalla spec
+    // del 2026-08-27 la facciata è fatta di pezzi modellati — base, N piani
+    // tipo, coronamento — e un palazzo alto 31.7 non esiste: esiste quello da
+    // sette piani. Le tre misure sono le stesse di
+    // `backend/tools/circuitAssets/cittaFacciate.py`, e vanno cambiate insieme:
+    // se divergono, il coronamento galleggia o il nastro sbuca sopra il tetto.
+    const H_BASE = 4.5;
+    const H_PIANO = 3.5;
+    const H_CORONAMENTO = 1.2;
+    // Un palazzo più basso della carreggiata non chiude niente; oltre gli 11
+    // piani si vede solo muro anche dall'abitacolo, e ogni unità in più è
+    // schermo riempito — che su questo gioco è il costo che conta davvero.
+    const PIANI_MIN = 3;
+    const PIANI_MAX = 11;
+    const altezzaDi = (piani) => H_BASE + piani * H_PIANO + H_CORONAMENTO;
+    const ALTEZZA_MIN = altezzaDi(PIANI_MIN);
+    const ALTEZZA_MAX = altezzaDi(PIANI_MAX);
 
     // Quanto è lungo un palazzo, in unità di pista. Sotto le 25 la fila si legge
     // come una scalinata, sopra le 60 come un capannone unico.
     const PALAZZO_LUNGHEZZA = 38;
+
+    // ⚠️ Quanto è larga una colonna di facciata. È la stessa misura scritta in
+    // `cittaFacciate.py` (W = 9.0): i moduli sono modellati su questa
+    // larghezza, e posarli a un passo diverso li sovrapporrebbe o lascerebbe
+    // una fessura fra l'uno e l'altro.
+    const MODULO_LARGO = 9;
 
     // ⚠️ QUANTO SPAZIO VUOLE IL PADDOCK. Nel tratto del traguardo il muro della
     // pista non arretra: sta FRA la carreggiata e la corsia box, com'è giusto.
@@ -60,10 +93,16 @@
     // Il numero non è nuovo: la fila dei garage la posa TrackScenery a
     // `pitRoadHalf + PIT_BUILDING_OFFSET_MARGIN` dall'asse della corsia, e
     // l'edificio è profondo 14.7 — il suo retro sta altre 7.4 unità più in là.
-    // Una misura sola per due sistemi: se un giorno i garage si spostano, la
-    // città arretra con loro invece di scoprirlo al playtest.
+    //
+    // ⚠️ La prima cifra è RICOPIATA da `trackScenery.js` invece che importata,
+    // e non per pigrizia: da quando le facciate sono asset, è la scenografia a
+    // dover nominare la città — deve posarne le colonne nel layout — e
+    // importarla di rimando chiuderebbe un anello di require, che in Node
+    // lascia mezzo modulo vuoto. A verificare che le due copie non divergano
+    // pensa un test, non la buona volontà.
+    const PADDOCK_OFFSET = 19.4;
     const PADDOCK_RETRO = 7.4;
-    const PADDOCK = TrackScenery.PIT_BUILDING_OFFSET_MARGIN + PADDOCK_RETRO;
+    const PADDOCK = PADDOCK_OFFSET + PADDOCK_RETRO;
 
     // Di quanto la facciata può allontanarsi dall'asse da un campione al
     // successivo, in frazione del passo. Senza limite, il rientro attorno ai box
@@ -174,38 +213,162 @@
         const distanza = new Float64Array(n * 2);
         const altezza = new Float64Array(n * 2);
         const colore = new Array(n * 2);
-        if (!n) return { distanza, altezza, colore };
+        // Chi è il palazzo di questo campione: quale famiglia-tinta, quanti
+        // piani, quale variante del piano tipo, e che numero ha il palazzo.
+        const tinta = new Int32Array(n * 2);
+        const piani = new Int32Array(n * 2);
+        const variante = new Int32Array(n * 2);
+        const inizio = new Int32Array(n * 2);
+        // Dove va posata ogni colonna di facciata. Le calcola QUI e non chi
+        // posa i moduli, perché sono le stesse misure che decidono dove il
+        // nastro cambia altezza: due conti separati vorrebbero dire un
+        // coronamento che finisce a metà di uno scalino.
+        const colonne = [];
+        const vuoto = { distanza, altezza, colore, tinta, piani, variante, inizio, colonne };
+        if (!n) return vuoto;
 
-        const passo = TrackGeometry.lapLength(trackPts) / n;
-        const perPalazzo = Math.max(2, Math.round(PALAZZO_LUNGHEZZA / passo));
+        const passoCampione = TrackGeometry.lapLength(trackPts) / n;
         const palette = tinte();
-        const arretra = spazioPerIlPaddock(trackPts, barrierProfile, opzioni || {}, passo);
+        const arretra = spazioPerIlPaddock(trackPts, barrierProfile, opzioni || {}, passoCampione);
 
         for (const side of [1, -1]) {
+            const lato = side > 0 ? 0 : 1;
+            // 1. Dove sta la facciata, campione per campione.
+            const bordo = new Array(n);
             for (let i = 0; i < n; i++) {
-                const k = i * 2 + (side > 0 ? 0 : 1);
+                const k = i * 2 + lato;
                 // La facciata si posa sul muro VERO di quel punto: dove la via
                 // di fuga allarga, la città arretra con lei invece di tagliarla.
                 // E dove passa il paddock arretra ancora: là fuori, prima dei
                 // palazzi, ci sono la corsia box e i garage.
                 distanza[k] = Math.max(
                     TrackGravel.barrierAt(barrierProfile, i, side) + MARCIAPIEDE, arretra[k]);
+                const p = trackPts[i];
+                const nrm = TrackGeometry.normalAt(trackPts, i, true);
+                bordo[i] = {
+                    x: p.x + nrm.nx * distanza[k] * side,
+                    z: p.z + nrm.nz * distanza[k] * side,
+                    y: p.y || 0,
+                    // Verso cui guarda la facciata: la pista, cioè il contrario
+                    // della normale dalla sua parte.
+                    rotY: Math.atan2(-nrm.nx * side, -nrm.nz * side),
+                };
+            }
 
-                // Il palazzo a cui questo campione appartiene: un blocco di
-                // campioni consecutivi, così l'altezza resta ferma e poi salta.
-                const inizio = Math.floor(i / perPalazzo) * perPalazzo;
-                const q = trackPts[inizio % n];
-                // Il lato entra nel seme, o i due bordi sarebbero uno lo
-                // specchio dell'altro per tutto il giro.
-                const seme = TrackScenery.hashString(
+            // 2. Quanto è lungo il giro DELLA FACCIATA — non dell'asse: in curva
+            // la facciata esterna è più lunga, e misurare sull'asse darebbe una
+            // colonna in meno proprio dove se ne vedono di più.
+            const percorso = new Float64Array(n + 1);
+            for (let i = 1; i <= n; i++) {
+                const a = bordo[i - 1], b = bordo[i % n];
+                percorso[i] = percorso[i - 1] + Math.hypot(b.x - a.x, b.z - a.z);
+            }
+            const giro = percorso[n];
+
+            // 3. Le colonne: un numero INTERO su tutto il giro, o l'ultima
+            // resterebbe mezza tagliata nel punto di chiusura. Il passo vero si
+            // stira di poco attorno a MODULO_LARGO, e il corpo dei moduli è tre
+            // decimi più stretto apposta per assorbirlo.
+            const quante = Math.max(1, Math.round(giro / MODULO_LARGO));
+            const passo = giro / quante;
+
+            // 4. I palazzi si contano in COLONNE, non in campioni. È ciò che
+            // fa combaciare lo scalino del nastro con la giunzione fra due
+            // facciate: se il confine cadesse in mezzo a una colonna, dietro
+            // mezza facciata il nastro avrebbe l'altezza del palazzo sbagliato.
+            const perPalazzo = Math.max(1, Math.round(PALAZZO_LUNGHEZZA / MODULO_LARGO));
+            const quantiPalazzi = Math.max(1, Math.ceil(quante / perPalazzo));
+
+            // 5. Che palazzo è, palazzo per palazzo. Il seme viene dalla
+            // GEOMETRIA — il punto in cui il palazzo comincia — non da un
+            // contatore: la stessa pista deve dare la stessa città a ogni
+            // caricamento, e due piste diverse città diverse.
+            const scelta = [];
+            for (let b = 0; b < quantiPalazzi; b++) {
+                const q = puntoA(bordo, percorso, n, b * perPalazzo * passo);
+                const seme = SemeStabile.hashString(
                     `${q.x.toFixed(1)}:${q.z.toFixed(1)}:${side > 0 ? 'd' : 's'}`);
-                const rng = TrackScenery.mulberry32(seme);
-                altezza[k] = ALTEZZA_MIN + rng() * (ALTEZZA_MAX - ALTEZZA_MIN);
-                colore[k] = palette[Math.floor(rng() * palette.length) % palette.length];
+                const rng = SemeStabile.mulberry32(seme);
+                const quantiPiani = PIANI_MIN + Math.floor(rng() * (PIANI_MAX - PIANI_MIN + 1));
+                const quale = Math.floor(rng() * palette.length) % palette.length;
+                scelta.push({ piani: quantiPiani, tinta: quale, variante: rng() < 0.5 ? 0 : 1 });
+            }
+
+            // 6. Ogni campione eredita il palazzo della colonna in cui cade.
+            for (let i = 0; i < n; i++) {
+                const k = i * 2 + lato;
+                const colonna = Math.min(quante - 1, Math.floor(percorso[i] / passo));
+                const b = Math.min(quantiPalazzi - 1, Math.floor(colonna / perPalazzo));
+                const s = scelta[b];
+                altezza[k] = altezzaDi(s.piani);
+                piani[k] = s.piani;
+                tinta[k] = s.tinta;
+                colore[k] = palette[s.tinta].colore;
+                variante[k] = s.variante;
+                inizio[k] = b;
+            }
+
+            // 7. E le colonne, al centro del loro tratto.
+            for (let c = 0; c < quante; c++) {
+                const dove = puntoA(bordo, percorso, n, (c + 0.5) * passo);
+                const b = Math.min(quantiPalazzi - 1, Math.floor(c / perPalazzo));
+                colonne.push({
+                    side, indice: c, palazzo: b,
+                    x: dove.x, y: dove.y, z: dove.z, rotY: dove.rotY,
+                    tinta: scelta[b].tinta, piani: scelta[b].piani, variante: scelta[b].variante,
+                });
             }
         }
-        return { distanza, altezza, colore };
+        return vuoto;
     }
 
-    return { profilo, MARCIAPIEDE, ALTEZZA_MIN, ALTEZZA_MAX, PALAZZO_LUNGHEZZA, PADDOCK, PENDENZA_MAX, LUSSO_TRAGUARDO };
+    // ⚠️ IL PROFILO DI UNA PISTA SI CHIEDE DA QUI, non componendo le opzioni a
+    // mano. Lo calcolano due sistemi diversi — la mesh del nastro (f1Scena) e le
+    // colonne di facciata (trackScenery) — e devono ottenere lo STESSO profilo:
+    // se uno dei due dimenticasse il traguardo o la corsia box, il nastro
+    // cambierebbe altezza dove le facciate non lo fanno, e si vedrebbe uno
+    // scalino di muro nudo sopra un palazzo intero.
+    function perPista(trackData, trackPts, barrierProfile, pitLanePts) {
+        if (!trackData || trackData.ambientazione !== 'citta') return null;
+        const sf = trackData.startFinish
+            ? TrackGeometry.nearestPoint(trackPts, trackData.startFinish.x, trackData.startFinish.z).index
+            : 0;
+        return profilo(trackPts, barrierProfile, {
+            pitLanePts,
+            pitRoadHalf: trackData.pit ? trackData.pit.roadHalfWidth : 0,
+            startFinishIndex: sf,
+        });
+    }
+
+    // Il punto della facciata a distanza `s` dall'inizio del giro.
+    function puntoA(bordo, percorso, n, s) {
+        const giro = percorso[n];
+        let d = s % giro;
+        if (d < 0) d += giro;
+        // Ricerca binaria: il giro ha mille campioni e le colonne sono
+        // centinaia, e una scansione lineare per ciascuna sarebbe quadratica.
+        let lo = 0, hi = n;
+        while (hi - lo > 1) {
+            const mid = (lo + hi) >> 1;
+            if (percorso[mid] <= d) lo = mid; else hi = mid;
+        }
+        const a = bordo[lo], b = bordo[(lo + 1) % n];
+        const tratto = percorso[lo + 1] - percorso[lo];
+        const t = tratto > 1e-9 ? (d - percorso[lo]) / tratto : 0;
+        return {
+            x: a.x + (b.x - a.x) * t,
+            z: a.z + (b.z - a.z) * t,
+            y: a.y + (b.y - a.y) * t,
+            // ⚠️ L'orientamento NON si interpola fra due angoli: a cavallo di
+            // ±π la media fra 179° e -179° è zero, cioè la facciata girata al
+            // contrario. Si prende quello del campione più vicino.
+            rotY: (t < 0.5 ? a : b).rotY,
+        };
+    }
+
+    return {
+        profilo, perPista, MARCIAPIEDE, SPESSORE_FACCIATA, ALTEZZA_MIN, ALTEZZA_MAX, PALAZZO_LUNGHEZZA,
+        PADDOCK, PADDOCK_OFFSET, PENDENZA_MAX, LUSSO_TRAGUARDO,
+        H_BASE, H_PIANO, H_CORONAMENTO, PIANI_MIN, PIANI_MAX, MODULO_LARGO,
+    };
 });

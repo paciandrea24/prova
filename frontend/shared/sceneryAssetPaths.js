@@ -11,9 +11,12 @@
 // Estratta da f1.js il 2026-08-24. Rif.
 // docs/superpowers/specs/2026-08-24-f1-anteprima-esplorabile-design.md
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory();
-    else root.SceneryAssetPaths = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory(require('./toonPalette.js'));
+    } else {
+        root.SceneryAssetPaths = factory(root.ToonPalette);
+    }
+})(typeof self !== 'undefined' ? self : this, function (ToonPalette) {
 
     const PERCORSI = {
         // Alberi: unici Kenney rimasti, per scelta esplicita dell'utente, e
@@ -78,6 +81,21 @@
         recoveryCrane: '/assets/custom/circuit/recoveryCrane.glb',
         trackGate: '/assets/custom/circuit/trackGate.glb',
     };
+
+    // I moduli di facciata dei circuiti cittadini: venticinque righe identiche
+    // che si scrivono da sole, una per pezzo e per famiglia-tinta.
+    //
+    // ⚠️ I nomi si compongono qui invece di chiederli a `CittaFacciate` — che
+    // è chi li usa — perché quel modulo tira dentro il profilo della città, il
+    // profilo tira dentro la scenografia e la scenografia legge questa tabella:
+    // un anello di require che in Node lascia mezzo modulo vuoto. A tenere
+    // allineate le due liste pensa un test, non la buona volontà.
+    for (const tinta of ToonPalette.CITTA_FACCIATE) {
+        for (const pezzo of ['BaseA', 'BaseB', 'PianoA', 'PianoB', 'Tetto']) {
+            const id = `citta${tinta.nome}${pezzo}`;
+            PERCORSI[id] = `/assets/custom/circuit/${id}.glb`;
+        }
+    }
 
     return { PERCORSI };
 });

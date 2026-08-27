@@ -1025,30 +1025,19 @@ test('la facciata sta oltre il muro e alla quota che dice il profilo', () => {
     }
 });
 
-test('le finestre sono mappate sulla facciata, e il motivo si chiude sul giro', () => {
-    // Le finestre sono una textura ripetuta, non dei vertici: quello che si puo'
-    // misurare senza un browser sono le UV. Devono crescere lungo il nastro
-    // (senno' il motivo sarebbe stirato o fermo) e il giro deve contenere un
-    // numero INTERO di moduli, o nel punto di chiusura si vedrebbe mezza
-    // finestra tagliata.
+test('il nastro resta un muro cieco: la faccia la fanno i moduli', () => {
+    // ⚠️ Le UV c'erano quando le finestre erano una textura sul nastro. Dal
+    // 2026-08-27 le finestre sono moduli scolpiti (CittaFacciate) e il nastro
+    // e' tornato quello che l'utente voleva che restasse: il muro che chiude la
+    // vista. Una textura qui sotto non si vedrebbe nemmeno — la coprono le
+    // facciate — e sarebbe fill rate pagato per niente.
     const { pts, profilo } = pistaCittadina();
     const c = contenitore();
     TrackMeshBuilder.buildCitta(c, pts, profilo);
-    for (const mesh of c.children.filter(m => /^citta(Destra|Sinistra)$/.test(m.name))) {
-        const uv = mesh.geometry.attributes.uv;
-        assert.ok(uv, `${mesh.name}: il fronte non ha UV, la textura non si vedrebbe`);
-        const a = uv.array;
-        assert.equal(a[0], 0, 'il primo campione parte a inizio motivo');
-        let cresce = 0;
-        for (let i = 1; i < pts.length; i++) {
-            if (a[i * 4] > a[(i - 1) * 4]) cresce++;
-        }
-        assert.equal(cresce, pts.length - 1, `${mesh.name}: le UV non avanzano lungo il nastro`);
-        // L'ultimo campione piu' il tratto di chiusura devono fare un intero.
-        const ultimo = a[(pts.length - 1) * 4];
-        assert.ok(ultimo > 1, `${mesh.name}: il giro contiene meno di un modulo`);
-        // La quota: la cima del palazzo sta piu' in alto della base anche in UV.
-        assert.ok(a[3] > a[1], `${mesh.name}: le UV verticali non salgono col palazzo`);
+    for (const mesh of c.children) {
+        assert.ok(!mesh.geometry.attributes.uv, `${mesh.name}: il nastro non deve avere UV`);
+        assert.ok(!mesh.material.map, `${mesh.name}: il nastro non deve avere una textura`);
+        assert.ok(mesh.material.vertexColors, `${mesh.name}: il colore del palazzo viene dai vertici`);
     }
 });
 

@@ -105,13 +105,37 @@ test('la stessa pista dà sempre la stessa città, una diversa no', () => {
     assert.notDeepEqual(Array.from(c.altezza), Array.from(a.altezza));
 });
 
-test('il colore non cambia in mezzo a un palazzo', () => {
+test('dentro un palazzo non cambia niente: tinta, altezza e variante', () => {
+    // ⚠️ Chi sia il palazzo lo dice `inizio`, non l'altezza. Da quando le
+    // altezze sono quantizzate sulla pila di moduli, due palazzi diversi
+    // possono avere lo stesso numero di piani — e questo test, che prima
+    // riconosceva il palazzo dalla sua altezza, li scambiava per uno solo.
     const { pts, muro } = ovaleConMuro();
     const p = CittaProfilo.profilo(pts, muro);
-    for (let i = 1; i < pts.length; i++) {
-        if (p.altezza[di(p, i, 1)] !== p.altezza[di(p, i - 1, 1)]) continue;
-        assert.equal(p.colore[di(p, i, 1)], p.colore[di(p, i - 1, 1)],
-            `campione ${i}: stesso palazzo, colore diverso`);
+    for (const side of [1, -1]) {
+        for (let i = 1; i < pts.length; i++) {
+            const qui = di(p, i, side), prima = di(p, i - 1, side);
+            if (p.inizio[qui] !== p.inizio[prima]) continue;
+            assert.equal(p.colore[qui], p.colore[prima], `campione ${i}: colore diverso`);
+            assert.equal(p.altezza[qui], p.altezza[prima], `campione ${i}: altezza diversa`);
+            assert.equal(p.variante[qui], p.variante[prima], `campione ${i}: variante diversa`);
+        }
+    }
+});
+
+test('ogni altezza e\' una pila di moduli, non un numero qualsiasi', () => {
+    // Un palazzo alto 31.7 non esiste: esiste quello da sette piani. Se
+    // l'altezza non cadesse sulla griglia dei moduli, il coronamento
+    // galleggerebbe sopra l'ultimo piano o ci affonderebbe dentro.
+    const { pts, muro } = ovaleConMuro();
+    const p = CittaProfilo.profilo(pts, muro);
+    for (let k = 0; k < p.altezza.length; k++) {
+        const piani = p.piani[k];
+        assert.ok(piani >= CittaProfilo.PIANI_MIN && piani <= CittaProfilo.PIANI_MAX,
+            `${piani} piani, fuori dall'intervallo`);
+        const attesa = CittaProfilo.H_BASE + piani * CittaProfilo.H_PIANO + CittaProfilo.H_CORONAMENTO;
+        assert.ok(Math.abs(p.altezza[k] - attesa) < 1e-9,
+            `altezza ${p.altezza[k]} non e' una pila: ${piani} piani fanno ${attesa}`);
     }
 });
 
@@ -171,4 +195,13 @@ test('la citta\' arretra solo DOVE serve, e senza gradini', () => {
         assert.equal(p.distanza[di(p, 600, side)], senzaBox.distanza[di(p, 600, side)],
             'lontano dalla corsia box la facciata non deve muoversi');
     }
+});
+
+test('la misura del paddock e quella della scenografia sono lo stesso numero', () => {
+    // ⚠️ `PADDOCK_OFFSET` e' una COPIA di TrackScenery.PIT_BUILDING_OFFSET_MARGIN:
+    // importarlo chiuderebbe un anello di require, da quando la scenografia deve
+    // nominare la citta' per posarne le colonne. Questo test e' il prezzo della
+    // copia — se qualcuno sposta i garage, la citta' deve arretrare con loro.
+    const TrackScenery = require('./trackScenery.js');
+    assert.equal(CittaProfilo.PADDOCK_OFFSET, TrackScenery.PIT_BUILDING_OFFSET_MARGIN);
 });
