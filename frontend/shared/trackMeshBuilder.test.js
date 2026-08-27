@@ -1053,6 +1053,12 @@ test('in citta\' le barriere portano i pannelli sponsor, nel verde no', () => {
     // traffico per un weekend, a bordo strada ci sono i cartelloni: fascia di
     // colore e banda chiara al centro, marchi inventati e nessuna scritta —
     // che e' quanto si legge davvero passandoci a 250 km/h.
+    //
+    // ⚠️ QUESTO TEST E' STATO RISCRITTO. La prima stesura contava i vertici
+    // (quattro) e i colori distinti (sei), ed era VERDE su una barriera che
+    // sfumava dal colore al bianco per il 38% della sua altezza e aveva tutto
+    // il terzo alto biancastro. Contare non e' guardare: un test sul colore
+    // deve chiedere di che tinta e' un punto preciso.
     const pts = [];
     for (let i = 0; i < 300; i++) {
         const a = (i / 300) * Math.PI * 2;
@@ -1062,27 +1068,51 @@ test('in citta\' le barriere portano i pannelli sponsor, nel verde no', () => {
     TrackMeshBuilder.buildBarriers(verde, pts, 15, null, null);
     TrackMeshBuilder.buildBarriers(citta, pts, 15, null, null, { sponsor: true });
 
-    // Nel verde due vertici per campione, in citta' quattro: la banda e'
-    // orizzontale, e con due soli vertici il colore sfumerebbe da terra in su.
-    const vVerde = verde.children[0].geometry.attributes.position.array.length / 3 / pts.length;
-    const vCitta = citta.children[0].geometry.attributes.position.array.length / 3 / pts.length;
-    assert.equal(vVerde, 2);
-    assert.equal(vCitta, 4);
-
-    // I colori: nel verde solo bianco e rosso, in citta' molti piu' di due.
-    const distinti = (mesh) => {
-        const c = mesh.geometry.attributes.color.array;
+    // Il verde non cambia di un vertice: due per campione, due colori soli.
+    const gV = verde.children[0].geometry;
+    assert.equal(gV.attributes.position.array.length / 3 / pts.length, 2);
+    const distinti = (g) => {
+        const c = g.attributes.color.array;
         const set = new Set();
         for (let i = 0; i < c.length; i += 3) {
             set.add(`${c[i].toFixed(2)},${c[i + 1].toFixed(2)},${c[i + 2].toFixed(2)}`);
         }
         return set;
     };
-    assert.equal(distinti(verde.children[0]).size, 2, 'la barriera verde e\' bianco-rossa');
-    assert.ok(distinti(citta.children[0]).size >= 6,
-        'la barriera cittadina deve mostrare piu\' insegne diverse');
+    assert.equal(distinti(gV).size, 2, 'la barriera verde e\' bianco-rossa');
 
-    // E le facce ci sono tutte: tre fasce per campione invece di una.
-    assert.equal(citta.children[0].geometry.index.length,
-                 verde.children[0].geometry.index.length * 3);
+    const gC = citta.children[0].geometry;
+    const pos = gC.attributes.position.array, col = gC.attributes.color.array;
+    const tinta = (v) => `${col[v * 3].toFixed(3)},${col[v * 3 + 1].toFixed(3)},${col[v * 3 + 2].toFixed(3)}`;
+
+    // IN ALTEZZA: fondo, banda, fondo — e i due stacchi su spessore ZERO.
+    // Il vertex color e' interpolato: se le due quote di stacco non coincidono
+    // esattamente, fra loro c'e' una sfumatura invece di un bordo.
+    const blocco = [0, 1, 2, 3, 4, 5].map(v => ({ z: pos[v * 3 + 1], c: tinta(v) }));
+    assert.equal(blocco[0].c, blocco[1].c, 'sotto la banda il colore dev\'essere pieno');
+    assert.equal(blocco[2].c, blocco[3].c, 'la banda dev\'essere piena');
+    assert.equal(blocco[4].c, blocco[5].c, 'sopra la banda il colore dev\'essere pieno');
+    assert.equal(blocco[1].z, blocco[2].z, 'lo stacco di sotto sfuma invece di essere netto');
+    assert.equal(blocco[3].z, blocco[4].z, 'lo stacco di sopra sfuma invece di essere netto');
+    assert.notEqual(blocco[1].c, blocco[2].c, 'la banda non si distingue dal fondo');
+    // E il colore SOPRA la banda e' quello di sotto: il pannello ha una banda
+    // al centro, non la meta' alta di un altro colore.
+    assert.equal(blocco[0].c, blocco[5].c, 'sopra la banda dev\'esserci ancora il fondo');
+    // La banda sta davvero in mezzo, non a filo del bordo superiore.
+    assert.ok(blocco[3].z < blocco[5].z - 0.1, 'la banda tocca la cima della barriera');
+
+    // LUNGO IL GIRO: due pannelli vicini non si mescolano. Il primo vertice di
+    // ogni segmento porta la tinta del suo pannello, e cambia di netto.
+    const fondi = [];
+    for (let s = 0; s < 40; s++) fondi.push(tinta(gC.index[s * 18]));
+    assert.ok(new Set(fondi).size >= 4, 'lungo il giro devono passare piu\' insegne');
+    // Ogni insegna dura piu' di un segmento: se cambiasse a ogni campione non
+    // sarebbero pannelli, sarebbe rumore.
+    let cambi = 0;
+    for (let s = 1; s < fondi.length; s++) if (fondi[s] !== fondi[s - 1]) cambi++;
+    assert.ok(cambi > 0 && cambi < fondi.length / 2,
+        `${cambi} cambi d'insegna su ${fondi.length} segmenti: i pannelli sono troppo corti`);
+
+    // Tre fasce per segmento invece di una: la citta' costa il triplo di facce.
+    assert.equal(gC.index.length, gV.index.length * 3);
 });

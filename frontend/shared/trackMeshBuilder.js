@@ -583,23 +583,27 @@
         // pannello è una fascia di colore con una banda chiara al centro, che
         // è quanto si legge davvero passandoci a 250 km/h.
         //
-        // Servono QUATTRO vertici per campione invece di due — base, banda
-        // sotto, banda sopra, cima — perché la banda è orizzontale e con due
-        // soli vertici il colore sfumerebbe da terra al bordo superiore.
+        // ⚠️ IL PRIMO TENTATIVO (2026-08-27) NE METTEVA QUATTRO E NON BASTAVA.
+        // Base, banda sotto, banda sopra, cima: il colore restava pieno solo
+        // nel terzo basso, poi SFUMAVA per il 38% dell'altezza e tutto il
+        // terzo alto era biancastro. Non era una banda al centro, era mezza
+        // barriera chiara — e l'utente l'ha vista: «le vedo colorate con
+        // alternanze di bianco e altri colori, e' un'implementazione
+        // interrotta o cosa?». Il dettaglio sta nel ramo `sponsor` qui sotto.
         const sponsor = !!(opzioni && opzioni.sponsor) && !!Palette.CITTA_SPONSOR;
-        const perCamp = sponsor ? 4 : 2;
         // Le quote della banda, in frazione dell'altezza: il pannello sta in
         // alto, sopra lo zoccolo, come i cartelloni veri.
         const BANDA = [0.34, 0.72];
         const insegne = sponsor ? Palette.CITTA_SPONSOR : null;
 
         for (const side of [-1, 1]) {
-            const pos = new Float32Array(n * perCamp * 3);
-            const col = new Float32Array(n * perCamp * 3);
-            const idx = [];
-            let stripeAcc = 0, isRed = false;
-            let pannello = 0;
+            // PRIMO GIRO: dove sta il muro, campione per campione, e a quale
+            // pannello appartiene. Serve una tabella prima di costruire, perche'
+            // in citta' il vertice non e' piu' uno per campione: dove finisce
+            // un'insegna e ne comincia un'altra ce ne vogliono due.
+            const bordo = new Array(n);
             const gapped = new Array(n).fill(false);
+            let stripeAcc = 0, isRed = false, pannello = 0;
 
             for (let i = 0; i < n; i++) {
                 const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
@@ -618,50 +622,96 @@
                 if (pts[i].acrobatico) gapped[i] = true;
 
                 if (i > 0) { stripeAcc += stepLen; if (stripeAcc >= STRIPE) { stripeAcc = 0; isRed = !isRed; pannello++; } }
-
-                if (sponsor) {
-                    // Quale insegna: cambia a ogni pannello, e non in ordine —
-                    // sei tinte in fila si leggono come un arcobaleno.
-                    const ins = insegne[(pannello * 5 + (side > 0 ? 2 : 0)) % insegne.length];
-                    const quote = [0.05, HEIGHT * BANDA[0], HEIGHT * BANDA[1], HEIGHT];
-                    const tinte = [ins.fondo, ins.fondo, ins.banda, ins.banda];
-                    for (let v = 0; v < 4; v++) {
-                        const b = (i * 4 + v) * 3;
-                        pos[b] = bx; pos[b + 1] = baseY + quote[v]; pos[b + 2] = bz;
-                        // La banda è il colore del logo, il resto è il fondo: i
-                        // due vertici di mezzo portano tinte diverse perché lo
-                        // stacco sia netto invece che sfumato.
-                        const c = v === 2 ? ins.banda : tinte[v];
-                        col[b] = ((c >> 16) & 255) / 255;
-                        col[b + 1] = ((c >> 8) & 255) / 255;
-                        col[b + 2] = (c & 255) / 255;
-                    }
-                    continue;
-                }
-
-                pos[i * 6]     = bx; pos[i * 6 + 1] = baseY + 0.05;   pos[i * 6 + 2] = bz;
-                pos[i * 6 + 3] = bx; pos[i * 6 + 4] = baseY + HEIGHT; pos[i * 6 + 5] = bz;
-                // Bianco/rosso su TUTTO il giro, ponti compresi. Le barriere
-                // dei ponti erano bianco/arancione perché lì il muro era
-                // rigido mentre altrove il fuoripista si attraversava: quella
-                // differenza serviva a leggerla a colpo d'occhio. Dal
-                // 2026-08-12 il circuito è fisicamente chiuso e ogni barriera
-                // è un muro (vedi applyBarrier in trackGravel), quindi il
-                // colore diverso non segnalava più niente.
-                const r  = isRed ? 0.85 : 0.93;
-                const g  = isRed ? 0.10 : 0.93;
-                const bv = isRed ? 0.10 : 0.96;
-                col[i * 6] = r; col[i * 6 + 1] = g; col[i * 6 + 2] = bv;
-                col[i * 6 + 3] = r; col[i * 6 + 4] = g; col[i * 6 + 5] = bv;
+                bordo[i] = { bx, bz, baseY, isRed, pannello };
             }
 
             const gappedClean = mergePoints ? suppressShortRuns(gapped, BARRIER_MIN_GAP_RUN) : gapped;
-            for (let i = 0; i < n; i++) {
-                const nextI = (i + 1) % n;
-                if (gappedClean[i] || gappedClean[nextI]) continue;   // varco: nessuna faccia vicino alla corsia box
-                const base = i * perCamp, next = nextI * perCamp;
-                for (let v = 0; v < perCamp - 1; v++) {
-                    const a = base + v, b = next + v;
+            let pos, col;
+            const idx = [];
+
+            if (sponsor) {
+                // ⚠️ UN COLORE SI FERMA SOLO DOVE FINISCE IL SUO VERTICE.
+                // Il vertex color e' INTERPOLATO: fra due vertici di tinta
+                // diversa non c'e' un bordo, c'e' una sfumatura lunga quanto
+                // il pezzo. Un pannello pubblicitario ha invece due bordi
+                // netti, uno sopra e uno sotto la banda del logo, e finisce
+                // di netto dove comincia il successivo. Quindi:
+                //
+                //  - SEI vertici per campione, non quattro, con le due quote
+                //    della banda DOPPIE: la coppia alla stessa altezza porta
+                //    tinte diverse, e il salto avviene su spessore zero;
+                //  - e un secondo blocco di sei dove cambia l'insegna, cosi'
+                //    il pannello che finisce e quello che comincia non si
+                //    mescolano lungo la barriera.
+                //
+                // Dentro un pannello i vertici restano CONDIVISI fra campioni
+                // vicini: e' cio' che tiene le normali mediate e la barriera
+                // liscia in curva. Separarli tutti l'avrebbe sfaccettata.
+                const QUOTE = [0.05, HEIGHT * BANDA[0], HEIGHT * BANDA[1], HEIGHT];
+                const p = [], c = [];
+                const insegnaDi = (pan) => insegne[(pan * 5 + (side > 0 ? 2 : 0)) % insegne.length];
+                const spingi = (b, dz, hex) => {
+                    p.push(b.bx, b.baseY + dz, b.bz);
+                    c.push(((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255);
+                };
+                // Il blocco di un campione: fondo, banda, fondo, con le due
+                // quote di stacco ripetute.
+                const blocco = (b, ins) => {
+                    const k = p.length / 3;
+                    spingi(b, QUOTE[0], ins.fondo); spingi(b, QUOTE[1], ins.fondo);
+                    spingi(b, QUOTE[1], ins.banda); spingi(b, QUOTE[2], ins.banda);
+                    spingi(b, QUOTE[2], ins.fondo); spingi(b, QUOTE[3], ins.fondo);
+                    return k;
+                };
+
+                // Due indici per campione: quello che CHIUDE il segmento che
+                // arriva e quello che APRE il segmento che parte. Coincidono
+                // ovunque tranne dove cambia l'insegna.
+                const entra = new Array(n), esce = new Array(n);
+                for (let i = 0; i < n; i++) {
+                    const insPrec = insegnaDi(bordo[(i - 1 + n) % n].pannello);
+                    const ins = insegnaDi(bordo[i].pannello);
+                    entra[i] = blocco(bordo[i], insPrec);
+                    esce[i] = ins === insPrec ? entra[i] : blocco(bordo[i], ins);
+                }
+
+                for (let i = 0; i < n; i++) {
+                    const j = (i + 1) % n;
+                    if (gappedClean[i] || gappedClean[j]) continue;   // varco: nessuna faccia vicino alla corsia box
+                    // Tre fasce, e si saltano le due coppie a spessore zero:
+                    // quelle non disegnano niente e costerebbero indici.
+                    for (const v of [0, 2, 4]) {
+                        const a = esce[i] + v, b = entra[j] + v;
+                        if (side < 0) idx.push(a, a + 1, b, b, a + 1, b + 1);
+                        else          idx.push(a, b, a + 1, b, b + 1, a + 1);
+                    }
+                }
+                pos = new Float32Array(p);
+                col = new Float32Array(c);
+            } else {
+                pos = new Float32Array(n * 2 * 3);
+                col = new Float32Array(n * 2 * 3);
+                for (let i = 0; i < n; i++) {
+                    const b = bordo[i];
+                    pos[i * 6]     = b.bx; pos[i * 6 + 1] = b.baseY + 0.05;   pos[i * 6 + 2] = b.bz;
+                    pos[i * 6 + 3] = b.bx; pos[i * 6 + 4] = b.baseY + HEIGHT; pos[i * 6 + 5] = b.bz;
+                    // Bianco/rosso su TUTTO il giro, ponti compresi. Le barriere
+                    // dei ponti erano bianco/arancione perché lì il muro era
+                    // rigido mentre altrove il fuoripista si attraversava: quella
+                    // differenza serviva a leggerla a colpo d'occhio. Dal
+                    // 2026-08-12 il circuito è fisicamente chiuso e ogni barriera
+                    // è un muro (vedi applyBarrier in trackGravel), quindi il
+                    // colore diverso non segnalava più niente.
+                    const r  = b.isRed ? 0.85 : 0.93;
+                    const g  = b.isRed ? 0.10 : 0.93;
+                    const bv = b.isRed ? 0.10 : 0.96;
+                    col[i * 6] = r; col[i * 6 + 1] = g; col[i * 6 + 2] = bv;
+                    col[i * 6 + 3] = r; col[i * 6 + 4] = g; col[i * 6 + 5] = bv;
+                }
+                for (let i = 0; i < n; i++) {
+                    const j = (i + 1) % n;
+                    if (gappedClean[i] || gappedClean[j]) continue;   // varco: nessuna faccia vicino alla corsia box
+                    const a = i * 2, b = j * 2;
                     if (side < 0) idx.push(a, a + 1, b, b, a + 1, b + 1);
                     else          idx.push(a, b, a + 1, b, b + 1, a + 1);
                 }
