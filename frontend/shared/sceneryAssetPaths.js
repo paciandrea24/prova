@@ -97,5 +97,11 @@
         }
     }
 
+    // L'arredo urbano del marciapiede (fase G2).
+    for (const id of ['cittaLampione', 'cittaSemaforo', 'cittaFermata',
+                      'cittaEdicola', 'cittaCassonetti', 'cittaDehors']) {
+        PERCORSI[id] = `/assets/custom/circuit/${id}.glb`;
+    }
+
     return { PERCORSI };
 });

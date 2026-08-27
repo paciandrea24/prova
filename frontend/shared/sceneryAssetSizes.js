@@ -110,6 +110,16 @@
         }
     }
 
+    // L'arredo urbano del marciapiede (fase G2), misurato sui .glb.
+    Object.assign(SIZES, {
+        cittaLampione:   { w: 0.9,  h: 9.1,  d: 3.1 },
+        cittaSemaforo:   { w: 0.8,  h: 6.2,  d: 0.9 },
+        cittaFermata:    { w: 7.3,  h: 3.4,  d: 3.1 },
+        cittaEdicola:    { w: 4.3,  h: 3.8,  d: 3.7 },
+        cittaCassonetti: { w: 5.5,  h: 1.6,  d: 1.4 },
+        cittaDehors:     { w: 7.5,  h: 2.5,  d: 3.1 },
+    });
+
 
     const FALLBACK = { w: 6, h: 6, d: 6 };
 

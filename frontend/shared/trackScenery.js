@@ -14,7 +14,8 @@
                                  require('./sceneryInfrastructure.js'),
                                  require('./sceneryRegistro.js'),
                                  require('./sceneryEsclusioni.js'), require('./semeStabile.js'),
-                                 require('./cittaProfilo.js'), require('./cittaFacciate.js'));
+                                 require('./cittaProfilo.js'), require('./cittaFacciate.js'),
+                                 require('./sceneryMarciapiede.js'));
     } else {
         root.TrackScenery = factory(root.TrackGeometry, root.SceneryLandmarks,
                                     root.SceneryTrackside, root.SceneryCrowd,
@@ -22,7 +23,7 @@
                                     root.SceneryPaddock, root.TrackGravel,
                                     root.SceneryInfrastructure,
                                     root.SceneryRegistro, root.SceneryEsclusioni, root.SemeStabile,
-                                    root.CittaProfilo, root.CittaFacciate);
+                                    root.CittaProfilo, root.CittaFacciate, root.SceneryMarciapiede);
     }
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryLandmarks,
                                                         SceneryTrackside, SceneryCrowd,
@@ -30,7 +31,8 @@
                                                         SceneryPaddock, TrackGravel,
                                                         SceneryInfrastructure,
                                                         SceneryRegistro, SceneryEsclusioni,
-                                                        SemeStabile, CittaProfilo, CittaFacciate) {
+                                                        SemeStabile, CittaProfilo, CittaFacciate,
+                                                        SceneryMarciapiede) {
 
     // Le categorie senza un modello solido: superfici piane e folla, che non
     // hanno un ingombro da far rispettare a nessuno. La folla in particolare
@@ -1723,13 +1725,28 @@
         traslaOltreLaGhiaia(layout, trackPts, barrierProfile,
             trackPts.filter(p => !p.bridge && !p.acrobatico), barrierDist, embankStart, embankOuter);
 
-        // LE FACCIATE DELLA CITTÀ, dopo la traslazione e non prima: le colonne
-        // sanno già dove stanno — gliel'ha detto il profilo, che parte dal muro
-        // vero — e spostarle «oltre la ghiaia» le staccherebbe dal nastro che
-        // devono vestire. In città, del resto, la ghiaia non c'è.
+        // LA CITTÀ, dopo la traslazione e non prima: le colonne sanno già dove
+        // stanno — gliel'ha detto il profilo, che parte dal muro vero — e
+        // spostarle «oltre la ghiaia» le staccherebbe dal nastro che devono
+        // vestire. In città, del resto, la ghiaia non c'è.
         if (inCitta) {
-            layout.push(...CittaFacciate.colonne(trackPts,
-                CittaProfilo.perPista(trackData, trackPts, barrierProfile, pitPts)));
+            const profiloCitta = CittaProfilo.perPista(trackData, trackPts, barrierProfile, pitPts);
+            // ⚠️ L'arredo del marciapiede va nel layout PRIMA delle facciate ma
+            // DOPO le tribune: le facciate non passano dalla porta (sono la
+            // superficie di un pezzo di mondo già deciso), l'arredo sì, e chi
+            // arriva prima ha la precedenza. Fra una tribuna e un lampione, a
+            // cedere dev'essere il lampione.
+            // ⚠️ Non sotto le campate: il ponte dei semafori e la passerella
+            // scavalcano la pista e i loro pilastri stanno oltre le barriere,
+            // cioe' proprio sul marciapiede. Un lampione alto nove unita' ci
+            // passa sotto senza toccare la traversa ma finisce dentro il
+            // pilastro — misurato su citta-prova, due lampioni. E' la stessa
+            // regola che fa cadere le tribune sotto una campata.
+            const campate = layout.filter(v => v.asset === 'startGantry' || v.asset === 'footbridge');
+            layout.push(...SceneryMarciapiede.buildLayout(trackPts, profiloCitta,
+                barrierProfile, pitPts, trackData.id)
+                .filter(v => !campate.some(g => SceneryAssetSizes.itemsOverlap(v, g))));
+            layout.push(...CittaFacciate.colonne(trackPts, profiloCitta));
         }
 
         // DAVANTI A UNA TRIBUNA CI VA SOLO LA SUA RETE.

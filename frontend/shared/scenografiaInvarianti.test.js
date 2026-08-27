@@ -202,7 +202,11 @@ for (const id of PISTE) {
         if (t.ambientazione !== 'citta') return;
         const LONTANI = new Set(['motorhome', 'truck', 'containerStack',
                                  'parkedCarRed', 'parkedCarBlue', 'parkedCarWhite']);
-        const trovati = layout.filter(v => LONTANI.has(v.asset) || v.category === 'parkingLot');
+        // ⚠️ Per CATEGORIA e non solo per asset: le auto parcheggiate del
+        // marciapiede sono gli stessi modelli di quelle del parcheggio del
+        // paddock, ma stanno in strada, davanti ai palazzi, e ci devono stare.
+        const trovati = layout.filter(v => v.category !== 'strada'
+            && (LONTANI.has(v.asset) || v.category === 'parkingLot'));
         assert.deepEqual([...new Set(trovati.map(v => v.asset || v.category))], []);
         assert.ok(layout.some(v => v.asset === 'banner'),
             'gli striscioni a bordo pista devono restare anche in citta\'');
@@ -231,8 +235,11 @@ for (const id of PISTE) {
             pitRoadHalf: t.pitRoadHalf,
             startFinishIndex: t.startFinishIndex,
         });
+        // `strada` e' l'arredo urbano del marciapiede: sta fra il muro e i
+        // palazzi, quindi vale per lui come per le tribune — davanti, mai
+        // dentro.
         const DAVANTI = new Set(['grandstand', 'grandstand-main', 'safety', 'trackside',
-                                 'marshal', 'landmark']);
+                                 'marshal', 'landmark', 'strada']);
         let controllati = 0;
         const dentro = [];
         for (const v of layout) {

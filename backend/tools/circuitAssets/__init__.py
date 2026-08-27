@@ -3,7 +3,7 @@ Ogni build() scolpisce i pezzi con il kit e ritorna l'ingombro orizzontale e
 l'altezza, usati solo per inquadrare il render."""
 from . import (grandstands, billboards, pitBuildings, raceStructures, safety,
                decor, people, trackside, pitBox, vegetation, rocks,
-               paddock, life, infrastructure, cittaFacciate)
+               paddock, life, infrastructure, cittaFacciate, cittaStrada)
 
 ASSET_BUILDERS = {
     'grandStand':        grandstands.build_grand_stand,
@@ -67,3 +67,14 @@ ASSET_BUILDERS = {
 # ognuna delle cinque famiglie-tinta. Generati invece che elencati: l'elenco a
 # mano sarebbe venticinque righe che dicono la stessa cosa.
 ASSET_BUILDERS.update(cittaFacciate.builders())
+
+# L'arredo urbano del marciapiede (fase G2): quello che sta fra la barriera e
+# la prima facciata, e che in una citta' vera non e' mai asfalto liscio.
+ASSET_BUILDERS.update({
+    'cittaLampione':   cittaStrada.build_citta_lampione,
+    'cittaSemaforo':   cittaStrada.build_citta_semaforo,
+    'cittaFermata':    cittaStrada.build_citta_fermata,
+    'cittaEdicola':    cittaStrada.build_citta_edicola,
+    'cittaCassonetti': cittaStrada.build_citta_cassonetti,
+    'cittaDehors':     cittaStrada.build_citta_dehors,
+})
