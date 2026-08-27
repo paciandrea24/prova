@@ -55,10 +55,27 @@
     // `SURFACES` è fatto di colori singoli — un test lo pretende, e ha ragione:
     // chi legge una superficie si aspetta un intero, non un array.
     //
-    // Tinte spente e vicine fra loro: sono un fondale, e un muro di colori
-    // accesi attorno a tutto il tracciato mangerebbe l'attenzione alla pista,
-    // che è dove si guarda.
-    const CITTA_FACCIATE = [0xb9b2a6, 0xa8a294, 0xc6bfae, 0x9aa0a6, 0xb0a89c, 0x8f959b];
+    // Tinte spente: sono un fondale, e un muro di colori accesi attorno a tutto
+    // il tracciato mangerebbe l'attenzione alla pista, che è dove si guarda.
+    //
+    // ⚠️ Ma spente non vuol dire UGUALI. Le prime sei erano sei grigi-beige a
+    // un passo l'uno dall'altro e in gioco davano quello che l'utente ha visto:
+    // «solamente dei blocchi bianchi». Le quattro aggiunte — mattone, cotto,
+    // salvia, ardesia scura — restano desaturate ma cadono in famiglie di tinta
+    // diverse, che è ciò che fa leggere una fila di palazzi come edifici
+    // distinti invece che come un muro unico intonacato.
+    const CITTA_FACCIATE = [
+        0xb9b2a6,   // pietra chiara
+        0xa8a294,   // sabbia
+        0xc6bfae,   // crema
+        0x9aa0a6,   // grigio azzurro
+        0xb0a89c,   // tortora
+        0x8f959b,   // ardesia
+        0xa97f6a,   // mattone
+        0x8a5f4e,   // cotto scuro
+        0x8b9a86,   // salvia
+        0x6f757b,   // ardesia scura
+    ];
 
     // Gradiente del cielo, dall'orizzonte (t=0) allo zenit (t=1).
     //

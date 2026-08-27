@@ -975,12 +975,13 @@ test('la facciata e\' un muro continuo: fra due campioni cambia l\'altezza, mai 
     const { pts, profilo } = pistaCittadina();
     const c = contenitore();
     TrackMeshBuilder.buildCitta(c, pts, profilo);
-    assert.equal(c.children.length, 2, 'una mesh per lato');
+    assert.equal(c.children.length, 4, 'fronte e tetto, per lato');
     for (const mesh of c.children) {
         const pos = mesh.geometry.attributes.position.array;
         const passo = 2 * Math.PI * 300 / pts.length;
+        const perCamp = pos.length / 3 / pts.length;
         for (let i = 1; i < pts.length; i++) {
-            const a = i * 9, b = (i - 1) * 9;
+            const a = i * perCamp * 3, b = (i - 1) * perCamp * 3;
             const dxz = Math.hypot(pos[a] - pos[b], pos[a + 2] - pos[b + 2]);
             assert.ok(dxz < passo * 2.5,
                 `${mesh.name}, campione ${i}: la base salta di ${dxz.toFixed(1)} in pianta (passo ${passo.toFixed(1)})`);
@@ -992,18 +993,62 @@ test('la facciata sta oltre il muro e alla quota che dice il profilo', () => {
     const { pts, profilo, muro } = pistaCittadina();
     const c = contenitore();
     TrackMeshBuilder.buildCitta(c, pts, profilo);
-    for (const mesh of c.children) {
+    // I FRONTI, non i tetti: sono i due nastri verticali, due vertici per
+    // campione (base sotto terra, cima del palazzo).
+    for (const mesh of c.children.filter(m => /^citta(Destra|Sinistra)$/.test(m.name))) {
         const side = mesh.name === 'cittaDestra' ? 1 : -1;
         const pos = mesh.geometry.attributes.position.array;
         for (let i = 0; i < pts.length; i += 17) {
-            const b = i * 9;
+            const b = i * 6;
             const dallAsse = Math.hypot(pos[b] - pts[i].x, pos[b + 2] - pts[i].z);
             const atteso = profilo.distanza[i * 2 + (side > 0 ? 0 : 1)];
             assert.ok(Math.abs(dallAsse - atteso) < 0.01,
                 `${mesh.name}, campione ${i}: base a ${dallAsse.toFixed(1)} invece di ${atteso.toFixed(1)}`);
-            const alta = pos[b + 4] - pos[b + 1];
-            assert.ok(alta > CittaProfilo.ALTEZZA_MIN, `${mesh.name}, campione ${i}: palazzo alto ${alta.toFixed(1)}`);
+            const alto = pos[b + 4] - pos[b + 1];
+            assert.ok(alto > CittaProfilo.ALTEZZA_MIN, `${mesh.name}, campione ${i}: palazzo alto ${alto.toFixed(1)}`);
         }
+    }
+    // E i tetti stanno DIETRO il fronte, alla quota della cima: senza, dall'alto
+    // e nelle salite si vedrebbe dentro il palazzo.
+    for (const mesh of c.children.filter(m => /Tetto/.test(m.name))) {
+        const side = /Destra/.test(mesh.name) ? 1 : -1;
+        const pos = mesh.geometry.attributes.position.array;
+        for (let i = 0; i < pts.length; i += 17) {
+            const b = i * 6;
+            const fronte = Math.hypot(pos[b] - pts[i].x, pos[b + 2] - pts[i].z);
+            const dietro = Math.hypot(pos[b + 3] - pts[i].x, pos[b + 5] - pts[i].z);
+            assert.ok(dietro > fronte + 1,
+                `${mesh.name}, campione ${i}: il tetto non arretra (${dietro.toFixed(1)} contro ${fronte.toFixed(1)})`);
+            assert.equal(pos[b + 1], pos[b + 4], `${mesh.name}, campione ${i}: il tetto non e' orizzontale`);
+            assert.ok(side === 1 || side === -1);
+        }
+    }
+});
+
+test('le finestre sono mappate sulla facciata, e il motivo si chiude sul giro', () => {
+    // Le finestre sono una textura ripetuta, non dei vertici: quello che si puo'
+    // misurare senza un browser sono le UV. Devono crescere lungo il nastro
+    // (senno' il motivo sarebbe stirato o fermo) e il giro deve contenere un
+    // numero INTERO di moduli, o nel punto di chiusura si vedrebbe mezza
+    // finestra tagliata.
+    const { pts, profilo } = pistaCittadina();
+    const c = contenitore();
+    TrackMeshBuilder.buildCitta(c, pts, profilo);
+    for (const mesh of c.children.filter(m => /^citta(Destra|Sinistra)$/.test(m.name))) {
+        const uv = mesh.geometry.attributes.uv;
+        assert.ok(uv, `${mesh.name}: il fronte non ha UV, la textura non si vedrebbe`);
+        const a = uv.array;
+        assert.equal(a[0], 0, 'il primo campione parte a inizio motivo');
+        let cresce = 0;
+        for (let i = 1; i < pts.length; i++) {
+            if (a[i * 4] > a[(i - 1) * 4]) cresce++;
+        }
+        assert.equal(cresce, pts.length - 1, `${mesh.name}: le UV non avanzano lungo il nastro`);
+        // L'ultimo campione piu' il tratto di chiusura devono fare un intero.
+        const ultimo = a[(pts.length - 1) * 4];
+        assert.ok(ultimo > 1, `${mesh.name}: il giro contiene meno di un modulo`);
+        // La quota: la cima del palazzo sta piu' in alto della base anche in UV.
+        assert.ok(a[3] > a[1], `${mesh.name}: le UV verticali non salgono col palazzo`);
     }
 });
 
