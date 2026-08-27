@@ -3,7 +3,7 @@ Ogni build() scolpisce i pezzi con il kit e ritorna l'ingombro orizzontale e
 l'altezza, usati solo per inquadrare il render."""
 from . import (grandstands, billboards, pitBuildings, raceStructures, safety,
                decor, people, trackside, pitBox, vegetation, rocks,
-               paddock, life, infrastructure)
+               paddock, life, infrastructure, cittaFacciate)
 
 ASSET_BUILDERS = {
     'grandStand':        grandstands.build_grand_stand,
@@ -58,6 +58,16 @@ ASSET_BUILDERS = {
     'tvTower':           infrastructure.build_tv_tower,
     'recoveryCrane':     infrastructure.build_recovery_crane,
     'trackGate':         infrastructure.build_track_gate,
+    # Moduli di facciata dei circuiti cittadini (spec 2026-08-27). Non sono
+    # palazzi: sono le colonne che vestono il nastro della citta'.
+    'cittaVecchiaBase':   cittaFacciate.build_citta_vecchia_base,
+    'cittaVecchiaPianoA': cittaFacciate.build_citta_vecchia_piano_a,
+    'cittaVecchiaPianoB': cittaFacciate.build_citta_vecchia_piano_b,
+    'cittaVecchiaTetto':  cittaFacciate.build_citta_vecchia_tetto,
+    'cittaNuovaBase':     cittaFacciate.build_citta_nuova_base,
+    'cittaNuovaPianoA':   cittaFacciate.build_citta_nuova_piano_a,
+    'cittaNuovaPianoB':   cittaFacciate.build_citta_nuova_piano_b,
+    'cittaNuovaTetto':    cittaFacciate.build_citta_nuova_tetto,
     # Non scenografia: è il box del giocatore, ricolorato a runtime.
     'pitBox':            pitBox.build_pit_box,
 }

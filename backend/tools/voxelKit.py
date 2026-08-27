@@ -85,6 +85,12 @@ _HEX = {
     # default che si vede nei render — vedi frontend/shared/pitBoxLoader.js,
     # che cerca i materiali il cui nome finisce per "_livery".
     'livery':       'D6392F',
+    # Citta' (spec 2026-08-27): intonaco, pietra da cornici e mattone. Sono i
+    # colori BASE delle facciate nei render; in gioco la mesh dell'intonaco
+    # viene ritinta palazzo per palazzo con le tinte di ToonPalette.
+    'plaster':      'DFD3BE',
+    'stone':        'BFB4A2',
+    'brick':        'A9705A',
 }
 
 
