@@ -87,6 +87,7 @@
             curbW: CURB_W,
             pitLanePts: pitPts,
             pitRoadHalf: trackData.pit.roadHalfWidth,
+            citta: trackData.ambientazione === 'citta',
         });
 
         // Fin dove il terreno resta alla quota della pista, e dove ha finito di

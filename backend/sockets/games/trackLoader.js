@@ -329,6 +329,7 @@ function buildTrack(id, raw) {
         roadHalf: raw.roadHalfWidth,
         pitLanePts,
         pitRoadHalf: raw.pit.roadHalfWidth,
+        citta: normalizzaAmbientazione(raw.ambientazione) === 'citta',
     });
     const pitGapPts = TrackGravel.pitGapSamples(pitLanePts);
 

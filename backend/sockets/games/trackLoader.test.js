@@ -310,6 +310,12 @@ test('il muro del server sta esattamente dove il client lo disegna', () => {
         const disegnato = TrackGravel.barrierProfile(trackPts, {
             roadHalf: raw.roadHalfWidth, curbW: 2.8,
             pitLanePts: pitPts, pitRoadHalf: raw.pit.roadHalfWidth,
+            // ⚠️ Anche l'ambientazione: in citta' il muro sta sul cordolo, e
+            // un client che non lo sapesse disegnerebbe la barriera quattordici
+            // unita' piu' in la' del muro contro cui si sbatte davvero. Il
+            // campo si legge dal TRACK, non dal raw: e' cosi' che arriva al
+            // client, gia' normalizzato dal server.
+            citta: track.ambientazione === 'citta',
         });
 
         assert.ok(track.barrierProfile, `${id}: il server non espone il profilo del muro`);

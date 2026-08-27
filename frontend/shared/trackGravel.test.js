@@ -247,6 +247,41 @@ test('barrierProfile: sui ponti il muro resta stretto come oggi', () => {
     }
 });
 
+test('barrierProfile: in citta\' il muro sta attaccato al cordolo', () => {
+    // A Monaco e a Baku non c'e' via di fuga: sbagli e tocchi. E' una
+    // richiesta dell'utente («renderei le barriere adiacenti ai cordoli in
+    // questi circuiti cittadini, senza spazio oltre il cordolo») ed e' anche
+    // cio' che rende difficile un cittadino.
+    const pts = ovale();
+    const citta = TrackGravel.barrierProfile(pts, { roadHalf: ROAD_HALF, citta: true });
+    const attesa = BORDO_CORDOLO + TrackGravel.BRIDGE_MARGIN;
+    for (let i = 0; i < pts.length; i++) {
+        for (const side of [-1, 1]) {
+            assert.equal(TrackGravel.barrierAt(citta, i, side), attesa,
+                `campione ${i} lato ${side}: il muro cittadino deve stare sul cordolo`);
+        }
+    }
+    // E il verde non se ne accorge: la via di fuga resta a chi ce l'ha sempre
+    // avuta, curve comprese.
+    const verde = TrackGravel.barrierProfile(pts, { roadHalf: ROAD_HALF });
+    assert.ok(TrackGravel.barrierAt(verde, 130, 1) > attesa,
+        'in curva, su una pista verde, la barriera deve stare piu\' lontana del cordolo');
+});
+
+test('barrierProfile: in citta\' non c\'e\' ghiaia', () => {
+    // «la ghiaia nei circuiti cittadini non c'e'»: fra il cordolo e il muro
+    // non ci starebbe, e una via di fuga in mezzo ai palazzi non esiste.
+    const pts = ovale();
+    const verde = TrackGravel.barrierProfile(pts, { roadHalf: ROAD_HALF });
+    assert.ok(Array.from(verde.gravel.left).concat(Array.from(verde.gravel.right)).some(g => g > 0),
+        'il caso di prova deve avere ghiaia da togliere, o non prova niente');
+    const citta = TrackGravel.barrierProfile(pts, { roadHalf: ROAD_HALF, citta: true });
+    for (let i = 0; i < pts.length; i++) {
+        assert.equal(citta.gravel.left[i], 0, `campione ${i}: ghiaia a sinistra in citta'`);
+        assert.equal(citta.gravel.right[i], 0, `campione ${i}: ghiaia a destra in citta'`);
+    }
+});
+
 test('barrierProfile: dove corre la corsia box la barriera non si sposta', () => {
     // È la zona del traguardo e dei box, che l'utente vuole invariata.
     const pts = ovale();

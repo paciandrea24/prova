@@ -346,7 +346,7 @@
     // un solo numero non lascia spazio a interpretazioni.
     function barrierProfile(trackPts, opts) {
         const n = trackPts.length;
-        const { roadHalf, curbW = CURB_W, pitLanePts = null, pitRoadHalf = 0 } = opts;
+        const { roadHalf, curbW = CURB_W, pitLanePts = null, pitRoadHalf = 0, citta = false } = opts;
         const out = { left: new Float64Array(n), right: new Float64Array(n) };
         if (!n) return out;
 
@@ -376,6 +376,15 @@
                        && TrackGeometry.nearestPoint(pitLanePts, p.x, p.z).dist < PIT_STRAIGHT_REACH) {
                 d = storicaAl(i);
                 zonaBox[i] = true;
+            } else if (citta) {
+                // ⚠️ NEI CITTADINI IL MURO STA SUL CORDOLO. A Monaco e a Baku
+                // non c'è via di fuga: sbagli e tocchi. È una richiesta
+                // esplicita dell'utente — «renderei le barriere adiacenti ai
+                // cordoli in questi circuiti cittadini, senza spazio oltre il
+                // cordolo» — ed è anche ciò che rende un cittadino difficile
+                // come dev'essere. Stessa distanza dei ponti, e per la stessa
+                // ragione: lì fuori non c'è niente su cui fuggire.
+                d = bordoCordoloAl(i) + BRIDGE_MARGIN;
             } else {
                 d = bordoCordoloAl(i) + RUNOFF_MIN;
             }
@@ -424,6 +433,10 @@
         // unità di pista, la "fisarmonica" segnalata dall'utente.
         for (let i = 0; i < n; i++) {
             if (trackPts[i].bridge) continue;
+            // In città non c'è ghiaia: fra il cordolo e il muro non ci sta, e
+            // una via di fuga in mezzo ai palazzi non esiste (richiesta
+            // dell'utente: «la ghiaia nei circuiti cittadini non c'è»).
+            if (citta) { gravel.left[i] = 0; gravel.right[i] = 0; continue; }
             if (zonaBox[i]) {
                 // Niente ghiaia dove il muro non arretra: verrebbe rifilata a
                 // 1.2 unità, cioè una striscia beige larga un bordino.
