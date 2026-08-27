@@ -98,7 +98,7 @@ const TRACCIATI = require('fs')
     .map(f => f.replace(/\.json$/, ''));
 
 
-function layoutComeIlClient(trackId) {
+function layoutComeIlClient(trackId, ambientazione) {
     const radice = path.join(__dirname, '..', '..');
     const trackData = JSON.parse(fs.readFileSync(
         path.join(radice, 'frontend', 'tracks', `${trackId}.json`), 'utf8'));
@@ -119,6 +119,11 @@ function layoutComeIlClient(trackId) {
     const BARRIER_PROFILE = TrackGravel.barrierProfile(trackPts, {              // f1.js:242
         roadHalf: ROAD_HALF, curbW: CURB_W,
         pitLanePts: PIT_PTS, pitRoadHalf: trackData.pit.roadHalfWidth,
+        // ⚠️ E l'ambientazione, come fa f1Scena: in citta' il muro sta sul
+        // cordolo, e un muro diverso posa una scenografia diversa. Senza questa
+        // riga la catena rifatta qui non era piu' quella del client — su
+        // citta-prova, 6448 oggetti contro i 6285 veri.
+        citta: ambientazione === 'citta',
     });
     return TrackScenery.generateLayout(trackData, trackPts, PIT_PTS, BARRIER_D,
         45, seatAnchors, BARRIER_PROFILE, terraceAnchors);                      // f1.js:670
@@ -126,8 +131,9 @@ function layoutComeIlClient(trackId) {
 
 for (const trackId of TRACCIATI) {
     test(`la scenografia ricostruita dal tool è quella del gioco (${trackId})`, () => {
-        const daTool = tool.layoutDi(trackId, loadTrack(trackId));
-        const daClient = layoutComeIlClient(trackId);
+        const track = loadTrack(trackId);
+        const daTool = tool.layoutDi(trackId, track);
+        const daClient = layoutComeIlClient(trackId, track.ambientazione);
         assert.equal(daTool.length, daClient.length);
         for (let i = 0; i < daTool.length; i++) {
             assert.equal(daTool[i].asset, daClient[i].asset);
