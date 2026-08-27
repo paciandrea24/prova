@@ -2003,6 +2003,24 @@
         // da sola in mezzo al prato. Il legame vale nei due sensi — senza
         // tribuna niente rete, senza rete niente tribuna (vedi il filtro
         // `scoperta` piu' sopra).
+        // ⚠️ E VALE ANCHE NELL'ALTRO VERSO, QUI IN USCITA. Il filtro
+        // `scoperta` piu' sopra toglie le tribune la cui rete non e' mai nata,
+        // ma una rete puo' cadere anche DOPO — dentro la campata di una
+        // passerella, o perche' il registro non le ha trovato posto — e allora
+        // la tribuna resterebbe in piedi senza protezione: lo stesso buco
+        // silenzioso, entrato da un'altra porta.
+        //
+        // Visto su citta-prova quando il muro si e' avvicinato al cordolo: una
+        // sola rete scartata su 330 oggetti, e una tribuna scoperta a
+        // (-433, 247). Le tribune PRINCIPALI non si toccano (sono
+        // NON_SCARTABILI: il traguardo senza tribuna non e' un traguardo), e
+        // lo stesso vale per le terrazze, che una rete non ce l'hanno per
+        // mestiere.
+        const reteSopravvissuta = new Set(
+            passate.filter(v => v.asset === 'catchFence').map(v => v.daTribuna));
+        passate = passate.filter(v => v.category !== 'grandstand'
+            || reteSopravvissuta.has(v.x.toFixed(2) + ',' + v.z.toFixed(2)));
+
         const tribuneRimaste = new Set(passate
             .filter(v => v.category === 'grandstand' || v.category === 'grandstand-main')
             .map(v => v.x.toFixed(2) + ',' + v.z.toFixed(2)));
