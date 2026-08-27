@@ -192,6 +192,25 @@ for (const id of PISTE) {
     });
 
 
+    test(`${id}: in citta' non nasce il paddock esterno`, () => {
+        // ⚠️ Mezzi, container e parcheggio stanno fra le 58 e le 210 unita'
+        // dalla corsia box, cioe' DIETRO le facciate: invisibili, e pagati a
+        // ogni frame. Decisione dell'utente il 2026-08-27: «se tanto e' dietro
+        // gli edifici non lo vediamo mai». Gli striscioni invece restano —
+        // quelli stanno sul marciapiede, davanti ai palazzi.
+        const { t, layout } = scenografiaDi(id);
+        if (t.ambientazione !== 'citta') return;
+        const LONTANI = new Set(['motorhome', 'truck', 'containerStack',
+                                 'parkedCarRed', 'parkedCarBlue', 'parkedCarWhite']);
+        const trovati = layout.filter(v => LONTANI.has(v.asset) || v.category === 'parkingLot');
+        assert.deepEqual([...new Set(trovati.map(v => v.asset || v.category))], []);
+        assert.ok(layout.some(v => v.asset === 'banner'),
+            'gli striscioni a bordo pista devono restare anche in citta\'');
+        // E i garage della corsia box non c'entrano: quelli si vedono eccome.
+        assert.ok(layout.some(v => v.asset === 'pitsGarageClosed' || v.asset === 'pitsOffice'),
+            'gli edifici della corsia box non vanno tolti');
+    });
+
     test(`${id}: in citta', niente di bordo pista finisce dentro una facciata`, () => {
         // ⚠️ SEGNALAZIONE DELL'UTENTE, 2026-08-27: «nella pista di prova dei
         // circuiti cittadini (e probabilmente anche negli altri che costruiro'

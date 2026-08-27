@@ -1695,7 +1695,7 @@
         const nature = inCitta ? []
             : buildNatureLayout(rng, trackPts, pitPts, barrierDist, pitRoadHalf, accepted, embankStart, embankOuter, playerBoxFootprints, fitsUnderBridge);
         const paddockLife = SceneryPaddock.buildLayout(rng, trackPts, pitPts, barrierDist, accepted,
-            (voce) => itemHitsPlayerBoxZone(voce, playerBoxFootprints));
+            (voce) => itemHitsPlayerBoxZone(voce, playerBoxFootprints), { citta: inCitta });
 
         // Boschi DOPO la natura: le macchie vedono fra gli oggetti già
         // accettati anche gli alberi vicini alla pista, e non ci finiscono

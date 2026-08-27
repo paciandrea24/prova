@@ -94,8 +94,18 @@
         return migliore;
     }
 
-    function buildLayout(rng, trackPts, pitPts, barrierDist, accepted, vietato) {
+    function buildLayout(rng, trackPts, pitPts, barrierDist, accepted, vietato, opzioni) {
         const layout = [];
+        // ⚠️ IN CITTA' IL PADDOCK ESTERNO NON NASCE AFFATTO. Mezzi, container e
+        // parcheggio stanno a 58-210 unita' dalla corsia, cioe' DIETRO le
+        // facciate: non si vedono mai, e si pagano a ogni frame. Misurati su
+        // citta-prova: 49 oggetti. Parole dell'utente (2026-08-27): «credo che
+        // in questo caso cittadino il paddock esterno non abbia senso averlo,
+        // se tanto e' dietro gli edifici non lo vediamo mai».
+        //
+        // Gli striscioni restano: quelli stanno a barrierDist + 6, cioe' sul
+        // marciapiede, davanti ai palazzi e sotto gli occhi di chi corre.
+        const citta = !!(opzioni && opzioni.citta);
         if (!pitPts || pitPts.length < 8) return layout;
 
         const mid = Math.floor(pitPts.length / 2);
@@ -121,87 +131,90 @@
             return voce;
         }
 
-        // --- Parcheggio lontano -------------------------------------------
-        // Le auto sparse vicino ai box si leggevano come relitti abbandonati:
-        // un parcheggio e' fatto di file ordinate e sta LONTANO, dove diventa
-        // parte dell'orizzonte invece di intralciare. I container gli fanno da
-        // fondale sul lato esterno.
-        const idxPark = mid;
-        const pPark = pitPts[idxPark];
-        const nPark = TrackGeometry.normalAt(pitPts, idxPark, false);
-        const tangPark = Math.atan2(pitPts[idxPark + 1].x - pitPts[idxPark - 1].x,
-                                    pitPts[idxPark + 1].z - pitPts[idxPark - 1].z);
-        const lx = Math.sin(tangPark), lz = Math.cos(tangPark);
+        if (!citta) {
+            // --- Parcheggio lontano -------------------------------------------
+            // Le auto sparse vicino ai box si leggevano come relitti abbandonati:
+            // un parcheggio e' fatto di file ordinate e sta LONTANO, dove diventa
+            // parte dell'orizzonte invece di intralciare. I container gli fanno da
+            // fondale sul lato esterno.
+            const idxPark = mid;
+            const pPark = pitPts[idxPark];
+            const nPark = TrackGeometry.normalAt(pitPts, idxPark, false);
+            const tangPark = Math.atan2(pitPts[idxPark + 1].x - pitPts[idxPark - 1].x,
+                                        pitPts[idxPark + 1].z - pitPts[idxPark - 1].z);
+            const lx = Math.sin(tangPark), lz = Math.cos(tangPark);
 
-        // QUANTO LONTANO, lo decide la pista. Proiettare 210 unita' in linea
-        // retta «dalla parte opposta» funziona finche' il circuito e' largo:
-        // su uno compatto quella retta attraversa l'infield ed esce
-        // dall'altra parte del tracciato. Su monte-rosso il parcheggio
-        // atterrava a 37 unita' dall'asse e i suoi container finivano dentro
-        // la pista — la segnalazione dell'utente del 2026-08-24.
-        //
-        // Il criterio «lato opposto» guarda a 30 unita' dalla corsia box: non
-        // sa niente di cosa c'e' 200 unita' piu' in la'. Qui glielo si chiede.
-        const parkOffset = scegliOffset(trackPts, pPark, nPark, side, barrierDist);
+            // QUANTO LONTANO, lo decide la pista. Proiettare 210 unita' in linea
+            // retta «dalla parte opposta» funziona finche' il circuito e' largo:
+            // su uno compatto quella retta attraversa l'infield ed esce
+            // dall'altra parte del tracciato. Su monte-rosso il parcheggio
+            // atterrava a 37 unita' dall'asse e i suoi container finivano dentro
+            // la pista — la segnalazione dell'utente del 2026-08-24.
+            //
+            // Il criterio «lato opposto» guarda a 30 unita' dalla corsia box: non
+            // sa niente di cosa c'e' 200 unita' piu' in la'. Qui glielo si chiede.
+            const parkOffset = scegliOffset(trackPts, pPark, nPark, side, barrierDist);
 
-        for (let r = 0; r < PARK_ROWS; r++) {
-            for (let c = 0; c < PARK_COLS; c++) {
-                const off = parkOffset + r * PARK_STEP_Z;
-                const lungo = (c - (PARK_COLS - 1) / 2) * PARK_STEP_X;
-                // rotY = tangPark e NON tangPark + PI/2: l'auto e' lunga 5.2 e
-                // larga 2.3, e in un parcheggio la LUNGHEZZA sta lungo la
-                // corsia di manovra (passo 7) mentre la larghezza sta
-                // affiancata (passo 3.2). Ruotate di 90 gradi si accavallavano
-                // di 2 unita' l'una sull'altra: ne entravano 20 su 36, e su
-                // monte-rosso 7. Nessuno se n'era accorto perche' con
-                // l'ingombro finto (6x6) si scartavano comunque.
-                piazza(CAR_COLORS[(r * PARK_COLS + c) % CAR_COLORS.length],
+            for (let r = 0; r < PARK_ROWS; r++) {
+                for (let c = 0; c < PARK_COLS; c++) {
+                    const off = parkOffset + r * PARK_STEP_Z;
+                    const lungo = (c - (PARK_COLS - 1) / 2) * PARK_STEP_X;
+                    // rotY = tangPark e NON tangPark + PI/2: l'auto e' lunga 5.2 e
+                    // larga 2.3, e in un parcheggio la LUNGHEZZA sta lungo la
+                    // corsia di manovra (passo 7) mentre la larghezza sta
+                    // affiancata (passo 3.2). Ruotate di 90 gradi si accavallavano
+                    // di 2 unita' l'una sull'altra: ne entravano 20 su 36, e su
+                    // monte-rosso 7. Nessuno se n'era accorto perche' con
+                    // l'ingombro finto (6x6) si scartavano comunque.
+                    piazza(CAR_COLORS[(r * PARK_COLS + c) % CAR_COLORS.length],
+                           pPark.x + nPark.nx * side * off + lx * lungo,
+                           pPark.z + nPark.nz * side * off + lz * lungo,
+                           tangPark, 'paddock-life');
+                }
+            }
+            // Container in fondo al parcheggio, allineati: chiudono la vista
+            // dietro le auto invece di stare sparsi dietro i garage.
+            for (let c = 0; c < 5; c++) {
+                const off = parkOffset + PARK_ROWS * PARK_STEP_Z + 14;
+                const lungo = (c - 2) * 12;
+                piazza('containerStack',
                        pPark.x + nPark.nx * side * off + lx * lungo,
                        pPark.z + nPark.nz * side * off + lz * lungo,
                        tangPark, 'paddock-life');
             }
-        }
-        // Container in fondo al parcheggio, allineati: chiudono la vista
-        // dietro le auto invece di stare sparsi dietro i garage.
-        for (let c = 0; c < 5; c++) {
-            const off = parkOffset + PARK_ROWS * PARK_STEP_Z + 14;
-            const lungo = (c - 2) * 12;
-            piazza('containerStack',
-                   pPark.x + nPark.nx * side * off + lx * lungo,
-                   pPark.z + nPark.nz * side * off + lz * lungo,
-                   tangPark, 'paddock-life');
-        }
 
-        // Asfalto sotto il parcheggio: senza, le auto poggiano sull erba e
-        // si leggono come abbandonate invece che parcheggiate. E una voce di
-        // layout con le sue dimensioni, disegnata da f1.js come superficie
-        // piana — la stessa strada del laghetto.
-        layout.push({
-            asset: null, category: 'parkingLot',
-            x: pPark.x + nPark.nx * side * (parkOffset + (PARK_ROWS - 1) * PARK_STEP_Z / 2),
-            y: 0,
-            z: pPark.z + nPark.nz * side * (parkOffset + (PARK_ROWS - 1) * PARK_STEP_Z / 2),
-            rotY: tangPark,
-            larghezza: PARK_COLS * PARK_STEP_X + 8,
-            profondita: PARK_ROWS * PARK_STEP_Z + 8,
-            scale: 1,
-        });
+            // Asfalto sotto il parcheggio: senza, le auto poggiano sull erba e
+            // si leggono come abbandonate invece che parcheggiate. E una voce di
+            // layout con le sue dimensioni, disegnata da f1.js come superficie
+            // piana — la stessa strada del laghetto.
+            layout.push({
+                asset: null, category: 'parkingLot',
+                x: pPark.x + nPark.nx * side * (parkOffset + (PARK_ROWS - 1) * PARK_STEP_Z / 2),
+                y: 0,
+                z: pPark.z + nPark.nz * side * (parkOffset + (PARK_ROWS - 1) * PARK_STEP_Z / 2),
+                rotY: tangPark,
+                larghezza: PARK_COLS * PARK_STEP_X + 8,
+                profondita: PARK_ROWS * PARK_STEP_Z + 8,
+                scale: 1,
+            });
 
-        // Motorhome e camion accanto al parcheggio, non dietro i garage.
-        //
-        // Stavano nella fascia fra la corsia box e il prato: lì un mezzo
-        // lungo 15 unità è schiacciato fra edifici alti 13 e non si vede
-        // (segnalato dall'utente: "sono piccolissimi rispetto ai box e dietro
-        // di essi non si vedono"). Qui formano invece un'area logistica
-        // coerente insieme al parcheggio e ai container — e a 210 unità
-        // stanno in una fascia libera, dove hanno spazio per leggersi.
-        for (let m = 0; m < MEZZI_COUNT; m++) {
-            const off = parkOffset - 34;
-            const lungo = (m - (MEZZI_COUNT - 1) / 2) * 26;
-            piazza(m % 3 === 2 ? 'truck' : 'motorhome',
-                   pPark.x + nPark.nx * side * off + lx * lungo,
-                   pPark.z + nPark.nz * side * off + lz * lungo,
-                   tangPark + Math.PI / 2, 'paddock-life');
+            // Motorhome e camion accanto al parcheggio, non dietro i garage.
+            //
+            // Stavano nella fascia fra la corsia box e il prato: lì un mezzo
+            // lungo 15 unità è schiacciato fra edifici alti 13 e non si vede
+            // (segnalato dall'utente: "sono piccolissimi rispetto ai box e dietro
+            // di essi non si vedono"). Qui formano invece un'area logistica
+            // coerente insieme al parcheggio e ai container — e a 210 unità
+            // stanno in una fascia libera, dove hanno spazio per leggersi.
+            for (let m = 0; m < MEZZI_COUNT; m++) {
+                const off = parkOffset - 34;
+                const lungo = (m - (MEZZI_COUNT - 1) / 2) * 26;
+                piazza(m % 3 === 2 ? 'truck' : 'motorhome',
+                       pPark.x + nPark.nx * side * off + lx * lungo,
+                       pPark.z + nPark.nz * side * off + lz * lungo,
+                       tangPark + Math.PI / 2, 'paddock-life');
+            }
+
         }
 
         // --- Striscioni lungo la pista ------------------------------------
