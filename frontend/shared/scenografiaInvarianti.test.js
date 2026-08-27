@@ -218,14 +218,22 @@ for (const id of PISTE) {
         // superflui dalle piste cittadine, tipo i cartelloni, le bandiere a
         // scacchi, la torre, il gazebo, le bandierine». Sono oggetti che in
         // mezzo ai palazzi si leggono come capitati li' per sbaglio.
+        //
+        // ⚠️ QUESTO ASSERT E' STATO ROVESCIATO. Nella prima stesura pretendeva
+        // che la `raceControlTower` RESTASSE, perche' «la torre» era stata
+        // letta come il pennone col pannello sponsor (`pylon`). L'utente ha
+        // corretto lo stesso giorno: «io intendevo di rimuovere la torre di
+        // direzione gara (e' ancora rimasta)», e insieme «anche il podio
+        // secondo me non ci sta in ambiente cittadino».
         const { t, layout } = scenografiaDi(id);
         if (t.ambientazione !== 'citta') return;
-        const FUORI = ['billboard', 'billboardLow', 'flagPole', 'pylon', 'paddockTent', 'banner'];
+        const FUORI = ['billboard', 'billboardLow', 'flagPole', 'pylon', 'paddockTent',
+                       'banner', 'raceControlTower', 'podium'];
         assert.deepEqual(layout.filter(v => FUORI.includes(v.asset)).map(v => v.asset), []);
-        // ⚠️ La torre di DIREZIONE GARA invece resta: quella sta al traguardo,
-        // dentro il recinto, e non e' arredo — e' il circuito.
-        assert.ok(layout.some(v => v.asset === 'raceControlTower'),
-            'la torre di direzione gara non va tolta');
+        // Il ponte dei semafori invece resta, ed e' l'unico landmark che resta:
+        // porta il via, senza non si legge la partenza.
+        assert.ok(layout.some(v => v.asset === 'startGantry'),
+            'il ponte dei semafori porta il via e non si toglie mai');
     });
 
     test(`${id}: in citta', niente di bordo pista finisce dentro una facciata`, () => {

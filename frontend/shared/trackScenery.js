@@ -46,10 +46,24 @@
     const SENZA_INGOMBRO = new Set(['pond', 'parkingLot', 'crowd', 'citta']);
 
     // Gli asset che in citta' non si generano: cartelloni pubblicitari, pennoni
-    // con la bandiera a scacchi, la torre col pannello sponsor, i gazebo del
-    // paddock e gli striscioni a bordo pista.
+    // con la bandiera a scacchi, il pennone col pannello sponsor, i gazebo del
+    // paddock, gli striscioni a bordo pista, la torre di direzione gara e il
+    // podio.
+    //
+    // ⚠️ LA TORRE E IL PODIO SONO ENTRATI QUI IL 2026-08-27, IN UN SECONDO
+    // GIRO. Il primo aveva tolto il `pylon` e aveva lasciato la
+    // `raceControlTower` — con tanto di test che lo pretendeva — perche'
+    // «la torre» dell'utente era stata letta come il pennone dello sponsor.
+    // Non era quella: «io intendevo di rimuovere la torre di direzione gara».
+    // E insieme il podio: «anche il podio secondo me non ci sta in ambiente
+    // cittadino».
+    //
+    // ⚠️ Il podio della PREMIAZIONE non c'entra e non si tocca: quello lo
+    // carica f1.js per conto suo (`costruisciCerimonia`, `costruisciPremiazione`),
+    // dal .glb, senza mai leggere la scenografia.
     const FUORI_CITTA = new Set(['billboard', 'billboardLow', 'flagPole',
-                                 'pylon', 'paddockTent', 'banner']);
+                                 'pylon', 'paddockTent', 'banner',
+                                 'raceControlTower', 'podium']);
 
     // Il seme deterministico e il suo generatore stanno in `semeStabile.js`:
     // li usa anche chi con la scenografia non c'entra (il profilo della città),
