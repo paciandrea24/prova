@@ -85,12 +85,20 @@ _HEX = {
     # default che si vede nei render — vedi frontend/shared/pitBoxLoader.js,
     # che cerca i materiali il cui nome finisce per "_livery".
     'livery':       'D6392F',
-    # Citta' (spec 2026-08-27): intonaco, pietra da cornici e mattone. Sono i
-    # colori BASE delle facciate nei render; in gioco la mesh dell'intonaco
-    # viene ritinta palazzo per palazzo con le tinte di ToonPalette.
-    'plaster':      'DFD3BE',
+    # Citta' (spec 2026-08-27). `stone` e' la pietra delle cornici, uguale per
+    # tutti i palazzi. Le altre cinque sono le TINTE DEI CORPI, una per
+    # famiglia-tinta: un InstancedMesh ha un materiale solo, quindi il colore
+    # di un palazzo si sceglie scegliendo l'asset.
+    #
+    # ⚠️ Gli hex sono gli stessi di ToonPalette.CITTA_FACCIATE e devono
+    # restarlo: il nastro dietro si colora da li', e nelle curve lo si vede fra
+    # una colonna e l'altra.
     'stone':        'BFB4A2',
-    'brick':        'A9705A',
+    'cittaCrema':   'C6BFAE',
+    'cittaMattone': 'A97F6A',
+    'cittaTortora': 'B0A89C',
+    'cittaVetro':   '9AA0A6',
+    'cittaArdesia': '8F959B',
 }
 
 

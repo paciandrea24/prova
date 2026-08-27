@@ -30,40 +30,34 @@ H_BASE, H_PIANO, H_CORONA = F.H_BASE, F.H_PIANO, F.H_CORONAMENTO
 # I palazzi della fila: (famiglia, numero di piani, variante del piano tipo).
 # Alterna le due famiglie e le due varianti, come fara' il seme in gioco.
 PALAZZI = [
-    ('vecchia', 5, 'A'),
-    ('vecchia', 3, 'B'),
-    ('nuova',   7, 'A'),
-    ('vecchia', 4, 'B'),
-    ('nuova',   5, 'B'),
+    ('Crema',   5, 'A'),
+    ('Mattone', 3, 'B'),
+    ('Vetro',   7, 'A'),
+    ('Tortora', 4, 'B'),
+    ('Ardesia', 5, 'B'),
 ]
 # Quante colonne e' largo ogni palazzo (in gioco lo decide PALAZZO_LUNGHEZZA).
 COLONNE_PER_PALAZZO = 4
 
-BUILDER = {
-    ('vecchia', 'base'):  F.build_citta_vecchia_base,
-    ('vecchia', 'A'):     F.build_citta_vecchia_piano_a,
-    ('vecchia', 'B'):     F.build_citta_vecchia_piano_b,
-    ('vecchia', 'tetto'): F.build_citta_vecchia_tetto,
-    ('nuova', 'base'):    F.build_citta_nuova_base,
-    ('nuova', 'A'):       F.build_citta_nuova_piano_a,
-    ('nuova', 'B'):       F.build_citta_nuova_piano_b,
-    ('nuova', 'tetto'):   F.build_citta_nuova_tetto,
-}
+# I builder veri, per assetId: citta<Tinta><Pezzo>.
+BUILDER = F.builders()
 
 voxelKit.clear_scene()
 
 n = 0
 x = 0.0
-for famiglia, piani, variante in PALAZZI:
-    for _ in range(COLONNE_PER_PALAZZO):
+for tinta, piani, variante in PALAZZI:
+    for col in range(COLONNE_PER_PALAZZO):
         z = 0.0
-        pila = [(famiglia, 'base', H_BASE)]
-        pila += [(famiglia, variante, H_PIANO)] * piani
-        pila += [(famiglia, 'tetto', H_CORONA)]
-        for fam, pezzo, alto in pila:
+        # Le due basi si alternano: quattro portoni identici in fila non
+        # esistono in nessuna strada.
+        pila = [(f'citta{tinta}Base{"A" if col % 2 == 0 else "B"}', H_BASE)]
+        pila += [(f'citta{tinta}Piano{variante}', H_PIANO)] * piani
+        pila += [(f'citta{tinta}Tetto', H_CORONA)]
+        for asset, alto in pila:
             n += 1
             kit = voxelKit.VoxelKit(f'anteprima{n}')
-            BUILDER[(fam, pezzo)](kit)
+            BUILDER[asset](kit)
             for _mat, obj in kit.parts:
                 obj.location.x += x
                 obj.location.z += z

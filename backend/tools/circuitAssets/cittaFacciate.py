@@ -12,15 +12,19 @@ PIANO DEL NASTRO (y = 0 e' il retro, la facciata cresce verso -Y, cioe' verso la
 pista) e alla BASE del pezzo (z = 0). Cosi' chi li posa non deve conoscerne lo
 spessore: mette l'origine sul nastro e impila in altezza.
 
-Due famiglie, perche' la citta' e' mista (decisione dell'utente):
-  vecchia — intonaco, pietra, persiane, balconi in ferro, cornicione
-  nuova   — cemento, nastri di vetro, montanti d'acciaio, attico
+⚠️ LA TINTA E' COTTA NELL'ASSET, una famiglia per tinta. Un InstancedMesh ha un
+materiale solo, quindi due palazzi dello stesso asset non possono avere colori
+diversi: la via che non tocca il motore di istanziamento e' generare lo stesso
+modulo in piu' tinte, come gia' si fa per le auto parcheggiate
+(`life.make_parked_car`). Le tinte sono le stesse di `ToonPalette.CITTA_FACCIATE`
+— devono esserlo, perche' il nastro dietro si colora da li' e nelle curve si
+vede fra una colonna e l'altra.
 
-⚠️ La mesh dell'INTONACO (`plaster`) e del CEMENTO (`concrete`) e' quella che il
-gioco ritinge palazzo per palazzo: il colore qui e' solo il default dei render.
-Tutto il resto — pietra, vetro, ferro — resta del suo colore, o due palazzi
-vicini avrebbero anche le persiane della stessa tinta e si riconoscerebbe il
-trucco.
+Cinque famiglie-tinta, perche' la citta' e' mista (decisione dell'utente):
+  crema, mattone, tortora — la citta' vecchia: intonaco, pietra, persiane,
+                            balconi in ferro, cornicione con mensole
+  vetro, ardesia          — la citta' nuova: nastri di vetro, montanti
+                            d'acciaio, pensiline, attico
 """
 from voxelKit import EPS
 
@@ -40,6 +44,17 @@ FRONT = -D
 H_BASE = 4.5
 H_PIANO = 3.5
 H_CORONAMENTO = 1.2
+
+# Le famiglie-tinta: nome -> (colore del corpo, famiglia).
+# Il colore e' un nome della PALETTE di voxelKit, e ognuno di questi esiste
+# anche in ToonPalette.CITTA_FACCIATE con lo stesso hex.
+FAMIGLIE = {
+    'Crema':   ('cittaCrema', 'vecchia'),
+    'Mattone': ('cittaMattone', 'vecchia'),
+    'Tortora': ('cittaTortora', 'vecchia'),
+    'Vetro':   ('cittaVetro', 'nuova'),
+    'Ardesia': ('cittaArdesia', 'nuova'),
+}
 
 
 def _corpo(kit, colore, h):
@@ -77,14 +92,13 @@ def _ringhiera(kit, x, z, larga, sporgenza):
 
 # ─────────────────────────────── vecchia ───────────────────────────────
 
-def build_citta_vecchia_base(kit):
-    """Piano terra di un palazzo d'epoca: vetrina con tenda, portone, gradino."""
-    _corpo(kit, 'plaster', H_BASE)
+def _vecchia_base_a(kit, tinta):
+    """Piano terra d'epoca: vetrina con tenda a sinistra, portone a destra."""
+    _corpo(kit, tinta, H_BASE)
     # Zoccolo in pietra: la fascia bassa che sui palazzi veri protegge
     # l'intonaco. Sporge poco e gira su tutta la larghezza.
     kit.box('stone', (W, D + 0.24, 1.0), (0, -D / 2 - 0.12, 0.5))
 
-    # La vetrina, spostata a sinistra per lasciare posto al portone.
     kit.box('glass', (4.4, 0.24, 2.5), (-1.7, FRONT - 0.07, 2.45))
     for sx in (-1, 1):
         kit.box('stone', (0.3, 0.4, 2.9), (-1.7 + sx * 2.35, FRONT - 0.15, 2.4))
@@ -102,14 +116,39 @@ def build_citta_vecchia_base(kit):
     kit.box('stone', (2.6, 0.42, 0.34), (2.6, FRONT - 0.16, 3.72))
     kit.box('stone', (2.2, 0.7, 0.18), (2.6, FRONT - 0.3, 0.09))
 
-    # Marcapiano: chiude il piano terra e regge il piano di sopra.
     kit.box('stone', (W, D + 0.44, 0.34), (0, -D / 2 - 0.22, H_BASE - 0.17))
     return W, H_BASE
 
 
-def build_citta_vecchia_piano_a(kit):
+def _vecchia_base_b(kit, tinta):
+    """Piano terra, variante SENZA portone: due negozi affiancati.
+
+    ⚠️ Esiste per una ragione precisa: con una base sola, un palazzo largo
+    quattro colonne mostrava quattro portoni identici in fila. Le due varianti
+    si alternano lungo il palazzo, e il portone torna a essere uno solo ogni
+    tanto — come nelle strade vere."""
+    _corpo(kit, tinta, H_BASE)
+    kit.box('stone', (W, D + 0.24, 1.0), (0, -D / 2 - 0.12, 0.5))
+
+    for sx, tenda in ((-1, 'blue'), (1, 'yellow')):
+        x = sx * 2.2
+        kit.box('glass', (3.5, 0.24, 2.5), (x, FRONT - 0.07, 2.45))
+        for lato in (-1, 1):
+            kit.box('stone', (0.28, 0.4, 2.9), (x + lato * 1.89, FRONT - 0.15, 2.4))
+        kit.box('stone', (4.3, 0.4, 0.3), (x, FRONT - 0.15, 3.85))
+        kit.box(tenda, (4.0, 1.25, 0.22), (x, FRONT - 0.62, 4.02), rot=(0.42, 0, 0))
+        for lato in (-1, 1):
+            kit.box('steelDark', (0.08, 1.1, 0.08), (x + lato * 1.85, FRONT - 0.6, 3.78))
+    # Il pilastro fra i due negozi: senza, le due vetrine si leggono come una.
+    kit.box('stone', (0.5, 0.44, 3.6), (0, FRONT - 0.17, 1.9))
+
+    kit.box('stone', (W, D + 0.44, 0.34), (0, -D / 2 - 0.22, H_BASE - 0.17))
+    return W, H_BASE
+
+
+def _vecchia_piano_a(kit, tinta):
     """Piano tipo: tre finestre con persiane, quella centrale col balcone."""
-    _corpo(kit, 'plaster', H_PIANO)
+    _corpo(kit, tinta, H_PIANO)
     kit.box('stone', (3.4, 0.85, 0.22), (0, FRONT - 0.42, 0.11))
     _ringhiera(kit, 0, 0.22, 3.3, 0.85)
     for x in (-2.9, 0.0, 2.9):
@@ -118,13 +157,9 @@ def build_citta_vecchia_piano_a(kit):
     return W, H_PIANO
 
 
-def build_citta_vecchia_piano_b(kit):
-    """Piano tipo, variante: due portefinestre larghe e un balcone continuo.
-
-    Serve a rompere la ripetizione — il difetto che l'utente ha visto nella
-    versione a textura: «cambia il colore ma il pattern sulla facciata sempre
-    quello e'»."""
-    _corpo(kit, 'plaster', H_PIANO)
+def _vecchia_piano_b(kit, tinta):
+    """Piano tipo, variante: due portefinestre larghe e un balcone continuo."""
+    _corpo(kit, tinta, H_PIANO)
     kit.box('stone', (W - 0.6, 0.95, 0.24), (0, FRONT - 0.47, 0.12))
     _ringhiera(kit, 0, 0.24, W - 0.7, 0.95)
     for x in (-2.2, 2.2):
@@ -135,24 +170,22 @@ def build_citta_vecchia_piano_b(kit):
     return W, H_PIANO
 
 
-def build_citta_vecchia_tetto(kit):
-    """Coronamento: cornicione aggettante e parapetto in muratura."""
-    _corpo(kit, 'plaster', H_CORONAMENTO)
-    # Il cornicione: e' il pezzo che da' lontano dice «qui il palazzo finisce».
+def _vecchia_tetto(kit, tinta):
+    """Coronamento: cornicione aggettante su mensole e parapetto in muratura."""
+    _corpo(kit, tinta, H_CORONAMENTO)
     kit.box('stone', (W, D + 1.1, 0.34), (0, -D / 2 - 0.55, 0.5))
     kit.box('stone', (W, D + 0.7, 0.26), (0, -D / 2 - 0.35, 0.22))
-    # Mensole sotto il cornicione, una ogni unita' e mezza.
     for i in range(6):
         kit.box('stone', (0.26, 0.5, 0.3), (-3.75 + i * 1.5, FRONT - 0.3, 0.06))
-    kit.box('plaster', (W, D + 0.2, 0.5), (0, -D / 2 - 0.1, H_CORONAMENTO - 0.25))
+    kit.box(tinta, (W, D + 0.2, 0.5), (0, -D / 2 - 0.1, H_CORONAMENTO - 0.25))
     return W, H_CORONAMENTO
 
 
 # ──────────────────────────────── nuova ────────────────────────────────
 
-def build_citta_nuova_base(kit):
+def _nuova_base_a(kit, tinta):
     """Piano terra moderno: ingresso vetrato a tutta altezza e pensilina."""
-    _corpo(kit, 'concrete', H_BASE)
+    _corpo(kit, tinta, H_BASE)
     kit.box('tarmac', (W, D + 0.2, 0.5), (0, -D / 2 - 0.1, 0.25))
 
     kit.box('glass', (W - 1.2, 0.26, 3.4), (0, FRONT - 0.08, 2.35))
@@ -160,16 +193,35 @@ def build_citta_nuova_base(kit):
         kit.box('steel', (0.22, 0.4, 3.5), (x, FRONT - 0.16, 2.35))
     kit.box('steel', (W - 1.0, 0.4, 0.24), (0, FRONT - 0.16, 4.05))
     kit.box('steel', (W - 1.0, 0.4, 0.2), (0, FRONT - 0.16, 0.7))
-    # Pensilina: sporge un metro e mezzo sopra l'ingresso.
     kit.box('steelDark', (W - 0.4, 1.5, 0.26), (0, FRONT - 0.75, 4.35))
     for sx in (-1, 1):
         kit.box('steel', (0.12, 1.3, 0.12), (sx * 3.6, FRONT - 0.7, 4.16))
     return W, H_BASE
 
 
-def build_citta_nuova_piano_a(kit):
+def _nuova_base_b(kit, tinta):
+    """Piano terra moderno, variante: vetrine di negozio e insegna continua.
+
+    Stessa ragione della variante vecchia: quattro ingressi principali in fila
+    non esistono in nessuna strada."""
+    _corpo(kit, tinta, H_BASE)
+    kit.box('tarmac', (W, D + 0.2, 0.5), (0, -D / 2 - 0.1, 0.25))
+
+    for x in (-2.8, 0.0, 2.8):
+        kit.box('glass', (2.3, 0.26, 2.7), (x, FRONT - 0.08, 2.05))
+    for x in (-1.4, 1.4):
+        kit.box('steel', (0.28, 0.38, 2.9), (x, FRONT - 0.14, 2.05))
+    # L'insegna: una fascia continua sopra le vetrine, spezzata da un'unica
+    # macchia di colore. Ne basta una per palazzo perche' si noti.
+    kit.box('steelDark', (W, 0.5, 0.9), (0, FRONT - 0.2, 3.9))
+    kit.box('red', (2.6, 0.28, 0.55), (-2.8, FRONT - 0.42, 3.9))
+    kit.box('steel', (W, 0.34, 0.16), (0, FRONT - 0.12, 0.85))
+    return W, H_BASE
+
+
+def _nuova_piano_a(kit, tinta):
     """Piano tipo: nastro di vetro continuo scandito da montanti."""
-    _corpo(kit, 'concrete', H_PIANO)
+    _corpo(kit, tinta, H_PIANO)
     kit.box('glass', (W - 0.5, 0.24, 2.5), (0, FRONT - 0.07, 1.75))
     for x in (-3.4, -1.7, 0.0, 1.7, 3.4):
         kit.box('steel', (0.2, 0.38, 2.6), (x, FRONT - 0.15, 1.75))
@@ -178,28 +230,46 @@ def build_citta_nuova_piano_a(kit):
     return W, H_PIANO
 
 
-def build_citta_nuova_piano_b(kit):
-    """Piano tipo, variante: finestre a riquadri e una fascia cieca.
-
-    Le due varianti servono a rompere la ripetizione: da un palazzo al
-    successivo il motivo deve cambiare, non solo la tinta."""
-    _corpo(kit, 'concrete', H_PIANO)
+def _nuova_piano_b(kit, tinta):
+    """Piano tipo, variante: finestre a riquadri e lesene cieche."""
+    _corpo(kit, tinta, H_PIANO)
     for x in (-3.15, -1.05, 1.05, 3.15):
         kit.box('glass', (1.62, 0.24, 2.1), (x, FRONT - 0.07, 1.85))
         kit.box('steel', (1.8, 0.36, 0.16), (x, FRONT - 0.13, 0.68))
     for x in (-2.1, 0.0, 2.1):
-        kit.box('concrete', (0.5, 0.34, 2.3), (x, FRONT - 0.12, 1.85))
+        kit.box(tinta, (0.5, 0.34, 2.3), (x, FRONT - 0.12, 1.85))
     kit.box('steelDark', (W, D + 0.28, 0.36), (0, -D / 2 - 0.14, H_PIANO - 0.18))
     return W, H_PIANO
 
 
-def build_citta_nuova_tetto(kit):
-    """Coronamento: fascia tecnica, parapetto e un volume impianti arretrato."""
-    _corpo(kit, 'concrete', H_CORONAMENTO)
+def _nuova_tetto(kit, tinta):
+    """Coronamento: fascia tecnica, parapetto di vetro fra montanti."""
+    _corpo(kit, tinta, H_CORONAMENTO)
     kit.box('steelDark', (W, D + 0.5, 0.55), (0, -D / 2 - 0.25, 0.3))
     kit.box('steel', (W, D + 0.16, 0.14), (0, -D / 2 - 0.08, 0.72))
-    # Parapetto: lastre di vetro fra montanti, come sulle torri vere.
     kit.box('glass', (W - 0.4, 0.12, 0.6), (0, FRONT + 0.06, H_CORONAMENTO - 0.3))
     for x in (-4.0, -1.35, 1.35, 4.0):
         kit.box('steel', (0.16, 0.2, 0.7), (x, FRONT + 0.1, H_CORONAMENTO - 0.35))
     return W, H_CORONAMENTO
+
+
+_PEZZI = {
+    'vecchia': {'BaseA': _vecchia_base_a, 'BaseB': _vecchia_base_b,
+                'PianoA': _vecchia_piano_a, 'PianoB': _vecchia_piano_b,
+                'Tetto': _vecchia_tetto},
+    'nuova':   {'BaseA': _nuova_base_a, 'BaseB': _nuova_base_b,
+                'PianoA': _nuova_piano_a, 'PianoB': _nuova_piano_b,
+                'Tetto': _nuova_tetto},
+}
+
+PEZZI = ('BaseA', 'BaseB', 'PianoA', 'PianoB', 'Tetto')
+
+
+def builders():
+    """assetId -> build(kit), per il registry. Cinque tinte per cinque pezzi."""
+    out = {}
+    for nome, (colore, famiglia) in FAMIGLIE.items():
+        for pezzo in PEZZI:
+            fn = _PEZZI[famiglia][pezzo]
+            out[f'citta{nome}{pezzo}'] = (lambda f, c: lambda kit: f(kit, c))(fn, colore)
+    return out
