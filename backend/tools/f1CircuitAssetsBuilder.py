@@ -25,6 +25,7 @@ import voxelKit  # noqa: E402
 from circuitAssets import ASSET_BUILDERS  # noqa: E402
 from circuitAssets import grandstands  # noqa: E402
 from circuitAssets import infrastructure  # noqa: E402
+from circuitAssets import pitClub  # noqa: E402
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 wanted = None
@@ -69,7 +70,13 @@ print(f'[circuitAssets] {len(seats)} posti a sedere -> {seats_path}')
 
 # Ancore degli spettatori sulle terrazze delle infrastrutture. Stesso motivo
 # del file dei sedili: dato derivato dalla geometria, scritto sempre.
-anchors = infrastructure.terrace_anchors()
+# ⚠️ Le ancore arrivano da PIÙ moduli: le terrazze delle infrastrutture e il
+# coronamento della fila dei box. Un file solo, perché per uno spettatore «la
+# mia terrazza» è l'oggetto su cui poggia, quale che sia il modulo che l'ha
+# scolpito — ed è a questo file che trackScenery.js chiede chi ha una terrazza,
+# invece di tenere una lista di asset scritta a mano.
+anchors = dict(infrastructure.terrace_anchors())
+anchors.update(pitClub.terrace_anchors())
 anchors_path = os.path.join(voxelKit.GLB_DIR, 'terraceAnchors.json')
 with open(anchors_path, 'w', encoding='utf-8') as f:
     json.dump({

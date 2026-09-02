@@ -31,6 +31,12 @@ const EXPECTED = {
     billboardLow:      { w: 16, h: 4.5, d: 1.4 },
     pitsGarageClosed:  { w: 12.9, h: 9, d: 14 },
     pitsOffice:        { w: 13.0, h: 13, d: 14 },
+    // Il coronamento della fila dei box (spec 2026-09-02). Le misure sono
+    // quelle degli edifici sotto — W 12.3, D 14.0 — perché ci si appoggiano
+    // sopra: un coronamento più largo sporgerebbe nel vuoto, uno più stretto
+    // lascerebbe vedere il tetto nudo.
+    pitRoofTerrace:    { w: 12.9, h: 3.6, d: 14.6 },
+    pitRoofLounge:     { w: 12.9, h: 4.2, d: 14.6 },
     raceControlTower:  { w: 14, h: 34, d: 12 },
     startGantry:       { w: 34, h: 16, d: 2.4 },
     podium:            { w: 12, h: 9, d: 7 },

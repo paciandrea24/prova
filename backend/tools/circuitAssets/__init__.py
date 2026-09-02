@@ -3,7 +3,8 @@ Ogni build() scolpisce i pezzi con il kit e ritorna l'ingombro orizzontale e
 l'altezza, usati solo per inquadrare il render."""
 from . import (grandstands, billboards, pitBuildings, raceStructures, safety,
                decor, people, trackside, pitBox, vegetation, rocks,
-               paddock, life, infrastructure, cittaFacciate, cittaStrada)
+               paddock, life, infrastructure, cittaFacciate, cittaStrada,
+               pitClub)
 
 ASSET_BUILDERS = {
     'grandStand':        grandstands.build_grand_stand,
@@ -90,4 +91,8 @@ ASSET_BUILDERS.update({
     'cittaFontanella': cittaStrada.build_citta_fontanella,
     'cittaBanco':      cittaStrada.build_citta_banco,
     'cittaTelecamere': cittaStrada.build_citta_telecamere,
+    # Il coronamento della fila dei box (spec 2026-09-02): quello che si posa
+    # sopra pitsGarageClosed e pitsOffice.
+    'pitRoofTerrace':  pitClub.build_pit_roof_terrace,
+    'pitRoofLounge':   pitClub.build_pit_roof_lounge,
 })
