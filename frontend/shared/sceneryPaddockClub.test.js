@@ -45,3 +45,70 @@ for (const asset of CORONAMENTI) {
         }
     });
 }
+
+// --- La posa, su ogni pista della cartella --------------------------------
+const TrackScenery = require('./trackScenery.js');
+const { loadTrack } = require('../../backend/sockets/games/trackLoader.js');
+const seats = require('../assets/custom/circuit/grandStandSeats.json').seats;
+const terraceAnchors = require('../assets/custom/circuit/terraceAnchors.json').anchors;
+
+const PISTE = fs.readdirSync(path.join(__dirname, '..', 'tracks'))
+    .filter(f => f.endsWith('.json') && !/^(__|test-)/.test(f))
+    .map(f => f.replace(/\.json$/, ''));
+
+// Una pista si genera una volta sola: sono migliaia di oggetti per pista e
+// piu' test per pista.
+const cache = new Map();
+function scenografiaDi(id) {
+    if (!cache.has(id)) {
+        const raw = JSON.parse(fs.readFileSync(
+            path.join(__dirname, '..', 'tracks', id + '.json'), 'utf8'));
+        const t = loadTrack(id);
+        cache.set(id, TrackScenery.generateLayout(raw, t.points, t.pitLanePts,
+            raw.roadHalfWidth + 2.8 + 1.2, 45, seats, t.barrierProfile,
+            terraceAnchors, { gridSize: 6 }));
+    }
+    return cache.get(id);
+}
+
+const SOPRA = { pitsGarageClosed: 'pitRoofTerrace', pitsOffice: 'pitRoofLounge' };
+const chiave = (v) => v.x.toFixed(2) + ',' + v.z.toFixed(2);
+
+for (const id of PISTE) {
+    test(`${id}: ogni edificio della corsia box ha il suo coronamento`, () => {
+        const layout = scenografiaDi(id);
+        const corone = new Map(layout
+            .filter(v => v.category === 'paddock-club').map(v => [chiave(v), v]));
+        const senza = layout
+            .filter(v => SOPRA[v.asset])
+            .filter(v => {
+                const c = corone.get(chiave(v));
+                return !c || c.asset !== SOPRA[v.asset];
+            });
+        assert.deepEqual(
+            senza.map(v => `${v.asset} a (${v.x.toFixed(1)}, ${v.z.toFixed(1)})`), []);
+    });
+
+    test(`${id}: nessun coronamento orfano, ne' storto`, () => {
+        const layout = scenografiaDi(id);
+        const edifici = new Map(layout
+            .filter(v => SOPRA[v.asset]).map(v => [chiave(v), v]));
+        const guai = [];
+        for (const c of layout.filter(v => v.category === 'paddock-club')) {
+            const e = edifici.get(chiave(c));
+            if (!e) { guai.push(`${c.asset} senza edificio sotto`); continue; }
+            // Stesso orientamento: un tetto ruotato rispetto al suo edificio
+            // sporgerebbe da un lato e lascerebbe scoperto l'altro.
+            if (Math.abs((c.rotY || 0) - (e.rotY || 0)) > 1e-9) {
+                guai.push(`${c.asset} ruotato rispetto al suo edificio`);
+            }
+            // Ne' sospeso ne' affondato: la quota e' quella dell'edificio piu'
+            // la sua altezza, letta dall'ingombro dichiarato.
+            const atteso = (e.y || 0) + Sizes.sizeOf(e.asset).h * (e.scale || 1);
+            if (Math.abs((c.y || 0) - atteso) > 1e-6) {
+                guai.push(`${c.asset} a quota ${c.y} invece di ${atteso}`);
+            }
+        }
+        assert.deepEqual(guai, []);
+    });
+}

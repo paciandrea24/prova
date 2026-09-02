@@ -847,6 +847,48 @@
         return layout;
     }
 
+    // IL CORONAMENTO DELLA FILA DEI BOX (spec 2026-09-02).
+    //
+    // Dove nasce un edificio della corsia box nasce il suo tetto abitato:
+    // stesso punto, stesso orientamento, quota = quella dell'edificio più la
+    // sua altezza. Non è una fila da posizionare — è una CONSEGUENZA — e per
+    // questo non può aprirsi a ventaglio in curva né perdere un pezzo per
+    // strada: eredita per intero il lavoro già fatto sugli edifici, compreso
+    // lo scostamento con cui si tolgono dalla corsia dove lei rientra su se
+    // stessa.
+    //
+    // ⚠️ Si genera DOPO la traslazione della scenografia. Gli edifici portano
+    // `natoSullaCorsia` e vengono spostati; un coronamento nato prima
+    // seguirebbe una strada sua — è lo stesso motivo per cui la folla nasce
+    // dopo la traslazione e non prima.
+    //
+    // Non serve nessuna esenzione ai controlli di compenetrazione:
+    // SceneryAssetSizes.itemsOverlap confronta già le quote, quindi un modulo
+    // appoggiato su un tetto non urta ciò che gli sta sotto.
+    const CORONAMENTO = {
+        pitsGarageClosed: 'pitRoofTerrace',
+        pitsOffice: 'pitRoofLounge',
+    };
+
+    function coronamentoDeiBox(layout) {
+        const out = [];
+        for (const v of layout) {
+            const asset = CORONAMENTO[v.asset];
+            if (!asset) continue;
+            // ⚠️ L'altezza si LEGGE dall'ingombro dichiarato, mai scritta a
+            // mano: un numero ricopiato qui resterebbe indietro il giorno in
+            // cui l'edificio cambia, e il tetto resterebbe sospeso o affondato
+            // senza che nessun test se ne accorga.
+            const h = SceneryAssetSizes.sizeOf(v.asset).h * (v.scale || 1);
+            out.push({
+                asset, category: 'paddock-club',
+                x: v.x, y: (v.y || 0) + h, z: v.z,
+                rotY: v.rotY || 0, scale: CUSTOM_MODEL_SCALE,
+            });
+        }
+        return out;
+    }
+
     // Tribune distribuite a intervalli regolari lungo il giro, alternando
     // lato sinistro/destro. Se lo slot calcolato cade troppo vicino alla
     // corsia box (o a una tribuna già piazzata), si cerca il punto valido
@@ -1859,6 +1901,11 @@
             }
         }
 
+        // Il coronamento nasce QUI: gli edifici della corsia box sono ormai
+        // dove staranno, e la folla che viene subito dopo lo trova fra le
+        // terrazze senza bisogno di sapere che esiste.
+        layout.push(...coronamentoDeiBox(layout));
+
         // Spettatori DOPO la traslazione, non prima.
         //
         // Ogni posto è espresso in coordinate locali alla tribuna, quindi la
@@ -2002,7 +2049,11 @@
         //    degli edifici box qui sopra), non scartandole qui.
         // Entrano nel registro senza essere giudicate: gli altri devono
         // VEDERLE, non poterle rimuovere.
-        const NON_SCARTABILI = new Set(['paddock', 'grandstand-main']);
+        //  - il coronamento è la STESSA fila continua, vista da sopra: un buco
+        //    lassù si vede a colpo d'occhio quanto un buco nel fronte dei box,
+        //    e le sue eventuali violazioni si curano spostando l'edificio
+        //    sotto, non scartando il tetto.
+        const NON_SCARTABILI = new Set(['paddock', 'grandstand-main', 'paddock-club']);
         const intoccabili = layout.filter(
             v => v.asset === 'startGantry' || NON_SCARTABILI.has(v.category));
         registro.aggiungiTutti(intoccabili);
