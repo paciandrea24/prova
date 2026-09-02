@@ -1929,8 +1929,14 @@
         // Anche loro dopo la traslazione, per la stessa ragione della folla:
         // le ancore sono locali all'oggetto, quindi l'oggetto deve già essere
         // dove starà.
-        const terrazze = infrastrutture.filter(
-            v => v.asset === 'hospitalityDeck' || v.asset === 'vipSuite');
+        // ⚠️ CHI HA LE ANCORE HA UNA TERRAZZA. Qui c'era una lista di asset
+        // scritta a mano (`hospitalityDeck`, `vipSuite`): un asset nuovo con la
+        // sua terrazza nasceva deserto, e nessun test lo diceva. La domanda si
+        // fa al file delle ancore, che è l'unico che lo sa.
+        //
+        // E si guarda TUTTO il layout, non le sole infrastrutture: il
+        // coronamento della fila dei box è altrettanto abitato.
+        const terrazze = layout.filter(v => v.asset && terraceAnchors && terraceAnchors[v.asset]);
         const terraceCrowd = SceneryCrowd.buildTerraceCrowd(
             terrazze, terraceAnchors || {}, mulberry32(hashString(trackData.id + ':terrace')));
 
@@ -2140,7 +2146,9 @@
         // sia la sua categoria.
         const sedutiRimasti = new Set([...tribuneRimaste]);
         for (const v of passate) {
-            if (v.asset === 'hospitalityDeck' || v.asset === 'vipSuite') {
+            // Stessa domanda di sopra, e per la stessa ragione: chi ha le
+            // ancore ha una terrazza, quale che sia il modulo che l'ha posata.
+            if (v.asset && terraceAnchors && terraceAnchors[v.asset]) {
                 sedutiRimasti.add(v.x.toFixed(2) + ',' + v.z.toFixed(2));
             }
         }

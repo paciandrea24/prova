@@ -112,3 +112,43 @@ for (const id of PISTE) {
         assert.deepEqual(guai, []);
     });
 }
+
+// --- La gente affacciata --------------------------------------------------
+test('sulle terrazze dei box c\'e\' gente, e sta sul piano della terrazza', () => {
+    const layout = scenografiaDi('citta-prova');
+    const terrazze = layout.filter(v => v.asset === 'pitRoofTerrace');
+    assert.ok(terrazze.length >= 5, `solo ${terrazze.length} terrazze`);
+    const persone = layout.filter(v => v.category === 'crowd');
+    const abitate = terrazze.filter(t => persone.some(p => p.daTribuna === chiave(t)));
+    assert.ok(abitate.length >= terrazze.length / 2,
+        `gente su ${abitate.length} terrazze su ${terrazze.length}`);
+    // In piedi sul piano, non a mezz'aria ne' dentro il solaio: le ancore sono
+    // locali all'oggetto, e se qualcuno le applicasse a un oggetto non ancora
+    // spostato la gente resterebbe indietro (e' successo con le tribune).
+    for (const t of abitate) {
+        for (const p of persone.filter(p => p.daTribuna === chiave(t))) {
+            assert.ok(p.y > t.y && p.y < t.y + 1.0,
+                `spettatore a ${p.y} con la terrazza a ${t.y}`);
+        }
+    }
+});
+
+test('chi ha le ancore ha gente sopra, senza bisogno di essere in elenco', () => {
+    // ⚠️ LA REGOLA VERA: chi ha ancore ha gente. Prima trackScenery teneva una
+    // lista di asset scritta a mano, e un asset nuovo con la sua terrazza
+    // nasceva deserto senza che niente lo dicesse — che e' il modo in cui
+    // questa voce sarebbe fallita in silenzio.
+    const conAncore = Object.keys(terraceAnchors);
+    assert.ok(conAncore.includes('pitRoofTerrace') && conAncore.includes('pitRoofLounge'),
+        `terraceAnchors.json contiene ${conAncore.join(', ')}`);
+    const layout = scenografiaDi('prova');
+    const sorgenti = new Set(layout.filter(v => v.category === 'crowd').map(p => p.daTribuna));
+    for (const asset of conAncore) {
+        const esemplari = layout.filter(v => v.asset === asset);
+        if (!esemplari.length) continue;
+        // Non TUTTI devono avere gente (il riempimento e' casuale), ma
+        // un'intera famiglia deserta e' il difetto.
+        assert.ok(esemplari.some(v => sorgenti.has(chiave(v))),
+            `${asset}: nessuno dei ${esemplari.length} esemplari ha gente sopra`);
+    }
+});

@@ -502,7 +502,10 @@
         // 4. Spettatori senza la loro tribuna: la folla nasce prima della
         //    porta della scenografia, e se la tribuna viene scartata dopo,
         //    restano seduti nel vuoto.
+        // Le sorgenti della folla: le tribune e tutto ciò che ha una terrazza
+        // abitata — le infrastrutture e il coronamento della fila dei box.
         const sorgenti = layout.filter(v => v.category === 'grandstand' || v.category === 'grandstand-main'
+            || v.category === 'paddock-club'
             || v.asset === 'hospitalityDeck' || v.asset === 'vipSuite');
         const orfani = layout.filter(v => v.category === 'crowd')
             .filter(s => !sorgenti.some(g => Math.hypot(g.x - s.x, g.z - s.z) < RAGGIO_TRIBUNA));
