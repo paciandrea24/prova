@@ -26,6 +26,12 @@
         billboardLow:      { w: 16.4, h: 4.5,  d: 1.4 },
         pitsGarageClosed:  { w: 12.9, h: 8.3,  d: 14.7 },
         pitsOffice:        { w: 13.0, h: 13.1, d: 14.9 },
+        // Il coronamento della fila dei box (spec 2026-09-02). ⚠️ La loro `h`
+        // non e' un dato estetico: e' la quota a cui trackScenery.js posa il
+        // coronamento sull'edificio sotto, e per questo va letta dal .glb —
+        // ci pensa sceneryPaddockClub.test.js.
+        pitRoofTerrace:    { w: 13.2, h: 3.34, d: 14.9 },
+        pitRoofLounge:     { w: 13.2, h: 4.74, d: 14.9 },
         raceControlTower:  { w: 14.6, h: 33.7, d: 12.6 },
         startGantry:       { w: 34.5, h: 16.0, d: 2.4 },
         podium:            { w: 12.0, h: 9.0,  d: 7.1 },

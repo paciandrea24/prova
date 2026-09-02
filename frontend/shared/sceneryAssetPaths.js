@@ -49,6 +49,10 @@
         billboardLow: '/assets/custom/circuit/billboardLow.glb',
         pitsGarageClosed: '/assets/custom/circuit/pitsGarageClosed.glb',
         pitsOffice: '/assets/custom/circuit/pitsOffice.glb',
+        // Il coronamento della fila dei box (spec 2026-09-02): la terrazza sta
+        // sul garage, il salotto sulla palazzina uffici.
+        pitRoofTerrace: '/assets/custom/circuit/pitRoofTerrace.glb',
+        pitRoofLounge: '/assets/custom/circuit/pitRoofLounge.glb',
         // Landmark unici (SceneryLandmarks): gantry e passerella vengono
         // scalati per scavalcare le barriere, gli altri restano a 1.
         raceControlTower: '/assets/custom/circuit/raceControlTower.glb',
