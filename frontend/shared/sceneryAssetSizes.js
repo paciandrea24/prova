@@ -32,6 +32,16 @@
         // ci pensa sceneryPaddockClub.test.js.
         pitRoofTerrace:    { w: 13.2, h: 3.34, d: 14.9 },
         pitRoofLounge:     { w: 13.2, h: 4.74, d: 14.9 },
+        // Le fette del palazzo dei box (spec 2026-09-03). Larghe 7.30 contro un
+        // passo di 7.5: il gioco meccanico e' voluto, due lastre piene che si
+        // compenetrano danno facce complanari. La profondita' supera i 22 del
+        // corpo perche' la balconata sporge di 1.6 oltre il fronte, e
+        // pitClubHead ha in piu' il corpo scala sul retro.
+        // ⚠️ pitClubSpan e' il solo primo piano: h 7.20 e si posa a quota 11.
+        pitClubBay:        { w: 7.30, h: 18.20, d: 23.95 },
+        pitClubSpan:       { w: 7.30, h: 7.20,  d: 23.90 },
+        pitClubHead:       { w: 7.30, h: 18.20, d: 25.41 },
+        pitClubTower:      { w: 7.30, h: 20.20, d: 23.95 },
         raceControlTower:  { w: 14.6, h: 33.7, d: 12.6 },
         startGantry:       { w: 34.5, h: 16.0, d: 2.4 },
         podium:            { w: 12.0, h: 9.0,  d: 7.1 },

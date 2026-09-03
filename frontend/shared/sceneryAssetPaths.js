@@ -53,6 +53,12 @@
         // sul garage, il salotto sulla palazzina uffici.
         pitRoofTerrace: '/assets/custom/circuit/pitRoofTerrace.glb',
         pitRoofLounge: '/assets/custom/circuit/pitRoofLounge.glb',
+        // Il palazzo dei box (spec 2026-09-03): non quattro edifici, ma quattro
+        // FETTE dello stesso, accostate a passo 7.5 lungo la corsia.
+        pitClubBay: '/assets/custom/circuit/pitClubBay.glb',
+        pitClubSpan: '/assets/custom/circuit/pitClubSpan.glb',
+        pitClubHead: '/assets/custom/circuit/pitClubHead.glb',
+        pitClubTower: '/assets/custom/circuit/pitClubTower.glb',
         // Landmark unici (SceneryLandmarks): gantry e passerella vengono
         // scalati per scavalcare le barriere, gli altri restano a 1.
         raceControlTower: '/assets/custom/circuit/raceControlTower.glb',
