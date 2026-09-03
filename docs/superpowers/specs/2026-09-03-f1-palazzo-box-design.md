@@ -130,9 +130,16 @@ tutti gli altri (la posa, il validatore, i test) glielo chiedono.
    (`PIT_BUILDING_LANE_PUSH_MAX`): in una fila di volumi staccati non si vede, in
    un muro continuo aprirebbe un gradino in mezzo alla facciata. Il palazzo
    calcola lo scostamento necessario fetta per fetta, ne prende il **massimo** e
-   applica quello a **tutte** le fette; solo nelle due fette di testa lo smorza
-   a zero, così il palazzo non finisce con uno spigolo staccato dal nulla. Il
-   fronte resta una linea sola, e nessuna fetta si muove da sola.
+   applica quello a **tutte** le fette, teste comprese. Il fronte resta una
+   linea sola, e nessuna fetta si muove da sola.
+
+   ⚠️ Nessuna rampa di smorzamento alle estremità: l'avevo scritta nella prima
+   stesura — «alle teste lo scostamento sfuma a zero, così il palazzo non finisce
+   con uno spigolo staccato dal nulla» — e contraddiceva l'invariante 3 di questa
+   stessa spec, perché fra la penultima e l'ultima fetta avrebbe aperto un
+   gradino di mezzo scostamento. Il prezzo del massimo uniforme è che dove la
+   corsia è dritta il palazzo sta qualche unità più indietro del necessario:
+   invisibile, e comunque preferibile a uno scalino in facciata.
 
 ## Cosa resta della fila di oggi
 
