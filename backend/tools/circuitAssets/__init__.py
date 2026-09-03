@@ -4,7 +4,7 @@ l'altezza, usati solo per inquadrare il render."""
 from . import (grandstands, billboards, pitBuildings, raceStructures, safety,
                decor, people, trackside, pitBox, vegetation, rocks,
                paddock, life, infrastructure, cittaFacciate, cittaStrada,
-               pitClub)
+               pitClub, pitPalazzo)
 
 ASSET_BUILDERS = {
     'grandStand':        grandstands.build_grand_stand,
@@ -95,4 +95,8 @@ ASSET_BUILDERS.update({
     # sopra pitsGarageClosed e pitsOffice.
     'pitRoofTerrace':  pitClub.build_pit_roof_terrace,
     'pitRoofLounge':   pitClub.build_pit_roof_lounge,
+    'pitClubBay':      pitPalazzo.build_pit_club_bay,
+    'pitClubSpan':     pitPalazzo.build_pit_club_span,
+    'pitClubHead':     pitPalazzo.build_pit_club_head,
+    'pitClubTower':    pitPalazzo.build_pit_club_tower,
 })

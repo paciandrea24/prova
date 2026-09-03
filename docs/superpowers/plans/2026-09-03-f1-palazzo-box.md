@@ -765,17 +765,36 @@ Create `frontend/shared/pitClubProfilo.js`:
         }
 
         const ultimo = offsets.length - 1;
-        return offsets.map((offset, k) => ({
-            offset,
-            tipo: tipoDi(k, ultimo, offset, offsetBox),
-            x: punti[k].x,
-            y: punti[k].y,
-            z: punti[k].z,
-            // ⚠️ La testa di coda si posa girata di mezzo giro: il suo fianco
-            // chiuso sta su +X del modello, e all'altro capo del palazzo deve
-            // guardare dalla parte opposta.
-            rotY: orientamento(k) + (k === ultimo ? Math.PI : 0),
-        }));
+
+        // ⚠️ QUALE TESTA GIRARE NON È «L'ULTIMA». Il fianco chiuso sta su +X
+        // del modello, e quale delle due estremità quel +X guardi dipende dal
+        // verso in cui la corsia corre su questa pista: su una fila girata
+        // dall'altra parte, «giro l'ultima» chiude il capo sbagliato e lascia
+        // l'altro con la sezione a vista. È successo davvero sul primo render
+        // dell'anteprima, e l'ha visto l'utente («l'estremità di sinistra
+        // sembra tagliata»).
+        //
+        // La regola giusta si misura invece di indovinarla: il fianco deve
+        // guardare DALLA PARTE OPPOSTA al vicino. In Three una rotazione rotY
+        // attorno a Y manda +X locale su (cos rotY, -sin rotY).
+        function fiancoVersoIlVicino(k, rotY) {
+            const vicino = punti[k === 0 ? 1 : k - 1];
+            const vx = vicino.x - punti[k].x, vz = vicino.z - punti[k].z;
+            return Math.cos(rotY) * vx - Math.sin(rotY) * vz > 0;
+        }
+
+        return offsets.map((offset, k) => {
+            const rotY = orientamento(k);
+            const testa = k === 0 || k === ultimo;
+            return {
+                offset,
+                tipo: tipoDi(k, ultimo, offset, offsetBox),
+                x: punti[k].x,
+                y: punti[k].y,
+                z: punti[k].z,
+                rotY: rotY + (testa && fiancoVersoIlVicino(k, rotY) ? Math.PI : 0),
+            };
+        });
     }
 
     // Un'ascissa della corsia è già occupata dal palazzo? Serve a chi posa gli

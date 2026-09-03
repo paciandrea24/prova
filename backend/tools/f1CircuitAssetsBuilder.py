@@ -26,6 +26,7 @@ from circuitAssets import ASSET_BUILDERS  # noqa: E402
 from circuitAssets import grandstands  # noqa: E402
 from circuitAssets import infrastructure  # noqa: E402
 from circuitAssets import pitClub  # noqa: E402
+from circuitAssets import pitPalazzo  # noqa: E402
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 wanted = None
@@ -77,6 +78,7 @@ print(f'[circuitAssets] {len(seats)} posti a sedere -> {seats_path}')
 # invece di tenere una lista di asset scritta a mano.
 anchors = dict(infrastructure.terrace_anchors())
 anchors.update(pitClub.terrace_anchors())
+anchors.update(pitPalazzo.terrace_anchors())
 anchors_path = os.path.join(voxelKit.GLB_DIR, 'terraceAnchors.json')
 with open(anchors_path, 'w', encoding='utf-8') as f:
     json.dump({
