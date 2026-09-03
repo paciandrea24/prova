@@ -32,6 +32,19 @@
     // lungo: vedi `tipoDi`.
     const GRID_PIENA = 20;
 
+    // ⚠️ IL PRIMO PIANO NON POGGIA A TERRA. `pitClubSpan` è il solo primo
+    // piano — sotto ci passa il box colorato di un pilota — e il suo pivot sta
+    // alla base del primo piano, non a terra: lo dichiara `pitPalazzo.py`, che
+    // lo scolpisce a partire da `SOLAIO_Z`. Chi lo posa alla quota del terreno
+    // gli mette le logge e le balconate dentro i box, che sono alti 10.
+    //
+    // Il numero è scritto qui perché fra Python e JS non c'è modo di
+    // importarlo, ma non è lasciato a se stesso: un vano intero è il piano
+    // terra più lo stesso primo piano dello Span, quindi
+    // `h(pitClubBay) - h(pitClubSpan)` deve dare esattamente questa quota, e
+    // c'è un test che lo misura sugli ingombri dichiarati.
+    const QUOTA_SOLAIO = 11.0;
+
     // Due fette di margine per capo, che sono anche le due teste.
     const MARGINE_FETTE = 2;
 
@@ -389,11 +402,15 @@
         const ultimo = offsets.length - 1;
         return offsets.map(function (offset, k) {
             const rotY = orientamento(k);
+            const tipo = tipoDi(k, ultimo, conBox, teste);
             return {
                 offset: offset,
-                tipo: tipoDi(k, ultimo, conBox, teste),
+                tipo: tipo,
                 x: punti[k].x,
-                y: punti[k].y,
+                // Lo Span comincia dove finisce il piano terra: è l'unico che
+                // si stacca dal suolo, e chi posa non deve saperlo — la quota
+                // esce di qui insieme al resto.
+                y: punti[k].y + (tipo === 'pitClubSpan' ? QUOTA_SOLAIO : 0),
                 z: punti[k].z,
                 // Il punto di CORSIA di questa fetta. Serve a chiunque debba
                 // confrontarla con qualcosa che vive sulla corsia — i box dei
@@ -421,6 +438,7 @@
 
     return {
         PASSO: PASSO,
+        QUOTA_SOLAIO: QUOTA_SOLAIO,
         GRID_PIENA: GRID_PIENA,
         MARGINE_FETTE: MARGINE_FETTE,
         OFFSET_FRONTE: OFFSET_FRONTE,

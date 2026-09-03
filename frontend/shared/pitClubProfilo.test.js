@@ -186,3 +186,35 @@ for (const id of PISTE) {
         }
     });
 }
+
+// --- LA QUOTA DEL PRIMO PIANO ---------------------------------------------
+//
+// ⚠️ `pitClubSpan` e' il SOLO primo piano, e il suo pivot sta alla base del
+// primo piano, non a terra: lo dichiara `pitPalazzo.py` («chi lo posa lo mette
+// a quota SOLAIO_Z»). Posato alla quota del terreno come gli altri tre pezzi,
+// le logge e le balconate finiscono a terra, DENTRO i box colorati dei piloti
+// — che e' esattamente cio' che l'utente ha visto in pista il 03-09.
+//
+// Nessuno dei test di prima guardava la quota: provavano ingombri, pianta,
+// teste, torri e buchi, e uno di loro dava per scontato che lo Span stesse a
+// undici invece di misurarlo. Un'ipotesi dentro un test non e' piu' un'ipotesi.
+for (const id of PISTE) {
+    test(`${id}: lo Span esce dal profilo alla quota del solaio`, () => {
+        const { fette } = fetteDi(id, 6);
+        const terra = fette.filter(f => f.tipo !== 'pitClubSpan');
+        const primoPiano = fette.filter(f => f.tipo === 'pitClubSpan');
+        assert.ok(terra.length, `${id}: nessuna fetta a terra con cui confrontare`);
+        // Il palazzo poggia su un tratto di paddock in piano: se un giorno non
+        // fosse piu' vero, e' questo assert a dirlo, e il confronto qui sotto
+        // andra' fatto sulla vicina invece che sulla base comune.
+        const base = terra[0].y;
+        for (const f of terra) {
+            assert.ok(Math.abs(f.y - base) <= 0.05,
+                `${id}: le fette a terra non sono alla stessa quota (${base} e ${f.y})`);
+        }
+        for (const f of primoPiano) {
+            assert.ok(Math.abs(f.y - base - Profilo.QUOTA_SOLAIO) <= 0.05,
+                `${id}: uno Span sta a quota ${f.y.toFixed(2)} invece di ${(base + Profilo.QUOTA_SOLAIO).toFixed(2)}: il primo piano e' a terra, dentro i box`);
+        }
+    });
+}

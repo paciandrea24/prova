@@ -166,12 +166,46 @@ for (const id of PISTE) {
         const { layout } = scenografiaDi(id, 6);
         for (const v of layout.filter(x => DEL_PALAZZO.has(x.asset))) {
             const alto = Sizes.sizeOf(v.asset).h * (v.scale || 1);
-            // pitClubSpan si posa a quota solaio: la sua cima e' 11 piu' la sua
-            // altezza, e va confrontata con lo stesso limite degli altri.
-            const cima = (v.asset === 'pitClubSpan' ? 11 : 0) + alto;
+            // ⚠️ LA QUOTA SI LEGGE DALLA VOCE, non si da' per scontata. Qui
+            // c'era un 11 scritto a mano: mentre il codice posava lo Span a
+            // terra, questo test calcolava la cima come se stesse in alto e
+            // restava verde. Un'ipotesi dentro un test non e' piu' un'ipotesi.
+            const cima = (v.y || 0) + alto;
             const limite = v.asset === 'pitClubTower' ? 21.5 : 19.5;
             assert.ok(cima <= limite,
                 `${v.asset} su ${id} arriva a ${cima.toFixed(1)} sopra il piede del palazzo`);
+        }
+    });
+}
+
+// --- LA QUOTA DEL PRIMO PIANO, UNA VOLTA IN PISTA -------------------------
+
+test('la quota del solaio e\' la differenza fra un vano intero e il solo primo piano', () => {
+    // Il numero vive in due mondi che non si parlano: `SOLAIO_Z` in
+    // `pitPalazzo.py`, che scolpisce, e `QUOTA_SOLAIO` in `pitClubProfilo.js`,
+    // che posa. Non c'e' modo di importarlo dall'uno all'altro, ma c'e' modo di
+    // MISURARLO: un vano intero e' il piano terra piu' lo stesso primo piano
+    // dello Span, quindi la differenza fra le due altezze E' la quota del
+    // solaio. Se domani il palazzo cambia in Blender, questo test lo dice.
+    const bay = Sizes.sizeOf('pitClubBay').h;
+    const span = Sizes.sizeOf('pitClubSpan').h;
+    assert.ok(Math.abs(Profilo.QUOTA_SOLAIO - (bay - span)) <= 0.05,
+        `QUOTA_SOLAIO e' ${Profilo.QUOTA_SOLAIO}, ma fra Bay (${bay}) e Span (${span}) ci sono ${(bay - span).toFixed(2)}`);
+});
+
+for (const id of PISTE) {
+    test(`${id}: in pista il primo piano sta in alto, non dentro i box`, () => {
+        // La posa copia la quota dal profilo: qui si prova che non la
+        // appiattisce per strada. Un `pitClubSpan` a terra e' alto 7.2 e i box
+        // dei piloti 10: si compenetrano per tutta la loro altezza.
+        const { layout } = scenografiaDi(id, 6);
+        const fette = layout.filter(v => DEL_PALAZZO.has(v.asset));
+        const terra = fette.filter(v => v.asset !== 'pitClubSpan');
+        assert.ok(terra.length, `${id}: nessuna fetta a terra con cui confrontare`);
+        const base = terra[0].y || 0;
+        for (const v of fette.filter(x => x.asset === 'pitClubSpan')) {
+            assert.ok(Math.abs((v.y || 0) - base - Profilo.QUOTA_SOLAIO) <= 0.05,
+                `${id}: uno Span in pista sta a quota ${(v.y || 0).toFixed(2)} invece di ${(base + Profilo.QUOTA_SOLAIO).toFixed(2)}`);
         }
     });
 }
