@@ -40,7 +40,7 @@
         // ⚠️ pitClubSpan e' il solo primo piano: h 7.20 e si posa a quota 11.
         pitClubBay:        { w: 7.30, h: 18.20, d: 23.95 },
         pitClubSpan:       { w: 7.30, h: 7.20,  d: 23.90 },
-        pitClubHead:       { w: 7.30, h: 18.20, d: 25.41 },
+        pitClubHead:       { w: 7.44, h: 18.20, d: 23.95 },
         pitClubTower:      { w: 7.30, h: 20.20, d: 23.95 },
         raceControlTower:  { w: 14.6, h: 33.7, d: 12.6 },
         startGantry:       { w: 34.5, h: 16.0, d: 2.4 },

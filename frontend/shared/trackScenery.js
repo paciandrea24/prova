@@ -15,7 +15,8 @@
                                  require('./sceneryRegistro.js'),
                                  require('./sceneryEsclusioni.js'), require('./semeStabile.js'),
                                  require('./cittaProfilo.js'), require('./cittaFacciate.js'),
-                                 require('./sceneryMarciapiede.js'));
+                                 require('./sceneryMarciapiede.js'),
+                                 require('./pitClubProfilo.js'));
     } else {
         root.TrackScenery = factory(root.TrackGeometry, root.SceneryLandmarks,
                                     root.SceneryTrackside, root.SceneryCrowd,
@@ -23,7 +24,8 @@
                                     root.SceneryPaddock, root.TrackGravel,
                                     root.SceneryInfrastructure,
                                     root.SceneryRegistro, root.SceneryEsclusioni, root.SemeStabile,
-                                    root.CittaProfilo, root.CittaFacciate, root.SceneryMarciapiede);
+                                    root.CittaProfilo, root.CittaFacciate, root.SceneryMarciapiede,
+                                    root.PitClubProfilo);
     }
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryLandmarks,
                                                         SceneryTrackside, SceneryCrowd,
@@ -32,7 +34,7 @@
                                                         SceneryInfrastructure,
                                                         SceneryRegistro, SceneryEsclusioni,
                                                         SemeStabile, CittaProfilo, CittaFacciate,
-                                                        SceneryMarciapiede) {
+                                                        SceneryMarciapiede, PitClubProfilo) {
 
     // Le categorie senza un modello solido: superfici piane e folla, che non
     // hanno un ingombro da far rispettare a nessuno. La folla in particolare
@@ -779,9 +781,48 @@
 
         let alternanza = 0;
         const posati = [];
+
+        // ── IL PALAZZO DEI BOX (spec 2026-09-03) ──
+        //
+        // Un edificio solo, a fette da 7.5, al posto della fila di edifici
+        // alternati che nella zona dei box si leggeva come un pattern — «sembra
+        // tutto uguale», il giudizio dell'utente sul coronamento del 02-09.
+        // Dove comincia e dove finisce lo sa `PitClubProfilo`, e lo sa da solo:
+        // qui si posa e basta.
+        //
+        // ⚠️ NASCE PRIMA DI OGNI ALTRA COSA, e non solo perché è il pezzo
+        // grosso: entra in `posati`, quindi tutto ciò che viene dopo lo VEDE e
+        // sceglie un altro posto invece di finirci dentro e farsi scartare
+        // dalla porta. È la prevenzione, distinta dalla garanzia — la stessa
+        // ragione per cui le tribune entrano nel registro prima del resto.
+        const fettePalazzo = PitClubProfilo.fette(boxCtx.pitPath, boxCtx.boxIndex,
+                                                  trackPts, pitRoadHalf, boxCtx.gridSize);
+        for (const f of fettePalazzo) {
+            const voce = {
+                asset: f.tipo, category: 'paddock-club',
+                x: f.x, y: f.y, z: f.z, rotY: f.rotY,
+                scale: CUSTOM_MODEL_SCALE,
+                // Nato misurando la CORSIA, non la pista: traslaOltreLaGhiaia
+                // allontana dalla pista e della corsia non sa niente. Senza
+                // questo, dove la via di fuga è larga il palazzo verrebbe
+                // spinto DENTRO la corsia — è il difetto già misurato sugli
+                // edifici decorativi di melbourne, sei di loro fino a 4.29
+                // unità dentro.
+                natoSullaCorsia: true,
+            };
+            layout.push(voce);
+            posati.push(voce);
+        }
+        const ascissePalazzo = fettePalazzo.map(f => f.offset);
+
         for (let k = 0; k < slot.length; k++) {
             const s = slot[k];
             if (riservate.has(s.indice)) continue;
+            // Dentro il tratto del palazzo gli edifici decorativi non nascono
+            // affatto: là il fronte è il palazzo. Fuori restano quelli di
+            // sempre, coi loro due tetti — isolati non fanno più pattern,
+            // perché il difetto era la fila serrata, non i modelli.
+            if (PitClubProfilo.dentroIlPalazzo(ascissePalazzo, s.offset)) continue;
             const asset = (alternanza % 2 === 0) ? 'pitsGarageClosed' : 'pitsOffice';
             const rotY = orientamento(k);
 

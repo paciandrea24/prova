@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const TrackGeometry = require('./trackGeometry.js');
+const PitClubProfilo = require('./pitClubProfilo.js');
 const TrackScenery = require('./trackScenery.js');
 const monteRosso = require('../tracks/monte-rosso.json');
 
@@ -241,6 +242,12 @@ test('nessun oggetto scenografico (paddock, natura, laghetto, tribune...) finisc
     const footprints = boxAnchors.map(a => TrackScenery.playerBoxFootprintCorners(a, trackPts, pitRoadHalf));
     assert.ok(layout.length > 0);
     for (const item of layout) {
+        // ⚠️ pitClubSpan E' L'UNICA ECCEZIONE, ed e' il suo mestiere: e' il
+        // solo primo piano del palazzo, si posa a quota 11 e SCAVALCA il box
+        // colorato del giocatore, che gli sta sotto. Le altre fette non sono
+        // esentate apposta: una Bay col piano terra pieno sopra un box sarebbe
+        // un garage murato dentro il cemento, e questo test deve dirlo.
+        if (item.asset === 'pitClubSpan') continue;
         assert.ok(!TrackScenery.insidePlayerBoxFootprint(item.x, item.z, footprints),
             `oggetto '${item.category}'/${item.asset} a (${item.x.toFixed(1)},${item.z.toFixed(1)}) cade dentro l'ingombro reale di un box giocatore`);
     }
@@ -580,9 +587,15 @@ for (const track of [prova, monteRosso, newMonza]) {
         const { layout, trackPts } = layoutFor(track);
         const buildings = layout.filter(i =>
             i.asset === 'pitsGarageClosed' || i.asset === 'pitsOffice');
+        // ⚠️ DAL 03-09 IL FRONTE LO FANNO IN DUE. Nel tratto centrale c'e' il
+        // palazzo dei box, e li' gli edifici decorativi non nascono affatto:
+        // contando solo loro, su new-monza ne restavano due e questo test
+        // dichiarava vuota una corsia che ha un muro continuo di venti fette.
+        const fette = layout.filter(i => /^pitClub/.test(i.asset || ''));
         const min = MIN_PIT_BUILDINGS[track.id];
-        assert.ok(buildings.length >= min,
-            `solo ${buildings.length} edifici (minimo ${min}): la corsia box sembra vuota`);
+        assert.ok(buildings.length + fette.length >= min,
+            `solo ${buildings.length} edifici e ${fette.length} fette di palazzo ` +
+            `(minimo ${min}): la corsia box sembra vuota`);
         if (buildings.length < 2) return;   // con un solo edificio non esiste "staccato da"
 
         // Ogni edificio deve avere un vicino a contatto: la distanza fra i
@@ -603,11 +616,16 @@ for (const track of [prova, monteRosso, newMonza]) {
             boxZone.push(TrackScenery.playerBoxFootprintCorners(a, trackPts, pitRoadHalf));
             boxZone.push(TrackScenery.playerBoxApronCorners(a, trackPts, pitRoadHalf));
         }
-        function boxFraLoro(a, b) {
+        // Un vuoto fra due edifici e' legittimo se in mezzo c'e' il fronte per
+        // altra via: i box dei piloti, oppure — dal 03-09 — il palazzo.
+        function frontePerAltraVia(a, b) {
             for (let s = 1; s < 20; s++) {
                 const t = s / 20;
-                if (TrackScenery.insidePlayerBoxFootprint(
-                        a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t, boxZone)) return true;
+                const x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t;
+                if (TrackScenery.insidePlayerBoxFootprint(x, z, boxZone)) return true;
+                for (const f of fette) {
+                    if (Math.hypot(f.x - x, f.z - z) < TrackGeometry.PIT_BOX_SPACING) return true;
+                }
             }
             return false;
         }
@@ -633,8 +651,8 @@ for (const track of [prova, monteRosso, newMonza]) {
             // alcune posizioni scoperte sui tratti curvi agli estremi della
             // corsia, dove comunque un garage non ci starebbe dritto.
             if (nearest <= TrackGeometry.PIT_BOX_SPACING + 5) continue;
-            assert.ok(boxFraLoro(b, nearestItem),
-                `edificio isolato: ${nearest.toFixed(1)} unità di vuoto senza box dei piloti in mezzo`);
+            assert.ok(frontePerAltraVia(b, nearestItem),
+                `edificio isolato: ${nearest.toFixed(1)} unità di vuoto senza box ne' palazzo in mezzo`);
         }
     });
 }
@@ -1680,7 +1698,34 @@ for (const id of TRACCIATI) {
                                                     trackPts, raw.pit.roadHalfWidth);
             const edifici = layout.filter(v => v.asset === 'pitsGarageClosed'
                                             || v.asset === 'pitsOffice');
+            // ⚠️ DAL 03-09 IL FRONTE LO FANNO IN DUE. Nel tratto centrale c'e'
+            // il palazzo dei box, e li' gli edifici decorativi non nascono
+            // affatto: contando solo loro, questo test vedeva sei edifici su
+            // venti posizioni e gridava al vuoto proprio dove il fronte e'
+            // diventato un muro continuo.
+            const fette = PitClubProfilo.fette(pitPath, raw.pit.boxIndex, trackPts,
+                                               raw.pit.roadHalfWidth, piloti);
+            const ascisse = fette.map(f => f.offset);
             const box = Math.min(piloti, slot.length);
+            // Le posizioni riservate ai box, con la stessa regola di
+            // trackScenery: l'ancora piu' vicina entro mezzo passo.
+            const ancore = TrackGeometry.pitBoxAnchors(pitPath, raw.pit.boxIndex, piloti,
+                                                       trackPts, raw.pit.roadHalfWidth);
+            const riservate = new Set();
+            for (const a of ancore) {
+                let migliore = -1, minima = Infinity;
+                for (const sl of slot) {
+                    const d = Math.hypot(sl.x - a.x, sl.z - a.z);
+                    if (d < minima) { minima = d; migliore = sl.indice; }
+                }
+                if (migliore >= 0 && minima < TrackGeometry.PIT_BOX_SPACING / 2) riservate.add(migliore);
+            }
+            // ⚠️ Si contano le posizioni LIBERE che il palazzo copre, non tutte
+            // quelle che gli stanno dentro meno il numero dei box: i box non
+            // cadono per forza tutti dentro il palazzo, e sottraendoli in blocco
+            // su banking-prova ne mancava una e il test gridava al vuoto.
+            const sottoIlPalazzo = slot.filter(
+                sl => !riservate.has(sl.indice) && PitClubProfilo.dentroIlPalazzo(ascisse, sl.offset)).length;
 
             // Il fronte deve essere PIENO, non "quasi vuoto come prima": la
             // misura è quante posizioni libere ricevono un edificio. Restano
@@ -1692,9 +1737,11 @@ for (const id of TRACCIATI) {
             // piloti gli edifici erano ZERO. Due terzi delle posizioni libere
             // è la soglia che distingue "fronte" da "qualche edificio sparso".
             const libere = slot.length - box;
-            assert.ok(edifici.length >= Math.floor(libere * 2 / 3),
+            const coperte = edifici.length + sottoIlPalazzo;
+            assert.ok(coperte >= Math.floor(libere * 2 / 3),
                 `${slot.length} posizioni, ${box} riservate ai box, ` +
-                `${edifici.length} edifici su ${libere} posizioni libere`);
+                `${edifici.length} edifici + ${sottoIlPalazzo} sotto il palazzo ` +
+                `su ${libere} posizioni libere`);
         });
     }
 }

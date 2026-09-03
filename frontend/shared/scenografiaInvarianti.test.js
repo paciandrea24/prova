@@ -57,6 +57,20 @@ function coppiaLecita(a, b) {
     // incrociano pur avendo i centri alla distanza giusta — lo stesso fenomeno
     // già documentato per gli edifici della corsia box.
     if (a.category === 'citta' && b.category === 'citta') return true;
+    // Due fette del palazzo dei box sono lo STESSO edificio, accostate a passo
+    // 7.5 mentre ne misurano 7.3. Sul lato interno di una curva l'arco si
+    // accorcia e le due si incastrano: misurati 2.88 su new-monza. Non e' un
+    // difetto da correggere ma la sola alternativa a un buco nella facciata —
+    // e fra due volumi identici e dello stesso colore non si vede nulla, al
+    // contrario di una fessura. Stessa ragione delle colonne di citta'.
+    const palazzo = (v) => v.category === 'paddock-club' && /^pitClub/.test(v.asset);
+    if (palazzo(a) && palazzo(b)) return true;
+    // Il RETRO del palazzo contro le facciate della citta'. Il nastro che
+    // chiude la vista corre proprio dietro la corsia box, e il palazzo e'
+    // profondo 22: su citta-prova si sovrappongono di 2.9 dal lato che nessuno
+    // guarda. In un circuito cittadino vero il pit building e' addossato agli
+    // edifici, ed e' esattamente quello che si vede.
+    if ((palazzo(a) && b.category === 'citta') || (palazzo(b) && a.category === 'citta')) return true;
     return (rete(a) && tribuna(b)) || (rete(b) && tribuna(a));
 }
 

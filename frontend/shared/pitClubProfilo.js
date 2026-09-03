@@ -35,11 +35,22 @@
     // Due fette di margine per capo, che sono anche le due teste.
     const MARGINE_FETTE = 2;
 
-    // Dal bordo della corsia al CENTRO della fetta. È la stessa misura dei box
-    // dei piloti (PIT_BOX_FRONT_HALF_DEPTH 11 + PIT_BOX_CLEARANCE 12 in
-    // pitBoxLoader.js): il palazzo è profondo 22 come loro, quindi così i due
-    // fronti coincidono invece di sfalsarsi di qualche unità.
-    const OFFSET_FRONTE = 23;
+    // Dal bordo della corsia al CENTRO della fetta. Nasce dalla misura dei box
+    // dei piloti — PIT_BOX_FRONT_HALF_DEPTH 11 + PIT_BOX_CLEARANCE 12 in
+    // pitBoxLoader.js, cioè 23 — più un'unità e mezza di arretramento.
+    //
+    // ⚠️ QUELL'UNITA' E MEZZA NON E' ARBITRARIA. La balconata sporge di 1.6
+    // oltre il fronte del corpo, quindi a 23 il footprint della fetta arrivava
+    // a 11 dal bordo corsia ed entrava nel GREMBIULE di manovra dei box —
+    // quello spazio davanti al garage dove l'auto si ferma e sterza per
+    // rientrare, protetto da un'invariante dal 2026-08-10. In quota non si
+    // toccano (la balconata sta a 11.7 e un'auto è alta 1), ma la scenografia
+    // ragiona in pianta, e un'eccezione «tanto è in alto» sarebbe una porta
+    // aperta per il prossimo oggetto che davvero ostruisce.
+    //
+    // Arretrando, la balconata resta a filo del fronte dei box invece di
+    // sporgergli davanti: il palazzo è ordinato lo stesso.
+    const OFFSET_FRONTE = 24.5;
 
     // Quanto deve restare fra il corpo del palazzo e il bordo della corsia.
     const MEZZA_PROFONDITA = 11;
@@ -48,6 +59,15 @@
 
     // Una torre ogni TORRE_PASSO fette, mai a ridosso di una testa.
     const TORRE_PASSO = 9;
+
+    // Entro quanto una fetta e un box si toccano: mezzo box piu' mezza fetta.
+    //
+    // ⚠️ NON MEZZO PASSO. Con 7.5 restava scoperta la fascia fra 7.5 e 8.05: un
+    // box e' largo 14.1 e il suo ingombro protetto arriva a 8.05 per lato,
+    // quindi una fetta col piano terra PIENO poteva cadere dentro un garage del
+    // giocatore senza essere marcata — misurato su monte-rosso, una pitClubBay
+    // a (32.1, 60.1) dentro l'ingombro reale di un box.
+    const SOGLIA_BOX = TrackGeometry.PIT_BOX_SPACING / 2 + PASSO / 2;
 
     // Le ascisse dei box rispetto a boxIndex, per un dato numero di piloti.
     //
@@ -277,7 +297,7 @@
                 // oltre, quel box il palazzo non ce l'ha sopra.
                 const d = Math.hypot(punti[k].verso.x - ancore[i].x,
                                      punti[k].verso.z - ancore[i].z);
-                if (d <= PASSO) set[k] = true;
+                if (d <= SOGLIA_BOX) set[k] = true;
             }
         }
         return set;
@@ -388,9 +408,15 @@
 
     // Un'ascissa della corsia è già occupata dal palazzo? Serve a chi posa gli
     // edifici decorativi, che dentro il tratto non devono nascere affatto.
+    // ⚠️ NESSUN MARGINE OLTRE GLI ESTREMI. Ne avevo messo uno di un passo per
+    // stare larghi, e teneva vuota una fascia di 7.5 unita' a ciascun capo dove
+    // un edificio ci stava benissimo: su new-monza il tratto di circuito senza
+    // niente di fianco passava da 90 a 99 unita'. A dire se un edificio ci sta
+    // pensa gia' il controllo di ingombro, che vede il palazzo perche' e' nato
+    // prima di lui — non serve tenergli sgombra anche l'aria intorno.
     function dentroIlPalazzo(offsets, offset) {
         if (!offsets || !offsets.length) return false;
-        return offset >= offsets[0] - PASSO && offset <= offsets[offsets.length - 1] + PASSO;
+        return offset >= offsets[0] && offset <= offsets[offsets.length - 1];
     }
 
     return {

@@ -148,16 +148,17 @@ def build_pit_club_head(kit):
     # c'è niente da prendere in prestito ai lati.
     kit.box('concrete', (0.5, D, top - 0.4), (HALF_W - 0.25, 0, (top - 0.4) / 2))
 
-    # Corpo scala addossato al RETRO, non sul fianco: sul fianco sporgeva di
-    # due unità dentro la fetta vicina, e al passo di 7.5 non c'è niente da
-    # prendere in prestito ai lati.
+    # ⚠️ NIENTE CORPO SCALA SUL RETRO. Ne avevo messo uno profondo 1.5, e su
+    # `citta-prova` la testa sfondava di 2.9 unità dentro le facciate della
+    # città: là il nastro che chiude la vista corre proprio dietro il palazzo,
+    # e ogni decimo di profondità in più finisce dentro il muro del mondo.
     #
-    # ⚠️ È un VOLUME, non una rampa a gradini: le cinque rampe che avevo messo
-    # qui portavano la profondità a 27.1 contro un target di 22 (+23%, fuori
-    # tolleranza), per un dettaglio che sta sul retro e non si vede mai dalla
-    # pista. Un corpo scala profondo 1.5 dice la stessa cosa e costa niente.
-    kit.box('concrete', (3.2, 1.5, SOLAIO_Z + 1.2), (0.9, HALF_D + 0.75, (SOLAIO_Z + 1.2) / 2))
-    kit.box('steelDark', (1.2, 0.3, 3.0), (0.9, HALF_D + 1.5 - EPS, 1.5))
+    # La porta di servizio resta, sul fianco chiuso: il fianco di una testa
+    # guarda SEMPRE verso l'esterno del palazzo (lo garantisce
+    # PitClubProfilo, misurando dove sta il vicino), quindi lì davanti non c'è
+    # nessuna fetta da invadere — al contrario del retro, che è dove il
+    # circuito mette le sue cose.
+    kit.box('steelDark', (0.3, 1.2, 3.0), (HALF_W - 0.05 + EPS, FRONT + 4.0, 1.5))
     return W, top
 
 

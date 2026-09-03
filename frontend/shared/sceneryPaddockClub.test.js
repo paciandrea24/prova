@@ -77,8 +77,12 @@ const chiave = (v) => v.x.toFixed(2) + ',' + v.z.toFixed(2);
 for (const id of PISTE) {
     test(`${id}: ogni edificio della corsia box ha il suo coronamento`, () => {
         const layout = scenografiaDi(id);
+        // ⚠️ PER ASSET, NON PER CATEGORIA. Dal 03-09 in `paddock-club` ci sono
+        // due famiglie: questi due tetti, e le fette del palazzo dei box, che
+        // un edificio sotto non ce l'hanno per progetto.
+        const CORONE = new Set(['pitRoofTerrace', 'pitRoofLounge']);
         const corone = new Map(layout
-            .filter(v => v.category === 'paddock-club').map(v => [chiave(v), v]));
+            .filter(v => CORONE.has(v.asset)).map(v => [chiave(v), v]));
         const senza = layout
             .filter(v => SOPRA[v.asset])
             .filter(v => {
@@ -94,7 +98,8 @@ for (const id of PISTE) {
         const edifici = new Map(layout
             .filter(v => SOPRA[v.asset]).map(v => [chiave(v), v]));
         const guai = [];
-        for (const c of layout.filter(v => v.category === 'paddock-club')) {
+        const SOLO_TETTI = new Set(['pitRoofTerrace', 'pitRoofLounge']);
+        for (const c of layout.filter(v => SOLO_TETTI.has(v.asset))) {
             const e = edifici.get(chiave(c));
             if (!e) { guai.push(`${c.asset} senza edificio sotto`); continue; }
             // Stesso orientamento: un tetto ruotato rispetto al suo edificio
