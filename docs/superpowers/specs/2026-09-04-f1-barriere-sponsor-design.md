@@ -87,12 +87,25 @@ c'è il guard-rail attaccato, le gomme stanno in fondo alla ghiaia.
 
 ## 2. Il numero che si sdoppia
 
-`barrierProfile` restituisce oggi `{left, right}`. Diventa:
+`barrierProfile` restituisce oggi `{left, right}`, e nessuno li legge
+direttamente: tutti passano dall'accessor `TrackGravel.barrierAt(profile, i,
+side)`. Sono **quattordici** i punti che lo chiamano, e uno solo di questi è la
+collisione (`CollisionResolver.js:116`).
 
-- **`left` / `right` = dove si sbatte.** Invariato dove non ci sono gomme,
-  ridotto di `PROFONDITA_GOMME` dove ci sono. Chi già li legge per la
-  **collisione** non cambia una riga, ed è il caso della fisica del server.
-- **`muroLeft` / `muroRight` = dov'è il muro.** Il profilo di oggi, sempre.
+Quindi la spec sceglie il verso che tocca meno codice:
+
+- **`barrierAt` resta il muro**, identico a oggi. I tredici consumatori di
+  scenografia, mesh e città non cambiano una riga, e soprattutto non cambiano
+  *per sbaglio*: chi non sa niente delle gomme continua a ragionare sul muro,
+  che è ciò che gli serve.
+- **`impattoAt(profile, i, side)` è il numero nuovo**: il muro, meno
+  `PROFONDITA_GOMME` dove il cuscinetto c'è. Lo leggono la **fisica** e la
+  **ghiaia**, e la posa delle gomme stesse.
+
+⚠️ Il verso opposto — `barrierAt` che diventa il punto d'impatto — sarebbe stato
+più fedele al nome ma avrebbe cambiato in silenzio il significato di quattordici
+chiamate, tredici delle quali vogliono il muro. Un default sbagliato per tredici
+consumatori su quattordici è un difetto che si scopre in pista, non in un test.
 
 Chi legge cosa:
 
