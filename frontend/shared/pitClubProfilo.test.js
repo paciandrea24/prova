@@ -218,3 +218,79 @@ for (const id of PISTE) {
         }
     });
 }
+
+// --- IL PALAZZO COPRE I BOX ------------------------------------------------
+//
+// L'invariante che la spec dichiara per prima — «il palazzo si estende sempre
+// sui box a 20 piloti» — non era provata da nessuno, e non era vera: misurata
+// il 2026-09-04, la copertura andava dal 30% di suzuka al 100% di melbourne.
+// La causa non era il palazzo ma il NASTRO su cui si posa: la corsia box e'
+// disegnata con pochi nodi (suzuka 10, monte-rosso 5) e al vertice fra due
+// segmenti la tangente scatta di 12-28 gradi in un colpo. A 23 unita' di
+// braccio quel salto sposta la fetta di 10-20 unita', il criterio di sanita'
+// legge «nastro collassato» e taglia li'.
+//
+// ⚠️ Questo test guarda la GRIGLIA PIENA. Con sei piloti il difetto non si
+// vede: i box sono pochi e stanno in mezzo, cioe' proprio dove il palazzo
+// sopravvive al taglio.
+// ⚠️ I BOX DISTINTI, NON TUTTI E VENTI. Dove la corsia è più corta di quanto
+// venti box chiedano (285 unità), `pitSlotAt` satura e le ancore si impilano:
+// su monte-rosso sette finiscono nello stesso identico punto, su test dieci.
+// Contarle come box da coprire chiede al palazzo l'impossibile e fa sembrare un
+// difetto una proprietà della pista.
+function boxDistinti(pitPath, boxIndex, half, t) {
+    const tutte = TG.pitBoxAnchors(pitPath, boxIndex, 20, t.points, half);
+    return tutte.filter((a, i) => i === 0
+        || Math.hypot(a.x - tutte[i - 1].x, a.z - tutte[i - 1].z) > 1);
+}
+
+for (const id of PISTE) {
+    test(`${id}: il palazzo non lascia buchi in mezzo ai box`, () => {
+        const { fette, pitPath, boxIndex, half, t } = fetteDi(id, 20);
+        const coperto = boxDistinti(pitPath, boxIndex, half, t).map(
+            a => fette.some(f => Math.hypot(f.corsia.x - a.x, f.corsia.z - a.z) <= Profilo.PASSO));
+        // Un box scoperto OLTRE un capo è il palazzo che finisce; uno scoperto
+        // fra due coperti è il palazzo che si è spezzato, e quello non deve
+        // succedere mai: in pista sarebbe un box senza vano in mezzo alla
+        // facciata.
+        const primo = coperto.indexOf(true), ultimo = coperto.lastIndexOf(true);
+        assert.ok(primo >= 0, `${id}: il palazzo non copre nessun box`);
+        const buchi = coperto.slice(primo, ultimo + 1).filter(c => !c).length;
+        assert.equal(buchi, 0, `${id}: ${buchi} box senza vano IN MEZZO al palazzo`);
+    });
+
+    test(`${id}: il palazzo copre la gran parte dei box a griglia piena`, () => {
+        const { fette, pitPath, boxIndex, half, t } = fetteDi(id, 20);
+        const box = boxDistinti(pitPath, boxIndex, half, t);
+        const coperti = box.filter(
+            a => fette.some(f => Math.hypot(f.corsia.x - a.x, f.corsia.z - a.z) <= Profilo.PASSO)).length;
+        // ⚠️ NON il 100%: su una corsia più corta di quanto i venti box
+        // chiedano, il palazzo finisce dove finisce la corsia. Due terzi è la
+        // rete che coglie un taglio andato a male — misurato il 2026-09-04, il
+        // peggiore è monte-rosso col 71%, e sette piste su dodici stanno al
+        // 100%. Prima della lisciatura del nastro suzuka stava al 30%.
+        assert.ok(coperti >= box.length * 2 / 3,
+            `${id}: solo ${coperti} box coperti su ${box.length}`);
+    });
+
+    test(`${id}: a griglia piena i capi restano chiusi se il palazzo li raggiunge`, () => {
+        const { fette, pitPath, boxIndex, half, t } = fetteDi(id, 20);
+        const box = boxDistinti(pitPath, boxIndex, half, t);
+        const coperti = box.filter(
+            a => fette.some(f => Math.hypot(f.corsia.x - a.x, f.corsia.z - a.z) <= Profilo.PASSO)).length;
+        // ⚠️ CON VENTI PILOTI, NON CON SEI. Dove sotto c'è un box la fetta deve
+        // essere uno Span, e con la griglia piena le uniche fette libere sono
+        // quelle di margine: se il taglio le mangia, il capo resta aperto con la
+        // sezione a vista. È il difetto misurato il 04-09, teste presenti su 3
+        // piste su 12, e il motivo per cui il margine è passato da due fette a
+        // tre.
+        //
+        // Dove il palazzo NON arriva a coprire tutti i box (monte-rosso e
+        // new-monza: la loro corsia box è più corta dei 285 unità che venti box
+        // chiedono) il capo del palazzo coincide col capo della corsia, e lì una
+        // fetta libera non c'è. Non si pretende.
+        if (coperti < box.length) return;
+        const teste = fette.filter(f => f.tipo === 'pitClubHead').length;
+        assert.equal(teste, 2, `${id}: ${teste} teste a griglia piena`);
+    });
+}

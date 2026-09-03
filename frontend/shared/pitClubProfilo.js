@@ -45,8 +45,16 @@
     // c'è un test che lo misura sugli ingombri dichiarati.
     const QUOTA_SOLAIO = 11.0;
 
-    // Due fette di margine per capo, che sono anche le due teste.
-    const MARGINE_FETTE = 2;
+    // Le fette di margine per capo: oltre l'ultimo box, e sono quelle da cui
+    // nascono le teste.
+    //
+    // ⚠️ TRE, NON DUE. Con due, la prima cade entro SOGLIA_BOX dall'ultimo box
+    // e diventa uno Span: ne resta UNA sola libera per capo, e basta che il
+    // taglio del nastro ne erode una perche' quel capo resti senza testa —
+    // cioe' aperto, con la sezione a vista. Misurato a griglia piena il
+    // 2026-09-04: teste presenti su 3 piste su 12. La terza fetta e' il
+    // cuscinetto che tiene la testa anche quando il capo viene rosicchiato.
+    const MARGINE_FETTE = 3;
 
     // Dal bordo della corsia al CENTRO della fetta. Nasce dalla misura dei box
     // dei piloti — PIT_BOX_FRONT_HALF_DEPTH 11 + PIT_BOX_CLEARANCE 12 in
@@ -110,22 +118,97 @@
         return { prima, dopo };
     }
 
-    // Il punto sul nastro del palazzo che corrisponde a un'ascissa della corsia,
-    // e il punto di corsia che quella fetta deve guardare.
-    function puntoFronte(pitPath, boxIndex, offset, trackPts, pitRoadHalf, scostamento) {
-        const s = TrackGeometry.pitSlotAt(pitPath, boxIndex, offset, trackPts, pitRoadHalf);
-        const nx = -s.tz, nz = s.tx;
-        // Da che parte sta il paddock: quella che si ALLONTANA dalla pista.
-        const distPlus = TrackGeometry.nearestPoint(trackPts, s.x + nx, s.z + nz).dist;
-        const distMinus = TrackGeometry.nearestPoint(trackPts, s.x - nx, s.z - nz).dist;
-        const lato = distPlus >= distMinus ? 1 : -1;
+    // Quante fette per lato entrano nella media della normale.
+    //
+    // ⚠️ IL NASTRO E' UNA CURVA SOLA, NON UNA DECISIONE PER FETTA. La corsia
+    // box e' disegnata a POCHI NODI — suzuka 10, shanghai 14, monte-rosso 5 —
+    // e fra un nodo e l'altro la tangente e' costante: al vertice scatta di
+    // colpo, misurato fino a 28 gradi. Sulla corsia non si vede (il passo resta
+    // 7.4), ma il nastro corre 23 unita' piu' in fuori, e li' quello scatto
+    // diventa un salto di 10-20 unita': il criterio di sanita' lo legge come
+    // «nastro collassato» e taglia il palazzo. Da qui la copertura misurata il
+    // 04-09, dal 30% di suzuka al 100% di melbourne, e i capi senza testa a
+    // griglia piena — le fette di margine erano proprio quelle tagliate.
+    //
+    // Due sole fette per lato bastano: cinque campioni spalmano uno scatto di
+    // 28 gradi su 5.6 gradi ciascuno, sotto ANGOLO_MAX. Su un arco regolare la
+    // media delle normali punta dove punta quella centrale, quindi il nastro
+    // non si accorcia in curva: si smussano gli spigoli, non le curve.
+    const FINESTRA_LISCIO = 2;
+
+    // I versori del nastro: per ogni ascissa il punto di CORSIA e la normale,
+    // gia' orientata verso il paddock e gia' lisciata.
+    function versori(pitPath, boxIndex, offsets, trackPts, pitRoadHalf) {
+        const grezzi = offsets.map(function (o) {
+            const s = TrackGeometry.pitSlotAt(pitPath, boxIndex, o, trackPts, pitRoadHalf);
+            const nx = -s.tz, nz = s.tx;
+            // Da che parte sta il paddock: quella che si ALLONTANA dalla pista.
+            const distPlus = TrackGeometry.nearestPoint(trackPts, s.x + nx, s.z + nz).dist;
+            const distMinus = TrackGeometry.nearestPoint(trackPts, s.x - nx, s.z - nz).dist;
+            return { s: s, nx: nx, nz: nz, voto: distPlus >= distMinus ? 1 : -1 };
+        });
+
+        // ⚠️ IL LATO SI VOTA UNA VOLTA SOLA. Deciso fetta per fetta, dove la
+        // corsia passa vicino a un altro tratto di pista le due distanze si
+        // equivalgono e il confronto diventa una monetina: su suzuka lo scarto
+        // fra le due scende a 0.30 unita', tre fette su quarantatre finivano
+        // DALL'ALTRA PARTE della corsia e fra una e l'altra si apriva un salto
+        // di 59 unita'. Il paddock e' uno solo per tutto il palazzo.
+        let somma = 0;
+        for (let i = 0; i < grezzi.length; i++) somma += grezzi[i].voto;
+        const lato = somma >= 0 ? 1 : -1;
+
+        // ⚠️ SI LISCIA ANCHE LA POSIZIONE, NON SOLO IL VERSO. Lisciata la sola
+        // normale, il nastro restava con un gomito di 34 gradi in mezzo a un
+        // tratto dove la normale girava di 5.6 per fetta: lo spigolo non era
+        // nel verso, era nella POLILINEA — al vertice fra due segmenti anche i
+        // punti della corsia piegano di colpo, e il nastro se li portava
+        // dietro. Un edificio rigido quello spigolo non lo puo' seguire: passa
+        // largo, e i box gli restano sotto lo stesso perche' il vano e' profondo
+        // 22 mentre lo scarto in pianta e' di poche unita'.
+        //
+        // Il punto di CORSIA (`verso`) resta invece quello vero: e' li' che
+        // stanno i box, ed e' li' che ogni fetta deve guardare.
+        // ⚠️ AI CAPI LA FINESTRA NON SI TRONCA, SI REPLICA. Con la media presa
+        // sui soli campioni esistenti, le due fette di ciascun capo pescano da
+        // meno vicini delle altre e ne escono spostate: nasce un passo anomalo
+        // proprio agli estremi, il criterio di sanita' lo legge come nastro
+        // rotto e taglia via il margine — cioe' le fette da cui nascono le
+        // teste. Misurato: 43 fette diventavano 39 e le teste a griglia piena
+        // sparivano su TUTTE le piste. Replicando l'estremo la media resta
+        // centrata e la serie continua.
+        function ind(k, n) { return k < 0 ? 0 : (k > n - 1 ? n - 1 : k); }
+        const n = grezzi.length;
+        const centro = grezzi.map(function (g, k) {
+            let cx = 0, cz = 0;
+            for (let j = k - FINESTRA_LISCIO; j <= k + FINESTRA_LISCIO; j++) {
+                const q = grezzi[ind(j, n)].s;
+                cx += q.x; cz += q.z;
+            }
+            const quanti = 2 * FINESTRA_LISCIO + 1;
+            return { x: cx / quanti, z: cz / quanti };
+        });
+
+        return grezzi.map(function (g, k) {
+            let sx = 0, sz = 0;
+            for (let j = k - FINESTRA_LISCIO; j <= k + FINESTRA_LISCIO; j++) {
+                sx += grezzi[ind(j, n)].nx * lato; sz += grezzi[ind(j, n)].nz * lato;
+            }
+            const len = Math.hypot(sx, sz) || 1e-9;
+            return { s: g.s, base: centro[k], nx: sx / len, nz: sz / len };
+        });
+    }
+
+    // Il punto sul nastro del palazzo, e il punto di corsia che quella fetta
+    // deve guardare.
+    function puntoFronte(pitPath, v, pitRoadHalf, scostamento) {
         const off = pitRoadHalf + OFFSET_FRONTE + scostamento;
-        const p = pitPath[Math.min(s.fromIdx, pitPath.length - 1)];
+        const p = pitPath[Math.min(v.s.fromIdx, pitPath.length - 1)];
         return {
-            x: s.x + nx * off * lato,
-            z: s.z + nz * off * lato,
+            x: v.base.x + v.nx * off,
+            z: v.base.z + v.nz * off,
             y: p.y || 0,
-            verso: { x: s.x, z: s.z },
+            verso: { x: v.s.x, z: v.s.z },
         };
     }
 
@@ -260,12 +343,12 @@
     // gradino in mezzo alla facciata. E nessuna rampa di smorzamento ai capi:
     // fra la penultima e l'ultima fetta aprirebbe mezzo scostamento, cioè
     // proprio il gradino che si vuole evitare.
-    function scostamentoComune(pitPath, boxIndex, offsets, trackPts, pitRoadHalf) {
+    function scostamentoComune(pitPath, vs, pitRoadHalf) {
         const serve = pitRoadHalf + MEZZA_PROFONDITA + FRANCO_CORSIA;
         let massimo = 0;
-        for (let i = 0; i < offsets.length; i++) {
+        for (let i = 0; i < vs.length; i++) {
             for (let extra = 0; extra <= SCOSTAMENTO_MAX; extra += 1) {
-                const q = puntoFronte(pitPath, boxIndex, offsets[i], trackPts, pitRoadHalf, extra);
+                const q = puntoFronte(pitPath, vs[i], pitRoadHalf, extra);
                 if (TrackGeometry.nearestPoint(pitPath, q.x, q.z).dist >= serve) {
                     if (extra > massimo) massimo = extra;
                     break;
@@ -347,19 +430,24 @@
         // chiederebbero uno scostamento enorme per uscire dalla corsia, e quello
         // vale per TUTTE — un tratto da buttare porterebbe indietro il palazzo
         // intero di dieci unità.
-        const grezzi = offsets.map(function (o) {
-            return puntoFronte(pitPath, boxIndex, o, trackPts, pitRoadHalf, 0);
+        let vs = versori(pitPath, boxIndex, offsets, trackPts, pitRoadHalf);
+        const grezzi = vs.map(function (v) {
+            return puntoFronte(pitPath, v, pitRoadHalf, 0);
         });
         const ancoreSuFette = indiciConBoxSotto(grezzi, pitPath, boxIndex, trackPts,
                                                 pitRoadHalf, GRID_PIENA);
         const buono = tagliaDoveCollassa(offsets, grezzi, Object.keys(ancoreSuFette).map(Number));
         offsets = offsets.slice(buono.da, buono.a + 1);
+        // I versori seguono il taglio: la lisciatura resta quella calcolata sul
+        // nastro intero, che e' il nastro vero — ritagliarla sul tratto
+        // superstite cambierebbe la normale delle due fette ai capi.
+        vs = vs.slice(buono.da, buono.a + 1);
         if (offsets.length < 4) return [];
 
-        const scostamento = scostamentoComune(pitPath, boxIndex, offsets, trackPts, pitRoadHalf);
+        const scostamento = scostamentoComune(pitPath, vs, pitRoadHalf);
         const quantiBox = Math.max(1, Math.min(GRID_PIENA, gridSize || GRID_PIENA));
-        const punti = offsets.map(function (o) {
-            return puntoFronte(pitPath, boxIndex, o, trackPts, pitRoadHalf, scostamento);
+        const punti = vs.map(function (v) {
+            return puntoFronte(pitPath, v, pitRoadHalf, scostamento);
         });
         const conBox = indiciConBoxSotto(punti, pitPath, boxIndex, trackPts, pitRoadHalf, quantiBox);
         const teste = indiciTesta(punti.length, conBox);
