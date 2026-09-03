@@ -103,17 +103,20 @@ function applyBarrier(p, track, isRace) {
     const side = (dx * nx + dz * nz) >= 0 ? 1 : -1;
     const wallNx = nx * side, wallNz = nz * side;
 
-    // Dove sta il muro. Il profilo è calcolato dalla STESSA funzione con cui
-    // il client lo disegna (TrackGravel.barrierProfile, via trackLoader): il
-    // muro fisico e quello disegnato non possono divergere, che è l'unico
-    // modo per non sbattere contro qualcosa che non si vede.
+    // Dove si SBATTE. Non è sempre il muro: sull'arco esterno delle curve, dove
+    // la via di fuga lo consente, davanti al muro c'è un cuscinetto di gomme, e
+    // l'auto si ferma su quello (spec 2026-09-04). Il profilo è calcolato dalla
+    // STESSA funzione con cui il client lo disegna (TrackGravel.barrierProfile,
+    // via trackLoader), e le pile che si vedono sono posate a questa stessa
+    // distanza: il muro fisico e quello disegnato non possono divergere, che è
+    // l'unico modo per non sbattere contro qualcosa che non si vede.
     //
     // Senza profilo — editor, test storici, piste caricate a mano — resta il
     // comportamento di prima: muro solo sui tratti a ponte, dove uscire di
     // lato significherebbe cadere nel vuoto.
     let limit;
     if (track.barrierProfile) {
-        limit = TrackGravel.barrierAt(track.barrierProfile, idx, side);
+        limit = TrackGravel.impattoAt(track.barrierProfile, idx, side);
     } else if (pt.bridge) {
         limit = track.roadHalf + BRIDGE_BARRIER_MARGIN;
     } else {
