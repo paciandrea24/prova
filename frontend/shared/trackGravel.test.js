@@ -621,3 +621,95 @@ test('sul fianco alto non resta un bordino di ghiaia largo un cordolo', () => {
         assert.equal(banda, 0, `campione ${i}: ${banda.toFixed(2)} unità di ghiaia sul fianco alto`);
     }
 });
+
+// --- LE GOMME DAVANTI AL MURO (spec 2026-09-04) --------------------------
+//
+// La barriera di pneumatici esisteva gia' come scenografia, posata DIETRO il
+// muro e quindi invisibile: si vedeva il muro, si sbatteva sul muro. Da oggi
+// sta davanti e ferma lei l'auto, e il profilo dice dove c'e' e di quanto si
+// sbatte prima.
+const fsGomme = require('fs');
+const pathGomme = require('path');
+const { loadTrack: loadTrackGomme } = require('../../backend/sockets/games/trackLoader.js');
+const SizesGomme = require('./sceneryAssetSizes.js');
+
+const PISTE_GOMME = fsGomme.readdirSync(pathGomme.join(__dirname, '..', 'tracks'))
+    .filter(f => f.endsWith('.json') && !/^(__|test-)/.test(f))
+    .map(f => f.replace(/\.json$/, ''));
+
+test('il cuscinetto e\' profondo quanto il modello che si vede', () => {
+    // ⚠️ IL NUMERO E' SCRITTO A MANO IN trackGravel, ed e' questo test a
+    // tenerlo onesto. Non si importa `sceneryAssetSizes` da li': quel modulo
+    // dipende dalla palette dei colori, e trackGravel lo carica il SERVER —
+    // la fisica delle collisioni non deve dipendere da come sono tinti gli
+    // oggetti. Stessa soluzione della quota del solaio nel palazzo dei box:
+    // costante in chiaro, misura che la sorveglia.
+    assert.ok(Math.abs(TrackGravel.PROFONDITA_GOMME - SizesGomme.sizeOf('tyreStack').d) < 0.05,
+        `PROFONDITA_GOMME e' ${TrackGravel.PROFONDITA_GOMME}, il modello e' profondo ${SizesGomme.sizeOf('tyreStack').d}`);
+});
+
+for (const id of PISTE_GOMME) {
+    test(`${id}: dove ci sono gomme si sbatte esattamente un cuscinetto prima`, () => {
+        const t = loadTrackGomme(id);
+        const bp = t.barrierProfile;
+        const raw2 = JSON.parse(fsGomme.readFileSync(
+            pathGomme.join(__dirname, '..', 'tracks', id + '.json'), 'utf8'));
+        assert.ok(bp.gomme, `${id}: il profilo non porta la banda gomme`);
+        let conGomme = 0;
+        for (let i = 0; i < t.points.length; i++) {
+            for (const side of [1, -1]) {
+                const muro = TrackGravel.barrierAt(bp, i, side);
+                const impatto = TrackGravel.impattoAt(bp, i, side);
+                const banda = side > 0 ? bp.gomme.right : bp.gomme.left;
+                if (banda[i]) {
+                    conGomme++;
+                    assert.ok(Math.abs(muro - impatto - TrackGravel.PROFONDITA_GOMME) < 1e-9,
+                        `${id}[${i}/${side}]: muro ${muro.toFixed(2)}, impatto ${impatto.toFixed(2)}`);
+                } else {
+                    assert.ok(Math.abs(muro - impatto) < 1e-9,
+                        `${id}[${i}/${side}]: senza gomme i due profili devono coincidere`);
+                }
+            }
+        }
+        // ⚠️ NON «una pista con curve deve avere gomme», ma «una pista con
+        // curve DOVE C'E' SPAZIO deve averle». Su citta-prova la via di fuga
+        // vale 4.8 su tutto il giro perche' il muro sta attaccato al cordolo
+        // per scelta (27-08): li' un cuscinetto non ci sta, ed e' giusto —
+        // nei cittadini veri, Monaco e Baku, le gomme lungo il muro non ci
+        // sono. Pretenderle avrebbe misurato quella scelta invece del
+        // cuscinetto, come chiedere al palazzo dei box di coprire venti box
+        // dove ce ne stanno quattordici.
+        let spazio = false;
+        for (const corner of TrackGeometry.findCorners(t.points)) {
+            const archi = ((corner.endIdx - corner.startIdx) % t.points.length + t.points.length) % t.points.length;
+            for (let s = 0; s <= archi && !spazio; s++) {
+                const i = (corner.startIdx + s) % t.points.length;
+                const muro = TrackGravel.barrierAt(bp, i, corner.side);
+                if (muro - raw2.roadHalfWidth >= TrackGravel.FUGA_MINIMA_GOMME) spazio = true;
+            }
+        }
+        if (spazio) {
+            assert.ok(conGomme > 0, `${id}: c'e' spazio per il cuscinetto ma non ne nasce nessuno`);
+        }
+    });
+
+    test(`${id}: le gomme non stringono la via di fuga sotto le 5 unita'`, () => {
+        // ⚠️ SOLO I CAMPIONI CON LE GOMME. La via di fuga scende gia' a 2.0 su
+        // prova e suzuka dove il muro sta attaccato al cordolo per scelta, e in
+        // citta' vale 4.8 su tutto il giro: pretendere 5 ovunque misurerebbe
+        // quelle scelte, non il cuscinetto. La regola vera e' che LE GOMME non
+        // devono stringere sotto le 5.
+        const t = loadTrackGomme(id);
+        const raw = JSON.parse(fsGomme.readFileSync(
+            pathGomme.join(__dirname, '..', 'tracks', id + '.json'), 'utf8'));
+        for (let i = 0; i < t.points.length; i++) {
+            for (const side of [1, -1]) {
+                const banda = side > 0 ? t.barrierProfile.gomme.right : t.barrierProfile.gomme.left;
+                if (!banda[i]) continue;
+                const fuga = TrackGravel.impattoAt(t.barrierProfile, i, side) - raw.roadHalfWidth;
+                assert.ok(fuga >= 5 - 1e-9,
+                    `${id}[${i}/${side}]: fra asse e impatto restano ${fuga.toFixed(2)} unita'`);
+            }
+        }
+    });
+}
