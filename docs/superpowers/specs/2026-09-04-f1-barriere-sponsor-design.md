@@ -155,10 +155,15 @@ delle facciate, che come vertex color sembravano tende a coste.
 ## 5. I colori
 
 - Il muretto diventa **cemento chiaro** ovunque: è ciò che si vede in F1 sotto i
-  cartelloni.
+  cartelloni, ed è anche ciò che resta a vista dietro le gomme.
 - I **cordoli restano bianco-rossi**, che è il loro posto.
-- Il bianco-rosso sopravvive sul muro solo dove non c'è né cartellone né gomme —
-  le zone di servizio.
+- ⚠️ **Sul muro il bianco-rosso sparisce del tutto.** La prima stesura di questa
+  spec diceva che sarebbe sopravvissuto «dove non c'è né cartellone né gomme»,
+  ma le due regole insieme non lasciano un solo campione a quel terzo caso: il
+  cartellone nasce ovunque non ci siano gomme. O il bianco-rosso spariva, o il
+  cartellone doveva diventare selettivo. Sparisce il bianco-rosso: le strisce
+  sul muro non esistono in F1, e tenerle vive per un caso vuoto avrebbe lasciato
+  in piedi un ramo di codice che nessuna pista percorre.
 - In città sparisce la colorazione a fasce del 27-08, sostituita dai cartelloni
   veri. Il ramo `sponsor` di `trackMeshBuilder` e l'uso di
   `Palette.CITTA_SPONSOR` come tinte del muro vengono **rimossi**: le tinte
