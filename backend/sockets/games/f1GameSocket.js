@@ -9,6 +9,9 @@ const F1Stagione = require('../../../frontend/shared/f1Stagione.js');
 const seasonStore = require('../../store/seasonStore');
 const { createBots, updateBotInputs, estimateFinishTime, nearestAheadPlayer, BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS } = require('./f1Bot');
 const TyreModel = require('./physics/TyreModel');
+// Registratore del giro umano: spento sempre, tranne quando si misura il
+// divario col bot (F1_TELEMETRIA=1). Rif. backend/tools/f1Telemetria.js.
+const Telemetria = require('../../tools/f1Telemetria.js');
 const {
     TYRE_COMPOUNDS, DEFAULT_COMPOUND, WEAR_LAPS_AT_MEDIUM,
     tyreOf, suggestStrategy, giriPerMescola
@@ -28,7 +31,7 @@ const {
 const { fuelFactorFor } = require('./physics/FuelModel');
 const VehiclePhysics = require('./physics/VehiclePhysics');
 const {
-    ACCEL, BRAKE_MULT, TURN_SPEED_HIGH,
+    ACCEL, BRAKE_MULT, TURN_SPEED_HIGH, TURN_SPEED_LOW,
     effectiveMaxSpeed, effectiveGrip, effectiveAccel, effectiveBrakeMult, corneringCapacity
 } = VehiclePhysics;
 
@@ -2023,6 +2026,21 @@ function tickGame(io, lobbyId, game) {
         effectiveMaxSpeed, handlePitReactionPress, io, lobbyId,
         wearLapsAtMedium: WEAR_LAPS_AT_MEDIUM,
         accel: ACCEL, brakeMult: BRAKE_MULT, turnRateHigh: TURN_SPEED_HIGH,
+        // ⚠️ IL TURN RATE VERO IN CURVA E' DIETRO UN INTERRUTTORE, SPENTO.
+        // `cornerTargetSpeed` stima la velocita' di curva col turn rate delle
+        // ALTE velocita' — il minimo che l'auto ha — mentre in curva, andando
+        // piano, ne avrebbe fino al 44% in piu'. Correggerlo e' fisicamente
+        // giusto e su monte-rosso vale -900ms senza una sola uscita di pista,
+        // ma su `prova` PEGGIORA appena entra il rumore di sterzo dei bot:
+        // 49583 -> 50117 ms a rumore medio, e le uscite dal cordolo passano da
+        // 0 a una ventina. La ragione e' che le traiettorie sono ottimizzate a
+        // rumore zero, quindi stanno gia' al limite: alzare la velocita' in
+        // curva consuma il margine che assorbiva il rumore.
+        //
+        // Si accende insieme alla fitness col rumore dentro l'ottimizzatore,
+        // non prima. Misure del 2026-09-05 in
+        // docs/superpowers/specs/2026-09-05-f1-bot-passo-design.md.
+        turnRateLow: process.env.F1_BOT_TURN_RATE_VERO ? TURN_SPEED_LOW : 0,
         slipstreamMaxBoost: SLIPSTREAM_MAX_BOOST,
         // Grip-awareness (Rif. docs/superpowers/specs/2026-07-28-f1-bot-grip-awareness-design.md):
         // passate sempre, il flag F1_BOT_GRIP_AWARENESS che decide se il
@@ -2132,6 +2150,7 @@ function tickGame(io, lobbyId, game) {
         // qualifica la macchina e' quella con cui si arriva al weekend, e il
         // giro di rientro dopo la bandiera non deve costare niente.
         if (game.phase === 'race' && !p.finished && offTrack) applyOffTrackFloorDamage(p, profondita);
+        Telemetria.condiviso.campiona(lobbyId, p, game.raceTick, PHYSICS_TICK_MS);
         checkLap(p, totalLaps, io, lobbyId, game);
         if (!p.finished) updateSectorTiming(p, game);
 
@@ -2664,6 +2683,8 @@ function checkLap(p, totalLaps, io, lobbyId, game) {
     if (p.checkpointA && inFinishZone && !p.inFinishZone) {
         // Il giocatore ha appena ENTRATO nella zona traguardo → giro completato
         p.lap++;
+        Telemetria.condiviso.chiudiGiro(lobbyId, {
+            pista: game.track.id, giro: p.lap, colore: p.color });
         p.checkpointA = false;
         console.log(`🏁 [F1] ${p.color} giro ${p.lap}/${totalLaps} (lobby ${lobbyId})`);
 
@@ -3070,7 +3091,7 @@ function resetPlayers(game) {
 // ====================================================
 module.exports.physics = {
     PHYSICS_TICK_MS, COLLISION_SUBSTEPS,
-    ACCEL, BRAKE_MULT, TURN_SPEED_HIGH, HALF_LAP_IDX,
+    ACCEL, BRAKE_MULT, TURN_SPEED_HIGH, TURN_SPEED_LOW, HALF_LAP_IDX,
     SECTOR1_REL_IDX, SECTOR2_REL_IDX, SECTOR_RECAP_DURATION_MS, fillGaps,
     effectiveMaxSpeed, effectiveAccel, effectiveBrakeMult, corneringCapacity, updateVelocity, integratePosition,
     applyOffTrackDrag, applyBarrier, updateTrackIndex,
