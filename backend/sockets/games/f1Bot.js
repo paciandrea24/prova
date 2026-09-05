@@ -419,7 +419,10 @@ function difendiSePossibile(p, game, track, aggro, target, steerGain) {
         latoAttaccante: dietro ? dietro.lato : 0,
         gapM: dietro ? dietro.gapM : Infinity,
         finestraM: BOT_FOLLOW_GAP_M,
-        forza: aggro.forzaDifesa,
+        // In unita' di pista, dalla frazione di mezza carreggiata del
+        // livello: una difesa tarata in unita' fisse vale meta' su una pista
+        // larga il doppio (vedi f1Difficolta.js).
+        forza: aggro.frazioneDifesa * track.roadHalf,
         scostamentoAttuale: p.botScostamentoDifesa || 0,
         affiancato: !!(dietro && dietro.affiancato),
         ultimoCambioMs: p.botUltimoCambioDifesa || 0,

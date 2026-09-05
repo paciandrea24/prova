@@ -38,13 +38,13 @@
     const TABELLA = {
         // dove cade su `prova`, rispetto al giro umano di 47.30 s:
         facile:    { ritmoMin: 0.905, ritmoMax: 0.925, rumoreMin: 0.16, rumoreMax: 0.22,  // +5.15 / +6.70 s
-                     margineSorpasso: 1.04, frazioneMinimaInScia: 0.75, forzaDifesa: 1.5,
+                     margineSorpasso: 1.04, frazioneMinimaInScia: 0.75, frazioneDifesa: 0.18,
                      erroriPerGiro: 1.2, allargaMin: 0.10, allargaMax: 0.35 },
         medio:     { ritmoMin: 0.945, ritmoMax: 0.965, rumoreMin: 0.08, rumoreMax: 0.14,  // +3.85 / +4.90 s
-                     margineSorpasso: 1.01, frazioneMinimaInScia: 0.85, forzaDifesa: 3.0,
+                     margineSorpasso: 1.01, frazioneMinimaInScia: 0.85, frazioneDifesa: 0.37,
                      erroriPerGiro: 0.4, allargaMin: 0.05, allargaMax: 0.20 },
         difficile: { ritmoMin: 0.985, ritmoMax: 1.000, rumoreMin: 0.00, rumoreMax: 0.06,  // +1.85 / +3.25 s
-                     margineSorpasso: 1.00, frazioneMinimaInScia: 0.92, forzaDifesa: 4.5,
+                     margineSorpasso: 1.00, frazioneMinimaInScia: 0.92, frazioneDifesa: 0.55,
                      erroriPerGiro: 0.05, allargaMin: 0.00, allargaMax: 0.08 },
     };
 
@@ -95,11 +95,23 @@
         return { margineSorpasso: t.margineSorpasso,
                  frazioneMinimaInScia: t.frazioneMinimaInScia,
                  // Di quanto ci si sposta per coprire chi arriva da dietro,
-                 // in unita' di pista. ⚠️ Da leggere contro la misura: la
-                 // mezza carreggiata e' 11 e i bot lasciano 16.4 unita'
-                 // libere da un lato. 4.5 ne copre poco piu' di un quarto:
-                 // e' una difesa, non un muro.
-                 forzaDifesa: t.forzaDifesa,
+                 // IN FRAZIONE DELLA MEZZA CARREGGIATA — come l'attacco
+                 // (BOT_OVERTAKE_FRACTION), non piu' in unita' di pista.
+                 //
+                 // ⚠️ PERCHE' E' CAMBIATA (playtest 2026-09-05, «ad hard mi e'
+                 // sembrato che non si spostano piu' i bot per difendere»).
+                 // Era 1.5 / 3.0 / 4.5 unita' fisse. Misurato su `prova`
+                 // (larga 22, auto larga 3.48): la difesa realizzata valeva
+                 // 0.61 larghezze d'auto a difficile e 0.47 a medio — i tre
+                 // livelli erano indistinguibili in pista, e la porta lasciata
+                 // aperta dall'altro lato passava da 4.4 a 3.4 auto
+                 // affiancate. Intanto l'attacco si spostava di 6.05 unita':
+                 // il bot attaccava tre volte piu' di quanto difendeva.
+                 //
+                 // In frazione la difesa scala anche con la pista: 4.5 unita'
+                 // su una carreggiata stretta sarebbero state un muro, sulla
+                 // larga un cenno.
+                 frazioneDifesa: t.frazioneDifesa,
                  // Quanti errori attendersi in un giro. Non e' zero
                  // nemmeno a difficile: un pilota che non sbaglia MAI non
                  // e' credibile. Uno ogni venti giri e' abbastanza raro

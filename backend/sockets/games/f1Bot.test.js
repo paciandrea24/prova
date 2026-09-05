@@ -1423,6 +1423,42 @@ test('a difficile si copre piu\' che a facile', () => {
     assert.ok(scostamentoCon('difficile') > scostamentoCon('facile'));
 });
 
+// ⚠️ LA DIFESA SI MISURA IN CARREGGIATA, NON IN UNITA' DI PISTA.
+// Playtest 2026-09-05: «ad hard mi e' sembrato che non si spostano piu' i bot
+// per difendere». Il meccanismo si attivava (6% dei tick su `prova`), ma
+// spostava 0.61 larghezze d'auto su una pista larga 22: sotto la soglia di
+// cio' che si vede. Una difesa in unita' fisse vale la meta' su una pista
+// larga il doppio — questo test e' quello che se ne accorge.
+test('la difesa scala con la larghezza della pista', () => {
+    function scostamentoConCarreggiata(roadHalf) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: 'difficile' };
+        game.track.roadHalf = roadHalf;
+        game.raceTick = 2000;
+        p.trackIndex = 25;
+        p.x = game.track.points[25].x; p.z = game.track.points[25].z;
+        const iDietro = p.trackIndex - 15;
+        const nrm = TrackGeometry.normalAt(game.track.points, iDietro, true);
+        game.players = {
+            bot1: p,
+            bot2: Object.assign({}, p, {
+                trackIndex: iDietro,
+                x: game.track.points[iDietro].x + nrm.nx * 4,
+                z: game.track.points[iDietro].z + nrm.nz * 4,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+            }),
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return Math.abs(p._botDebug.scostamentoDifensivo);
+    }
+    const stretta = scostamentoConCarreggiata(8);
+    const larga = scostamentoConCarreggiata(16);
+    assert.ok(stretta > 0, 'sulla pista stretta non si difende affatto');
+    assert.ok(Math.abs(larga / stretta - 2) < 0.01,
+        `carreggiata doppia, difesa ${(larga / stretta).toFixed(2)}x invece di 2x: ` +
+        "e' tarata in unita' fisse, non in frazione di pista");
+});
+
 test('ogni bot ha una sua idea di traiettoria', () => {
     const g = partitaConLivello('medio', 8);
     creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);

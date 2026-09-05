@@ -70,15 +70,28 @@ test('i valori di oggi restano dentro il livello medio', () => {
 
 
 test('la difesa cresce col livello', () => {
-    assert.ok(F1Difficolta.soglieDi('difficile').forzaDifesa >
-              F1Difficolta.soglieDi('medio').forzaDifesa);
-    assert.ok(F1Difficolta.soglieDi('medio').forzaDifesa >
-              F1Difficolta.soglieDi('facile').forzaDifesa);
-    // ⚠️ E resta una difesa, non un muro: sopra meta' carreggiata (11) il
-    // bot occuperebbe la pista invece di coprire una linea.
+    assert.ok(F1Difficolta.soglieDi('difficile').frazioneDifesa >
+              F1Difficolta.soglieDi('medio').frazioneDifesa);
+    assert.ok(F1Difficolta.soglieDi('medio').frazioneDifesa >
+              F1Difficolta.soglieDi('facile').frazioneDifesa);
+    // ⚠️ E resta una difesa, non un muro: oltre i tre quarti della mezza
+    // carreggiata il bot occuperebbe la pista invece di coprire una linea.
     for (const l of F1Difficolta.LIVELLI) {
-        assert.ok(F1Difficolta.soglieDi(l).forzaDifesa < 5.5, l + ': difesa troppo larga');
+        assert.ok(F1Difficolta.soglieDi(l).frazioneDifesa < 0.75, l + ': difesa troppo larga');
     }
+});
+
+// ⚠️ LA MISURA CHE HA CAMBIATO QUESTI NUMERI (playtest 2026-09-05).
+// La difesa era in unita' di pista (4.5 a difficile) mentre l'attacco era ed
+// e' una frazione della mezza carreggiata (BOT_OVERTAKE_FRACTION = 0.55, cioe'
+// 6.05 unita' su `prova`): il bot attaccava tre volte piu' di quanto
+// difendeva, e su `prova` la difesa realizzata valeva 0.61 larghezze d'auto —
+// invisibile. Difendere quanto si attacca e' la stessa scala per le due meta'
+// dello stesso duello.
+test('a difficile ci si copre quanto ci si sposta per attaccare', () => {
+    const BOT_OVERTAKE_FRACTION = 0.55;   // f1Bot.js, la meta' offensiva
+    assert.ok(Math.abs(F1Difficolta.soglieDi('difficile').frazioneDifesa - BOT_OVERTAKE_FRACTION) < 1e-9,
+        "a difficile la difesa deve valere quanto l'attacco");
 });
 
 test('si sbaglia di piu\' ai livelli bassi, ma mai zero', () => {
