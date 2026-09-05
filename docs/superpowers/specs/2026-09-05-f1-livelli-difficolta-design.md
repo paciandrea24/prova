@@ -49,11 +49,19 @@ basta. Rif. [H1] in `project_f1_bot_competitivi`.
 
 Un livello è **una coppia di intervalli**, non due numeri fissi:
 
-| livello | ritmo | rumore | dove cade su `prova` |
+| livello | ritmo | rumore | dove cade su `prova` (misurato) |
 |---|---|---|---|
-| Facile | 0.90 – 0.94 | 0.16 – 0.25 | da +5.3 a +6.3 s |
-| Medio | 0.95 – 0.98 | 0.08 – 0.16 | da +3.0 a +3.9 s |
-| Difficile | 0.98 – 1.00 | 0.00 – 0.08 | da +1.9 a +2.3 s |
+| Facile | 0.905 – 0.925 | 0.16 – 0.22 | da +5.02 a +5.80 s |
+| Medio | 0.945 – 0.965 | 0.08 – 0.14 | da +3.67 a +4.38 s |
+| Difficile | 0.985 – 1.000 | 0.00 – 0.06 | da +1.85 a +3.23 s |
+
+⚠️ **Gli intervalli sono STRETTI, e devono restarlo.** La prima taratura di
+questa spec li faceva larghi (0.90-0.94, 0.95-0.98, 0.98-1.00) e i tre livelli
+si SOVRAPPONEVANO: misurato, il bot piu' lento di Difficile faceva +3.50 s e il
+piu' veloce di Medio +3.17, cioe' il livello alto era piu' lento di quello
+medio. L'escursione dentro un livello non puo' superare la distanza fra un
+livello e l'altro. Con questi numeri restano 0.44 s di stacco fra Difficile e
+Medio e 0.64 fra Medio e Facile.
 
 ⚠️ **Intervalli e non valori fissi**, perché la varianza fra i bot è ciò che
 rompe l'ordine statico della griglia: senza, chi parte davanti resta davanti e
@@ -110,8 +118,10 @@ classifica sommerebbe punti presi contro avversari diversi.
 
 Su ogni livello e su più piste:
 
-1. **I tre livelli sono ordinati**: il giro medio a Difficile < Medio < Facile,
-   con almeno un secondo fra l'uno e l'altro su `prova`.
+1. **I tre livelli non si sovrappongono**: il bot piu' lento di un livello resta
+   piu' veloce del piu' rapido del livello sotto. Misurato su `prova`: 0.44 s di
+   stacco fra Difficile e Medio, 0.64 fra Medio e Facile. E' l'invariante che la
+   prima taratura violava.
 2. **Dentro un livello i bot restano diversi**: fra il più veloce e il più
    lento della griglia c'è uno scarto di ritmo misurabile, o la gara è una
    fila indiana.
