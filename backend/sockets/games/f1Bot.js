@@ -586,14 +586,20 @@ function pickBotColors(humanColors, count, rng = Math.random) {
 // avere — a `facile` il piu' impreciso arriva a 0.22.
 const BOT_PRECISION_NOISE_MAX = 0.25;   // rad aggiunti/tolti allo sterzo
 
-// La traiettoria PROPRIA di un bot: quanto si scosta dalla linea buona, in
-// unita' di pista. Serve a non avere sei copie sulla stessa riga — e a dare
-// alla difesa qualcosa da cui muoversi.
+// La traiettoria PROPRIA di un bot: quanto si scosta dalla linea buona, IN
+// FRAZIONE DELLA MEZZA CARREGGIATA. Serve a non avere sei copie sulla stessa
+// riga — e a dare alla difesa qualcosa da cui muoversi.
 //
-// ⚠️ PICCOLO. La racing line e' gia' ottimizzata: ogni unita' di scostamento
-// costa tempo sul giro, e una varieta' generosa diventerebbe solo lentezza.
-// Quanto costi davvero e' misurato nel commit che lo introduce.
-const BOT_LINEA_OFFSET_MAX = 1.5;
+// ⚠️ ERA 1.5 UNITA' FISSE, ed era troppo poco per vedersi. Playtest
+// 2026-09-05: «probabilmente anche ad hard si forma il trenino perche' tutti
+// vanno sempre all'interno della curva». Misurato su `prova` nello stesso
+// punto di pista, i sei bot stavano in una fascia larga 4.5 unita': 1.3
+// larghezze d'auto su una pista larga 22, cioe' una fila indiana.
+//
+// Costa tempo sul giro — la racing line e' ottimizzata, allontanarsene si
+// paga — ed e' una spesa scelta: sei traiettorie che si distinguono valgono
+// piu' di sei copie veloci. Quanto costi e' misurato nel commit che lo alza.
+const BOT_LINEA_OFFSET_FRAZIONE = 0.27;
 
 // Quanto lontano dall'asse puo' arrivare il bersaglio, in frazione della
 // mezza carreggiata: il resto e' il margine che il pure-pursuit si mangia
@@ -817,7 +823,8 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
             botPrecisionNoise:      randRange(intervalli.rumoreMin, intervalli.rumoreMax, rng),
             // La sua idea di traiettoria: chi taglia un filo piu' stretto, chi
             // sta un filo piu' largo.
-            botLineaOffset:         randRange(-BOT_LINEA_OFFSET_MAX, BOT_LINEA_OFFSET_MAX, rng),
+            botLineaOffset:         randRange(-BOT_LINEA_OFFSET_FRAZIONE * game.track.roadHalf,
+                                              BOT_LINEA_OFFSET_FRAZIONE * game.track.roadHalf, rng),
             // Quanto prende male l'apice: 0 = passa dove passa la linea buona,
             // 0.35 = si allarga di un terzo di carreggiata. E' il carattere
             // del pilota, e si paga in tempo sul giro — per questo

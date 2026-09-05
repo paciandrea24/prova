@@ -955,6 +955,10 @@ function partitaPerBot(gridSize) {
         track: {
             qualiSpawn: { x: 0, z: 0, angle: 0 },
             points: [{ x: 0, z: 0 }, { x: 10, z: 0 }],
+            // La linea propria di ogni bot e' una frazione di questa: una
+            // pista vera ce l'ha sempre (la mette loadTrack), e senza,
+            // botLineaOffset sarebbe NaN.
+            roadHalf: 11,
         },
         players: {},
         settings: {},
@@ -1505,10 +1509,19 @@ test('ogni bot ha una sua idea di traiettoria', () => {
     assert.ok(offset.every(v => Number.isFinite(v)), 'un bot senza linea propria');
     assert.ok(Math.max(...offset) - Math.min(...offset) > 0.5,
         'i bot hanno tutti la stessa linea: restano sei copie');
-    // ⚠️ Piccolo: la linea e' gia' ottimizzata, allontanarsene costa tempo, e
-    // uno scostamento generoso non sarebbe varieta' ma lentezza.
-    assert.ok(Math.max(...offset.map(Math.abs)) <= 2,
-        'scostamento troppo largo: e\' lentezza, non varieta\'');
+    // ⚠️ IN FRAZIONE DELLA MEZZA CARREGGIATA, come la difesa e l'attacco.
+    // Playtest 2026-09-05: «probabilmente anche ad hard si forma il trenino
+    // perche' tutti vanno sempre all'interno della curva». Misurato su
+    // `prova` NELLO STESSO PUNTO di pista, i sei bot stavano in una fascia
+    // larga 4.5 unita' — 1.3 larghezze d'auto su una pista larga 22: una fila
+    // indiana. Con un intervallo di ±1.5 in unita' fisse non poteva essere
+    // altrimenti, e su una pista stretta le stesse 1.5 sarebbero state
+    // mezza carreggiata.
+    const roadHalf = g.track.roadHalf;
+    assert.ok(Math.max(...offset.map(Math.abs)) <= 0.28 * roadHalf,
+        "scostamento troppo largo: e' lentezza, non varieta'");
+    assert.ok(Math.max(...offset.map(Math.abs)) > 0.15 * roadHalf,
+        'scostamento troppo stretto: restano in fila indiana');
 });
 
 // ═══════════ GLI ERRORI DELL'AI (spec 2026-09-05) ═══════════
