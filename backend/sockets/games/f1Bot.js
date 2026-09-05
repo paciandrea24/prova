@@ -370,6 +370,35 @@ function nearestAheadPlayer(p, allPlayers, track) {
     return best ? { player: best, gapM: bestGap } : null;
 }
 
+// Il simmetrico: chi mi sta INSEGUENDO, quanto e' vicino e da che parte
+// arriva.
+//
+// ⚠️ Serve anche il LATO, che a nearestAheadPlayer non serviva: una difesa
+// che non sa da dove arriva l'attacco copre a caso, e coprire il lato
+// sbagliato e' peggio che non coprire — gli si apre la porta.
+const BOT_AFFIANCATO_M = 8;   // lunghezza di un'auto piu' un margine
+function nearestBehindPlayer(p, allPlayers, track) {
+    const n = track.points.length;
+    const metersPerSample = track.lapLength / n;
+    let best = null, bestGap = Infinity;
+    for (const q of allPlayers) {
+        if (q === p || q.finished || q.pitting || q.pitAutoState) continue;
+        // Distanza INDIETRO lungo il giro: quanto quello dietro deve ancora
+        // percorrere per arrivare dove sono io.
+        const delta = (((p.trackIndex || 0) - (q.trackIndex || 0)) % n + n) % n;
+        const gapM = delta * metersPerSample;
+        if (gapM < bestGap) { bestGap = gapM; best = q; }
+    }
+    if (!best) return null;
+    // Da che lato dell'asse sta, misurato NEL MIO PUNTO di pista: e' li' che
+    // dovro' spostarmi, non dove si trova lui adesso.
+    const idx = p.trackIndex || 0;
+    const centro = track.points[idx];
+    const nrm = TrackGeometry.normalAt(track.points, idx, true);
+    const lato = Math.sign((best.x - centro.x) * nrm.nx + (best.z - centro.z) * nrm.nz) || 1;
+    return { player: best, gapM: bestGap, lato, affiancato: bestGap < BOT_AFFIANCATO_M };
+}
+
 // Velocità-obiettivo "vera" (guardando avanti sulla propria traiettoria) di
 // UN'ALTRA auto nella sua posizione attuale — usata per decidere il
 // sorpasso (vedi updateBotInputs). Confrontare la propria velocità-obiettivo
@@ -1488,7 +1517,7 @@ module.exports = {
     PALETTE, PALETTE_BOT_EXTRA, MAX_GRID_SIZE, GRID_SIZE_DEFAULT, DEFAULT_TUNING,
     BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS,
     normalizeAngle, steerToward, lookaheadIndex, mirinoPrimaDelTubo, apexOffset, windowRadius, cornerApexNear, cornerTargetSpeed, overtakeOffset,
-    nearestAheadPlayer, otherCarTargetSpeed, pickPostPitCompound, pickBotColors, estimateFinishTime,
+    nearestAheadPlayer, nearestBehindPlayer, otherCarTargetSpeed, pickPostPitCompound, pickBotColors, estimateFinishTime,
     createBots, updateBotInputs, shouldBotRepair,
     BOT_CURVATURE_LOCAL_M, BOT_APEX_MAX_FRACTION, trajectoryDiagnostics,
     adaptiveLookaheadMeters, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,

@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
     PALETTE, normalizeAngle, steerToward, lookaheadIndex, apexOffset,
-    cornerTargetSpeed, windowRadius, cornerApexNear, overtakeOffset, nearestAheadPlayer,
+    cornerTargetSpeed, windowRadius, cornerApexNear, overtakeOffset, nearestAheadPlayer, nearestBehindPlayer,
     pickPostPitCompound, pickBotColors, estimateFinishTime,
     updateBotInputs, DEFAULT_TUNING, shouldBotRepair, trajectoryDiagnostics,
     adaptiveLookaheadMeters, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
@@ -1294,4 +1294,52 @@ test('a meta\' gara con le gomme finite si entra come sempre', () => {
     const meta = garaAlGiro(1, 5, 85);
     updateBotInputs(meta.game, makeGripAwarenessDeps());
     assert.equal(meta.p.botHeadingToPits, true, 'con le gomme oltre soglia si entra');
+});
+
+// ═══════════ CHI HO DIETRO (spec 2026-09-05) ═══════════
+test('nearestBehindPlayer trova chi insegue, e da che lato arriva', () => {
+    // ⚠️ `mockTrack` non ha coordinate — e' `{points:{length:n}}`, basta a
+    // contare i campioni ma non a dire da che LATO sta uno. Qui serve una
+    // pista vera, e il file ne sa gia' costruire una.
+    const punti = buildConstantCurveTrack(200, 60, 1 / 40);
+    const track = { points: punti, lapLength: punti.length };
+    // Chi difende sta al campione 100, sull'asse; l'inseguitore quattro
+    // campioni dietro e spostato di 3 unita' da un lato.
+    const nrm = TrackGeometry.normalAt(track.points, 96, true);
+    const difensore = { color: 'A', trackIndex: 100, x: track.points[100].x, z: track.points[100].z };
+    const attaccante = {
+        color: 'B', trackIndex: 96,
+        x: track.points[96].x + nrm.nx * 3, z: track.points[96].z + nrm.nz * 3,
+    };
+    const r = nearestBehindPlayer(difensore, [difensore, attaccante], track);
+    assert.ok(r, 'nessun inseguitore trovato');
+    assert.equal(r.player.color, 'B');
+    assert.ok(r.gapM > 0, 'il distacco si conta indietro, non avanti');
+    assert.equal(Math.sign(r.lato), 1, 'l\'inseguitore sta dal lato positivo della normale');
+});
+
+test('chi e\' davanti non conta come inseguitore', () => {
+    // ⚠️ `mockTrack` non ha coordinate — e' `{points:{length:n}}`, basta a
+    // contare i campioni ma non a dire da che LATO sta uno. Qui serve una
+    // pista vera, e il file ne sa gia' costruire una.
+    const punti = buildConstantCurveTrack(200, 60, 1 / 40);
+    const track = { points: punti, lapLength: punti.length };
+    const difensore = { color: 'A', trackIndex: 100, x: track.points[100].x, z: track.points[100].z };
+    const davanti = { color: 'B', trackIndex: 104, x: track.points[104].x, z: track.points[104].z };
+    const r = nearestBehindPlayer(difensore, [difensore, davanti], track);
+    // C'e' un solo altro pilota, ed e' davanti: come inseguitore risulta a
+    // quasi un giro di distanza, non a quattro campioni.
+    assert.ok(!r || r.gapM > track.lapLength / 2, 'chi e\' davanti non e\' un inseguitore');
+});
+
+test('un inseguitore incollato risulta affiancato', () => {
+    // ⚠️ `mockTrack` non ha coordinate — e' `{points:{length:n}}`, basta a
+    // contare i campioni ma non a dire da che LATO sta uno. Qui serve una
+    // pista vera, e il file ne sa gia' costruire una.
+    const punti = buildConstantCurveTrack(200, 60, 1 / 40);
+    const track = { points: punti, lapLength: punti.length };
+    const difensore = { color: 'A', trackIndex: 100, x: track.points[100].x, z: track.points[100].z };
+    const incollato = { color: 'B', trackIndex: 100, x: track.points[100].x + 2, z: track.points[100].z };
+    const r = nearestBehindPlayer(difensore, [difensore, incollato], track);
+    assert.equal(r.affiancato, true);
 });
