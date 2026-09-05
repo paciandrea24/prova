@@ -555,6 +555,15 @@ function pickBotColors(humanColors, count, rng = Math.random) {
 // riferimento storico del rumore massimo, non piu' il massimo che un bot puo'
 // avere — a `facile` il piu' impreciso arriva a 0.22.
 const BOT_PRECISION_NOISE_MAX = 0.25;   // rad aggiunti/tolti allo sterzo
+
+// La traiettoria PROPRIA di un bot: quanto si scosta dalla linea buona, in
+// unita' di pista. Serve a non avere sei copie sulla stessa riga — e a dare
+// alla difesa qualcosa da cui muoversi.
+//
+// ⚠️ PICCOLO. La racing line e' gia' ottimizzata: ogni unita' di scostamento
+// costa tempo sul giro, e una varieta' generosa diventerebbe solo lentezza.
+// Quanto costi davvero e' misurato nel commit che lo introduce.
+const BOT_LINEA_OFFSET_MAX = 1.5;
 const BOT_PIT_THRESHOLD_MIN   = 60,   BOT_PIT_THRESHOLD_MAX   = 80;     // % usura gomme a cui il bot decide di entrare ai box
 // Distanza (metri, lungo il giro) entro cui un bot che ha deciso di entrare
 // ai box comincia a sfumare il bersaglio dello sterzo verso pitPath[0]
@@ -771,6 +780,9 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
             nomeStagione:           daStagione ? (daStagione.find(b => b.colore === color) || {}).nome || null : null,
             botSpeedFactor:         randRange(intervalli.ritmoMin, intervalli.ritmoMax, rng),
             botPrecisionNoise:      randRange(intervalli.rumoreMin, intervalli.rumoreMax, rng),
+            // La sua idea di traiettoria: chi taglia un filo piu' stretto, chi
+            // sta un filo piu' largo.
+            botLineaOffset:         randRange(-BOT_LINEA_OFFSET_MAX, BOT_LINEA_OFFSET_MAX, rng),
             botPitThreshold:        randRange(BOT_PIT_THRESHOLD_MIN, BOT_PIT_THRESHOLD_MAX, rng),
             botHeadingToPits:       false,
             botPitReactionScheduled: false,
@@ -1370,9 +1382,21 @@ function updateBotInputs(game, deps) {
             // cervello di guida unificato): niente più flag, e la logica è
             // condivisa con l'ottimizzatore offline via computeSoloRacingLineInputs.
             const solo = computeSoloRacingLineInputs(p, track, rt, maxSpeed, brakeDecel, turnRateHigh, gripCapacityFactor, turnRateLow);
-            const target = solo.target;
+            // LA LINEA DI QUESTO BOT: quella buona piu' il suo scostamento
+            // personale. Sei bot sulla stessa riga sono sei copie, e da una
+            // riga sola la difesa non avrebbe da che parte muoversi.
+            const nrmLinea = TrackGeometry.normalAt(track.points, p.trackIndex || 0, true);
+            const suo = p.botLineaOffset || 0;
+            const target = suo === 0 ? solo.target : {
+                x: solo.target.x + nrmLinea.nx * suo,
+                z: solo.target.z + nrmLinea.nz * suo,
+            };
             const localSamples = solo.localSamples;   // riusato più sotto per il sorpasso (windowRadius) — evita di ricalcolarlo
-            steer = solo.steer;
+            // ⚠️ Lo sterzo va RICALCOLATO sul bersaglio nuovo: `solo.steer`
+            // punta alla linea di tutti, e un bot che crede di stare sulla sua
+            // mentre sterza verso l'altra non ci arriva mai.
+            steer = suo === 0 ? solo.steer
+                : steerToward(p.x, p.z, p.angle, target.x, target.z, rt.steerGain);
             debugTarget = { x: target.x, z: target.z };
 
             let targetSpeed = solo.targetSpeed * p.botSpeedFactor * p.botLapPaceMult;

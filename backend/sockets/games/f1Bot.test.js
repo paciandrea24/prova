@@ -1422,3 +1422,16 @@ test('a difficile si copre piu\' che a facile', () => {
     }
     assert.ok(scostamentoCon('difficile') > scostamentoCon('facile'));
 });
+
+test('ogni bot ha una sua idea di traiettoria', () => {
+    const g = partitaConLivello('medio', 8);
+    creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+    const offset = Object.values(g.players).map(p => p.botLineaOffset);
+    assert.ok(offset.every(v => Number.isFinite(v)), 'un bot senza linea propria');
+    assert.ok(Math.max(...offset) - Math.min(...offset) > 0.5,
+        'i bot hanno tutti la stessa linea: restano sei copie');
+    // ⚠️ Piccolo: la linea e' gia' ottimizzata, allontanarsene costa tempo, e
+    // uno scostamento generoso non sarebbe varieta' ma lentezza.
+    assert.ok(Math.max(...offset.map(Math.abs)) <= 2,
+        'scostamento troppo largo: e\' lentezza, non varieta\'');
+});
