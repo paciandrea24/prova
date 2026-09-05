@@ -44,6 +44,13 @@
         pond: 0x1e63c8,         // era 0x2f6fa8
         curbNeutral: [0.55, 0.57, 0.60],  // era [0.35, 0.35, 0.37] (vertex color)
 
+        // Il muretto a bordo pista. ⚠️ NON PIU' BIANCO-ROSSO: quelle strisce
+        // in F1 stanno sui CORDOLI, non sui muri, e sopra il muro adesso
+        // corrono i cartelloni (spec 2026-09-04). Cemento chiaro, appena piu'
+        // caldo del grigio dell'asfalto: e' anche cio' che resta a vista
+        // dietro le barriere di gomme.
+        muretto: 0xd8d5cf,
+
         // ── La città (blocco G) ───────────────────────────────────────────
         // Il suolo urbano al posto del prato: più chiaro dell'asfalto della
         // pista, o da dentro l'abitacolo non si capisce più dove finisce la

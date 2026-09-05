@@ -36,7 +36,7 @@ function builderChePrendeNota(registro) {
     // conosce fa esplodere ogni test di questo file con «is not a function»,
     // che è come me ne sono accorto.
     const nomi = ['impostaSuolo', 'buildGround', 'buildEmbankment', 'buildBridgeDecks', 'buildRibbon',
-                  'buildCurbs', 'buildGravel', 'buildBarriers', 'buildCitta', 'buildStartLine',
+                  'buildCurbs', 'buildGravel', 'buildBarriers', 'buildCartelloni', 'buildCitta', 'buildStartLine',
                   'buildPitLane', 'buildStartingGrid'];
     const finto = {};
     for (const nome of nomi) {
@@ -72,6 +72,9 @@ test('la sequenza di costruzione è quella del gioco, nell ordine del gioco', as
         'impostaSuolo',
         'buildGround', 'buildEmbankment', 'buildBridgeDecks',
         'buildRibbon', 'buildCurbs', 'buildGravel', 'buildBarriers',
+        // I cartelloni vengono DOPO le barriere: si posano sopra il loro
+        // muretto e ne seguono la distanza (spec 2026-09-04).
+        'buildCartelloni',
         'buildStartLine', 'buildPitLane', 'buildStartingGrid',
     ]);
 });
@@ -106,9 +109,9 @@ test('ogni pista si costruisce senza esplodere', async () => {
         const registro = [];
         await F1Scena.costruisciCircuito(scenaFinta(), pista(id),
             { builder: builderChePrendeNota(registro), gridSize: 6 });
-        // 11 con `impostaSuolo`, 12 sulle piste cittadine (che aggiungono
-        // `buildCitta`).
-        const attese = pista(id).ambientazione === 'citta' ? 12 : 11;
+        // 12 con impostaSuolo e il nastro dei cartelloni, 13 sulle piste
+        // cittadine (che aggiungono buildCitta).
+        const attese = pista(id).ambientazione === 'citta' ? 13 : 12;
         assert.equal(registro.length, attese, `${id}: attese ${attese} chiamate, fatte ${registro.length}`);
     }
 });
@@ -160,5 +163,33 @@ test('una pista cittadina costruisce le facciate, una verde no', () => {
         .then(() => {
             assert.ok(!verde.some(r => r.startsWith('buildCitta')), 'la pista verde ha costruito una citta\'');
             assert.ok(citta.some(r => r.startsWith('buildCitta')), 'la pista cittadina non ha costruito niente');
+        });
+});
+
+test('il terrapieno riceve anche i tratti a ponte, non solo quelli a terra', () => {
+    // ⚠️ SEGNALATO DALL'UTENTE IL 2026-09-05 (tasto M, punti 3 e 4 su `prova`):
+    // «c'è dell'erba verde dentro la pista».
+    //
+    // La scena passava a buildEmbankment i punti GIA' FILTRATI dai ponti. Su
+    // quella polilinea bucata il campione che segue il ponte ha come vicino
+    // precedente quello che lo precede — a 350 unità di distanza — e la
+    // normale del terrapieno esce di 72 gradi: misurata (-0.731, -0.682)
+    // invece di (0.349, -0.937). Il terrapieno di quel campione viene posato
+    // di traverso e finisce DENTRO la carreggiata, a 5.7 unità dall'asse su
+    // una mezza carreggiata di 11.
+    //
+    // Il buco non va tolto prima: `buildEmbankment` chiama splitByBridge da
+    // sola, e con i punti gia' filtrati non trova piu' niente da spezzare —
+    // il salto le resta dentro come se fosse un pezzo di pista.
+    const trackData = pista('prova');
+    let visti = null;
+    const builder = builderChePrendeNota([]);
+    builder.buildEmbankment = (scene, pts) => { visti = pts; };
+    return F1Scena.costruisciCircuito(scenaFinta(), trackData, { builder, gridSize: 6 })
+        .then(() => {
+            assert.ok(visti, 'buildEmbankment non e\' stata chiamata');
+            const conPonte = visti.filter(p => p.bridge).length;
+            assert.ok(conPonte > 0,
+                `al terrapieno arrivano ${visti.length} punti e nessuno a ponte: la polilinea e' bucata`);
         });
 });

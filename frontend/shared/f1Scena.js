@@ -126,7 +126,15 @@
         // Servono al gioco, che le stilizza a parte (il prato dipinto).
         const mesheTerreno = scene.children.slice(primaDelPrato);
         // Tre distanze: attacco alla pista, fine del pianoro, fine della rampa.
-        builder.buildEmbankment(scene, puntiATerra, embankmentStart, embankPlateau, embankOuter);
+        // ⚠️ AL TERRAPIENO SERVONO I PUNTI COMPLETI, ponti compresi: e' lui a
+        // chiamare splitByBridge, e con una polilinea gia' bucata non trova
+        // piu' niente da spezzare — il salto le resta dentro come se fosse un
+        // pezzo di pista. Il campione che segue il ponte si ritrova per vicino
+        // quello che lo precede, a 350 unita' di distanza, e la normale esce
+        // di 72 gradi: il terrapieno viene posato di traverso e finisce dentro
+        // la carreggiata. Segnalato dall'utente il 2026-09-05 (punti 3 e 4 su
+        // `prova`): «c'e' dell'erba verde dentro la pista».
+        builder.buildEmbankment(scene, trackPts, embankmentStart, embankPlateau, embankOuter);
         // Punti "a terra" (non-ponte): usati sia per i piloni (quota reale
         // sotto un ponte) sia per la quota visiva fuori pista — calcolati una
         // sola volta qui, non ad ogni frame.
@@ -182,7 +190,19 @@
             (i, side) => TrackGravel.barrierAt(barrierProfile, i, side),
             pitMergeSamples,
             (i, bx, bz) => TrackGeometry.terrainTopAt(trackPts, i, bx, bz, embankPlateau),
-            { sponsor: inCitta });
+            null);
+
+        // I CARTELLONI, dopo le barriere perche' si posano sopra il loro
+        // muretto e ne seguono la distanza: se il muro arretra per una via di
+        // fuga, il cartellone arretra con lui.
+        // ⚠️ `barrierAt` e non `impattoAt`: il cartellone sta sul MURO, non
+        // sulle gomme. Dove il cuscinetto c'e', il nastro si interrompe — un
+        // pannello dietro tre file di pneumatici non lo vedrebbe nessuno.
+        builder.buildCartelloni(scene, trackPts,
+            (i, side) => TrackGravel.barrierAt(barrierProfile, i, side),
+            pitMergeSamples,
+            (i, bx, bz) => TrackGeometry.terrainTopAt(trackPts, i, bx, bz, embankPlateau),
+            { gomme: barrierProfile.gomme, trackId: trackData.id });
         // LA CITTÀ, dopo le barriere perché si posa su di loro: la facciata
         // comincia dove finisce il muro più il marciapiede, e dove la via di
         // fuga allarga arretra con lei.

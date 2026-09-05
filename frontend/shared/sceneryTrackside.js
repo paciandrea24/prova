@@ -22,8 +22,6 @@
     const findCorners = TrackGeometry.findCorners;
     const CORNER_RADIUS_MAX = TrackGeometry.CORNER_RADIUS_MAX;
 
-    const TYRE_STEP = 7;             // passo di affiancamento del modello tyreStack
-    const TYRE_MARGIN = 2.5;         // oltre barrierDist
     const BOARD_DISTANCES = [100, 50];
     const BOARD_MARGIN = 4;
     const MARSHAL_MARGIN = 8;
@@ -135,16 +133,80 @@
         const corners = findCorners(trackPts);
 
         for (const corner of corners) {
-            // Barriera di pneumatici lungo tutto l'arco esterno della curva.
+            // Barriera di pneumatici lungo l'arco esterno della curva, DOVE IL
+            // PROFILO LA PREVEDE: la stessa banda su cui si regola la fisica.
+            // Prima del 2026-09-04 nascevano su tutto l'arco e a barrierDist +
+            // 2.5, cioe' DIETRO il muro — si vedeva il muro, si sbatteva sul
+            // muro, e le gomme erano una fila di modelli nascosti.
+            //
+            // ⚠️ IL PASSO SI MISURA SULL'ARCO DOVE LE PILE STANNO, e la pila
+            // si posa DOVE IL PASSO CADE — anche in mezzo a due campioni.
+            //
+            // Contato in campioni dell'asse (com'era) il passo andava
+            // arrotondato a un intero: su `prova` un campione vale 5.17 unita'
+            // e ne bastava uno, su monte-rosso ne valeva 1.18 e ne servivano
+            // sei. Poi le pile si posano sull'arco ESTERNO, piu' lungo
+            // dell'asse quanto il rapporto dei raggi: quello che sull'asse era
+            // 7 arrivava a 9, 12, 14. Dal 49% al 100% delle pile aveva un buco
+            // col suo vicino, con punte di 19 unita' su un modello largo 7, e
+            // l'utente l'ha visto: «non tutti attaccati per creare una curva
+            // continua, ma staccati».
+            //
+            // ⚠️ E non basta posare al primo campione OLTRE il passo: con
+            // campioni da 5.17 e passo 6.65, il passo vero diventerebbe 6.65 +
+            // 5.17, cioe' di nuovo un buco. La posizione si interpola, come
+            // gia' fa il nastro dei cartelloni per i confini dei pannelli.
+            //
+            // Il passo e' la LARGHEZZA VERA del modello meno un filo: le pile
+            // devono toccarsi, e in curva la corda fra due centri e' piu' corta
+            // dell'arco su cui si misura. Il registro le esenta gia' dal
+            // controllo di compenetrazione (`stessaFila`), perche' una barriera
+            // di gomme e' fatta per stare unita.
             const arcSamples = (corner.endIdx - corner.startIdx + n) % n;
-            const stepSamples = Math.max(1, Math.round(TYRE_STEP / stepLen));
-            for (let s = 0; s <= arcSamples; s += stepSamples) {
+            const passoGomme = SceneryAssetSizes.sizeOf('tyreStack').w * 0.95;
+            const posaGomma = (pos, idx) => {
+                if (onBridge(idx)) return;
+                if (!usable('tyreStack', pos.x, pos.z, pos.y, pitRoadHalf + 6)) return;
+                // `suMisuraSulMuro`: la pila e' gia' alla distanza giusta,
+                // perche' `impattoAt` viene dal muro. Senza questo flag
+                // `traslaOltreLaGhiaia` la porterebbe una seconda volta oltre
+                // la via di fuga — misurato su banking-prova: posata a 44.8,
+                // ritrovata a 74.8, cioe' trenta unita' dietro il muro.
+                layout.push(Object.assign({ asset: 'tyreStack', category: 'safety', scale: 1,
+                                            suMisuraSulMuro: true }, pos));
+            };
+            let prec = null, restante = 0;
+            for (let s = 0; s <= arcSamples && barrierProfile; s++) {
                 const idx = (corner.startIdx + s) % n;
-                if (onBridge(idx)) continue;
-                const pos = place(trackPts, groundPts, idx, barrierDist + TYRE_MARGIN,
+                const banda = corner.side > 0 ? barrierProfile.gomme.right
+                                              : barrierProfile.gomme.left;
+                // Fuori dal cuscinetto la fila si interrompe: quella che
+                // ricomincia e' un'altra fila, e riparte dalla sua prima pila.
+                if (!banda || !banda[idx]) { prec = null; continue; }
+                // Il centro del modello sta mezza profondita' oltre il punto
+                // d'impatto: l'auto tocca la FACCIA delle gomme, non il loro
+                // centro.
+                const dist = TrackGravel.impattoAt(barrierProfile, idx, corner.side)
+                           + TrackGravel.PROFONDITA_GOMME / 2;
+                const pos = place(trackPts, groundPts, idx, dist,
                                   corner.side, barrierDist, embankStart, embankOuter);
-                if (!usable('tyreStack', pos.x, pos.z, pos.y, pitRoadHalf + 6)) continue;
-                layout.push(Object.assign({ asset: 'tyreStack', category: 'safety', scale: 1 }, pos));
+                if (!prec) { posaGomma(pos, idx); prec = pos; restante = passoGomme; continue; }
+                let avanzo = Math.hypot(pos.x - prec.x, pos.z - prec.z);
+                // Un ciclo e non un `if`: dove i campioni sono radi, fra due
+                // ne stanno piu' di una.
+                while (avanzo >= restante) {
+                    const t = restante / avanzo;
+                    const dentro = { x: prec.x + (pos.x - prec.x) * t,
+                                     z: prec.z + (pos.z - prec.z) * t,
+                                     y: prec.y + (pos.y - prec.y) * t,
+                                     rotY: pos.rotY };
+                    posaGomma(dentro, idx);
+                    avanzo -= restante;
+                    restante = passoGomme;
+                    prec = dentro;
+                }
+                restante -= avanzo;
+                prec = pos;
             }
 
             // Commissario all'ingresso curva.

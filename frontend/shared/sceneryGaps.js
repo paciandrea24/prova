@@ -26,9 +26,19 @@
     // l'utente ha segnalato nei dodici punti M 24-35 del 2026-08-13: in tutti,
     // l'oggetto costruito più vicino stava a 40-60 unità e in mezzo c'erano
     // solo alberi.
+    //
+    // ⚠️ `paddock-club` E' DENTRO, ed e' stata una svista fino al 2026-09-04:
+    // dal 03-09 il fronte della zona box lo fa il PALAZZO, un edificio alto 18
+    // e lungo trecento unita', e la sua categoria non era in questa lista.
+    // Finche' il palazzo si limitava a coronare gli edifici della fila il conto
+    // tornava lo stesso — sotto c'era comunque un `paddock` a farsi contare —
+    // ma da quando li SOSTITUISCE, allungare il palazzo faceva CRESCERE il
+    // vuoto misurato: piu' edificio di fianco al circuito, piu' «circuito senza
+    // niente di fianco». Su new-monza il lato destro e' passato dal 3.2% al
+    // 4.1% per questo, non per una scenografia piu' rada.
     const CATEGORIE_COSTRUITE = ['grandstand', 'grandstand-main', 'paddock',
                                  'landmark', 'paddock-decor', 'paddock-life',
-                                 'safety', 'infrastructure'];
+                                 'paddock-club', 'safety', 'infrastructure'];
     // Quanto lontano dall'asse guardare, e quanto avanti/indietro lungo la
     // pista. Entrambi in unità di gioco, mai in campioni: il campione vale
     // 5.17 unità su `prova` e 1.18 su `monte-rosso`.

@@ -21,13 +21,28 @@ const path = require('path');
 const FRONTEND = path.join(__dirname, '..');
 const SHARED = __dirname;
 
-// Le dipendenze che un modulo UMD dichiara nel suo ramo BROWSER: la riga
-// `root.Nome = factory(root.Dep1, root.Dep2)`.
+// Le dipendenze che un modulo dichiara nel suo ramo BROWSER.
+//
+// Due forme, perché nel progetto ci sono due stili di modulo:
+//  - UMD: `root.Nome = factory(root.Dep1, root.Dep2)`;
+//  - solo-browser: `const Dep = root.Dep;` in testa al file, come fa
+//    trackMeshBuilder.js.
+//
+// ⚠️ La seconda forma e' stata aggiunta il 2026-09-04, quando
+// `trackMeshBuilder` ha cominciato a usare `SponsorAtlas` e `ToonStyle`:
+// guardando solo la riga di `factory` questo test non avrebbe visto una pagina
+// che carica il builder senza l'atlante — e in gioco sarebbe morta la
+// costruzione del circuito, che e' esattamente il difetto per cui il file
+// esiste.
 function dipendenzeBrowser(file) {
     const src = fs.readFileSync(path.join(SHARED, file), 'utf8');
+    const nomi = [];
     const m = src.match(/root\.\w+\s*=\s*factory\(([^)]*)\)/);
-    if (!m) return [];
-    return (m[1].match(/root\.(\w+)/g) || []).map(s => s.replace('root.', ''));
+    if (m) nomi.push(...(m[1].match(/root\.(\w+)/g) || []));
+    for (const r of src.match(/const\s+\w+\s*=\s*root\.\w+\s*;/g) || []) {
+        nomi.push(r.slice(r.indexOf('root.')));
+    }
+    return nomi.map(s => s.replace('root.', '').replace(';', '').trim());
 }
 
 // Da `TrackSegmenti` al file che lo definisce.

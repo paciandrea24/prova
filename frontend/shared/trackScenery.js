@@ -15,7 +15,8 @@
                                  require('./sceneryRegistro.js'),
                                  require('./sceneryEsclusioni.js'), require('./semeStabile.js'),
                                  require('./cittaProfilo.js'), require('./cittaFacciate.js'),
-                                 require('./sceneryMarciapiede.js'));
+                                 require('./sceneryMarciapiede.js'),
+                                 require('./pitClubProfilo.js'));
     } else {
         root.TrackScenery = factory(root.TrackGeometry, root.SceneryLandmarks,
                                     root.SceneryTrackside, root.SceneryCrowd,
@@ -23,7 +24,8 @@
                                     root.SceneryPaddock, root.TrackGravel,
                                     root.SceneryInfrastructure,
                                     root.SceneryRegistro, root.SceneryEsclusioni, root.SemeStabile,
-                                    root.CittaProfilo, root.CittaFacciate, root.SceneryMarciapiede);
+                                    root.CittaProfilo, root.CittaFacciate, root.SceneryMarciapiede,
+                                    root.PitClubProfilo);
     }
 })(typeof self !== 'undefined' ? self : this, function (TrackGeometry, SceneryLandmarks,
                                                         SceneryTrackside, SceneryCrowd,
@@ -32,7 +34,7 @@
                                                         SceneryInfrastructure,
                                                         SceneryRegistro, SceneryEsclusioni,
                                                         SemeStabile, CittaProfilo, CittaFacciate,
-                                                        SceneryMarciapiede) {
+                                                        SceneryMarciapiede, PitClubProfilo) {
 
     // Le categorie senza un modello solido: superfici piane e folla, che non
     // hanno un ingombro da far rispettare a nessuno. La folla in particolare
@@ -779,9 +781,48 @@
 
         let alternanza = 0;
         const posati = [];
+
+        // ── IL PALAZZO DEI BOX (spec 2026-09-03) ──
+        //
+        // Un edificio solo, a fette da 7.5, al posto della fila di edifici
+        // alternati che nella zona dei box si leggeva come un pattern — «sembra
+        // tutto uguale», il giudizio dell'utente sul coronamento del 02-09.
+        // Dove comincia e dove finisce lo sa `PitClubProfilo`, e lo sa da solo:
+        // qui si posa e basta.
+        //
+        // ⚠️ NASCE PRIMA DI OGNI ALTRA COSA, e non solo perché è il pezzo
+        // grosso: entra in `posati`, quindi tutto ciò che viene dopo lo VEDE e
+        // sceglie un altro posto invece di finirci dentro e farsi scartare
+        // dalla porta. È la prevenzione, distinta dalla garanzia — la stessa
+        // ragione per cui le tribune entrano nel registro prima del resto.
+        const fettePalazzo = PitClubProfilo.fette(boxCtx.pitPath, boxCtx.boxIndex,
+                                                  trackPts, pitRoadHalf, boxCtx.gridSize);
+        for (const f of fettePalazzo) {
+            const voce = {
+                asset: f.tipo, category: 'paddock-club',
+                x: f.x, y: f.y, z: f.z, rotY: f.rotY,
+                scale: CUSTOM_MODEL_SCALE,
+                // Nato misurando la CORSIA, non la pista: traslaOltreLaGhiaia
+                // allontana dalla pista e della corsia non sa niente. Senza
+                // questo, dove la via di fuga è larga il palazzo verrebbe
+                // spinto DENTRO la corsia — è il difetto già misurato sugli
+                // edifici decorativi di melbourne, sei di loro fino a 4.29
+                // unità dentro.
+                natoSullaCorsia: true,
+            };
+            layout.push(voce);
+            posati.push(voce);
+        }
+        const ascissePalazzo = fettePalazzo.map(f => f.offset);
+
         for (let k = 0; k < slot.length; k++) {
             const s = slot[k];
             if (riservate.has(s.indice)) continue;
+            // Dentro il tratto del palazzo gli edifici decorativi non nascono
+            // affatto: là il fronte è il palazzo. Fuori restano quelli di
+            // sempre, coi loro due tetti — isolati non fanno più pattern,
+            // perché il difetto era la fila serrata, non i modelli.
+            if (PitClubProfilo.dentroIlPalazzo(ascissePalazzo, s.offset)) continue;
             const asset = (alternanza % 2 === 0) ? 'pitsGarageClosed' : 'pitsOffice';
             const rotY = orientamento(k);
 
@@ -845,6 +886,48 @@
         }
 
         return layout;
+    }
+
+    // IL CORONAMENTO DELLA FILA DEI BOX (spec 2026-09-02).
+    //
+    // Dove nasce un edificio della corsia box nasce il suo tetto abitato:
+    // stesso punto, stesso orientamento, quota = quella dell'edificio più la
+    // sua altezza. Non è una fila da posizionare — è una CONSEGUENZA — e per
+    // questo non può aprirsi a ventaglio in curva né perdere un pezzo per
+    // strada: eredita per intero il lavoro già fatto sugli edifici, compreso
+    // lo scostamento con cui si tolgono dalla corsia dove lei rientra su se
+    // stessa.
+    //
+    // ⚠️ Si genera DOPO la traslazione della scenografia. Gli edifici portano
+    // `natoSullaCorsia` e vengono spostati; un coronamento nato prima
+    // seguirebbe una strada sua — è lo stesso motivo per cui la folla nasce
+    // dopo la traslazione e non prima.
+    //
+    // Non serve nessuna esenzione ai controlli di compenetrazione:
+    // SceneryAssetSizes.itemsOverlap confronta già le quote, quindi un modulo
+    // appoggiato su un tetto non urta ciò che gli sta sotto.
+    const CORONAMENTO = {
+        pitsGarageClosed: 'pitRoofTerrace',
+        pitsOffice: 'pitRoofLounge',
+    };
+
+    function coronamentoDeiBox(layout) {
+        const out = [];
+        for (const v of layout) {
+            const asset = CORONAMENTO[v.asset];
+            if (!asset) continue;
+            // ⚠️ L'altezza si LEGGE dall'ingombro dichiarato, mai scritta a
+            // mano: un numero ricopiato qui resterebbe indietro il giorno in
+            // cui l'edificio cambia, e il tetto resterebbe sospeso o affondato
+            // senza che nessun test se ne accorga.
+            const h = SceneryAssetSizes.sizeOf(v.asset).h * (v.scale || 1);
+            out.push({
+                asset, category: 'paddock-club',
+                x: v.x, y: (v.y || 0) + h, z: v.z,
+                rotY: v.rotY || 0, scale: CUSTOM_MODEL_SCALE,
+            });
+        }
+        return out;
     }
 
     // Tribune distribuite a intervalli regolari lungo il giro, alternando
@@ -1859,6 +1942,11 @@
             }
         }
 
+        // Il coronamento nasce QUI: gli edifici della corsia box sono ormai
+        // dove staranno, e la folla che viene subito dopo lo trova fra le
+        // terrazze senza bisogno di sapere che esiste.
+        layout.push(...coronamentoDeiBox(layout));
+
         // Spettatori DOPO la traslazione, non prima.
         //
         // Ogni posto è espresso in coordinate locali alla tribuna, quindi la
@@ -1882,8 +1970,14 @@
         // Anche loro dopo la traslazione, per la stessa ragione della folla:
         // le ancore sono locali all'oggetto, quindi l'oggetto deve già essere
         // dove starà.
-        const terrazze = infrastrutture.filter(
-            v => v.asset === 'hospitalityDeck' || v.asset === 'vipSuite');
+        // ⚠️ CHI HA LE ANCORE HA UNA TERRAZZA. Qui c'era una lista di asset
+        // scritta a mano (`hospitalityDeck`, `vipSuite`): un asset nuovo con la
+        // sua terrazza nasceva deserto, e nessun test lo diceva. La domanda si
+        // fa al file delle ancore, che è l'unico che lo sa.
+        //
+        // E si guarda TUTTO il layout, non le sole infrastrutture: il
+        // coronamento della fila dei box è altrettanto abitato.
+        const terrazze = layout.filter(v => v.asset && terraceAnchors && terraceAnchors[v.asset]);
         const terraceCrowd = SceneryCrowd.buildTerraceCrowd(
             terrazze, terraceAnchors || {}, mulberry32(hashString(trackData.id + ':terrace')));
 
@@ -2002,7 +2096,11 @@
         //    degli edifici box qui sopra), non scartandole qui.
         // Entrano nel registro senza essere giudicate: gli altri devono
         // VEDERLE, non poterle rimuovere.
-        const NON_SCARTABILI = new Set(['paddock', 'grandstand-main']);
+        //  - il coronamento è la STESSA fila continua, vista da sopra: un buco
+        //    lassù si vede a colpo d'occhio quanto un buco nel fronte dei box,
+        //    e le sue eventuali violazioni si curano spostando l'edificio
+        //    sotto, non scartando il tetto.
+        const NON_SCARTABILI = new Set(['paddock', 'grandstand-main', 'paddock-club']);
         const intoccabili = layout.filter(
             v => v.asset === 'startGantry' || NON_SCARTABILI.has(v.category));
         registro.aggiungiTutti(intoccabili);
@@ -2089,7 +2187,9 @@
         // sia la sua categoria.
         const sedutiRimasti = new Set([...tribuneRimaste]);
         for (const v of passate) {
-            if (v.asset === 'hospitalityDeck' || v.asset === 'vipSuite') {
+            // Stessa domanda di sopra, e per la stessa ragione: chi ha le
+            // ancore ha una terrazza, quale che sia il modulo che l'ha posata.
+            if (v.asset && terraceAnchors && terraceAnchors[v.asset]) {
                 sedutiRimasti.add(v.x.toFixed(2) + ',' + v.z.toFixed(2));
             }
         }

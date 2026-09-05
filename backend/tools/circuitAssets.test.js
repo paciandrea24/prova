@@ -31,6 +31,26 @@ const EXPECTED = {
     billboardLow:      { w: 16, h: 4.5, d: 1.4 },
     pitsGarageClosed:  { w: 12.9, h: 9, d: 14 },
     pitsOffice:        { w: 13.0, h: 13, d: 14 },
+    // Il coronamento della fila dei box (spec 2026-09-02). Le misure sono
+    // quelle degli edifici sotto — W 12.3, D 14.0 — perché ci si appoggiano
+    // sopra: un coronamento più largo sporgerebbe nel vuoto, uno più stretto
+    // lascerebbe vedere il tetto nudo.
+    pitRoofTerrace:    { w: 12.9, h: 3.6, d: 14.6 },
+    pitRoofLounge:     { w: 12.9, h: 4.2, d: 14.6 },
+    // Il palazzo dei box (spec 2026-09-03): quattro fette larghe 7.3 — mezzo
+    // passo di box meno il gioco meccanico — profonde 22 come i box dei
+    // piloti, così il fronte del palazzo e quello dei box coincidono.
+    // pitClubSpan è il solo primo piano: si posa a quota 11, sopra le teste
+    // dei garage, e il suo pivot sta alla base del PRIMO PIANO.
+    // centerTol 1.0: la balconata sporge di 1.6 oltre il fronte, quindi il
+    // centro del bounding box cade spostato in Z di 0.83. Il pivot giusto
+    // resta quello del CORPO — è a sbalzo per definizione, come la tettoia di
+    // grandStandAwning. Una fetta centrata sul proprio ingombro complessivo
+    // starebbe quasi un metro più indietro delle altre.
+    pitClubBay:        { w: 7.3, h: 18.4, d: 22, centerTol: 1.0 },
+    pitClubSpan:       { w: 7.3, h: 7.4,  d: 22, centerTol: 1.0 },
+    pitClubHead:       { w: 7.3, h: 18.4, d: 22, centerTol: 1.0 },
+    pitClubTower:      { w: 7.3, h: 20.4, d: 22, centerTol: 1.0 },
     raceControlTower:  { w: 14, h: 34, d: 12 },
     startGantry:       { w: 34, h: 16, d: 2.4 },
     podium:            { w: 12, h: 9, d: 7 },

@@ -104,6 +104,35 @@
     // ricopiati da f1.js (CURB_W / BARRIER_D), qui perché il profilo deve
     // sapere da dove parte la ghiaia.
     const CURB_W = 2.8;
+
+    // ────────────────────────────────────────────────────────────────────
+    // LE GOMME DAVANTI AL MURO (spec 2026-09-04)
+    //
+    // Sull'arco esterno delle curve, davanti al muro, c'e' un cuscinetto di
+    // pneumatici: l'auto si ferma su quello. Il modello esisteva gia' come
+    // scenografia ma stava DIETRO il muro, invisibile.
+    //
+    // ⚠️ NASCONO SOLO DOVE C'E' SPAZIO. Misurato il 2026-09-04 su tutte e
+    // dodici le piste: la via di fuga e' larga 18.8 in mediana, ma sta sotto
+    // le 5 unita' per un quinto o un terzo del giro, e su citta-prova ovunque
+    // (li' il muro sta attaccato al cordolo per scelta). Un cuscinetto
+    // profondo 2.4 in un tratto da 4.0 lascerebbe 1.6 unita' fra cordolo e
+    // impatto: un muro praticamente sul cordolo. E' anche cio' che si vede in
+    // pista vera — dove lo spazio manca c'e' il guard-rail attaccato, le gomme
+    // stanno in fondo alla ghiaia.
+    const FUGA_MINIMA_GOMME = 8;
+
+    // La profondita' del cuscinetto: quella del modello `tyreStack` che il
+    // giocatore vede.
+    //
+    // ⚠️ SCRITTA QUI E SORVEGLIATA DA UN TEST, non importata da
+    // `sceneryAssetSizes`: quel modulo dipende dalla palette dei colori, e
+    // questo lo carica il SERVER — la fisica delle collisioni non deve
+    // dipendere da come sono tinti gli oggetti. Il test
+    // «il cuscinetto e' profondo quanto il modello che si vede» tiene i due
+    // numeri allineati, ed e' la stessa soluzione della quota del solaio nel
+    // palazzo dei box.
+    const PROFONDITA_GOMME = 2.4;
     const BARRIER_GAP = 1.2;
 
     // La zona di ghiaia si estende oltre gli estremi della curva per coprire
@@ -663,19 +692,56 @@
             out[lato].set(b);
         }
 
-        // Sesta passata: la ghiaia si rifila sul muro. Il livellamento può
-        // aver abbassato la barriera sotto la banda disegnata — è quello che
-        // succede avvicinandosi a un ponte — e una banda che esce da sotto il
-        // muro si vede. Il minimo fra due profili a pendenza limitata resta a
-        // pendenza limitata, quindi rifilare non reintroduce gradini.
+        // ── IL CUSCINETTO DI GOMME ──
+        //
+        // Sull'arco esterno di ogni curva, dove la via di fuga lo consente. Le
+        // curve le trova la stessa funzione che decide la ghiaia: due sistemi
+        // che vedessero curve diverse darebbero un cuscinetto dove la ghiaia
+        // non c'e', e viceversa.
+        out.gomme = { left: new Uint8Array(n), right: new Uint8Array(n) };
+        for (const corner of TrackGeometry.findCorners(trackPts)) {
+            const banda = corner.side > 0 ? out.gomme.right : out.gomme.left;
+            const muri = corner.side > 0 ? out.right : out.left;
+            const archi = ((corner.endIdx - corner.startIdx) % n + n) % n;
+            for (let s = 0; s <= archi; s++) {
+                const i = (corner.startIdx + s) % n;
+                // La via di fuga di QUESTO campione, non quella media della
+                // curva: dentro un arco lungo il muro si avvicina e si
+                // allontana, e il cuscinetto deve seguire il punto.
+                // ⚠️ NEL TUBO NON C'E' MURO, e quindi non c'e' cuscinetto:
+                // buildBarriers apre un varco sui campioni acrobatici perche'
+                // un giro della morte e' chiuso per costruzione. Un cuscinetto
+                // dichiarato li' fermerebbe l'auto 2.4 unita' prima di un muro
+                // che non esiste — un ostacolo invisibile in mezzo al tubo.
+                if (trackPts[i].acrobatico) continue;
+                if (muri[i] - mezzaAl(trackPts, i, roadHalf) < FUGA_MINIMA_GOMME) continue;
+                banda[i] = 1;
+            }
+        }
+
+        // ── LA GHIAIA SI RIFILA SUL MURO, ANZI SULLE GOMME ──
+        //
+        // Il livellamento può aver abbassato la barriera sotto la banda
+        // disegnata — è quello che succede avvicinandosi a un ponte — e una
+        // banda che esce da sotto il muro si vede. Il minimo fra due profili a
+        // pendenza limitata resta a pendenza limitata, quindi rifilare non
+        // reintroduce gradini.
         //
         // È il motivo per cui la ghiaia rifilata esce da QUI e non da
         // gravelProfile: le due grandezze devono essere decise insieme,
         // altrimenti disegno e muro possono contraddirsi.
+        //
+        // ⚠️ Per lo stesso motivo si rifila DOPO il cuscinetto e non prima: il
+        // bordo non è il muro ma il punto d'IMPATTO (spec 2026-09-04). Sotto
+        // un cuscinetto di pneumatici non c'è ghiaia, ci sono le gomme, e una
+        // banda che arrivasse fino al muro spunterebbe da sotto le pile che
+        // dovrebbero coprirla. `impattoAt` si può già interrogare: a questo
+        // punto `out` ha sia i muri sia la banda `gomme`.
         out.gravel = { left: new Float64Array(n), right: new Float64Array(n) };
         for (let i = 0; i < n; i++) {
-            out.gravel.left[i] = Math.max(0, Math.min(gravel.left[i], out.left[i] - bordoCordoloAl(i)));
-            out.gravel.right[i] = Math.max(0, Math.min(gravel.right[i], out.right[i] - bordoCordoloAl(i)));
+            const bordo = bordoCordoloAl(i);
+            out.gravel.left[i] = Math.max(0, Math.min(gravel.left[i], impattoAt(out, i, -1) - bordo));
+            out.gravel.right[i] = Math.max(0, Math.min(gravel.right[i], impattoAt(out, i, 1) - bordo));
         }
         return out;
     }
@@ -683,6 +749,23 @@
     function barrierAt(profile, i, side) {
         const banda = side > 0 ? profile.right : profile.left;
         return banda[((i % banda.length) + banda.length) % banda.length];
+    }
+
+    // Dove si SBATTE: il muro, meno il cuscinetto di gomme dove c'e'.
+    //
+    // ⚠️ E' UN SECONDO NOME, NON UN CAMBIO DI SIGNIFICATO. `barrierAt` continua
+    // a dire dov'e' il MURO, e glielo chiedono in quattordici punti fra
+    // scenografia, mesh e citta': a tutti loro serve il muro. La collisione e'
+    // UNA di quelle quattordici. Cambiare il valore di `barrierAt` avrebbe dato
+    // in silenzio il numero sbagliato agli altri tredici — oggetti posati
+    // dentro le gomme, muro disegnato dove passa l'auto — e sarebbe un difetto
+    // da scoprire in pista invece che in un test.
+    function impattoAt(profile, i, side) {
+        const muro = barrierAt(profile, i, side);
+        if (!profile.gomme) return muro;
+        const banda = side > 0 ? profile.gomme.right : profile.gomme.left;
+        const k = ((i % banda.length) + banda.length) % banda.length;
+        return banda[k] ? muro - PROFONDITA_GOMME : muro;
     }
 
     // Di quanto va spostata verso l'esterno una voce di scenografia calcolata
@@ -704,7 +787,8 @@
 
     return {
         gravelProfile, gravelAt, barrierDistAt,
-        barrierProfile, barrierAt, sceneryShiftAt,
+        barrierProfile, barrierAt, impattoAt, sceneryShiftAt,
+        PROFONDITA_GOMME, FUGA_MINIMA_GOMME,
         RUNOFF_MIN, BARRIER_MIN_ADVANCE, BRIDGE_MARGIN, PIT_STRAIGHT_REACH,
         pitGapSamples, PIT_MERGE_WINDOW,
         cornerSpeed, cornerGravelWidth,

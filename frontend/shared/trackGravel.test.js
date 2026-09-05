@@ -230,6 +230,18 @@ test('barrierProfile: la banda di ghiaia non esce mai da sotto il muro', () => {
     const piena = TrackGravel.gravelProfile(pts, { roadHalf: ROAD_HALF });
     for (let i = 0; i < pts.length; i++) {
         for (const lato of ['left', 'right']) {
+            const side = lato === 'right' ? 1 : -1;
+            if (bar.gomme[lato][i]) {
+                // ⚠️ Dove c'è il cuscinetto la ghiaia si accorcia lo stesso, e
+                // non sul muro: sulle GOMME (spec 2026-09-04). Non è il muro
+                // che le toglie spazio — è che sotto le pile non c'è ghiaia,
+                // ci sono le gomme. Sull'ovale vale 0.44 unità.
+                const atteso = Math.max(0, Math.min(piena[lato][i],
+                    TrackGravel.impattoAt(bar, i, side) - BORDO_CORDOLO));
+                assert.ok(Math.abs(bar.gravel[lato][i] - atteso) < 1e-9,
+                    `campione ${i} ${lato}: ghiaia ${bar.gravel[lato][i].toFixed(2)}, attesa ${atteso.toFixed(2)} (fin sotto le gomme)`);
+                continue;
+            }
             assert.ok(Math.abs(bar.gravel[lato][i] - piena[lato][i]) < 1e-9,
                 `campione ${i} ${lato}: ghiaia ${bar.gravel[lato][i].toFixed(2)}, attesa ${piena[lato][i].toFixed(2)}`);
         }
@@ -620,4 +632,148 @@ test('sul fianco alto non resta un bordino di ghiaia largo un cordolo', () => {
         const banda = latoAlto > 0 ? prof.gravel.right[i] : prof.gravel.left[i];
         assert.equal(banda, 0, `campione ${i}: ${banda.toFixed(2)} unità di ghiaia sul fianco alto`);
     }
+});
+
+// --- LE GOMME DAVANTI AL MURO (spec 2026-09-04) --------------------------
+//
+// La barriera di pneumatici esisteva gia' come scenografia, posata DIETRO il
+// muro e quindi invisibile: si vedeva il muro, si sbatteva sul muro. Da oggi
+// sta davanti e ferma lei l'auto, e il profilo dice dove c'e' e di quanto si
+// sbatte prima.
+const fsGomme = require('fs');
+const pathGomme = require('path');
+const { loadTrack: loadTrackGomme } = require('../../backend/sockets/games/trackLoader.js');
+const SizesGomme = require('./sceneryAssetSizes.js');
+
+const PISTE_GOMME = fsGomme.readdirSync(pathGomme.join(__dirname, '..', 'tracks'))
+    .filter(f => f.endsWith('.json') && !/^(__|test-)/.test(f))
+    .map(f => f.replace(/\.json$/, ''));
+
+test('il cuscinetto e\' profondo quanto il modello che si vede', () => {
+    // ⚠️ IL NUMERO E' SCRITTO A MANO IN trackGravel, ed e' questo test a
+    // tenerlo onesto. Non si importa `sceneryAssetSizes` da li': quel modulo
+    // dipende dalla palette dei colori, e trackGravel lo carica il SERVER —
+    // la fisica delle collisioni non deve dipendere da come sono tinti gli
+    // oggetti. Stessa soluzione della quota del solaio nel palazzo dei box:
+    // costante in chiaro, misura che la sorveglia.
+    assert.ok(Math.abs(TrackGravel.PROFONDITA_GOMME - SizesGomme.sizeOf('tyreStack').d) < 0.05,
+        `PROFONDITA_GOMME e' ${TrackGravel.PROFONDITA_GOMME}, il modello e' profondo ${SizesGomme.sizeOf('tyreStack').d}`);
+});
+
+for (const id of PISTE_GOMME) {
+    test(`${id}: dove ci sono gomme si sbatte esattamente un cuscinetto prima`, () => {
+        const t = loadTrackGomme(id);
+        const bp = t.barrierProfile;
+        const raw2 = JSON.parse(fsGomme.readFileSync(
+            pathGomme.join(__dirname, '..', 'tracks', id + '.json'), 'utf8'));
+        assert.ok(bp.gomme, `${id}: il profilo non porta la banda gomme`);
+        let conGomme = 0;
+        for (let i = 0; i < t.points.length; i++) {
+            for (const side of [1, -1]) {
+                const muro = TrackGravel.barrierAt(bp, i, side);
+                const impatto = TrackGravel.impattoAt(bp, i, side);
+                const banda = side > 0 ? bp.gomme.right : bp.gomme.left;
+                if (banda[i]) {
+                    conGomme++;
+                    assert.ok(Math.abs(muro - impatto - TrackGravel.PROFONDITA_GOMME) < 1e-9,
+                        `${id}[${i}/${side}]: muro ${muro.toFixed(2)}, impatto ${impatto.toFixed(2)}`);
+                } else {
+                    assert.ok(Math.abs(muro - impatto) < 1e-9,
+                        `${id}[${i}/${side}]: senza gomme i due profili devono coincidere`);
+                }
+            }
+        }
+        // ⚠️ NON «una pista con curve deve avere gomme», ma «una pista con
+        // curve DOVE C'E' SPAZIO deve averle». Su citta-prova la via di fuga
+        // vale 4.8 su tutto il giro perche' il muro sta attaccato al cordolo
+        // per scelta (27-08): li' un cuscinetto non ci sta, ed e' giusto —
+        // nei cittadini veri, Monaco e Baku, le gomme lungo il muro non ci
+        // sono. Pretenderle avrebbe misurato quella scelta invece del
+        // cuscinetto, come chiedere al palazzo dei box di coprire venti box
+        // dove ce ne stanno quattordici.
+        let spazio = false;
+        for (const corner of TrackGeometry.findCorners(t.points)) {
+            const archi = ((corner.endIdx - corner.startIdx) % t.points.length + t.points.length) % t.points.length;
+            for (let s = 0; s <= archi && !spazio; s++) {
+                const i = (corner.startIdx + s) % t.points.length;
+                const muro = TrackGravel.barrierAt(bp, i, corner.side);
+                if (muro - raw2.roadHalfWidth >= TrackGravel.FUGA_MINIMA_GOMME) spazio = true;
+            }
+        }
+        if (spazio) {
+            assert.ok(conGomme > 0, `${id}: c'e' spazio per il cuscinetto ma non ne nasce nessuno`);
+        }
+    });
+
+    test(`${id}: le gomme non stringono la via di fuga sotto le 5 unita'`, () => {
+        // ⚠️ SOLO I CAMPIONI CON LE GOMME. La via di fuga scende gia' a 2.0 su
+        // prova e suzuka dove il muro sta attaccato al cordolo per scelta, e in
+        // citta' vale 4.8 su tutto il giro: pretendere 5 ovunque misurerebbe
+        // quelle scelte, non il cuscinetto. La regola vera e' che LE GOMME non
+        // devono stringere sotto le 5.
+        const t = loadTrackGomme(id);
+        const raw = JSON.parse(fsGomme.readFileSync(
+            pathGomme.join(__dirname, '..', 'tracks', id + '.json'), 'utf8'));
+        for (let i = 0; i < t.points.length; i++) {
+            for (const side of [1, -1]) {
+                const banda = side > 0 ? t.barrierProfile.gomme.right : t.barrierProfile.gomme.left;
+                if (!banda[i]) continue;
+                const fuga = TrackGravel.impattoAt(t.barrierProfile, i, side) - raw.roadHalfWidth;
+                assert.ok(fuga >= 5 - 1e-9,
+                    `${id}[${i}/${side}]: fra asse e impatto restano ${fuga.toFixed(2)} unita'`);
+            }
+        }
+    });
+
+    test(`${id}: la ghiaia non passa sotto le gomme`, () => {
+        // Sotto un cuscinetto di pneumatici non c'e' ghiaia: ci sono le gomme.
+        // Se la banda continuasse fino al muro vecchio, l'ultimo tratto
+        // resterebbe disegnato SOTTO le pile — e in gioco si vedrebbe la ghiaia
+        // spuntare da sotto la barriera che la copre.
+        const t = loadTrackGomme(id);
+        const bp = t.barrierProfile;
+        const raw = JSON.parse(fsGomme.readFileSync(
+            pathGomme.join(__dirname, '..', 'tracks', id + '.json'), 'utf8'));
+        for (let i = 0; i < t.points.length; i++) {
+            // ⚠️ Il bordo del cordolo si misura CAMPIONE PER CAMPIONE: dove la
+            // pista si allarga, `halfWidth` non e' `roadHalfWidth`, e un solo
+            // numero per tutto il giro direbbe che la ghiaia sfora dove invece
+            // e' la pista a essere piu' larga.
+            const p = t.points[i];
+            const mezza = (p && typeof p.halfWidth === 'number' && p.halfWidth > 0)
+                ? p.halfWidth : raw.roadHalfWidth;
+            const bordoCordolo = mezza + TrackGravel.CURB_W;
+            for (const side of [1, -1]) {
+                const banda = side > 0 ? bp.gomme.right : bp.gomme.left;
+                if (!banda[i]) continue;
+                const fineGhiaia = bordoCordolo + TrackGravel.gravelAt(bp.gravel, i, side);
+                const impatto = TrackGravel.impattoAt(bp, i, side);
+                assert.ok(fineGhiaia <= impatto + 1e-6,
+                    `${id}[${i}/${side}]: la ghiaia arriva a ${fineGhiaia.toFixed(2)}, le gomme a ${impatto.toFixed(2)}`);
+            }
+        }
+    });
+}
+
+test('dentro un giro della morte non c\'e\' cuscinetto di gomme', () => {
+    // Nel tubo non c'e' muro — `buildBarriers` ci apre un varco, perche' un
+    // giro della morte e' chiuso per costruzione e non ha un fuori da cui
+    // trattenere l'auto. Un cuscinetto dichiarato li' e' un ostacolo che
+    // ferma l'auto 2.4 unita' prima di un muro che non esiste: invisibile, e
+    // in mezzo al tubo. Trovato il 2026-09-05 indagando un'altra segnalazione:
+    // erano 15 campioni su `loop-prova`.
+    const t = loadTrackGomme('loop-prova');
+    const bp = t.barrierProfile;
+    const acrobatici = [];
+    for (let i = 0; i < t.points.length; i++) {
+        if (!t.points[i].acrobatico) continue;
+        acrobatici.push(i);
+        for (const side of [1, -1]) {
+            const banda = side > 0 ? bp.gomme.right : bp.gomme.left;
+            assert.equal(banda[i], 0, `cuscinetto nel tubo, campione ${i}`);
+            assert.equal(TrackGravel.impattoAt(bp, i, side), TrackGravel.barrierAt(bp, i, side),
+                `nel tubo si sbatte prima del muro, campione ${i}`);
+        }
+    }
+    assert.ok(acrobatici.length > 20, `solo ${acrobatici.length} campioni acrobatici: la misura e' vuota`);
 });

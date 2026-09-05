@@ -21,6 +21,28 @@ function ctx(overrides) {
     }, overrides);
 }
 
+const TrackGravel = require('./trackGravel.js');
+const { loadTrack } = require('../../backend/sockets/games/trackLoader.js');
+
+// Il profilo vero di monte-rosso, con la sua banda `gomme`: la stessa cosa che
+// legge la fisica. Costruirne uno finto qui vorrebbe dire misurare il finto.
+const monteRossoTrack = loadTrack('monte-rosso');
+
+function ctxConProfilo(overrides) {
+    return ctx(Object.assign({
+        trackPts: monteRossoTrack.points,
+        barrierProfile: monteRossoTrack.barrierProfile,
+    }, overrides));
+}
+
+// Il lato (destro/sinistro del nastro) di un oggetto rispetto al campione che
+// gli sta piu' vicino: la stessa convenzione di segno della fisica
+// (CollisionResolver) e del profilo.
+function latoDi(trackPts, idx, x, z) {
+    const nrm = TrackGeometry.normalAt(trackPts, idx, true);
+    return Math.sign((x - trackPts[idx].x) * nrm.nx + (z - trackPts[idx].z) * nrm.nz) || 1;
+}
+
 test('findCorners trova curve separate e non tutto il tracciato', () => {
     const c = ctx();
     const corners = SceneryTrackside.findCorners(c.trackPts);
@@ -33,7 +55,9 @@ test('findCorners trova curve separate e non tutto il tracciato', () => {
 });
 
 test('le barriere di pneumatici stanno fuori dalla barriera e mai in corsia box', () => {
-    const c = ctx();
+    // Col profilo vero: dal 2026-09-04 le pile nascono solo dove lui dichiara
+    // il cuscinetto, e senza profilo non ne nasce nessuna.
+    const c = ctxConProfilo();
     const items = SceneryTrackside.buildTrackside(c);
     const tyres = items.filter(i => i.asset === 'tyreStack');
     assert.ok(tyres.length > 0, 'nessuna barriera di gomme generata');
@@ -171,4 +195,46 @@ test('due tribune affiancate ricevono due reti contigue, senza sovrapporsi', () 
     assert.equal(reti.length, 2);
     assert.equal(SceneryAssetSizes.itemsOverlap(reti[0], reti[1]), false,
         'le due reti si compenetrano');
+});
+
+// ═══════════ Le gomme che si vedono sono quelle che fermano ═══════════
+//
+// Fino al 2026-09-04 le pile nascevano a `barrierDist + 2.5`, cioe' DIETRO il
+// muro: si vedeva il muro, ci si sbatteva contro, e le gomme erano una fila di
+// modelli nascosti. Adesso la fila che si vede e' la fila che ferma: sta al
+// punto d'impatto del profilo (spec 2026-09-04), e nasce solo dove il profilo
+// dichiara il cuscinetto.
+test('ogni pila di gomme sta dove l\'auto si ferma, non oltre il muro', () => {
+    const c = ctxConProfilo();
+    const gomme = SceneryTrackside.buildTrackside(c).filter(i => i.asset === 'tyreStack');
+    assert.ok(gomme.length > 0, 'nessuna pila generata');
+    for (const g of gomme) {
+        const q = TrackGeometry.nearestPoint(c.trackPts, g.x, g.z);
+        const side = latoDi(c.trackPts, q.index, g.x, g.z);
+        const impatto = TrackGravel.impattoAt(c.barrierProfile, q.index, side);
+        const meta = TrackGravel.PROFONDITA_GOMME / 2;
+        assert.ok(Math.abs(q.dist - (impatto + meta)) < 1.5,
+            `una pila sta a ${q.dist.toFixed(2)} mentre si sbatte a ${impatto.toFixed(2)}`);
+    }
+});
+
+test('non nascono gomme dove il profilo non le prevede', () => {
+    const c = ctxConProfilo();
+    const gomme = SceneryTrackside.buildTrackside(c).filter(i => i.asset === 'tyreStack');
+    for (const g of gomme) {
+        const q = TrackGeometry.nearestPoint(c.trackPts, g.x, g.z);
+        const side = latoDi(c.trackPts, q.index, g.x, g.z);
+        const banda = side > 0 ? c.barrierProfile.gomme.right : c.barrierProfile.gomme.left;
+        assert.equal(banda[q.index], 1,
+            `una pila a (${g.x.toFixed(0)}, ${g.z.toFixed(0)}) dove il profilo non ha cuscinetto`);
+    }
+});
+
+test('senza profilo di barriera non nasce nessuna pila', () => {
+    // Editor, banco prova, chiamanti storici: senza profilo non esiste un
+    // punto d'impatto, e posare le gomme "circa li'" vorrebbe dire far
+    // sbattere l'auto su un muro invisibile dietro di loro.
+    const gomme = SceneryTrackside.buildTrackside(ctx({ barrierProfile: null }))
+        .filter(i => i.asset === 'tyreStack');
+    assert.equal(gomme.length, 0, `${gomme.length} pile senza profilo`);
 });

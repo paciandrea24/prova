@@ -228,24 +228,22 @@
     }
 
     // Divide i punti campionati (chiusi, come trackPts) in spezzoni "a terra"
-    // (non-ponte) e "ponte": un ponte non genera terrapieno/prato proprio
-    // (li ignora, il terreno resta quello vero sotto), uno spezzone a terra
-    // continua a funzionare come nella Fase 1. Se non c'è nessun punto ponte,
-    // un solo spezzone chiuso copre l'intero giro (nessuna differenza
-    // rispetto a prima di questa funzione). La scansione parte sempre
-    // dall'inizio di uno spezzone a terra (non da un indice arbitrario):
+    // e spezzoni staccati da terra, secondo il predicato `staccato`. Se non ce
+    // n'è nessuno, un solo spezzone chiuso copre l'intero giro (nessuna
+    // differenza rispetto a prima di questa funzione). La scansione parte
+    // sempre dall'inizio di uno spezzone a terra (non da un indice arbitrario):
     // partire a metà di uno spezzone lo spezzerebbe in due pezzi ai lati del
     // bordo dell'array — un bug reale trovato scrivendo i test di questa
     // funzione.
-    function splitByBridge(trackPts) {
+    function spezzoni(trackPts, staccato) {
         const n = trackPts.length;
-        if (!trackPts.some(p => p.bridge)) {
+        if (!trackPts.some(staccato)) {
             return { groundRuns: [{ indices: trackPts.map((_, i) => i), closed: true }], bridgeRuns: [] };
         }
 
         let first = 0;
         for (let i = 0; i < n; i++) {
-            if (!trackPts[i].bridge && trackPts[(i - 1 + n) % n].bridge) { first = i; break; }
+            if (!staccato(trackPts[i]) && staccato(trackPts[(i - 1 + n) % n])) { first = i; break; }
         }
 
         const groundRuns = [];
@@ -262,13 +260,35 @@
 
         for (let k = 0; k < n; k++) {
             const idx = (first + k) % n;
-            const isBridge = !!trackPts[idx].bridge;
+            const isBridge = staccato(trackPts[idx]);
             if (isBridge !== currentIsBridge) { flush(); currentIsBridge = isBridge; }
             current.push(idx);
         }
         flush();
 
         return { groundRuns, bridgeRuns };
+    }
+
+    // I PONTI: un ponte non genera terrapieno/prato proprio (il terreno resta
+    // quello vero sotto), e i suoi spezzoni sono quelli che vogliono un
+    // impalcato e dei piloni.
+    //
+    // ⚠️ QUI I TRATTI ACROBATICI NON CONTANO. Per un giorno (2026-09-05) hanno
+    // contato, e `buildBridgeDecks` ha cominciato a piantare piloni sotto il
+    // giro della morte: l'utente li ha visti dall'interno del loop, «cose
+    // strane tipo gradini o forse sono dei pilastri». Un tubo che si rovescia
+    // non si regge su piloni.
+    function splitByBridge(trackPts) {
+        return spezzoni(trackPts, (p) => !!p.bridge);
+    }
+
+    // CIO' CHE NON STA A TERRA, ponti e tratti acrobatici insieme: e' la
+    // domanda che si fa il terrapieno, che deve sapere dove il terreno si
+    // interrompe. Il tubo del giro della morte non sta a terra piu' di un
+    // cavalcavia, e un terrapieno disegnato attorno ai suoi campioni finisce
+    // in mezzo alla pista sotto — 104 vertici su `loop-prova`.
+    function splitBySospeso(trackPts) {
+        return spezzoni(trackPts, (p) => !!(p.bridge || p.acrobatico));
     }
 
     // Giri necessari per coprire (circa) targetKm, dati in metri = unità di
@@ -1499,6 +1519,7 @@
         nearestPoint,
         terrainHeightAt,
         splitByBridge,
+        splitBySospeso,
         tangentAt,
         normalAt,
         pendenzaAt,
