@@ -38,11 +38,14 @@
     const TABELLA = {
         // dove cade su `prova`, rispetto al giro umano di 47.30 s:
         facile:    { ritmoMin: 0.905, ritmoMax: 0.925, rumoreMin: 0.16, rumoreMax: 0.22,  // +5.02 / +5.80 s
-                     margineSorpasso: 1.04, frazioneMinimaInScia: 0.75, forzaDifesa: 1.5 },
+                     margineSorpasso: 1.04, frazioneMinimaInScia: 0.75, forzaDifesa: 1.5,
+                     erroriPerGiro: 1.2 },
         medio:     { ritmoMin: 0.945, ritmoMax: 0.965, rumoreMin: 0.08, rumoreMax: 0.14,  // +3.67 / +4.38 s
-                     margineSorpasso: 1.01, frazioneMinimaInScia: 0.85, forzaDifesa: 3.0 },
+                     margineSorpasso: 1.01, frazioneMinimaInScia: 0.85, forzaDifesa: 3.0,
+                     erroriPerGiro: 0.4 },
         difficile: { ritmoMin: 0.985, ritmoMax: 1.000, rumoreMin: 0.00, rumoreMax: 0.06,  // +1.85 / +3.23 s
-                     margineSorpasso: 1.00, frazioneMinimaInScia: 0.92, forzaDifesa: 4.5 },
+                     margineSorpasso: 1.00, frazioneMinimaInScia: 0.92, forzaDifesa: 4.5,
+                     erroriPerGiro: 0.05 },
     };
 
     // ⚠️ Tutto cio' che non e' esattamente uno dei tre livelli vale `medio`:
@@ -83,7 +86,12 @@
                  // mezza carreggiata e' 11 e i bot lasciano 16.4 unita'
                  // libere da un lato. 4.5 ne copre poco piu' di un quarto:
                  // e' una difesa, non un muro.
-                 forzaDifesa: t.forzaDifesa };
+                 forzaDifesa: t.forzaDifesa,
+                 // Quanti errori attendersi in un giro. Non e' zero
+                 // nemmeno a difficile: un pilota che non sbaglia MAI non
+                 // e' credibile. Uno ogni venti giri e' abbastanza raro
+                 // da non dare fastidio a chi sceglie il livello alto.
+                 erroriPerGiro: t.erroriPerGiro };
     }
 
     return { LIVELLI, PREDEFINITO, normalizza, intervalliDi, soglieDi };

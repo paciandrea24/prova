@@ -7,7 +7,7 @@ const {
     pickPostPitCompound, pickBotColors, estimateFinishTime,
     updateBotInputs, DEFAULT_TUNING, shouldBotRepair, trajectoryDiagnostics,
     adaptiveLookaheadMeters, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
-    computeSoloRacingLineInputs
+    computeSoloRacingLineInputs, aggiornaErrore
 } = require('./f1Bot.js');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 
@@ -1434,4 +1434,53 @@ test('ogni bot ha una sua idea di traiettoria', () => {
     // uno scostamento generoso non sarebbe varieta' ma lentezza.
     assert.ok(Math.max(...offset.map(Math.abs)) <= 2,
         'scostamento troppo largo: e\' lentezza, non varieta\'');
+});
+
+// ═══════════ GLI ERRORI DELL'AI (spec 2026-09-05) ═══════════
+test('a facile i bot sbagliano, a difficile quasi mai', () => {
+    // ⚠️ Lo STESSO flusso di numeri casuali per i due livelli: cosi' a
+    // decidere e' la soglia, non la fortuna. Con Math.random questo test
+    // sarebbe statistico, e a facile uscirebbe zero errori una volta ogni
+    // venti esecuzioni: un rosso che non significa niente.
+    function erroriIn(livello) {
+        const g = partitaConLivello(livello, 4);
+        creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+        const soglia = F1Difficolta.soglieDi(livello).erroriPerGiro;
+        let seme = 987654321;
+        const rng = () => { seme = (seme * 1103515245 + 12345) % 2147483648; return seme / 2147483648; };
+        let quanti = 0;
+        for (const p of Object.values(g.players)) {
+            // 1200 tick = un minuto, circa un giro di `prova`.
+            for (let t = 0; t < 1200; t++) {
+                if (aggiornaErrore(p, soglia, 50, 50000, rng)) quanti++;
+            }
+        }
+        return quanti;
+    }
+    const facile = erroriIn('facile');
+    const difficile = erroriIn('difficile');
+    assert.ok(facile > 0, 'a facile non ha sbagliato nessuno in un giro intero');
+    assert.ok(facile > difficile * 3,
+        `a facile si deve sbagliare molto piu' spesso (facile ${facile}, difficile ${difficile})`);
+});
+
+test('un errore dura un attimo e poi passa', () => {
+    // ⚠️ Un errore che non scade e' un bot rotto per il resto della gara.
+    const p = {};
+    const sempre = () => 0;      // scatta al primo tick utile
+    assert.equal(aggiornaErrore(p, 1, 50, 50000, sempre), true, 'non e\' partito');
+    // Quanti tick passano prima che ne possa partire un altro: e' la durata
+    // dell'errore, e si misura invece di darla per buona.
+    let tick = 0;
+    while (!aggiornaErrore(p, 1, 50, 50000, sempre) && tick < 200) tick++;
+    assert.equal(tick * 50, 900, 'l\'errore non dura i 900 ms dichiarati');
+});
+
+test('in qualifica non si sbaglia mai', () => {
+    // ⚠️ Un giro secco rovinato dal caso falsa la griglia, e la griglia
+    // decide la gara. Gli errori sono roba da gara, non da qualifica.
+    const { game, p } = makeGripAwarenessGame(0, 'qualifying');
+    game.settings = { botDifficolta: 'facile' };
+    for (let t = 0; t < 400; t++) updateBotInputs(game, makeGripAwarenessDeps());
+    assert.ok(!p.botErroreFinoMs, 'un bot ha sbagliato in qualifica');
 });

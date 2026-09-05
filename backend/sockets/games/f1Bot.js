@@ -1072,6 +1072,43 @@ function trajectoryDiagnostics(p, track) {
     };
 }
 
+// ═══════════ L'ERRORE UMANO ═══════════
+//
+// Un errore dura poco e costa qualche decimo: il bot allarga in uscita di
+// curva o frena troppo tardi. Non finisce in ghiaia.
+//
+// ⚠️ COSTA TEMPO, NON LA GARA (spec 2026-09-05, invariante 6). Un bot che
+// sbaglia deve restare dentro i limiti della pista: e' la differenza fra un
+// avversario divertente e uno rotto. Se questi numeri crescono, la misura da
+// rifare e' quella dei tick fuori dal cordolo, non la sensazione.
+const BOT_ERRORE_DURATA_MS = 900;
+const BOT_ERRORE_STERZO = 0.25;    // quanto allarga, in frazione di sterzo
+const BOT_ERRORE_FRENO = 0.15;     // quanto ritarda la frenata
+
+// Decide se comincia un errore, e lo fa scadere. Restituisce true nel tick in
+// cui un errore COMINCIA — cosi' si puo' contare senza guardare dentro `p`.
+//
+// `giroMs` e' quanto dura un giro: chi chiama lo stima dalla velocita' di
+// adesso (lapLength / speed * tickMs), e non da un tempo fisso, perche'
+// «un errore e mezzo a giro» deve valere uguale su una pista da 50 secondi
+// e su una da tre minuti.
+//
+// `rng` esiste per i test: con Math.random il conteggio degli errori sarebbe
+// statistico, e un test statistico su una soglia bassa e' un rosso che arriva
+// una volta ogni venti esecuzioni senza voler dire niente.
+function aggiornaErrore(p, erroriPerGiro, tickMs, giroMs, rng) {
+    const caso = rng || Math.random;
+    p.botOrologioMs = (p.botOrologioMs || 0) + tickMs;
+    // Un errore alla volta: dentro uno che dura non ne parte un altro sopra.
+    if (p.botErroreFinoMs && p.botErroreFinoMs >= p.botOrologioMs) return false;
+    const perTick = (erroriPerGiro || 0) * tickMs / (giroMs || 50000);
+    if (caso() >= perTick) return false;
+    p.botErroreFinoMs = p.botOrologioMs + BOT_ERRORE_DURATA_MS;
+    // Meta' delle volte allarga, meta' frena tardi.
+    p.botErroreTipo = caso() < 0.5 ? 'allarga' : 'frenata';
+    return true;
+}
+
 function updateBotInputs(game, deps) {
     const {
         effectiveMaxSpeed, handlePitReactionPress, io, lobbyId, wearLapsAtMedium,
@@ -1575,6 +1612,26 @@ function updateBotInputs(game, deps) {
         // lettura del valore `brake` già deciso sopra, nessun nuovo calcolo.
         if (botState === 'CRUISE' && brake > 0) botState = 'BRAKE_FOR_CORNER';
 
+        // L'ERRORE UMANO (spec 2026-09-05): ai livelli bassi ogni tanto il
+        // bot allarga l'uscita o ritarda la frenata. La durata dell'errore
+        // scorre sull'orologio del bot, quindi qui si chiama SEMPRE, anche
+        // quando non ne sta facendo uno.
+        //
+        // ⚠️ Mai in qualifica: un giro secco rovinato dal caso falsa la
+        // griglia, e la griglia decide la gara. Mai in corsia box: li'
+        // sbagliare non costa decimi, costa una penalita'.
+        if (!isQuali && !inCorsiaBox) {
+            // Quanto dura un giro, alla velocita' di adesso: cosi'
+            // `erroriPerGiro` vale uguale su piste di lunghezza diversa.
+            const giroMs = track.lapLength / Math.max(p.speed, 0.5) * 50;
+            aggiornaErrore(p, aggro.erroriPerGiro, 50, giroMs);
+            if (p.botErroreFinoMs >= (p.botOrologioMs || 0)) {
+                if (p.botErroreTipo === 'allarga') steer *= 1 - BOT_ERRORE_STERZO;
+                else brake *= 1 - BOT_ERRORE_FRENO;
+                botState = 'MISTAKE';
+            }
+        }
+
         const noiseScale = nearPitEntry ? BOT_PIT_APPROACH_NOISE_SCALE : 1;
         steer += (Math.random() * 2 - 1) * p.botPrecisionNoise * noiseScale;
         steer = Math.max(-1, Math.min(1, steer));
@@ -1607,5 +1664,5 @@ module.exports = {
     createBots, updateBotInputs, shouldBotRepair,
     BOT_CURVATURE_LOCAL_M, BOT_APEX_MAX_FRACTION, trajectoryDiagnostics,
     adaptiveLookaheadMeters, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
-    BOT_ADAPTIVE_LOOKAHEAD_T_MIN, computeSoloRacingLineInputs, BOT_GRIP_CAPACITY_EXPONENT
+    BOT_ADAPTIVE_LOOKAHEAD_T_MIN, computeSoloRacingLineInputs, BOT_GRIP_CAPACITY_EXPONENT, aggiornaErrore
 };

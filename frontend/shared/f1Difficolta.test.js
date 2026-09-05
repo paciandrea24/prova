@@ -80,3 +80,21 @@ test('la difesa cresce col livello', () => {
         assert.ok(F1Difficolta.soglieDi(l).forzaDifesa < 5.5, l + ': difesa troppo larga');
     }
 });
+
+test('si sbaglia di piu\' ai livelli bassi, ma mai zero', () => {
+    const f = F1Difficolta.soglieDi('facile');
+    const m = F1Difficolta.soglieDi('medio');
+    const d = F1Difficolta.soglieDi('difficile');
+    assert.ok(f.erroriPerGiro > m.erroriPerGiro, 'a facile si deve sbagliare piu\' che a medio');
+    assert.ok(m.erroriPerGiro > d.erroriPerGiro, 'a medio si deve sbagliare piu\' che a difficile');
+    // ⚠️ Nemmeno a difficile e' zero: un pilota che non sbaglia MAI non e'
+    // credibile. Ma resta sotto uno ogni due giri (invariante 7 della spec),
+    // altrimenti chi sceglie il livello alto vince per gli errori altrui.
+    assert.ok(d.erroriPerGiro > 0, 'a difficile non sbagliano mai: non e\' credibile');
+    assert.ok(d.erroriPerGiro < 0.5, 'a difficile si sbaglia troppo per un livello alto');
+    // E a facile non si diventa uno spettacolo di uscite di pista: misurato
+    // sul banco, 1.2 errori a giro fanno +0.3 punti di tick fuori dal
+    // cordolo (9.2% contro 8.9%). Sopra i due errori a giro non e' piu' stato
+    // misurato niente, e quindi non ci si va.
+    assert.ok(f.erroriPerGiro <= 2, 'a facile si sbaglia oltre quanto sia stato misurato');
+});

@@ -75,7 +75,14 @@ function garaDiBot(trackId, opzioni) {
             // Dove sta rispetto all'asse: il segno dice il lato, e su una
             // curva dice se sta all'interno o all'esterno.
             const q = TrackGeometry.nearestPoint(track.points, p.x, p.z);
-            scostamenti.push({ i: q.index, d: q.dist, x: p.x, z: p.z, colore: p.color });
+            // ⚠️  serve a NON contare come uscita di pista chi sta
+            // facendo una sosta: in corsia box la distanza dall'asse arriva
+            // a 63 unita' contro le 11 della mezza carreggiata, e senza
+            // questo campo ogni misura di traiettoria conta le soste come
+            // errori (successo il 2026-09-05, con numeri credibili e falsi).
+            scostamenti.push({ i: q.index, d: q.dist, x: p.x, z: p.z, colore: p.color,
+                               pit: !!(p.pitting || p.botHeadingToPits || s.startsWith('PIT')),
+                               stato: s });
         }
         // Un sorpasso e' uno scambio fra due vicini in classifica.
         const adesso = ordine();
