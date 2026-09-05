@@ -1270,6 +1270,11 @@ function resetStatoAuto(p) {
         p.damageParts.frontWing, p.damageParts.floor,
         p.damageParts.engine, p.damageParts.suspension
     );
+    // ⚠️ Lo stato della difesa va azzerato come tutto il resto: un bot che
+    // stava coprendo qualcuno alla bandiera comincerebbe la sessione dopo
+    // spostato di lato, senza nessuno dietro e senza sapere perche'.
+    p.botScostamentoDifesa = 0;
+    p.botUltimoCambioDifesa = 0;
     p.collisionPenaltyMs = 0;
     p.pendingRepair = false;
     if (p.carContacts) p.carContacts.clear();

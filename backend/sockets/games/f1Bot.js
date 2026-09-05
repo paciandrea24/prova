@@ -9,6 +9,7 @@ const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 const BoxIngresso = require('../../../frontend/shared/f1BoxIngresso.js');
 const Stagione = require('./f1Stagione.server.js');
 const F1Difficolta = require('../../../frontend/shared/f1Difficolta.js');
+const F1Duelli = require('../../../frontend/shared/f1Duelli.js');
 
 // Palette colori — DEVE restare in sync con frontend/index.js →
 // availableColors: i colori sono l'identità del giocatore su tutta la
@@ -397,6 +398,48 @@ function nearestBehindPlayer(p, allPlayers, track) {
     const nrm = TrackGeometry.normalAt(track.points, idx, true);
     const lato = Math.sign((best.x - centro.x) * nrm.nx + (best.z - centro.z) * nrm.nz) || 1;
     return { player: best, gapM: bestGap, lato, affiancato: bestGap < BOT_AFFIANCATO_M };
+}
+
+// LA DIFESA: chi ho dietro, da che parte arriva, e di quanto mi sposto per
+// coprirlo.
+//
+// ⚠️ SI SPOSTA LA TRAIETTORIA, MAI LA VELOCITA'. Un bot che frena per restare
+// davanti e' cio' che i giocatori riconoscono come «AI che bara»: qui dentro
+// `targetSpeed` non compare, ed e' voluto.
+//
+// Vive in una funzione e non dentro updateBotInputs perche' i rami di guida
+// sono DUE — con racing line e geometrico, per le piste che non ce l'hanno —
+// e una difesa che valesse solo su uno funzionerebbe a seconda della pista.
+//
+// Restituisce null se non c'e' niente da fare: chi chiama tiene il suo sterzo.
+function difendiSePossibile(p, game, track, aggro, target, steerGain) {
+    const dietro = nearestBehindPlayer(p, Object.values(game.players), track);
+    const adessoMs = (game.raceTick || 0) * 50;
+    const difesa = F1Duelli.scostamentoDifensivo({
+        latoAttaccante: dietro ? dietro.lato : 0,
+        gapM: dietro ? dietro.gapM : Infinity,
+        finestraM: BOT_FOLLOW_GAP_M,
+        forza: aggro.forzaDifesa,
+        scostamentoAttuale: p.botScostamentoDifesa || 0,
+        affiancato: !!(dietro && dietro.affiancato),
+        ultimoCambioMs: p.botUltimoCambioDifesa || 0,
+        adessoMs,
+    });
+    const prima = p.botScostamentoDifesa || 0;
+    if (difesa.scostamento !== 0 && Math.sign(difesa.scostamento) !== Math.sign(prima)) {
+        p.botUltimoCambioDifesa = adessoMs;
+    }
+    p.botScostamentoDifesa = difesa.scostamento;
+    if (difesa.scostamento === 0) return null;
+    const nrm = TrackGeometry.normalAt(track.points, p.trackIndex || 0, true);
+    const bersaglio = {
+        x: target.x + nrm.nx * difesa.scostamento,
+        z: target.z + nrm.nz * difesa.scostamento,
+    };
+    return {
+        steer: steerToward(p.x, p.z, p.angle, bersaglio.x, bersaglio.z, steerGain),
+        debugTarget: bersaglio,
+    };
 }
 
 // Velocità-obiettivo "vera" (guardando avanti sulla propria traiettoria) di
@@ -1371,6 +1414,14 @@ function updateBotInputs(game, deps) {
                     }
                 }
             }
+
+            // La difesa vale su tutti e due i rami di guida: una pista senza
+            // racing line non e' una pista dove non ci si difende.
+            if (!isQuali && botState !== 'OVERTAKING') {
+                const dif = difendiSePossibile(p, game, track, aggro, target, rt.steerGain);
+                if (dif) { steer = dif.steer; debugTarget = dif.debugTarget; botState = 'DEFENDING'; }
+            }
+
             debugTargetSpeed = targetSpeed;
 
             // Controllo proporzionale (non on/off): la racing line è stata
@@ -1480,6 +1531,13 @@ function updateBotInputs(game, deps) {
                     }
                 }
             }
+            // La difesa vale su tutti e due i rami di guida: una pista senza
+            // racing line non e' una pista dove non ci si difende.
+            if (!isQuali && botState !== 'OVERTAKING') {
+                const dif = difendiSePossibile(p, game, track, aggro, target, tuning.steerGain);
+                if (dif) { steer = dif.steer; debugTarget = dif.debugTarget; botState = 'DEFENDING'; }
+            }
+
             debugTargetSpeed = targetSpeed;
 
             if (p.speed < targetSpeed * (1 - BOT_SPEED_MARGIN)) throttle = 1;
@@ -1500,6 +1558,10 @@ function updateBotInputs(game, deps) {
         p.inputs = { throttle, brake, steer };
         p._botDebug = debugEnabled ? {
             state: botState,
+            // Di quanto si sta spostando per coprire chi ha dietro: serve al
+            // banco prova per contare le difese, e al Bot Inspector per
+            // farle vedere mentre succedono.
+            scostamentoDifensivo: p.botScostamentoDifesa || 0,
             speed: p.speed,
             targetSpeed: debugTargetSpeed,
             maxSpeed: debugMaxSpeed,

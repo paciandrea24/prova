@@ -1343,3 +1343,82 @@ test('un inseguitore incollato risulta affiancato', () => {
     const r = nearestBehindPlayer(difensore, [difensore, incollato], track);
     assert.equal(r.affiancato, true);
 });
+
+test('un bot che ha qualcuno dietro si sposta a coprirlo, e non rallenta', () => {
+    // ⚠️ Le due cose insieme, e la seconda conta quanto la prima: la difesa
+    // cambia la traiettoria, mai la velocita'. Un bot che frena per restare
+    // davanti e' cio' che i giocatori riconoscono come «AI che bara».
+    function difesaCon(livello, latoAttaccante) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: livello };
+        game.raceTick = 2000;
+        // ⚠️ QUINDICI campioni, non tre: su questa pista finta un campione
+        // vale un metro, e a tre metri l'inseguitore conta come AFFIANCATO —
+        // la difesa allora non scatta apposta, ed e' la regola giusta. Serve
+        // dentro la finestra (30) ma oltre l'affiancamento (8).
+        p.trackIndex = 25;
+        p.x = game.track.points[25].x; p.z = game.track.points[25].z;
+        const iDietro = p.trackIndex - 15;
+        const nrm = TrackGeometry.normalAt(game.track.points, iDietro, true);
+        game.players = {
+            bot1: p,
+            bot2: Object.assign({}, p, {
+                trackIndex: iDietro,
+                x: game.track.points[iDietro].x + nrm.nx * 4 * latoAttaccante,
+                z: game.track.points[iDietro].z + nrm.nz * 4 * latoAttaccante,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+            }),
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return { stato: p._botDebug.state, velocita: p._botDebug.targetSpeed,
+                 scostamento: p._botDebug.scostamentoDifensivo };
+    }
+    // Lo stesso bot senza nessuno dietro: e' il metro per la velocita'.
+    // ⚠️ NELLO STESSO PUNTO DI PISTA. Misurarlo dove parte (campione 5, dritto)
+    // e confrontarlo col difensore (campione 25, in curva) darebbe due
+    // velocita' diverse per la geometria, non per la difesa.
+    const solo = (() => {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: 'difficile' };
+        p.trackIndex = 25;
+        p.x = game.track.points[25].x; p.z = game.track.points[25].z;
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return p._botDebug.targetSpeed;
+    })();
+
+    const daSinistra = difesaCon('difficile', -1);
+    const daDestra = difesaCon('difficile', 1);
+    assert.ok(daSinistra.scostamento < 0, 'chi arriva da sinistra va coperto a sinistra');
+    assert.ok(daDestra.scostamento > 0, 'chi arriva da destra va coperto a destra');
+    assert.equal(daSinistra.stato, 'DEFENDING');
+    assert.ok(Math.abs(daSinistra.velocita - solo) < 1e-9,
+        `difendendo la velocita' e' passata da ${solo} a ${daSinistra.velocita}`);
+});
+
+test('a difficile si copre piu\' che a facile', () => {
+    function scostamentoCon(livello) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: livello };
+        game.raceTick = 2000;
+        // ⚠️ QUINDICI campioni, non tre: su questa pista finta un campione
+        // vale un metro, e a tre metri l'inseguitore conta come AFFIANCATO —
+        // la difesa allora non scatta apposta, ed e' la regola giusta. Serve
+        // dentro la finestra (30) ma oltre l'affiancamento (8).
+        p.trackIndex = 25;
+        p.x = game.track.points[25].x; p.z = game.track.points[25].z;
+        const iDietro = p.trackIndex - 15;
+        const nrm = TrackGeometry.normalAt(game.track.points, iDietro, true);
+        game.players = {
+            bot1: p,
+            bot2: Object.assign({}, p, {
+                trackIndex: iDietro,
+                x: game.track.points[iDietro].x + nrm.nx * 4,
+                z: game.track.points[iDietro].z + nrm.nz * 4,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+            }),
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return Math.abs(p._botDebug.scostamentoDifensivo);
+    }
+    assert.ok(scostamentoCon('difficile') > scostamentoCon('facile'));
+});

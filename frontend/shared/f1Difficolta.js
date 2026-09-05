@@ -38,11 +38,11 @@
     const TABELLA = {
         // dove cade su `prova`, rispetto al giro umano di 47.30 s:
         facile:    { ritmoMin: 0.905, ritmoMax: 0.925, rumoreMin: 0.16, rumoreMax: 0.22,  // +5.02 / +5.80 s
-                     margineSorpasso: 1.04, frazioneMinimaInScia: 0.75 },
+                     margineSorpasso: 1.04, frazioneMinimaInScia: 0.75, forzaDifesa: 1.5 },
         medio:     { ritmoMin: 0.945, ritmoMax: 0.965, rumoreMin: 0.08, rumoreMax: 0.14,  // +3.67 / +4.38 s
-                     margineSorpasso: 1.01, frazioneMinimaInScia: 0.85 },
+                     margineSorpasso: 1.01, frazioneMinimaInScia: 0.85, forzaDifesa: 3.0 },
         difficile: { ritmoMin: 0.985, ritmoMax: 1.000, rumoreMin: 0.00, rumoreMax: 0.06,  // +1.85 / +3.23 s
-                     margineSorpasso: 1.00, frazioneMinimaInScia: 0.92 },
+                     margineSorpasso: 1.00, frazioneMinimaInScia: 0.92, forzaDifesa: 4.5 },
     };
 
     // ⚠️ Tutto cio' che non e' esattamente uno dei tre livelli vale `medio`:
@@ -77,7 +77,13 @@
     function soglieDi(livello) {
         const t = TABELLA[normalizza(livello)];
         return { margineSorpasso: t.margineSorpasso,
-                 frazioneMinimaInScia: t.frazioneMinimaInScia };
+                 frazioneMinimaInScia: t.frazioneMinimaInScia,
+                 // Di quanto ci si sposta per coprire chi arriva da dietro,
+                 // in unita' di pista. ⚠️ Da leggere contro la misura: la
+                 // mezza carreggiata e' 11 e i bot lasciano 16.4 unita'
+                 // libere da un lato. 4.5 ne copre poco piu' di un quarto:
+                 // e' una difesa, non un muro.
+                 forzaDifesa: t.forzaDifesa };
     }
 
     return { LIVELLI, PREDEFINITO, normalizza, intervalliDi, soglieDi };

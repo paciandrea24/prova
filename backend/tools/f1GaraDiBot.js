@@ -59,7 +59,7 @@ function garaDiBot(trackId, opzioni) {
     const ordine = () => bot.slice().sort((a, b) => avanzamento(b) - avanzamento(a)).map(p => p.color);
 
     const stati = {};
-    let sorpassi = 0, tickAttaccati = 0, tickTotali = 0;
+    let sorpassi = 0, tickAttaccati = 0, tickTotali = 0, difese = 0, scostamentoDifesa = 0;
     const scostamenti = [];
     let precedente = ordine();
 
@@ -70,7 +70,8 @@ function garaDiBot(trackId, opzioni) {
         for (const p of bot) {
             const s = (p._botDebug && p._botDebug.state) || '?';
             stati[s] = (stati[s] || 0) + 1;
-            if (s === 'FOLLOWING' || s === 'OVERTAKING') tickAttaccati++;
+            if (s === 'FOLLOWING' || s === 'OVERTAKING' || s === 'DEFENDING') tickAttaccati++;
+            if (s === 'DEFENDING') { difese++; scostamentoDifesa += Math.abs(p._botDebug.scostamentoDifensivo || 0); }
             // Dove sta rispetto all'asse: il segno dice il lato, e su una
             // curva dice se sta all'interno o all'esterno.
             const q = TrackGeometry.nearestPoint(track.points, p.x, p.z);
@@ -85,7 +86,8 @@ function garaDiBot(trackId, opzioni) {
         if (bot.every(p => (p.lap || 0) >= giri)) break;
     }
 
-    return { game, bot, sorpassi, stati, tickAttaccati, tickTotali, scostamenti, track };
+    return { game, bot, sorpassi, stati, tickAttaccati, tickTotali, scostamenti, track,
+             difese, scostamentoMedioDifesa: difese ? scostamentoDifesa / difese : 0 };
 }
 
 if (require.main === module) {
@@ -93,16 +95,16 @@ if (require.main === module) {
     const giri = Number(process.argv[3] || 3);
     console.log('gara di soli bot su ' + trackId + ', ' + giri + ' giri, 6 bot per livello');
     console.log('');
-    console.log('livello'.padEnd(12) + 'cambi di posizione'.padStart(20) +
+    console.log('livello'.padEnd(12) + 'tick in difesa'.padStart(20) +
                 'tick attaccati'.padStart(16) + '   stati');
     for (const livello of ['facile', 'medio', 'difficile']) {
         const r = garaDiBot(trackId, { livello, giri, quanti: 6 });
         const stati = Object.entries(r.stati).sort((a, b) => b[1] - a[1])
             .map(([k, v]) => k + ' ' + (100 * v / (r.tickTotali * r.bot.length)).toFixed(0) + '%')
             .join('  ');
-        console.log(livello.padEnd(12) + String(r.sorpassi).padStart(20) +
+        console.log(livello.padEnd(12) + String(r.difese).padStart(20) +
                     (r.tickAttaccati + ' su ' + r.tickTotali * r.bot.length).padStart(16) +
-                    '   ' + stati);
+                    '   scostamento medio ' + r.scostamentoMedioDifesa.toFixed(2) + '   ' + stati);
     }
 }
 

@@ -67,3 +67,16 @@ test('i valori di oggi restano dentro il livello medio', () => {
     assert.ok(Math.abs(m.margineSorpasso - 1.01) < 0.02);
     assert.ok(Math.abs(m.frazioneMinimaInScia - 0.85) < 0.05);
 });
+
+
+test('la difesa cresce col livello', () => {
+    assert.ok(F1Difficolta.soglieDi('difficile').forzaDifesa >
+              F1Difficolta.soglieDi('medio').forzaDifesa);
+    assert.ok(F1Difficolta.soglieDi('medio').forzaDifesa >
+              F1Difficolta.soglieDi('facile').forzaDifesa);
+    // ⚠️ E resta una difesa, non un muro: sopra meta' carreggiata (11) il
+    // bot occuperebbe la pista invece di coprire una linea.
+    for (const l of F1Difficolta.LIVELLI) {
+        assert.ok(F1Difficolta.soglieDi(l).forzaDifesa < 5.5, l + ': difesa troppo larga');
+    }
+});
