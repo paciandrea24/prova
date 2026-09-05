@@ -1484,3 +1484,34 @@ test('in qualifica non si sbaglia mai', () => {
     for (let t = 0; t < 400; t++) updateBotInputs(game, makeGripAwarenessDeps());
     assert.ok(!p.botErroreFinoMs, 'un bot ha sbagliato in qualifica');
 });
+
+test('chi attacca sceglie il lato dove c\'e\' spazio, non quello deciso alla nascita', () => {
+    // ⚠️ Il test gira sui DUE lati con la STESSA preferenza personale: se il
+    // bot attaccasse sempre dalla parte che si e' scelto alla nascita, uno
+    // dei due casi fallirebbe. Con un lato solo passerebbe per meta' delle
+    // volte anche un codice che la porta non la guarda.
+    function latoDellAttacco(latoDifensore) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: 'difficile' };
+        p.botOvertakeSide = 1;            // preferenza: sempre destra
+        const iDavanti = p.trackIndex + 4;
+        const nrm = TrackGeometry.normalAt(game.track.points, iDavanti, true);
+        game.players = {
+            bot1: p,
+            bot2: Object.assign({}, p, {
+                trackIndex: iDavanti, speed: p.speed * 0.9, botSpeedFactor: 0.9,
+                // Il difensore e' spostato da un lato: la porta e' dall'altro.
+                x: game.track.points[iDavanti].x + nrm.nx * 4 * latoDifensore,
+                z: game.track.points[iDavanti].z + nrm.nz * 4 * latoDifensore,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+            }),
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        assert.equal(p._botDebug.state, 'OVERTAKING', 'non sta nemmeno attaccando');
+        const centro = game.track.points[p.trackIndex];
+        return Math.sign((p._botDebug.target.x - centro.x) * nrm.nx +
+                         (p._botDebug.target.z - centro.z) * nrm.nz);
+    }
+    assert.equal(latoDellAttacco(1), -1, 'difensore a destra: ha attaccato a destra');
+    assert.equal(latoDellAttacco(-1), 1, 'difensore a sinistra: ha attaccato a sinistra');
+});
