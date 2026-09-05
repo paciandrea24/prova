@@ -1295,7 +1295,11 @@
         const material = new THREE.MeshStandardMaterial({
             color: 0xffffff, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide
         });
-        const { groundRuns } = TrackGeometry.splitByBridge(trackPts);
+        // ⚠️ `splitBySospeso` e non `splitByBridge`: al terrapieno serve
+        // sapere dove il terreno si interrompe, e sotto un giro della morte
+        // non c'e' terreno piu' che sotto un cavalcavia. I PONTI veri, quelli
+        // che vogliono impalcato e piloni, sono un'altra domanda.
+        const { groundRuns } = TrackGeometry.splitBySospeso(trackPts);
         // Fin dove il terrapieno di ogni campione può estendersi senza finire
         // sul territorio di un altro tratto di pista, e a che quota riprende
         // il terreno oltre quel confine. Stessa funzione che usa il profilo

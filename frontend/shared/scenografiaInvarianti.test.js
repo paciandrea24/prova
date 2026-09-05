@@ -384,40 +384,68 @@ function latoDi(trackPts, idx, x, z) {
 // All'esterno di una curva stretta l'arco si allarga, e la pila piu' esterna
 // finisce piu' vicina a un campione del rettilineo che segue — dove il muro
 // sta a 13 mentre lei sta a 27. Misurarla di li' fa gridare a un difetto che
-// non c'e' (su `prova` dava uno scarto di 13.62). La domanda giusta e':
-// ESISTE un campione col cuscinetto che la spiega esattamente?
-function campioneCheLaSpiega(trackPts, profilo, g) {
+// non c'e' (su `prova` dava uno scarto di 13.62).
+//
+// ⚠️ E dal 2026-09-05 una pila non coincide nemmeno piu' con un campione: il
+// passo si misura sull'arco e la pila si posa DOVE IL PASSO CADE, anche in
+// mezzo a due campioni — e' cio' che tiene la fila unita. La domanda giusta
+// diventa: la pila sta sulla LINEA del cuscinetto?
+function lineaDelCuscinetto(trackPts, profilo) {
     const meta = TrackGravel.PROFONDITA_GOMME / 2;
+    const punti = [];
     for (let i = 0; i < trackPts.length; i++) {
         for (const side of [1, -1]) {
             const banda = side > 0 ? profilo.gomme.right : profilo.gomme.left;
             if (!banda[i]) continue;
             const { nx, nz } = TrackGeometry.normalAt(trackPts, i, true);
             const d = TrackGravel.impattoAt(profilo, i, side) + meta;
-            const dx = trackPts[i].x + nx * d * side - g.x;
-            const dz = trackPts[i].z + nz * d * side - g.z;
-            if (dx * dx + dz * dz < 0.01) return i;
+            punti.push({ i, side,
+                         x: trackPts[i].x + nx * d * side,
+                         z: trackPts[i].z + nz * d * side });
         }
     }
-    return -1;
+    return punti;
 }
 
-test('ogni pila di gomme nasce da un campione col cuscinetto, al punto d\'impatto', () => {
+// Distanza di una pila dal tratto di linea piu' vicino, fra due campioni
+// CONSECUTIVI dello stesso lato: la pila interpolata ci sta sopra per
+// costruzione, una posata col numero sbagliato no.
+function scartoDallaLinea(linea, g) {
+    let minimo = Infinity;
+    for (let k = 0; k < linea.length; k++) {
+        const a = linea[k];
+        for (const b of [linea[k + 1], linea[k - 1]]) {
+            if (!b || b.side !== a.side || Math.abs(b.i - a.i) > 1) continue;
+            const vx = b.x - a.x, vz = b.z - a.z;
+            const len2 = vx * vx + vz * vz;
+            const t = len2 < 1e-9 ? 0 : Math.max(0, Math.min(1, ((g.x - a.x) * vx + (g.z - a.z) * vz) / len2));
+            const d = Math.hypot(a.x + vx * t - g.x, a.z + vz * t - g.z);
+            if (d < minimo) minimo = d;
+        }
+        const d0 = Math.hypot(a.x - g.x, a.z - g.z);
+        if (d0 < minimo) minimo = d0;
+    }
+    return minimo;
+}
+
+test('ogni pila di gomme sta sulla linea del cuscinetto', () => {
     // Fino al 2026-09-04 stavano a barrierDist + 2.5, cioe' DIETRO il muro:
-    // invisibili. La fila che si vede dev'essere la fila che ferma, e nascere
+    // invisibili. La fila che si vede dev'essere la fila che ferma, e stare
     // solo dove il profilo dichiara il cuscinetto.
     const orfane = [];
     for (const id of PISTE) {
         const { t, layout } = scenografiaDi(id);
         if (!t.barrierProfile || !t.barrierProfile.gomme) continue;
+        const linea = lineaDelCuscinetto(t.points, t.barrierProfile);
         for (const g of layout.filter(v => v.asset === 'tyreStack')) {
-            if (campioneCheLaSpiega(t.points, t.barrierProfile, g) < 0) {
-                const q = TrackGeometry.nearestPoint(t.points, g.x, g.z);
-                orfane.push(`${id}: pila a (${g.x.toFixed(0)}, ${g.z.toFixed(0)}), ${q.dist.toFixed(2)} dal nastro`);
+            const scarto = scartoDallaLinea(linea, g);
+            if (scarto > 0.2) {
+                orfane.push(`${id}: pila a (${g.x.toFixed(0)}, ${g.z.toFixed(0)}), ` +
+                            `${scarto.toFixed(2)} fuori dalla linea del cuscinetto`);
             }
         }
     }
-    assert.deepEqual(orfane, []);
+    assert.deepEqual(orfane.slice(0, 6), [], `${orfane.length} pile fuori dalla linea`);
 });
 
 test('nessun oggetto di scenografia sta fra le gomme e il muro', () => {
@@ -449,4 +477,40 @@ test('nessun oggetto di scenografia sta fra le gomme e il muro', () => {
         }
     }
     assert.deepEqual(dentro, []);
+});
+
+test('le pile di gomme fanno una fila continua, senza buchi fra una e l\'altra', () => {
+    // ⚠️ SEGNALATO DALL'UTENTE AL SECONDO PLAYTEST (2026-09-05, punto 5 su
+    // `prova`): «gli pneumatici in curva non tutti attaccati per creare una
+    // curva continua, ma staccati».
+    //
+    // Il passo era contato in CAMPIONI DELL'ASSE, arrotondati all'intero: su
+    // `prova` un campione vale 5.17 unità e il passo cadeva a uno solo, su
+    // monte-rosso ne valeva 1.18 e ne servivano sei. Poi le pile si posano
+    // sull'arco ESTERNO della curva, che è più lungo dell'asse quanto il
+    // rapporto dei raggi: quello che sull'asse era 7 diventava 9, 12, 14.
+    // Misurato prima della correzione: dal 49% al 100% delle pile aveva un
+    // buco col suo vicino, con punte di 19 unità su un modello largo 7.
+    const largo = Sizes.sizeOf('tyreStack').w;
+    const guasti = [];
+    for (const id of PISTE) {
+        const { layout } = scenografiaDi(id);
+        const gomme = layout.filter(v => v.asset === 'tyreStack');
+        for (let i = 0; i < gomme.length; i++) {
+            let vicina = Infinity;
+            for (let j = 0; j < gomme.length; j++) {
+                if (i === j) continue;
+                const d = Math.hypot(gomme[i].x - gomme[j].x, gomme[i].z - gomme[j].z);
+                if (d < vicina) vicina = d;
+            }
+            // ⚠️ Oltre tre volte il modello non è un buco: è la fine della
+            // fila, e la pila più vicina sta in un'altra curva. Il difetto è
+            // lo stacco DENTRO una fila.
+            if (vicina > largo + 0.05 && vicina < largo * 3) {
+                guasti.push(`${id}: due pile a ${vicina.toFixed(2)} l'una dall'altra, ` +
+                            `il modello è largo ${largo.toFixed(2)} — (${gomme[i].x.toFixed(0)}, ${gomme[i].z.toFixed(0)})`);
+            }
+        }
+    }
+    assert.deepEqual(guasti.slice(0, 6), [], `${guasti.length} pile staccate dalla loro fila`);
 });

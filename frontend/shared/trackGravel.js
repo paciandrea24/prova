@@ -708,6 +708,12 @@
                 // La via di fuga di QUESTO campione, non quella media della
                 // curva: dentro un arco lungo il muro si avvicina e si
                 // allontana, e il cuscinetto deve seguire il punto.
+                // ⚠️ NEL TUBO NON C'E' MURO, e quindi non c'e' cuscinetto:
+                // buildBarriers apre un varco sui campioni acrobatici perche'
+                // un giro della morte e' chiuso per costruzione. Un cuscinetto
+                // dichiarato li' fermerebbe l'auto 2.4 unita' prima di un muro
+                // che non esiste — un ostacolo invisibile in mezzo al tubo.
+                if (trackPts[i].acrobatico) continue;
                 if (muri[i] - mezzaAl(trackPts, i, roadHalf) < FUGA_MINIMA_GOMME) continue;
                 banda[i] = 1;
             }

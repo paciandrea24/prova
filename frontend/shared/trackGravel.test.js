@@ -754,3 +754,26 @@ for (const id of PISTE_GOMME) {
         }
     });
 }
+
+test('dentro un giro della morte non c\'e\' cuscinetto di gomme', () => {
+    // Nel tubo non c'e' muro — `buildBarriers` ci apre un varco, perche' un
+    // giro della morte e' chiuso per costruzione e non ha un fuori da cui
+    // trattenere l'auto. Un cuscinetto dichiarato li' e' un ostacolo che
+    // ferma l'auto 2.4 unita' prima di un muro che non esiste: invisibile, e
+    // in mezzo al tubo. Trovato il 2026-09-05 indagando un'altra segnalazione:
+    // erano 15 campioni su `loop-prova`.
+    const t = loadTrackGomme('loop-prova');
+    const bp = t.barrierProfile;
+    const acrobatici = [];
+    for (let i = 0; i < t.points.length; i++) {
+        if (!t.points[i].acrobatico) continue;
+        acrobatici.push(i);
+        for (const side of [1, -1]) {
+            const banda = side > 0 ? bp.gomme.right : bp.gomme.left;
+            assert.equal(banda[i], 0, `cuscinetto nel tubo, campione ${i}`);
+            assert.equal(TrackGravel.impattoAt(bp, i, side), TrackGravel.barrierAt(bp, i, side),
+                `nel tubo si sbatte prima del muro, campione ${i}`);
+        }
+    }
+    assert.ok(acrobatici.length > 20, `solo ${acrobatici.length} campioni acrobatici: la misura e' vuota`);
+});

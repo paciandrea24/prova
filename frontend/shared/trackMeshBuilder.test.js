@@ -1387,3 +1387,35 @@ test('ai capi di un ponte il terrapieno non finisce dentro la carreggiata', () =
     assert.deepEqual(dentro.slice(0, 6), [],
         `${dentro.length} vertici di terrapieno dentro la carreggiata ai capi dei ponti`);
 });
+
+test('sotto un giro della morte non nascono impalcato e piloni', () => {
+    // ⚠️ SEGNALATO DALL'UTENTE (2026-09-05): «dentro al loop si vedono cose
+    // strane tipo gradini o forse sono dei pilastri». Erano pilastri davvero.
+    //
+    // Per un giorno `splitByBridge` ha considerato ponte anche il tratto
+    // acrobatico — serviva al terrapieno, che deve sapere dove il terreno si
+    // interrompe — e `buildBridgeDecks`, che usa la stessa funzione, si e'
+    // messo a piantare piloni sotto un tubo che si rovescia. Ora le domande
+    // sono due funzioni diverse: `splitByBridge` per i ponti, `splitBySospeso`
+    // per cio' che non sta a terra.
+    const fsT = require('fs');
+    const pathT = require('path');
+    const TrackGravel = require('./trackGravel.js');
+    const TrackScenery = require('./trackScenery.js');
+    const { loadTrack } = require('../../backend/sockets/games/trackLoader.js');
+    const raw = JSON.parse(fsT.readFileSync(
+        pathT.join(__dirname, '..', 'tracks', 'loop-prova.json'), 'utf8'));
+    const t = loadTrack('loop-prova');
+    const pts = t.points;
+    assert.ok(pts.some(p => p.acrobatico), 'loop-prova deve avere un tratto acrobatico');
+    assert.ok(!pts.some(p => p.bridge), 'loop-prova non ha ponti: se ne acquista uno, il test va rivisto');
+
+    const innerEdge = raw.roadHalfWidth + TrackGravel.CURB_W;
+    const plateau = TrackScenery.embankmentStart(t.barrierProfile, innerEdge);
+    const c = contenitore();
+    TrackMeshBuilder.buildBridgeDecks(c, pts, pts.filter(p => !p.bridge && !p.acrobatico),
+        raw.roadHalfWidth + 2, innerEdge, plateau, plateau + 45,
+        (i, side) => TrackGravel.barrierAt(t.barrierProfile, i, side));
+    assert.equal(c.children.length, 0,
+        `${c.children.length} pezzi di viadotto costruiti su una pista senza ponti`);
+});
