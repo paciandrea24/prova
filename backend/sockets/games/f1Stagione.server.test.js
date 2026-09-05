@@ -148,3 +148,26 @@ test('usuraDeiPiloti: un giocatore senza damageParts non produce NaN', () => {
     });
     assert.deepEqual(usura.p1, { frontWing: 0, floor: 0, engine: 0, suspension: 0 });
 });
+
+test('una stagione corre tutte le sue gare allo stesso livello', () => {
+    // ⚠️ In campionato i bot sono fissati alla creazione — stesso colore,
+    // stesso nome per tutte le gare — e il livello e' parte di chi sono. Se
+    // cambiasse da una gara all'altra, la classifica sommerebbe punti presi
+    // contro avversari diversi.
+    const s = stagioneFinta();
+    s.impostazioni.botDifficolta = 'difficile';
+    assert.equal(ponte.impostazioniPerLaProssimaGara(s, {}).botDifficolta, 'difficile');
+    // Seconda gara, e una lobby che nel frattempo dice un'altra cosa: vince
+    // la stagione.
+    s.giro = 1;
+    assert.equal(ponte.impostazioniPerLaProssimaGara(s, { botDifficolta: 'facile' }).botDifficolta,
+        'difficile');
+});
+
+test('una stagione salvata prima dei livelli corre a medio', () => {
+    // Le stagioni gia' in corso nel database non hanno quel campo: devono
+    // continuare a girare, non fermarsi.
+    const s = stagioneFinta();
+    delete s.impostazioni.botDifficolta;
+    assert.equal(ponte.impostazioniPerLaProssimaGara(s, {}).botDifficolta, 'medio');
+});
