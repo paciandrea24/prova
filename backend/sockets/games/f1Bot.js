@@ -378,6 +378,22 @@ function nearestAheadPlayer(p, allPlayers, track) {
 // che non sa da dove arriva l'attacco copre a caso, e coprire il lato
 // sbagliato e' peggio che non coprire — gli si apre la porta.
 const BOT_AFFIANCATO_M = 8;   // lunghezza di un'auto piu' un margine
+
+// DA QUANTO LONTANO CI SI COMINCIA A COPRIRE, in secondi di distacco.
+//
+// ⚠️ IN TEMPO, NON IN UNITA' DI PISTA, e con una costante SUA. Prima era
+// BOT_FOLLOW_GAP_M (30 unita'), condivisa con la scia e i sorpassi: su
+// `prova`, a 5.5 unita' per tick, sono 0.27 secondi — il bot cominciava a
+// coprirti quando gli eri a quattro lunghezze d'auto, e a 8 unita' (0.07 s)
+// scattava gia' l'affiancamento, che congela lo scostamento. La difesa non
+// faceva in tempo ad esistere, ed e' il playtest del 2026-09-05 ad averlo
+// detto: «ad hard mi e' sembrato che non si spostano piu' i bot per
+// difendere».
+//
+// Separata da BOT_FOLLOW_GAP_M apposta: quella soglia governa scia e
+// sorpassi, tarati nel blocco H2, e allargarla li cambierebbe tutti.
+const BOT_DIFESA_FINESTRA_S = 1.0;
+const TICK_MS = 50;   // il passo del server, lo stesso di aggiornaErrore
 function nearestBehindPlayer(p, allPlayers, track) {
     const n = track.points.length;
     const metersPerSample = track.lapLength / n;
@@ -418,7 +434,18 @@ function difendiSePossibile(p, game, track, aggro, target, steerGain) {
     const difesa = F1Duelli.scostamentoDifensivo({
         latoAttaccante: dietro ? dietro.lato : 0,
         gapM: dietro ? dietro.gapM : Infinity,
-        finestraM: BOT_FOLLOW_GAP_M,
+        // Un secondo di distacco alla velocita' di adesso: chi corre si
+        // copre da piu' lontano, chi arranca in una curva lenta no.
+        //
+        // ⚠️ MAI OLTRE MEZZO GIRO. Il gap «indietro» si misura col wrap del
+        // tracciato: oltre meta' giro, chi risulta a un passo dietro di te e'
+        // in realta' quello che hai DAVANTI, e il bot si metterebbe a
+        // difendersi da lui. Su una pista corta la finestra di un secondo ci
+        // arriva davvero (120 unita' di giro, 120 di finestra), e l'ha trovato
+        // il test del sorpasso, non il gioco.
+        finestraM: Math.min(
+            Math.max(p.speed * BOT_DIFESA_FINESTRA_S * 1000 / TICK_MS, BOT_AFFIANCATO_M * 2),
+            track.lapLength / 2),
         // In unita' di pista, dalla frazione di mezza carreggiata del
         // livello: una difesa tarata in unita' fisse vale meta' su una pista
         // larga il doppio (vedi f1Difficolta.js).

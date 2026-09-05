@@ -1459,6 +1459,45 @@ test('la difesa scala con la larghezza della pista', () => {
         "e' tarata in unita' fisse, non in frazione di pista");
 });
 
+// ⚠️ LA DIFESA COMINCIA A UN TEMPO, NON A UNA DISTANZA.
+// Playtest 2026-09-05. La finestra era BOT_FOLLOW_GAP_M = 30 unita', condivisa
+// con la scia e i sorpassi: su `prova`, a 109 unita' al secondo, sono 0.27
+// secondi. Il bot cominciava a coprirti quando gli eri a quattro lunghezze
+// d'auto, e sotto le 8 unita' (0.07 s) scattava «affiancato» che congela lo
+// scostamento: la difesa non faceva in tempo ad esistere.
+test("ci si copre da chi arriva entro un secondo, non entro trenta unita'", () => {
+    function difendeCon(velocita, distanzaCampioni) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: 'difficile' };
+        game.raceTick = 2000;
+        p.trackIndex = 40;
+        p.x = game.track.points[40].x; p.z = game.track.points[40].z;
+        p.speed = velocita;
+        const iDietro = p.trackIndex - distanzaCampioni;
+        const nrm = TrackGeometry.normalAt(game.track.points, iDietro, true);
+        game.players = {
+            bot1: p,
+            bot2: Object.assign({}, p, {
+                trackIndex: iDietro,
+                x: game.track.points[iDietro].x + nrm.nx * 4,
+                z: game.track.points[iDietro].z + nrm.nz * 4,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+            }),
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return Math.abs(p._botDebug.scostamentoDifensivo);
+    }
+    // Su questa pista finta un campione vale un'unita', e `p.speed` e' in
+    // unita' per TICK (venti tick al secondo): a 2 per tick un secondo vale
+    // 40 unita', a 1 per tick ne vale 20.
+    //
+    // LO STESSO DISTACCO, 30 unita', letto due volte: chi corre ce l'ha
+    // addosso fra tre quarti di secondo e si copre, chi va piano lo ha a un
+    // secondo e mezzo e tiene la sua linea.
+    assert.ok(difendeCon(2, 30) > 0, 'non copre chi arriva fra tre quarti di secondo');
+    assert.equal(difendeCon(1, 30), 0, "copre chi e' lontano un secondo e mezzo");
+});
+
 test('ogni bot ha una sua idea di traiettoria', () => {
     const g = partitaConLivello('medio', 8);
     creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
