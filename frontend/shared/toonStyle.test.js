@@ -169,7 +169,6 @@ test('un chunk mancante fa fallire il patch con un messaggio esplicito', () => {
         'l errore deve nominare il chunk mancante'
     );
 });
-
 // ═══════════ L'ATLANTE DEI CARTELLONI (spec 2026-09-04) ═══════════
 //
 // La texture dei pannelli pubblicitari nasce da un canvas disegnato a runtime.
@@ -179,14 +178,37 @@ const SponsorAtlas = require('./sponsorAtlas.js');
 
 function finestraFinta() {
     const tratti = [];
+    // Il finto tiene conto della trasformazione corrente, perche' i nomi si
+    // disegnano dentro un translate + scale: senza, ogni scritta risulterebbe
+    // all'origine e il test non vedrebbe dove finisce davvero.
+    let stato = { dx: 0, dy: 0, sx: 1, sy: 1 };
+    const pila = [];
     const ctx = {
         set fillStyle(v) { this._fill = v; },
         get fillStyle() { return this._fill; },
         set font(v) { this._font = v; },
         get font() { return this._font; },
         textAlign: '', textBaseline: '',
-        fillRect(x, y, w, h) { tratti.push({ tipo: 'rect', x, y, w, h, colore: this._fill }); },
-        fillText(t, x, y) { tratti.push({ tipo: 'testo', testo: t, x, y, colore: this._fill, font: this._font }); },
+        save() { pila.push(Object.assign({}, stato)); },
+        restore() { stato = pila.pop() || stato; },
+        translate(x, y) { stato.dx += x * stato.sx; stato.dy += y * stato.sy; },
+        scale(x, y) { stato.sx *= x; stato.sy *= y; },
+        // Una misura plausibile: mezza altezza del font per lettera, che e'
+        // circa il passo di un sans-serif grassetto.
+        measureText(t) {
+            const px = parseFloat((this._font || '0px').replace(/[^0-9.]/g, ' ').trim()) || 10;
+            return { width: t.length * px * 0.55 };
+        },
+        fillRect(x, y, w, h) {
+            tratti.push({ tipo: 'rect', x: stato.dx + x * stato.sx, y: stato.dy + y * stato.sy,
+                          w: w * stato.sx, h: h * stato.sy, colore: this._fill });
+        },
+        fillText(t, x, y) {
+            const px = parseFloat((this._font || '0px').replace(/[^0-9.]/g, ' ').trim()) || 10;
+            tratti.push({ tipo: 'testo', testo: t, x: stato.dx + x * stato.sx, y: stato.dy + y * stato.sy,
+                          largo: t.length * px * 0.55 * stato.sx, alto: px * stato.sy,
+                          colore: this._fill, font: this._font });
+        },
     };
     const canvas = { width: 0, height: 0, getContext: () => ctx };
     global.document = { createElement: () => canvas };
@@ -200,18 +222,39 @@ function finestraFinta() {
 test('l\'atlante ha un pannello per sponsor, con fondo, banda e nome', () => {
     const { tratti, canvas } = finestraFinta();
     const tex = ToonStyle.sponsorTexture(SponsorAtlas.PANNELLI);
-    const larghezzaPannello = canvas.width / SponsorAtlas.PANNELLI.length;
+    const largo = canvas.width / SponsorAtlas.PANNELLI.length;
     assert.equal(canvas.width % SponsorAtlas.PANNELLI.length, 0,
         'i pannelli devono dividere esattamente la texture');
 
+    // ⚠️ IL PANNELLO IN TEXTURE HA LE PROPORZIONI DI QUELLO IN MONDO. Il
+    // nastro e' alto 1.6 e un pannello e' lungo LUNGHEZZA_PANNELLO: se il
+    // riquadro disegnato avesse un altro rapporto, ogni lettera arriverebbe in
+    // pista stirata di quel tanto. La prima stesura disegnava 2:1 su un
+    // pannello 7.5:1, cioe' lettere larghe quattro volte la loro altezza.
+    const rapportoMondo = SponsorAtlas.LUNGHEZZA_PANNELLO / 1.6;
+    assert.ok(Math.abs(largo / canvas.height - rapportoMondo) / rapportoMondo < 0.02,
+        `il pannello e' ${(largo / canvas.height).toFixed(2)}:1 in texture e ${rapportoMondo.toFixed(2)}:1 in mondo`);
+    // E l'atlante intero sta sotto il limite di texture che ogni scheda
+    // rispetta: oltre, la texture non si carica e i cartelloni spariscono.
+    assert.ok(canvas.width <= 16384, `atlante largo ${canvas.width} texel`);
+
     const scritte = tratti.filter(t => t.tipo === 'testo');
-    assert.deepEqual(scritte.map(t => t.testo), SponsorAtlas.PANNELLI.map(p => p.nome));
-    // ⚠️ Ogni nome sta DENTRO il suo pannello: sconfinare vorrebbe dire una
-    // scritta a cavallo di due cartelloni, e in gioco si vedrebbe mezza
-    // parola su un pannello e mezza sul successivo.
-    scritte.forEach((t, k) => {
-        assert.ok(t.x > k * larghezzaPannello && t.x < (k + 1) * larghezzaPannello,
-            `${t.testo} sta a ${t.x}, fuori dal pannello ${k}`);
+    const nomi = SponsorAtlas.PANNELLI.map(p => p.nome);
+    // Ogni nome due volte: un cartellone lungo 12 unita' con una parola sola in
+    // mezzo sarebbe per due terzi colore piatto, e da dentro l'abitacolo si
+    // legge quel che si ha davanti, non il centro del pannello.
+    assert.equal(scritte.length, nomi.length * 2);
+    nomi.forEach((n, k) => {
+        assert.equal(scritte[k * 2].testo, n);
+        assert.equal(scritte[k * 2 + 1].testo, n);
+    });
+
+    // ⚠️ Ogni scritta sta DENTRO il suo pannello, bordi compresi: sconfinare
+    // vorrebbe dire mezza parola su un cartellone e mezza sul successivo.
+    scritte.forEach((t, i) => {
+        const k = Math.floor(i / 2);
+        assert.ok(t.x - t.largo / 2 >= k * largo - 0.5 && t.x + t.largo / 2 <= (k + 1) * largo + 0.5,
+            `${t.testo} occupa da ${(t.x - t.largo / 2).toFixed(0)} a ${(t.x + t.largo / 2).toFixed(0)}, fuori dal pannello ${k}`);
     });
 
     // Due rettangoli per pannello: il fondo pieno e la banda chiara in mezzo.
@@ -226,10 +269,13 @@ test('l\'atlante ha un pannello per sponsor, con fondo, banda e nome', () => {
         assert.ok(banda.y > 0 && banda.y + banda.h < canvas.height,
             'la banda sta in mezzo, non a filo dei bordi');
         // Il nome e' scritto nel colore del FONDO, sopra la banda chiara: e'
-        // il contrasto che si legge passandoci a 250 all'ora.
-        assert.equal(scritte[k].colore, hex(p.fondo));
-        assert.ok(scritte[k].y > banda.y && scritte[k].y < banda.y + banda.h,
+        // il contrasto che si legge passandoci a 250 all'ora. E ci sta dentro
+        // in altezza, altrimenti le lettere sborderebbero sul colore pieno.
+        const testo = scritte[k * 2];
+        assert.equal(testo.colore, hex(p.fondo));
+        assert.ok(testo.y > banda.y && testo.y < banda.y + banda.h,
             'il nome dev\'essere dentro la banda');
+        assert.ok(testo.alto < banda.h, `il nome e' alto ${testo.alto} e la banda ${banda.h}`);
     });
 
     // ⚠️ Niente mipmap e niente ripetizione su S: le UV del nastro non escono

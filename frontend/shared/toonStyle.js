@@ -119,7 +119,7 @@
         return tex;
     }
 
-// L'atlante dei cartelloni: i pannelli affiancati in orizzontale, ciascuno
+    // L'atlante dei cartelloni: i pannelli affiancati in orizzontale, ciascuno
     // fondo + banda chiara + nome. Rif. spec 2026-09-04.
     //
     // ⚠️ TESTO NETTO, non sfumato. In cel shading una scritta con l'antialias
@@ -127,21 +127,25 @@
     // delle facciate di citta', che come vertex color sembravano tende a
     // coste. Font pesante, niente ombre, niente bordi morbidi.
     //
-    // ⚠️ Un pannello LARGO IL DOPPIO di quanto e' alto: il nastro e' alto 1.6
-    // unita' e un pannello e' lungo 12, ma le lettere devono restare leggibili
-    // passandoci a 250 all'ora. Il rapporto 2:1 della texture, stirato su 12:1
-    // in mondo, allarga le lettere invece di assottigliarle.
+    // ⚠️ IL PANNELLO IN TEXTURE HA LE PROPORZIONI DEL PANNELLO IN MONDO: 720 x
+    // 96 sta a 7.5:1 come 12 x 1.6, che sono le misure del nastro. Con un
+    // riquadro 2:1, come nella prima stesura, ogni lettera sarebbe arrivata in
+    // pista larga QUATTRO VOLTE la sua altezza. E l'atlante intero resta a
+    // 14400 x 96, sotto il limite di 16384 texel che le schede rispettano da
+    // dieci anni: se un giorno i pannelli diventassero il doppio, andrebbe
+    // disposto su due righe, non allargato ancora.
     function sponsorTexture(pannelli) {
-        const LARGO = 256, ALTO = 128;      // per pannello
+        const LARGO = 720, ALTO = 96;       // per pannello, 7.5:1 come in mondo
         const c = document.createElement('canvas');
         c.width = LARGO * pannelli.length;
         c.height = ALTO;
         const ctx = c.getContext('2d');
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
+        ctx.font = 'bold ' + Math.round(ALTO * 0.34) + 'px sans-serif';
+        const hex = (v) => '#' + (v >>> 0).toString(16).padStart(6, '0');
         pannelli.forEach(function (p, k) {
             const x0 = k * LARGO;
-            const hex = (v) => '#' + (v >>> 0).toString(16).padStart(6, '0');
             ctx.fillStyle = hex(p.fondo);
             ctx.fillRect(x0, 0, LARGO, ALTO);
             // La banda chiara: una fascia orizzontale al centro, su cui sta il
@@ -149,8 +153,23 @@
             ctx.fillStyle = hex(p.banda);
             ctx.fillRect(x0, ALTO * 0.28, LARGO, ALTO * 0.44);
             ctx.fillStyle = hex(p.fondo);
-            ctx.font = 'bold ' + Math.round(ALTO * 0.30) + 'px sans-serif';
-            ctx.fillText(p.nome, x0 + LARGO / 2, ALTO * 0.5);
+            // ⚠️ IL NOME DUE VOLTE, e allargato. Un cartellone lungo 12 unita'
+            // con una parola sola in mezzo sarebbe per due terzi colore piatto,
+            // e da dentro l'abitacolo si legge quello che si ha davanti in quel
+            // momento — non il centro del pannello. Due copie a un quarto e a
+            // tre quarti fanno si' che ce ne sia sempre una in vista. Il
+            // fattore di allargamento e' limitato a 2.2 perche' oltre le
+            // lettere si sfilacciano.
+            const misura = ctx.measureText(p.nome);
+            const largoTesto = (misura && misura.width) || LARGO / 4;
+            const fattore = Math.min(2.2, (LARGO * 0.42) / largoTesto);
+            for (const frazione of [0.25, 0.75]) {
+                ctx.save();
+                ctx.translate(x0 + LARGO * frazione, ALTO * 0.5);
+                ctx.scale(fattore, 1);
+                ctx.fillText(p.nome, 0, 0);
+                ctx.restore();
+            }
         });
         const tex = new THREE.CanvasTexture(c);
         // ⚠️ ClampToEdge su entrambi gli assi, non Repeat su S: le UV del

@@ -46,8 +46,16 @@
     // gli stessi due o tre nomi tornare a ogni curva, che e' esattamente il
     // «sembra tutto uguale» da cui nasce questo lavoro. Col sacchetto, i
     // primi venti pannelli del giro sono i venti sponsor, ciascuno una volta.
+    //
+    // ⚠️ E NON BASTA CHE SIANO DIVERSI: devono essere diversi ANCHE DI TINTA.
+    // I nomi sono venti e le coppie fondo/banda sei, quindi un vicino su sei
+    // avrebbe lo stesso schema di colore — e due cartelloni con lo stesso
+    // fondo, uno accanto all'altro, si leggono come un unico pannello lungo
+    // con due scritte sopra. Visto in un render dell'atlante: ALTAVIA e
+    // KILOVOLT, arancio su antracite tutti e due, senza piu' un confine.
     function sequenza(trackId, quanti) {
         const rng = Seme.mulberry32(Seme.hashString(String(trackId) + ':sponsor'));
+        const tintaDi = (k) => k % Palette.CITTA_SPONSOR.length;
         const out = [];
         let sacchetto = [];
         for (let k = 0; k < quanti; k++) {
@@ -57,12 +65,17 @@
                     const j = Math.floor(rng() * (i + 1));
                     const t = sacchetto[i]; sacchetto[i] = sacchetto[j]; sacchetto[j] = t;
                 }
-                // Il giunto fra un sacchetto e il successivo e' l'unico punto
-                // in cui possono capitare due uguali di fila: se il primo che
-                // uscirebbe e' l'ultimo gia' uscito, si scambia col fondo.
-                const primo = sacchetto.length - 1;
-                if (out.length && sacchetto[primo] === out[out.length - 1]) {
-                    const t = sacchetto[primo]; sacchetto[primo] = sacchetto[0]; sacchetto[0] = t;
+            }
+            // Chi uscirebbe adesso e' in fondo al sacchetto. Se ha la tinta del
+            // precedente, si scambia col primo che ce l'ha diversa: verso la
+            // fine del sacchetto puo' non essercene nessuno, e allora pazienza
+            // — forzarlo vorrebbe dire rompere il giro completo dei venti.
+            const ultimo = sacchetto.length - 1;
+            if (out.length && tintaDi(sacchetto[ultimo]) === tintaDi(out[out.length - 1])) {
+                for (let i = 0; i < ultimo; i++) {
+                    if (tintaDi(sacchetto[i]) === tintaDi(out[out.length - 1])) continue;
+                    const t = sacchetto[ultimo]; sacchetto[ultimo] = sacchetto[i]; sacchetto[i] = t;
+                    break;
                 }
             }
             out.push(sacchetto.pop());

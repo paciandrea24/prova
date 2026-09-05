@@ -38,6 +38,29 @@ test('due cartelloni uguali non stanno mai attaccati', () => {
     }
 });
 
+test('due cartelloni vicini non hanno quasi mai la stessa tinta', () => {
+    // ⚠️ NON BASTA CHE SIANO SPONSOR DIVERSI. I nomi sono venti e le coppie
+    // fondo/banda sei: pescando senza guardare il colore, un vicino su sei
+    // avrebbe lo stesso schema, e due cartelloni con lo stesso fondo uno
+    // accanto all'altro si leggono come un unico pannello lungo con due
+    // scritte sopra. Visto in un render dell'atlante: ALTAVIA e KILOVOLT,
+    // arancio su antracite tutti e due, senza piu' un confine.
+    //
+    // «Quasi mai» e non «mai»: verso la fine di un sacchetto puo' non restare
+    // nessun pannello di tinta diversa, e li' si accetta la ripetizione invece
+    // di rompere il giro completo dei venti. A caso puro sarebbero 33 su 199.
+    const Palette = require('./toonPalette.js');
+    const tinte = Palette.CITTA_SPONSOR.length;
+    for (const id of ['melbourne', 'suzuka', 'prova', 'citta-prova', 'monte-rosso']) {
+        const seq = SponsorAtlas.sequenza(id, 200);
+        let vicini = 0;
+        for (let k = 1; k < seq.length; k++) {
+            if (seq[k] % tinte === seq[k - 1] % tinte) vicini++;
+        }
+        assert.ok(vicini <= 5, `${id}: ${vicini} coppie di vicini con la stessa tinta`);
+    }
+});
+
 test('la sequenza usa tutti e venti i pannelli su un giro lungo', () => {
     // ⚠️ Su OGNI pista, non solo su una fortunata: e' la differenza fra una
     // distribuzione sana e un seme che e' andato bene per caso.
