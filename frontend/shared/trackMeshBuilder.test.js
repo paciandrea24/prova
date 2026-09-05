@@ -1193,7 +1193,10 @@ test('i pannelli hanno passo costante anche in curva', () => {
         for (let k = 2; k < quanti; k += 2) {
             const a = verticeNastro(geo, k - 2), b = verticeNastro(geo, k);
             const dist = Math.hypot(b.x - a.x, b.z - a.z);
-            const du = b.u - a.u;
+            // ⚠️ Il VALORE ASSOLUTO di du: su un lato la texture e' specchiata
+            // apposta (vedi il test delle scritte allo specchio), quindi `u`
+            // scorre all'indietro mentre il nastro va avanti.
+            const du = Math.abs(b.u - a.u);
             // I due vertici di un confine stanno nello stesso punto e portano
             // `u` diversi: fra loro il rapporto non significa niente.
             if (dist < 1e-6 || du <= 1e-9) continue;
@@ -1238,6 +1241,56 @@ test('ogni pannello e\' lungo LUNGHEZZA_PANNELLO, anche in curva', () => {
     }
 });
 
+test('le scritte si leggono da DENTRO la pista, su tutti e due i lati', () => {
+    // ⚠️ SEGNALATO DALL'UTENTE AL PRIMO PLAYTEST (2026-09-05): «i cartelloni
+    // delle barriere a sinistra sono giusti, quelli a destra sono specchiati».
+    //
+    // Il nastro e' DoubleSide, quindi la faccia si vede da tutte e due le
+    // parti — ma una texture guardata dal retro si legge allo specchio. I due
+    // lati della pista si guardano da versi opposti: se `u` cresce nella
+    // stessa direzione del mondo su entrambi, uno dei due mostra le scritte
+    // rovesciate.
+    //
+    // La misura non usa la convenzione di segno delle normali (che potrebbe
+    // cambiare): chiede dove sta la DESTRA di chi guarda il cartellone stando
+    // in pista, e pretende che `u` cresca verso di li'.
+    const pts = cerchio();
+    const c = contenitore();
+    TrackMeshBuilder.buildCartelloni(c, pts, 20, null, null, { trackId: 'test' });
+    assert.equal(c.children.length, 2);
+    for (const mesh of c.children) {
+        const geo = mesh.geometry;
+        const quanti = geo.attributes.position.array.length / 3;
+        let controllati = 0;
+        for (let k = 2; k < quanti; k += 2) {
+            const a = verticeNastro(geo, k - 2), b = verticeNastro(geo, k);
+            const dx = b.x - a.x, dz = b.z - a.z;
+            if (Math.hypot(dx, dz) < 1e-6 || Math.abs(b.u - a.u) <= 1e-9) continue;
+            // Il verso in cui `u` CRESCE: dove la texture e' specchiata
+            // apposta, e' l'opposto del verso di marcia.
+            const verso = b.u > a.u ? 1 : -1;
+            // ⚠️ CHI GUARDA STA SULL'ASSE PISTA, non al centro del cerchio.
+            // Il cerchio ha raggio 100 e i due nastri stanno a 80 e a 120: un
+            // osservatore fermo al centro guarderebbe i due lati nella stessa
+            // direzione, e il test passerebbe anche col difetto sotto gli
+            // occhi — e' successo alla prima stesura.
+            const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+            const lung = Math.hypot(mx, mz);
+            const ax = mx / lung * 100, az = mz / lung * 100;      // il punto sull'asse
+            const sx = mx - ax, sz = mz - az;                      // dall'asse al cartellone
+            const s = Math.hypot(sx, sz);
+            const gx = sx / s, gz = sz / s;                        // direzione dello sguardo
+            // La sua destra, con l'alto a +Y: (D x U) = (-Dz, 0, Dx).
+            const rx = -gz, rz = gx;
+            assert.ok(verso * (dx * rx + dz * rz) > 0,
+                `qui la scritta si legge allo specchio: a (${mx.toFixed(0)}, ${mz.toFixed(0)}) ` +
+                `u cresce verso (${dx.toFixed(2)}, ${dz.toFixed(2)}) mentre la destra e' (${rx.toFixed(2)}, ${rz.toFixed(2)})`);
+            controllati++;
+        }
+        assert.ok(controllati > 50, `solo ${controllati} passi controllati`);
+    }
+});
+
 test('lungo il giro passano molti sponsor diversi', () => {
     // Con le UV continue l'atlante scorrerebbe sempre nello stesso ordine
     // ciclico — 1, 2, 3, ... 20, 1, 2, 3 — e la sequenza a sacchetto non
@@ -1252,4 +1305,85 @@ test('lungo il giro passano molti sponsor diversi', () => {
         usati.add(Math.floor(u * SponsorAtlas.PANNELLI.length + 1e-6));
     }
     assert.ok(usati.size >= 10, `un giro mostra solo ${usati.size} pannelli diversi`);
+});
+// ═══════════ IL TERRAPIENO AI CAPI DI UN PONTE (2026-09-05) ═══════════
+//
+// Segnalato dall'utente col tasto M, punti 3 e 4 su `prova`: «c'è dell'erba
+// verde dentro la pista». La scena passava a buildEmbankment i punti già
+// filtrati dai ponti: su quella polilinea bucata il campione che segue il
+// ponte ha come vicino precedente quello che lo PRECEDE, a 350 unità di
+// distanza, e la normale esce di 72 gradi — misurata (-0.731, -0.682) invece
+// di (0.349, -0.937). Il terrapieno di quel campione veniva posato di traverso
+// e finiva a 5.7 unità dall'asse, con una mezza carreggiata di 11.
+//
+// ⚠️ Si misura la MESH, non `terrainHeightAt`: la superficie ideale non
+// superava l'asfalto in nessun punto del giro, ed è la mesh vera — costruita
+// anello per anello — che entrava in pista.
+//
+// ⚠️ E si misura SOLO ATTORNO AI CAPI DEI PONTI. Altrove il verde entra in
+// carreggiata anche per ragioni che non riguardano questo difetto e che nessun
+// builder può evitare: due tratti che si sfiorano (su `loop-prova` i campioni
+// 289 e 315 distano 18.8 con mezza carreggiata 12), e spigoli più stretti
+// dell'offset del terrapieno (sempre lì, raggio di curvatura 3 e 5 contro un
+// attacco a 14.8), dove il bordo interno si ripiega dall'altra parte
+// dell'asse. Sono difetti dei tracciati, non della mesh, e misurarli qui
+// avrebbe voluto dire tarare una soglia finché non passava.
+test('ai capi di un ponte il terrapieno non finisce dentro la carreggiata', () => {
+    const fsT = require('fs');
+    const pathT = require('path');
+    const TrackScenery = require('./trackScenery.js');
+    const TrackGravel = require('./trackGravel.js');
+    const { loadTrack } = require('../../backend/sockets/games/trackLoader.js');
+    const dir = pathT.join(__dirname, '..', 'tracks');
+    const piste = fsT.readdirSync(dir)
+        .filter(f => f.endsWith('.json') && !/^(__|test-)/.test(f))
+        .map(f => f.replace(/\.json$/, ''));
+
+    const dentro = [];
+    let capiEsaminati = 0;
+    for (const id of piste) {
+        const raw = JSON.parse(fsT.readFileSync(pathT.join(dir, id + '.json'), 'utf8'));
+        const t = loadTrack(id);
+        const pts = t.points;
+        const n = pts.length;
+        // I capi: dove si passa da terra a sospeso e viceversa.
+        const capi = [];
+        for (let i = 0; i < n; i++) {
+            const qui = !!(pts[i].bridge || pts[i].acrobatico);
+            const prima = !!(pts[(i - 1 + n) % n].bridge || pts[(i - 1 + n) % n].acrobatico);
+            if (qui !== prima) capi.push(i);
+        }
+        if (!capi.length) continue;
+        capiEsaminati += capi.length;
+        const vicinoAUnCapo = (i) => capi.some(c =>
+            Math.min(Math.abs(c - i), n - Math.abs(c - i)) <= 10);
+
+        // Gli stessi tre raggi che passa la scena (f1Scena.js), e i punti
+        // COMPLETI: è il filtro sbagliato che causava il difetto.
+        const innerEdge = raw.roadHalfWidth + TrackGravel.CURB_W;
+        const plateau = TrackScenery.embankmentStart(t.barrierProfile, innerEdge);
+        const c = contenitore();
+        TrackMeshBuilder.buildEmbankment(c, pts, innerEdge, plateau, plateau + 45);
+        for (const mesh of c.children) {
+            const p = mesh.geometry.attributes.position.array;
+            for (let k = 0; k < p.length; k += 3) {
+                const q = TrackGeometry.nearestPoint(pts, p[k], p[k + 2]);
+                if (!vicinoAUnCapo(q.index)) continue;
+                const punto = pts[q.index];
+                const mezza = (typeof punto.halfWidth === 'number' && punto.halfWidth > 0)
+                    ? punto.halfWidth : raw.roadHalfWidth;
+                if (q.dist >= mezza) continue;
+                // Sotto l'asfalto ci può stare: è quel che fa il prato sotto un
+                // cavalcavia. Molto sopra è un altro piano del circuito. Il
+                // difetto è il verde che COMPENETRA l'asfalto.
+                const dislivello = p[k + 1] - (punto.y || 0);
+                if (dislivello < -0.35 || dislivello > 1.5) continue;
+                dentro.push(`${id}: verde a ${q.dist.toFixed(1)} dall'asse del campione ${q.index}` +
+                            ` (mezza ${mezza}), quota ${p[k + 1].toFixed(2)} contro asfalto ${(punto.y || 0).toFixed(2)}`);
+            }
+        }
+    }
+    assert.ok(capiEsaminati > 0, 'nessun capo di ponte esaminato: la misura è vuota');
+    assert.deepEqual(dentro.slice(0, 6), [],
+        `${dentro.length} vertici di terrapieno dentro la carreggiata ai capi dei ponti`);
 });

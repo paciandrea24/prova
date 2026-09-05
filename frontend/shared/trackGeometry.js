@@ -228,24 +228,32 @@
     }
 
     // Divide i punti campionati (chiusi, come trackPts) in spezzoni "a terra"
-    // (non-ponte) e "ponte": un ponte non genera terrapieno/prato proprio
+    // e spezzoni SOSPESI: un tratto sospeso non genera terrapieno/prato proprio
     // (li ignora, il terreno resta quello vero sotto), uno spezzone a terra
-    // continua a funzionare come nella Fase 1. Se non c'è nessun punto ponte,
+    // continua a funzionare come nella Fase 1. Se non c'è nessun punto sospeso,
     // un solo spezzone chiuso copre l'intero giro (nessuna differenza
     // rispetto a prima di questa funzione). La scansione parte sempre
     // dall'inizio di uno spezzone a terra (non da un indice arbitrario):
     // partire a metà di uno spezzone lo spezzerebbe in due pezzi ai lati del
     // bordo dell'array — un bug reale trovato scrivendo i test di questa
     // funzione.
+    //
+    // ⚠️ SOSPESO E' PONTE **O** ACROBATICO. Il tubo del giro della morte non
+    // sta a terra più di un cavalcavia: si rovescia e torna, e un terrapieno
+    // disegnato attorno ai suoi campioni finisce in mezzo alla pista sotto.
+    // Misurato su `loop-prova` il 2026-09-05: 104 vertici di terreno dentro la
+    // carreggiata, a 7.4 unità dall'asse e alla stessa quota dell'asfalto.
+    function sospeso(p) { return !!(p.bridge || p.acrobatico); }
+
     function splitByBridge(trackPts) {
         const n = trackPts.length;
-        if (!trackPts.some(p => p.bridge)) {
+        if (!trackPts.some(sospeso)) {
             return { groundRuns: [{ indices: trackPts.map((_, i) => i), closed: true }], bridgeRuns: [] };
         }
 
         let first = 0;
         for (let i = 0; i < n; i++) {
-            if (!trackPts[i].bridge && trackPts[(i - 1 + n) % n].bridge) { first = i; break; }
+            if (!sospeso(trackPts[i]) && sospeso(trackPts[(i - 1 + n) % n])) { first = i; break; }
         }
 
         const groundRuns = [];
@@ -262,7 +270,7 @@
 
         for (let k = 0; k < n; k++) {
             const idx = (first + k) % n;
-            const isBridge = !!trackPts[idx].bridge;
+            const isBridge = sospeso(trackPts[idx]);
             if (isBridge !== currentIsBridge) { flush(); currentIsBridge = isBridge; }
             current.push(idx);
         }

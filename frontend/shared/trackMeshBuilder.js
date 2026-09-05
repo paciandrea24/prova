@@ -722,6 +722,29 @@
             // del campione: in curva il bordo esterno e' piu' lungo dell'asse,
             // e con l'indice le scritte si stirerebbero di fuori e si
             // stringerebbero di dentro.
+// ⚠️ SU UN LATO LA TEXTURE VA SPECCHIATA. Il nastro e' DoubleSide
+            // e i due lati della pista si guardano da versi opposti: con `u`
+            // che cresce nella stessa direzione del mondo su entrambi, uno dei
+            // due mostra le scritte allo specchio. Visto dall'utente al primo
+            // playtest (2026-09-05): «quelli a destra sono specchiati».
+            //
+            // Non si sceglie il lato per convenzione di segno — quella puo'
+            // cambiare — ma si guarda dove cade la DESTRA di chi sta in pista:
+            // `u` deve crescere verso di li'.
+            let rovescio = false;
+            for (let i = 0; i < n; i++) {
+                const b = bordo[i], b2 = bordo[i + 1];
+                if (!b2) break;
+                const tx = b2.bx - b.bx, tz = b2.bz - b.bz;
+                if (Math.hypot(tx, tz) < 1e-6) continue;
+                const { nx, nz } = TrackGeometry.normalAt(pts, i % n, true);
+                // La destra di chi guarda in direzione (nx, nz) * side, con
+                // l'alto a +Y: (D x U) = (-Dz, 0, Dx).
+                const rx = -nz * side, rz = nx * side;
+                rovescio = (tx * rx + tz * rz) < 0;
+                break;
+            }
+
             const quantiPannelli = Math.floor(bordo[n].percorso / passo) + 2;
             const seq = SponsorAtlas.sequenza(o.trackId || 'senza-nome', quantiPannelli);
             const pos = [], uv = [], idx = [];
@@ -729,7 +752,8 @@
             // `u` dentro l'atlante per un punto che sta a `avanzamento` (0..1)
             // dentro il pannello numero `k`: il pannello scelto occupa
             // 1/atlante della texture.
-            const uDi = (k, avanzamento) => (seq[k % seq.length] + avanzamento) / atlante;
+            const uDi = (k, avanzamento) => (seq[k % seq.length] +
+                (rovescio ? 1 - avanzamento : avanzamento)) / atlante;
             const spingi = (bx, bz, baseY, u) => {
                 const j = pos.length / 3;
                 pos.push(bx, baseY, bz, bx, baseY + CARTELLO_H, bz);

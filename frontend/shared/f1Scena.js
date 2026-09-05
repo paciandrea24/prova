@@ -126,7 +126,15 @@
         // Servono al gioco, che le stilizza a parte (il prato dipinto).
         const mesheTerreno = scene.children.slice(primaDelPrato);
         // Tre distanze: attacco alla pista, fine del pianoro, fine della rampa.
-        builder.buildEmbankment(scene, puntiATerra, embankmentStart, embankPlateau, embankOuter);
+        // ⚠️ AL TERRAPIENO SERVONO I PUNTI COMPLETI, ponti compresi: e' lui a
+        // chiamare splitByBridge, e con una polilinea gia' bucata non trova
+        // piu' niente da spezzare — il salto le resta dentro come se fosse un
+        // pezzo di pista. Il campione che segue il ponte si ritrova per vicino
+        // quello che lo precede, a 350 unita' di distanza, e la normale esce
+        // di 72 gradi: il terrapieno viene posato di traverso e finisce dentro
+        // la carreggiata. Segnalato dall'utente il 2026-09-05 (punti 3 e 4 su
+        // `prova`): «c'e' dell'erba verde dentro la pista».
+        builder.buildEmbankment(scene, trackPts, embankmentStart, embankPlateau, embankOuter);
         // Punti "a terra" (non-ponte): usati sia per i piloni (quota reale
         // sotto un ponte) sia per la quota visiva fuori pista — calcolati una
         // sola volta qui, non ad ogni frame.

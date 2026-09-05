@@ -165,3 +165,31 @@ test('una pista cittadina costruisce le facciate, una verde no', () => {
             assert.ok(citta.some(r => r.startsWith('buildCitta')), 'la pista cittadina non ha costruito niente');
         });
 });
+
+test('il terrapieno riceve anche i tratti a ponte, non solo quelli a terra', () => {
+    // ⚠️ SEGNALATO DALL'UTENTE IL 2026-09-05 (tasto M, punti 3 e 4 su `prova`):
+    // «c'è dell'erba verde dentro la pista».
+    //
+    // La scena passava a buildEmbankment i punti GIA' FILTRATI dai ponti. Su
+    // quella polilinea bucata il campione che segue il ponte ha come vicino
+    // precedente quello che lo precede — a 350 unità di distanza — e la
+    // normale del terrapieno esce di 72 gradi: misurata (-0.731, -0.682)
+    // invece di (0.349, -0.937). Il terrapieno di quel campione viene posato
+    // di traverso e finisce DENTRO la carreggiata, a 5.7 unità dall'asse su
+    // una mezza carreggiata di 11.
+    //
+    // Il buco non va tolto prima: `buildEmbankment` chiama splitByBridge da
+    // sola, e con i punti gia' filtrati non trova piu' niente da spezzare —
+    // il salto le resta dentro come se fosse un pezzo di pista.
+    const trackData = pista('prova');
+    let visti = null;
+    const builder = builderChePrendeNota([]);
+    builder.buildEmbankment = (scene, pts) => { visti = pts; };
+    return F1Scena.costruisciCircuito(scenaFinta(), trackData, { builder, gridSize: 6 })
+        .then(() => {
+            assert.ok(visti, 'buildEmbankment non e\' stata chiamata');
+            const conPonte = visti.filter(p => p.bridge).length;
+            assert.ok(conPonte > 0,
+                `al terrapieno arrivano ${visti.length} punti e nessuno a ponte: la polilinea e' bucata`);
+        });
+});
