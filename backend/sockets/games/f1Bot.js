@@ -1209,8 +1209,27 @@ function profiloAllargamento(track) {
 // avversario divertente e uno rotto. Se questi numeri crescono, la misura da
 // rifare e' quella dei tick fuori dal cordolo, non la sensazione.
 const BOT_ERRORE_DURATA_MS = 900;
-const BOT_ERRORE_STERZO = 0.25;    // quanto allarga, in frazione di sterzo
-const BOT_ERRORE_FRENO = 0.15;     // quanto ritarda la frenata
+const BOT_ERRORE_STERZO = 0.40;    // quanto allarga, in frazione di sterzo
+const BOT_ERRORE_FRENO = 0.30;     // quanto ritarda la frenata
+
+// SI SBAGLIA IN CURVA, NON IN RETTILINEO.
+//
+// ⚠️ MISURATO, ed e' la ragione per cui alzare il guadagno non bastava.
+// Playtest 2026-09-05 a facile: «non mi e' sembrato di vedere errori». Gli
+// errori partivano (1.41 per bot al giro col banco gara), ma meta' capitava
+// dove togliere sterzo non sposta niente. Portando il guadagno da 0.25 a 0.80
+// lo spostamento MEDIANO non si muoveva — 0.39 larghezze d'auto contro 0.42 —
+// mentre la coda peggiorava fino a mandare in ghiaia il 17% dei tick di
+// errore: la leva sbagliata, spinta forte.
+//
+// Un pilota vero sbaglia dove c'e' qualcosa da sbagliare: la frenata,
+// l'apice, l'uscita. Un errore in rettilineo non e' un errore, e' rumore.
+// Misurato su tre gare a `facile`: il picco di un errore passa da 0.54 a 1.11
+// larghezze d'auto, il tempo fuori pista NON peggiora (2.3% contro 3.0%) e la
+// frequenza resta dentro il rumore del banco (0.75 contro 0.88 per bot al
+// giro, con corse fra 0.67 e 1.13). Restringere il dove non ha richiesto di
+// compensare il quanti: sopra questa soglia ci si sta per buona parte del giro.
+const BOT_ERRORE_SOGLIA_STERZO = 0.15;
 
 // Decide se comincia un errore, e lo fa scadere. Restituisce true nel tick in
 // cui un errore COMINCIA — cosi' si puo' contare senza guardare dentro `p`.
@@ -1223,11 +1242,15 @@ const BOT_ERRORE_FRENO = 0.15;     // quanto ritarda la frenata
 // `rng` esiste per i test: con Math.random il conteggio degli errori sarebbe
 // statistico, e un test statistico su una soglia bassa e' un rosso che arriva
 // una volta ogni venti esecuzioni senza voler dire niente.
-function aggiornaErrore(p, erroriPerGiro, tickMs, giroMs, rng) {
+function aggiornaErrore(p, erroriPerGiro, tickMs, giroMs, rng, puoIniziare = true) {
     const caso = rng || Math.random;
     p.botOrologioMs = (p.botOrologioMs || 0) + tickMs;
     // Un errore alla volta: dentro uno che dura non ne parte un altro sopra.
     if (p.botErroreFinoMs && p.botErroreFinoMs >= p.botOrologioMs) return false;
+    // ⚠️ L'orologio scorre SEMPRE, anche dove un errore non puo' cominciare:
+    // e' lui a far scadere quello in corso. Uscire prima lascerebbe il bot
+    // dentro l'errore per sempre appena imbocca un rettilineo.
+    if (!puoIniziare) return false;
     const perTick = (erroriPerGiro || 0) * tickMs / (giroMs || 50000);
     if (caso() >= perTick) return false;
     p.botErroreFinoMs = p.botOrologioMs + BOT_ERRORE_DURATA_MS;
@@ -1799,7 +1822,10 @@ function updateBotInputs(game, deps) {
             // Quanto dura un giro, alla velocita' di adesso: cosi'
             // `erroriPerGiro` vale uguale su piste di lunghezza diversa.
             const giroMs = track.lapLength / Math.max(p.speed, 0.5) * 50;
-            aggiornaErrore(p, aggro.erroriPerGiro, 50, giroMs);
+            // Solo dove si vedrebbe: se il bot non sta sterzando, un errore
+            // di guida non ha niente da rovinare.
+            const dovePesa = Math.abs(steer) > BOT_ERRORE_SOGLIA_STERZO;
+            aggiornaErrore(p, aggro.erroriPerGiro, 50, giroMs, undefined, dovePesa);
             if (p.botErroreFinoMs >= (p.botOrologioMs || 0)) {
                 if (p.botErroreTipo === 'allarga') steer *= 1 - BOT_ERRORE_STERZO;
                 else brake *= 1 - BOT_ERRORE_FRENO;

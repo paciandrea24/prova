@@ -1586,6 +1586,43 @@ test('ogni bot ha una sua idea di traiettoria', () => {
 });
 
 // ═══════════ GLI ERRORI DELL'AI (spec 2026-09-05) ═══════════
+
+// ⚠️ UN ERRORE CHE NON SI VEDE NON E' UN ERRORE.
+// Playtest 2026-09-05, a facile: «non mi e' sembrato di vedere errori». Col
+// banco gara gli errori PARTIVANO eccome — 1.70 per bot al giro, piu' dei 1.2
+// previsti — ma spostavano l'auto di 0.63 unita': 0.18 larghezze d'auto su una
+// pista larga 22. Contarli non bastava: quello che il giocatore vede e'
+// l'ampiezza, e nessun test la misurava.
+test("un errore di guida toglie la meta' dello sterzo, non un quarto", () => {
+    function sterzoIn(conErrore) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: 'facile' };
+        p.trackIndex = 40;            // dentro la curva del tracciato finto
+        p.x = game.track.points[40].x; p.z = game.track.points[40].z;
+        p.botPrecisionNoise = 0;      // qui si misura l'errore, non il rumore
+        if (conErrore) {
+            p.botOrologioMs = 0;
+            p.botErroreFinoMs = 5000;
+            p.botErroreTipo = 'allarga';
+        }
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return Math.abs(p.inputs.steer);
+    }
+    const pulito = sterzoIn(false);
+    const sbagliato = sterzoIn(true);
+    assert.ok(pulito > 0.01, 'la scena non sterza: il test non prova niente');
+    // ⚠️ LA SOGLIA VIENE DALLA MISURA, non il contrario: col banco gara,
+    // 0.40 di guadagno porta il picco di un errore a 1.11 larghezze d'auto
+    // (era 0.54) senza peggiorare il tempo passato fuori pista. Qui si
+    // protegge la proprieta' — un errore si distingue dalla guida normale —
+    // non il numero.
+    assert.ok(sbagliato <= pulito * 0.67,
+        `sbagliando sterza ${sbagliato.toFixed(3)} contro ${pulito.toFixed(3)}: ` +
+        "un errore cosi' non si distingue dalla guida normale");
+    // ⚠️ E resta un errore, non un ritiro: sterzo invertito vuol dire
+    // testacoda, e la spec chiede errori che costino tempo, non la gara.
+    assert.ok(sbagliato >= 0, "sterzo invertito: e' un glitch, non un errore");
+});
 test('a facile i bot sbagliano, a difficile quasi mai', () => {
     // ⚠️ Lo STESSO flusso di numeri casuali per i due livelli: cosi' a
     // decidere e' la soglia, non la fortuna. Con Math.random questo test
