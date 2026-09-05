@@ -1502,6 +1502,67 @@ test("ci si copre da chi arriva entro un secondo, non entro trenta unita'", () =
     assert.equal(difendeCon(1, 30), 0, "copre chi e' lontano un secondo e mezzo");
 });
 
+// ⚠️ LA DIFESA E' L'UNICO SCOSTAMENTO CHE PUO' USCIRE DI PISTA.
+// La linea propria e l'ingresso largo passano da un tetto comune (vedi
+// BOT_BERSAGLIO_MAX_FRAZIONE): «sommare due vettori e sperare che il totale
+// resti in pista e' come non avere limite». La difesa veniva sommata DOPO,
+// senza tetto, e su `prova` la racing line passa gia' a 5.96 unita' dall'asse
+// su una mezza carreggiata di 11: aggiungerne 6 di difesa porta il bersaglio
+// oltre il bordo. Misurato col banco gara, il tempo passato oltre la
+// carreggiata saliva dal 6.6% al 10.6% a difficile.
+//
+// Serve una pista VERA: sul cerchio sintetico il bersaglio sta al centro
+// dell'asse, la somma non supera mai il tetto e il test proverebbe il vuoto.
+test('difendendosi il bersaglio resta dentro la carreggiata', () => {
+    const track = require('./trackLoader.js').loadTrack('prova');
+    const n = track.points.length;
+    let peggiore = 0, dove = -1;
+    // Tutto il giro: il punto critico e' dove la linea e' gia' larga di suo.
+    for (let i = 0; i < n; i += 25) {
+        const nrm = TrackGeometry.normalAt(track.points, i, true);
+        const suPista = track.racingLine ? track.racingLine[i] : track.points[i];
+        const p = {
+            x: suPista.x, z: suPista.z, angle: 0, speed: 5.5, vx: 0, vz: 0,
+            inputs: { throttle: 0, brake: 0, steer: 0 },
+            finished: false, lap: 0, botLapSeen: 0, trackIndex: i,
+            tyreWear: 0, compound: 'medium', damage: 0,
+            pitting: false, pitAutoState: null, pitPhase: null,
+            isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+            botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false,
+            botPitThreshold: 100, hasPitted: false, botLineaOffset: 0, botAllargamento: 0,
+        };
+        // L'inseguitore: dieci campioni dietro, sul lato dove c'e' piu' spazio
+        // — cioe' quello opposto a dove sta la linea. E' il sorpasso che
+        // l'utente descrive: «io passo sempre dal lato opposto».
+        const iDietro = (i - 10 + n) % n;
+        const centro = track.points[i];
+        const latLinea = (p.x - centro.x) * nrm.nx + (p.z - centro.z) * nrm.nz;
+        const lato = latLinea >= 0 ? -1 : 1;
+        const nrmD = TrackGeometry.normalAt(track.points, iDietro, true);
+        const game = {
+            track, phase: 'race', raceTick: 4000,
+            settings: { botDifficolta: 'difficile' },
+            players: {
+                bot1: p,
+                bot2: Object.assign({}, p, {
+                    trackIndex: iDietro,
+                    x: track.points[iDietro].x + nrmD.nx * 8 * lato,
+                    z: track.points[iDietro].z + nrmD.nz * 8 * lato,
+                    inputs: { throttle: 0, brake: 0, steer: 0 },
+                }),
+            },
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        const t = p._botDebug && p._botDebug.target;
+        if (!t) continue;
+        const q = TrackGeometry.nearestPoint(track.points, t.x, t.z);
+        if (q.dist > peggiore) { peggiore = q.dist; dove = i; }
+    }
+    assert.ok(peggiore <= track.roadHalf,
+        `il bersaglio della difesa arriva a ${peggiore.toFixed(2)} dall'asse ` +
+        `(campione ${dove}), oltre la mezza carreggiata di ${track.roadHalf}`);
+});
+
 test('ogni bot ha una sua idea di traiettoria', () => {
     const g = partitaConLivello('medio', 8);
     creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);

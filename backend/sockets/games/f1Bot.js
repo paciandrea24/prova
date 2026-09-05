@@ -428,7 +428,7 @@ function nearestBehindPlayer(p, allPlayers, track) {
 // e una difesa che valesse solo su uno funzionerebbe a seconda della pista.
 //
 // Restituisce null se non c'e' niente da fare: chi chiama tiene il suo sterzo.
-function difendiSePossibile(p, game, track, aggro, target, steerGain) {
+function difendiSePossibile(p, game, track, aggro, target, steerGain, targetIdx) {
     const dietro = nearestBehindPlayer(p, Object.values(game.players), track);
     const adessoMs = (game.raceTick || 0) * 50;
     const difesa = F1Duelli.scostamentoDifensivo({
@@ -461,10 +461,26 @@ function difendiSePossibile(p, game, track, aggro, target, steerGain) {
     }
     p.botScostamentoDifesa = difesa.scostamento;
     if (difesa.scostamento === 0) return null;
-    const nrm = TrackGeometry.normalAt(track.points, p.trackIndex || 0, true);
+    // ⚠️ NEL PUNTO MIRATO, non dove sta il bot: e' li' che il bersaglio
+    // viene spostato, e in una curva la normale di qui e quella venti
+    // campioni piu' avanti guardano da due parti diverse.
+    const iBers = targetIdx === undefined ? (p.trackIndex || 0) : targetIdx;
+    const nrm = TrackGeometry.normalAt(track.points, iBers, true);
+    // LO STESSO TETTO DEGLI ALTRI SCOSTAMENTI. La linea propria e l'ingresso
+    // largo si tagliano insieme al bordo della carreggiata; la difesa veniva
+    // sommata dopo, e su `prova` la racing line passa gia' a 5.96 dall'asse su
+    // una mezza carreggiata di 11: sei unita' di difesa portavano il bersaglio
+    // a 13.85, cioe' in ghiaia. Col banco gara si vedeva come tempo passato
+    // fuori pista, salito dal 6.6% al 10.6% a difficile.
+    const centro = track.points[iBers];
+    const latLinea = (target.x - centro.x) * nrm.nx + (target.z - centro.z) * nrm.nz;
+    const tetto = Math.max(Math.abs(latLinea), track.roadHalf * BOT_BERSAGLIO_MAX_FRAZIONE);
+    const latVoluta = Math.max(-tetto, Math.min(tetto, latLinea + difesa.scostamento));
+    const scarto = latVoluta - latLinea;
+    if (scarto === 0) return null;
     const bersaglio = {
-        x: target.x + nrm.nx * difesa.scostamento,
-        z: target.z + nrm.nz * difesa.scostamento,
+        x: target.x + nrm.nx * scarto,
+        z: target.z + nrm.nz * scarto,
     };
     return {
         steer: steerToward(p.x, p.z, p.angle, bersaglio.x, bersaglio.z, steerGain),
@@ -1638,7 +1654,7 @@ function updateBotInputs(game, deps) {
             // La difesa vale su tutti e due i rami di guida: una pista senza
             // racing line non e' una pista dove non ci si difende.
             if (!isQuali && botState !== 'OVERTAKING') {
-                const dif = difendiSePossibile(p, game, track, aggro, target, rt.steerGain);
+                const dif = difendiSePossibile(p, game, track, aggro, target, rt.steerGain, solo.targetIdx);
                 if (dif) { steer = dif.steer; debugTarget = dif.debugTarget; botState = 'DEFENDING'; }
             }
 
@@ -1754,7 +1770,7 @@ function updateBotInputs(game, deps) {
             // La difesa vale su tutti e due i rami di guida: una pista senza
             // racing line non e' una pista dove non ci si difende.
             if (!isQuali && botState !== 'OVERTAKING') {
-                const dif = difendiSePossibile(p, game, track, aggro, target, tuning.steerGain);
+                const dif = difendiSePossibile(p, game, track, aggro, target, tuning.steerGain, targetIdx);
                 if (dif) { steer = dif.steer; debugTarget = dif.debugTarget; botState = 'DEFENDING'; }
             }
 
