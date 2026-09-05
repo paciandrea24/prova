@@ -1250,3 +1250,48 @@ test('a difficile un bot tenta il sorpasso dove a facile si accoda', () => {
     assert.equal(statoDi('difficile', 0.98), 'OVERTAKING');
     assert.equal(statoDi('facile', 0.98), 'FOLLOWING');
 });
+
+// ═══════════ LA SOSTA NON SI FA NELL'ULTIMO GIRO ═══════════
+//
+// ⚠️ SEGNALATO DALL'UTENTE (2026-09-05): «non voglio che i bot vadano ai box
+// all'ultimo giro, massimo al penultimo. non si puo' finire la gara passando
+// ai box».
+//
+// La rete di sicurezza che forza la sosta a chi non ha ancora pittato
+// scattava a `remainingLaps <= 1`, che vuol dire "sta correndo l'ultimo
+// giro": su una pista corta, dove l'usura non arriva mai alla soglia, TUTTI i
+// bot finivano per entrare li'.
+function garaAlGiro(lap, totalLaps, usura) {
+    const { game, p } = makeGripAwarenessGame(usura, 'race');
+    game.track.totalLaps = totalLaps;
+    p.lap = lap;
+    p.tyreWear = usura;
+    p.botPitThreshold = 70;
+    p.hasPitted = false;
+    p.botHeadingToPits = false;
+    return { game, p };
+}
+
+test('con gomme buone il bot si dirige ai box al penultimo giro, non all\'ultimo', () => {
+    // Gara di 5 giri, gomme a posto: la sosta obbligatoria va scontata, e il
+    // posto giusto e' il penultimo giro (lap 3 = sta correndo il quarto).
+    const penultimo = garaAlGiro(3, 5, 20);
+    updateBotInputs(penultimo.game, makeGripAwarenessDeps());
+    assert.equal(penultimo.p.botHeadingToPits, true, 'al penultimo giro deve dirigersi ai box');
+});
+
+test('nell\'ultimo giro il bot non entra ai box nemmeno con le gomme finite', () => {
+    // ⚠️ Nemmeno con l'usura oltre la soglia: chi e' arrivato fin li' senza
+    // pittare si tiene la penalita', ma non chiude la gara in corsia box.
+    const ultimo = garaAlGiro(4, 5, 95);
+    updateBotInputs(ultimo.game, makeGripAwarenessDeps());
+    assert.equal(ultimo.p.botHeadingToPits, false, 'nell\'ultimo giro non si entra ai box');
+});
+
+test('a meta\' gara con le gomme finite si entra come sempre', () => {
+    // La regressione da evitare: il divieto vale per l'ultimo giro, non per
+    // la strategia normale.
+    const meta = garaAlGiro(1, 5, 85);
+    updateBotInputs(meta.game, makeGripAwarenessDeps());
+    assert.equal(meta.p.botHeadingToPits, true, 'con le gomme oltre soglia si entra');
+});

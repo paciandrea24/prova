@@ -599,7 +599,12 @@ function suImboccoCorsia(p, track) {
 // gomme non al limite, sceglierebbe di scontare la sosta obbligatoria
 // piuttosto che la penalità in tempo) — stesso percorso di avvicinamento
 // sicuro sopra, nessuna logica di sterzo duplicata.
-const BOT_FORCE_PIT_LAPS_REMAINING = 1;
+// ⚠️ DUE e non uno. `remainingLaps <= 1` vuol dire «sta correndo l'ultimo
+// giro»: con quel valore, su una pista corta dove l'usura non arriva mai alla
+// soglia, TUTTI i bot finivano per entrare ai box proprio li'. Segnalato
+// dall'utente il 2026-09-05: «non voglio che i bot vadano ai box all'ultimo
+// giro, massimo al penultimo. non si puo' finire la gara passando ai box».
+const BOT_FORCE_PIT_LAPS_REMAINING = 2;
 // Durante l'avvicinamento finale ai box la precisione conta più che in
 // pista aperta (il trigger d'ingresso è stretto, ~30×15m): lo stesso
 // rumore di sterzo usato per la guida normale a volte fa mancare il
@@ -1119,7 +1124,13 @@ function updateBotInputs(game, deps) {
             const remainingLaps = Math.max(0, track.totalLaps - p.lap);
             const wearThresholdHit = p.tyreWear >= p.botPitThreshold;
             const mustPitNow = remainingLaps <= BOT_FORCE_PIT_LAPS_REMAINING;
-            if (wearThresholdHit || mustPitNow) {
+            // Nell'ultimo giro non si entra ai box per nessuna ragione: chi e'
+            // arrivato fin qui senza pittare si tiene la penalita', ma la gara
+            // non si chiude passando dalla corsia. ⚠️ Su una gara di un giro
+            // solo non esiste un penultimo: li' il vincolo non si puo'
+            // rispettare e non si applica, o il bot non sosterebbe mai.
+            const ultimoGiro = track.totalLaps > 1 && remainingLaps <= 1;
+            if ((wearThresholdHit || mustPitNow) && !ultimoGiro) {
                 p.botHeadingToPits = true;
                 p.pendingCompound = pickPostPitCompound(remainingLaps, wearLapsAtMedium);
                 p.pendingRepair = shouldBotRepair(p.damage, BOT_REPAIR_DAMAGE_THRESHOLD);
