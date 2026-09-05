@@ -692,21 +692,6 @@
             out[lato].set(b);
         }
 
-        // Sesta passata: la ghiaia si rifila sul muro. Il livellamento può
-        // aver abbassato la barriera sotto la banda disegnata — è quello che
-        // succede avvicinandosi a un ponte — e una banda che esce da sotto il
-        // muro si vede. Il minimo fra due profili a pendenza limitata resta a
-        // pendenza limitata, quindi rifilare non reintroduce gradini.
-        //
-        // È il motivo per cui la ghiaia rifilata esce da QUI e non da
-        // gravelProfile: le due grandezze devono essere decise insieme,
-        // altrimenti disegno e muro possono contraddirsi.
-        out.gravel = { left: new Float64Array(n), right: new Float64Array(n) };
-        for (let i = 0; i < n; i++) {
-            out.gravel.left[i] = Math.max(0, Math.min(gravel.left[i], out.left[i] - bordoCordoloAl(i)));
-            out.gravel.right[i] = Math.max(0, Math.min(gravel.right[i], out.right[i] - bordoCordoloAl(i)));
-        }
-
         // ── IL CUSCINETTO DI GOMME ──
         //
         // Sull'arco esterno di ogni curva, dove la via di fuga lo consente. Le
@@ -726,6 +711,31 @@
                 if (muri[i] - mezzaAl(trackPts, i, roadHalf) < FUGA_MINIMA_GOMME) continue;
                 banda[i] = 1;
             }
+        }
+
+        // ── LA GHIAIA SI RIFILA SUL MURO, ANZI SULLE GOMME ──
+        //
+        // Il livellamento può aver abbassato la barriera sotto la banda
+        // disegnata — è quello che succede avvicinandosi a un ponte — e una
+        // banda che esce da sotto il muro si vede. Il minimo fra due profili a
+        // pendenza limitata resta a pendenza limitata, quindi rifilare non
+        // reintroduce gradini.
+        //
+        // È il motivo per cui la ghiaia rifilata esce da QUI e non da
+        // gravelProfile: le due grandezze devono essere decise insieme,
+        // altrimenti disegno e muro possono contraddirsi.
+        //
+        // ⚠️ Per lo stesso motivo si rifila DOPO il cuscinetto e non prima: il
+        // bordo non è il muro ma il punto d'IMPATTO (spec 2026-09-04). Sotto
+        // un cuscinetto di pneumatici non c'è ghiaia, ci sono le gomme, e una
+        // banda che arrivasse fino al muro spunterebbe da sotto le pile che
+        // dovrebbero coprirla. `impattoAt` si può già interrogare: a questo
+        // punto `out` ha sia i muri sia la banda `gomme`.
+        out.gravel = { left: new Float64Array(n), right: new Float64Array(n) };
+        for (let i = 0; i < n; i++) {
+            const bordo = bordoCordoloAl(i);
+            out.gravel.left[i] = Math.max(0, Math.min(gravel.left[i], impattoAt(out, i, -1) - bordo));
+            out.gravel.right[i] = Math.max(0, Math.min(gravel.right[i], impattoAt(out, i, 1) - bordo));
         }
         return out;
     }

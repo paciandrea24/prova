@@ -230,6 +230,18 @@ test('barrierProfile: la banda di ghiaia non esce mai da sotto il muro', () => {
     const piena = TrackGravel.gravelProfile(pts, { roadHalf: ROAD_HALF });
     for (let i = 0; i < pts.length; i++) {
         for (const lato of ['left', 'right']) {
+            const side = lato === 'right' ? 1 : -1;
+            if (bar.gomme[lato][i]) {
+                // ⚠️ Dove c'è il cuscinetto la ghiaia si accorcia lo stesso, e
+                // non sul muro: sulle GOMME (spec 2026-09-04). Non è il muro
+                // che le toglie spazio — è che sotto le pile non c'è ghiaia,
+                // ci sono le gomme. Sull'ovale vale 0.44 unità.
+                const atteso = Math.max(0, Math.min(piena[lato][i],
+                    TrackGravel.impattoAt(bar, i, side) - BORDO_CORDOLO));
+                assert.ok(Math.abs(bar.gravel[lato][i] - atteso) < 1e-9,
+                    `campione ${i} ${lato}: ghiaia ${bar.gravel[lato][i].toFixed(2)}, attesa ${atteso.toFixed(2)} (fin sotto le gomme)`);
+                continue;
+            }
             assert.ok(Math.abs(bar.gravel[lato][i] - piena[lato][i]) < 1e-9,
                 `campione ${i} ${lato}: ghiaia ${bar.gravel[lato][i].toFixed(2)}, attesa ${piena[lato][i].toFixed(2)}`);
         }
@@ -709,6 +721,35 @@ for (const id of PISTE_GOMME) {
                 const fuga = TrackGravel.impattoAt(t.barrierProfile, i, side) - raw.roadHalfWidth;
                 assert.ok(fuga >= 5 - 1e-9,
                     `${id}[${i}/${side}]: fra asse e impatto restano ${fuga.toFixed(2)} unita'`);
+            }
+        }
+    });
+
+    test(`${id}: la ghiaia non passa sotto le gomme`, () => {
+        // Sotto un cuscinetto di pneumatici non c'e' ghiaia: ci sono le gomme.
+        // Se la banda continuasse fino al muro vecchio, l'ultimo tratto
+        // resterebbe disegnato SOTTO le pile — e in gioco si vedrebbe la ghiaia
+        // spuntare da sotto la barriera che la copre.
+        const t = loadTrackGomme(id);
+        const bp = t.barrierProfile;
+        const raw = JSON.parse(fsGomme.readFileSync(
+            pathGomme.join(__dirname, '..', 'tracks', id + '.json'), 'utf8'));
+        for (let i = 0; i < t.points.length; i++) {
+            // ⚠️ Il bordo del cordolo si misura CAMPIONE PER CAMPIONE: dove la
+            // pista si allarga, `halfWidth` non e' `roadHalfWidth`, e un solo
+            // numero per tutto il giro direbbe che la ghiaia sfora dove invece
+            // e' la pista a essere piu' larga.
+            const p = t.points[i];
+            const mezza = (p && typeof p.halfWidth === 'number' && p.halfWidth > 0)
+                ? p.halfWidth : raw.roadHalfWidth;
+            const bordoCordolo = mezza + TrackGravel.CURB_W;
+            for (const side of [1, -1]) {
+                const banda = side > 0 ? bp.gomme.right : bp.gomme.left;
+                if (!banda[i]) continue;
+                const fineGhiaia = bordoCordolo + TrackGravel.gravelAt(bp.gravel, i, side);
+                const impatto = TrackGravel.impattoAt(bp, i, side);
+                assert.ok(fineGhiaia <= impatto + 1e-6,
+                    `${id}[${i}/${side}]: la ghiaia arriva a ${fineGhiaia.toFixed(2)}, le gomme a ${impatto.toFixed(2)}`);
             }
         }
     });
