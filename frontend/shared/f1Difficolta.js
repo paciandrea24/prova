@@ -60,11 +60,20 @@
                  rumoreMin: t.rumoreMin, rumoreMax: t.rumoreMax };
     }
 
-    // Le due soglie che governano l'aggressivita', gia' esistenti in f1Bot.js
-    // come costanti: quanto margine di velocita' serve per tentare un sorpasso
-    // e quanto ci si accoda a chi precede. I valori di `medio` sono quelli
-    // storici (1.01 e 0.85), cosi' chi non sceglie niente ritrova la gara di
-    // prima.
+    // Le due soglie che governano l'aggressivita', prima costanti in f1Bot.js:
+    //
+    // `margineSorpasso` — quanta velocita' libera in piu' serve per tentare un
+    //   sorpasso. Il valore di `medio`, 1.01, e' il risultato di tre tarature
+    //   successive: era il 5%, poi il 2%, poi giu' ancora su richiesta
+    //   esplicita dell'utente, perche' in un playtest su Monza (3 giri) si era
+    //   visto UN solo sorpasso. A `difficile` scende a 1.00: basta un margine
+    //   qualsiasi. A `facile` sale al 4%, cosi' ti lasciano passare.
+    //
+    // `frazioneMinimaInScia` — a quanto scende la velocita' obiettivo quando si
+    //   e' praticamente addosso a chi precede. Alta apposta: il bot talloona
+    //   invece di staccarsi, per restare a ridosso e cercare l'occasione (spec
+    //   2026-07-24-f1-bot-aggressivita-sorpassi-design.md). A `difficile` sale
+    //   ancora, a `facile` scende: si stacca e ti lascia lavorare.
     function soglieDi(livello) {
         const t = TABELLA[normalizza(livello)];
         return { margineSorpasso: t.margineSorpasso,

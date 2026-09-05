@@ -1217,3 +1217,36 @@ test('senza livello scelto la griglia nasce media, e mai senza ritmo', () => {
         assert.ok(p.botSpeedFactor >= i.ritmoMin && p.botSpeedFactor <= i.ritmoMax);
     }
 });
+
+test('a difficile un bot tenta il sorpasso dove a facile si accoda', () => {
+    // ⚠️ Si misura il COMPORTAMENTO, non la costante: due bot identici, stessa
+    // pista, stesso avversario davanti, e si guarda in che stato finiscono. Un
+    // test sulla costante direbbe solo che la tabella e' stata letta.
+    //
+    // Si riusano gli helper che il file ha gia': `makeGripAwarenessGame`
+    // costruisce pista + bot, `makeGripAwarenessDeps` le deps di
+    // updateBotInputs.
+    function statoDi(livello, quantoPiuLento) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: livello };
+        const iDavanti = p.trackIndex + 4;
+        game.players = {
+            bot1: p,
+            bot2: Object.assign({}, p, {
+                trackIndex: iDavanti,
+                speed: p.speed * quantoPiuLento,
+                botSpeedFactor: quantoPiuLento,
+                x: game.track.points[iDavanti].x,
+                z: game.track.points[iDavanti].z,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+            }),
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return p._botDebug && p._botDebug.state;
+    }
+    // Un avversario piu' lento del 2%: sta in mezzo fra la soglia di
+    // `difficile` (serve l'1.00, cioe' qualunque margine) e quella di
+    // `facile` (serve il 4%).
+    assert.equal(statoDi('difficile', 0.98), 'OVERTAKING');
+    assert.equal(statoDi('facile', 0.98), 'FOLLOWING');
+});

@@ -867,13 +867,17 @@ const BOT_RACE_START_REACTION_MAX_MS = 500;
 // che si accorge di un'altra auto entro BOT_FOLLOW_GAP_M subito avanti lungo
 // il tracciato rallenta proporzionalmente, invece di tallonarla identico.
 const BOT_FOLLOW_GAP_M        = 30;
-const BOT_FOLLOW_MIN_FRACTION = 0.85;   // frazione minima di velocità quando si è praticamente addosso a chi precede — alta apposta: il bot talloona invece di staccarsi, per restare a ridosso e cercare l'occasione di sorpasso (vedi spec 2026-07-24-f1-bot-aggressivita-sorpassi-design.md)
+// ⚠️ Il valore che era scritto qui vive ora nella tabella dei livelli
+// (frontend/shared/f1Difficolta.js), col suo perche': era una costante, ed e'
+// diventata una delle cose che cambiano fra facile e difficile.
 // Sorpasso: entro BOT_FOLLOW_GAP_M, se il bot avrebbe margine di velocità
 // libera vero sull'auto che precede (non solo momentaneo, es. lei in
 // frenata per una curva) tenta di superarla scartando di lato invece di
 // limitarsi a rallentare — altrimenti la "skill" di qualifica diventa una
 // posizione fissa per tutta la gara, nessun sorpasso si verifica mai.
-const BOT_OVERTAKE_PACE_MARGIN = 1.01;   // serve almeno l'1% di velocità libera in più per tentare (era 5%, poi 2%: un solo sorpasso osservato in playtest su Monza/3 giri, spinto ancora più giù su richiesta esplicita)
+// ⚠️ Il valore che era scritto qui vive ora nella tabella dei livelli
+// (frontend/shared/f1Difficolta.js), col suo perche': era una costante, ed e'
+// diventata una delle cose che cambiano fra facile e difficile.
 const BOT_OVERTAKE_FRACTION    = 0.55;   // quanto ci si sposta lateralmente (frazione della mezza larghezza pista)
 // Il sorpasso si somma allo spazio pista già "consumato" dal taglio curva
 // (apexOffset): tentarlo mentre si è già in curva stretta può superare la
@@ -986,6 +990,10 @@ function updateBotInputs(game, deps) {
         effectiveBrakeMult, corneringCapacity
     } = deps;
     const tuning = { ...DEFAULT_TUNING, ...(tuningOverrides || {}) };
+    // Quanto sono aggressivi, secondo il livello scelto in lobby: con quanto
+    // margine tentano un sorpasso e quanto restano attaccati a chi precede.
+    // I valori di `medio` sono quelli storici (1.01 e 0.85).
+    const aggro = F1Difficolta.soglieDi(game.settings && game.settings.botDifficolta);
     const track = game.track;
     const isQuali = game.phase === 'qualifying';
     const metersPerSample = track.lapLength / track.points.length;
@@ -1308,7 +1316,7 @@ function updateBotInputs(game, deps) {
                         effectiveMaxSpeed, rt.cornerSpeedMargin, rt.brakingDistanceMargin, turnRateLow
                     );
                     debugGapToAhead = ahead.gapM;
-                    if (cornerIsMild && targetSpeed > leaderTargetSpeed * BOT_OVERTAKE_PACE_MARGIN) {
+                    if (cornerIsMild && targetSpeed > leaderTargetSpeed * aggro.margineSorpasso) {
                         const overtake = overtakeOffset(
                             track.points, ahead.player.trackIndex || 0, ahead.player.x, ahead.player.z,
                             track.roadHalf, BOT_OVERTAKE_FRACTION, p.botOvertakeSide
@@ -1318,7 +1326,7 @@ function updateBotInputs(game, deps) {
                         botState = 'OVERTAKING';
                     } else {
                         const closeness = 1 - ahead.gapM / BOT_FOLLOW_GAP_M;
-                        targetSpeed *= 1 - closeness * (1 - BOT_FOLLOW_MIN_FRACTION);
+                        targetSpeed *= 1 - closeness * (1 - aggro.frazioneMinimaInScia);
                         botState = 'FOLLOWING';
                     }
                 }
@@ -1417,7 +1425,7 @@ function updateBotInputs(game, deps) {
                         effectiveMaxSpeed, tuning.cornerSpeedMargin, tuning.brakingDistanceMargin, turnRateLow
                     );
                     debugGapToAhead = ahead.gapM;
-                    if (cornerIsMild && targetSpeed > leaderTargetSpeed * BOT_OVERTAKE_PACE_MARGIN) {
+                    if (cornerIsMild && targetSpeed > leaderTargetSpeed * aggro.margineSorpasso) {
                         const overtake = overtakeOffset(
                             track.points, ahead.player.trackIndex || 0, ahead.player.x, ahead.player.z,
                             track.roadHalf, BOT_OVERTAKE_FRACTION, p.botOvertakeSide
@@ -1427,7 +1435,7 @@ function updateBotInputs(game, deps) {
                         botState = 'OVERTAKING';
                     } else {
                         const closeness = 1 - ahead.gapM / BOT_FOLLOW_GAP_M;   // 0 = al limite, 1 = praticamente addosso
-                        targetSpeed *= 1 - closeness * (1 - BOT_FOLLOW_MIN_FRACTION);
+                        targetSpeed *= 1 - closeness * (1 - aggro.frazioneMinimaInScia);
                         botState = 'FOLLOWING';
                     }
                 }
