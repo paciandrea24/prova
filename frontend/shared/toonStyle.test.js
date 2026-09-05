@@ -169,3 +169,73 @@ test('un chunk mancante fa fallire il patch con un messaggio esplicito', () => {
         'l errore deve nominare il chunk mancante'
     );
 });
+
+// ═══════════ L'ATLANTE DEI CARTELLONI (spec 2026-09-04) ═══════════
+//
+// La texture dei pannelli pubblicitari nasce da un canvas disegnato a runtime.
+// Qui il canvas e' finto e REGISTRA le chiamate: cosi' si puo' chiedere cosa
+// c'e' disegnato sopra — che e' l'unica domanda che conta — senza un browser.
+const SponsorAtlas = require('./sponsorAtlas.js');
+
+function finestraFinta() {
+    const tratti = [];
+    const ctx = {
+        set fillStyle(v) { this._fill = v; },
+        get fillStyle() { return this._fill; },
+        set font(v) { this._font = v; },
+        get font() { return this._font; },
+        textAlign: '', textBaseline: '',
+        fillRect(x, y, w, h) { tratti.push({ tipo: 'rect', x, y, w, h, colore: this._fill }); },
+        fillText(t, x, y) { tratti.push({ tipo: 'testo', testo: t, x, y, colore: this._fill, font: this._font }); },
+    };
+    const canvas = { width: 0, height: 0, getContext: () => ctx };
+    global.document = { createElement: () => canvas };
+    global.THREE = {
+        CanvasTexture: class { constructor(c) { this.image = c; } },
+        RepeatWrapping: 1000, ClampToEdgeWrapping: 1001, LinearFilter: 1006,
+    };
+    return { tratti, canvas };
+}
+
+test('l\'atlante ha un pannello per sponsor, con fondo, banda e nome', () => {
+    const { tratti, canvas } = finestraFinta();
+    const tex = ToonStyle.sponsorTexture(SponsorAtlas.PANNELLI);
+    const larghezzaPannello = canvas.width / SponsorAtlas.PANNELLI.length;
+    assert.equal(canvas.width % SponsorAtlas.PANNELLI.length, 0,
+        'i pannelli devono dividere esattamente la texture');
+
+    const scritte = tratti.filter(t => t.tipo === 'testo');
+    assert.deepEqual(scritte.map(t => t.testo), SponsorAtlas.PANNELLI.map(p => p.nome));
+    // ⚠️ Ogni nome sta DENTRO il suo pannello: sconfinare vorrebbe dire una
+    // scritta a cavallo di due cartelloni, e in gioco si vedrebbe mezza
+    // parola su un pannello e mezza sul successivo.
+    scritte.forEach((t, k) => {
+        assert.ok(t.x > k * larghezzaPannello && t.x < (k + 1) * larghezzaPannello,
+            `${t.testo} sta a ${t.x}, fuori dal pannello ${k}`);
+    });
+
+    // Due rettangoli per pannello: il fondo pieno e la banda chiara in mezzo.
+    const rett = tratti.filter(t => t.tipo === 'rect');
+    assert.equal(rett.length, SponsorAtlas.PANNELLI.length * 2);
+    const hex = (v) => '#' + (v >>> 0).toString(16).padStart(6, '0');
+    SponsorAtlas.PANNELLI.forEach((p, k) => {
+        const fondo = rett[k * 2], banda = rett[k * 2 + 1];
+        assert.equal(fondo.colore, hex(p.fondo), `pannello ${k}: fondo`);
+        assert.equal(banda.colore, hex(p.banda), `pannello ${k}: banda`);
+        assert.equal(fondo.h, canvas.height, 'il fondo copre tutta l\'altezza');
+        assert.ok(banda.y > 0 && banda.y + banda.h < canvas.height,
+            'la banda sta in mezzo, non a filo dei bordi');
+        // Il nome e' scritto nel colore del FONDO, sopra la banda chiara: e'
+        // il contrasto che si legge passandoci a 250 all'ora.
+        assert.equal(scritte[k].colore, hex(p.fondo));
+        assert.ok(scritte[k].y > banda.y && scritte[k].y < banda.y + banda.h,
+            'il nome dev\'essere dentro la banda');
+    });
+
+    // ⚠️ Niente mipmap e niente ripetizione su S: le UV del nastro non escono
+    // mai da [0,1], e con Repeat il filtro all'ultimo pixel di un pannello
+    // pescherebbe il primo pixel di quello all'altro capo dell'atlante.
+    assert.equal(tex.generateMipmaps, false);
+    assert.equal(tex.wrapS, global.THREE.ClampToEdgeWrapping);
+    delete global.document; delete global.THREE;
+});

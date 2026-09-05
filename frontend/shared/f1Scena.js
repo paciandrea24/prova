@@ -182,7 +182,19 @@
             (i, side) => TrackGravel.barrierAt(barrierProfile, i, side),
             pitMergeSamples,
             (i, bx, bz) => TrackGeometry.terrainTopAt(trackPts, i, bx, bz, embankPlateau),
-            { sponsor: inCitta });
+            null);
+
+        // I CARTELLONI, dopo le barriere perche' si posano sopra il loro
+        // muretto e ne seguono la distanza: se il muro arretra per una via di
+        // fuga, il cartellone arretra con lui.
+        // ⚠️ `barrierAt` e non `impattoAt`: il cartellone sta sul MURO, non
+        // sulle gomme. Dove il cuscinetto c'e', il nastro si interrompe — un
+        // pannello dietro tre file di pneumatici non lo vedrebbe nessuno.
+        builder.buildCartelloni(scene, trackPts,
+            (i, side) => TrackGravel.barrierAt(barrierProfile, i, side),
+            pitMergeSamples,
+            (i, bx, bz) => TrackGeometry.terrainTopAt(trackPts, i, bx, bz, embankPlateau),
+            { gomme: barrierProfile.gomme, trackId: trackData.id });
         // LA CITTÀ, dopo le barriere perché si posa su di loro: la facciata
         // comincia dove finisce il muro più il marciapiede, e dove la via di
         // fuga allarga arretra con lei.

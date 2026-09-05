@@ -36,7 +36,7 @@ function builderChePrendeNota(registro) {
     // conosce fa esplodere ogni test di questo file con «is not a function»,
     // che è come me ne sono accorto.
     const nomi = ['impostaSuolo', 'buildGround', 'buildEmbankment', 'buildBridgeDecks', 'buildRibbon',
-                  'buildCurbs', 'buildGravel', 'buildBarriers', 'buildCitta', 'buildStartLine',
+                  'buildCurbs', 'buildGravel', 'buildBarriers', 'buildCartelloni', 'buildCitta', 'buildStartLine',
                   'buildPitLane', 'buildStartingGrid'];
     const finto = {};
     for (const nome of nomi) {
@@ -72,6 +72,9 @@ test('la sequenza di costruzione è quella del gioco, nell ordine del gioco', as
         'impostaSuolo',
         'buildGround', 'buildEmbankment', 'buildBridgeDecks',
         'buildRibbon', 'buildCurbs', 'buildGravel', 'buildBarriers',
+        // I cartelloni vengono DOPO le barriere: si posano sopra il loro
+        // muretto e ne seguono la distanza (spec 2026-09-04).
+        'buildCartelloni',
         'buildStartLine', 'buildPitLane', 'buildStartingGrid',
     ]);
 });
@@ -106,9 +109,9 @@ test('ogni pista si costruisce senza esplodere', async () => {
         const registro = [];
         await F1Scena.costruisciCircuito(scenaFinta(), pista(id),
             { builder: builderChePrendeNota(registro), gridSize: 6 });
-        // 11 con `impostaSuolo`, 12 sulle piste cittadine (che aggiungono
-        // `buildCitta`).
-        const attese = pista(id).ambientazione === 'citta' ? 12 : 11;
+        // 12 con impostaSuolo e il nastro dei cartelloni, 13 sulle piste
+        // cittadine (che aggiungono buildCitta).
+        const attese = pista(id).ambientazione === 'citta' ? 13 : 12;
         assert.equal(registro.length, attese, `${id}: attese ${attese} chiamate, fatte ${registro.length}`);
     }
 });

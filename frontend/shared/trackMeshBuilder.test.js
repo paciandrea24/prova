@@ -45,6 +45,11 @@ global.window = {
     SceneryHills: require('./sceneryHills.js'),
     TrackAcrobatico: require('./trackAcrobatico.js'),
     ToonPalette: require('./toonPalette.js'),
+    SponsorAtlas: require('./sponsorAtlas.js'),
+    // La texture vera nasce da un canvas, che qui non c'e': questi test
+    // misurano la GEOMETRIA. Cosa ci sia disegnato sopra e' affare di
+    // toonStyle.test.js.
+    ToonStyle: { sponsorTexture: () => ({ finta: true }) },
 };
 require('./trackMeshBuilder.js');
 const TrackMeshBuilder = global.window.TrackMeshBuilder;
@@ -552,10 +557,14 @@ test('le barriere sul ponte hanno gli stessi colori di tutte le altre', () => {
             tinte.add([col[i], col[i + 1], col[i + 2]].map(v => v.toFixed(2)).join(','));
         }
     }
-    // Due sole tinte su tutto il giro: la striscia chiara e quella rossa. Ora
-    // che ogni barriera è un muro solido, quella del ponte non ha più niente
-    // di diverso da segnalare.
-    assert.equal(tinte.size, 2, `attese 2 tinte, trovate ${tinte.size}: ${[...tinte].join(' | ')}`);
+    // UNA sola tinta su tutto il giro. Erano due, la chiara e la rossa,
+    // finche' il muro e' stato bianco-rosso: dal 2026-09-04 e' cemento, e
+    // sopra ci corrono i cartelloni. Ora che ogni barriera e' un muro solido,
+    // quella del ponte non ha piu' niente di diverso da segnalare.
+    const cemento = require('./toonPalette.js').SURFACES.muretto;
+    const atteso = [((cemento >> 16) & 255) / 255, ((cemento >> 8) & 255) / 255, (cemento & 255) / 255]
+        .map(v => v.toFixed(2)).join(',');
+    assert.deepEqual([...tinte], [atteso], `attese solo il cemento, trovate: ${[...tinte].join(' | ')}`);
 });
 
 // ────────────────────────────────────────────────────────────────────────
@@ -1048,71 +1057,199 @@ test('senza profilo non si costruisce nessuna citta\'', () => {
     assert.equal(c.children.length, 0);
 });
 
-test('in citta\' le barriere portano i pannelli sponsor, nel verde no', () => {
-    // ⚠️ Il bianco-rosso e' la barriera di un autodromo. In una via chiusa al
-    // traffico per un weekend, a bordo strada ci sono i cartelloni: fascia di
-    // colore e banda chiara al centro, marchi inventati e nessuna scritta —
-    // che e' quanto si legge davvero passandoci a 250 km/h.
+test('il muro e\' cemento su ogni pista, citta\' compresa', () => {
+    // ⚠️ QUESTO TEST HA CAMBIATO PROMESSA DUE VOLTE, e vale la pena ricordarlo.
     //
-    // ⚠️ QUESTO TEST E' STATO RISCRITTO. La prima stesura contava i vertici
-    // (quattro) e i colori distinti (sei), ed era VERDE su una barriera che
-    // sfumava dal colore al bianco per il 38% della sua altezza e aveva tutto
-    // il terzo alto biancastro. Contare non e' guardare: un test sul colore
-    // deve chiedere di che tinta e' un punto preciso.
+    // Prima chiedeva quattro vertici e sei colori distinti in citta', ed era
+    // VERDE su una barriera che sfumava dal colore al bianco per il 38%
+    // dell'altezza: contare non e' guardare. Poi ha chiesto che di quei colori
+    // ce ne fossero due netti e non sfumati.
+    //
+    // Dal 2026-09-04 non chiede piu' niente di tutto questo, perche' sul MURO
+    // non c'e' piu' colore: i cartelloni sono diventati un nastro a parte con
+    // scritte vere (buildCartelloni), e il muretto sotto e' cemento — in
+    // citta' come nel verde. Il bianco-rosso non e' rimasto nemmeno «dove non
+    // c'e' ne' cartellone ne' gomme»: quel caso e' vuoto.
     const pts = [];
     for (let i = 0; i < 300; i++) {
         const a = (i / 300) * Math.PI * 2;
         pts.push({ x: Math.cos(a) * 200, z: Math.sin(a) * 200, y: 0 });
     }
+    const cemento = require('./toonPalette.js').SURFACES.muretto;
+    const atteso = [((cemento >> 16) & 255) / 255, ((cemento >> 8) & 255) / 255, (cemento & 255) / 255]
+        .map(v => v.toFixed(2)).join(',');
+
     const verde = contenitore(), citta = contenitore();
     TrackMeshBuilder.buildBarriers(verde, pts, 15, null, null);
+    // ⚠️ L'opzione `sponsor` non esiste piu', e passarla non deve cambiare
+    // niente: e' il modo di accorgersi se qualcuno riaprisse quel ramo.
     TrackMeshBuilder.buildBarriers(citta, pts, 15, null, null, { sponsor: true });
 
-    // Il verde non cambia di un vertice: due per campione, due colori soli.
-    const gV = verde.children[0].geometry;
-    assert.equal(gV.attributes.position.array.length / 3 / pts.length, 2);
-    const distinti = (g) => {
-        const c = g.attributes.color.array;
-        const set = new Set();
-        for (let i = 0; i < c.length; i += 3) {
-            set.add(`${c[i].toFixed(2)},${c[i + 1].toFixed(2)},${c[i + 2].toFixed(2)}`);
+    for (const [nome, c] of [['verde', verde], ['citta', citta]]) {
+        const g = c.children[0].geometry;
+        // Due vertici per campione: il muro e' una fascia, non un pannello.
+        assert.equal(g.attributes.position.array.length / 3 / pts.length, 2, nome);
+        const col = g.attributes.color.array;
+        const distinti = new Set();
+        for (let i = 0; i < col.length; i += 3) {
+            distinti.add(`${col[i].toFixed(2)},${col[i + 1].toFixed(2)},${col[i + 2].toFixed(2)}`);
         }
-        return set;
+        assert.deepEqual([...distinti], [atteso],
+            `${nome}: il muro dovrebbe essere solo cemento`);
+    }
+    // E le due barriere sono identiche vertice per vertice: in citta' il muro
+    // non e' piu' un'altra cosa.
+    assert.deepEqual(Array.from(citta.children[0].geometry.attributes.position.array),
+                     Array.from(verde.children[0].geometry.attributes.position.array));
+});
+
+// ═══════════ IL NASTRO DEI CARTELLONI (spec 2026-09-04) ═══════════
+//
+// Sopra il muretto corre una fascia di pannelli pubblicitari con scritte
+// leggibili. Sopra e non davanti: davanti ruberebbe unita' alla via di fuga,
+// che su un quinto del giro e' larga appena 4.
+
+// La texture vera nasce da un canvas, che qui non c'e': questi test misurano
+// la GEOMETRIA, e il finto restituisce un oggetto qualsiasi. Cosa ci sia
+// disegnato sopra e' affare di toonStyle.test.js.
+const SponsorAtlas = require('./sponsorAtlas.js');
+
+// Il vertice `k` di una geometria del nastro, come {x, y, z, u}.
+function verticeNastro(geo, k) {
+    const p = geo.attributes.position.array, uv = geo.attributes.uv.array;
+    return { x: p[k * 3], y: p[k * 3 + 1], z: p[k * 3 + 2], u: uv[k * 2] };
+}
+
+test('il nastro dei cartelloni sta SOPRA il muretto, non davanti', () => {
+    const c = contenitore();
+    TrackMeshBuilder.buildCartelloni(c, cerchio(), 20, null, null, { trackId: 'test' });
+    assert.equal(c.children.length, 2, 'una mesh per lato');
+    for (const mesh of c.children) {
+        const p = mesh.geometry.attributes.position.array;
+        let minY = Infinity, maxY = -Infinity, minD = Infinity, maxD = -Infinity;
+        for (let k = 0; k < p.length; k += 3) {
+            minY = Math.min(minY, p[k + 1]); maxY = Math.max(maxY, p[k + 1]);
+            // Cerchio di raggio 100: il muro sta a 80 dentro e 120 fuori.
+            const d = Math.hypot(p[k], p[k + 2]);
+            minD = Math.min(minD, d); maxD = Math.max(maxD, d);
+        }
+        // Il muretto e' alto 1.1: il nastro comincia li' e sale di 1.6.
+        assert.ok(Math.abs(minY - 1.1) < 0.01, `il nastro parte da ${minY}`);
+        assert.ok(Math.abs(maxY - 2.7) < 0.01, `il nastro arriva a ${maxY}`);
+        // E sta sulla verticale del muro, non davanti: una sola distanza.
+        assert.ok(maxD - minD < 0.02, `il nastro sta fra ${minD.toFixed(2)} e ${maxD.toFixed(2)}`);
+        assert.ok(Math.abs(minD - 100) > 19.9, `il nastro sta a ${minD.toFixed(2)} dal centro`);
+    }
+});
+
+test('dove ci sono le gomme il cartellone non nasce', () => {
+    // In curva il muro resta nudo dietro il cuscinetto, com'e' in pista vera:
+    // un pannello dietro tre file di pneumatici non lo vedrebbe nessuno.
+    const n = 60;
+    const pts = cerchio(n);
+    const gomme = { left: new Uint8Array(n), right: new Uint8Array(n) };
+    for (let i = 20; i < 40; i++) { gomme.left[i] = 1; gomme.right[i] = 1; }
+
+    const conGomme = contenitore();
+    TrackMeshBuilder.buildCartelloni(conGomme, pts, 20, null, null, { gomme, trackId: 'test' });
+    const senza = contenitore();
+    TrackMeshBuilder.buildCartelloni(senza, pts, 20, null, null, { trackId: 'test' });
+
+    // L'arco 20..40 di un cerchio campionato a passo costante si riconosce
+    // dall'ANGOLO di un vertice, non dal suo indice: i vertici del nastro non
+    // sono uno per campione.
+    const nellArco = (mesh) => {
+        const p = mesh.geometry.attributes.position.array;
+        let quanti = 0;
+        for (let k = 0; k < p.length; k += 3) {
+            const a = Math.atan2(p[k + 2], p[k]) / (Math.PI * 2) * n;
+            const i = (a + n) % n;
+            if (i > 21 && i < 39) quanti++;
+        }
+        return quanti;
     };
-    assert.equal(distinti(gV).size, 2, 'la barriera verde e\' bianco-rossa');
+    for (const mesh of conGomme.children) {
+        assert.equal(nellArco(mesh), 0, 'vertici di cartellone sopra le gomme');
+    }
+    // ⚠️ E senza gomme quell'arco e' pieno: altrimenti il test qui sopra
+    // misurerebbe un pezzo di nastro che non sarebbe nato comunque.
+    for (const mesh of senza.children) {
+        assert.ok(nellArco(mesh) > 10, 'senza gomme quel tratto dev\'essere coperto');
+    }
+});
 
-    const gC = citta.children[0].geometry;
-    const pos = gC.attributes.position.array, col = gC.attributes.color.array;
-    const tinta = (v) => `${col[v * 3].toFixed(3)},${col[v * 3 + 1].toFixed(3)},${col[v * 3 + 2].toFixed(3)}`;
+test('i pannelli hanno passo costante anche in curva', () => {
+    // ⚠️ E' l'invariante che vale il modo in cui si calcolano le UV: prese
+    // dall'INDICE del campione, in curva il bordo esterno e' piu' lungo
+    // dell'asse e le scritte si stirano di fuori e si stringono di dentro.
+    // Prese dalla distanza percorsa, un pannello e' lungo uguale ovunque.
+    const c = contenitore();
+    TrackMeshBuilder.buildCartelloni(c, cerchio(), 20, null, null, { trackId: 'test' });
+    const atteso = SponsorAtlas.LUNGHEZZA_PANNELLO * SponsorAtlas.PANNELLI.length;
+    for (const mesh of c.children) {
+        const geo = mesh.geometry;
+        const quanti = geo.attributes.position.array.length / 3;
+        const rapporti = [];
+        for (let k = 2; k < quanti; k += 2) {
+            const a = verticeNastro(geo, k - 2), b = verticeNastro(geo, k);
+            const dist = Math.hypot(b.x - a.x, b.z - a.z);
+            const du = b.u - a.u;
+            // I due vertici di un confine stanno nello stesso punto e portano
+            // `u` diversi: fra loro il rapporto non significa niente.
+            if (dist < 1e-6 || du <= 1e-9) continue;
+            rapporti.push(dist / du);
+        }
+        assert.ok(rapporti.length > 50, `solo ${rapporti.length} passi misurabili`);
+        const min = Math.min.apply(null, rapporti), max = Math.max.apply(null, rapporti);
+        assert.ok((max - min) / max < 0.05,
+            `il passo dei pannelli varia del ${(100 * (max - min) / max).toFixed(1)}%`);
+        // E il passo e' quello dichiarato: un giro intero dell'atlante ogni
+        // LUNGHEZZA_PANNELLO per quanti pannelli ci sono.
+        assert.ok(Math.abs(min - atteso) / atteso < 0.05,
+            `un giro d'atlante dura ${min.toFixed(1)} unita' invece di ${atteso}`);
+    }
+});
 
-    // IN ALTEZZA: fondo, banda, fondo — e i due stacchi su spessore ZERO.
-    // Il vertex color e' interpolato: se le due quote di stacco non coincidono
-    // esattamente, fra loro c'e' una sfumatura invece di un bordo.
-    const blocco = [0, 1, 2, 3, 4, 5].map(v => ({ z: pos[v * 3 + 1], c: tinta(v) }));
-    assert.equal(blocco[0].c, blocco[1].c, 'sotto la banda il colore dev\'essere pieno');
-    assert.equal(blocco[2].c, blocco[3].c, 'la banda dev\'essere piena');
-    assert.equal(blocco[4].c, blocco[5].c, 'sopra la banda il colore dev\'essere pieno');
-    assert.equal(blocco[1].z, blocco[2].z, 'lo stacco di sotto sfuma invece di essere netto');
-    assert.equal(blocco[3].z, blocco[4].z, 'lo stacco di sopra sfuma invece di essere netto');
-    assert.notEqual(blocco[1].c, blocco[2].c, 'la banda non si distingue dal fondo');
-    // E il colore SOPRA la banda e' quello di sotto: il pannello ha una banda
-    // al centro, non la meta' alta di un altro colore.
-    assert.equal(blocco[0].c, blocco[5].c, 'sopra la banda dev\'esserci ancora il fondo');
-    // La banda sta davvero in mezzo, non a filo del bordo superiore.
-    assert.ok(blocco[3].z < blocco[5].z - 0.1, 'la banda tocca la cima della barriera');
+test('ogni pannello e\' lungo LUNGHEZZA_PANNELLO, anche in curva', () => {
+    // La prova diretta: i confini fra un pannello e il successivo sono i punti
+    // dove due vertici coincidono, e la distanza fra due confini e' il passo.
+    // ⚠️ Un confine cade quasi sempre IN MEZZO a due campioni: spostandolo sul
+    // campione piu' vicino, con passo di campionamento 3.1 e pannelli da 12,
+    // un pannello su quattro sarebbe lungo un quarto in piu' del suo vicino.
+    const c = contenitore();
+    TrackMeshBuilder.buildCartelloni(c, cerchio(), 20, null, null, { trackId: 'test' });
+    for (const mesh of c.children) {
+        const geo = mesh.geometry;
+        const quanti = geo.attributes.position.array.length / 3;
+        const confini = [];
+        for (let k = 2; k < quanti; k += 2) {
+            const a = verticeNastro(geo, k - 2), b = verticeNastro(geo, k);
+            if (Math.hypot(b.x - a.x, b.z - a.z) < 1e-6) confini.push(b);
+        }
+        assert.ok(confini.length > 5, `solo ${confini.length} confini di pannello`);
+        for (let k = 1; k < confini.length; k++) {
+            // Corda contro arco: su un cerchio di raggio 120 una corda di 12
+            // e' piu' corta dell'arco dello 0.05%, sotto la tolleranza.
+            const passo = Math.hypot(confini[k].x - confini[k - 1].x,
+                                     confini[k].z - confini[k - 1].z);
+            assert.ok(Math.abs(passo - SponsorAtlas.LUNGHEZZA_PANNELLO) < 0.2,
+                `un pannello e' lungo ${passo.toFixed(2)} invece di ${SponsorAtlas.LUNGHEZZA_PANNELLO}`);
+        }
+    }
+});
 
-    // LUNGO IL GIRO: due pannelli vicini non si mescolano. Il primo vertice di
-    // ogni segmento porta la tinta del suo pannello, e cambia di netto.
-    const fondi = [];
-    for (let s = 0; s < 40; s++) fondi.push(tinta(gC.index[s * 18]));
-    assert.ok(new Set(fondi).size >= 4, 'lungo il giro devono passare piu\' insegne');
-    // Ogni insegna dura piu' di un segmento: se cambiasse a ogni campione non
-    // sarebbero pannelli, sarebbe rumore.
-    let cambi = 0;
-    for (let s = 1; s < fondi.length; s++) if (fondi[s] !== fondi[s - 1]) cambi++;
-    assert.ok(cambi > 0 && cambi < fondi.length / 2,
-        `${cambi} cambi d'insegna su ${fondi.length} segmenti: i pannelli sono troppo corti`);
-
-    // Tre fasce per segmento invece di una: la citta' costa il triplo di facce.
-    assert.equal(gC.index.length, gV.index.length * 3);
+test('lungo il giro passano molti sponsor diversi', () => {
+    // Con le UV continue l'atlante scorrerebbe sempre nello stesso ordine
+    // ciclico — 1, 2, 3, ... 20, 1, 2, 3 — e la sequenza a sacchetto non
+    // servirebbe a niente. Ogni pannello prende il suo pezzo di nastro.
+    const c = contenitore();
+    TrackMeshBuilder.buildCartelloni(c, cerchio(), 20, null, null, { trackId: 'melbourne' });
+    const geo = c.children[0].geometry;
+    const quanti = geo.attributes.position.array.length / 3;
+    const usati = new Set();
+    for (let k = 0; k < quanti; k += 2) {
+        const u = verticeNastro(geo, k).u;
+        usati.add(Math.floor(u * SponsorAtlas.PANNELLI.length + 1e-6));
+    }
+    assert.ok(usati.size >= 10, `un giro mostra solo ${usati.size} pannelli diversi`);
 });

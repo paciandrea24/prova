@@ -119,6 +119,50 @@
         return tex;
     }
 
+// L'atlante dei cartelloni: i pannelli affiancati in orizzontale, ciascuno
+    // fondo + banda chiara + nome. Rif. spec 2026-09-04.
+    //
+    // ⚠️ TESTO NETTO, non sfumato. In cel shading una scritta con l'antialias
+    // spinto diventa una macchia grigia — e' la stessa lezione delle finestre
+    // delle facciate di citta', che come vertex color sembravano tende a
+    // coste. Font pesante, niente ombre, niente bordi morbidi.
+    //
+    // ⚠️ Un pannello LARGO IL DOPPIO di quanto e' alto: il nastro e' alto 1.6
+    // unita' e un pannello e' lungo 12, ma le lettere devono restare leggibili
+    // passandoci a 250 all'ora. Il rapporto 2:1 della texture, stirato su 12:1
+    // in mondo, allarga le lettere invece di assottigliarle.
+    function sponsorTexture(pannelli) {
+        const LARGO = 256, ALTO = 128;      // per pannello
+        const c = document.createElement('canvas');
+        c.width = LARGO * pannelli.length;
+        c.height = ALTO;
+        const ctx = c.getContext('2d');
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        pannelli.forEach(function (p, k) {
+            const x0 = k * LARGO;
+            const hex = (v) => '#' + (v >>> 0).toString(16).padStart(6, '0');
+            ctx.fillStyle = hex(p.fondo);
+            ctx.fillRect(x0, 0, LARGO, ALTO);
+            // La banda chiara: una fascia orizzontale al centro, su cui sta il
+            // nome. E' quanto si legge davvero passandoci a 250 km/h.
+            ctx.fillStyle = hex(p.banda);
+            ctx.fillRect(x0, ALTO * 0.28, LARGO, ALTO * 0.44);
+            ctx.fillStyle = hex(p.fondo);
+            ctx.font = 'bold ' + Math.round(ALTO * 0.30) + 'px sans-serif';
+            ctx.fillText(p.nome, x0 + LARGO / 2, ALTO * 0.5);
+        });
+        const tex = new THREE.CanvasTexture(c);
+        // ⚠️ ClampToEdge su entrambi gli assi, non Repeat su S: le UV del
+        // nastro non escono mai da [0,1] — ogni pannello ha il suo pezzo — e
+        // con Repeat il filtro lineare all'ultimo pixel di un pannello
+        // pescherebbe il primo pixel del pannello all'altro capo dell'atlante.
+        tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.minFilter = tex.magFilter = THREE.LinearFilter;
+        tex.generateMipmaps = false;
+        return tex;
+    }
+
     function sharedUniforms() {
         if (!shared) {
             const P = palette();
@@ -398,6 +442,7 @@
     return {
         buildPatch, convert, setEnabled, impostaNotturno, audit, excludeFromOutline,
         copyMaterialState, MATERIAL_STATE,
+        sponsorTexture,
         OUTLINE_EXCLUDE_LAYER, BUILD,
         get uniforms() { return sharedUniforms(); },
     };

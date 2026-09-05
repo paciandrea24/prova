@@ -16,6 +16,11 @@
     // questo file in ogni pagina che lo usa.
     const Palette = root.ToonPalette;
 
+    // I cartelloni sopra il muretto: l'atlante dice CHI sono e in che
+    // ordine, toonStyle li disegna. Rif. spec 2026-09-04.
+    const SponsorAtlas = root.SponsorAtlas;
+    const ToonStyle = root.ToonStyle;
+
     // Verde del prato: usato sia dal terrapieno sia dal prato con foro
     // (buildGround), per continuità visiva senza cuciture di colore tra i due.
     const GRASS_COLOR = Palette.SURFACES.grass;
@@ -574,36 +579,28 @@
             : () => distFromCenter;
         const n = pts.length;
         const HEIGHT = 1.1;
-        const stepLen = TrackGeometry.lapLength(pts) / n;
-        const STRIPE = 14;
-        // ⚠️ IN CITTA' LE BARRIERE PORTANO GLI SPONSOR, non il bianco-rosso.
-        // Il bianco-rosso è la barriera di un autodromo; in una via chiusa al
-        // traffico per un weekend, quello che si vede a bordo strada sono
-        // pannelli pubblicitari. Marchi inventati e nessuna scritta: un
-        // pannello è una fascia di colore con una banda chiara al centro, che
-        // è quanto si legge davvero passandoci a 250 km/h.
+        // ⚠️ IL MURO E' CEMENTO, E BASTA (spec 2026-09-04). Non piu'
+        // bianco-rosso, e non piu' a fasce di colore in citta':
         //
-        // ⚠️ IL PRIMO TENTATIVO (2026-08-27) NE METTEVA QUATTRO E NON BASTAVA.
-        // Base, banda sotto, banda sopra, cima: il colore restava pieno solo
-        // nel terzo basso, poi SFUMAVA per il 38% dell'altezza e tutto il
-        // terzo alto era biancastro. Non era una banda al centro, era mezza
-        // barriera chiara — e l'utente l'ha vista: «le vedo colorate con
-        // alternanze di bianco e altri colori, e' un'implementazione
-        // interrotta o cosa?». Il dettaglio sta nel ramo `sponsor` qui sotto.
-        const sponsor = !!(opzioni && opzioni.sponsor) && !!Palette.CITTA_SPONSOR;
-        // Le quote della banda, in frazione dell'altezza: il pannello sta in
-        // alto, sopra lo zoccolo, come i cartelloni veri.
-        const BANDA = [0.34, 0.72];
-        const insegne = sponsor ? Palette.CITTA_SPONSOR : null;
+        //  - le strisce bianco-rosse in F1 stanno sui CORDOLI, non sui muri, e
+        //    sopra il muretto adesso corre il nastro dei cartelloni veri
+        //    (buildCartelloni, qui sotto), con scritte leggibili al posto
+        //    delle fasce di colore del 27-08 che l'utente ha bocciato:
+        //    «ha semplicemente cambiato il colore»;
+        //  - il bianco-rosso non e' rimasto nemmeno «dove non c'e' ne'
+        //    cartellone ne' gomme», perche' quel terzo caso e' VUOTO: il
+        //    cartellone nasce ovunque non ci siano gomme. Tenerlo vivo avrebbe
+        //    lasciato in piedi un ramo di codice che nessuna pista percorre.
+        //
+        // Quel che resta a vista del muro e' la fascia bassa sotto i
+        // cartelloni e il pezzo dietro le gomme: cemento chiaro, come in F1.
 
         for (const side of [-1, 1]) {
-            // PRIMO GIRO: dove sta il muro, campione per campione, e a quale
-            // pannello appartiene. Serve una tabella prima di costruire, perche'
-            // in citta' il vertice non e' piu' uno per campione: dove finisce
-            // un'insegna e ne comincia un'altra ce ne vogliono due.
+            // PRIMO GIRO: dove sta il muro, campione per campione. Serve una
+            // tabella prima di costruire, perche' i varchi della corsia box si
+            // decidono guardando i campioni vicini.
             const bordo = new Array(n);
             const gapped = new Array(n).fill(false);
-            let stripeAcc = 0, isRed = false, pannello = 0;
 
             for (let i = 0; i < n; i++) {
                 const { nx, nz } = TrackGeometry.normalAt(pts, i, true);
@@ -621,100 +618,31 @@
                 // riusa il meccanismo dei buchi che gia' serve alla corsia box.
                 if (pts[i].acrobatico) gapped[i] = true;
 
-                if (i > 0) { stripeAcc += stepLen; if (stripeAcc >= STRIPE) { stripeAcc = 0; isRed = !isRed; pannello++; } }
-                bordo[i] = { bx, bz, baseY, isRed, pannello };
+                bordo[i] = { bx, bz, baseY };
             }
 
             const gappedClean = mergePoints ? suppressShortRuns(gapped, BARRIER_MIN_GAP_RUN) : gapped;
-            let pos, col;
             const idx = [];
+            const pos = new Float32Array(n * 2 * 3);
+            const col = new Float32Array(n * 2 * 3);
+            const cemento = Palette.SURFACES.muretto;
+            const cr = ((cemento >> 16) & 255) / 255;
+            const cg = ((cemento >> 8) & 255) / 255;
+            const cb = (cemento & 255) / 255;
 
-            if (sponsor) {
-                // ⚠️ UN COLORE SI FERMA SOLO DOVE FINISCE IL SUO VERTICE.
-                // Il vertex color e' INTERPOLATO: fra due vertici di tinta
-                // diversa non c'e' un bordo, c'e' una sfumatura lunga quanto
-                // il pezzo. Un pannello pubblicitario ha invece due bordi
-                // netti, uno sopra e uno sotto la banda del logo, e finisce
-                // di netto dove comincia il successivo. Quindi:
-                //
-                //  - SEI vertici per campione, non quattro, con le due quote
-                //    della banda DOPPIE: la coppia alla stessa altezza porta
-                //    tinte diverse, e il salto avviene su spessore zero;
-                //  - e un secondo blocco di sei dove cambia l'insegna, cosi'
-                //    il pannello che finisce e quello che comincia non si
-                //    mescolano lungo la barriera.
-                //
-                // Dentro un pannello i vertici restano CONDIVISI fra campioni
-                // vicini: e' cio' che tiene le normali mediate e la barriera
-                // liscia in curva. Separarli tutti l'avrebbe sfaccettata.
-                const QUOTE = [0.05, HEIGHT * BANDA[0], HEIGHT * BANDA[1], HEIGHT];
-                const p = [], c = [];
-                const insegnaDi = (pan) => insegne[(pan * 5 + (side > 0 ? 2 : 0)) % insegne.length];
-                const spingi = (b, dz, hex) => {
-                    p.push(b.bx, b.baseY + dz, b.bz);
-                    c.push(((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255);
-                };
-                // Il blocco di un campione: fondo, banda, fondo, con le due
-                // quote di stacco ripetute.
-                const blocco = (b, ins) => {
-                    const k = p.length / 3;
-                    spingi(b, QUOTE[0], ins.fondo); spingi(b, QUOTE[1], ins.fondo);
-                    spingi(b, QUOTE[1], ins.banda); spingi(b, QUOTE[2], ins.banda);
-                    spingi(b, QUOTE[2], ins.fondo); spingi(b, QUOTE[3], ins.fondo);
-                    return k;
-                };
-
-                // Due indici per campione: quello che CHIUDE il segmento che
-                // arriva e quello che APRE il segmento che parte. Coincidono
-                // ovunque tranne dove cambia l'insegna.
-                const entra = new Array(n), esce = new Array(n);
-                for (let i = 0; i < n; i++) {
-                    const insPrec = insegnaDi(bordo[(i - 1 + n) % n].pannello);
-                    const ins = insegnaDi(bordo[i].pannello);
-                    entra[i] = blocco(bordo[i], insPrec);
-                    esce[i] = ins === insPrec ? entra[i] : blocco(bordo[i], ins);
-                }
-
-                for (let i = 0; i < n; i++) {
-                    const j = (i + 1) % n;
-                    if (gappedClean[i] || gappedClean[j]) continue;   // varco: nessuna faccia vicino alla corsia box
-                    // Tre fasce, e si saltano le due coppie a spessore zero:
-                    // quelle non disegnano niente e costerebbero indici.
-                    for (const v of [0, 2, 4]) {
-                        const a = esce[i] + v, b = entra[j] + v;
-                        if (side < 0) idx.push(a, a + 1, b, b, a + 1, b + 1);
-                        else          idx.push(a, b, a + 1, b, b + 1, a + 1);
-                    }
-                }
-                pos = new Float32Array(p);
-                col = new Float32Array(c);
-            } else {
-                pos = new Float32Array(n * 2 * 3);
-                col = new Float32Array(n * 2 * 3);
-                for (let i = 0; i < n; i++) {
-                    const b = bordo[i];
-                    pos[i * 6]     = b.bx; pos[i * 6 + 1] = b.baseY + 0.05;   pos[i * 6 + 2] = b.bz;
-                    pos[i * 6 + 3] = b.bx; pos[i * 6 + 4] = b.baseY + HEIGHT; pos[i * 6 + 5] = b.bz;
-                    // Bianco/rosso su TUTTO il giro, ponti compresi. Le barriere
-                    // dei ponti erano bianco/arancione perché lì il muro era
-                    // rigido mentre altrove il fuoripista si attraversava: quella
-                    // differenza serviva a leggerla a colpo d'occhio. Dal
-                    // 2026-08-12 il circuito è fisicamente chiuso e ogni barriera
-                    // è un muro (vedi applyBarrier in trackGravel), quindi il
-                    // colore diverso non segnalava più niente.
-                    const r  = b.isRed ? 0.85 : 0.93;
-                    const g  = b.isRed ? 0.10 : 0.93;
-                    const bv = b.isRed ? 0.10 : 0.96;
-                    col[i * 6] = r; col[i * 6 + 1] = g; col[i * 6 + 2] = bv;
-                    col[i * 6 + 3] = r; col[i * 6 + 4] = g; col[i * 6 + 5] = bv;
-                }
-                for (let i = 0; i < n; i++) {
-                    const j = (i + 1) % n;
-                    if (gappedClean[i] || gappedClean[j]) continue;   // varco: nessuna faccia vicino alla corsia box
-                    const a = i * 2, b = j * 2;
-                    if (side < 0) idx.push(a, a + 1, b, b, a + 1, b + 1);
-                    else          idx.push(a, b, a + 1, b, b + 1, a + 1);
-                }
+            for (let i = 0; i < n; i++) {
+                const b = bordo[i];
+                pos[i * 6]     = b.bx; pos[i * 6 + 1] = b.baseY + 0.05;   pos[i * 6 + 2] = b.bz;
+                pos[i * 6 + 3] = b.bx; pos[i * 6 + 4] = b.baseY + HEIGHT; pos[i * 6 + 5] = b.bz;
+                col[i * 6] = cr; col[i * 6 + 1] = cg; col[i * 6 + 2] = cb;
+                col[i * 6 + 3] = cr; col[i * 6 + 4] = cg; col[i * 6 + 5] = cb;
+            }
+            for (let i = 0; i < n; i++) {
+                const j = (i + 1) % n;
+                if (gappedClean[i] || gappedClean[j]) continue;   // varco: nessuna faccia vicino alla corsia box
+                const a = i * 2, b = j * 2;
+                if (side < 0) idx.push(a, a + 1, b, b, a + 1, b + 1);
+                else          idx.push(a, b, a + 1, b, b + 1, a + 1);
             }
 
             const geo = new THREE.BufferGeometry();
@@ -724,6 +652,135 @@
             geo.computeVertexNormals();
             const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
                 vertexColors: true, roughness: 0.6, metalness: 0.15, side: THREE.DoubleSide
+            }));
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            container.add(mesh);
+        }
+    }
+
+// IL NASTRO DEI CARTELLONI (spec 2026-09-04).
+    //
+    // Una fascia estrusa alta CARTELLO_H, posata SOPRA il muretto — che e'
+    // alto MURO_H. ⚠️ Sopra e non davanti: davanti ruberebbe unita' alla via
+    // di fuga, che su un quinto del giro e' larga appena 4.
+    //
+    // Nasce dove il muro NON ha le gomme davanti: in curva il muro resta nudo
+    // dietro il cuscinetto, com'e' in pista vera.
+    //
+    // ⚠️ IL NASTRO SI SPEZZA A OGNI PANNELLO, e non e' una complicazione
+    // gratuita. Con le UV continue — `u` che scorre da 0 all'infinito su un
+    // atlante ripetuto — i cartelloni si susseguirebbero sempre nello stesso
+    // ordine ciclico, 1, 2, 3, ... 20, 1, 2, 3, e `SponsorAtlas.sequenza` non
+    // servirebbe a niente. Un ordine fisso che si ripete e' di nuovo «sembra
+    // tutto uguale», il difetto da cui nasce questo lavoro. Quindi ogni
+    // pannello prende il SUO pezzo di nastro, con due vertici alla stessa
+    // posizione e `u` diversi: la scritta finisce di netto e la successiva
+    // comincia dal suo bordo.
+    function buildCartelloni(container, pts, distFromCenter, mergePoints, quotaBase, opzioni) {
+        const MURO_H = 1.1;         // l'altezza del muretto, come in buildBarriers
+        const CARTELLO_H = 1.6;
+        const distAt = typeof distFromCenter === 'function'
+            ? distFromCenter
+            : () => distFromCenter;
+        const n = pts.length;
+        const o = opzioni || {};
+        const gomme = o.gomme || null;
+        const passo = SponsorAtlas.LUNGHEZZA_PANNELLO;
+        const atlante = SponsorAtlas.PANNELLI.length;
+        // ⚠️ UNA texture per tutti e due i lati: e' larga 5120 pixel, e il
+        // ciclo qui sotto ne farebbe due identiche.
+        let tex = null;
+
+        for (const side of [-1, 1]) {
+            // PRIMO GIRO: dove sta il nastro, quanto se n'e' percorso, e se
+            // questo campione e' saltato. Serve una tabella prima di
+            // costruire, perche' il confine di un pannello cade quasi sempre
+            // IN MEZZO a due campioni, e li' servono due vertici.
+            const bordo = new Array(n + 1);
+            let percorso = 0;
+            for (let i = 0; i <= n; i++) {
+                const k = i % n;           // l'ultimo giro chiude sul primo campione
+                const { nx, nz } = TrackGeometry.normalAt(pts, k, true);
+                const p = pts[k];
+                const d = distAt(k, side);
+                const bx = p.x + nx * d * side, bz = p.z + nz * d * side;
+                if (i > 0) percorso += Math.hypot(bx - bordo[i - 1].bx, bz - bordo[i - 1].bz);
+                const banda = gomme ? (side > 0 ? gomme.right : gomme.left) : null;
+                // Niente cartellone dove ci sono le gomme, dove il nastro si
+                // apre per la corsia box, e dentro un giro della morte — che
+                // e' chiuso e non ha un fuori su cui affacciare un pannello.
+                const saltato = !!(banda && banda[k])
+                    || !!p.acrobatico
+                    || !!(mergePoints && TrackGeometry.nearestPoint(mergePoints, bx, bz).dist
+                          < BARRIER_PIT_GAP_THRESHOLD);
+                const baseY = (quotaBase ? quotaBase(k, bx, bz) : (p.y || 0)) + MURO_H;
+                bordo[i] = { bx, bz, baseY, percorso, saltato };
+            }
+
+            // ⚠️ L'ASCISSA E' LA DISTANZA PERCORSA SUL NASTRO, non l'indice
+            // del campione: in curva il bordo esterno e' piu' lungo dell'asse,
+            // e con l'indice le scritte si stirerebbero di fuori e si
+            // stringerebbero di dentro.
+            const quantiPannelli = Math.floor(bordo[n].percorso / passo) + 2;
+            const seq = SponsorAtlas.sequenza(o.trackId || 'senza-nome', quantiPannelli);
+            const pos = [], uv = [], idx = [];
+
+            // `u` dentro l'atlante per un punto che sta a `avanzamento` (0..1)
+            // dentro il pannello numero `k`: il pannello scelto occupa
+            // 1/atlante della texture.
+            const uDi = (k, avanzamento) => (seq[k % seq.length] + avanzamento) / atlante;
+            const spingi = (bx, bz, baseY, u) => {
+                const j = pos.length / 3;
+                pos.push(bx, baseY, bz, bx, baseY + CARTELLO_H, bz);
+                uv.push(u, 0, u, 1);
+                return j;
+            };
+            const faccia = (a, b) => {
+                if (side < 0) idx.push(a, a + 1, b, b, a + 1, b + 1);
+                else          idx.push(a, b, a + 1, b, b + 1, a + 1);
+            };
+
+            let precJ = -1;
+            for (let i = 0; i <= n; i++) {
+                const b = bordo[i];
+                if (b.saltato) { precJ = -1; continue; }
+                const panB = Math.floor(b.percorso / passo);
+                if (precJ < 0) {         // un tratto nuovo comincia qui
+                    precJ = spingi(b.bx, b.bz, b.baseY,
+                                   uDi(panB, (b.percorso % passo) / passo));
+                    continue;
+                }
+                const a = bordo[i - 1];
+                const corsa = b.percorso - a.percorso;
+                // ⚠️ Un ciclo e non un `if`: dove i campioni sono radi — su
+                // `prova` un campione vale 5.17 unita' — un solo segmento puo'
+                // attraversare piu' di un confine di pannello.
+                for (let k = Math.floor(a.percorso / passo); k < panB && corsa > 1e-9; k++) {
+                    const t = ((k + 1) * passo - a.percorso) / corsa;
+                    const qx = a.bx + (b.bx - a.bx) * t;
+                    const qz = a.bz + (b.bz - a.bz) * t;
+                    const qy = a.baseY + (b.baseY - a.baseY) * t;
+                    // Il pannello che finisce si chiude sul suo bordo destro, e
+                    // quello che comincia si apre sul suo bordo sinistro, alla
+                    // STESSA posizione: due vertici sovrapposti, `u` diversi.
+                    faccia(precJ, spingi(qx, qz, qy, uDi(k, 1)));
+                    precJ = spingi(qx, qz, qy, uDi(k + 1, 0));
+                }
+                const j = spingi(b.bx, b.bz, b.baseY, uDi(panB, (b.percorso % passo) / passo));
+                faccia(precJ, j);
+                precJ = j;
+            }
+
+            if (!idx.length) continue;
+            if (!tex) tex = ToonStyle.sponsorTexture(SponsorAtlas.PANNELLI);
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+            geo.setIndex(idx);
+            geo.computeVertexNormals();
+            const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+                map: tex, roughness: 0.7, metalness: 0.0, side: THREE.DoubleSide,
             }));
             mesh.castShadow = true;
             mesh.receiveShadow = true;
@@ -1775,5 +1832,5 @@
         }
     }
 
-    root.TrackMeshBuilder = { bordiDelNastro, buildCitta, impostaSuolo, buildRibbon, buildOpenRibbon, buildCurbs, buildGravel, buildBarriers, buildStartLine, buildStartingGrid, buildPitLane, buildEmbankment, buildGround, buildBridgeDecks };
+    root.TrackMeshBuilder = { bordiDelNastro, buildCitta, impostaSuolo, buildRibbon, buildOpenRibbon, buildCurbs, buildGravel, buildBarriers, buildCartelloni, buildStartLine, buildStartingGrid, buildPitLane, buildEmbankment, buildGround, buildBridgeDecks };
 })(window);
