@@ -1151,3 +1151,69 @@ test('dove la pista corre quasi dritta non si rallenta', () => {
         SteeringModel.TURN_SPEED_LOW);
     assert.equal(v, maxSpeed);
 });
+
+// ═══════════ I LIVELLI DI DIFFICOLTA' (spec 2026-09-05) ═══════════
+//
+// Prima, ogni bot pescava da solo ritmo e rumore di sterzo: la difficolta'
+// esisteva ma girava a caso, e il giocatore incontrava avversari fra +1.9 e
+// +5.6 secondi al giro senza che nessuno lo decidesse.
+const F1Difficolta = require('../../../frontend/shared/f1Difficolta.js');
+
+// ⚠️ Non un finto nuovo: `partitaPerBot` (sopra) e' quello che usano gli
+// altri test di createBots. Qui serve solo aggiungerci il livello.
+function partitaConLivello(livello, quanti) {
+    const g = partitaPerBot(quanti);
+    if (livello !== undefined) g.settings = { botDifficolta: livello };
+    return g;
+}
+
+test('a difficile i bot nascono piu\' veloci e piu\' precisi che a facile', () => {
+    const facile = partitaConLivello('facile', 8);
+    const difficile = partitaConLivello('difficile', 8);
+    creaBot(facile, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+    creaBot(difficile, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+    const ritmi = (g) => Object.values(g.players).map(p => p.botSpeedFactor);
+    const rumori = (g) => Object.values(g.players).map(p => p.botPrecisionNoise);
+    assert.ok(Math.min(...ritmi(difficile)) >= Math.max(...ritmi(facile)),
+        'il piu\' lento a difficile deve battere il piu\' veloce a facile');
+    assert.ok(Math.max(...rumori(difficile)) <= Math.min(...rumori(facile)),
+        'il piu\' impreciso a difficile deve battere il piu\' preciso a facile');
+});
+
+test('dentro un livello i bot restano diversi fra loro', () => {
+    // ⚠️ Senza varianza la griglia gira in fila indiana e non si vede un
+    // sorpasso per tutta la gara — e' il motivo per cui i livelli sono
+    // intervalli e non numeri.
+    for (const livello of F1Difficolta.LIVELLI) {
+        const g = partitaConLivello(livello, 10);
+        creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+        const ritmi = Object.values(g.players).map(p => p.botSpeedFactor);
+        assert.ok(Math.max(...ritmi) - Math.min(...ritmi) > 0.005,
+            `${livello}: tutti i bot hanno lo stesso ritmo`);
+    }
+});
+
+test('ogni bot nasce dentro gli intervalli del suo livello', () => {
+    for (const livello of F1Difficolta.LIVELLI) {
+        const i = F1Difficolta.intervalliDi(livello);
+        const g = partitaConLivello(livello, 10);
+        creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+        for (const p of Object.values(g.players)) {
+            assert.ok(p.botSpeedFactor >= i.ritmoMin && p.botSpeedFactor <= i.ritmoMax,
+                `${livello}: ritmo ${p.botSpeedFactor} fuori da [${i.ritmoMin}, ${i.ritmoMax}]`);
+            assert.ok(p.botPrecisionNoise >= i.rumoreMin && p.botPrecisionNoise <= i.rumoreMax,
+                `${livello}: rumore ${p.botPrecisionNoise} fuori da [${i.rumoreMin}, ${i.rumoreMax}]`);
+        }
+    }
+});
+
+test('senza livello scelto la griglia nasce media, e mai senza ritmo', () => {
+    const g = partitaConLivello(undefined, 6);
+    creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+    const i = F1Difficolta.intervalliDi('medio');
+    for (const p of Object.values(g.players)) {
+        assert.ok(Number.isFinite(p.botSpeedFactor) && p.botSpeedFactor > 0,
+            'un bot senza ritmo moltiplica la velocita\' per NaN e sparisce dal tracciato');
+        assert.ok(p.botSpeedFactor >= i.ritmoMin && p.botSpeedFactor <= i.ritmoMax);
+    }
+});

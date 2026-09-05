@@ -326,7 +326,13 @@ function tempoRiparazioneMs(p) {
 // ⚠️ IL NUMERO E' TARATO SU QUANTO RALLENTA, non su quanto "sembra" tanto.
 // getEnginePowerPenalty e' lineare: 1% di motore = -0,3% di velocita' massima
 // (DAMAGE_SPEED_PENALTY_MAX). Il metro di paragone e' il ventaglio dei bot,
-// che fra il piu' lento e il piu' veloce e' il 7% (BOT_SPEED_FACTOR_MIN/MAX):
+// che fra il piu' lento e il piu' veloce era il 7%. ⚠️ Dal 2026-09-05 quel
+// ventaglio dipende dal LIVELLO scelto (f1Difficolta.js): resta il 10%
+// fra il piu' lento dei facili e il piu' veloce dei difficili, ma DENTRO
+// un livello e' il 2%, e li' una perdita del 5,4% a gara non ti fa
+// scivolare nel gruppo: ti stacca. Da rivedere quando si tarera' il danno
+// motore la prossima volta — non e' stato toccato qui perche' e' una
+// scelta dell'utente del 24-08, presa sui numeri di allora.
 // una perdita che lo supera dopo una sola gara non e' "usura", e' esclusione
 // dalla corsa. A 18 si perde il 5,4% a gara — dentro il ventaglio, quindi
 // scivoli nel gruppo invece di uscirne. (Il piano diceva 35, cioe' -10,5%

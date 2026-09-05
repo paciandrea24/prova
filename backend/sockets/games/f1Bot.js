@@ -8,6 +8,7 @@
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 const BoxIngresso = require('../../../frontend/shared/f1BoxIngresso.js');
 const Stagione = require('./f1Stagione.server.js');
+const F1Difficolta = require('../../../frontend/shared/f1Difficolta.js');
 
 // Palette colori — DEVE restare in sync con frontend/index.js →
 // availableColors: i colori sono l'identità del giocatore su tutta la
@@ -472,8 +473,16 @@ function pickBotColors(humanColors, count, rng = Math.random) {
 // vera lotta. 0.93 mantiene comunque un ventaglio di ritmi diversi (assieme
 // a BOT_LAP_PACE_VARIANCE, che abilita i sorpassi) senza spalancare il
 // distacco tra il migliore e il peggiore del gruppo.
-const BOT_SPEED_FACTOR_MIN    = 0.93, BOT_SPEED_FACTOR_MAX    = 1.0;
-const BOT_PRECISION_NOISE_MIN = 0,    BOT_PRECISION_NOISE_MAX = 0.25;   // rad aggiunti/tolti allo sterzo
+// ⚠️ IL VENTAGLIO DEI BOT ORA VIENE DAL LIVELLO (f1Difficolta.js), non da
+// qui: `BOT_SPEED_FACTOR_MIN/MAX` e `BOT_PRECISION_NOISE_MIN` sono state tolte
+// il 2026-09-05 perche' non decidevano piu' niente, e una costante che resta
+// scritta senza comandare fa credere al prossimo lettore che sia lei a farlo.
+//
+// Resta questa, che ha un altro mestiere: normalizzare quanto un bot e'
+// impreciso per decidere di quanto sbaglia la mira ai box (vedi sotto). E' il
+// riferimento storico del rumore massimo, non piu' il massimo che un bot puo'
+// avere — a `facile` il piu' impreciso arriva a 0.22.
+const BOT_PRECISION_NOISE_MAX = 0.25;   // rad aggiunti/tolti allo sterzo
 const BOT_PIT_THRESHOLD_MIN   = 60,   BOT_PIT_THRESHOLD_MAX   = 80;     // % usura gomme a cui il bot decide di entrare ai box
 // Distanza (metri, lungo il giro) entro cui un bot che ha deciso di entrare
 // ai box comincia a sfumare il bersaglio dello sterzo verso pitPath[0]
@@ -616,6 +625,12 @@ function randRange(min, max, rng) {
 
 function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
     const botsEnabled = !game.settings || game.settings.botsEnabled !== 'false';
+
+    // Il livello scelto in lobby decide ritmo e precisione di TUTTA la
+    // griglia. Prima del 2026-09-05 ogni bot pescava per conto suo fra
+    // 0.93-1.00 e 0-0.25, quindi la difficolta' cambiava da una gara
+    // all'altra senza che nessuno la scegliesse.
+    const intervalli = F1Difficolta.intervalliDi(game.settings && game.settings.botDifficolta);
     if (!botsEnabled) return;
 
     const humanColors = (lobby && (lobby.lockedPlayers || lobby.players)) || [];
@@ -677,8 +692,8 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
             // gioco continua a identificare i piloti dal colore, come ha
             // sempre fatto (mai nickname, solo colore).
             nomeStagione:           daStagione ? (daStagione.find(b => b.colore === color) || {}).nome || null : null,
-            botSpeedFactor:         randRange(BOT_SPEED_FACTOR_MIN, BOT_SPEED_FACTOR_MAX, rng),
-            botPrecisionNoise:      randRange(BOT_PRECISION_NOISE_MIN, BOT_PRECISION_NOISE_MAX, rng),
+            botSpeedFactor:         randRange(intervalli.ritmoMin, intervalli.ritmoMax, rng),
+            botPrecisionNoise:      randRange(intervalli.rumoreMin, intervalli.rumoreMax, rng),
             botPitThreshold:        randRange(BOT_PIT_THRESHOLD_MIN, BOT_PIT_THRESHOLD_MAX, rng),
             botHeadingToPits:       false,
             botPitReactionScheduled: false,
