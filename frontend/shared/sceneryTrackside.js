@@ -23,7 +23,6 @@
     const CORNER_RADIUS_MAX = TrackGeometry.CORNER_RADIUS_MAX;
 
     const TYRE_STEP = 7;             // passo di affiancamento del modello tyreStack
-    const TYRE_MARGIN = 2.5;         // oltre barrierDist
     const BOARD_DISTANCES = [100, 50];
     const BOARD_MARGIN = 4;
     const MARSHAL_MARGIN = 8;
@@ -135,16 +134,34 @@
         const corners = findCorners(trackPts);
 
         for (const corner of corners) {
-            // Barriera di pneumatici lungo tutto l'arco esterno della curva.
+            // Barriera di pneumatici lungo l'arco esterno della curva, DOVE IL
+            // PROFILO LA PREVEDE: la stessa banda su cui si regola la fisica.
+            // Prima del 2026-09-04 nascevano su tutto l'arco e a barrierDist +
+            // 2.5, cioe' DIETRO il muro — si vedeva il muro, si sbatteva sul
+            // muro, e le gomme erano una fila di modelli nascosti.
             const arcSamples = (corner.endIdx - corner.startIdx + n) % n;
             const stepSamples = Math.max(1, Math.round(TYRE_STEP / stepLen));
-            for (let s = 0; s <= arcSamples; s += stepSamples) {
+            for (let s = 0; s <= arcSamples && barrierProfile; s += stepSamples) {
                 const idx = (corner.startIdx + s) % n;
                 if (onBridge(idx)) continue;
-                const pos = place(trackPts, groundPts, idx, barrierDist + TYRE_MARGIN,
+                const banda = corner.side > 0 ? barrierProfile.gomme.right
+                                              : barrierProfile.gomme.left;
+                if (!banda || !banda[idx]) continue;
+                // Il centro del modello sta mezza profondita' oltre il punto
+                // d'impatto: l'auto tocca la FACCIA delle gomme, non il loro
+                // centro.
+                const dist = TrackGravel.impattoAt(barrierProfile, idx, corner.side)
+                           + TrackGravel.PROFONDITA_GOMME / 2;
+                const pos = place(trackPts, groundPts, idx, dist,
                                   corner.side, barrierDist, embankStart, embankOuter);
                 if (!usable('tyreStack', pos.x, pos.z, pos.y, pitRoadHalf + 6)) continue;
-                layout.push(Object.assign({ asset: 'tyreStack', category: 'safety', scale: 1 }, pos));
+                // `suMisuraSulMuro`: la pila e' gia' alla distanza giusta,
+                // perche' `impattoAt` viene dal muro. Senza questo flag
+                // `traslaOltreLaGhiaia` la porterebbe una seconda volta oltre
+                // la via di fuga — misurato su banking-prova: posata a 44.8,
+                // ritrovata a 74.8, cioe' trenta unita' dietro il muro.
+                layout.push(Object.assign({ asset: 'tyreStack', category: 'safety', scale: 1,
+                                            suMisuraSulMuro: true }, pos));
             }
 
             // Commissario all'ingresso curva.

@@ -366,3 +366,87 @@ test('ogni asset piazzato ha un ingombro dichiarato, e coincide col .glb', () =>
     assert.deepEqual(senzaTaglia, [], 'asset piazzati senza ingombro dichiarato');
     assert.deepEqual(scostati, [], 'ingombro dichiarato diverso dal modello');
 });
+
+// ═══════════ Le gomme stanno dove si sbatte, e nulla sta davanti a loro ═══════════
+//
+// Dal 2026-09-04 le pile di pneumatici non sono piu' decorazione dietro il
+// muro: sono l'ostacolo su cui l'auto si ferma (spec 2026-09-04). Da qui
+// nascono due promesse su ogni pista.
+
+// Il lato del nastro su cui sta un oggetto, nella convenzione di segno del
+// profilo e della fisica.
+function latoDi(trackPts, idx, x, z) {
+    const nrm = TrackGeometry.normalAt(trackPts, idx, true);
+    return Math.sign((x - trackPts[idx].x) * nrm.nx + (z - trackPts[idx].z) * nrm.nz) || 1;
+}
+
+// ⚠️ Il campione PIU' VICINO a una pila non e' il campione da cui e' nata.
+// All'esterno di una curva stretta l'arco si allarga, e la pila piu' esterna
+// finisce piu' vicina a un campione del rettilineo che segue — dove il muro
+// sta a 13 mentre lei sta a 27. Misurarla di li' fa gridare a un difetto che
+// non c'e' (su `prova` dava uno scarto di 13.62). La domanda giusta e':
+// ESISTE un campione col cuscinetto che la spiega esattamente?
+function campioneCheLaSpiega(trackPts, profilo, g) {
+    const meta = TrackGravel.PROFONDITA_GOMME / 2;
+    for (let i = 0; i < trackPts.length; i++) {
+        for (const side of [1, -1]) {
+            const banda = side > 0 ? profilo.gomme.right : profilo.gomme.left;
+            if (!banda[i]) continue;
+            const { nx, nz } = TrackGeometry.normalAt(trackPts, i, true);
+            const d = TrackGravel.impattoAt(profilo, i, side) + meta;
+            const dx = trackPts[i].x + nx * d * side - g.x;
+            const dz = trackPts[i].z + nz * d * side - g.z;
+            if (dx * dx + dz * dz < 0.01) return i;
+        }
+    }
+    return -1;
+}
+
+test('ogni pila di gomme nasce da un campione col cuscinetto, al punto d\'impatto', () => {
+    // Fino al 2026-09-04 stavano a barrierDist + 2.5, cioe' DIETRO il muro:
+    // invisibili. La fila che si vede dev'essere la fila che ferma, e nascere
+    // solo dove il profilo dichiara il cuscinetto.
+    const orfane = [];
+    for (const id of PISTE) {
+        const { t, layout } = scenografiaDi(id);
+        if (!t.barrierProfile || !t.barrierProfile.gomme) continue;
+        for (const g of layout.filter(v => v.asset === 'tyreStack')) {
+            if (campioneCheLaSpiega(t.points, t.barrierProfile, g) < 0) {
+                const q = TrackGeometry.nearestPoint(t.points, g.x, g.z);
+                orfane.push(`${id}: pila a (${g.x.toFixed(0)}, ${g.z.toFixed(0)}), ${q.dist.toFixed(2)} dal nastro`);
+            }
+        }
+    }
+    assert.deepEqual(orfane, []);
+});
+
+test('nessun oggetto di scenografia sta fra le gomme e il muro', () => {
+    // La fascia fra il punto d'impatto e il muro e' larga 2.4 e la occupano le
+    // gomme: un oggetto li' dentro comparirebbe DAVANTI a loro, in mezzo alla
+    // via di fuga. La scenografia si dispone a partire dal muro, quindi la
+    // fascia va lasciata libera da sola — se non lo e', e' un modulo che posa
+    // a partire da un numero che non e' piu' il bordo buono.
+    //
+    // La tolleranza serve al BORDO: un cartello di frenata che finisce
+    // esattamente sul muro (misurato su melbourne, scarto 0.00) sta dietro le
+    // gomme, non dentro.
+    const BORDO = 0.1;
+    const dentro = [];
+    for (const id of PISTE) {
+        const { t, layout } = scenografiaDi(id);
+        if (!t.barrierProfile || !t.barrierProfile.gomme) continue;
+        for (const v of layout) {
+            if (v.asset === 'tyreStack' || !v.asset) continue;
+            const q = TrackGeometry.nearestPoint(t.points, v.x, v.z);
+            const side = latoDi(t.points, q.index, v.x, v.z);
+            const banda = side > 0 ? t.barrierProfile.gomme.right : t.barrierProfile.gomme.left;
+            if (!banda[q.index]) continue;
+            const impatto = TrackGravel.impattoAt(t.barrierProfile, q.index, side);
+            const muro = TrackGravel.barrierAt(t.barrierProfile, q.index, side);
+            if (q.dist > impatto + BORDO && q.dist < muro - BORDO) {
+                dentro.push(`${id}: ${v.asset} a ${q.dist.toFixed(2)}, nel cuscinetto ${impatto.toFixed(2)}..${muro.toFixed(2)}`);
+            }
+        }
+    }
+    assert.deepEqual(dentro, []);
+});

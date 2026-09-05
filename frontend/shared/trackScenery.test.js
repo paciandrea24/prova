@@ -828,7 +828,11 @@ test('con le vie di fuga nessun oggetto resta dentro il muro', () => {
         const p = trackPts[near.index];
         const { nx, nz } = TrackGeometry.normalAt(trackPts, near.index, true);
         const lato = Math.sign((v.x - p.x) * nx + (v.z - p.z) * nz) || 1;
-        const muro = TrackGravel.barrierAt(bar, near.index, lato);
+        // Il bordo della via di fuga e' il punto d'IMPATTO, non il muro: dove
+        // c'e' il cuscinetto l'auto si ferma 2.4 prima, e le pile di gomme
+        // stanno proprio li' davanti per mestiere (spec 2026-09-04). Misurare
+        // col muro le farebbe apparire tutte «dentro la via di fuga».
+        const muro = TrackGravel.impattoAt(bar, near.index, lato);
         controllate++;
         assert.ok(near.dist >= muro - 0.5,
             `${v.asset} (${v.category}) è dentro la via di fuga: a ${near.dist.toFixed(1)} con il muro a ${muro.toFixed(1)}`);
@@ -1902,19 +1906,72 @@ test('nessun oggetto scenico fluttua o affonda nel terreno (banking-prova)', () 
         `${storti.length} oggetti mal posati: ${storti.slice(0, 6).join(' | ')}`);
 });
 
-test('in pendenza ci si sta: le pile di gomme della parabolica restano', () => {
+test('in pendenza ci si sta: sul fianco del cuneo la scenografia resta', () => {
     // Il controspecchio del test qui sopra, e la ragione per cui la misura è
-    // cambiata: sul fianco del cuneo a 35 gradi ci sono undici pile di gomme
-    // con 1.1-2.8 unità di scarto — meno delle tribune che l'utente ha
-    // approvato guardandole. Toglierle era il difetto, non la cura.
+    // cambiata: una soglia sulla PENDENZA svuoterebbe il fianco delle
+    // sopraelevate, dove invece l'utente ha approvato guardandole tribune con
+    // 2.7 unità di scarto. Si misura lo scarto agli angoli: in pendenza ci si
+    // sta, purché ci si stia bene.
+    //
+    // ⚠️ Fino al 2026-09-04 il campione erano le undici pile di gomme del
+    // cuneo. Non ci sono più, e NON per la pendenza: il perché sta nel test
+    // qui sotto. Il campione ora sono le tribune, cioè i volumi grandi —
+    // quelli che un filtro troppo severo toglierebbe per primi. I boschi non
+    // contano: stanno centinaia di unità più in là e seguono la quota
+    // collinare, non il fianco del cuneo.
     const { trackPts, layout } = circuitoVero('banking-prova');
-    const gomme = layout.filter(v => v.asset === 'tyreStack');
-    const sulCuneo = gomme.filter(v => {
+    const sulCuneo = layout.filter(v => {
+        if (!v.asset || v.category === 'woods') return false;
         const i = TrackGeometry.nearestPoint(trackPts, v.x, v.z).index;
         return (trackPts[i].rollio || 0) > 0.3;      // oltre 17 gradi
     });
-    assert.ok(sulCuneo.length >= 8,
-        `sul fianco delle sopraelevate restano solo ${sulCuneo.length} pile di gomme`);
+    const tribune = sulCuneo.filter(v => v.category === 'grandstand' || v.category === 'grandstand-main');
+    assert.ok(sulCuneo.length >= 20,
+        `sul fianco delle sopraelevate restano solo ${sulCuneo.length} oggetti`);
+    assert.ok(tribune.length >= 5,
+        `sul fianco delle sopraelevate restano solo ${tribune.length} tribune`);
+});
+
+test('sul fianco del cuneo il cuscinetto di gomme non nasce: manca lo spazio', () => {
+    // La promessa che ha preso il posto di quella vecchia (decisione
+    // dell'utente del 2026-09-05). Da quando le gomme FERMANO l'auto, dove la
+    // via di fuga è stretta il cuscinetto se ne mangerebbe metà: sul cuneo la
+    // fuga è 4.80 e il minimo è 8, quindi lì resta il muro nudo — come nei
+    // cittadini. Sui tratti piani della stessa pista le pile ci sono eccome:
+    // è la differenza fra «non c'è spazio» e «il codice non le fa più».
+    const TrackGravel = require('./trackGravel.js');
+    const { raw, trackPts, barrierProfile, layout } = circuitoVero('banking-prova');
+    const n = trackPts.length;
+    // ⚠️ La via di fuga va misurata sui campioni di CURVA, dal lato ESTERNO:
+    // sono gli stessi che il profilo interroga. Presa su tutti i campioni del
+    // cuneo e su entrambi i lati arriva a 18.80 e racconta un'altra cosa —
+    // dietro il lato interno di una sopraelevata lo spazio c'è, ma lì il
+    // cuscinetto non ci andrebbe comunque.
+    let campioni = 0, fugaMassima = 0;
+    for (const corner of TrackGeometry.findCorners(trackPts)) {
+        const archi = ((corner.endIdx - corner.startIdx) % n + n) % n;
+        for (let s = 0; s <= archi; s++) {
+            const i = (corner.startIdx + s) % n;
+            if ((trackPts[i].rollio || 0) <= 0.3) continue;
+            campioni++;
+            const banda = corner.side > 0 ? barrierProfile.gomme.right : barrierProfile.gomme.left;
+            assert.equal(banda[i], 0, `cuscinetto sul cuneo, campione ${i}`);
+            const fuga = TrackGravel.barrierAt(barrierProfile, i, corner.side) -
+                (trackPts[i].halfWidth || raw.roadHalfWidth);
+            if (fuga > fugaMassima) fugaMassima = fuga;
+        }
+    }
+    assert.ok(campioni > 50, `solo ${campioni} campioni di curva sul cuneo: la misura è vuota`);
+    assert.ok(fugaMassima < TrackGravel.FUGA_MINIMA_GOMME,
+        `sul cuneo la via di fuga arriva a ${fugaMassima.toFixed(2)}: le gomme ci starebbero`);
+    const gomme = layout.filter(v => v.asset === 'tyreStack');
+    const sulCuneo = gomme.filter(v => {
+        const i = TrackGeometry.nearestPoint(trackPts, v.x, v.z).index;
+        return (trackPts[i].rollio || 0) > 0.3;
+    });
+    assert.equal(sulCuneo.length, 0, `${sulCuneo.length} pile sul fianco del cuneo`);
+    assert.ok(gomme.length - sulCuneo.length >= 8,
+        `sui tratti piani restano solo ${gomme.length} pile: il cuscinetto è sparito dalla pista`);
 });
 
 // --- la città (blocco G) ---
