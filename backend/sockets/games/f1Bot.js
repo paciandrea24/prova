@@ -564,6 +564,11 @@ const BOT_PRECISION_NOISE_MAX = 0.25;   // rad aggiunti/tolti allo sterzo
 // costa tempo sul giro, e una varieta' generosa diventerebbe solo lentezza.
 // Quanto costi davvero e' misurato nel commit che lo introduce.
 const BOT_LINEA_OFFSET_MAX = 1.5;
+
+// Quanto lontano dall'asse puo' arrivare il bersaglio, in frazione della
+// mezza carreggiata: il resto e' il margine che il pure-pursuit si mangia
+// tagliando fra se' e il punto che insegue.
+const BOT_BERSAGLIO_MAX_FRAZIONE = 0.92;
 const BOT_PIT_THRESHOLD_MIN   = 60,   BOT_PIT_THRESHOLD_MAX   = 80;     // % usura gomme a cui il bot decide di entrare ai box
 // Distanza (metri, lungo il giro) entro cui un bot che ha deciso di entrare
 // ai box comincia a sfumare il bersaglio dello sterzo verso pitPath[0]
@@ -783,6 +788,11 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
             // La sua idea di traiettoria: chi taglia un filo piu' stretto, chi
             // sta un filo piu' largo.
             botLineaOffset:         randRange(-BOT_LINEA_OFFSET_MAX, BOT_LINEA_OFFSET_MAX, rng),
+            // Quanto prende male l'apice: 0 = passa dove passa la linea buona,
+            // 0.35 = si allarga di un terzo di carreggiata. E' il carattere
+            // del pilota, e si paga in tempo sul giro — per questo
+            // l'intervallo dipende dal livello (vedi f1Difficolta.js).
+            botAllargamento:        randRange(intervalli.allargaMin, intervalli.allargaMax, rng),
             botPitThreshold:        randRange(BOT_PIT_THRESHOLD_MIN, BOT_PIT_THRESHOLD_MAX, rng),
             botHeadingToPits:       false,
             botPitReactionScheduled: false,
@@ -920,7 +930,9 @@ function computeSoloRacingLineInputs(p, track, rt, maxSpeed, brakeDecel, turnRat
         p.speed, maxSpeed, brakeDecel, turnRateHigh, rt.cornerSpeedMargin, gripCapacityFactor, turnRateAtRest
     );
 
-    return { steer, target, targetSpeed, localSamples };
+    // scanSamples esce di qui perche' e' gia' calcolato: chi corregge la
+    // linea con apexOffset ha bisogno dello stesso raggio di ricerca.
+    return { steer, target, targetSpeed, localSamples, scanSamples, targetIdx };
 }
 
 // Margine sulla distanza di frenata calcolata dalla fisica: oltre il
@@ -1070,6 +1082,68 @@ function trajectoryDiagnostics(p, track) {
         distanceFromRacingLine: bestDist,
         headingVsTangentDeg: normalizeAngle(p.angle - tangentAngle) * 180 / Math.PI
     };
+}
+
+// ═══════════ IL PROFILO DI ALLARGAMENTO ═══════════
+//
+// Per ogni campione della pista: QUANTO ci si deve allargare li' (0 = siamo
+// all'apice, la traiettoria buona e' quella della linea; 1 = siamo lontani da
+// ogni apice, qui si sta larghi) e DA CHE PARTE sta l'interno della curva.
+//
+// ⚠️ PERCHE' NON `apexOffset`. La forma a S esiste gia' nel ramo geometrico,
+// e il primo tentativo e' stato riusarla prendendone la meta' che spinge
+// fuori. Non funziona, e la misura dice perche': su `prova` quella funzione
+// lavora con una finestra di 12 METRI, che sono 2 campioni (il passo e' 5.17
+// unita'), e il segnale che ne esce salta a scatti — 0, 0, 0.97, 0, 0.97 —
+// perche' la curvatura su due campioni e' rumore. In piu' la sua `severity`
+// vale roadHalf/raggio, cioe' 11/88 = 0.125 sulle curve di `prova`: anche
+// quando il segnale c'e', l'effetto e' mezzo metro. E' tarata per decidere
+// l'apice quando NON c'e' una racing line, non per correggerne una.
+//
+// Qui invece: curvatura su una finestra in UNITA' DI PISTA (60), che sono 12
+// campioni su `prova` e 51 su monte-rosso — liscia in entrambi i casi — e
+// confronto con la curvatura massima nella curva in cui si sta. Verificato
+// che l'intorno di +-60 unita' e' quello giusto: agli apici veri il fattore
+// esce 0.02, mentre a +-186 unita' esce 0.26 perche' sconfina nella curva
+// successiva e non riconosce piu' l'apice locale.
+//
+// Si calcola UNA VOLTA per pista (la pista non cambia mai) e si tiene in una
+// WeakMap: mai scritto dentro `track`, che e' l'oggetto condiviso e cacheato
+// da trackLoader.
+const PROFILO_ALLARGAMENTO = new WeakMap();
+const BOT_FASE_CURVA_M = 60;      // finestra di curvatura E ampiezza dell'intorno
+// Sotto questa curvatura non e' una curva ma un rettilineo con del rumore
+// dentro: 20 volte la mezza carreggiata e' una piega, non una staccata.
+const BOT_CURVA_MINIMA_RAGGI = 20;
+
+function profiloAllargamento(track) {
+    const gia = PROFILO_ALLARGAMENTO.get(track);
+    if (gia) return gia;
+    const n = track.points.length;
+    const passo = track.lapLength / n;
+    const finestra = Math.max(4, Math.round(BOT_FASE_CURVA_M / passo));
+    const curvatura = new Array(n), versoLocale = new Array(n);
+    for (let i = 0; i < n; i++) {
+        const c = TrackGeometry.curvatureAt(track.points, i, finestra);
+        curvatura[i] = (c && isFinite(c.radius) && c.radius > 0) ? 1 / c.radius : 0;
+        versoLocale[i] = c ? Math.sign(c.turnSigned) : 0;
+    }
+    const soglia = 1 / (track.roadHalf * BOT_CURVA_MINIMA_RAGGI);
+    const fattore = new Array(n), verso = new Array(n);
+    for (let i = 0; i < n; i++) {
+        let massima = 0, dovE = i;
+        for (let d = -finestra; d <= finestra; d++) {
+            const j = (i + d + n) % n;
+            if (curvatura[j] > massima) { massima = curvatura[j]; dovE = j; }
+        }
+        fattore[i] = massima > soglia ? Math.max(0, 1 - curvatura[i] / massima) : 0;
+        // Il verso lo detta l'APICE, non il punto in cui si sta: in ingresso
+        // la pista e' quasi dritta e il suo verso locale e' rumore.
+        verso[i] = versoLocale[dovE];
+    }
+    const profilo = { fattore, verso };
+    PROFILO_ALLARGAMENTO.set(track, profilo);
+    return profilo;
 }
 
 // ═══════════ L'ERRORE UMANO ═══════════
@@ -1422,17 +1496,65 @@ function updateBotInputs(game, deps) {
             // LA LINEA DI QUESTO BOT: quella buona piu' il suo scostamento
             // personale. Sei bot sulla stessa riga sono sei copie, e da una
             // riga sola la difesa non avrebbe da che parte muoversi.
-            const nrmLinea = TrackGeometry.normalAt(track.points, p.trackIndex || 0, true);
+            // L'INGRESSO LARGO. La racing line precalcolata entra in curva
+            // gia' all'interno: misurato su `prova`, l'ingresso medio sta a
+            // +4.3 verso il cordolo interno (un fuori-dentro-fuori entrerebbe
+            // NEGATIVO), e tre curve su undici stanno a 10.5-10.8 su 11
+            // dall'ingresso all'uscita. E' il motivo per cui i bot si vedono
+            // «sempre all'interno curva» e li si supera dal lato libero.
+            //
+            // Il rimedio riusa la forma che il ramo geometrico ha gia'
+            // (`apexOffset`, cos(x*pi): +1 all'apice, -1 ai bordi della zona
+            // d'influenza) prendendone SOLO la meta' negativa: dove la forma
+            // dice «qui si sta larghi» il bersaglio va verso l'esterno, dove
+            // dice «qui c'e' l'apice» non si tocca niente. L'apice la linea
+            // ottimizzata lo fa bene — e' l'ingresso che sbaglia, e sommare
+            // due volte l'interno porterebbe soltanto fuori pista.
+            // Tutto quello che segue si valuta NEL PUNTO MIRATO, non dove sta
+            // il bot: e' li' che il bersaglio verra' spostato, e in una curva
+            // stretta la normale di qui e quella di venti campioni piu' avanti
+            // guardano da due parti diverse.
+            const iBers = solo.targetIdx;
+            // Quanto allargarsi qui, e da che parte sta l'interno: lo dice il
+            // profilo della pista, calcolato una volta sola (vedi sopra).
+            // ⚠️ Si legge dove sta IL BOT, non nel punto mirato: e' il bot che
+            // deve trovarsi largo in ingresso.
+            const profilo = profiloAllargamento(track);
+            const iQui = p.trackIndex || 0;
+            // Verso l'ESTERNO:  punta all'interno, e il segno meno e'
+            // tutta la differenza fra allargare e tagliare ancora di piu'.
+            // ⚠️ Quanto allargarsi e' del BOT, non della pista: due auto nello
+            // stesso punto di curva prendono l'apice in modo diverso, ed e'
+            // questo che le mette su una fascia invece che in fila. Chi non ha
+            // un carattere (il banco prova, un test) resta sulla linea.
+            const latLargo = -profilo.verso[iQui] * profilo.fattore[iQui] *
+                             track.roadHalf * (p.botAllargamento || 0);
+                        const nrmBers = TrackGeometry.normalAt(track.points, iBers, true);
+            const centroBers = track.points[iBers];
             const suo = p.botLineaOffset || 0;
-            const target = suo === 0 ? solo.target : {
-                x: solo.target.x + nrmLinea.nx * suo,
-                z: solo.target.z + nrmLinea.nz * suo,
+            // I due scostamenti (il suo e l'ingresso largo) si sommano in UNA
+            // laterale sola e si tagliano insieme: sommare due vettori e
+            // sperare che il totale resti in pista e' come non avere limite.
+            const latLinea = (solo.target.x - centroBers.x) * nrmBers.nx +
+                             (solo.target.z - centroBers.z) * nrmBers.nz;
+            // ⚠️ Il tetto non e' 0.92 secco: la racing line ottimizzata arriva
+            // da sola a 10.7 su 11 (il 98%), e un tetto piu' basso la
+            // taglierebbe — cambiando la traiettoria di tutti, che non e' quel
+            // che si sta facendo qui. Si tiene il piu' largo fra il 92% e dove
+            // la linea gia' passa: gli scostamenti non portano MAI piu' fuori
+            // di lei.
+            const tetto = Math.max(Math.abs(latLinea), track.roadHalf * BOT_BERSAGLIO_MAX_FRAZIONE);
+            const latVoluta = Math.max(-tetto, Math.min(tetto, latLinea + suo + latLargo));
+            const scarto = latVoluta - latLinea;
+            const target = scarto === 0 ? solo.target : {
+                x: solo.target.x + nrmBers.nx * scarto,
+                z: solo.target.z + nrmBers.nz * scarto,
             };
             const localSamples = solo.localSamples;   // riusato più sotto per il sorpasso (windowRadius) — evita di ricalcolarlo
             // ⚠️ Lo sterzo va RICALCOLATO sul bersaglio nuovo: `solo.steer`
             // punta alla linea di tutti, e un bot che crede di stare sulla sua
             // mentre sterza verso l'altra non ci arriva mai.
-            steer = suo === 0 ? solo.steer
+            steer = scarto === 0 ? solo.steer
                 : steerToward(p.x, p.z, p.angle, target.x, target.z, rt.steerGain);
             debugTarget = { x: target.x, z: target.z };
 
@@ -1664,5 +1786,5 @@ module.exports = {
     createBots, updateBotInputs, shouldBotRepair,
     BOT_CURVATURE_LOCAL_M, BOT_APEX_MAX_FRACTION, trajectoryDiagnostics,
     adaptiveLookaheadMeters, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
-    BOT_ADAPTIVE_LOOKAHEAD_T_MIN, computeSoloRacingLineInputs, BOT_GRIP_CAPACITY_EXPONENT, aggiornaErrore
+    BOT_ADAPTIVE_LOOKAHEAD_T_MIN, computeSoloRacingLineInputs, BOT_GRIP_CAPACITY_EXPONENT, aggiornaErrore, profiloAllargamento
 };

@@ -98,3 +98,23 @@ test('si sbaglia di piu\' ai livelli bassi, ma mai zero', () => {
     // misurato niente, e quindi non ci si va.
     assert.ok(f.erroriPerGiro <= 2, 'a facile si sbaglia oltre quanto sia stato misurato');
 });
+test('salendo di livello si sta piu\' vicini alla linea buona', () => {
+    const f = F1Difficolta.intervalliDi('facile');
+    const m = F1Difficolta.intervalliDi('medio');
+    const d = F1Difficolta.intervalliDi('difficile');
+    // ⚠️ Allargarsi COSTA: misurato su `prova`, 0.20 vale +650 ms al giro e
+    // 0.35 vale +1100 ms, perche' il bot calcola la velocita' in curva dalla
+    // curvatura della LINEA e non della traiettoria che percorre davvero —
+    // paga il percorso lungo senza incassare il raggio ampio. Un livello alto
+    // non se lo puo' permettere.
+    assert.ok(d.allargaMax <= m.allargaMax, 'difficile si allarga piu\' di medio');
+    assert.ok(m.allargaMax <= f.allargaMax, 'medio si allarga piu\' di facile');
+    for (const l of F1Difficolta.LIVELLI) {
+        const i = F1Difficolta.intervalliDi(l);
+        assert.ok(i.allargaMax > i.allargaMin, l + ': guidano tutti uguale, non e\' un intervallo');
+        // Oltre 0.4 non e' stato misurato niente, e a 0.45 i bot perdevano
+        // 1.5 s al giro: tanto quanto tutto il divario dall'umano.
+        assert.ok(i.allargaMax <= 0.4, l + ': allargamento oltre quanto sia stato misurato');
+        assert.ok(i.allargaMin >= 0, l + ': allargamento negativo (taglierebbe l\'apice)');
+    }
+});

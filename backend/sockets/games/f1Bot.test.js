@@ -7,7 +7,7 @@ const {
     pickPostPitCompound, pickBotColors, estimateFinishTime,
     updateBotInputs, DEFAULT_TUNING, shouldBotRepair, trajectoryDiagnostics,
     adaptiveLookaheadMeters, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
-    computeSoloRacingLineInputs, aggiornaErrore
+    computeSoloRacingLineInputs, aggiornaErrore, profiloAllargamento
 } = require('./f1Bot.js');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 
@@ -1514,4 +1514,143 @@ test('chi attacca sceglie il lato dove c\'e\' spazio, non quello deciso alla nas
     }
     assert.equal(latoDellAttacco(1), -1, 'difensore a destra: ha attaccato a destra');
     assert.equal(latoDellAttacco(-1), 1, 'difensore a sinistra: ha attaccato a sinistra');
+});
+
+// ═══════════ L'INGRESSO LARGO (2026-09-05) ═══════════
+//
+// Misurato su `prova`: la racing line precalcolata entra in curva GIA'
+// all'interno (+4.3 su una semicarreggiata di 11, dove un fuori-dentro-fuori
+// entrerebbe negativo) e in tre curve su undici sta a 10.5-10.8 dall'ingresso
+// all'uscita. E' il motivo per cui l'utente vede i bot «sempre all'interno»
+// e li supera dal lato libero.
+test('con una linea che entra stretta, il bot entra piu\' largo di lei', () => {
+    // La racing line di questo test coincide con l'asse: e' il caso limite
+    // di una linea che «non si allarga mai». Il bot deve comunque entrare
+    // largo, altrimenti in curva sta dove sta la linea e basta.
+    function bersaglioA(indice) {
+        const points = buildVaryingCurveTrack(300, 100, 100, 1 / 25);
+        const racingLineTuning = { lookaheadTimeS: 0.6, steerGain: 3.0, adaptiveLookaheadK: 0.1,
+                                   cornerSpeedMargin: 0.99, brakingDistanceMargin: 1.2,
+                                   deadband: 0.01, ramp: 0.06 };
+        const track = { points, racingLine: points, racingLineTuning,
+                        lapLength: points.length, roadHalf: 8, totalLaps: 3,
+                        pitEntryIndex: 9999, pitPath: [{ x: 0, z: 0 }, { x: 0, z: 0 }] };
+        const p = {
+            x: points[indice].x, z: points[indice].z, angle: 0,
+            speed: 6, vx: 0, vz: 0, inputs: { throttle: 0, brake: 0, steer: 0 },
+            finished: false, lap: 0, botLapSeen: 0, trackIndex: indice,
+            tyreWear: 0, compound: 'medium', damage: 0,
+            pitting: false, pitAutoState: null, pitPhase: null,
+            isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+            // ⚠️ Linea personale a zero: qui si misura l'ingresso largo, e due
+            // scostamenti sommati non direbbero quale dei due ha agito.
+            botLineaOffset: 0,
+            // Il carattere di questo bot: si allarga di un terzo di
+            // carreggiata dove il profilo dice di allargarsi.
+            botAllargamento: 0.35,
+            botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false,
+            botPitThreshold: 100, hasPitted: false
+        };
+        const game = { phase: 'race', track, players: { bot1: p },
+                       settings: { botDifficolta: 'medio' } };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        // ⚠️ Lo scostamento si misura dalla LINEA, nel punto mirato: il
+        // bersaglio sta piu' avanti, e in curva un punto dell'asse piu'
+        // avanti proietta gia' di suo verso l'interno sulla normale di qui.
+        // Misurandolo dal punto del bot, quella componente geometrica
+        // sommergerebbe lo scostamento che si vuole vedere.
+        const t = p._botDebug.target;
+        const q = TrackGeometry.nearestPoint(points, t.x, t.z);
+        const n = TrackGeometry.normalAt(points, q.index, true);
+        return (t.x - points[q.index].x) * n.nx + (t.z - points[q.index].z) * n.nz;
+    }
+    // Da che parte sta l'interno, in questa curva: lo dice la forma completa
+    // all'apice, invece di fidarsi di una convenzione di segno.
+    const pts = buildVaryingCurveTrack(300, 100, 100, 1 / 25);
+    const nApice = TrackGeometry.normalAt(pts, 150, true);
+    const o = apexOffset(pts, 150, 60, 12, 1, 8, 0.5);
+    const interno = Math.sign(o.dx * nApice.nx + o.dz * nApice.nz);
+
+    // ⚠️ Poco PRIMA della curva, non a dieci campioni dall'apice: e' li' che
+    // si prepara l'ingresso, e a un passo dall'apice il profilo dice
+    // giustamente di stare sulla linea.
+    const ingresso = bersaglioA(95);
+    assert.ok(Math.sign(ingresso) === -interno && Math.abs(ingresso) > 0.5,
+        `prima della curva il bersaglio dovrebbe stare verso l'esterno, sta a ${ingresso.toFixed(2)}`);
+});
+
+// ═══════════ IL PROFILO DI ALLARGAMENTO (2026-09-05) ═══════════
+//
+// Misurato su `prova`: la racing line precalcolata entra in curva GIA'
+// all'interno (+4.3 su una semicarreggiata di 11, dove un fuori-dentro-fuori
+// entrerebbe negativo) e in tre curve su undici sta a 10.5-10.8 dall'ingresso
+// all'uscita. Da qui il profilo: dove NON siamo all'apice, ci si allarga.
+test('il profilo dice zero agli apici e tanto nei tratti aperti', () => {
+    // Curva a triangolo con l'apice al centro: 100 campioni dritti, 100 di
+    // curva, apice a 150.
+    const pts = buildVaryingCurveTrack(300, 100, 100, 1 / 25);
+    const track = { points: pts, lapLength: pts.length, roadHalf: 8 };
+    const { fattore } = profiloAllargamento(track);
+    assert.ok(fattore[150] < 0.15, `all'apice non ci si allarga, invece vale ${fattore[150].toFixed(2)}`);
+    // Nel dritto poco prima della curva ci si deve gia' allargare: e' li' che
+    // si prepara l'ingresso, e arrivarci attaccati all'interno e' il difetto
+    // che tutto questo corregge.
+    assert.ok(fattore[95] > 0.5, `prima della curva ci si allarga poco: ${fattore[95].toFixed(2)}`);
+});
+
+test('una piega larghissima non e\' una curva: non ci si sposta', () => {
+    // ⚠️ Senza la soglia, QUALUNQUE piega diventerebbe una curva con un suo
+    // apice, e i bot ondeggerebbero anche in rettilineo.
+    //
+    // (Un rettilineo vero non si puo' usare come caso di prova: una pista
+    // aperta ha i due capi che si richiudono, e li' la curvatura non e' zero.
+    // Un cerchio molto ampio e' il caso onesto.)
+    const pts = [];
+    const raggio = 500;
+    for (let i = 0; i < 400; i++) {
+        const t = i / 400 * 2 * Math.PI;
+        pts.push({ x: raggio * Math.cos(t), z: raggio * Math.sin(t) });
+    }
+    const track = { points: pts, lapLength: 2 * Math.PI * raggio, roadHalf: 8 };
+    // La soglia e' 20 mezze carreggiate: 160 unita' contro un raggio di 500.
+    const { fattore } = profiloAllargamento(track);
+    assert.ok(fattore.every(v => v === 0), 'una piega da 500 unita\' di raggio conta come curva');
+});
+test('il profilo indica il verso della curva in cui si sta', () => {
+    const pts = buildVaryingCurveTrack(300, 100, 100, 1 / 25);
+    const track = { points: pts, lapLength: pts.length, roadHalf: 8 };
+    const { verso } = profiloAllargamento(track);
+    // Calibrato su un cerchio di centro noto: l'interno sta dalla parte di
+    // normale * sign(turnSigned). Qui si controlla che il profilo riporti
+    // QUEL segno, preso all'apice della curva e non dove capita.
+    const c = TrackGeometry.curvatureAt(pts, 150, 12);
+    assert.equal(verso[140], Math.sign(c.turnSigned),
+        'il verso in ingresso non e\' quello della curva che si sta per fare');
+});
+
+test('il profilo si calcola una volta sola per pista', () => {
+    // ⚠️ Gira per ogni bot ad ogni tick: ricalcolarlo sarebbe O(n * finestra)
+    // venti volte al secondo per sei auto.
+    const pts = buildVaryingCurveTrack(300, 100, 100, 1 / 25);
+    const track = { points: pts, lapLength: pts.length, roadHalf: 8 };
+    assert.equal(profiloAllargamento(track), profiloAllargamento(track));
+});
+test('ogni bot prende l\' apice a modo suo, e il livello dice quanto', () => {
+    // ⚠️ E' questo che mette le auto su una FASCIA invece che in fila
+    // sull'interno: sei bot con lo stesso allargamento sarebbero sei copie
+    // anche con la forma piu' bella del mondo.
+    function allargamenti(livello) {
+        const g = partitaConLivello(livello, 8);
+        creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+        return Object.values(g.players).map(p => p.botAllargamento);
+    }
+    const f = allargamenti('facile');
+    const d = allargamenti('difficile');
+    assert.ok(f.every(v => Number.isFinite(v)), 'un bot senza carattere');
+    assert.ok(Math.max(...f) - Math.min(...f) > 0.05, 'a facile guidano tutti uguale');
+    // Salendo di livello si sta piu' vicini alla linea buona: allargarsi
+    // costa tempo (0.20 vale +650 ms al giro su `prova`), e un livello alto
+    // non se lo puo' permettere.
+    assert.ok(Math.max(...d) <= Math.min(...f),
+        'a difficile il piu\' sporco deve stare dentro il piu\' pulito di facile');
 });

@@ -37,15 +37,15 @@
     // distanza fra un livello e l'altro.
     const TABELLA = {
         // dove cade su `prova`, rispetto al giro umano di 47.30 s:
-        facile:    { ritmoMin: 0.905, ritmoMax: 0.925, rumoreMin: 0.16, rumoreMax: 0.22,  // +5.02 / +5.80 s
+        facile:    { ritmoMin: 0.905, ritmoMax: 0.925, rumoreMin: 0.16, rumoreMax: 0.22,  // +5.15 / +6.70 s
                      margineSorpasso: 1.04, frazioneMinimaInScia: 0.75, forzaDifesa: 1.5,
-                     erroriPerGiro: 1.2 },
-        medio:     { ritmoMin: 0.945, ritmoMax: 0.965, rumoreMin: 0.08, rumoreMax: 0.14,  // +3.67 / +4.38 s
+                     erroriPerGiro: 1.2, allargaMin: 0.10, allargaMax: 0.35 },
+        medio:     { ritmoMin: 0.945, ritmoMax: 0.965, rumoreMin: 0.08, rumoreMax: 0.14,  // +3.85 / +4.90 s
                      margineSorpasso: 1.01, frazioneMinimaInScia: 0.85, forzaDifesa: 3.0,
-                     erroriPerGiro: 0.4 },
-        difficile: { ritmoMin: 0.985, ritmoMax: 1.000, rumoreMin: 0.00, rumoreMax: 0.06,  // +1.85 / +3.23 s
+                     erroriPerGiro: 0.4, allargaMin: 0.05, allargaMax: 0.20 },
+        difficile: { ritmoMin: 0.985, ritmoMax: 1.000, rumoreMin: 0.00, rumoreMax: 0.06,  // +1.85 / +3.25 s
                      margineSorpasso: 1.00, frazioneMinimaInScia: 0.92, forzaDifesa: 4.5,
-                     erroriPerGiro: 0.05 },
+                     erroriPerGiro: 0.05, allargaMin: 0.00, allargaMax: 0.08 },
     };
 
     // ⚠️ Tutto cio' che non e' esattamente uno dei tre livelli vale `medio`:
@@ -60,7 +60,20 @@
     function intervalliDi(livello) {
         const t = TABELLA[normalizza(livello)];
         return { ritmoMin: t.ritmoMin, ritmoMax: t.ritmoMax,
-                 rumoreMin: t.rumoreMin, rumoreMax: t.rumoreMax };
+                 rumoreMin: t.rumoreMin, rumoreMax: t.rumoreMax,
+                 // Quanto un bot si allarga in curva rispetto alla linea
+                 // buona, in frazione della mezza carreggiata. E' il suo
+                 // CARATTERE: chi prende bene l'apice sta sulla linea ed e'
+                 // veloce, chi lo prende male sta largo e paga.
+                 //
+                 // ⚠️ COSTA TEMPO, e non poco: misurato su `prova`, 0.20 vale
+                 // +650 ms al giro e 0.35 vale +1100 ms. Il motivo e' che il
+                 // bot calcola la velocita' in curva dalla curvatura DELLA
+                 // LINEA, non della traiettoria che percorre davvero: paga il
+                 // percorso piu' lungo senza incassare il raggio piu' ampio.
+                 // Per questo l'intervallo si stringe salendo di livello, e a
+                 // difficile parte da zero.
+                 allargaMin: t.allargaMin, allargaMax: t.allargaMax };
     }
 
     // Le due soglie che governano l'aggressivita', prima costanti in f1Bot.js:
