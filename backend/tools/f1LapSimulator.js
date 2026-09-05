@@ -58,6 +58,9 @@ function simulateLap(track, opts) {
         accel: physics.ACCEL,
         brakeMult: physics.BRAKE_MULT,
         turnRateHigh: physics.TURN_SPEED_HIGH,
+        // Stesso interruttore del gioco (vedi f1GameSocket): se qui fosse
+        // sempre acceso, il banco prova misurerebbe un bot che non esiste.
+        turnRateLow: process.env.F1_BOT_TURN_RATE_VERO ? physics.TURN_SPEED_LOW : 0,
         // Grip-awareness ora permanente in updateBotInputs (Fase 1): queste
         // due dipendenze non sono più opzionali, servono sempre.
         effectiveBrakeMult: physics.effectiveBrakeMult,

@@ -268,7 +268,37 @@ function cornerApexNear(points, idx, searchSamples, localSamples, metersPerSampl
 // sovrapposte (passo = metà di `localSamples`) e, per ogni curva trovata,
 // si valuta se la distanza rimanente basta ancora per non dover già
 // frenare.
-function cornerTargetSpeed(points, idx, scanSamples, localSamples, metersPerSample, currentSpeed, maxSpeed, brakeDecel, turnRateAtMax, marginFactor, gripCapacityFactor = 1) {
+// La velocita' piu' alta a cui si percorre una curva di raggio `raggio`.
+//
+// ⚠️ IL TURN RATE DIPENDE DALLA VELOCITA', e la velocita' da lui: e' un punto
+// fisso, non un prodotto. La fisica interpola fra il turn rate a fermo e
+// quello alla velocita' massima (SteeringModel: 0.075 e 0.052 rad/tick, il
+// 44% di differenza), quindi
+//
+//     v = raggio . ( wFermo + (wMax - wFermo) . v/vMax )
+//
+// che si risolve in forma chiusa. Il denominatore e' sempre > 1 perche'
+// wFermo > wMax: nessuna divisione per zero, nessuna iterazione.
+//
+// Prima si usava `wMax` e basta, cioe' il turn rate MINIMO che l'auto ha —
+// quello delle velocita' alte — proprio per calcolare quanto si va piano in
+// curva. Il bot si negava un quinto dello sterzo disponibile: misurato su
+// `prova` contro il giro di una persona (2026-09-05), passava un apice a 140
+// km/h dove l'utente passava a 279, e seguendo bene la propria traiettoria.
+//
+// Un chiamante che non passa `turnRateAtRest` ottiene il conto di prima. E'
+// voluto e c'e' un test che lo fissa: gli strumenti offline non aggiornati
+// devono dare il vecchio numero in modo evidente, non un ripiego che gli
+// somiglia — o le loro misure sarebbero false senza dirlo.
+function velocitaSostenibile(raggio, maxSpeed, turnRateAtMax, turnRateAtRest) {
+    if (!(turnRateAtRest > turnRateAtMax) || !(maxSpeed > 0)) {
+        return raggio * turnRateAtMax;
+    }
+    const calo = turnRateAtRest - turnRateAtMax;
+    return (raggio * turnRateAtRest) / (1 + (raggio * calo) / maxSpeed);
+}
+
+function cornerTargetSpeed(points, idx, scanSamples, localSamples, metersPerSample, currentSpeed, maxSpeed, brakeDecel, turnRateAtMax, marginFactor, gripCapacityFactor = 1, turnRateAtRest = 0) {
     const n = points.length;
     const step = Math.max(1, Math.floor(localSamples / 2));
     const localArcM = localSamples * metersPerSample;
@@ -288,7 +318,9 @@ function cornerTargetSpeed(points, idx, scanSamples, localSamples, metersPerSamp
         // gripCapacityFactor arriva già scalato dal chiamante (vedi
         // BOT_GRIP_CAPACITY_EXPONENT in updateBotInputs) — qui è solo un
         // moltiplicatore diretto, nessuna logica di scala in questa funzione.
-        const cornerSpeed = Math.min(maxSpeed, w.radius * turnRateAtMax * marginFactor * gripCapacityFactor);
+        const cornerSpeed = Math.min(maxSpeed,
+            velocitaSostenibile(w.radius, maxSpeed, turnRateAtMax, turnRateAtRest)
+            * marginFactor * gripCapacityFactor);
         if (cornerSpeed >= currentSpeed) continue;   // già più lenti del necessario per questa curva
         const distanceM = offset * metersPerSample;
         const neededBrakingM = (currentSpeed * currentSpeed - cornerSpeed * cornerSpeed) / (2 * brakeDecel);
@@ -350,14 +382,14 @@ function nearestAheadPlayer(p, allPlayers, track) {
 // completare un sorpasso (finestra media del tentativo ~0.5s). Confrontando
 // invece ritmo-contro-ritmo (questa funzione) la mediana scende a ~7m/s, un
 // vantaggio fisicamente sensato.
-function otherCarTargetSpeed(other, laneSource, track, metersPerSample, brakeDecel, turnRateHigh, effectiveMaxSpeed, cornerSpeedMargin, brakingDistanceMargin) {
+function otherCarTargetSpeed(other, laneSource, track, metersPerSample, brakeDecel, turnRateHigh, effectiveMaxSpeed, cornerSpeedMargin, brakingDistanceMargin, turnRateAtRest = 0) {
     const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
     const maxSpeed = effectiveMaxSpeed(other, false);
     const scanM = (maxSpeed * maxSpeed) / (2 * brakeDecel) * brakingDistanceMargin;
     const scanSamples = metersToSamples(scanM, track);
     return cornerTargetSpeed(
         laneSource, other.trackIndex || 0, scanSamples, localSamples, metersPerSample,
-        other.speed, maxSpeed, brakeDecel, turnRateHigh, cornerSpeedMargin
+        other.speed, maxSpeed, brakeDecel, turnRateHigh, cornerSpeedMargin, 1, turnRateAtRest
     ) * (other.botSpeedFactor || 1) * (other.botLapPaceMult || 1);
 }
 
@@ -758,7 +790,7 @@ function adaptiveLookaheadMeters(laneSource, trackIndex, track, k, speedMs) {
 // Non include botSpeedFactor/botLapPaceMult (varianza di ritmo per-bot, un
 // concetto di gara) né l'aggiustamento sorpasso/scia (multi-auto): il
 // chiamante reale li applica DOPO aver ricevuto targetSpeed da qui.
-function computeSoloRacingLineInputs(p, track, rt, maxSpeed, brakeDecel, turnRateHigh, gripCapacityFactor) {
+function computeSoloRacingLineInputs(p, track, rt, maxSpeed, brakeDecel, turnRateHigh, gripCapacityFactor, turnRateAtRest = 0) {
     const metersPerSample = track.lapLength / track.points.length;
     const localSamples = metersToSamples(BOT_CURVATURE_LOCAL_M, track);
     const speedMs = Math.max(5, botSpeedMs(p.speed));
@@ -781,7 +813,7 @@ function computeSoloRacingLineInputs(p, track, rt, maxSpeed, brakeDecel, turnRat
     const scanSamples = metersToSamples(scanM, track);
     const targetSpeed = cornerTargetSpeed(
         track.racingLine, p.trackIndex || 0, scanSamples, localSamples, metersPerSample,
-        p.speed, maxSpeed, brakeDecel, turnRateHigh, rt.cornerSpeedMargin, gripCapacityFactor
+        p.speed, maxSpeed, brakeDecel, turnRateHigh, rt.cornerSpeedMargin, gripCapacityFactor, turnRateAtRest
     );
 
     return { steer, target, targetSpeed, localSamples };
@@ -935,7 +967,7 @@ function trajectoryDiagnostics(p, track) {
 function updateBotInputs(game, deps) {
     const {
         effectiveMaxSpeed, handlePitReactionPress, io, lobbyId, wearLapsAtMedium,
-        accel, brakeMult, turnRateHigh, tuning: tuningOverrides, slipstreamMaxBoost,
+        accel, brakeMult, turnRateHigh, turnRateLow = 0, tuning: tuningOverrides, slipstreamMaxBoost,
         effectiveBrakeMult, corneringCapacity
     } = deps;
     const tuning = { ...DEFAULT_TUNING, ...(tuningOverrides || {}) };
@@ -1231,7 +1263,7 @@ function updateBotInputs(game, deps) {
             // Lookahead adattivo ora permanente in questo ramo (Fase 1 —
             // cervello di guida unificato): niente più flag, e la logica è
             // condivisa con l'ottimizzatore offline via computeSoloRacingLineInputs.
-            const solo = computeSoloRacingLineInputs(p, track, rt, maxSpeed, brakeDecel, turnRateHigh, gripCapacityFactor);
+            const solo = computeSoloRacingLineInputs(p, track, rt, maxSpeed, brakeDecel, turnRateHigh, gripCapacityFactor, turnRateLow);
             const target = solo.target;
             const localSamples = solo.localSamples;   // riusato più sotto per il sorpasso (windowRadius) — evita di ricalcolarlo
             steer = solo.steer;
@@ -1258,7 +1290,7 @@ function updateBotInputs(game, deps) {
                     // (vedi otherCarTargetSpeed).
                     const leaderTargetSpeed = otherCarTargetSpeed(
                         ahead.player, track.racingLine, track, metersPerSample, legacyBrakeDecel, turnRateHigh,
-                        effectiveMaxSpeed, rt.cornerSpeedMargin, rt.brakingDistanceMargin
+                        effectiveMaxSpeed, rt.cornerSpeedMargin, rt.brakingDistanceMargin, turnRateLow
                     );
                     debugGapToAhead = ahead.gapM;
                     if (cornerIsMild && targetSpeed > leaderTargetSpeed * BOT_OVERTAKE_PACE_MARGIN) {
@@ -1342,7 +1374,7 @@ function updateBotInputs(game, deps) {
 
             let targetSpeed = cornerTargetSpeed(
                 track.points, p.trackIndex || 0, scanSamples, localSamples, metersPerSample,
-                p.speed, maxSpeed, brakeDecel, turnRateHigh, tuning.cornerSpeedMargin, gripCapacityFactor
+                p.speed, maxSpeed, brakeDecel, turnRateHigh, tuning.cornerSpeedMargin, gripCapacityFactor, turnRateLow
             ) * p.botSpeedFactor * p.botLapPaceMult;
 
             // Solo in gara: in qualifica ogni pilota corre isolato (un vero
@@ -1367,7 +1399,7 @@ function updateBotInputs(game, deps) {
                     // (vedi otherCarTargetSpeed).
                     const leaderTargetSpeed = otherCarTargetSpeed(
                         ahead.player, track.points, track, metersPerSample, legacyBrakeDecel, turnRateHigh,
-                        effectiveMaxSpeed, tuning.cornerSpeedMargin, tuning.brakingDistanceMargin
+                        effectiveMaxSpeed, tuning.cornerSpeedMargin, tuning.brakingDistanceMargin, turnRateLow
                     );
                     debugGapToAhead = ahead.gapM;
                     if (cornerIsMild && targetSpeed > leaderTargetSpeed * BOT_OVERTAKE_PACE_MARGIN) {

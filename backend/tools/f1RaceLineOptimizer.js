@@ -141,7 +141,7 @@ function buildOptimizer(track) {
         for (let tick = 0; tick < maxTicks; tick++) {
             const maxSpeed = physics.effectiveMaxSpeed(p, true);
             const gripCapacityFactor = Math.pow(physics.corneringCapacity(p, true, maxSpeed), BOT_GRIP_CAPACITY_EXPONENT);
-            const solo = computeSoloRacingLineInputs(p, trackView, rt, maxSpeed, brakeDecel, physics.TURN_SPEED_HIGH, gripCapacityFactor);
+            const solo = computeSoloRacingLineInputs(p, trackView, rt, maxSpeed, brakeDecel, physics.TURN_SPEED_HIGH, gripCapacityFactor, physics.TURN_SPEED_LOW);
 
             const err = (p.speed - solo.targetSpeed) / maxSpeed;
             let throttle = 0, brake = 0;

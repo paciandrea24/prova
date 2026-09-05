@@ -1040,3 +1040,114 @@ test('su una pista senza giri della morte il mirino non cambia di un campione', 
         }
     }
 });
+
+// ═══════ LA VELOCITA' IN CURVA SI CALCOLA COL TURN RATE CHE SI AVRA' ═══════
+//
+// ⚠️ MISURATO CONTRO UN GIRO UMANO (2026-09-05). Su `prova` il bot passava
+// l'apice di una curva a 140 km/h dove una persona passa a 279, seguendo bene
+// la propria traiettoria: non era la linea, era la stima.
+//
+// `cornerTargetSpeed` calcola v = raggio x turnRate, che e' cinematicamente
+// giusto, ma usava `TURN_SPEED_HIGH` — il turn rate ALLA VELOCITA' MASSIMA,
+// cioe' il minimo che l'auto ha. In curva si va piano, e piano l'auto sterza
+// fino a `TURN_SPEED_LOW`: il 44% in piu'. Il bot si negava metà dello sterzo
+// che avrebbe avuto proprio dove serviva.
+//
+// La velocita' e il turn rate si definiscono a vicenda, quindi la soluzione e'
+// un punto fisso — risolto in forma chiusa dentro cornerTargetSpeed.
+const SteeringModel = require('./physics/SteeringModel.js');
+const VehiclePhysics = require('./physics/VehiclePhysics.js');
+
+// Un arco di raggio noto, campionato come una pista vera.
+function arco(raggio, quanti = 400) {
+    const pts = [];
+    for (let i = 0; i < quanti; i++) {
+        const a = (i / quanti) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * raggio, z: Math.sin(a) * raggio, y: 0 });
+    }
+    return pts;
+}
+
+// Il turn rate VERO che la fisica concede a quella velocita', misurato
+// facendo girare l'auto per un tick con lo sterzo tutto da un lato.
+function turnRateVeroA(velocita, maxSpeed) {
+    const p = {
+        speed: velocita, angle: 0, vx: 0, vz: velocita,
+        inputs: { throttle: 0, brake: 0, steer: 1 },
+    };
+    SteeringModel.applySteering(p, true, maxSpeed);
+    return Math.abs(p.angle);
+}
+
+test('la velocita\' in curva sta dentro il turn rate che la fisica concede davvero', () => {
+    // Il test di verita': qualunque sia la formula, l'auto alla velocita'
+    // stimata deve riuscire a percorrere quel raggio. Se non ci riesce, il bot
+    // uscira' di pista; se ci riesce con troppo margine, sta andando piano
+    // per niente.
+    const maxSpeed = VehiclePhysics.MAX_SPEED;
+    // ⚠️ Il passo di campionamento e' quello VERO dell'arco: passando 1 mentre
+    // un campione vale 0.63 unita', `windowRadius` misura un raggio falsato e
+    // il test accusa la formula di un difetto che e' della misura.
+    const passoDi = (raggio, quanti) => (2 * Math.PI * raggio) / quanti;
+    for (const raggio of [40, 60, 100, 200, 400]) {
+        const pts = arco(raggio);
+        const v = cornerTargetSpeed(pts, 0, 200, 20, passoDi(raggio, pts.length),
+            maxSpeed, maxSpeed, 0.05, SteeringModel.TURN_SPEED_HIGH, 1, 1,
+            SteeringModel.TURN_SPEED_LOW);
+        const raggioPercorribile = v / turnRateVeroA(v, maxSpeed);
+        assert.ok(raggioPercorribile <= raggio * 1.02,
+            `raggio ${raggio}: a ${v.toFixed(2)} l'auto gira al minimo su ${raggioPercorribile.toFixed(1)}, non ci sta`);
+        // E non deve avanzare troppo margine — ma solo dove la curva limita
+        // davvero: se la velocita' ha saturato al massimo, il margine grande
+        // e' il segno che li' non c'era niente da rallentare.
+        if (v < maxSpeed - 1e-9) {
+            assert.ok(raggioPercorribile >= raggio * 0.75,
+                `raggio ${raggio}: a ${v.toFixed(2)} potrebbe girare su ${raggioPercorribile.toFixed(1)}, va piano per niente`);
+        }
+    }
+});
+
+test('col turn rate a fermo la stima in curva stretta sale, e di quanto lo dice la formula', () => {
+    const maxSpeed = VehiclePhysics.MAX_SPEED;
+    const pts = arco(50);
+    const vecchia = cornerTargetSpeed(pts, 0, 200, 20, (2 * Math.PI * 50) / 400,
+        maxSpeed, maxSpeed, 0.05, SteeringModel.TURN_SPEED_HIGH, 1, 1);
+    const nuova = cornerTargetSpeed(pts, 0, 200, 20, (2 * Math.PI * 50) / 400,
+        maxSpeed, maxSpeed, 0.05, SteeringModel.TURN_SPEED_HIGH, 1, 1,
+        SteeringModel.TURN_SPEED_LOW);
+    assert.ok(nuova > vecchia * 1.15,
+        `la stima e' passata da ${vecchia.toFixed(2)} a ${nuova.toFixed(2)}: troppo poco`);
+    // La forma chiusa del punto fisso: v = R.wLow / (1 + R.(wLow-wHigh)/vMax).
+    // Il raggio che conta e' quello che misura windowRadius sull'arco, non il
+    // nominale — la finestra e' una corda, non l'arco intero.
+    const w = windowRadius(pts, 0, 20, (2 * Math.PI * 50) / 400 * 20);
+    const wLow = SteeringModel.TURN_SPEED_LOW, wHigh = SteeringModel.TURN_SPEED_HIGH;
+    const atteso = (w.radius * wLow) / (1 + w.radius * (wLow - wHigh) / maxSpeed);
+    assert.ok(Math.abs(nuova - Math.min(maxSpeed, atteso)) < 0.01,
+        `atteso ${atteso.toFixed(3)}, ottenuto ${nuova.toFixed(3)}`);
+});
+
+test('senza il turn rate a fermo la stima resta quella di prima', () => {
+    // ⚠️ Serve che sia ESPLICITO: un chiamante non aggiornato (uno strumento
+    // offline, un test storico) ottiene il conto vecchio, non un ripiego che
+    // somiglia al nuovo. Un ripiego silenzioso falsificherebbe ogni misura
+    // fatta con quello strumento.
+    const maxSpeed = VehiclePhysics.MAX_SPEED;
+    const pts = arco(50);
+    const w = windowRadius(pts, 0, 20, (2 * Math.PI * 50) / 400 * 20);
+    const v = cornerTargetSpeed(pts, 0, 200, 20, (2 * Math.PI * 50) / 400,
+        maxSpeed, maxSpeed, 0.05, SteeringModel.TURN_SPEED_HIGH, 1, 1);
+    assert.ok(Math.abs(v - Math.min(maxSpeed, w.radius * SteeringModel.TURN_SPEED_HIGH)) < 0.01);
+});
+
+test('dove la pista corre quasi dritta non si rallenta', () => {
+    // ⚠️ Un cerchio ENORME, non un segmento: `lookaheadIndex` tratta i punti
+    // come un giro chiuso, e un segmento aperto si richiude su se' stesso
+    // creando una curva strettissima che non esiste in nessuna pista.
+    const maxSpeed = VehiclePhysics.MAX_SPEED;
+    const quasiDritto = arco(20000, 400);
+    const v = cornerTargetSpeed(quasiDritto, 0, 200, 20, (2 * Math.PI * 20000) / 400,
+        maxSpeed, maxSpeed, 0.05, SteeringModel.TURN_SPEED_HIGH, 1, 1,
+        SteeringModel.TURN_SPEED_LOW);
+    assert.equal(v, maxSpeed);
+});
