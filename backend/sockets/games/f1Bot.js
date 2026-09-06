@@ -407,17 +407,33 @@ function nearestBehindPlayer(p, allPlayers, track) {
         if (gapM < bestGap) { bestGap = gapM; best = q; }
     }
     if (!best) return null;
-    // Da che lato dell'asse sta, misurato NEL MIO PUNTO di pista: e' li' che
-    // dovro' spostarmi, non dove si trova lui adesso.
-    const idx = p.trackIndex || 0;
-    const centro = track.points[idx];
-    const nrm = TrackGeometry.normalAt(track.points, idx, true);
-    const lato = Math.sign((best.x - centro.x) * nrm.nx + (best.z - centro.z) * nrm.nz) || 1;
-    return { player: best, gapM: bestGap, lato, affiancato: bestGap < BOT_AFFIANCATO_M };
+    // DOVE sta rispetto all'asse, non solo da che parte: e' la linea che gli
+    // devo prendere, e il segno da solo non basta piu' a dire di quanto
+    // spostarsi (vedi f1Duelli.js, modello riscritto il 2026-09-06).
+    //
+    // ⚠️ Misurato NEL SUO punto, con la normale di li': e' la sua posizione
+    // vera. L'offset dall'asse e' poi confrontabile con quello della mia
+    // linea anche se i due punti di pista non coincidono — vale come
+    // coordinata trasversale lungo tutto il tracciato, ed e' la stessa
+    // assunzione che il codice faceva gia' col segno.
+    const idxSuo = best.trackIndex || 0;
+    const centro = track.points[idxSuo];
+    const nrm = TrackGeometry.normalAt(track.points, idxSuo, true);
+    const grezzo = (best.x - centro.x) * nrm.nx + (best.z - centro.z) * nrm.nz;
+    // ⚠️ SI COPRE UNA LINEA CHE ESISTE. Da quando la difesa mira a dove sta
+    // l'attaccante invece di spostarsi di un tanto, la sua posizione entra
+    // nel conto: e chi e' in corsia box sta a 63 unita' dall'asse contro le
+    // 11 della mezza carreggiata, chi e' lungo in ghiaia anche di piu'. Senza
+    // questo taglio il bot andrebbe a incollarsi al bordo pista per «coprire»
+    // uno che sta rientrando ai box. I flag `pitting`/`pitAutoState` sopra non
+    // bastano: c'e' un tratto di avvicinamento in cui non sono ancora alzati.
+    const lat = Math.max(-track.roadHalf, Math.min(track.roadHalf, grezzo));
+    return { player: best, gapM: bestGap, lat, lato: Math.sign(lat) || 1,
+             affiancato: bestGap < BOT_AFFIANCATO_M };
 }
 
-// LA DIFESA: chi ho dietro, da che parte arriva, e di quanto mi sposto per
-// coprirlo.
+// LA DIFESA: chi ho dietro, dove sta di traverso, e su che linea vado a
+// mettermi per togliergliela.
 //
 // ⚠️ SI SPOSTA LA TRAIETTORIA, MAI LA VELOCITA'. Un bot che frena per restare
 // davanti e' cio' che i giocatori riconoscono come «AI che bara»: qui dentro
@@ -431,8 +447,19 @@ function nearestBehindPlayer(p, allPlayers, track) {
 function difendiSePossibile(p, game, track, aggro, target, steerGain, targetIdx) {
     const dietro = nearestBehindPlayer(p, Object.values(game.players), track);
     const adessoMs = (game.raceTick || 0) * 50;
+    // ⚠️ NEL PUNTO MIRATO, non dove sta il bot: e' li' che il bersaglio
+    // viene spostato, e in una curva la normale di qui e quella venti
+    // campioni piu' avanti guardano da due parti diverse.
+    const iBers = targetIdx === undefined ? (p.trackIndex || 0) : targetIdx;
+    const nrm = TrackGeometry.normalAt(track.points, iBers, true);
+    const centro = track.points[iBers];
+    // Dove passerebbe la mia linea se nessuno mi inseguisse. Serve PRIMA di
+    // decidere la difesa, non dopo: quanto devo spostarmi dipende da quanta
+    // pista mi separa da lui, e quella si misura da qui.
+    const latLinea = (target.x - centro.x) * nrm.nx + (target.z - centro.z) * nrm.nz;
     const difesa = F1Duelli.scostamentoDifensivo({
-        latoAttaccante: dietro ? dietro.lato : 0,
+        latLinea,
+        latAttaccante: dietro ? dietro.lat : null,
         gapM: dietro ? dietro.gapM : Infinity,
         // Un secondo di distacco alla velocita' di adesso: chi corre si
         // copre da piu' lontano, chi arranca in una curva lenta no.
@@ -446,10 +473,11 @@ function difendiSePossibile(p, game, track, aggro, target, steerGain, targetIdx)
         finestraM: Math.min(
             Math.max(p.speed * BOT_DIFESA_FINESTRA_S * 1000 / TICK_MS, BOT_AFFIANCATO_M * 2),
             track.lapLength / 2),
-        // In unita' di pista, dalla frazione di mezza carreggiata del
-        // livello: una difesa tarata in unita' fisse vale meta' su una pista
-        // larga il doppio (vedi f1Difficolta.js).
-        forza: aggro.frazioneDifesa * track.roadHalf,
+        // QUANTA PARTE della sua linea si prende, dal livello: non un numero
+        // di unita'. Cosi' la difesa non va ritarata pista per pista ne'
+        // racing line per racing line — chiude sempre la porta che c'e',
+        // grande o piccola che sia (vedi f1Difficolta.js).
+        copertura: aggro.coperturaDifesa,
         scostamentoAttuale: p.botScostamentoDifesa || 0,
         affiancato: !!(dietro && dietro.affiancato),
         ultimoCambioMs: p.botUltimoCambioDifesa || 0,
@@ -461,19 +489,12 @@ function difendiSePossibile(p, game, track, aggro, target, steerGain, targetIdx)
     }
     p.botScostamentoDifesa = difesa.scostamento;
     if (difesa.scostamento === 0) return null;
-    // ⚠️ NEL PUNTO MIRATO, non dove sta il bot: e' li' che il bersaglio
-    // viene spostato, e in una curva la normale di qui e quella venti
-    // campioni piu' avanti guardano da due parti diverse.
-    const iBers = targetIdx === undefined ? (p.trackIndex || 0) : targetIdx;
-    const nrm = TrackGeometry.normalAt(track.points, iBers, true);
     // LO STESSO TETTO DEGLI ALTRI SCOSTAMENTI. La linea propria e l'ingresso
     // largo si tagliano insieme al bordo della carreggiata; la difesa veniva
     // sommata dopo, e su `prova` la racing line passa gia' a 5.96 dall'asse su
     // una mezza carreggiata di 11: sei unita' di difesa portavano il bersaglio
     // a 13.85, cioe' in ghiaia. Col banco gara si vedeva come tempo passato
     // fuori pista, salito dal 6.6% al 10.6% a difficile.
-    const centro = track.points[iBers];
-    const latLinea = (target.x - centro.x) * nrm.nx + (target.z - centro.z) * nrm.nz;
     const tetto = Math.max(Math.abs(latLinea), track.roadHalf * BOT_BERSAGLIO_MAX_FRAZIONE);
     const latVoluta = Math.max(-tetto, Math.min(tetto, latLinea + difesa.scostamento));
     const scarto = latVoluta - latLinea;

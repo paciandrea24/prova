@@ -1427,17 +1427,25 @@ test('a difficile si copre piu\' che a facile', () => {
     assert.ok(scostamentoCon('difficile') > scostamentoCon('facile'));
 });
 
-// ⚠️ LA DIFESA SI MISURA IN CARREGGIATA, NON IN UNITA' DI PISTA.
-// Playtest 2026-09-05: «ad hard mi e' sembrato che non si spostano piu' i bot
-// per difendere». Il meccanismo si attivava (6% dei tick su `prova`), ma
-// spostava 0.61 larghezze d'auto su una pista larga 22: sotto la soglia di
-// cio' che si vede. Una difesa in unita' fisse vale la meta' su una pista
-// larga il doppio — questo test e' quello che se ne accorge.
-test('la difesa scala con la larghezza della pista', () => {
-    function scostamentoConCarreggiata(roadHalf) {
+// ⚠️ LA DIFESA SI MISURA SULLA PORTA DA CHIUDERE, NON SULLA CARREGGIATA.
+//
+// Due playtest di fila hanno detto la stessa cosa — «ad hard non si spostano
+// per difendere» (05-09) e «non lo noto ancora» (06-09) — e la seconda volta
+// il meccanismo si attivava nel 74% dei tick spostando 0.93 larghezze d'auto.
+// Si muoveva: non chiudeva. Su `prova` la linea dei bot passa a 6 unita'
+// dall'asse e ne lascia 16.3 dall'altra parte, e spostarsi di 6 lasciava
+// ancora 4 auto affiancate di porta.
+//
+// Questo test e' il successore di uno che pretendeva il raddoppio della
+// difesa su una carreggiata doppia. Era la simmetria sbagliata: con
+// l'attaccante fermo nello stesso punto, allargare la pista NON allarga la
+// porta da chiudere, e il bot non deve spostarsi di piu'. Cio' che deve
+// raddoppiare la difesa e' un attaccante due volte piu' lontano di traverso.
+test('la difesa scala con la porta da chiudere', () => {
+    function scostamentoConAttaccanteA(latAttaccante, roadHalf) {
         const { game, p } = makeGripAwarenessGame(0, 'race');
         game.settings = { botDifficolta: 'difficile' };
-        game.track.roadHalf = roadHalf;
+        game.track.roadHalf = roadHalf === undefined ? 11 : roadHalf;
         game.raceTick = 2000;
         p.trackIndex = 25;
         p.x = game.track.points[25].x; p.z = game.track.points[25].z;
@@ -1447,20 +1455,23 @@ test('la difesa scala con la larghezza della pista', () => {
             bot1: p,
             bot2: Object.assign({}, p, {
                 trackIndex: iDietro,
-                x: game.track.points[iDietro].x + nrm.nx * 4,
-                z: game.track.points[iDietro].z + nrm.nz * 4,
+                x: game.track.points[iDietro].x + nrm.nx * latAttaccante,
+                z: game.track.points[iDietro].z + nrm.nz * latAttaccante,
                 inputs: { throttle: 0, brake: 0, steer: 0 },
             }),
         };
         updateBotInputs(game, makeGripAwarenessDeps());
         return Math.abs(p._botDebug.scostamentoDifensivo);
     }
-    const stretta = scostamentoConCarreggiata(8);
-    const larga = scostamentoConCarreggiata(16);
-    assert.ok(stretta > 0, 'sulla pista stretta non si difende affatto');
-    assert.ok(Math.abs(larga / stretta - 2) < 0.01,
-        `carreggiata doppia, difesa ${(larga / stretta).toFixed(2)}x invece di 2x: ` +
-        "e' tarata in unita' fisse, non in frazione di pista");
+    const vicino = scostamentoConAttaccanteA(3);
+    const lontano = scostamentoConAttaccanteA(6);
+    assert.ok(vicino > 0, 'con qualcuno dietro di traverso non si difende affatto');
+    assert.ok(Math.abs(lontano / vicino - 2) < 0.02,
+        `porta doppia, difesa ${(lontano / vicino).toFixed(2)}x invece di 2x: ` +
+        'non e\' tarata sulla distanza laterale dall\'attaccante');
+    // E la larghezza della pista, da sola, non c'entra: la porta e' quella.
+    assert.ok(Math.abs(scostamentoConAttaccanteA(6, 16) - lontano) < 1e-6,
+        'la difesa cambia allargando la pista a parita\' di porta da chiudere');
 });
 
 // ⚠️ LA DIFESA COMINCIA A UN TEMPO, NON A UNA DISTANZA.
@@ -1839,4 +1850,39 @@ test('ogni bot prende l\' apice a modo suo, e il livello dice quanto', () => {
     // non se lo puo' permettere.
     assert.ok(Math.max(...d) <= Math.min(...f),
         'a difficile il piu\' sporco deve stare dentro il piu\' pulito di facile');
+});
+
+// ⚠️ CHI E' IN CORSIA BOX NON E' UNA LINEA DA COPRIRE.
+// Da quando la difesa mira a DOVE sta l'attaccante (2026-09-06) la sua
+// posizione laterale entra nel conto, e in corsia box vale 63 unita' contro le
+// 11 della mezza carreggiata: senza un taglio, il bot va a incollarsi al bordo
+// pista per coprire uno che sta rientrando. I flag pitting/pitAutoState non
+// bastano, c'e' un tratto di avvicinamento in cui non sono ancora alzati.
+test('non ci si difende da chi e\' fuori dalla carreggiata', () => {
+    function scostamentoConAttaccanteA(latAttaccante) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: 'difficile' };
+        game.track.roadHalf = 11;
+        game.raceTick = 2000;
+        p.trackIndex = 25;
+        p.x = game.track.points[25].x; p.z = game.track.points[25].z;
+        const iDietro = p.trackIndex - 15;
+        const nrm = TrackGeometry.normalAt(game.track.points, iDietro, true);
+        game.players = {
+            bot1: p,
+            bot2: Object.assign({}, p, {
+                trackIndex: iDietro,
+                x: game.track.points[iDietro].x + nrm.nx * latAttaccante,
+                z: game.track.points[iDietro].z + nrm.nz * latAttaccante,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+            }),
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return Math.abs(p._botDebug.scostamentoDifensivo);
+    }
+    const alBordo = scostamentoConAttaccanteA(11);      // sul limite della pista
+    const inCorsiaBox = scostamentoConAttaccanteA(63);  // dentro la corsia box
+    assert.ok(Math.abs(inCorsiaBox - alBordo) < 1e-6,
+        `chi e' a 63 dall'asse tira la difesa a ${inCorsiaBox.toFixed(2)} invece ` +
+        `di fermarla a ${alBordo.toFixed(2)}: il bot copre la corsia box`);
 });

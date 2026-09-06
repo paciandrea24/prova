@@ -70,28 +70,51 @@ test('i valori di oggi restano dentro il livello medio', () => {
 
 
 test('la difesa cresce col livello', () => {
-    assert.ok(F1Difficolta.soglieDi('difficile').frazioneDifesa >
-              F1Difficolta.soglieDi('medio').frazioneDifesa);
-    assert.ok(F1Difficolta.soglieDi('medio').frazioneDifesa >
-              F1Difficolta.soglieDi('facile').frazioneDifesa);
-    // ⚠️ E resta una difesa, non un muro: oltre i tre quarti della mezza
-    // carreggiata il bot occuperebbe la pista invece di coprire una linea.
+    assert.ok(F1Difficolta.soglieDi('difficile').coperturaDifesa >
+              F1Difficolta.soglieDi('medio').coperturaDifesa);
+    assert.ok(F1Difficolta.soglieDi('medio').coperturaDifesa >
+              F1Difficolta.soglieDi('facile').coperturaDifesa);
+    // ⚠️ E resta una difesa, non un blocco: 1 vuol dire «gli vado davanti»,
+    // che e' il massimo lecito. Oltre, il bot mirerebbe PIU' IN LA' della
+    // linea dell'attaccante, cioe' verrebbe a prendersi la sua metrata —
+    // quello non e' coprirsi, e' buttarlo fuori.
     for (const l of F1Difficolta.LIVELLI) {
-        assert.ok(F1Difficolta.soglieDi(l).frazioneDifesa < 0.75, l + ': difesa troppo larga');
+        assert.ok(F1Difficolta.soglieDi(l).coperturaDifesa <= 1,
+            l + ': si mira oltre la linea dell\'attaccante, non e\' una difesa');
     }
 });
 
-// ⚠️ LA MISURA CHE HA CAMBIATO QUESTI NUMERI (playtest 2026-09-05).
-// La difesa era in unita' di pista (4.5 a difficile) mentre l'attacco era ed
-// e' una frazione della mezza carreggiata (BOT_OVERTAKE_FRACTION = 0.55, cioe'
-// 6.05 unita' su `prova`): il bot attaccava tre volte piu' di quanto
-// difendeva, e su `prova` la difesa realizzata valeva 0.61 larghezze d'auto —
-// invisibile. Difendere quanto si attacca e' la stessa scala per le due meta'
-// dello stesso duello.
-test('a difficile ci si copre quanto ci si sposta per attaccare', () => {
-    const BOT_OVERTAKE_FRACTION = 0.55;   // f1Bot.js, la meta' offensiva
-    assert.ok(Math.abs(F1Difficolta.soglieDi('difficile').frazioneDifesa - BOT_OVERTAKE_FRACTION) < 1e-9,
-        "a difficile la difesa deve valere quanto l'attacco");
+// ⚠️ QUESTO TEST HA SOSTITUITO UN'IPOTESI SBAGLIATA, e vale la pena dire
+// quale. Fino al 2026-09-06 qui si pretendeva che la difesa valesse
+// ESATTAMENTE quanto l'attacco (BOT_OVERTAKE_FRACTION, 0.55 della mezza
+// carreggiata), col ragionamento «sono le due meta' dello stesso duello,
+// stessa scala». Sembrava simmetrico ed era falso: chi attacca si sposta
+// verso lo spazio libero e lo trova, chi difende deve coprire una porta la
+// cui larghezza dipende da dove passa la sua linea. Su `prova` sono 16.3
+// unita' contro le 6.05 che quel numero concedeva.
+//
+// Il test rendeva definitiva quell'ipotesi: legava i due numeri, quindi
+// nessuna taratura della difesa poteva passare senza toccare anche
+// l'attacco. Un'ipotesi dentro un test non e' piu' un'ipotesi.
+test('la difesa si misura sulla porta, non sull\'attacco', () => {
+    const R = 11;          // mezza carreggiata di `prova`
+    const AUTO = 3.48;
+    const F1Duelli = require('./f1Duelli.js');
+    // La situazione vera: la linea dei bot passa a 6 dall'asse, l'attaccante
+    // arriva dal lato largo ed e' incollato.
+    const porta = (livello) => {
+        const d = F1Duelli.scostamentoDifensivo({
+            latLinea: 6, latAttaccante: -6, gapM: 0, finestraM: 120,
+            copertura: F1Difficolta.soglieDi(livello).coperturaDifesa,
+            scostamentoAttuale: 0, affiancato: false, ultimoCambioMs: 0, adessoMs: 1e6,
+        });
+        return (R + (6 + d.scostamento)) / AUTO;   // auto affiancate dal lato dell'attacco
+    };
+    assert.ok(porta('difficile') < 1.6,
+        `a difficile la porta resta ${porta('difficile').toFixed(2)} auto: ci si passa senza sterzare`);
+    assert.ok(porta('medio') < 2.8, 'a medio la porta e\' ancora un\'autostrada');
+    assert.ok(porta('facile') > porta('medio') && porta('medio') > porta('difficile'),
+        'salendo di livello la porta si stringe');
 });
 
 test('si sbaglia di piu\' ai livelli bassi, ma mai zero', () => {
