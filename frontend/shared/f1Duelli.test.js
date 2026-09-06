@@ -92,17 +92,22 @@ test('non si stringe chi e\' gia\' affiancato', () => {
 
 test('non si cambia direzione due volte di fila', () => {
     // Un cambio di traiettoria in difesa, non due: un bot che oscilla per
-    // bloccare si vede subito ed e' antipatico. Qui l'attaccante e' passato
-    // dall'altro lato poco dopo il primo spostamento.
+    // bloccare si vede subito ed e' antipatico. Qui l'attaccante ONDEGGIA —
+    // si e' spostato di meno di una larghezza d'auto poco dopo il primo
+    // movimento del difensore, che quindi non lo insegue.
+    //
+    // ⚠️ Un attaccante passato DAVVERO dall'altra parte e' un altro caso, e
+    // va coperto subito: vedi «si copre chi e' passato davvero dall'altra
+    // parte». La differenza la fa `sogliaCambioM`.
     const r = F1Duelli.scostamentoDifensivo(stato({
-        latLinea: -6, latAttaccante: 6, scostamentoAttuale: -3,
+        latLinea: -6, latAttaccante: -4, scostamentoAttuale: -3, sogliaCambioM: 3.48,
         ultimoCambioMs: 99000, adessoMs: 100000,   // un secondo fa
     }));
     assert.equal(r.scostamento, -3, 'si resta dove si e\', non si insegue l\'attaccante');
     assert.equal(r.motivo, 'gia-mosso');
     // Passato l'intervallo, si puo' coprire di nuovo.
     const dopo = F1Duelli.scostamentoDifensivo(stato({
-        latLinea: -6, latAttaccante: 6, scostamentoAttuale: -3,
+        latLinea: -6, latAttaccante: -4, scostamentoAttuale: -3, sogliaCambioM: 3.48,
         ultimoCambioMs: 100000 - F1Duelli.INTERVALLO_CAMBIO_MS - 1, adessoMs: 100000,
     }));
     assert.ok(dopo.scostamento > -3, 'passato l\'intervallo si copre il lato nuovo');
@@ -111,4 +116,38 @@ test('non si cambia direzione due volte di fila', () => {
 test('senza attaccante si torna sulla propria linea', () => {
     const r = F1Duelli.scostamentoDifensivo(stato({ latAttaccante: null, gapM: Infinity }));
     assert.equal(r.scostamento, 0);
+});
+
+// ⚠️ IL BLOCCO ANTI-ZIGZAG NON DEVE COPRIRE IL LATO SBAGLIATO.
+//
+// Playtest 2026-09-06: «avevo una macchina davanti a sinistra, io ho
+// sorpassato a destra e lui ha tipo coperto a sinistra, ma io stavo passando a
+// destra». Riprodotto: il difensore restava sul lato vecchio per l'INTERO
+// intervallo di 2 s, mentre la finestra del duello e' 1 s di distacco. Faceva
+// una scelta e non poteva piu' correggerla per tutto il sorpasso.
+//
+// La regola vera della F1 vieta lo ZIG-ZAG — inseguire chi ondeggia — non
+// vieta di chiudere la porta a chi e' passato davvero dall'altra parte. Le due
+// cose si distinguono da QUANTO si e' spostato l'attaccante: sotto una
+// larghezza d'auto e' un finto, sopra e' un attacco.
+test('si copre chi e\' passato davvero dall\'altra parte, anche subito', () => {
+    const base = { latLinea: 0, gapM: 20, finestraM: 120, copertura: 1,
+                   affiancato: false, sogliaCambioM: 3.48 };
+    // Il bot si e' coperto a sinistra un istante fa; l'attaccante e' ora
+    // nettamente a destra.
+    const attaccoVero = F1Duelli.scostamentoDifensivo(Object.assign({}, base, {
+        latAttaccante: 6, scostamentoAttuale: -5,
+        ultimoCambioMs: 900, adessoMs: 1000,   // un decimo di secondo fa
+    }));
+    assert.ok(attaccoVero.scostamento > 0,
+        `l'attaccante e' a destra di 6 e il bot copre ancora a ` +
+        `${attaccoVero.scostamento.toFixed(2)}: sta coprendo il vuoto`);
+
+    // Ma un'oscillazione dentro la larghezza di un'auto NON va inseguita.
+    const finta = F1Duelli.scostamentoDifensivo(Object.assign({}, base, {
+        latAttaccante: 1.2, scostamentoAttuale: -5,
+        ultimoCambioMs: 900, adessoMs: 1000,
+    }));
+    assert.equal(finta.scostamento, -5, 'il bot insegue un\'oscillazione da mezzo metro');
+    assert.equal(finta.motivo, 'gia-mosso');
 });

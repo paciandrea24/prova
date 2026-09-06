@@ -378,6 +378,11 @@ function nearestAheadPlayer(p, allPlayers, track) {
 // che non sa da dove arriva l'attacco copre a caso, e coprire il lato
 // sbagliato e' peggio che non coprire — gli si apre la porta.
 const BOT_AFFIANCATO_M = 8;   // lunghezza di un'auto piu' un margine
+// Larghezza dell'auto, la stessa di f1SensoVelocita (SEMI_LARGHEZZA_AUTO 1.74).
+// Serve come unita' percettiva: uno spostamento piu' stretto di un'auto non e'
+// una mossa, e' rumore — vale per giudicare se l'attaccante ha davvero
+// cambiato lato.
+const LARGHEZZA_AUTO = 3.48;
 
 // DA QUANTO LONTANO CI SI COMINCIA A COPRIRE, in secondi di distacco.
 //
@@ -481,6 +486,10 @@ function difendiSePossibile(p, game, track, aggro, target, steerGain, targetIdx)
         scostamentoAttuale: p.botScostamentoDifesa || 0,
         affiancato: !!(dietro && dietro.affiancato),
         ultimoCambioMs: p.botUltimoCambioDifesa || 0,
+        // Oltre una larghezza d'auto non e' piu' un'oscillazione: e' passato
+        // dall'altra parte, e il blocco anti-zigzag non deve tenere il bot a
+        // coprire il vuoto (playtest 2026-09-06, vedi f1Duelli.js).
+        sogliaCambioM: LARGHEZZA_AUTO,
         adessoMs,
     });
     const prima = p.botScostamentoDifesa || 0;

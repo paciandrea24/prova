@@ -62,9 +62,27 @@
         if (s.affiancato) return { scostamento: attuale, motivo: 'affiancato' };
 
         // Gia' spostato da poco dall'altra parte: si resta dove si e'.
+        //
+        // ⚠️ MA SOLO CONTRO UN'OSCILLAZIONE, non contro un attacco vero.
+        // Playtest 2026-09-06: «ho sorpassato a destra e lui ha coperto a
+        // sinistra». Riprodotto — il blocco durava 2 s pieni mentre la
+        // finestra del duello e' 1 s, quindi il difensore faceva UNA scelta e
+        // per tutto il resto del sorpasso copriva il vuoto. Peggio del
+        // problema che la regola voleva evitare: chi guarda non vede una
+        // difesa disciplinata, vede un'AI che non capisce da che parte arrivi.
+        //
+        // Il regolamento vero vieta lo zig-zag, cioe' inseguire chi ondeggia;
+        // non obbliga a lasciare aperta la porta di chi e' passato davvero
+        // dall'altra parte. Le due cose si distinguono da QUANTO si e'
+        // spostato: sotto una larghezza d'auto e' un finto, sopra e' un
+        // attacco — e chi attacca sul serio esce dalla scia, non ci resta.
         const dallUltimo = (s.adessoMs || 0) - (s.ultimoCambioMs || 0);
         const cambierebbeLato = attuale !== 0 && Math.sign(attuale) !== Math.sign(daCoprire);
-        if (cambierebbeLato && dallUltimo < INTERVALLO_CAMBIO_MS) {
+        // Senza una soglia non si sa distinguere il finto dall'attacco: si
+        // tiene il blocco, che e' il comportamento prudente.
+        const soglia = s.sogliaCambioM === undefined ? Infinity : s.sogliaCambioM;
+        const attaccoDeciso = Math.abs(daCoprire) > soglia;
+        if (cambierebbeLato && dallUltimo < INTERVALLO_CAMBIO_MS && !attaccoDeciso) {
             return { scostamento: attuale, motivo: 'gia-mosso' };
         }
 
