@@ -8,6 +8,8 @@
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 const BoxIngresso = require('../../../frontend/shared/f1BoxIngresso.js');
 const Stagione = require('./f1Stagione.server.js');
+const F1Difficolta = require('../../../frontend/shared/f1Difficolta.js');
+const F1Duelli = require('../../../frontend/shared/f1Duelli.js');
 
 // Palette colori — DEVE restare in sync con frontend/index.js →
 // availableColors: i colori sono l'identità del giocatore su tutta la
@@ -369,6 +371,153 @@ function nearestAheadPlayer(p, allPlayers, track) {
     return best ? { player: best, gapM: bestGap } : null;
 }
 
+// Il simmetrico: chi mi sta INSEGUENDO, quanto e' vicino e da che parte
+// arriva.
+//
+// ⚠️ Serve anche il LATO, che a nearestAheadPlayer non serviva: una difesa
+// che non sa da dove arriva l'attacco copre a caso, e coprire il lato
+// sbagliato e' peggio che non coprire — gli si apre la porta.
+const BOT_AFFIANCATO_M = 8;   // lunghezza di un'auto piu' un margine
+// Larghezza dell'auto, la stessa di f1SensoVelocita (SEMI_LARGHEZZA_AUTO 1.74).
+// Serve come unita' percettiva: uno spostamento piu' stretto di un'auto non e'
+// una mossa, e' rumore — vale per giudicare se l'attaccante ha davvero
+// cambiato lato.
+const LARGHEZZA_AUTO = 3.48;
+
+// DA QUANTO LONTANO CI SI COMINCIA A COPRIRE, in secondi di distacco.
+//
+// ⚠️ IN TEMPO, NON IN UNITA' DI PISTA, e con una costante SUA. Prima era
+// BOT_FOLLOW_GAP_M (30 unita'), condivisa con la scia e i sorpassi: su
+// `prova`, a 5.5 unita' per tick, sono 0.27 secondi — il bot cominciava a
+// coprirti quando gli eri a quattro lunghezze d'auto, e a 8 unita' (0.07 s)
+// scattava gia' l'affiancamento, che congela lo scostamento. La difesa non
+// faceva in tempo ad esistere, ed e' il playtest del 2026-09-05 ad averlo
+// detto: «ad hard mi e' sembrato che non si spostano piu' i bot per
+// difendere».
+//
+// Separata da BOT_FOLLOW_GAP_M apposta: quella soglia governa scia e
+// sorpassi, tarati nel blocco H2, e allargarla li cambierebbe tutti.
+const BOT_DIFESA_FINESTRA_S = 1.0;
+const TICK_MS = 50;   // il passo del server, lo stesso di aggiornaErrore
+function nearestBehindPlayer(p, allPlayers, track) {
+    const n = track.points.length;
+    const metersPerSample = track.lapLength / n;
+    let best = null, bestGap = Infinity;
+    for (const q of allPlayers) {
+        if (q === p || q.finished || q.pitting || q.pitAutoState) continue;
+        // Distanza INDIETRO lungo il giro: quanto quello dietro deve ancora
+        // percorrere per arrivare dove sono io.
+        const delta = (((p.trackIndex || 0) - (q.trackIndex || 0)) % n + n) % n;
+        const gapM = delta * metersPerSample;
+        if (gapM < bestGap) { bestGap = gapM; best = q; }
+    }
+    if (!best) return null;
+    // DOVE sta rispetto all'asse, non solo da che parte: e' la linea che gli
+    // devo prendere, e il segno da solo non basta piu' a dire di quanto
+    // spostarsi (vedi f1Duelli.js, modello riscritto il 2026-09-06).
+    //
+    // ⚠️ Misurato NEL SUO punto, con la normale di li': e' la sua posizione
+    // vera. L'offset dall'asse e' poi confrontabile con quello della mia
+    // linea anche se i due punti di pista non coincidono — vale come
+    // coordinata trasversale lungo tutto il tracciato, ed e' la stessa
+    // assunzione che il codice faceva gia' col segno.
+    const idxSuo = best.trackIndex || 0;
+    const centro = track.points[idxSuo];
+    const nrm = TrackGeometry.normalAt(track.points, idxSuo, true);
+    const grezzo = (best.x - centro.x) * nrm.nx + (best.z - centro.z) * nrm.nz;
+    // ⚠️ SI COPRE UNA LINEA CHE ESISTE. Da quando la difesa mira a dove sta
+    // l'attaccante invece di spostarsi di un tanto, la sua posizione entra
+    // nel conto: e chi e' in corsia box sta a 63 unita' dall'asse contro le
+    // 11 della mezza carreggiata, chi e' lungo in ghiaia anche di piu'. Senza
+    // questo taglio il bot andrebbe a incollarsi al bordo pista per «coprire»
+    // uno che sta rientrando ai box. I flag `pitting`/`pitAutoState` sopra non
+    // bastano: c'e' un tratto di avvicinamento in cui non sono ancora alzati.
+    const lat = Math.max(-track.roadHalf, Math.min(track.roadHalf, grezzo));
+    return { player: best, gapM: bestGap, lat, lato: Math.sign(lat) || 1,
+             affiancato: bestGap < BOT_AFFIANCATO_M };
+}
+
+// LA DIFESA: chi ho dietro, dove sta di traverso, e su che linea vado a
+// mettermi per togliergliela.
+//
+// ⚠️ SI SPOSTA LA TRAIETTORIA, MAI LA VELOCITA'. Un bot che frena per restare
+// davanti e' cio' che i giocatori riconoscono come «AI che bara»: qui dentro
+// `targetSpeed` non compare, ed e' voluto.
+//
+// Vive in una funzione e non dentro updateBotInputs perche' i rami di guida
+// sono DUE — con racing line e geometrico, per le piste che non ce l'hanno —
+// e una difesa che valesse solo su uno funzionerebbe a seconda della pista.
+//
+// Restituisce null se non c'e' niente da fare: chi chiama tiene il suo sterzo.
+function difendiSePossibile(p, game, track, aggro, target, steerGain, targetIdx) {
+    const dietro = nearestBehindPlayer(p, Object.values(game.players), track);
+    const adessoMs = (game.raceTick || 0) * 50;
+    // ⚠️ NEL PUNTO MIRATO, non dove sta il bot: e' li' che il bersaglio
+    // viene spostato, e in una curva la normale di qui e quella venti
+    // campioni piu' avanti guardano da due parti diverse.
+    const iBers = targetIdx === undefined ? (p.trackIndex || 0) : targetIdx;
+    const nrm = TrackGeometry.normalAt(track.points, iBers, true);
+    const centro = track.points[iBers];
+    // Dove passerebbe la mia linea se nessuno mi inseguisse. Serve PRIMA di
+    // decidere la difesa, non dopo: quanto devo spostarmi dipende da quanta
+    // pista mi separa da lui, e quella si misura da qui.
+    const latLinea = (target.x - centro.x) * nrm.nx + (target.z - centro.z) * nrm.nz;
+    const difesa = F1Duelli.scostamentoDifensivo({
+        latLinea,
+        latAttaccante: dietro ? dietro.lat : null,
+        gapM: dietro ? dietro.gapM : Infinity,
+        // Un secondo di distacco alla velocita' di adesso: chi corre si
+        // copre da piu' lontano, chi arranca in una curva lenta no.
+        //
+        // ⚠️ MAI OLTRE MEZZO GIRO. Il gap «indietro» si misura col wrap del
+        // tracciato: oltre meta' giro, chi risulta a un passo dietro di te e'
+        // in realta' quello che hai DAVANTI, e il bot si metterebbe a
+        // difendersi da lui. Su una pista corta la finestra di un secondo ci
+        // arriva davvero (120 unita' di giro, 120 di finestra), e l'ha trovato
+        // il test del sorpasso, non il gioco.
+        finestraM: Math.min(
+            Math.max(p.speed * BOT_DIFESA_FINESTRA_S * 1000 / TICK_MS, BOT_AFFIANCATO_M * 2),
+            track.lapLength / 2),
+        // QUANTA PARTE della sua linea si prende, dal livello: non un numero
+        // di unita'. Cosi' la difesa non va ritarata pista per pista ne'
+        // racing line per racing line — chiude sempre la porta che c'e',
+        // grande o piccola che sia (vedi f1Difficolta.js).
+        copertura: aggro.coperturaDifesa,
+        scostamentoAttuale: p.botScostamentoDifesa || 0,
+        affiancato: !!(dietro && dietro.affiancato),
+        ultimoCambioMs: p.botUltimoCambioDifesa || 0,
+        // Oltre una larghezza d'auto non e' piu' un'oscillazione: e' passato
+        // dall'altra parte, e il blocco anti-zigzag non deve tenere il bot a
+        // coprire il vuoto (playtest 2026-09-06, vedi f1Duelli.js).
+        sogliaCambioM: LARGHEZZA_AUTO,
+        adessoMs,
+    });
+    const prima = p.botScostamentoDifesa || 0;
+    if (difesa.scostamento !== 0 && Math.sign(difesa.scostamento) !== Math.sign(prima)) {
+        p.botUltimoCambioDifesa = adessoMs;
+    }
+    p.botScostamentoDifesa = difesa.scostamento;
+    if (difesa.scostamento === 0) return null;
+    // LO STESSO TETTO DEGLI ALTRI SCOSTAMENTI. La linea propria e l'ingresso
+    // largo si tagliano insieme al bordo della carreggiata; la difesa veniva
+    // sommata dopo, e su `prova` la racing line passa gia' a 5.96 dall'asse su
+    // una mezza carreggiata di 11: sei unita' di difesa portavano il bersaglio
+    // a 13.85, cioe' in ghiaia. Col banco gara si vedeva come tempo passato
+    // fuori pista, salito dal 6.6% al 10.6% a difficile.
+    const tetto = Math.max(Math.abs(latLinea), track.roadHalf * BOT_BERSAGLIO_MAX_FRAZIONE);
+    const latVoluta = Math.max(-tetto, Math.min(tetto, latLinea + difesa.scostamento));
+    const scarto = latVoluta - latLinea;
+    if (scarto === 0) return null;
+    const bersaglio = {
+        x: target.x + nrm.nx * scarto,
+        z: target.z + nrm.nz * scarto,
+    };
+    return {
+        steer: steerToward(p.x, p.z, p.angle, bersaglio.x, bersaglio.z, steerGain),
+        debugTarget: bersaglio,
+    };
+}
+
 // Velocità-obiettivo "vera" (guardando avanti sulla propria traiettoria) di
 // UN'ALTRA auto nella sua posizione attuale — usata per decidere il
 // sorpasso (vedi updateBotInputs). Confrontare la propria velocità-obiettivo
@@ -472,8 +621,36 @@ function pickBotColors(humanColors, count, rng = Math.random) {
 // vera lotta. 0.93 mantiene comunque un ventaglio di ritmi diversi (assieme
 // a BOT_LAP_PACE_VARIANCE, che abilita i sorpassi) senza spalancare il
 // distacco tra il migliore e il peggiore del gruppo.
-const BOT_SPEED_FACTOR_MIN    = 0.93, BOT_SPEED_FACTOR_MAX    = 1.0;
-const BOT_PRECISION_NOISE_MIN = 0,    BOT_PRECISION_NOISE_MAX = 0.25;   // rad aggiunti/tolti allo sterzo
+// ⚠️ IL VENTAGLIO DEI BOT ORA VIENE DAL LIVELLO (f1Difficolta.js), non da
+// qui: `BOT_SPEED_FACTOR_MIN/MAX` e `BOT_PRECISION_NOISE_MIN` sono state tolte
+// il 2026-09-05 perche' non decidevano piu' niente, e una costante che resta
+// scritta senza comandare fa credere al prossimo lettore che sia lei a farlo.
+//
+// Resta questa, che ha un altro mestiere: normalizzare quanto un bot e'
+// impreciso per decidere di quanto sbaglia la mira ai box (vedi sotto). E' il
+// riferimento storico del rumore massimo, non piu' il massimo che un bot puo'
+// avere — a `facile` il piu' impreciso arriva a 0.22.
+const BOT_PRECISION_NOISE_MAX = 0.25;   // rad aggiunti/tolti allo sterzo
+
+// La traiettoria PROPRIA di un bot: quanto si scosta dalla linea buona, IN
+// FRAZIONE DELLA MEZZA CARREGGIATA. Serve a non avere sei copie sulla stessa
+// riga — e a dare alla difesa qualcosa da cui muoversi.
+//
+// ⚠️ ERA 1.5 UNITA' FISSE, ed era troppo poco per vedersi. Playtest
+// 2026-09-05: «probabilmente anche ad hard si forma il trenino perche' tutti
+// vanno sempre all'interno della curva». Misurato su `prova` nello stesso
+// punto di pista, i sei bot stavano in una fascia larga 4.5 unita': 1.3
+// larghezze d'auto su una pista larga 22, cioe' una fila indiana.
+//
+// Costa tempo sul giro — la racing line e' ottimizzata, allontanarsene si
+// paga — ed e' una spesa scelta: sei traiettorie che si distinguono valgono
+// piu' di sei copie veloci. Quanto costi e' misurato nel commit che lo alza.
+const BOT_LINEA_OFFSET_FRAZIONE = 0.27;
+
+// Quanto lontano dall'asse puo' arrivare il bersaglio, in frazione della
+// mezza carreggiata: il resto e' il margine che il pure-pursuit si mangia
+// tagliando fra se' e il punto che insegue.
+const BOT_BERSAGLIO_MAX_FRAZIONE = 0.92;
 const BOT_PIT_THRESHOLD_MIN   = 60,   BOT_PIT_THRESHOLD_MAX   = 80;     // % usura gomme a cui il bot decide di entrare ai box
 // Distanza (metri, lungo il giro) entro cui un bot che ha deciso di entrare
 // ai box comincia a sfumare il bersaglio dello sterzo verso pitPath[0]
@@ -590,7 +767,12 @@ function suImboccoCorsia(p, track) {
 // gomme non al limite, sceglierebbe di scontare la sosta obbligatoria
 // piuttosto che la penalità in tempo) — stesso percorso di avvicinamento
 // sicuro sopra, nessuna logica di sterzo duplicata.
-const BOT_FORCE_PIT_LAPS_REMAINING = 1;
+// ⚠️ DUE e non uno. `remainingLaps <= 1` vuol dire «sta correndo l'ultimo
+// giro»: con quel valore, su una pista corta dove l'usura non arriva mai alla
+// soglia, TUTTI i bot finivano per entrare ai box proprio li'. Segnalato
+// dall'utente il 2026-09-05: «non voglio che i bot vadano ai box all'ultimo
+// giro, massimo al penultimo. non si puo' finire la gara passando ai box».
+const BOT_FORCE_PIT_LAPS_REMAINING = 2;
 // Durante l'avvicinamento finale ai box la precisione conta più che in
 // pista aperta (il trigger d'ingresso è stretto, ~30×15m): lo stesso
 // rumore di sterzo usato per la guida normale a volte fa mancare il
@@ -616,6 +798,12 @@ function randRange(min, max, rng) {
 
 function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
     const botsEnabled = !game.settings || game.settings.botsEnabled !== 'false';
+
+    // Il livello scelto in lobby decide ritmo e precisione di TUTTA la
+    // griglia. Prima del 2026-09-05 ogni bot pescava per conto suo fra
+    // 0.93-1.00 e 0-0.25, quindi la difficolta' cambiava da una gara
+    // all'altra senza che nessuno la scegliesse.
+    const intervalli = F1Difficolta.intervalliDi(game.settings && game.settings.botDifficolta);
     if (!botsEnabled) return;
 
     const humanColors = (lobby && (lobby.lockedPlayers || lobby.players)) || [];
@@ -677,8 +865,17 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
             // gioco continua a identificare i piloti dal colore, come ha
             // sempre fatto (mai nickname, solo colore).
             nomeStagione:           daStagione ? (daStagione.find(b => b.colore === color) || {}).nome || null : null,
-            botSpeedFactor:         randRange(BOT_SPEED_FACTOR_MIN, BOT_SPEED_FACTOR_MAX, rng),
-            botPrecisionNoise:      randRange(BOT_PRECISION_NOISE_MIN, BOT_PRECISION_NOISE_MAX, rng),
+            botSpeedFactor:         randRange(intervalli.ritmoMin, intervalli.ritmoMax, rng),
+            botPrecisionNoise:      randRange(intervalli.rumoreMin, intervalli.rumoreMax, rng),
+            // La sua idea di traiettoria: chi taglia un filo piu' stretto, chi
+            // sta un filo piu' largo.
+            botLineaOffset:         randRange(-BOT_LINEA_OFFSET_FRAZIONE * game.track.roadHalf,
+                                              BOT_LINEA_OFFSET_FRAZIONE * game.track.roadHalf, rng),
+            // Quanto prende male l'apice: 0 = passa dove passa la linea buona,
+            // 0.35 = si allarga di un terzo di carreggiata. E' il carattere
+            // del pilota, e si paga in tempo sul giro — per questo
+            // l'intervallo dipende dal livello (vedi f1Difficolta.js).
+            botAllargamento:        randRange(intervalli.allargaMin, intervalli.allargaMax, rng),
             botPitThreshold:        randRange(BOT_PIT_THRESHOLD_MIN, BOT_PIT_THRESHOLD_MAX, rng),
             botHeadingToPits:       false,
             botPitReactionScheduled: false,
@@ -816,7 +1013,9 @@ function computeSoloRacingLineInputs(p, track, rt, maxSpeed, brakeDecel, turnRat
         p.speed, maxSpeed, brakeDecel, turnRateHigh, rt.cornerSpeedMargin, gripCapacityFactor, turnRateAtRest
     );
 
-    return { steer, target, targetSpeed, localSamples };
+    // scanSamples esce di qui perche' e' gia' calcolato: chi corregge la
+    // linea con apexOffset ha bisogno dello stesso raggio di ricerca.
+    return { steer, target, targetSpeed, localSamples, scanSamples, targetIdx };
 }
 
 // Margine sulla distanza di frenata calcolata dalla fisica: oltre il
@@ -852,13 +1051,17 @@ const BOT_RACE_START_REACTION_MAX_MS = 500;
 // che si accorge di un'altra auto entro BOT_FOLLOW_GAP_M subito avanti lungo
 // il tracciato rallenta proporzionalmente, invece di tallonarla identico.
 const BOT_FOLLOW_GAP_M        = 30;
-const BOT_FOLLOW_MIN_FRACTION = 0.85;   // frazione minima di velocità quando si è praticamente addosso a chi precede — alta apposta: il bot talloona invece di staccarsi, per restare a ridosso e cercare l'occasione di sorpasso (vedi spec 2026-07-24-f1-bot-aggressivita-sorpassi-design.md)
+// ⚠️ Il valore che era scritto qui vive ora nella tabella dei livelli
+// (frontend/shared/f1Difficolta.js), col suo perche': era una costante, ed e'
+// diventata una delle cose che cambiano fra facile e difficile.
 // Sorpasso: entro BOT_FOLLOW_GAP_M, se il bot avrebbe margine di velocità
 // libera vero sull'auto che precede (non solo momentaneo, es. lei in
 // frenata per una curva) tenta di superarla scartando di lato invece di
 // limitarsi a rallentare — altrimenti la "skill" di qualifica diventa una
 // posizione fissa per tutta la gara, nessun sorpasso si verifica mai.
-const BOT_OVERTAKE_PACE_MARGIN = 1.01;   // serve almeno l'1% di velocità libera in più per tentare (era 5%, poi 2%: un solo sorpasso osservato in playtest su Monza/3 giri, spinto ancora più giù su richiesta esplicita)
+// ⚠️ Il valore che era scritto qui vive ora nella tabella dei livelli
+// (frontend/shared/f1Difficolta.js), col suo perche': era una costante, ed e'
+// diventata una delle cose che cambiano fra facile e difficile.
 const BOT_OVERTAKE_FRACTION    = 0.55;   // quanto ci si sposta lateralmente (frazione della mezza larghezza pista)
 // Il sorpasso si somma allo spazio pista già "consumato" dal taglio curva
 // (apexOffset): tentarlo mentre si è già in curva stretta può superare la
@@ -964,6 +1167,128 @@ function trajectoryDiagnostics(p, track) {
     };
 }
 
+// ═══════════ IL PROFILO DI ALLARGAMENTO ═══════════
+//
+// Per ogni campione della pista: QUANTO ci si deve allargare li' (0 = siamo
+// all'apice, la traiettoria buona e' quella della linea; 1 = siamo lontani da
+// ogni apice, qui si sta larghi) e DA CHE PARTE sta l'interno della curva.
+//
+// ⚠️ PERCHE' NON `apexOffset`. La forma a S esiste gia' nel ramo geometrico,
+// e il primo tentativo e' stato riusarla prendendone la meta' che spinge
+// fuori. Non funziona, e la misura dice perche': su `prova` quella funzione
+// lavora con una finestra di 12 METRI, che sono 2 campioni (il passo e' 5.17
+// unita'), e il segnale che ne esce salta a scatti — 0, 0, 0.97, 0, 0.97 —
+// perche' la curvatura su due campioni e' rumore. In piu' la sua `severity`
+// vale roadHalf/raggio, cioe' 11/88 = 0.125 sulle curve di `prova`: anche
+// quando il segnale c'e', l'effetto e' mezzo metro. E' tarata per decidere
+// l'apice quando NON c'e' una racing line, non per correggerne una.
+//
+// Qui invece: curvatura su una finestra in UNITA' DI PISTA (60), che sono 12
+// campioni su `prova` e 51 su monte-rosso — liscia in entrambi i casi — e
+// confronto con la curvatura massima nella curva in cui si sta. Verificato
+// che l'intorno di +-60 unita' e' quello giusto: agli apici veri il fattore
+// esce 0.02, mentre a +-186 unita' esce 0.26 perche' sconfina nella curva
+// successiva e non riconosce piu' l'apice locale.
+//
+// Si calcola UNA VOLTA per pista (la pista non cambia mai) e si tiene in una
+// WeakMap: mai scritto dentro `track`, che e' l'oggetto condiviso e cacheato
+// da trackLoader.
+const PROFILO_ALLARGAMENTO = new WeakMap();
+const BOT_FASE_CURVA_M = 60;      // finestra di curvatura E ampiezza dell'intorno
+// Sotto questa curvatura non e' una curva ma un rettilineo con del rumore
+// dentro: 20 volte la mezza carreggiata e' una piega, non una staccata.
+const BOT_CURVA_MINIMA_RAGGI = 20;
+
+function profiloAllargamento(track) {
+    const gia = PROFILO_ALLARGAMENTO.get(track);
+    if (gia) return gia;
+    const n = track.points.length;
+    const passo = track.lapLength / n;
+    const finestra = Math.max(4, Math.round(BOT_FASE_CURVA_M / passo));
+    const curvatura = new Array(n), versoLocale = new Array(n);
+    for (let i = 0; i < n; i++) {
+        const c = TrackGeometry.curvatureAt(track.points, i, finestra);
+        curvatura[i] = (c && isFinite(c.radius) && c.radius > 0) ? 1 / c.radius : 0;
+        versoLocale[i] = c ? Math.sign(c.turnSigned) : 0;
+    }
+    const soglia = 1 / (track.roadHalf * BOT_CURVA_MINIMA_RAGGI);
+    const fattore = new Array(n), verso = new Array(n);
+    for (let i = 0; i < n; i++) {
+        let massima = 0, dovE = i;
+        for (let d = -finestra; d <= finestra; d++) {
+            const j = (i + d + n) % n;
+            if (curvatura[j] > massima) { massima = curvatura[j]; dovE = j; }
+        }
+        fattore[i] = massima > soglia ? Math.max(0, 1 - curvatura[i] / massima) : 0;
+        // Il verso lo detta l'APICE, non il punto in cui si sta: in ingresso
+        // la pista e' quasi dritta e il suo verso locale e' rumore.
+        verso[i] = versoLocale[dovE];
+    }
+    const profilo = { fattore, verso };
+    PROFILO_ALLARGAMENTO.set(track, profilo);
+    return profilo;
+}
+
+// ═══════════ L'ERRORE UMANO ═══════════
+//
+// Un errore dura poco e costa qualche decimo: il bot allarga in uscita di
+// curva o frena troppo tardi. Non finisce in ghiaia.
+//
+// ⚠️ COSTA TEMPO, NON LA GARA (spec 2026-09-05, invariante 6). Un bot che
+// sbaglia deve restare dentro i limiti della pista: e' la differenza fra un
+// avversario divertente e uno rotto. Se questi numeri crescono, la misura da
+// rifare e' quella dei tick fuori dal cordolo, non la sensazione.
+const BOT_ERRORE_DURATA_MS = 900;
+const BOT_ERRORE_STERZO = 0.40;    // quanto allarga, in frazione di sterzo
+const BOT_ERRORE_FRENO = 0.30;     // quanto ritarda la frenata
+
+// SI SBAGLIA IN CURVA, NON IN RETTILINEO.
+//
+// ⚠️ MISURATO, ed e' la ragione per cui alzare il guadagno non bastava.
+// Playtest 2026-09-05 a facile: «non mi e' sembrato di vedere errori». Gli
+// errori partivano (1.41 per bot al giro col banco gara), ma meta' capitava
+// dove togliere sterzo non sposta niente. Portando il guadagno da 0.25 a 0.80
+// lo spostamento MEDIANO non si muoveva — 0.39 larghezze d'auto contro 0.42 —
+// mentre la coda peggiorava fino a mandare in ghiaia il 17% dei tick di
+// errore: la leva sbagliata, spinta forte.
+//
+// Un pilota vero sbaglia dove c'e' qualcosa da sbagliare: la frenata,
+// l'apice, l'uscita. Un errore in rettilineo non e' un errore, e' rumore.
+// Misurato su tre gare a `facile`: il picco di un errore passa da 0.54 a 1.11
+// larghezze d'auto, il tempo fuori pista NON peggiora (2.3% contro 3.0%) e la
+// frequenza resta dentro il rumore del banco (0.75 contro 0.88 per bot al
+// giro, con corse fra 0.67 e 1.13). Restringere il dove non ha richiesto di
+// compensare il quanti: sopra questa soglia ci si sta per buona parte del giro.
+const BOT_ERRORE_SOGLIA_STERZO = 0.15;
+
+// Decide se comincia un errore, e lo fa scadere. Restituisce true nel tick in
+// cui un errore COMINCIA — cosi' si puo' contare senza guardare dentro `p`.
+//
+// `giroMs` e' quanto dura un giro: chi chiama lo stima dalla velocita' di
+// adesso (lapLength / speed * tickMs), e non da un tempo fisso, perche'
+// «un errore e mezzo a giro» deve valere uguale su una pista da 50 secondi
+// e su una da tre minuti.
+//
+// `rng` esiste per i test: con Math.random il conteggio degli errori sarebbe
+// statistico, e un test statistico su una soglia bassa e' un rosso che arriva
+// una volta ogni venti esecuzioni senza voler dire niente.
+function aggiornaErrore(p, erroriPerGiro, tickMs, giroMs, rng, puoIniziare = true) {
+    const caso = rng || Math.random;
+    p.botOrologioMs = (p.botOrologioMs || 0) + tickMs;
+    // Un errore alla volta: dentro uno che dura non ne parte un altro sopra.
+    if (p.botErroreFinoMs && p.botErroreFinoMs >= p.botOrologioMs) return false;
+    // ⚠️ L'orologio scorre SEMPRE, anche dove un errore non puo' cominciare:
+    // e' lui a far scadere quello in corso. Uscire prima lascerebbe il bot
+    // dentro l'errore per sempre appena imbocca un rettilineo.
+    if (!puoIniziare) return false;
+    const perTick = (erroriPerGiro || 0) * tickMs / (giroMs || 50000);
+    if (caso() >= perTick) return false;
+    p.botErroreFinoMs = p.botOrologioMs + BOT_ERRORE_DURATA_MS;
+    // Meta' delle volte allarga, meta' frena tardi.
+    p.botErroreTipo = caso() < 0.5 ? 'allarga' : 'frenata';
+    return true;
+}
+
 function updateBotInputs(game, deps) {
     const {
         effectiveMaxSpeed, handlePitReactionPress, io, lobbyId, wearLapsAtMedium,
@@ -971,6 +1296,10 @@ function updateBotInputs(game, deps) {
         effectiveBrakeMult, corneringCapacity
     } = deps;
     const tuning = { ...DEFAULT_TUNING, ...(tuningOverrides || {}) };
+    // Quanto sono aggressivi, secondo il livello scelto in lobby: con quanto
+    // margine tentano un sorpasso e quanto restano attaccati a chi precede.
+    // I valori di `medio` sono quelli storici (1.01 e 0.85).
+    const aggro = F1Difficolta.soglieDi(game.settings && game.settings.botDifficolta);
     const track = game.track;
     const isQuali = game.phase === 'qualifying';
     const metersPerSample = track.lapLength / track.points.length;
@@ -1096,7 +1425,13 @@ function updateBotInputs(game, deps) {
             const remainingLaps = Math.max(0, track.totalLaps - p.lap);
             const wearThresholdHit = p.tyreWear >= p.botPitThreshold;
             const mustPitNow = remainingLaps <= BOT_FORCE_PIT_LAPS_REMAINING;
-            if (wearThresholdHit || mustPitNow) {
+            // Nell'ultimo giro non si entra ai box per nessuna ragione: chi e'
+            // arrivato fin qui senza pittare si tiene la penalita', ma la gara
+            // non si chiude passando dalla corsia. ⚠️ Su una gara di un giro
+            // solo non esiste un penultimo: li' il vincolo non si puo'
+            // rispettare e non si applica, o il bot non sosterebbe mai.
+            const ultimoGiro = track.totalLaps > 1 && remainingLaps <= 1;
+            if ((wearThresholdHit || mustPitNow) && !ultimoGiro) {
                 p.botHeadingToPits = true;
                 p.pendingCompound = pickPostPitCompound(remainingLaps, wearLapsAtMedium);
                 p.pendingRepair = shouldBotRepair(p.damage, BOT_REPAIR_DAMAGE_THRESHOLD);
@@ -1264,9 +1599,69 @@ function updateBotInputs(game, deps) {
             // cervello di guida unificato): niente più flag, e la logica è
             // condivisa con l'ottimizzatore offline via computeSoloRacingLineInputs.
             const solo = computeSoloRacingLineInputs(p, track, rt, maxSpeed, brakeDecel, turnRateHigh, gripCapacityFactor, turnRateLow);
-            const target = solo.target;
+            // LA LINEA DI QUESTO BOT: quella buona piu' il suo scostamento
+            // personale. Sei bot sulla stessa riga sono sei copie, e da una
+            // riga sola la difesa non avrebbe da che parte muoversi.
+            // L'INGRESSO LARGO. La racing line precalcolata entra in curva
+            // gia' all'interno: misurato su `prova`, l'ingresso medio sta a
+            // +4.3 verso il cordolo interno (un fuori-dentro-fuori entrerebbe
+            // NEGATIVO), e tre curve su undici stanno a 10.5-10.8 su 11
+            // dall'ingresso all'uscita. E' il motivo per cui i bot si vedono
+            // «sempre all'interno curva» e li si supera dal lato libero.
+            //
+            // Il rimedio riusa la forma che il ramo geometrico ha gia'
+            // (`apexOffset`, cos(x*pi): +1 all'apice, -1 ai bordi della zona
+            // d'influenza) prendendone SOLO la meta' negativa: dove la forma
+            // dice «qui si sta larghi» il bersaglio va verso l'esterno, dove
+            // dice «qui c'e' l'apice» non si tocca niente. L'apice la linea
+            // ottimizzata lo fa bene — e' l'ingresso che sbaglia, e sommare
+            // due volte l'interno porterebbe soltanto fuori pista.
+            // Tutto quello che segue si valuta NEL PUNTO MIRATO, non dove sta
+            // il bot: e' li' che il bersaglio verra' spostato, e in una curva
+            // stretta la normale di qui e quella di venti campioni piu' avanti
+            // guardano da due parti diverse.
+            const iBers = solo.targetIdx;
+            // Quanto allargarsi qui, e da che parte sta l'interno: lo dice il
+            // profilo della pista, calcolato una volta sola (vedi sopra).
+            // ⚠️ Si legge dove sta IL BOT, non nel punto mirato: e' il bot che
+            // deve trovarsi largo in ingresso.
+            const profilo = profiloAllargamento(track);
+            const iQui = p.trackIndex || 0;
+            // Verso l'ESTERNO:  punta all'interno, e il segno meno e'
+            // tutta la differenza fra allargare e tagliare ancora di piu'.
+            // ⚠️ Quanto allargarsi e' del BOT, non della pista: due auto nello
+            // stesso punto di curva prendono l'apice in modo diverso, ed e'
+            // questo che le mette su una fascia invece che in fila. Chi non ha
+            // un carattere (il banco prova, un test) resta sulla linea.
+            const latLargo = -profilo.verso[iQui] * profilo.fattore[iQui] *
+                             track.roadHalf * (p.botAllargamento || 0);
+                        const nrmBers = TrackGeometry.normalAt(track.points, iBers, true);
+            const centroBers = track.points[iBers];
+            const suo = p.botLineaOffset || 0;
+            // I due scostamenti (il suo e l'ingresso largo) si sommano in UNA
+            // laterale sola e si tagliano insieme: sommare due vettori e
+            // sperare che il totale resti in pista e' come non avere limite.
+            const latLinea = (solo.target.x - centroBers.x) * nrmBers.nx +
+                             (solo.target.z - centroBers.z) * nrmBers.nz;
+            // ⚠️ Il tetto non e' 0.92 secco: la racing line ottimizzata arriva
+            // da sola a 10.7 su 11 (il 98%), e un tetto piu' basso la
+            // taglierebbe — cambiando la traiettoria di tutti, che non e' quel
+            // che si sta facendo qui. Si tiene il piu' largo fra il 92% e dove
+            // la linea gia' passa: gli scostamenti non portano MAI piu' fuori
+            // di lei.
+            const tetto = Math.max(Math.abs(latLinea), track.roadHalf * BOT_BERSAGLIO_MAX_FRAZIONE);
+            const latVoluta = Math.max(-tetto, Math.min(tetto, latLinea + suo + latLargo));
+            const scarto = latVoluta - latLinea;
+            const target = scarto === 0 ? solo.target : {
+                x: solo.target.x + nrmBers.nx * scarto,
+                z: solo.target.z + nrmBers.nz * scarto,
+            };
             const localSamples = solo.localSamples;   // riusato più sotto per il sorpasso (windowRadius) — evita di ricalcolarlo
-            steer = solo.steer;
+            // ⚠️ Lo sterzo va RICALCOLATO sul bersaglio nuovo: `solo.steer`
+            // punta alla linea di tutti, e un bot che crede di stare sulla sua
+            // mentre sterza verso l'altra non ci arriva mai.
+            steer = scarto === 0 ? solo.steer
+                : steerToward(p.x, p.z, p.angle, target.x, target.z, rt.steerGain);
             debugTarget = { x: target.x, z: target.z };
 
             let targetSpeed = solo.targetSpeed * p.botSpeedFactor * p.botLapPaceMult;
@@ -1293,7 +1688,7 @@ function updateBotInputs(game, deps) {
                         effectiveMaxSpeed, rt.cornerSpeedMargin, rt.brakingDistanceMargin, turnRateLow
                     );
                     debugGapToAhead = ahead.gapM;
-                    if (cornerIsMild && targetSpeed > leaderTargetSpeed * BOT_OVERTAKE_PACE_MARGIN) {
+                    if (cornerIsMild && targetSpeed > leaderTargetSpeed * aggro.margineSorpasso) {
                         const overtake = overtakeOffset(
                             track.points, ahead.player.trackIndex || 0, ahead.player.x, ahead.player.z,
                             track.roadHalf, BOT_OVERTAKE_FRACTION, p.botOvertakeSide
@@ -1303,11 +1698,19 @@ function updateBotInputs(game, deps) {
                         botState = 'OVERTAKING';
                     } else {
                         const closeness = 1 - ahead.gapM / BOT_FOLLOW_GAP_M;
-                        targetSpeed *= 1 - closeness * (1 - BOT_FOLLOW_MIN_FRACTION);
+                        targetSpeed *= 1 - closeness * (1 - aggro.frazioneMinimaInScia);
                         botState = 'FOLLOWING';
                     }
                 }
             }
+
+            // La difesa vale su tutti e due i rami di guida: una pista senza
+            // racing line non e' una pista dove non ci si difende.
+            if (!isQuali && botState !== 'OVERTAKING') {
+                const dif = difendiSePossibile(p, game, track, aggro, target, rt.steerGain, solo.targetIdx);
+                if (dif) { steer = dif.steer; debugTarget = dif.debugTarget; botState = 'DEFENDING'; }
+            }
+
             debugTargetSpeed = targetSpeed;
 
             // Controllo proporzionale (non on/off): la racing line è stata
@@ -1402,7 +1805,7 @@ function updateBotInputs(game, deps) {
                         effectiveMaxSpeed, tuning.cornerSpeedMargin, tuning.brakingDistanceMargin, turnRateLow
                     );
                     debugGapToAhead = ahead.gapM;
-                    if (cornerIsMild && targetSpeed > leaderTargetSpeed * BOT_OVERTAKE_PACE_MARGIN) {
+                    if (cornerIsMild && targetSpeed > leaderTargetSpeed * aggro.margineSorpasso) {
                         const overtake = overtakeOffset(
                             track.points, ahead.player.trackIndex || 0, ahead.player.x, ahead.player.z,
                             track.roadHalf, BOT_OVERTAKE_FRACTION, p.botOvertakeSide
@@ -1412,11 +1815,18 @@ function updateBotInputs(game, deps) {
                         botState = 'OVERTAKING';
                     } else {
                         const closeness = 1 - ahead.gapM / BOT_FOLLOW_GAP_M;   // 0 = al limite, 1 = praticamente addosso
-                        targetSpeed *= 1 - closeness * (1 - BOT_FOLLOW_MIN_FRACTION);
+                        targetSpeed *= 1 - closeness * (1 - aggro.frazioneMinimaInScia);
                         botState = 'FOLLOWING';
                     }
                 }
             }
+            // La difesa vale su tutti e due i rami di guida: una pista senza
+            // racing line non e' una pista dove non ci si difende.
+            if (!isQuali && botState !== 'OVERTAKING') {
+                const dif = difendiSePossibile(p, game, track, aggro, target, tuning.steerGain, targetIdx);
+                if (dif) { steer = dif.steer; debugTarget = dif.debugTarget; botState = 'DEFENDING'; }
+            }
+
             debugTargetSpeed = targetSpeed;
 
             if (p.speed < targetSpeed * (1 - BOT_SPEED_MARGIN)) throttle = 1;
@@ -1430,6 +1840,29 @@ function updateBotInputs(game, deps) {
         // lettura del valore `brake` già deciso sopra, nessun nuovo calcolo.
         if (botState === 'CRUISE' && brake > 0) botState = 'BRAKE_FOR_CORNER';
 
+        // L'ERRORE UMANO (spec 2026-09-05): ai livelli bassi ogni tanto il
+        // bot allarga l'uscita o ritarda la frenata. La durata dell'errore
+        // scorre sull'orologio del bot, quindi qui si chiama SEMPRE, anche
+        // quando non ne sta facendo uno.
+        //
+        // ⚠️ Mai in qualifica: un giro secco rovinato dal caso falsa la
+        // griglia, e la griglia decide la gara. Mai in corsia box: li'
+        // sbagliare non costa decimi, costa una penalita'.
+        if (!isQuali && !inCorsiaBox) {
+            // Quanto dura un giro, alla velocita' di adesso: cosi'
+            // `erroriPerGiro` vale uguale su piste di lunghezza diversa.
+            const giroMs = track.lapLength / Math.max(p.speed, 0.5) * 50;
+            // Solo dove si vedrebbe: se il bot non sta sterzando, un errore
+            // di guida non ha niente da rovinare.
+            const dovePesa = Math.abs(steer) > BOT_ERRORE_SOGLIA_STERZO;
+            aggiornaErrore(p, aggro.erroriPerGiro, 50, giroMs, undefined, dovePesa);
+            if (p.botErroreFinoMs >= (p.botOrologioMs || 0)) {
+                if (p.botErroreTipo === 'allarga') steer *= 1 - BOT_ERRORE_STERZO;
+                else brake *= 1 - BOT_ERRORE_FRENO;
+                botState = 'MISTAKE';
+            }
+        }
+
         const noiseScale = nearPitEntry ? BOT_PIT_APPROACH_NOISE_SCALE : 1;
         steer += (Math.random() * 2 - 1) * p.botPrecisionNoise * noiseScale;
         steer = Math.max(-1, Math.min(1, steer));
@@ -1437,6 +1870,10 @@ function updateBotInputs(game, deps) {
         p.inputs = { throttle, brake, steer };
         p._botDebug = debugEnabled ? {
             state: botState,
+            // Di quanto si sta spostando per coprire chi ha dietro: serve al
+            // banco prova per contare le difese, e al Bot Inspector per
+            // farle vedere mentre succedono.
+            scostamentoDifensivo: p.botScostamentoDifesa || 0,
             speed: p.speed,
             targetSpeed: debugTargetSpeed,
             maxSpeed: debugMaxSpeed,
@@ -1454,9 +1891,9 @@ module.exports = {
     PALETTE, PALETTE_BOT_EXTRA, MAX_GRID_SIZE, GRID_SIZE_DEFAULT, DEFAULT_TUNING,
     BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS,
     normalizeAngle, steerToward, lookaheadIndex, mirinoPrimaDelTubo, apexOffset, windowRadius, cornerApexNear, cornerTargetSpeed, overtakeOffset,
-    nearestAheadPlayer, otherCarTargetSpeed, pickPostPitCompound, pickBotColors, estimateFinishTime,
+    nearestAheadPlayer, nearestBehindPlayer, otherCarTargetSpeed, pickPostPitCompound, pickBotColors, estimateFinishTime,
     createBots, updateBotInputs, shouldBotRepair,
     BOT_CURVATURE_LOCAL_M, BOT_APEX_MAX_FRACTION, trajectoryDiagnostics,
     adaptiveLookaheadMeters, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
-    BOT_ADAPTIVE_LOOKAHEAD_T_MIN, computeSoloRacingLineInputs, BOT_GRIP_CAPACITY_EXPONENT
+    BOT_ADAPTIVE_LOOKAHEAD_T_MIN, computeSoloRacingLineInputs, BOT_GRIP_CAPACITY_EXPONENT, aggiornaErrore, profiloAllargamento
 };

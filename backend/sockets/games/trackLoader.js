@@ -3,6 +3,7 @@ const path = require('path');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 const TrackGravel = require('../../../frontend/shared/trackGravel.js');
 const TrackAcrobatico = require('../../../frontend/shared/trackAcrobatico.js');
+const F1FormaCurva = require('../../../frontend/shared/f1FormaCurva.js');
 
 const TRACKS_DIR = path.join(__dirname, '..', '..', '..', 'frontend', 'tracks');
 // backend/tools, NON frontend/tracks: listTracks() scansiona frontend/tracks
@@ -11,6 +12,39 @@ const TRACKS_DIR = path.join(__dirname, '..', '..', '..', 'frontend', 'tracks');
 // backend/tools/f1RaceLineOptimizer.js, opzionali (una pista senza il file
 // corrispondente carica esattamente come oggi, zero differenza).
 const RACELINES_DIR = path.join(__dirname, '..', '..', 'tools');
+
+// Quanto della forma «largo-stretto-largo» si rimette alla racing line
+// ottimizzata. Vedi f1FormaCurva.js per il problema che affronta.
+//
+// ⚠️ SPENTA, E NON E' UNA TARATURA DA ALZARE. Misurata su `prova`, giro
+// migliore di un bot solo in pista: 51.90 s senza forma, 55.65 s col miglior
+// compromesso trovato, 64.65 s coi parametri che davano la forma piu' netta.
+// Fra +3.75 e +12.75 secondi al giro, contro un divario dall'umano che tutto
+// il blocco H1 ha faticato a portare a 1.85. Cercati zona e pendenza su
+// dodici combinazioni: il costo non scende sotto i tre secondi e mezzo
+// nemmeno dove la linea si allarga appena.
+//
+// LA RAGIONE, ed e' piu' profonda della forma: il bot frena per qualunque
+// raggio sotto ~119 unita' (velocita' di punta 6.2 diviso TURN_SPEED_HIGH
+// 0.052). Un'auto che si allarga di 9 unita' per impostare una curva disegna
+// un arco di raggio ~100 — sotto soglia. `cornerTargetSpeed` non distingue
+// «la pista gira» da «io cambio corsia», quindi QUALUNQUE spostamento
+// laterale viene pagato con una frenata. E' anche il motivo per cui
+// l'ottimizzatore produce una linea sempre interna: evita cio' che il suo
+// stesso modello punisce, e per cui `botAllargamento` costa 650 ms al giro.
+//
+// Il modulo resta, con i suoi test: la forma serve come SEME
+// dell'ottimizzatore — dove viene ottimizzata insieme al resto invece di
+// imposta sopra — non come ritocco a valle.
+//
+// F1_FORMA_CURVA la sovrascrive, com'e' gia' per F1_RACELINE_SUFFIX qui sopra
+// e per i flag di fisica: si imposta PRIMA di avviare il server, mai a
+// runtime, perche' buildTrack e' cacheata per id.
+const AMPIEZZA_FORMA_DEFAULT = 0;
+function ampiezzaForma() {
+    const v = process.env.F1_FORMA_CURVA;
+    return v === undefined || v === '' ? AMPIEZZA_FORMA_DEFAULT : Number(v);
+}
 
 // Tetto assoluto di piloti per gara. Ricopiato da f1Bot.MAX_GRID_SIZE invece
 // di importarlo: trackLoader è caricato anche dagli strumenti offline e
@@ -107,8 +141,25 @@ function loadRacelineData(id) {
 // il banco prova deve poter costruire una racing line sperimentale da un
 // file di controlli alternativo, riusando ESATTAMENTE questa stessa
 // interpolazione/proiezione, senza duplicarla.
-function buildRacingLineFromControls(points, lineControls) {
-    const offsets = interpolateLineControls(lineControls, points.length);
+function buildRacingLineFromControls(points, lineControls, roadHalf) {
+    let offsets = interpolateLineControls(lineControls, points.length);
+    // LARGO, STRETTO, LARGO. L'ottimizzatore produce una linea che entra in
+    // curva gia' all'interno e ci resta — su `prova` 10 curve su 13, ingresso
+    // medio +4.84 col segno dell'interno positivo. In gara vuol dire che meta'
+    // pista resta libera e i duelli non esistono: «anche se le macchine si
+    // spostano per difendere, comunque lo spazio e' tantissimo» (playtest
+    // 2026-09-06). Qui la forma viene rimessa dopo, sugli offset.
+    //
+    // ⚠️ Solo se la pista dichiara una carreggiata: senza `roadHalf` non c'e'
+    // niente rispetto a cui allargarsi, e il chiamante che non lo passa
+    // (f1Testbench con una linea sperimentale) ottiene la linea grezza, com'e'
+    // sempre stato.
+    if (roadHalf) {
+        offsets = F1FormaCurva.allargaIngressoUscita(points, offsets, roadHalf, ampiezzaForma(), {
+            zonaM: process.env.F1_FORMA_ZONA ? Number(process.env.F1_FORMA_ZONA) : undefined,
+            pendenzaMax: process.env.F1_FORMA_PENDENZA ? Number(process.env.F1_FORMA_PENDENZA) : undefined,
+        });
+    }
     return points.map((pt, i) => {
         const normal = TrackGeometry.normalAt(points, i, true);
         return { x: pt.x + normal.nx * offsets[i], z: pt.z + normal.nz * offsets[i] };
@@ -211,7 +262,7 @@ function buildTrack(id, raw) {
     const racelineData = loadRacelineData(id);
     let racingLine = null, racingLineTuning = null;
     if (racelineData) {
-        racingLine = buildRacingLineFromControls(points, racelineData.lineControls);
+        racingLine = buildRacingLineFromControls(points, racelineData.lineControls, raw.roadHalfWidth);
         racingLineTuning = racelineData.tuning || null;
     }
 

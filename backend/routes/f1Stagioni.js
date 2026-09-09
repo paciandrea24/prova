@@ -20,6 +20,7 @@ const { activeGames } = require('../store/activeGames');
 const { listTracks } = require('../sockets/games/trackLoader');
 const { pickBotColors, MAX_GRID_SIZE } = require('../sockets/games/f1Bot');
 const F1Stagione = require('../../frontend/shared/f1Stagione.js');
+const F1Difficolta = require('../../frontend/shared/f1Difficolta.js');
 
 const NOME_MAX = 40;
 
@@ -127,7 +128,14 @@ function creaRouter(opzioni) {
             creataDa: req.uid,
             piloti,
             calendario: F1Stagione.sorteggiaCalendario(piste, n),
-            impostazioni: { botsEnabled: botsEnabled !== false, gridSize: piloti.length },
+            impostazioni: {
+                botsEnabled: botsEnabled !== false,
+                gridSize: piloti.length,
+                // Il livello si sceglie una volta, alla creazione: i bot di un
+                // campionato sono gli stessi per tutte le gare, e la loro
+                // difficolta' fa parte di chi sono.
+                botDifficolta: F1Difficolta.normalizza(req.body && req.body.botDifficolta),
+            },
         });
 
         try {

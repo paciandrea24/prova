@@ -12,6 +12,7 @@
 // frontend/shared/f1Stagione.js, che gira uguale sul client. Qui c'e' solo il
 // collegamento fra i due mondi.
 const F1Stagione = require('../../../frontend/shared/f1Stagione.js');
+const F1Difficolta = require('../../../frontend/shared/f1Difficolta.js');
 const seasonStore = require('../../store/seasonStore');
 
 // Le impostazioni con cui far ripartire la pagina per la PROSSIMA gara.
@@ -26,6 +27,12 @@ function impostazioniPerLaProssimaGara(stagione, settingsCorrenti) {
         // campo sono esattamente il tipo di scarto che e' gia' costato caro.
         gridSize: String((stagione.impostazioni && stagione.impostazioni.gridSize) || 6),
         botsEnabled: (stagione.impostazioni && stagione.impostazioni.botsEnabled) === false ? 'false' : 'true',
+        // ⚠️ Il livello del campionato VINCE su quello della lobby: i bot di
+        // una stagione sono gli stessi per tutte le gare, e la loro
+        // difficolta' fa parte di chi sono. Una stagione salvata prima dei
+        // livelli non ha il campo e corre a medio, invece di fermarsi.
+        botDifficolta: F1Difficolta.normalizza(
+            stagione.impostazioni && stagione.impostazioni.botDifficolta),
         formato: 'stagione',
         stagioneId: stagione._id,
         // La differenza fra "sono in campionato e scelgo" e "sono in campionato

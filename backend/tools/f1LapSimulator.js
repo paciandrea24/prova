@@ -35,6 +35,13 @@ function makeSimPlayer(track, opts) {
         botSpeedFactor: opts.speedFactor,
         botLapPaceMult: opts.paceMult,
         botPrecisionNoise: opts.precisionNoise,
+        // Lo scostamento personale dalla linea: serve a misurare quanto costa
+        // (Task 4 del piano duelli), non lo usa nessun altro chiamante.
+        botLineaOffset: opts.lineaOffset || 0,
+        // Quanto prende male l'apice: serve a misurare quanto costa il
+        // carattere di guida, che e' la ragione per cui gli intervalli
+        // di allargamento si stringono salendo di livello.
+        botAllargamento: opts.allargamento || 0,
         botOvertakeSide: 1,
         botHeadingToPits: false,
         botPitReactionScheduled: false,

@@ -3,11 +3,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
     PALETTE, normalizeAngle, steerToward, lookaheadIndex, apexOffset,
-    cornerTargetSpeed, windowRadius, cornerApexNear, overtakeOffset, nearestAheadPlayer,
+    cornerTargetSpeed, windowRadius, cornerApexNear, overtakeOffset, nearestAheadPlayer, nearestBehindPlayer,
     pickPostPitCompound, pickBotColors, estimateFinishTime,
     updateBotInputs, DEFAULT_TUNING, shouldBotRepair, trajectoryDiagnostics,
     adaptiveLookaheadMeters, BOT_ADAPTIVE_LOOKAHEAD_K, BOT_ADAPTIVE_LOOKAHEAD_MAX_M, BOT_LOOKAHEAD_MIN_M,
-    computeSoloRacingLineInputs
+    computeSoloRacingLineInputs, aggiornaErrore, profiloAllargamento
 } = require('./f1Bot.js');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 
@@ -955,6 +955,10 @@ function partitaPerBot(gridSize) {
         track: {
             qualiSpawn: { x: 0, z: 0, angle: 0 },
             points: [{ x: 0, z: 0 }, { x: 10, z: 0 }],
+            // La linea propria di ogni bot e' una frazione di questa: una
+            // pista vera ce l'ha sempre (la mette loadTrack), e senza,
+            // botLineaOffset sarebbe NaN.
+            roadHalf: 11,
         },
         players: {},
         settings: {},
@@ -1150,4 +1154,735 @@ test('dove la pista corre quasi dritta non si rallenta', () => {
         maxSpeed, maxSpeed, 0.05, SteeringModel.TURN_SPEED_HIGH, 1, 1,
         SteeringModel.TURN_SPEED_LOW);
     assert.equal(v, maxSpeed);
+});
+
+// ═══════════ I LIVELLI DI DIFFICOLTA' (spec 2026-09-05) ═══════════
+//
+// Prima, ogni bot pescava da solo ritmo e rumore di sterzo: la difficolta'
+// esisteva ma girava a caso, e il giocatore incontrava avversari fra +1.9 e
+// +5.6 secondi al giro senza che nessuno lo decidesse.
+const F1Difficolta = require('../../../frontend/shared/f1Difficolta.js');
+
+// ⚠️ Non un finto nuovo: `partitaPerBot` (sopra) e' quello che usano gli
+// altri test di createBots. Qui serve solo aggiungerci il livello.
+function partitaConLivello(livello, quanti) {
+    const g = partitaPerBot(quanti);
+    if (livello !== undefined) g.settings = { botDifficolta: livello };
+    return g;
+}
+
+test('a difficile i bot nascono piu\' veloci e piu\' precisi che a facile', () => {
+    const facile = partitaConLivello('facile', 8);
+    const difficile = partitaConLivello('difficile', 8);
+    creaBot(facile, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+    creaBot(difficile, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+    const ritmi = (g) => Object.values(g.players).map(p => p.botSpeedFactor);
+    const rumori = (g) => Object.values(g.players).map(p => p.botPrecisionNoise);
+    assert.ok(Math.min(...ritmi(difficile)) >= Math.max(...ritmi(facile)),
+        'il piu\' lento a difficile deve battere il piu\' veloce a facile');
+    assert.ok(Math.max(...rumori(difficile)) <= Math.min(...rumori(facile)),
+        'il piu\' impreciso a difficile deve battere il piu\' preciso a facile');
+});
+
+test('dentro un livello i bot restano diversi fra loro', () => {
+    // ⚠️ Senza varianza la griglia gira in fila indiana e non si vede un
+    // sorpasso per tutta la gara — e' il motivo per cui i livelli sono
+    // intervalli e non numeri.
+    for (const livello of F1Difficolta.LIVELLI) {
+        const g = partitaConLivello(livello, 10);
+        creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+        const ritmi = Object.values(g.players).map(p => p.botSpeedFactor);
+        assert.ok(Math.max(...ritmi) - Math.min(...ritmi) > 0.005,
+            `${livello}: tutti i bot hanno lo stesso ritmo`);
+    }
+});
+
+test('ogni bot nasce dentro gli intervalli del suo livello', () => {
+    for (const livello of F1Difficolta.LIVELLI) {
+        const i = F1Difficolta.intervalliDi(livello);
+        const g = partitaConLivello(livello, 10);
+        creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+        for (const p of Object.values(g.players)) {
+            assert.ok(p.botSpeedFactor >= i.ritmoMin && p.botSpeedFactor <= i.ritmoMax,
+                `${livello}: ritmo ${p.botSpeedFactor} fuori da [${i.ritmoMin}, ${i.ritmoMax}]`);
+            assert.ok(p.botPrecisionNoise >= i.rumoreMin && p.botPrecisionNoise <= i.rumoreMax,
+                `${livello}: rumore ${p.botPrecisionNoise} fuori da [${i.rumoreMin}, ${i.rumoreMax}]`);
+        }
+    }
+});
+
+test('senza livello scelto la griglia nasce media, e mai senza ritmo', () => {
+    const g = partitaConLivello(undefined, 6);
+    creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+    const i = F1Difficolta.intervalliDi('medio');
+    for (const p of Object.values(g.players)) {
+        assert.ok(Number.isFinite(p.botSpeedFactor) && p.botSpeedFactor > 0,
+            'un bot senza ritmo moltiplica la velocita\' per NaN e sparisce dal tracciato');
+        assert.ok(p.botSpeedFactor >= i.ritmoMin && p.botSpeedFactor <= i.ritmoMax);
+    }
+});
+
+test('a difficile un bot tenta il sorpasso dove a facile si accoda', () => {
+    // ⚠️ Si misura il COMPORTAMENTO, non la costante: due bot identici, stessa
+    // pista, stesso avversario davanti, e si guarda in che stato finiscono. Un
+    // test sulla costante direbbe solo che la tabella e' stata letta.
+    //
+    // Si riusano gli helper che il file ha gia': `makeGripAwarenessGame`
+    // costruisce pista + bot, `makeGripAwarenessDeps` le deps di
+    // updateBotInputs.
+    function statoDi(livello, quantoPiuLento) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: livello };
+        const iDavanti = p.trackIndex + 4;
+        game.players = {
+            bot1: p,
+            bot2: Object.assign({}, p, {
+                trackIndex: iDavanti,
+                speed: p.speed * quantoPiuLento,
+                botSpeedFactor: quantoPiuLento,
+                x: game.track.points[iDavanti].x,
+                z: game.track.points[iDavanti].z,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+            }),
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return p._botDebug && p._botDebug.state;
+    }
+    // Un avversario piu' lento del 2%: sta in mezzo fra la soglia di
+    // `difficile` (serve l'1.00, cioe' qualunque margine) e quella di
+    // `facile` (serve il 4%).
+    assert.equal(statoDi('difficile', 0.98), 'OVERTAKING');
+    assert.equal(statoDi('facile', 0.98), 'FOLLOWING');
+});
+
+// ═══════════ LA SOSTA NON SI FA NELL'ULTIMO GIRO ═══════════
+//
+// ⚠️ SEGNALATO DALL'UTENTE (2026-09-05): «non voglio che i bot vadano ai box
+// all'ultimo giro, massimo al penultimo. non si puo' finire la gara passando
+// ai box».
+//
+// La rete di sicurezza che forza la sosta a chi non ha ancora pittato
+// scattava a `remainingLaps <= 1`, che vuol dire "sta correndo l'ultimo
+// giro": su una pista corta, dove l'usura non arriva mai alla soglia, TUTTI i
+// bot finivano per entrare li'.
+function garaAlGiro(lap, totalLaps, usura) {
+    const { game, p } = makeGripAwarenessGame(usura, 'race');
+    game.track.totalLaps = totalLaps;
+    p.lap = lap;
+    p.tyreWear = usura;
+    p.botPitThreshold = 70;
+    p.hasPitted = false;
+    p.botHeadingToPits = false;
+    return { game, p };
+}
+
+test('con gomme buone il bot si dirige ai box al penultimo giro, non all\'ultimo', () => {
+    // Gara di 5 giri, gomme a posto: la sosta obbligatoria va scontata, e il
+    // posto giusto e' il penultimo giro (lap 3 = sta correndo il quarto).
+    const penultimo = garaAlGiro(3, 5, 20);
+    updateBotInputs(penultimo.game, makeGripAwarenessDeps());
+    assert.equal(penultimo.p.botHeadingToPits, true, 'al penultimo giro deve dirigersi ai box');
+});
+
+test('nell\'ultimo giro il bot non entra ai box nemmeno con le gomme finite', () => {
+    // ⚠️ Nemmeno con l'usura oltre la soglia: chi e' arrivato fin li' senza
+    // pittare si tiene la penalita', ma non chiude la gara in corsia box.
+    const ultimo = garaAlGiro(4, 5, 95);
+    updateBotInputs(ultimo.game, makeGripAwarenessDeps());
+    assert.equal(ultimo.p.botHeadingToPits, false, 'nell\'ultimo giro non si entra ai box');
+});
+
+test('a meta\' gara con le gomme finite si entra come sempre', () => {
+    // La regressione da evitare: il divieto vale per l'ultimo giro, non per
+    // la strategia normale.
+    const meta = garaAlGiro(1, 5, 85);
+    updateBotInputs(meta.game, makeGripAwarenessDeps());
+    assert.equal(meta.p.botHeadingToPits, true, 'con le gomme oltre soglia si entra');
+});
+
+// ═══════════ CHI HO DIETRO (spec 2026-09-05) ═══════════
+test('nearestBehindPlayer trova chi insegue, e da che lato arriva', () => {
+    // ⚠️ `mockTrack` non ha coordinate — e' `{points:{length:n}}`, basta a
+    // contare i campioni ma non a dire da che LATO sta uno. Qui serve una
+    // pista vera, e il file ne sa gia' costruire una.
+    const punti = buildConstantCurveTrack(200, 60, 1 / 40);
+    const track = { points: punti, lapLength: punti.length };
+    // Chi difende sta al campione 100, sull'asse; l'inseguitore quattro
+    // campioni dietro e spostato di 3 unita' da un lato.
+    const nrm = TrackGeometry.normalAt(track.points, 96, true);
+    const difensore = { color: 'A', trackIndex: 100, x: track.points[100].x, z: track.points[100].z };
+    const attaccante = {
+        color: 'B', trackIndex: 96,
+        x: track.points[96].x + nrm.nx * 3, z: track.points[96].z + nrm.nz * 3,
+    };
+    const r = nearestBehindPlayer(difensore, [difensore, attaccante], track);
+    assert.ok(r, 'nessun inseguitore trovato');
+    assert.equal(r.player.color, 'B');
+    assert.ok(r.gapM > 0, 'il distacco si conta indietro, non avanti');
+    assert.equal(Math.sign(r.lato), 1, 'l\'inseguitore sta dal lato positivo della normale');
+});
+
+test('chi e\' davanti non conta come inseguitore', () => {
+    // ⚠️ `mockTrack` non ha coordinate — e' `{points:{length:n}}`, basta a
+    // contare i campioni ma non a dire da che LATO sta uno. Qui serve una
+    // pista vera, e il file ne sa gia' costruire una.
+    const punti = buildConstantCurveTrack(200, 60, 1 / 40);
+    const track = { points: punti, lapLength: punti.length };
+    const difensore = { color: 'A', trackIndex: 100, x: track.points[100].x, z: track.points[100].z };
+    const davanti = { color: 'B', trackIndex: 104, x: track.points[104].x, z: track.points[104].z };
+    const r = nearestBehindPlayer(difensore, [difensore, davanti], track);
+    // C'e' un solo altro pilota, ed e' davanti: come inseguitore risulta a
+    // quasi un giro di distanza, non a quattro campioni.
+    assert.ok(!r || r.gapM > track.lapLength / 2, 'chi e\' davanti non e\' un inseguitore');
+});
+
+test('un inseguitore incollato risulta affiancato', () => {
+    // ⚠️ `mockTrack` non ha coordinate — e' `{points:{length:n}}`, basta a
+    // contare i campioni ma non a dire da che LATO sta uno. Qui serve una
+    // pista vera, e il file ne sa gia' costruire una.
+    const punti = buildConstantCurveTrack(200, 60, 1 / 40);
+    const track = { points: punti, lapLength: punti.length };
+    const difensore = { color: 'A', trackIndex: 100, x: track.points[100].x, z: track.points[100].z };
+    const incollato = { color: 'B', trackIndex: 100, x: track.points[100].x + 2, z: track.points[100].z };
+    const r = nearestBehindPlayer(difensore, [difensore, incollato], track);
+    assert.equal(r.affiancato, true);
+});
+
+test('un bot che ha qualcuno dietro si sposta a coprirlo, e non rallenta', () => {
+    // ⚠️ Le due cose insieme, e la seconda conta quanto la prima: la difesa
+    // cambia la traiettoria, mai la velocita'. Un bot che frena per restare
+    // davanti e' cio' che i giocatori riconoscono come «AI che bara».
+    function difesaCon(livello, latoAttaccante) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: livello };
+        game.raceTick = 2000;
+        // ⚠️ QUINDICI campioni, non tre: su questa pista finta un campione
+        // vale un metro, e a tre metri l'inseguitore conta come AFFIANCATO —
+        // la difesa allora non scatta apposta, ed e' la regola giusta. Serve
+        // dentro la finestra (30) ma oltre l'affiancamento (8).
+        p.trackIndex = 25;
+        p.x = game.track.points[25].x; p.z = game.track.points[25].z;
+        const iDietro = p.trackIndex - 15;
+        const nrm = TrackGeometry.normalAt(game.track.points, iDietro, true);
+        game.players = {
+            bot1: p,
+            bot2: Object.assign({}, p, {
+                trackIndex: iDietro,
+                x: game.track.points[iDietro].x + nrm.nx * 4 * latoAttaccante,
+                z: game.track.points[iDietro].z + nrm.nz * 4 * latoAttaccante,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+            }),
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return { stato: p._botDebug.state, velocita: p._botDebug.targetSpeed,
+                 scostamento: p._botDebug.scostamentoDifensivo };
+    }
+    // Lo stesso bot senza nessuno dietro: e' il metro per la velocita'.
+    // ⚠️ NELLO STESSO PUNTO DI PISTA. Misurarlo dove parte (campione 5, dritto)
+    // e confrontarlo col difensore (campione 25, in curva) darebbe due
+    // velocita' diverse per la geometria, non per la difesa.
+    const solo = (() => {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: 'difficile' };
+        p.trackIndex = 25;
+        p.x = game.track.points[25].x; p.z = game.track.points[25].z;
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return p._botDebug.targetSpeed;
+    })();
+
+    const daSinistra = difesaCon('difficile', -1);
+    const daDestra = difesaCon('difficile', 1);
+    assert.ok(daSinistra.scostamento < 0, 'chi arriva da sinistra va coperto a sinistra');
+    assert.ok(daDestra.scostamento > 0, 'chi arriva da destra va coperto a destra');
+    assert.equal(daSinistra.stato, 'DEFENDING');
+    assert.ok(Math.abs(daSinistra.velocita - solo) < 1e-9,
+        `difendendo la velocita' e' passata da ${solo} a ${daSinistra.velocita}`);
+});
+
+test('a difficile si copre piu\' che a facile', () => {
+    function scostamentoCon(livello) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: livello };
+        game.raceTick = 2000;
+        // ⚠️ QUINDICI campioni, non tre: su questa pista finta un campione
+        // vale un metro, e a tre metri l'inseguitore conta come AFFIANCATO —
+        // la difesa allora non scatta apposta, ed e' la regola giusta. Serve
+        // dentro la finestra (30) ma oltre l'affiancamento (8).
+        p.trackIndex = 25;
+        p.x = game.track.points[25].x; p.z = game.track.points[25].z;
+        const iDietro = p.trackIndex - 15;
+        const nrm = TrackGeometry.normalAt(game.track.points, iDietro, true);
+        game.players = {
+            bot1: p,
+            bot2: Object.assign({}, p, {
+                trackIndex: iDietro,
+                x: game.track.points[iDietro].x + nrm.nx * 4,
+                z: game.track.points[iDietro].z + nrm.nz * 4,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+            }),
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return Math.abs(p._botDebug.scostamentoDifensivo);
+    }
+    assert.ok(scostamentoCon('difficile') > scostamentoCon('facile'));
+});
+
+// ⚠️ LA DIFESA SI MISURA SULLA PORTA DA CHIUDERE, NON SULLA CARREGGIATA.
+//
+// Due playtest di fila hanno detto la stessa cosa — «ad hard non si spostano
+// per difendere» (05-09) e «non lo noto ancora» (06-09) — e la seconda volta
+// il meccanismo si attivava nel 74% dei tick spostando 0.93 larghezze d'auto.
+// Si muoveva: non chiudeva. Su `prova` la linea dei bot passa a 6 unita'
+// dall'asse e ne lascia 16.3 dall'altra parte, e spostarsi di 6 lasciava
+// ancora 4 auto affiancate di porta.
+//
+// Questo test e' il successore di uno che pretendeva il raddoppio della
+// difesa su una carreggiata doppia. Era la simmetria sbagliata: con
+// l'attaccante fermo nello stesso punto, allargare la pista NON allarga la
+// porta da chiudere, e il bot non deve spostarsi di piu'. Cio' che deve
+// raddoppiare la difesa e' un attaccante due volte piu' lontano di traverso.
+test('la difesa scala con la porta da chiudere', () => {
+    function scostamentoConAttaccanteA(latAttaccante, roadHalf) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: 'difficile' };
+        game.track.roadHalf = roadHalf === undefined ? 11 : roadHalf;
+        game.raceTick = 2000;
+        p.trackIndex = 25;
+        p.x = game.track.points[25].x; p.z = game.track.points[25].z;
+        const iDietro = p.trackIndex - 15;
+        const nrm = TrackGeometry.normalAt(game.track.points, iDietro, true);
+        game.players = {
+            bot1: p,
+            bot2: Object.assign({}, p, {
+                trackIndex: iDietro,
+                x: game.track.points[iDietro].x + nrm.nx * latAttaccante,
+                z: game.track.points[iDietro].z + nrm.nz * latAttaccante,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+            }),
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return Math.abs(p._botDebug.scostamentoDifensivo);
+    }
+    const vicino = scostamentoConAttaccanteA(3);
+    const lontano = scostamentoConAttaccanteA(6);
+    assert.ok(vicino > 0, 'con qualcuno dietro di traverso non si difende affatto');
+    assert.ok(Math.abs(lontano / vicino - 2) < 0.02,
+        `porta doppia, difesa ${(lontano / vicino).toFixed(2)}x invece di 2x: ` +
+        'non e\' tarata sulla distanza laterale dall\'attaccante');
+    // E la larghezza della pista, da sola, non c'entra: la porta e' quella.
+    assert.ok(Math.abs(scostamentoConAttaccanteA(6, 16) - lontano) < 1e-6,
+        'la difesa cambia allargando la pista a parita\' di porta da chiudere');
+});
+
+// ⚠️ LA DIFESA COMINCIA A UN TEMPO, NON A UNA DISTANZA.
+// Playtest 2026-09-05. La finestra era BOT_FOLLOW_GAP_M = 30 unita', condivisa
+// con la scia e i sorpassi: su `prova`, a 109 unita' al secondo, sono 0.27
+// secondi. Il bot cominciava a coprirti quando gli eri a quattro lunghezze
+// d'auto, e sotto le 8 unita' (0.07 s) scattava «affiancato» che congela lo
+// scostamento: la difesa non faceva in tempo ad esistere.
+test("ci si copre da chi arriva entro un secondo, non entro trenta unita'", () => {
+    function difendeCon(velocita, distanzaCampioni) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: 'difficile' };
+        game.raceTick = 2000;
+        p.trackIndex = 40;
+        p.x = game.track.points[40].x; p.z = game.track.points[40].z;
+        p.speed = velocita;
+        const iDietro = p.trackIndex - distanzaCampioni;
+        const nrm = TrackGeometry.normalAt(game.track.points, iDietro, true);
+        game.players = {
+            bot1: p,
+            bot2: Object.assign({}, p, {
+                trackIndex: iDietro,
+                x: game.track.points[iDietro].x + nrm.nx * 4,
+                z: game.track.points[iDietro].z + nrm.nz * 4,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+            }),
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return Math.abs(p._botDebug.scostamentoDifensivo);
+    }
+    // Su questa pista finta un campione vale un'unita', e `p.speed` e' in
+    // unita' per TICK (venti tick al secondo): a 2 per tick un secondo vale
+    // 40 unita', a 1 per tick ne vale 20.
+    //
+    // LO STESSO DISTACCO, 30 unita', letto due volte: chi corre ce l'ha
+    // addosso fra tre quarti di secondo e si copre, chi va piano lo ha a un
+    // secondo e mezzo e tiene la sua linea.
+    assert.ok(difendeCon(2, 30) > 0, 'non copre chi arriva fra tre quarti di secondo');
+    assert.equal(difendeCon(1, 30), 0, "copre chi e' lontano un secondo e mezzo");
+});
+
+// ⚠️ LA DIFESA E' L'UNICO SCOSTAMENTO CHE PUO' USCIRE DI PISTA.
+// La linea propria e l'ingresso largo passano da un tetto comune (vedi
+// BOT_BERSAGLIO_MAX_FRAZIONE): «sommare due vettori e sperare che il totale
+// resti in pista e' come non avere limite». La difesa veniva sommata DOPO,
+// senza tetto, e su `prova` la racing line passa gia' a 5.96 unita' dall'asse
+// su una mezza carreggiata di 11: aggiungerne 6 di difesa porta il bersaglio
+// oltre il bordo. Misurato col banco gara, il tempo passato oltre la
+// carreggiata saliva dal 6.6% al 10.6% a difficile.
+//
+// Serve una pista VERA: sul cerchio sintetico il bersaglio sta al centro
+// dell'asse, la somma non supera mai il tetto e il test proverebbe il vuoto.
+test('difendendosi il bersaglio resta dentro la carreggiata', () => {
+    const track = require('./trackLoader.js').loadTrack('prova');
+    const n = track.points.length;
+    let peggiore = 0, dove = -1;
+    // Tutto il giro: il punto critico e' dove la linea e' gia' larga di suo.
+    for (let i = 0; i < n; i += 25) {
+        const nrm = TrackGeometry.normalAt(track.points, i, true);
+        const suPista = track.racingLine ? track.racingLine[i] : track.points[i];
+        const p = {
+            x: suPista.x, z: suPista.z, angle: 0, speed: 5.5, vx: 0, vz: 0,
+            inputs: { throttle: 0, brake: 0, steer: 0 },
+            finished: false, lap: 0, botLapSeen: 0, trackIndex: i,
+            tyreWear: 0, compound: 'medium', damage: 0,
+            pitting: false, pitAutoState: null, pitPhase: null,
+            isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+            botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false,
+            botPitThreshold: 100, hasPitted: false, botLineaOffset: 0, botAllargamento: 0,
+        };
+        // L'inseguitore: dieci campioni dietro, sul lato dove c'e' piu' spazio
+        // — cioe' quello opposto a dove sta la linea. E' il sorpasso che
+        // l'utente descrive: «io passo sempre dal lato opposto».
+        const iDietro = (i - 10 + n) % n;
+        const centro = track.points[i];
+        const latLinea = (p.x - centro.x) * nrm.nx + (p.z - centro.z) * nrm.nz;
+        const lato = latLinea >= 0 ? -1 : 1;
+        const nrmD = TrackGeometry.normalAt(track.points, iDietro, true);
+        const game = {
+            track, phase: 'race', raceTick: 4000,
+            settings: { botDifficolta: 'difficile' },
+            players: {
+                bot1: p,
+                bot2: Object.assign({}, p, {
+                    trackIndex: iDietro,
+                    x: track.points[iDietro].x + nrmD.nx * 8 * lato,
+                    z: track.points[iDietro].z + nrmD.nz * 8 * lato,
+                    inputs: { throttle: 0, brake: 0, steer: 0 },
+                }),
+            },
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        const t = p._botDebug && p._botDebug.target;
+        if (!t) continue;
+        const q = TrackGeometry.nearestPoint(track.points, t.x, t.z);
+        if (q.dist > peggiore) { peggiore = q.dist; dove = i; }
+    }
+    assert.ok(peggiore <= track.roadHalf,
+        `il bersaglio della difesa arriva a ${peggiore.toFixed(2)} dall'asse ` +
+        `(campione ${dove}), oltre la mezza carreggiata di ${track.roadHalf}`);
+});
+
+test('ogni bot ha una sua idea di traiettoria', () => {
+    const g = partitaConLivello('medio', 8);
+    creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+    const offset = Object.values(g.players).map(p => p.botLineaOffset);
+    assert.ok(offset.every(v => Number.isFinite(v)), 'un bot senza linea propria');
+    assert.ok(Math.max(...offset) - Math.min(...offset) > 0.5,
+        'i bot hanno tutti la stessa linea: restano sei copie');
+    // ⚠️ IN FRAZIONE DELLA MEZZA CARREGGIATA, come la difesa e l'attacco.
+    // Playtest 2026-09-05: «probabilmente anche ad hard si forma il trenino
+    // perche' tutti vanno sempre all'interno della curva». Misurato su
+    // `prova` NELLO STESSO PUNTO di pista, i sei bot stavano in una fascia
+    // larga 4.5 unita' — 1.3 larghezze d'auto su una pista larga 22: una fila
+    // indiana. Con un intervallo di ±1.5 in unita' fisse non poteva essere
+    // altrimenti, e su una pista stretta le stesse 1.5 sarebbero state
+    // mezza carreggiata.
+    const roadHalf = g.track.roadHalf;
+    assert.ok(Math.max(...offset.map(Math.abs)) <= 0.28 * roadHalf,
+        "scostamento troppo largo: e' lentezza, non varieta'");
+    assert.ok(Math.max(...offset.map(Math.abs)) > 0.15 * roadHalf,
+        'scostamento troppo stretto: restano in fila indiana');
+});
+
+// ═══════════ GLI ERRORI DELL'AI (spec 2026-09-05) ═══════════
+
+// ⚠️ UN ERRORE CHE NON SI VEDE NON E' UN ERRORE.
+// Playtest 2026-09-05, a facile: «non mi e' sembrato di vedere errori». Col
+// banco gara gli errori PARTIVANO eccome — 1.70 per bot al giro, piu' dei 1.2
+// previsti — ma spostavano l'auto di 0.63 unita': 0.18 larghezze d'auto su una
+// pista larga 22. Contarli non bastava: quello che il giocatore vede e'
+// l'ampiezza, e nessun test la misurava.
+test("un errore di guida toglie la meta' dello sterzo, non un quarto", () => {
+    function sterzoIn(conErrore) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: 'facile' };
+        p.trackIndex = 40;            // dentro la curva del tracciato finto
+        p.x = game.track.points[40].x; p.z = game.track.points[40].z;
+        p.botPrecisionNoise = 0;      // qui si misura l'errore, non il rumore
+        if (conErrore) {
+            p.botOrologioMs = 0;
+            p.botErroreFinoMs = 5000;
+            p.botErroreTipo = 'allarga';
+        }
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return Math.abs(p.inputs.steer);
+    }
+    const pulito = sterzoIn(false);
+    const sbagliato = sterzoIn(true);
+    assert.ok(pulito > 0.01, 'la scena non sterza: il test non prova niente');
+    // ⚠️ LA SOGLIA VIENE DALLA MISURA, non il contrario: col banco gara,
+    // 0.40 di guadagno porta il picco di un errore a 1.11 larghezze d'auto
+    // (era 0.54) senza peggiorare il tempo passato fuori pista. Qui si
+    // protegge la proprieta' — un errore si distingue dalla guida normale —
+    // non il numero.
+    assert.ok(sbagliato <= pulito * 0.67,
+        `sbagliando sterza ${sbagliato.toFixed(3)} contro ${pulito.toFixed(3)}: ` +
+        "un errore cosi' non si distingue dalla guida normale");
+    // ⚠️ E resta un errore, non un ritiro: sterzo invertito vuol dire
+    // testacoda, e la spec chiede errori che costino tempo, non la gara.
+    assert.ok(sbagliato >= 0, "sterzo invertito: e' un glitch, non un errore");
+});
+test('a facile i bot sbagliano, a difficile quasi mai', () => {
+    // ⚠️ Lo STESSO flusso di numeri casuali per i due livelli: cosi' a
+    // decidere e' la soglia, non la fortuna. Con Math.random questo test
+    // sarebbe statistico, e a facile uscirebbe zero errori una volta ogni
+    // venti esecuzioni: un rosso che non significa niente.
+    function erroriIn(livello) {
+        const g = partitaConLivello(livello, 4);
+        creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+        const soglia = F1Difficolta.soglieDi(livello).erroriPerGiro;
+        let seme = 987654321;
+        const rng = () => { seme = (seme * 1103515245 + 12345) % 2147483648; return seme / 2147483648; };
+        let quanti = 0;
+        for (const p of Object.values(g.players)) {
+            // 1200 tick = un minuto, circa un giro di `prova`.
+            for (let t = 0; t < 1200; t++) {
+                if (aggiornaErrore(p, soglia, 50, 50000, rng)) quanti++;
+            }
+        }
+        return quanti;
+    }
+    const facile = erroriIn('facile');
+    const difficile = erroriIn('difficile');
+    assert.ok(facile > 0, 'a facile non ha sbagliato nessuno in un giro intero');
+    assert.ok(facile > difficile * 3,
+        `a facile si deve sbagliare molto piu' spesso (facile ${facile}, difficile ${difficile})`);
+});
+
+test('un errore dura un attimo e poi passa', () => {
+    // ⚠️ Un errore che non scade e' un bot rotto per il resto della gara.
+    const p = {};
+    const sempre = () => 0;      // scatta al primo tick utile
+    assert.equal(aggiornaErrore(p, 1, 50, 50000, sempre), true, 'non e\' partito');
+    // Quanti tick passano prima che ne possa partire un altro: e' la durata
+    // dell'errore, e si misura invece di darla per buona.
+    let tick = 0;
+    while (!aggiornaErrore(p, 1, 50, 50000, sempre) && tick < 200) tick++;
+    assert.equal(tick * 50, 900, 'l\'errore non dura i 900 ms dichiarati');
+});
+
+test('in qualifica non si sbaglia mai', () => {
+    // ⚠️ Un giro secco rovinato dal caso falsa la griglia, e la griglia
+    // decide la gara. Gli errori sono roba da gara, non da qualifica.
+    const { game, p } = makeGripAwarenessGame(0, 'qualifying');
+    game.settings = { botDifficolta: 'facile' };
+    for (let t = 0; t < 400; t++) updateBotInputs(game, makeGripAwarenessDeps());
+    assert.ok(!p.botErroreFinoMs, 'un bot ha sbagliato in qualifica');
+});
+
+test('chi attacca sceglie il lato dove c\'e\' spazio, non quello deciso alla nascita', () => {
+    // ⚠️ Il test gira sui DUE lati con la STESSA preferenza personale: se il
+    // bot attaccasse sempre dalla parte che si e' scelto alla nascita, uno
+    // dei due casi fallirebbe. Con un lato solo passerebbe per meta' delle
+    // volte anche un codice che la porta non la guarda.
+    function latoDellAttacco(latoDifensore) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: 'difficile' };
+        p.botOvertakeSide = 1;            // preferenza: sempre destra
+        const iDavanti = p.trackIndex + 4;
+        const nrm = TrackGeometry.normalAt(game.track.points, iDavanti, true);
+        game.players = {
+            bot1: p,
+            bot2: Object.assign({}, p, {
+                trackIndex: iDavanti, speed: p.speed * 0.9, botSpeedFactor: 0.9,
+                // Il difensore e' spostato da un lato: la porta e' dall'altro.
+                x: game.track.points[iDavanti].x + nrm.nx * 4 * latoDifensore,
+                z: game.track.points[iDavanti].z + nrm.nz * 4 * latoDifensore,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+            }),
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        assert.equal(p._botDebug.state, 'OVERTAKING', 'non sta nemmeno attaccando');
+        const centro = game.track.points[p.trackIndex];
+        return Math.sign((p._botDebug.target.x - centro.x) * nrm.nx +
+                         (p._botDebug.target.z - centro.z) * nrm.nz);
+    }
+    assert.equal(latoDellAttacco(1), -1, 'difensore a destra: ha attaccato a destra');
+    assert.equal(latoDellAttacco(-1), 1, 'difensore a sinistra: ha attaccato a sinistra');
+});
+
+// ═══════════ L'INGRESSO LARGO (2026-09-05) ═══════════
+//
+// Misurato su `prova`: la racing line precalcolata entra in curva GIA'
+// all'interno (+4.3 su una semicarreggiata di 11, dove un fuori-dentro-fuori
+// entrerebbe negativo) e in tre curve su undici sta a 10.5-10.8 dall'ingresso
+// all'uscita. E' il motivo per cui l'utente vede i bot «sempre all'interno»
+// e li supera dal lato libero.
+test('con una linea che entra stretta, il bot entra piu\' largo di lei', () => {
+    // La racing line di questo test coincide con l'asse: e' il caso limite
+    // di una linea che «non si allarga mai». Il bot deve comunque entrare
+    // largo, altrimenti in curva sta dove sta la linea e basta.
+    function bersaglioA(indice) {
+        const points = buildVaryingCurveTrack(300, 100, 100, 1 / 25);
+        const racingLineTuning = { lookaheadTimeS: 0.6, steerGain: 3.0, adaptiveLookaheadK: 0.1,
+                                   cornerSpeedMargin: 0.99, brakingDistanceMargin: 1.2,
+                                   deadband: 0.01, ramp: 0.06 };
+        const track = { points, racingLine: points, racingLineTuning,
+                        lapLength: points.length, roadHalf: 8, totalLaps: 3,
+                        pitEntryIndex: 9999, pitPath: [{ x: 0, z: 0 }, { x: 0, z: 0 }] };
+        const p = {
+            x: points[indice].x, z: points[indice].z, angle: 0,
+            speed: 6, vx: 0, vz: 0, inputs: { throttle: 0, brake: 0, steer: 0 },
+            finished: false, lap: 0, botLapSeen: 0, trackIndex: indice,
+            tyreWear: 0, compound: 'medium', damage: 0,
+            pitting: false, pitAutoState: null, pitPhase: null,
+            isBot: true, botSpeedFactor: 1, botLapPaceMult: 1, botPrecisionNoise: 0,
+            // ⚠️ Linea personale a zero: qui si misura l'ingresso largo, e due
+            // scostamenti sommati non direbbero quale dei due ha agito.
+            botLineaOffset: 0,
+            // Il carattere di questo bot: si allarga di un terzo di
+            // carreggiata dove il profilo dice di allargarsi.
+            botAllargamento: 0.35,
+            botOvertakeSide: 1, botHeadingToPits: false, botPitReactionScheduled: false,
+            botPitThreshold: 100, hasPitted: false
+        };
+        const game = { phase: 'race', track, players: { bot1: p },
+                       settings: { botDifficolta: 'medio' } };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        // ⚠️ Lo scostamento si misura dalla LINEA, nel punto mirato: il
+        // bersaglio sta piu' avanti, e in curva un punto dell'asse piu'
+        // avanti proietta gia' di suo verso l'interno sulla normale di qui.
+        // Misurandolo dal punto del bot, quella componente geometrica
+        // sommergerebbe lo scostamento che si vuole vedere.
+        const t = p._botDebug.target;
+        const q = TrackGeometry.nearestPoint(points, t.x, t.z);
+        const n = TrackGeometry.normalAt(points, q.index, true);
+        return (t.x - points[q.index].x) * n.nx + (t.z - points[q.index].z) * n.nz;
+    }
+    // Da che parte sta l'interno, in questa curva: lo dice la forma completa
+    // all'apice, invece di fidarsi di una convenzione di segno.
+    const pts = buildVaryingCurveTrack(300, 100, 100, 1 / 25);
+    const nApice = TrackGeometry.normalAt(pts, 150, true);
+    const o = apexOffset(pts, 150, 60, 12, 1, 8, 0.5);
+    const interno = Math.sign(o.dx * nApice.nx + o.dz * nApice.nz);
+
+    // ⚠️ Poco PRIMA della curva, non a dieci campioni dall'apice: e' li' che
+    // si prepara l'ingresso, e a un passo dall'apice il profilo dice
+    // giustamente di stare sulla linea.
+    const ingresso = bersaglioA(95);
+    assert.ok(Math.sign(ingresso) === -interno && Math.abs(ingresso) > 0.5,
+        `prima della curva il bersaglio dovrebbe stare verso l'esterno, sta a ${ingresso.toFixed(2)}`);
+});
+
+// ═══════════ IL PROFILO DI ALLARGAMENTO (2026-09-05) ═══════════
+//
+// Misurato su `prova`: la racing line precalcolata entra in curva GIA'
+// all'interno (+4.3 su una semicarreggiata di 11, dove un fuori-dentro-fuori
+// entrerebbe negativo) e in tre curve su undici sta a 10.5-10.8 dall'ingresso
+// all'uscita. Da qui il profilo: dove NON siamo all'apice, ci si allarga.
+test('il profilo dice zero agli apici e tanto nei tratti aperti', () => {
+    // Curva a triangolo con l'apice al centro: 100 campioni dritti, 100 di
+    // curva, apice a 150.
+    const pts = buildVaryingCurveTrack(300, 100, 100, 1 / 25);
+    const track = { points: pts, lapLength: pts.length, roadHalf: 8 };
+    const { fattore } = profiloAllargamento(track);
+    assert.ok(fattore[150] < 0.15, `all'apice non ci si allarga, invece vale ${fattore[150].toFixed(2)}`);
+    // Nel dritto poco prima della curva ci si deve gia' allargare: e' li' che
+    // si prepara l'ingresso, e arrivarci attaccati all'interno e' il difetto
+    // che tutto questo corregge.
+    assert.ok(fattore[95] > 0.5, `prima della curva ci si allarga poco: ${fattore[95].toFixed(2)}`);
+});
+
+test('una piega larghissima non e\' una curva: non ci si sposta', () => {
+    // ⚠️ Senza la soglia, QUALUNQUE piega diventerebbe una curva con un suo
+    // apice, e i bot ondeggerebbero anche in rettilineo.
+    //
+    // (Un rettilineo vero non si puo' usare come caso di prova: una pista
+    // aperta ha i due capi che si richiudono, e li' la curvatura non e' zero.
+    // Un cerchio molto ampio e' il caso onesto.)
+    const pts = [];
+    const raggio = 500;
+    for (let i = 0; i < 400; i++) {
+        const t = i / 400 * 2 * Math.PI;
+        pts.push({ x: raggio * Math.cos(t), z: raggio * Math.sin(t) });
+    }
+    const track = { points: pts, lapLength: 2 * Math.PI * raggio, roadHalf: 8 };
+    // La soglia e' 20 mezze carreggiate: 160 unita' contro un raggio di 500.
+    const { fattore } = profiloAllargamento(track);
+    assert.ok(fattore.every(v => v === 0), 'una piega da 500 unita\' di raggio conta come curva');
+});
+test('il profilo indica il verso della curva in cui si sta', () => {
+    const pts = buildVaryingCurveTrack(300, 100, 100, 1 / 25);
+    const track = { points: pts, lapLength: pts.length, roadHalf: 8 };
+    const { verso } = profiloAllargamento(track);
+    // Calibrato su un cerchio di centro noto: l'interno sta dalla parte di
+    // normale * sign(turnSigned). Qui si controlla che il profilo riporti
+    // QUEL segno, preso all'apice della curva e non dove capita.
+    const c = TrackGeometry.curvatureAt(pts, 150, 12);
+    assert.equal(verso[140], Math.sign(c.turnSigned),
+        'il verso in ingresso non e\' quello della curva che si sta per fare');
+});
+
+test('il profilo si calcola una volta sola per pista', () => {
+    // ⚠️ Gira per ogni bot ad ogni tick: ricalcolarlo sarebbe O(n * finestra)
+    // venti volte al secondo per sei auto.
+    const pts = buildVaryingCurveTrack(300, 100, 100, 1 / 25);
+    const track = { points: pts, lapLength: pts.length, roadHalf: 8 };
+    assert.equal(profiloAllargamento(track), profiloAllargamento(track));
+});
+test('ogni bot prende l\' apice a modo suo, e il livello dice quanto', () => {
+    // ⚠️ E' questo che mette le auto su una FASCIA invece che in fila
+    // sull'interno: sei bot con lo stesso allargamento sarebbero sei copie
+    // anche con la forma piu' bella del mondo.
+    function allargamenti(livello) {
+        const g = partitaConLivello(livello, 8);
+        creaBot(g, { lockedPlayers: ['red'] }, TYRE_COMPOUNDS_FINTE);
+        return Object.values(g.players).map(p => p.botAllargamento);
+    }
+    const f = allargamenti('facile');
+    const d = allargamenti('difficile');
+    assert.ok(f.every(v => Number.isFinite(v)), 'un bot senza carattere');
+    assert.ok(Math.max(...f) - Math.min(...f) > 0.05, 'a facile guidano tutti uguale');
+    // Salendo di livello si sta piu' vicini alla linea buona: allargarsi
+    // costa tempo (0.20 vale +650 ms al giro su `prova`), e un livello alto
+    // non se lo puo' permettere.
+    assert.ok(Math.max(...d) <= Math.min(...f),
+        'a difficile il piu\' sporco deve stare dentro il piu\' pulito di facile');
+});
+
+// ⚠️ CHI E' IN CORSIA BOX NON E' UNA LINEA DA COPRIRE.
+// Da quando la difesa mira a DOVE sta l'attaccante (2026-09-06) la sua
+// posizione laterale entra nel conto, e in corsia box vale 63 unita' contro le
+// 11 della mezza carreggiata: senza un taglio, il bot va a incollarsi al bordo
+// pista per coprire uno che sta rientrando. I flag pitting/pitAutoState non
+// bastano, c'e' un tratto di avvicinamento in cui non sono ancora alzati.
+test('non ci si difende da chi e\' fuori dalla carreggiata', () => {
+    function scostamentoConAttaccanteA(latAttaccante) {
+        const { game, p } = makeGripAwarenessGame(0, 'race');
+        game.settings = { botDifficolta: 'difficile' };
+        game.track.roadHalf = 11;
+        game.raceTick = 2000;
+        p.trackIndex = 25;
+        p.x = game.track.points[25].x; p.z = game.track.points[25].z;
+        const iDietro = p.trackIndex - 15;
+        const nrm = TrackGeometry.normalAt(game.track.points, iDietro, true);
+        game.players = {
+            bot1: p,
+            bot2: Object.assign({}, p, {
+                trackIndex: iDietro,
+                x: game.track.points[iDietro].x + nrm.nx * latAttaccante,
+                z: game.track.points[iDietro].z + nrm.nz * latAttaccante,
+                inputs: { throttle: 0, brake: 0, steer: 0 },
+            }),
+        };
+        updateBotInputs(game, makeGripAwarenessDeps());
+        return Math.abs(p._botDebug.scostamentoDifensivo);
+    }
+    const alBordo = scostamentoConAttaccanteA(11);      // sul limite della pista
+    const inCorsiaBox = scostamentoConAttaccanteA(63);  // dentro la corsia box
+    assert.ok(Math.abs(inCorsiaBox - alBordo) < 1e-6,
+        `chi e' a 63 dall'asse tira la difesa a ${inCorsiaBox.toFixed(2)} invece ` +
+        `di fermarla a ${alBordo.toFixed(2)}: il bot copre la corsia box`);
 });
