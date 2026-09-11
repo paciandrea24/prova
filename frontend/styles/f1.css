@@ -599,7 +599,10 @@ canvas.tyre-preview-canvas {
     align-items: flex-start;
 }
 .f1-indicator-row {
-    display: flex; align-items: stretch; gap: 2px;
+    /* gap ZERO: le linguette accese formano una STRISCIA UNICA che esce dal
+       pannello. Staccate, solo la prima sembrava attaccata alla classifica e
+       le altre due galleggiavano con lo spigolo vivo a sinistra. */
+    display: flex; align-items: stretch; gap: 0;
     /* L'altezza la scrive f1.js copiandola dalla riga gemella. */
 }
 .f1-indicator-row .ind {
@@ -610,7 +613,11 @@ canvas.tyre-preview-canvas {
     height: 100%;
     min-width: 24px;
     padding: 0 5px;
-    border-radius: 0 4px 4px 0;
+    /* Squadrate: dentro la striscia sono tutte tasselli. La sola che si
+       arrotonda e' l'ultima accesa, e quale sia lo dice f1.js. */
+    border-radius: 0;
+    /* Il filo di luce a sinistra fa due lavori: stacca la prima linguetta dal
+       pannello e divide le une dalle altre dentro la striscia. */
     border-left: 1px solid rgba(255,255,255,0.22);
     font-family: 'Fredoka', sans-serif;
     font-size: 12px; font-weight: 900; line-height: 1;
@@ -622,6 +629,7 @@ canvas.tyre-preview-canvas {
    `[hidden] { display: none }` del browser, e i riquadri spenti resterebbero
    in vista. */
 .f1-indicator-row .ind[hidden] { display: none; }
+.f1-indicator-row .ind.ultima { border-radius: 0 4px 4px 0; }
 
 /* LA PENALITA' SI APRE E POI SI COMPATTA. Scelta dell'utente: «quando la
    penalita' viene presa vediamo il tempo, ad esempio +5, dopo un po' questo

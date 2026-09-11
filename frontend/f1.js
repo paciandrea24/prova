@@ -3365,6 +3365,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         parti.pit.hidden = !d.inPit;
         parti.fast.hidden = !d.fastestLap;
+
+        // ⚠️ Solo l'ULTIMA linguetta accesa ha gli angoli tondi a destra: le
+        // tre devono leggersi come una striscia unica che esce dal pannello,
+        // non come tre riquadri staccati. In CSS non si puo' dire «l'ultima
+        // visibile» — `:last-child` conta anche quelle spente — quindi il
+        // segno lo mette qui chi gia' sa quali sono accese.
+        const accese = [parti.pen, parti.pit, parti.fast].filter(el => !el.hidden);
+        accese.forEach((el, i) => el.classList.toggle('ultima', i === accese.length - 1));
     }
 
     // La colonna è un elemento a sé (il pannello classifica ha overflow:hidden
@@ -3774,23 +3782,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     socket.on('f1LapUpdate', ({ color, lap, phase }) => {
         if (color !== myColor) return;
         setLapDisplay(lap, phase);
-    });
-
-    // Penalita' da collisione appena presa. L'AVVISO IN CLASSIFICA NON SI
-    // TOCCA PIU' DA QUI: si disegna da solo leggendo penaltyPendingMs (vedi
-    // renderIndicatoriRow), che si apre col numero e dopo tre secondi si
-    // compatta in un «!». Prima invece era questo evento ad allargare e
-    // restringere il badge con un rimbalzo di scala, bocciato al playtest del
-    // 2026-09-11: «non mi convince il tremolio del ! quando prendo una nuova
-    // penalita'».
-    //
-    // Uno stato che converge batte un evento: un messaggio perso lascerebbe
-    // l'avviso fermo al valore vecchio, mentre lo stato arriva ad ogni tick.
-    // L'evento resta per dire al SOLO interessato cos'e' appena successo, che
-    // dallo stato non si vede: quanto valeva quel singolo contatto.
-    socket.on('f1CollisionPenalty', ({ color, penaltyMs }) => {
-        if (color !== myColor) return;
-        mostraAvviso(`Penalita': +${(penaltyMs / 1000).toFixed(1)}s`);
     });
 
     // ── SIPARIO DELLA TRANSIZIONE ──────────────────────────────────────

@@ -2255,15 +2255,18 @@ function tickGame(io, lobbyId, game) {
     // finished/time e il cronometro continuava a scorrere sullo sfondo.
     broadcastState(io, lobbyId, game, true);
 
-    // Notifica live di ogni penalità da collisione appena accumulata (Task
-    // 2/3): DOPO broadcastState, non prima — il client deve già avere il
-    // badge "!" nel DOM (aggiunto da renderStandingRowContent in risposta a
-    // collisionPenalty:true nello stato appena ricevuto) prima di ricevere
-    // il trigger di animazione, altrimenti sul primissimo incidente della
-    // gara l'elemento .collision-badge non esisterebbe ancora e l'animazione
-    // verrebbe silenziosamente ignorata. Una alla volta, nell'ordine in cui
-    // sono avvenute nel tick — la coda resta quasi sempre vuota (0-1
-    // elementi), niente di costoso qui.
+    // Notifica live di ogni penalità da collisione appena accumulata: una alla
+    // volta, nell'ordine in cui sono avvenute nel tick — la coda resta quasi
+    // sempre vuota (0-1 elementi), niente di costoso qui.
+    //
+    // ⚠️ DAL 2026-09-11 NESSUN CLIENT LA ASCOLTA. L'avviso in classifica lo
+    // guida `penaltyPendingMs` nello stato, che converge ad ogni tick invece
+    // di dipendere da un messaggio che puo' perdersi; e l'avviso a schermo
+    // che stava qui e' stato tolto su richiesta dell'utente. L'evento resta
+    // perche' porta un'informazione che dallo stato non si ricava — quanto
+    // valeva IL SINGOLO contatto — e perche' la coda e' provata da quattro
+    // test in physics/DamageModel: se un giorno non servisse davvero, si
+    // toglie insieme a quelli, non di sfuggita.
     for (const p of players) {
         if (!p.pendingCollisionPenaltyEvents.length) continue;
         for (const penaltyMs of p.pendingCollisionPenaltyEvents) {
