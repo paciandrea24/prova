@@ -145,6 +145,47 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log("[F1] Giocatore ospite, nessuna livrea da caricare.");
     }
 
+    // ── STRUMENTI DI SVILUPPO: SOLO PER L'AMMINISTRATORE ────────────────
+    // Richiesta dell'utente: «togli dal gioco le scritte C: cambia visuale,
+    // O: ombre e cosi' via, anche F9 ed F8 e in generale tutto cio' che
+    // riguarda il debug; associa il mio account a un account admin che puo'
+    // ancora visualizzare queste cose».
+    //
+    // ⚠️ Non e' una barriera di sicurezza e non pretende di esserlo: tutto
+    // quel che sblocca sta qui nel client, e chi apre gli strumenti del
+    // browser ci arriva comunque. Serve a togliere di mezzo roba da sviluppo
+    // a chi gioca, e non c'e' niente da proteggere — quegli strumenti leggono
+    // lo stato che il giocatore ha gia' davanti.
+    //
+    // Si chiede QUI, prima che la scena si costruisca: piu' avanti il pannello
+    // di taratura si installa gia', e installarlo per poi spegnerlo vorrebbe
+    // dire lasciare in piedi i suoi ascoltatori di tastiera.
+    let sonoAdmin = false;
+    if (user) {
+        try {
+            const token = await user.getIdToken();
+            const res = await fetch('/api/admin', { headers: { Authorization: `Bearer ${token}` } });
+            if (res.ok) {
+                const dati = await res.json();
+                sonoAdmin = !!dati.admin;
+                // L'uid si stampa SEMPRE: e' il modo di leggersi
+                // l'identificativo da mettere in F1_ADMIN_UIDS la prima volta,
+                // senza andarlo a cercare nella console di Firebase.
+                console.log(`[F1] uid ${dati.uid} — amministratore: ${sonoAdmin ? 'si' : 'no'}`);
+            }
+        } catch (e) {
+            console.warn('[F1] stato amministratore non letto:', e.message);
+        }
+    }
+
+    {
+        // La legenda degli strumenti di sviluppo: nascosta a tutti, accesa
+        // solo per chi puo' usarli. Senza, resterebbe a video un elenco di
+        // tasti che non fanno piu' niente.
+        const hint = document.getElementById('camera-hint');
+        if (hint) hint.style.display = sonoAdmin ? 'block' : 'none';
+    }
+
     // 3. NESSUN fallback a una fixture JSON condivisa: se non c'è una livrea
     // salvata (ospite, o account senza livrea) loadedLivery resta null e
     // CarLoader.loadCarModel colora la carrozzeria col colore scelto in
@@ -675,10 +716,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Pannello di taratura: F9 lo apre, F8 accende e spegne i contorni.
     // `outline` resta null finché ToonOutline non entra in gioco.
-    const pannello = ToonPanel.install({
+    // ⚠️ Non si installa affatto per chi non e' amministratore: install()
+    // registra i propri ascoltatori su F9 e F8, e installarlo per poi
+    // nasconderlo lascerebbe quei tasti vivi.
+    const pannello = sonoAdmin ? ToonPanel.install({
         style: ToonStyle, sky: toonSky, outline: TOON_ON ? ToonOutline : null, scene,
         lights: { sun, hemi }, renderer, attivo: TOON_ON, perf: F1Perf,
-    });
+    }) : null;
 
     // ====================================================
     // AUDIO MOTORE — un solo loop di 4s di un vero motore d'auto,
@@ -3104,7 +3148,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // il contenuto è già aggiornato ad ogni f1StateUpdate indipendentemente
     // da questo stato (vedi updateDebugPanel), come per showHitboxes.
     document.addEventListener('keydown', (e) => {
-        if (e.key.toLowerCase() === 'g') {
+        if (sonoAdmin && e.key.toLowerCase() === 'g') {
             debugPanelOpen = !debugPanelOpen;
             document.getElementById('debug-panel').style.display = debugPanelOpen ? 'block' : 'none';
         }
@@ -5546,7 +5590,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     document.addEventListener('keydown', (e) => {
-        if (e.key !== 'F8') return;
+        if (!sonoAdmin || e.key !== 'F8') return;
         // Solo in gara veloce: in campionato la cerimonia vera arriva da se',
         // e sovrapporle una di prova la lascerebbe a meta'.
         if (formatoPartita === 'stagione') return;
@@ -5988,7 +6032,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             lookBackKey = true;
             if (k === 'arrowdown') e.preventDefault();   // niente scroll della pagina
         }
-        if (k === 'h') {   // DEBUG: mostra/nascondi le hitbox di collisione
+        if (sonoAdmin && k === 'h') {   // DEBUG: mostra/nascondi le hitbox di collisione
             showHitboxes = !showHitboxes;
             for (const mesh of Object.values(hitboxMeshes)) mesh.visible = showHitboxes;
         }
@@ -6000,7 +6044,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // L = indicatore luci a schermo durante il via. Il semaforo vero resta
         // sempre quello sul ponte: questo è solo un aiuto per chi parte in
         // fondo alla griglia. La scelta resta fra una gara e l'altra.
-        if (k === 'l' && !e.repeat && !isTypingInField(e)) {
+        if (sonoAdmin && k === 'l' && !e.repeat && !isTypingInField(e)) {
             indicatoreLuci = !indicatoreLuci;
             try { localStorage.setItem('f1IndicatoreLuci', indicatoreLuci ? '1' : '0'); } catch (err) { /* modalità privata */ }
             const board = document.getElementById('lights-board');
@@ -6014,7 +6058,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             socket.emit('f1ChiudiGara', { lobbyId });
             fineGaraScadeA = null;
         }
-        if (k === 'o' && !e.repeat && !isTypingInField(e) && pannello && pannello.ombreDinamiche) {
+        if (sonoAdmin && k === 'o' && !e.repeat && !isTypingInField(e) && pannello && pannello.ombreDinamiche) {
             const accese = !pannello.ombreAccese();
             pannello.ombreDinamiche(accese);
             mostraAvviso(accese ? 'Ombre accese' : 'Ombre spente');
@@ -6023,7 +6067,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // insieme si giudicano male a parola ("un po' meno") e bene a numero.
         // Zero è anche l'interruttore di sicurezza — la camera torna esattamente
         // com'era prima che tutto questo esistesse.
-        if (k === 'v' && !e.repeat && !isTypingInField(e)) {
+        if (sonoAdmin && k === 'v' && !e.repeat && !isTypingInField(e)) {
             const scala = [0, 0.5, 1, 1.5];
             const ora = F1SensoVelocita.getIntensita();
             const prossimo = scala[(scala.findIndex(s => Math.abs(s - ora) < 0.01) + 1) % scala.length];
@@ -6042,7 +6086,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // M segnala il punto in cui sei, Shift+M annulla l'ultima. `e.repeat`
         // esclude l'autorepeat: tenendo premuto si riempirebbe il file di
         // copie dello stesso punto.
-        if (k === 'm' && !e.repeat && !isTypingInField(e)) {
+        if (sonoAdmin && k === 'm' && !e.repeat && !isTypingInField(e)) {
             if (e.shiftKey) annullaUltimaSegnalazione();
             else registraSegnalazione();
         }
