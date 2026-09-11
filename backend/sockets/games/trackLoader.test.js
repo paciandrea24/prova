@@ -6,18 +6,45 @@ const { loadTrack, listTracks, saveTrack, deleteTrack, normalizzaAbrasivita } = 
 
 const TRACKS_DIR = path.join(__dirname, '..', '..', '..', 'frontend', 'tracks');
 
-test('loadTrack("monte-rosso") calcola 10 giri dal targetKm', () => {
+// I numeri di questa pista li decide l'EDITOR, non il codice: quando l'utente
+// ritocca monte-rosso cambiano targetKm, la lunghezza del giro e l'indice del
+// box. Un test che li RICOPIA diventa rosso al primo salvataggio e non dice
+// niente sul loader — ed e' successo davvero: targetKm 9.3 -> 5 e
+// pit.boxIndex 4 -> 2 hanno tenuto rossi questi due per settimane.
+// Quindi qui si verifica la RELAZIONE fra il file e quel che il loader ne
+// ricava, non i valori del file di oggi.
+test('loadTrack("monte-rosso") ricava i giri dal targetKm e dalla lunghezza vera del giro', () => {
+    const raw = JSON.parse(fs.readFileSync(path.join(TRACKS_DIR, 'monte-rosso.json'), 'utf8'));
     const track = loadTrack('monte-rosso');
-    assert.equal(track.totalLaps, 10);
+
+    // Lunghezza misurata QUI, senza passare dal codice sotto esame.
+    let giro = 0;
+    for (let i = 0; i < track.points.length; i++) {
+        const a = track.points[i], b = track.points[(i + 1) % track.points.length];
+        giro += Math.hypot(b.x - a.x, b.z - a.z);
+    }
+
+    const metriChiesti = raw.targetKm * 1000;   // un'unita' di mondo e' un metro
+    const scarto = (n) => Math.abs(n * giro - metriChiesti);
+
+    assert.ok(track.totalLaps >= 1, 'una gara dura almeno un giro');
+    assert.ok(scarto(track.totalLaps) <= scarto(track.totalLaps + 1),
+        `${track.totalLaps} giri si allontanano da ${raw.targetKm} km piu' di ${track.totalLaps + 1}`);
+    assert.ok(track.totalLaps === 1 || scarto(track.totalLaps) <= scarto(track.totalLaps - 1),
+        `${track.totalLaps} giri si allontanano da ${raw.targetKm} km piu' di ${track.totalLaps - 1}`);
 });
 
-test('loadTrack("monte-rosso") espone nome, larghezza pista e corsia box', () => {
+test('loadTrack("monte-rosso") espone i dati del file senza perderli per strada', () => {
+    const raw = JSON.parse(fs.readFileSync(path.join(TRACKS_DIR, 'monte-rosso.json'), 'utf8'));
     const track = loadTrack('monte-rosso');
-    assert.equal(track.name, 'Monte Rosso');
-    assert.equal(track.roadHalf, 11);
-    assert.equal(track.pitRoadHalf, 5);
-    assert.equal(track.pitBoxIndex, 4);
-    assert.equal(track.points.length, 1000);
+    assert.equal(track.name, raw.name);
+    assert.equal(track.roadHalf, raw.roadHalfWidth);
+    assert.equal(track.pitRoadHalf, raw.pit.roadHalfWidth);
+    assert.equal(track.pitBoxIndex, raw.pit.boxIndex);
+    // Il ricampionamento e' del loader, non del file: i punti disegnati
+    // nell'editor sono poche decine. Un tracciato acrobatico ne aggiunge nel
+    // tubo, quindi il vincolo e' un minimo, non un uguale.
+    assert.ok(track.points.length >= 1000, `ricampionata a ${track.points.length} punti`);
 });
 
 // Sostituisce il vecchio confronto con valori storici hardcoded (era già
