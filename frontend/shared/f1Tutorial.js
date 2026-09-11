@@ -22,6 +22,11 @@
 })(typeof self !== 'undefined' ? self : this, function () {
 
     const ID_NODO = 'f1-tutorial';
+    // Dove stanno le fotografie di cio' che si vedra' in gioco. ⚠️ Se un file
+    // manca, la sua immagine si nasconde da sola e il passo resta leggibile:
+    // cosi' il tutorial e' utile da subito e migliora quando le foto
+    // arrivano, invece di aspettarle per esistere.
+    const CARTELLA_FOTO = 'assets/tutorial/';
     const ID_STILE = 'f1-tutorial-stile';
 
     // I tre colori delle mescole, gli stessi del gioco (TyreModel.TYRE_COMPOUNDS).
@@ -40,6 +45,7 @@
     const PASSI = [
         {
             titolo: 'Il weekend',
+            foto: 'weekend.jpg',
             occhiello: 'Come si svolge',
             corpo: [
                 'Prima la <b>qualifica</b>: un giro secco, da solo in pista. Il tempo che fai decide da dove parti.',
@@ -50,6 +56,7 @@
         },
         {
             titolo: 'La partenza',
+            foto: 'partenza.jpg',
             occhiello: 'Cinque luci, poi buio',
             corpo: [
                 'Tieni premuta la <b>frizione</b> mentre i semafori si accendono, e <b>rilasciala</b> quando si spengono: e’ il rilascio che mette in moto l’auto.',
@@ -60,6 +67,7 @@
         },
         {
             titolo: 'La sosta',
+            foto: 'sosta.jpg',
             occhiello: 'Almeno una, sempre',
             corpo: [
                 'Ogni gara richiede <b>almeno una sosta</b> ai box. Chi non si ferma si prende <b>30 secondi</b> sul tempo finale.',
@@ -70,6 +78,7 @@
         },
         {
             titolo: 'Le gomme',
+            foto: 'gomme.jpg',
             occhiello: 'Tre mescole, tre strategie',
             corpo: [
                 '<b>Nessuna arriva in fondo alla gara</b>: la scelta non e’ quale sia la migliore, ma come dividere la gara fra due treni.',
@@ -86,6 +95,15 @@
         },
     ];
 
+    // ⚠️ LA GRAMMATICA E' QUELLA DELLA LOBBY, non un tema mio: carta chiara,
+    // bordo spesso scuro, e l'ombra piena nel COLORE DELL'HOST — che nella
+    // lobby e' cio' che fa da bordo colorato (`box-shadow: 7px 7px 0
+    // var(--host-color)` su .modal-content). Segnalato dall'utente: «dato che
+    // il tutorial si vede in lobby, deve avere lo stile tipico della lobby».
+    //
+    // Si usano le VARIABILI della lobby con un ripiego accanto: dove quelle
+    // non esistono — se un giorno questo modulo servisse dentro il gioco — il
+    // riquadro resta leggibile invece di diventare invisibile.
     function iniettaStile() {
         if (document.getElementById(ID_STILE)) return;
         const st = document.createElement('style');
@@ -94,98 +112,121 @@
             #${ID_NODO} {
                 position: fixed; inset: 0; z-index: 9000;
                 display: flex; align-items: center; justify-content: center;
-                background: rgba(6, 8, 12, 0.78);
-                padding: 16px;
+                background: rgba(13, 12, 20, 0.85);
+                padding: 24px;
                 font-family: 'Fredoka', 'Segoe UI', system-ui, sans-serif;
             }
             #${ID_NODO} .tut-box {
-                width: min(680px, 100%);
-                max-height: calc(100vh - 32px);
+                width: min(620px, 100%);
+                max-height: 88vh;
                 display: flex; flex-direction: column;
-                background: #12161c;
-                border: 1px solid rgba(255,255,255,0.14);
-                border-radius: 14px;
-                box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+                background: var(--card, #fff);
+                color: var(--ink, #16141E);
+                border: 3px solid var(--ink, #16141E);
+                border-radius: 20px;
+                box-shadow: 7px 7px 0 var(--host-color, #16141E);
                 overflow: hidden;
             }
             #${ID_NODO} .tut-testa {
                 display: flex; align-items: baseline; gap: 12px;
-                padding: 16px 20px 10px;
+                padding: 20px 22px 8px;
             }
             #${ID_NODO} .tut-occhiello {
-                font-size: 10.5px; font-weight: 800; letter-spacing: 1.6px;
-                text-transform: uppercase; color: #7b8794;
+                font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
+                text-transform: uppercase; color: var(--muted, #6B6878);
             }
             #${ID_NODO} .tut-titolo {
-                font-size: 22px; font-weight: 700; color: #f2f5f8; margin: 0;
+                font-size: 24px; font-weight: 700; margin: 0;
+                color: var(--ink, #16141E);
             }
-            #${ID_NODO} .tut-conta { margin-left: auto; font-size: 12px; color: #7b8794; font-variant-numeric: tabular-nums; }
+            #${ID_NODO} .tut-conta {
+                margin-left: auto; font-size: 13px; font-weight: 600;
+                color: var(--muted, #6B6878); font-variant-numeric: tabular-nums;
+            }
             #${ID_NODO} .tut-corpo {
-                padding: 4px 20px 18px;
+                padding: 4px 22px 18px;
                 overflow-y: auto;
-                display: flex; flex-direction: column; gap: 14px;
+                display: flex; flex-direction: column; gap: 12px;
             }
-            #${ID_NODO} .tut-riga { font-size: 14.5px; line-height: 1.5; color: #d6dde4; }
-            #${ID_NODO} .tut-riga b { color: #fff; font-weight: 700; }
+            #${ID_NODO} .tut-riga { font-size: 15px; line-height: 1.5; }
+            #${ID_NODO} .tut-riga b { font-weight: 700; }
+
+            /* La fotografia di cio' che si vedra' in gioco. ⚠️ Se il file non
+               c'e' si nasconde da sola (onerror), cosi' il tutorial funziona
+               anche prima che le immagini siano state scattate. */
+            #${ID_NODO} .tut-foto {
+                width: 100%; display: block; border-radius: 12px;
+                border: 3px solid var(--ink, #16141E);
+                aspect-ratio: 16 / 9; object-fit: cover;
+                background: var(--surface, #F2F1EF);
+            }
             #${ID_NODO} .tut-figura {
                 display: flex; flex-direction: column; gap: 10px;
-                padding: 14px; border-radius: 10px;
-                background: rgba(255,255,255,0.04);
-                border: 1px solid rgba(255,255,255,0.08);
+                padding: 14px; border-radius: 12px;
+                background: var(--surface, #F2F1EF);
+                border: 3px solid var(--ink, #16141E);
             }
             #${ID_NODO} .tut-mescola { display: flex; align-items: center; gap: 12px; }
             #${ID_NODO} .tut-pallina {
-                width: 30px; height: 30px; flex-shrink: 0;
-                border-radius: 50%; border: 2.5px solid currentColor;
+                width: 32px; height: 32px; flex-shrink: 0;
+                border-radius: 50%; border: 3px solid currentColor;
                 display: flex; align-items: center; justify-content: center;
-                font-size: 13px; font-weight: 800;
+                font-size: 14px; font-weight: 700;
+                background: var(--ink, #16141E);
             }
-            #${ID_NODO} .tut-mescola span { font-size: 14px; color: #d6dde4; }
-            #${ID_NODO} .tut-mescola span b { color: #fff; }
-            /* Le colonne dei comandi: due su schermo largo, una in colonna
-               quando non ci stanno — e' l'unica parte con due colonne, quindi
-               basta questa regola. */
+            #${ID_NODO} .tut-mescola span { font-size: 14.5px; }
             #${ID_NODO} .tut-comandi {
-                display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px;
+                display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px;
             }
             #${ID_NODO} .tut-colonna h4 {
-                margin: 0 0 8px; font-size: 10.5px; font-weight: 800;
-                letter-spacing: 1.4px; text-transform: uppercase; color: #7b8794;
+                margin: 0 0 8px; font-size: 11px; font-weight: 700;
+                letter-spacing: 0.14em; text-transform: uppercase;
+                color: var(--muted, #6B6878);
             }
             #${ID_NODO} .tut-comando {
-                display: flex; align-items: center; gap: 8px;
-                padding: 3px 0; font-size: 13.5px; color: #d6dde4;
+                display: flex; align-items: center; gap: 7px;
+                padding: 3px 0; font-size: 14px;
             }
             #${ID_NODO} kbd {
                 display: inline-flex; align-items: center; justify-content: center;
-                min-width: 26px; height: 24px; padding: 0 7px;
-                border-radius: 5px; background: rgba(255,255,255,0.12);
-                border: 1px solid rgba(255,255,255,0.18);
-                font-family: inherit; font-size: 12px; font-weight: 700; color: #fff;
+                min-width: 28px; height: 26px; padding: 0 7px;
+                border-radius: 8px;
+                background: var(--surface, #F2F1EF);
+                border: 2px solid var(--ink, #16141E);
+                box-shadow: 2px 2px 0 var(--ink, #16141E);
+                font-family: inherit; font-size: 12.5px; font-weight: 700;
+                color: var(--ink, #16141E);
             }
             #${ID_NODO} .tut-piede {
                 display: flex; align-items: center; gap: 10px;
-                padding: 12px 20px; border-top: 1px solid rgba(255,255,255,0.1);
-                background: rgba(255,255,255,0.03);
+                padding: 14px 22px; border-top: 3px solid var(--ink, #16141E);
+                background: var(--surface, #F2F1EF);
             }
-            #${ID_NODO} .tut-punti { display: flex; gap: 6px; margin-right: auto; }
+            #${ID_NODO} .tut-punti { display: flex; gap: 7px; margin-right: auto; }
             #${ID_NODO} .tut-punto {
-                width: 7px; height: 7px; border-radius: 50%;
-                background: rgba(255,255,255,0.22);
+                width: 10px; height: 10px; border-radius: 50%;
+                border: 2px solid var(--ink, #16141E);
+                background: transparent;
             }
-            #${ID_NODO} .tut-punto.qui { background: #39c7f2; }
+            #${ID_NODO} .tut-punto.qui { background: var(--host-color, #16141E); }
+            /* I pulsanti sono quelli della lobby: bordo spesso e ombra piena. */
             #${ID_NODO} button {
-                font-family: inherit; font-size: 13.5px; font-weight: 600;
-                padding: 8px 16px; border-radius: 8px; cursor: pointer;
-                border: 1px solid rgba(255,255,255,0.16);
-                background: rgba(255,255,255,0.08); color: #e8edf2;
+                font-family: inherit; font-size: 14px; font-weight: 700;
+                padding: 8px 16px; border-radius: 12px; cursor: pointer;
+                border: 3px solid var(--ink, #16141E);
+                background: var(--card, #fff); color: var(--ink, #16141E);
+                box-shadow: 3px 3px 0 var(--ink, #16141E);
             }
-            #${ID_NODO} button:hover { background: rgba(255,255,255,0.15); }
-            #${ID_NODO} button[disabled] { opacity: 0.35; cursor: default; }
-            #${ID_NODO} button.tut-avanti { background: #1d7fd6; border-color: #2a95f0; color: #fff; }
-            #${ID_NODO} button.tut-avanti:hover { background: #2a95f0; }
-            #${ID_NODO} button.tut-salta { background: transparent; border-color: transparent; color: #7b8794; }
-            #${ID_NODO} button.tut-salta:hover { color: #d6dde4; background: rgba(255,255,255,0.06); }
+            #${ID_NODO} button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink, #16141E); }
+            #${ID_NODO} button[disabled] { opacity: 0.35; cursor: default; box-shadow: none; }
+            #${ID_NODO} button.tut-avanti {
+                background: var(--host-color, #16141E); color: #fff;
+            }
+            #${ID_NODO} button.tut-salta {
+                border-color: transparent; box-shadow: none;
+                background: transparent; color: var(--muted, #6B6878);
+            }
+            #${ID_NODO} button.tut-salta:hover { color: var(--ink, #16141E); }
         `;
         document.head.appendChild(st);
     }
@@ -339,6 +380,8 @@
             el.titolo.textContent = p.titolo;
             el.conta.textContent = `${i + 1} / ${PASSI.length}`;
             el.corpo.innerHTML =
+                (p.foto ? `<img class="tut-foto" alt="" src="${CARTELLA_FOTO}${p.foto}"
+                            onerror="this.style.display='none'">` : '') +
                 (p.figura ? p.figura() : '') +
                 p.corpo.map(t => `<div class="tut-riga">${t}</div>`).join('');
             el.corpo.scrollTop = 0;
