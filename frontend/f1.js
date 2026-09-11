@@ -6838,7 +6838,29 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const RATE_RAMP = 0.15;
                     let targetRate, targetVolume, frac;
 
-                    if (target.pitLimiter) {
+                    // IL MOTORE CHE CARICA ALLA PARTENZA (richiesta
+                    // dell'utente): con la frizione giu' il regime sale e
+                    // resta li', come un'auto tenuta su di giri in griglia.
+                    // Poi si molla e il suono torna quello di sempre.
+                    //
+                    // ⚠️ Vale anche DURANTE i semafori, che e' il momento in
+                    // cui serve davvero: li' il cancello della partenza e'
+                    // ancora aperto lato server (si chiude allo spegnimento),
+                    // quindi non basta guardare partenzaSbloccata.
+                    //
+                    // Solo la propria auto: lo stato della frizione altrui non
+                    // viaggia, e i bot una frizione non ce l'hanno proprio.
+                    if (color === myColor && frizioneGiu
+                        && (lightsSequenceActive || target.partenzaSbloccata === false)) {
+                        // Un filo di oscillazione, se no sono sette secondi di
+                        // nota fissa: un motore tenuto su di giri respira.
+                        // La salita non si scrive qui — la fa da sola la rampa
+                        // di setTargetAtTime qui sotto, che e' anche cio' che
+                        // riporta giu' il suono al rilascio.
+                        targetRate = 1.45 + 0.04 * Math.sin(performance.now() / 70);
+                        targetVolume = 0.28;
+                        frac = 0.8;
+                    } else if (target.pitLimiter) {
                         targetRate = 0.9;
                         targetVolume = 0.15;
                         frac = 0.25;   // regime fisso e basso, coerente col limitatore
