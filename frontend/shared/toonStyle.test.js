@@ -219,7 +219,7 @@ function finestraFinta() {
     return { tratti, canvas };
 }
 
-test('l\'atlante ha un pannello per sponsor, con fondo, banda e nome', () => {
+test('l\'atlante ha un pannello per sponsor: tinta piena e nome contrastante', () => {
     const { tratti, canvas } = finestraFinta();
     const tex = ToonStyle.sponsorTexture(SponsorAtlas.PANNELLI);
     const largo = canvas.width / SponsorAtlas.PANNELLI.length;
@@ -257,25 +257,47 @@ test('l\'atlante ha un pannello per sponsor, con fondo, banda e nome', () => {
             `${t.testo} occupa da ${(t.x - t.largo / 2).toFixed(0)} a ${(t.x + t.largo / 2).toFixed(0)}, fuori dal pannello ${k}`);
     });
 
-    // Due rettangoli per pannello: il fondo pieno e la banda chiara in mezzo.
+    // ⚠️ IL PANNELLO E' A TINTA PIENA. Fino al 2026-09-11 erano due rettangoli
+    // — fondo pieno piu' una banda chiara a meta' altezza, col nome sopra la
+    // banda — e l'utente l'ha bocciato: «non mi fa impazzire che tutti hanno
+    // questo pattern con il bianco al centro ed i colori al lato, preferirei
+    // qualcosa di pieno con scritte di colore diverso, come i cartelloni della
+    // Pirelli che sono tutti gialli con scritta rossa».
     const rett = tratti.filter(t => t.tipo === 'rect');
-    assert.equal(rett.length, SponsorAtlas.PANNELLI.length * 2);
+    assert.equal(rett.length, SponsorAtlas.PANNELLI.length,
+        'un rettangolo per pannello, non due: la banda chiara non deve tornare');
     const hex = (v) => '#' + (v >>> 0).toString(16).padStart(6, '0');
+
+    // ⚠️ E QUI NON SI CONTANO I RETTANGOLI, SI CHIEDE DI CHE TINTA E' UN PUNTO.
+    // Contare non e' guardare: un test che conta resta verde anche se la banda
+    // rientra sotto un altro nome, o se il fondo viene ridisegnato sopra la
+    // scritta. Questa funzione ripercorre i rettangoli in ordine, come farebbe
+    // il canvas vero, e risponde per un punto preciso.
+    const coloreIn = (x, y) => {
+        let c = null;
+        for (const r of rett) {
+            if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) c = r.colore;
+        }
+        return c;
+    };
+
     SponsorAtlas.PANNELLI.forEach((p, k) => {
-        const fondo = rett[k * 2], banda = rett[k * 2 + 1];
-        assert.equal(fondo.colore, hex(p.fondo), `pannello ${k}: fondo`);
-        assert.equal(banda.colore, hex(p.banda), `pannello ${k}: banda`);
-        assert.equal(fondo.h, canvas.height, 'il fondo copre tutta l\'altezza');
-        assert.ok(banda.y > 0 && banda.y + banda.h < canvas.height,
-            'la banda sta in mezzo, non a filo dei bordi');
-        // Il nome e' scritto nel colore del FONDO, sopra la banda chiara: e'
-        // il contrasto che si legge passandoci a 250 all'ora. E ci sta dentro
-        // in altezza, altrimenti le lettere sborderebbero sul colore pieno.
+        const x = k * largo + largo / 2;
+        // Sopra, in mezzo e sotto: tutto il pannello e' del suo fondo. E' la
+        // domanda a cui la banda chiara non saprebbe rispondere.
+        for (const frazione of [0.05, 0.5, 0.95]) {
+            assert.equal(coloreIn(x, canvas.height * frazione), hex(p.fondo),
+                `${p.nome}: al ${frazione * 100}% dell'altezza non c'e' il fondo`);
+        }
+        // Il nome e' scritto nel colore di contrasto: nel colore del fondo
+        // sarebbe invisibile, ed e' l'unico modo di sbagliare che resta.
         const testo = scritte[k * 2];
-        assert.equal(testo.colore, hex(p.fondo));
-        assert.ok(testo.y > banda.y && testo.y < banda.y + banda.h,
-            'il nome dev\'essere dentro la banda');
-        assert.ok(testo.alto < banda.h, `il nome e' alto ${testo.alto} e la banda ${banda.h}`);
+        assert.equal(testo.colore, hex(p.testo), `${p.nome}: colore della scritta`);
+        assert.notEqual(testo.colore, hex(p.fondo), `${p.nome}: scritta invisibile sul fondo`);
+        // E ci sta dentro in altezza, altrimenti le lettere toccherebbero i
+        // bordi del nastro e arriverebbero in pista tagliate.
+        assert.ok(testo.alto < canvas.height * 0.8,
+            `${p.nome}: il nome e' alto ${testo.alto} su un nastro di ${canvas.height}`);
     });
 
     // ⚠️ Niente mipmap e niente ripetizione su S: le UV del nastro non escono

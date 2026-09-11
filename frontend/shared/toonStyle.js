@@ -146,19 +146,28 @@
         const hex = (v) => '#' + (v >>> 0).toString(16).padStart(6, '0');
         pannelli.forEach(function (p, k) {
             const x0 = k * LARGO;
+            // ⚠️ TINTA PIENA SU TUTTA L'ALTEZZA, e il nome nel colore di
+            // contrasto. Fino al 2026-09-11 c'era anche una banda chiara a
+            // meta' altezza col nome sopra, e l'utente l'ha bocciata: «non mi
+            // fa impazzire che tutti hanno questo pattern con il bianco al
+            // centro ed i colori al lato, preferirei qualcosa di pieno con
+            // scritte di colore diverso, come i cartelloni della Pirelli che
+            // sono tutti gialli con scritta rossa».
+            //
+            // La banda serviva a garantire il contrasto della scritta; adesso
+            // lo garantisce la coppia fondo/testo scelta per ogni sponsor in
+            // sponsorAtlas, dove un test pretende almeno 3.5 di rapporto.
             ctx.fillStyle = hex(p.fondo);
             ctx.fillRect(x0, 0, LARGO, ALTO);
-            // La banda chiara: una fascia orizzontale al centro, su cui sta il
-            // nome. E' quanto si legge davvero passandoci a 250 km/h.
-            ctx.fillStyle = hex(p.banda);
-            ctx.fillRect(x0, ALTO * 0.28, LARGO, ALTO * 0.44);
-            ctx.fillStyle = hex(p.fondo);
+            ctx.fillStyle = hex(p.testo);
             // ⚠️ IL NOME DUE VOLTE, e allargato. Un cartellone lungo 12 unita'
             // con una parola sola in mezzo sarebbe per due terzi colore piatto,
             // e da dentro l'abitacolo si legge quello che si ha davanti in quel
             // momento — non il centro del pannello. Due copie a un quarto e a
-            // tre quarti fanno si' che ce ne sia sempre una in vista. Il
-            // fattore di allargamento e' limitato a 2.2 perche' oltre le
+            // tre quarti fanno si' che ce ne sia sempre una in vista. Conta
+            // doppio da quando i cartelloni vanno a run: dentro un run il fondo
+            // e' continuo, e sono le scritte a dare il ritmo dell'insegna.
+            // Il fattore di allargamento e' limitato a 2.2 perche' oltre le
             // lettere si sfilacciano.
             const misura = ctx.measureText(p.nome);
             const largoTesto = (misura && misura.width) || LARGO / 4;
