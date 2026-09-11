@@ -118,7 +118,14 @@
             }
             #${ID_NODO} .tut-box {
                 width: min(620px, 100%);
-                max-height: 88vh;
+                /* ⚠️ ALTEZZA FISSA, non «al massimo». Con max-height il riquadro si
+                   ridimensionava a ogni passo, seguendo il testo di quella
+                   schermata: da fuori sembrava che saltasse. Segnalato
+                   dall'utente. Fissandola, cambia solo il contenuto — che e'
+                   quel che deve cambiare — e quando le fotografie arriveranno
+                   il riquadro non ricomincera' a ballare. Quel che eccede
+                   scorre dentro il corpo. */
+                height: min(620px, 88vh);
                 display: flex; flex-direction: column;
                 background: var(--card, #fff);
                 color: var(--ink, #16141E);
@@ -145,6 +152,12 @@
             }
             #${ID_NODO} .tut-corpo {
                 padding: 4px 22px 18px;
+                /* Prende tutto lo spazio che avanza, cosi' il piede resta
+                   INCOLLATO IN FONDO invece di seguire il testo. Senza,
+                   l'altezza fissa toglie il salto del riquadro ma lascia
+                   ballare i pulsanti, che e' lo stesso difetto piu' in
+                   piccolo. */
+                flex: 1 1 auto;
                 overflow-y: auto;
                 display: flex; flex-direction: column; gap: 12px;
             }

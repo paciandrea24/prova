@@ -551,18 +551,23 @@ body::before {
 /* «How to play»: piccolo e defilato sopra le due modalita'. Non e' una terza
    scelta al pari di Quick Race e Season — se avesse lo stesso peso visivo
    sembrerebbe una modalita' di gioco. */
+/* ⚠️ La stessa grammatica di tutto il resto: fondo chiaro, bordo spesso,
+   ombra piena. La prima stesura era un bottone piatto e trasparente preso da
+   un'altra idea di interfaccia — «non e' a tema e neanche si vede», ed era
+   vero: su carta chiara, testo grigio senza bordo pieno non lo trova nessuno. */
 .f1-how-to-play {
     align-self: flex-start;
-    margin: 0 0 12px;
-    padding: 6px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border, rgba(255,255,255,0.16));
-    background: transparent;
-    color: var(--muted, #8b95a1);
-    font: 600 13px inherit;
+    margin: 0 0 14px;
+    padding: 8px 14px;
+    border-radius: 12px;
+    border: 3px solid var(--ink);
+    background: var(--card);
+    color: var(--ink);
+    box-shadow: 3px 3px 0 var(--host-color);
+    font-family: inherit; font-size: 14px; font-weight: 700;
     cursor: pointer;
 }
-.f1-how-to-play:hover { color: var(--text, #e8edf2); background: rgba(255,255,255,0.06); }
+.f1-how-to-play:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--host-color); }
 
 .f1-mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .f1-mode-card {
