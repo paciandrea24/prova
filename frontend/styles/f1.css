@@ -575,6 +575,47 @@ canvas.tyre-preview-canvas {
     font-variant-numeric: tabular-nums;
 }
 
+/* LA COLONNA DEGLI INDICATORI — blocco I, richiesta dell'utente: gli avvisi
+   non devono stare «dentro la casellina del giocatore ma subito alla fine,
+   fuori dalla classifica ma allineati al giocatore».
+
+   ⚠️ E' un elemento a se', non un pezzo di #standings-panel: quel pannello
+   ha overflow:hidden e taglierebbe qualunque cosa sporga dal suo bordo. Il
+   prezzo e' che l'allineamento va tenuto a mano — `top` lo scrive f1.js
+   misurando dove comincia davvero la prima riga, e ogni riga qui dentro e'
+   alta esattamente quanto la sua gemella. */
+#standings-badges {
+    position: fixed;
+    left: 220px;          /* 12 del pannello + 200 di larghezza + 8 di respiro */
+    z-index: 6;
+    pointer-events: none; /* non deve mai rubare un clic: e' un'etichetta */
+    display: flex;
+    flex-direction: column;
+}
+.f1-indicator-row {
+    display: flex; align-items: center; gap: 4px;
+    /* L'altezza la scrive f1.js copiandola dalla riga gemella: scritta qui a
+       mano si scollerebbe al primo ritocco del font della classifica. */
+}
+.f1-indicator-row .ind {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 15px; min-width: 15px;
+    padding: 0 3px;
+    border-radius: 3px;
+    font-family: 'Fredoka', sans-serif;
+    font-size: 10px; font-weight: 900; line-height: 1;
+    color: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.45);
+}
+/* Penalita' da scontare: UNA sola, comunque siano state prese (falsa partenza,
+   collisione o entrambe) — richiesta dell'utente del 2026-09-11. Si spegne
+   quando il debito e' pagato ai box. */
+.f1-indicator-row .ind-pen { background: #c0392b; }
+/* Ai box: dall'ingresso in corsia fino al rientro in pista. */
+.f1-indicator-row .ind-pit { background: #2c7fb8; }
+/* Giro veloce della gara: cronometro su fucsia, come nella F1 vera. */
+.f1-indicator-row .ind-fast { background: #b8138a; font-size: 11px; }
+
 /* ---- top-right: tempo + velocità ---- */
 #timer-speed-panel {
     top: 14px; right: 12px;
@@ -959,23 +1000,9 @@ canvas.tyre-preview-canvas {
     padding: 10px 14px;
 }
 
-/* Badge falsa partenza: box rosso pieno con "!" accanto al pallino colore
-   del pilota in classifica — visibile a tutti in tempo reale, resta per
-   tutta la gara anche dopo che la penalità è stata scontata ai box. */
-.false-start-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 14px;
-    height: 14px;
-    border-radius: 3px;
-    background: #c0392b;
-    color: #fff;
-    font-size: 10px;
-    font-weight: 900;
-    line-height: 1;
-    flex-shrink: 0;
-}
+/* I badge "!" della classifica NON stanno più qui: dal 2026-09-11 vivono
+   nella colonna #standings-badges, fuori dal riquadro e allineati al pilota,
+   e sono UNO solo per tutte le penalità. Vedi .f1-indicator-row .ind-pen. */
 
 /* Badge mescola: cerchio VUOTO (bordo + lettera nel colore della mescola
    corrente, sfondo trasparente), sempre visibile in classifica, aggiornato
@@ -998,14 +1025,6 @@ canvas.tyre-preview-canvas {
     flex-shrink: 0;
 }
 
-/* Badge penalità collisione: eredita l'aspetto di .false-start-badge, ma la
-   larghezza è animata via anime.js (f1CollisionPenalty) per fare spazio al
-   testo "+X.Xs" durante l'espansione, non fissa come l'originale. */
-.collision-badge {
-    width: auto;
-    min-width: 14px;
-    padding: 0 2px;
-}
 
 /* Badge "CPU": box neutro accanto al pallino colore per i piloti bot, per
    distinguerli a colpo d'occhio dai giocatori umani in classifica. */

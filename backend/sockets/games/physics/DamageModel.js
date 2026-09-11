@@ -139,9 +139,16 @@ function collisionDamageAmount(severity) {
     return Math.min(DAMAGE_CAP_PER_HIT, Math.abs(severity) * DAMAGE_PER_SEVERITY);
 }
 
+// ⚠️ DUE CONTATORI, E NON E' UN DOPPIONE. Dal 2026-09-11 la penalita' si
+// SCONTA ai box come nella F1 vera, quindi `collisionPenaltyMs` e' un DEBITO:
+// lo si paga alla sosta e torna a zero, ed e' quello che accende il "!" in
+// classifica. `collisionPenaltyTotalMs` e' la MEMORIA della gara, non si
+// azzera mai, e serve al riepilogo di fine gara — con un contatore solo, il
+// pannello finale direbbe «nessuna penalita'» a chi l'ha presa e pagata.
 function applyCollisionPenalty(culprit, severity) {
     const ms = Math.round(Math.min(COLLISION_PENALTY_CAP_MS, Math.abs(severity) * COLLISION_PENALTY_PER_SEVERITY));
     culprit.collisionPenaltyMs += ms;
+    culprit.collisionPenaltyTotalMs = (culprit.collisionPenaltyTotalMs || 0) + ms;
     culprit.pendingCollisionPenaltyEvents.push(ms);
 }
 

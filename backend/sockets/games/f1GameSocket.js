@@ -654,7 +654,9 @@ module.exports = function (io, socket) {
                 // weekend. Assente in gara veloce = macchina nuova. Copiata,
                 // mai condivisa per riferimento (vedi createDamageParts).
                 usuraIniziale: Stagione.usuraEreditata(game, playerColor),
-                collisionPenaltyMs: 0,       // penalità di tempo accumulata per collisioni causate, sommata a p.time al traguardo
+                collisionPenaltyMs: 0,       // DEBITO di penalità da scontare: si paga ai box e torna a zero
+                collisionPenaltyTotalMs: 0,  // quanta se n'è presa in tutta la gara: non si azzera, serve al riepilogo
+                bestLapMs: null,             // miglior giro personale in gara (vedi checkLap)
                 pendingRepair: false,   // scelta fatta ai box, applicata a fine sosta come pendingCompound
                 carContacts: new Set(),   // colori con cui è ATTUALMENTE a contatto (rileva un urto NUOVO)
                 wallContact: false,   // true se attualmente appoggiato a un muro ponte
@@ -1276,6 +1278,8 @@ function resetStatoAuto(p) {
     p.botScostamentoDifesa = 0;
     p.botUltimoCambioDifesa = 0;
     p.collisionPenaltyMs = 0;
+    p.collisionPenaltyTotalMs = 0;
+    p.bestLapMs = null;
     p.pendingRepair = false;
     if (p.carContacts) p.carContacts.clear();
     p.wallContact = false;
@@ -1302,6 +1306,7 @@ function resetStatoAuto(p) {
 // ed è esattamente ciò che quella dissolvenza esiste per coprire.
 function schieraPerLaQualifica(game) {
     game.bestSectorTimes = [Infinity, Infinity, Infinity];
+    game.fastestLap = null;
     // Box visibili anche in qualifica, per coerenza visiva (Rif. richiesta
     // utente 2026-08-07: "i box in qualifica non funzionano" — p.pitBoxAnchor
     // non veniva mai assegnato prima della fine qualifica/assignGridSpawns,
@@ -1497,6 +1502,7 @@ function assignGridSpawns(game) {
     );
     addLaneIndices(game.track, boxAnchors);
     game.bestSectorTimes = [Infinity, Infinity, Infinity];
+    game.fastestLap = null;
     order.forEach((color, i) => {
         const p = game.players[color];
         if (!p) return;
@@ -1819,6 +1825,18 @@ function startPitStop(io, lobbyId, game, p) {
     if (p.falseStart && !p.falseStartServed) {
         durationMs += FALSE_START_PENALTY_MS;
         p.falseStartServed = true;
+    }
+
+    // E da qui anche le penalità da collisione (scelta dell'utente del
+    // 2026-09-11): prima si sommavano solo al tempo finale, quindi in gara non
+    // si «pagavano» mai e l'avviso in classifica non poteva spegnersi.
+    // `collisionPenaltyMs` è il debito e va a zero; il totale della gara resta
+    // in `collisionPenaltyTotalMs` per il riepilogo finale.
+    // ⚠️ Chi si becca una penalità DOPO l'ultima sosta non la scampa: la rete
+    // di sicurezza in applicaPenalitaFineGara somma quel che resta del debito.
+    if (p.collisionPenaltyMs > 0) {
+        durationMs += p.collisionPenaltyMs;
+        p.collisionPenaltyMs = 0;
     }
 
     // Riparazione danni: tempo extra proporzionale al danno — e in stagione
@@ -2729,6 +2747,25 @@ function checkLap(p, totalLaps, io, lobbyId, game) {
             }
         }
 
+        // IL GIRO VELOCE DELLA GARA (blocco I). Questo è l'unico punto in cui
+        // esistono insieme l'istante esatto di attraversamento e l'inizio del
+        // giro, quindi è qui che si misura — e va PRIMA della chiusura
+        // settori, che sposta p.lapStartMs sul giro nuovo.
+        //
+        // Solo in gara: in qualifica si corre un giro secco e il tempo è già
+        // il risultato, un «giro veloce» lì sarebbe l'unico giro di tutti.
+        // Il primo giro parte dallo spegnimento dei semafori e conta come gli
+        // altri, come nella F1 vera.
+        if (game.phase === 'race' && p.lapStartMs != null) {
+            const lapMs = crossingElapsedMs - p.lapStartMs;
+            if (lapMs > 0) {
+                if (p.bestLapMs == null || lapMs < p.bestLapMs) p.bestLapMs = lapMs;
+                if (!game.fastestLap || lapMs < game.fastestLap.ms) {
+                    game.fastestLap = { color: p.color, ms: lapMs };
+                }
+            }
+        }
+
         // Chiusura settori (solo in gara, mai in qualifica): il settore 3 è
         // tutto ciò che resta del giro dopo i primi due; la curva
         // posizione→tempo appena chiusa diventa il riferimento per il
@@ -2833,7 +2870,9 @@ async function endRace(io, lobbyId, game) {
         // tempo cronometrato.
         stimato: p.time === null,
         pitPenalty: !!p.pitPenalty, falseStart: !!p.falseStart,
-        collisionPenaltyMs: p.collisionPenaltyMs || 0,
+        // Il TOTALE della gara, non il debito residuo: quello è già stato
+        // pagato ai box e dal riepilogo sparirebbe.
+        collisionPenaltyMs: p.collisionPenaltyTotalMs || 0,
         // Servono alla premiazione: i primi tre vengono costruiti col loro
         // modello vero e la livrea personalizzata, chiesta per uid come nel
         // riepilogo della griglia.
@@ -3026,6 +3065,14 @@ function buildPublicState(players, raceStarted, track, game) {
             falseStart: !!p.falseStart,
             falseStartServed: !!p.falseStartServed,
             gapToLeaderMs: (p.gapToLeaderMs != null) ? p.gapToLeaderMs : null,
+            // Ai box, in ogni senso: manovra d'ingresso, fermo nello stallo e
+            // uscita. `pitLimiter` qui sopra copre solo l'autopilota e non la
+            // sosta, quindi non basta per l'indicatore P in classifica.
+            inPit: !!(p.pitting || p.pitAutoState),
+            // Chi detiene il giro veloce della gara (vedi checkLap): un
+            // booleano per pilota invece del colore, così il client non deve
+            // sapere niente dell'altrui stato per disegnare il proprio badge.
+            fastestLap: !!(game && game.fastestLap && game.fastestLap.color === color),
             // Settori/delta (Rif. docs/superpowers/specs/2026-08-07-f1-sector-timing-design.md):
             // solo in gara, mai in qualifica — vedi updateSectorTiming/checkLap.
             // Infinity (nessun record ancora) convertito esplicitamente in
@@ -3076,6 +3123,7 @@ function buildPublicState(players, raceStarted, track, game) {
 function resetPlayers(game) {
     let i = 0;
     game.bestSectorTimes = [Infinity, Infinity, Infinity];
+    game.fastestLap = null;
     for (const p of Object.values(game.players)) {
         const spawn = game.track.gridSpawnPoint(i);
         p.x = spawn.x; p.z = spawn.z; p.angle = spawn.angle;

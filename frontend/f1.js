@@ -3295,6 +3295,55 @@ document.addEventListener('DOMContentLoaded', async () => {
     let lastStandingsOrder = [];   // colori nell'ordine dell'ultimo render, per rilevare i sorpassi
     const standingRowEls = {};     // color -> riga DOM persistente (mai ricreata finché il pilota resta in gara)
 
+    // ── LA COLONNA DEGLI INDICATORI (blocco I) ──────────────────────────
+    // Gli avvisi stanno FUORI dal riquadro della classifica ma allineati al
+    // loro pilota, come nelle grafiche TV: richiesta esplicita dell'utente
+    // («non dentro la casellina del giocatore ma subito alla fine»).
+    //
+    // ⚠️ Sono righe GEMELLE, una per riga di classifica, create, riordinate e
+    // animate nella STESSA istruzione della loro compagna. Tenerle in due
+    // cicli separati vorrebbe dire due sorgenti di verità per lo stesso
+    // ordine: basta un sorpasso servito a metà e i badge si trovano di fianco
+    // al pilota sbagliato — che è peggio di non averli.
+    const standingRailEls = {};    // color -> riga DOM della colonna, gemella di standingRowEls[color]
+
+    // ⚠️ Disegnato, non l'emoji U+23F1: un'emoji la disegna il sistema con
+    // i SUOI colori, quindi su Windows arriverebbe un cronometro colorato
+    // dentro il riquadro fucsia invece di un segno bianco. Un SVG eredita
+    // currentColor e resta coerente su ogni macchina.
+    const CRONOMETRO_SVG =
+        '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor"' +
+        ' stroke-width="2.4" stroke-linecap="round" aria-hidden="true">' +
+        '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5"/><path d="M9.5 2h5"/></svg>';
+
+    function renderIndicatoriRow(railEl, d) {
+        // UN SOLO "!" per tutte le penalità: l'utente non vuole vederne due a
+        // chi ha sia la falsa partenza sia un contatto. Si spegne quando il
+        // debito è stato scontato ai box — la falsa partenza alla prima sosta
+        // (falseStartServed), i secondi da collisione alla prima sosta utile
+        // (il server azzera collisionPenalty, vedi startPitStop).
+        const penalita = (d.falseStart && !d.falseStartServed) || d.collisionPenalty;
+        railEl.innerHTML =
+            (penalita ? '<span class="ind ind-pen" title="Penalità da scontare ai box">!</span>' : '') +
+            (d.inPit ? '<span class="ind ind-pit" title="Ai box">P</span>' : '') +
+            (d.fastestLap ? `<span class="ind ind-fast" title="Giro veloce della gara">${CRONOMETRO_SVG}</span>` : '');
+    }
+
+    // La colonna è un elemento a sé (il pannello classifica ha overflow:hidden
+    // e taglierebbe tutto ciò che sporge), quindi il suo allineamento verticale
+    // va scritto a mano. Si misura DOVE COMINCIA DAVVERO la prima riga invece
+    // di sommare a mano l'altezza del chip dei giri: quella cambia col font e
+    // si scollerebbe in silenzio.
+    function allineaColonnaIndicatori() {
+        const rail = document.getElementById('standings-badges');
+        const rowsEl = document.getElementById('standings-rows');
+        if (!rail || !rowsEl) return;
+        const r = rowsEl.getBoundingClientRect();
+        if (r.height === 0 && r.top === 0) return;   // pannello ancora nascosto: niente da misurare
+        rail.style.top = `${r.top}px`;
+    }
+    window.addEventListener('resize', allineaColonnaIndicatori);
+
     const STANDING_ROW_HEIGHT = 24;   // deve corrispondere all'altezza reale di .f1-standing-row (padding incluso)
     const STANDING_LIFT_PX = 16;   // quanto la riga di chi sorpassa si "alza" oltre lo slot di arrivo, a metà animazione
 
@@ -3306,7 +3355,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             <span class="dot" style="background:${color};"></span>
             ${color === myColor ? 'TU' : ''}${d.isBot ? '<span class="bot-badge">CPU</span>' : ''}
             ${compoundLetter ? `<span class="compound-badge" style="color:${compoundColor};">${compoundLetter}</span>` : ''}
-            ${(d.falseStart && !d.falseStartServed) ? '<span class="false-start-badge">!</span>' : ''}${d.collisionPenalty ? '<span class="false-start-badge collision-badge">!</span>' : ''}
             <span class="gap">${d.position === 1 ? 'Leader' : formatGap(d.gapToLeaderMs)}</span>
         `;
     }
@@ -3353,6 +3401,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function updateStandings(state) {
         const box = document.getElementById('standings-panel');
         const rowsEl = document.getElementById('standings-rows');
+        const railEl = document.getElementById('standings-badges');
 
         const tutti = (currentPhase !== 'race') ? [] : Object.entries(state)
             .filter(([, d]) => d.position)
@@ -3362,12 +3411,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (entries.length === 0) {
             rowsEl.innerHTML = '';
             box.style.display = 'none';
+            railEl.innerHTML = '';
+            railEl.style.display = 'none';
             lastStandingsOrder = [];
             for (const color in standingRowEls) delete standingRowEls[color];
+            for (const color in standingRailEls) delete standingRailEls[color];
             return;
         }
 
+        const eraNascosto = box.style.display === 'none';
         box.style.display = 'flex';
+        railEl.style.display = 'flex';
         const newOrder = entries.map(([color]) => color);
 
         // posizione di ogni pilota nell'ordine PRIMA di questo aggiornamento —
@@ -3375,11 +3429,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         const prevIndex = {};
         lastStandingsOrder.forEach((color, i) => { prevIndex[color] = i; });
 
-        // righe di chi non è più in classifica (disconnesso) — via
+        // righe di chi non è più in classifica (disconnesso) — via, insieme
+        // alla loro gemella nella colonna degli indicatori
         for (const color in standingRowEls) {
             if (!newOrder.includes(color)) {
                 standingRowEls[color].remove();
                 delete standingRowEls[color];
+                if (standingRailEls[color]) {
+                    standingRailEls[color].remove();
+                    delete standingRailEls[color];
+                }
             }
         }
 
@@ -3396,19 +3455,48 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             rowEl.classList.toggle('me', color === myColor);
             renderStandingRowContent(rowEl, color, d);
+
+            let ind = standingRailEls[color];
+            if (!ind) {
+                ind = document.createElement('div');
+                ind.className = 'f1-indicator-row';
+                ind.dataset.color = color;
+                standingRailEls[color] = ind;
+                railEl.appendChild(ind);
+                // ⚠️ L'altezza si COPIA dalla gemella, non si scrive nel CSS:
+                // scritta a mano si scollerebbe al primo ritocco del font
+                // della classifica, e i badge scivolerebbero via di una riga
+                // dopo l'altra. offsetHeight qui è già valido — il pannello è
+                // stato messo a display:flex qualche riga sopra.
+                ind.style.height = `${rowEl.offsetHeight || STANDING_ROW_HEIGHT}px`;
+            }
+            renderIndicatoriRow(ind, d);
         }
+
+        // Il pannello è appena ricomparso: la prima riga può essere finita a
+        // un'altra quota (finestra ridimensionata mentre era nascosto).
+        if (eraNascosto) allineaColonnaIndicatori();
 
         // riordina il DOM secondo la classifica attuale — solo se l'ordine è
         // davvero cambiato, per non forzare un reflow ad ogni tick.
         const orderChanged = newOrder.some((color, i) => lastStandingsOrder[i] !== color);
         if (orderChanged) {
-            newOrder.forEach(color => rowsEl.appendChild(standingRowEls[color]));
+            newOrder.forEach(color => {
+                rowsEl.appendChild(standingRowEls[color]);
+                railEl.appendChild(standingRailEls[color]);
+            });
 
             newOrder.forEach((color, newIdx) => {
                 const oldIdx = prevIndex[color];
                 if (oldIdx === undefined || oldIdx === newIdx) return;   // riga nuova o posizione invariata: nessuna animazione
 
                 const rowEl = standingRowEls[color];
+                // ⚠️ La gemella si anima nella STESSA chiamata, non in una
+                // seconda: due tween separate sullo stesso movimento divergono
+                // al primo frame perso, e il badge si stacca dal suo pilota
+                // proprio durante il sorpasso — l'unico momento in cui lo si
+                // sta guardando.
+                const coppia = [rowEl, standingRailEls[color]].filter(Boolean);
                 const deltaPx = (oldIdx - newIdx) * STANDING_ROW_HEIGHT;
 
                 // Sorpassi ravvicinati possono far scattare due animazioni sulla
@@ -3418,7 +3506,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // (l'unico ramo che lo anima è quello sotto, l'altro anima solo
                 // translateY) — badge/lettera restano leggermente deformati e
                 // fuori centro finché non arriva un altro sorpasso a "sbloccarli".
-                anime.remove(rowEl);
+                anime.remove(coppia);
 
                 if (newIdx < oldIdx) {
                     // Ha sorpassato: la riga viene "estratta" dalla classifica
@@ -3426,10 +3514,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // dal cartellone) e poi riposizionata nel posto giusto —
                     // richiesta esplicita dell'utente, ispirata ai vecchi
                     // cartelloni a fasce non digitali.
-                    rowEl.style.transform = `translateY(${deltaPx}px)`;
-                    rowEl.classList.add('is-lifting');
+                    coppia.forEach(el => { el.style.transform = `translateY(${deltaPx}px)`; });
+                    rowEl.classList.add('is-lifting');   // sfondo e ombra solo sulla riga vera
                     anime({
-                        targets: rowEl,
+                        targets: coppia,
                         keyframes: [
                             { translateY: -STANDING_LIFT_PX, scale: 1.08, duration: 180, easing: 'easeOutQuad' },
                             { translateY: 0, scale: 1, duration: 300, easing: 'easeInOutQuad' },
@@ -3442,7 +3530,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // per riportare a riposo eventuale scale lasciato a metà da
                     // un'animazione di sorpasso interrotta (vedi anime.remove sopra).
                     anime({
-                        targets: rowEl,
+                        targets: coppia,
                         translateY: [deltaPx, 0],
                         scale: 1,
                         duration: 420,
@@ -3650,17 +3738,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     socket.on('f1CollisionPenalty', ({ color, penaltyMs }) => {
         const rowEl = standingRowEls[color];
         if (!rowEl) return;
-        const el = rowEl.querySelector('.collision-badge');
+        const el = (standingRailEls[color] || rowEl).querySelector('.ind-pen');
         if (!el) return;
         const secs = (penaltyMs / 1000).toFixed(1);
         anime.timeline({ easing: 'easeOutQuad' })
             .add({
-                targets: el, scale: [1, 1.3], width: [14, 46], duration: 200,
+                targets: el, scale: [1, 1.3], width: [15, 48], duration: 200,
                 complete: () => { el.textContent = `+${secs}s`; }
             })
             .add({ targets: el, duration: 1200 })
             .add({
-                targets: el, scale: 1, width: 14, duration: 200,
+                targets: el, scale: 1, width: 15, duration: 200,
                 complete: () => { el.textContent = '!'; }
             });
     });
