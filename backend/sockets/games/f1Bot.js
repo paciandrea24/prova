@@ -675,6 +675,11 @@ const BOT_PIT_APPROACH_M = 300;
 // prima di considerare questo task chiuso — non un valore derivato
 // matematicamente, una misura empirica come BOT_ADAPTIVE_LOOKAHEAD_K.
 const PIT_CONVERGENCE_LEAD_FACTOR = 5;
+// Quanta parte della finestra di avvicinamento puo' prendersi l'anticipo di
+// convergenza. Oltre questa frazione la miscela fra linea di gara e raccordo
+// non ha piu' strada per lavorare e degenera in un punto fisso mirato in linea
+// retta — vedi il commento nel punto in cui si usa.
+const PIT_CONVERGENCE_MAX_FRACTION = 0.5;
 // Sotto questa distanza (metri) da pitPath[0] si passa dal bersaglio
 // sfumato all'inseguimento diretto di pitPath[1] (dentro il vero riquadro-
 // trigger, verificato) — evita di "arrivare" su pitPath[0] e poi tornare
@@ -1535,7 +1540,26 @@ function updateBotInputs(game, deps) {
                 // Quanto è largo lo scostamento fra linea di gara e raccordo:
                 // più è largo, più anticipo serve per traversare in tempo.
                 const splitGapM = Math.hypot(mainAtEntry.x - raccordo.x, mainAtEntry.z - raccordo.z);
-                const convergenceLeadSamples = metersToSamples(Math.max(BOT_PIT_LANE_FOLLOW_M, splitGapM * PIT_CONVERGENCE_LEAD_FACTOR), track);
+                // ⚠️ L'ANTICIPO NON PUO' MANGIARSI TUTTA LA FINESTRA. Quanto
+                // prima cominciare a traversare lo detta lo scostamento fra
+                // linea di gara e raccordo — ma se il risultato supera la
+                // finestra di avvicinamento, `idxUntilPitEntry <= lead` e' vero
+                // dal primo istante, t resta inchiodato a 1 e la miscela
+                // degenera: il bersaglio torna ad essere il RACCORDO PURO,
+                // mirato in linea retta da 300 metri. Che e' esattamente il
+                // difetto che questa riscrittura doveva togliere — in linea
+                // retta fra il nastro e la corsia c'e' la barriera.
+                // Misurato: su nuova-pista lo scostamento e' 75 unita', che
+                // chiedono 85 campioni di anticipo contro i 68 della finestra;
+                // i bot uscivano di carreggiata e restavano incastrati contro
+                // la barriera per tutta la gara, con danno fino a 92.
+                // Tenendo l'anticipo a meta' finestra, alla miscela resta
+                // sempre l'altra meta' per lavorare. Su prova e monte-rosso
+                // (le piste gia' playtestate) il valore non cambia: erano
+                // sotto la meta' comunque.
+                const convergenceLeadSamples = Math.min(
+                    Math.round(approachSamples * PIT_CONVERGENCE_MAX_FRACTION),
+                    metersToSamples(Math.max(BOT_PIT_LANE_FOLLOW_M, splitGapM * PIT_CONVERGENCE_LEAD_FACTOR), track));
                 const denomSamples = Math.max(1, approachSamples - convergenceLeadSamples);
                 const tLinear = idxUntilPitEntry <= convergenceLeadSamples
                     ? 1
