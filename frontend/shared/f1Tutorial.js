@@ -83,7 +83,13 @@
         },
         {
             titolo: 'Le gomme',
-            foto: 'gomme.png',
+            // ⚠️ Questo passo NON ha fotografia, ed e' una scelta. La schermata
+            // di scelta mescola e' verticale, e qui le immagini stanno in una
+            // striscia larga e bassa — il tetto d'altezza serve a non far
+            // scorrere il tutorial. Tagliata in striscia perderebbe due carte
+            // su tre; rimpicciolita per intero sarebbe alta 190 px e larga
+            // altrettanto, con le scritte illeggibili. Lo schemetto qui sotto
+            // dice la stessa cosa e si legge.
             occhiello: 'Tre mescole, tre strategie',
             corpo: [
                 '<b>Nessuna arriva in fondo alla gara</b>: la scelta non e’ quale sia la migliore, ma come dividere la gara fra due treni.',
@@ -404,11 +410,22 @@
         chiudi();   // mai due copie sovrapposte
 
         // Chi c'e' e chi no, prima di disegnare: un colpo solo all'apertura.
-        PASSI.forEach(p => {
+        PASSI.forEach((p, k) => {
             if (!p.foto || p.foto in FOTO_PRESENTI) return;
             const prova = new Image();
-            prova.onload = () => { FOTO_PRESENTI[p.foto] = true; };
-            prova.onerror = () => { FOTO_PRESENTI[p.foto] = false; };
+            const risposto = (c1e) => {
+                FOTO_PRESENTI[p.foto] = c1e;
+                // ⚠️ E SI RIDISEGNA, se la risposta riguarda il passo che si sta
+                // guardando. La prima schermata viene disegnata SUBITO, prima
+                // che l'immagine abbia risposto: senza questo, al primo passo
+                // si vedevano la foto E lo schemetto insieme, che e' esattamente
+                // il doppione che il controllo doveva evitare. Si nota solo
+                // sul primo, perche' dal secondo in poi la risposta e' gia'
+                // arrivata — il difetto peggiore, quello che sembra casuale.
+                if (k === i) disegna();
+            };
+            prova.onload = () => risposto(true);
+            prova.onerror = () => risposto(false);
             prova.src = CARTELLA_FOTO + p.foto;
         });
 

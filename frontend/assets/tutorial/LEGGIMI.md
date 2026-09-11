@@ -8,10 +8,10 @@ funziona lo stesso: il tutorial non aspetta le foto per esistere.
 
 | file | cosa deve mostrare |
 |---|---|
-| `weekend.png` | La griglia di partenza vista da dietro, con le auto schierate. |
-| `partenza.png` | Il ponte dei semafori **con le luci accese**, un attimo prima del via. |
-| `sosta.png` | L'arrivo in corsia box col **muro del conto alla rovescia acceso** (quando diventa azzurro). |
-| `gomme.png` | La schermata di scelta mescola, con le tre carte. |
+| `weekend.png` | ✅ La griglia di partenza con le auto schierate. |
+| `partenza.png` | ✅ Il ponte dei semafori con le luci accese. |
+| `sosta.png` | ✅ La corsia box col muro del conto alla rovescia acceso. |
+| ~~`gomme.png`~~ | ⚠️ **NON si usa**, e non e' una dimenticanza: la schermata di scelta mescola e' VERTICALE, e qui le immagini stanno in una striscia larga e bassa. Tagliata perderebbe due carte su tre; rimpicciolita per intero avrebbe le scritte illeggibili. Quel passo tiene lo schemetto disegnato, che dice la stessa cosa e si legge. |
 
 ## Come scattarle: dentro la gara, da amministratore
 
@@ -38,8 +38,6 @@ Consigli per le quattro inquadrature:
   hai qualche secondo, la sequenza dura fra i 4 e i 7 secondi.
 - **sosta**: segui un bot che entra ai box e mettiti in corsia dove il muro si
   accende.
-- **gomme**: questa non e' nel mondo 3D, e' una schermata. Basta un
-  `Win+Alt+Stamp` mentre scegli la mescola, oppure la faccio io.
 
 ⚠️ Prima di scattare premi **F10** per spegnere la legenda admin: quelle
 scritte non le vede nessun altro giocatore.
