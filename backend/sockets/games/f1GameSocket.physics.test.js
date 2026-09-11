@@ -529,26 +529,45 @@ test('effectiveAccel: il danno al motore riduce anche l\'accelerazione, non solo
         'motore danneggiato: accelerazione ridotta anche in qualifica');
 });
 
-test('Simcade: isolamento dei componenti — ala anteriore riduce lo sterzo ma non velocità/accelerazione; motore riduce velocità/accelerazione ma non lo sterzo', () => {
+// ⚠️ REGOLA CAMBIATA IL 2026-08-23, e questo test era rimasto alla vecchia.
+// Nasceva come "isolamento dei componenti": l'ala tocca solo lo sterzo, il
+// motore solo velocita' e accelerazione. Poi la fase 3 del modello
+// aerodinamico (promossa a default ON dopo playtest, vedi
+// AerodynamicsModel.dragFactor) ha dato all'ala rotta piu' RESISTENZA: da
+// allora l'ala toglie anche velocita' di punta, ed e' voluto — un'ala
+// spezzata che non rallenta non si vede in nessuna gara.
+//
+// Quel che resta isolato, e va difeso, sono le altre due caselle:
+//   - l'ACCELERAZIONE e' del motore: l'ala non toglie potenza (misurato:
+//     ala all'80% => accelerazione identica al millesimo);
+//   - lo STERZO e' dell'ala: il motore non c'entra niente con la direzione.
+test('Simcade: ogni danno ha il suo effetto — accelerazione solo dal motore, sterzo solo dall\'ala (la velocita\' di punta la tocca anche il drag dell\'ala)', () => {
     const { physics } = f1GameSocket;
     const base = { tyreWear: 0, compound: 'medium', damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 } };
     const frontWingDanneggiato = { tyreWear: 0, compound: 'medium', damageParts: { frontWing: 80, floor: 0, engine: 0, suspension: 0 } };
     const engineDanneggiato    = { tyreWear: 0, compound: 'medium', damageParts: { frontWing: 0, floor: 0, engine: 80, suspension: 0 } };
 
-    // Ala all'80%: sottosterzo marcato, ma velocità/accelerazione IDENTICHE al sano.
-    assert.ok(physics.getFrontWingSteerPenalty(frontWingDanneggiato.damageParts) > 0, 'ala danneggiata: penalità sterzo attiva');
-    assert.ok(Math.abs(physics.effectiveMaxSpeed(frontWingDanneggiato, false) - physics.effectiveMaxSpeed(base, false)) < 1e-9,
-        'ala danneggiata: MAX_SPEED invariata');
+    // Ala all'80%: sottosterzo marcato e un po' di velocita' di punta persa
+    // per la resistenza, ma la potenza resta tutta.
+    assert.ok(physics.getFrontWingSteerPenalty(frontWingDanneggiato.damageParts) > 0, "ala danneggiata: penalita' sterzo attiva");
+    assert.ok(physics.effectiveMaxSpeed(frontWingDanneggiato, false) < physics.effectiveMaxSpeed(base, false),
+        "ala danneggiata: la resistenza in piu' abbassa la velocita' di punta");
     assert.ok(Math.abs(physics.effectiveAccel(frontWingDanneggiato, false) - physics.effectiveAccel(base, false)) < 1e-9,
-        'ala danneggiata: accelerazione invariata');
+        "ala danneggiata: accelerazione invariata — la potenza e' del motore");
 
-    // Motore all'80%: velocità/accelerazione ridotte, ma sterzo IDENTICO al sano.
+    // Motore all'80%: velocita'/accelerazione ridotte, ma sterzo IDENTICO al sano.
     assert.ok(physics.effectiveMaxSpeed(engineDanneggiato, false) < physics.effectiveMaxSpeed(base, false),
         'motore danneggiato: MAX_SPEED ridotta');
     assert.ok(physics.effectiveAccel(engineDanneggiato, false) < physics.effectiveAccel(base, false),
         'motore danneggiato: accelerazione ridotta');
     assert.ok(Math.abs(physics.getFrontWingSteerPenalty(engineDanneggiato.damageParts) - physics.getFrontWingSteerPenalty(base.damageParts)) < 1e-9,
-        'motore danneggiato: penalità sterzo invariata (zero in entrambi i casi)');
+        "motore danneggiato: penalita' sterzo invariata (zero in entrambi i casi)");
+
+    // E il motore pesa PIU' dell'ala sulla velocita': se un giorno si
+    // invertissero, il danno avrebbe smesso di raccontare quel che e'
+    // successo all'auto.
+    assert.ok(physics.effectiveMaxSpeed(engineDanneggiato, false) < physics.effectiveMaxSpeed(frontWingDanneggiato, false),
+        "a pari danno, il motore rallenta piu' dell'ala");
 });
 
 test('buildPublicState: espone anche damageParts (per evoluzioni future HUD)', () => {
