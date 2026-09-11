@@ -694,6 +694,73 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ====================================================
     const listener = new THREE.AudioListener();
     camera.add(listener);
+
+    // ====================================================
+    // IL VOLUME DEL GIOCO (blocco I). Si alza e si abbassa coi tasti - e +
+    // mentre si guida, e resta come l'hai lasciato fra una gara e l'altra.
+    //
+    // ⚠️ STA QUI, SUBITO SOTTO IL LISTENER, E NON PIU' IN BASSO: poche righe
+    // sotto c'e' gia' una chiamata a silenzioTransizione (le schermate del
+    // campionato nascono mute), che passa per applicaVolume e legge
+    // volumeGioco. Dichiarato dopo, sarebbe una `let` letta prima della sua
+    // riga: ReferenceError, e solo in campionato.
+    //
+    // ⚠️ DUE BUS, UNA MANOPOLA SOLA. Il volume del listener e' GIA' usato
+    // come interruttore da silenzioTransizione (zero durante lo stacco
+    // qualifica→gara, altrimenti si sentono i motori delle auto gia' in
+    // griglia dietro le schermate). Se anche i tasti scrivessero li' dentro,
+    // la prima transizione rimetterebbe tutto a 1 e cancellerebbe la scelta
+    // del giocatore, in silenzio. Quindi nessuno chiama piu' setMasterVolume
+    // tranne applicaVolume, che e' l'unico posto dove le due cose si
+    // combinano.
+    //
+    // Il secondo bus serve ai suoni d'INTERFACCIA (gli scatti della scoperta
+    // posizione), che vanno diritti all'uscita proprio per non essere zittiti
+    // dallo stacco: senza un loro guadagno resterebbero a tutto volume anche
+    // con la manopola a zero — e «i suoni del gioco» sono anche quelli.
+    // ====================================================
+    const VOLUME_PASSO = 0.1;
+    let volumeGioco = 1;
+    let mondoSilenziato = false;
+    let gainInterfaccia = null;
+
+    try {
+        const salvato = parseFloat(localStorage.getItem('f1Volume'));
+        if (isFinite(salvato)) volumeGioco = Math.max(0, Math.min(1, salvato));
+    } catch (e) { /* localStorage negato: si parte a volume pieno */ }
+
+    // L'uscita dei suoni d'interfaccia. Nasce alla prima richiesta, perche'
+    // prima del gesto dell'utente il contesto audio e' sospeso.
+    function uscitaInterfaccia() {
+        const ctx = listener.context;
+        if (!ctx) return null;
+        if (!gainInterfaccia) {
+            gainInterfaccia = ctx.createGain();
+            gainInterfaccia.connect(ctx.destination);
+        }
+        gainInterfaccia.gain.value = volumeGioco;
+        return gainInterfaccia;
+    }
+
+    function applicaVolume() {
+        if (listener && typeof listener.setMasterVolume === 'function') {
+            listener.setMasterVolume(mondoSilenziato ? 0 : volumeGioco);
+        }
+        if (gainInterfaccia) gainInterfaccia.gain.value = volumeGioco;
+    }
+
+    function cambiaVolume(delta) {
+        // Si conta a PASSI e non sommando 0.1: in virgola mobile si arriva a
+        // 0.30000000000000004, e l'avviso direbbe 30% oggi e 29% domani a
+        // seconda di quante volte hai premuto.
+        const passi = Math.round(volumeGioco / VOLUME_PASSO) + delta;
+        volumeGioco = Math.max(0, Math.min(1, passi * VOLUME_PASSO));
+        try { localStorage.setItem('f1Volume', String(volumeGioco)); } catch (e) { /* pazienza */ }
+        applicaVolume();
+        mostraAvviso(volumeGioco === 0 ? 'Audio muto' : `Volume ${Math.round(volumeGioco * 100)}%`);
+    }
+
+    applicaVolume();
     // In CAMPIONATO il mondo parte muto. La propria auto viene caricata comunque
     // (serve appena si corre) e il suo motore parte con lei, a volume zero ma
     // con un attacco che si sente — segnalato al playtest: "finito il
@@ -1312,10 +1379,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // sulla pole arriva in cima. Non è decorazione, è la stessa informazione
     // per un altro senso.
     //
-    // ⚠️ Va a `ctx.destination`, NON al listener come bipSemaforo: durante la
-    // transizione il mondo è muto (silenzioTransizione azzera il volume del
-    // listener, altrimenti si sentirebbero i motori delle auto già ferme in
-    // griglia) e questo è un suono d'interfaccia, non un suono del mondo.
+    // ⚠️ NON passa dal listener come bipSemaforo: durante la transizione il
+    // mondo è muto (silenzioTransizione, altrimenti si sentirebbero i motori
+    // delle auto già ferme in griglia) e questo è un suono d'interfaccia, non
+    // un suono del mondo. Passa però dal bus dell'interfaccia, che porta la
+    // manopola del volume: saltare l'uno non vuol dire saltare l'altra.
     function ticPosizione(progresso) {
         const ctx = listener.context;
         if (!ctx || ctx.state !== 'running') return;
@@ -1329,7 +1397,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         gain.gain.exponentialRampToValueAtTime(0.05, t0 + 0.004);
         gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.045);
         osc.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(uscitaInterfaccia() || ctx.destination);
         osc.start(t0);
         osc.stop(t0 + 0.07);
     }
@@ -1352,7 +1420,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             gain.gain.exponentialRampToValueAtTime(0.06, inizio + 0.01);
             gain.gain.exponentialRampToValueAtTime(0.0001, inizio + 0.42);
             osc.connect(gain);
-            gain.connect(ctx.destination);
+            gain.connect(uscitaInterfaccia() || ctx.destination);
             osc.start(inizio);
             osc.stop(inizio + 0.46);
         });
@@ -4010,10 +4078,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // playtest si sentiva "un rumore di motori" proprio mentre partiva lo
     // stacco. Un solo interruttore sul listener invece di inseguire il suono
     // di ogni singola auto.
+    // ⚠️ Non scrive piu' il volume: alza e abbassa la sua bandierina e lascia
+    // che sia applicaVolume a combinarla con la manopola del giocatore.
+    // Scrivendo `1` alla fine dello stacco rimetteva a tutto volume un gioco
+    // che il giocatore aveva messo al 30%, e nessuno se ne sarebbe accorto.
     function silenzioTransizione(attivo) {
-        if (listener && typeof listener.setMasterVolume === 'function') {
-            listener.setMasterVolume(attivo ? 0 : 1);
-        }
+        mondoSilenziato = !!attivo;
+        applicaVolume();
     }
 
     socket.on('f1QualiEnded', async ({ grid, trackName, sequenza }) => {
@@ -5797,6 +5868,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             const prossimo = scala[(scala.findIndex(s => Math.abs(s - ora) < 0.01) + 1) % scala.length];
             F1SensoVelocita.impostaIntensita(prossimo);
             mostraAvviso(prossimo === 0 ? 'Senso di velocità: spento' : `Senso di velocità: ${prossimo}×`);
+        }
+        // Volume del gioco: - abbassa, + alza, a passi del 10%. Si accettano
+        // anche `_` e `=` e i tasti del tastierino, perche' su un layout
+        // italiano il `+` non e' dove un layout americano lo aspetta.
+        // Col Control premuto sono lo zoom del browser, non roba nostra.
+        if (!e.repeat && !isTypingInField(e) && !e.ctrlKey && !e.metaKey) {
+            const giu = e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract';
+            const su  = e.key === '+' || e.key === '=' || e.code === 'NumpadAdd';
+            if (giu || su) { e.preventDefault(); cambiaVolume(su ? 1 : -1); }
         }
         // M segnala il punto in cui sei, Shift+M annulla l'ultima. `e.repeat`
         // esclude l'autorepeat: tenendo premuto si riempirebbe il file di
