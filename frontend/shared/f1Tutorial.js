@@ -136,7 +136,12 @@
                    quel che deve cambiare — e quando le fotografie arriveranno
                    il riquadro non ricomincera' a ballare. Quel che eccede
                    scorre dentro il corpo. */
-                height: min(620px, 88vh);
+                /* ⚠️ MISURATA, non scelta a occhio: il contenuto piu' alto (la
+                   partenza) sta in 528 px con la foto INTERA, piu' 162 di
+                   intestazione, piede e margini. A 620 la foto veniva tagliata
+                   del 42% e restavano COMUNQUE 85-130 px di vuoto sotto il
+                   testo: il peggio dei due mondi. */
+                height: min(690px, 92vh);
                 display: flex; flex-direction: column;
                 background: var(--card, #fff);
                 color: var(--ink, #16141E);
@@ -169,6 +174,21 @@
                    ballare i pulsanti, che e' lo stesso difetto piu' in
                    piccolo. */
                 flex: 1 1 auto;
+                /* ⚠️ Il contenuto sta al CENTRO dello spazio. I cinque passi
+                   variano di 45 px l'uno dall'altro: allineati in alto, quella
+                   differenza diventa tutta un buco sotto l'ultima riga e si
+                   legge come «il riquadro e' troppo grande». Al centro diventa
+                   respiro sopra e sotto, che e' quel che e'. */
+                /* ⚠️ Attenzione: niente apici inversi in questi commenti, il CSS
+                   qui dentro sta in un template literal e li' un apice inverso
+                   lo chiude a meta'.
+                   Un centraggio normale, quando il contenuto NON ci sta,
+                   lo centra facendo finire la cima FUORI dal riquadro — e sopra
+                   il bordo non si puo' scorrere, quindi quella parte diventa
+                   irraggiungibile. Con la parola chiave safe il centraggio si
+                   spegne da solo appena servirebbe scorrere. Si vede solo su schermi bassi,
+                   che e' il modo peggiore in cui un difetto puo' presentarsi. */
+                justify-content: safe center;
                 overflow-y: auto;
                 display: flex; flex-direction: column; gap: 12px;
             }
@@ -215,20 +235,24 @@
             /* La fotografia di cio' che si vedra' in gioco. ⚠️ Se il file non
                c'e' si nasconde da sola (onerror), cosi' il tutorial funziona
                anche prima che le immagini siano state scattate. */
-            /* ⚠️ LA FOTO HA UN TETTO DI ALTEZZA, e serve a una cosa sola: NON
-               FAR SCORRERE il tutorial. «Non voglio scroll»: a tutta larghezza
-               una 16:9 alta 320 px lascia meno spazio di quanto ne chiedano tre
-               paragrafi, e il corpo comincia a scorrere. Con 190 px di tetto e
-               object-fit: cover l'immagine si taglia invece di spingere fuori
-               il testo. */
+            /* ⚠️ NIENTE TETTO D'ALTEZZA. Ce n'era uno a 190 px, e a 564 px di
+               larghezza tagliava il 42% di una 16:9: nella griglia sparivano le
+               auto piu' avanti, nei semafori si vedeva «raso raso» il ponte.
+               Segnalato dall'utente su due schermate. La foto ora si vede
+               INTERA, e a tenere il tutorial senza scorrere ci pensa l'altezza
+               del riquadro, che e' calcolata su questa. */
             #${ID_NODO} .tut-foto {
                 width: 100%; display: block; border-radius: 12px;
                 border: 3px solid var(--ink, #16141E);
-                aspect-ratio: 16 / 9; max-height: 190px; object-fit: cover;
+                aspect-ratio: 16 / 9; object-fit: cover;
+                flex: 0 0 auto;
                 background: var(--surface, #F2F1EF);
             }
+            /* Lo schemetto prende lo spazio che avanza nei passi senza foto,
+               invece di lasciarlo vuoto sotto. */
             #${ID_NODO} .tut-figura {
                 display: flex; flex-direction: column; gap: 10px;
+                justify-content: space-around;
                 padding: 14px; border-radius: 12px;
                 background: var(--surface, #F2F1EF);
                 border: 3px solid var(--ink, #16141E);
