@@ -3384,11 +3384,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         const rail = document.getElementById('standings-badges');
         const rowsEl = document.getElementById('standings-rows');
         if (!rail || !rowsEl) return;
-        const r = rowsEl.getBoundingClientRect();
+        // ⚠️ SI MISURA LA PRIMA RIGA, NON IL CONTENITORE. #standings-rows ha
+        // `padding: 3px 0`, quindi la sua cima sta tre pixel sopra la cima
+        // della prima riga: appoggiando li' la colonna, OGNI linguetta finiva
+        // tre pixel piu' in alto della sua riga. Segnalato dall'utente al
+        // playtest del 2026-09-11 («in larghezza le linguette non sono uguali
+        // alla riga di ciascun giocatore») e misurato: scarto 3.000 px esatti,
+        // mentre l'altezza era gia' giusta (24.000, nessuna deriva).
+        //
+        // Misurare l'elemento vero invece di sommare a mano padding e altezza
+        // del chip dei giri e' anche cio' che tiene l'allineamento se un
+        // giorno quei numeri cambiano.
+        const riferimento = rowsEl.firstElementChild || rowsEl;
+        const r = riferimento.getBoundingClientRect();
         if (r.height === 0 && r.top === 0) return;   // pannello ancora nascosto: niente da misurare
         rail.style.top = `${r.top}px`;
     }
     window.addEventListener('resize', allineaColonnaIndicatori);
+    // Il chip dei giri e' scritto in Fredoka, che arriva dalla rete: quando il
+    // font sostituisce quello di ripiego l'altezza del chip cambia, e con essa
+    // la quota della prima riga. Senza questo, chi apre la gara prima che il
+    // font sia pronto si tiene la colonna disallineata per tutta la corsa.
+    if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(allineaColonnaIndicatori);
+    }
 
     const STANDING_ROW_HEIGHT = 24;   // deve corrispondere all'altezza reale di .f1-standing-row (padding incluso)
     const STANDING_LIFT_PX = 16;   // quanto la riga di chi sorpassa si "alza" oltre lo slot di arrivo, a metà animazione
