@@ -584,12 +584,12 @@ canvas.tyre-preview-canvas {
    prezzo e' che l'allineamento va tenuto a mano — `top` lo scrive f1.js
    misurando dove comincia davvero la prima riga, e ogni riga qui dentro e'
    alta esattamente quanto la sua gemella. */
+/* ⚠️ Porta la classe `hud` nell'HTML, e non e' cosmesi: da li' prende
+   position:fixed, z-index e pointer-events:none, ma soprattutto la regola
+   `body.in-cerimonia .hud { display: none }` — senza, durante la premiazione
+   sparirebbe tutta l'interfaccia e resterebbero in aria tre badge orfani. */
 #standings-badges {
-    position: fixed;
     left: 220px;          /* 12 del pannello + 200 di larghezza + 8 di respiro */
-    z-index: 6;
-    pointer-events: none; /* non deve mai rubare un clic: e' un'etichetta */
-    display: flex;
     flex-direction: column;
 }
 .f1-indicator-row {
