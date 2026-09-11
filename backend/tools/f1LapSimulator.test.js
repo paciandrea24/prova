@@ -17,6 +17,27 @@ const DEFAULT_OPTS = { speedFactor: 1, paceMult: 1, precisionNoise: 0, safetyCap
 // `test`, che ha pendenze dell'89% (una parete) ed è un tracciato di prova.
 const { pistaPercorribile } = require('../sockets/games/physics/GravitaNastro.js');
 
+// Quanto puo' durare al massimo un giro prima di dire "qui e' bloccata".
+// NON un numero di secondi uguale per tutte: i tracciati vanno da 1177 a 7485
+// unita', un fattore sei, e un tetto fisso a 60s bocciava shanghai (84s veri)
+// e suzuka (62s veri) senza che avessero niente che non va — mentre su
+// monte-rosso, che il giro lo chiude in 13s, lasciava passare qualunque
+// disastro. Il tetto e' la lunghezza del giro divisa per una velocita' media
+// che nessuna auto sana scende sotto: il giro piu' lento misurato viaggia a
+// 66 unita' al secondo, quindi 40 e' gia' meta' del peggiore.
+// Stessa regola delle altre soglie geometriche del progetto: si esprimono per
+// unita' di pista, mai in valori assoluti che valgono per una pista sola.
+const VELOCITA_MINIMA_PLAUSIBILE = 40;   // unita'/s
+
+function tettoDiSicurezzaS(track) {
+    let giro = 0;
+    for (let i = 0; i < track.points.length; i++) {
+        const a = track.points[i], b = track.points[(i + 1) % track.points.length];
+        giro += Math.hypot(b.x - a.x, b.z - a.z);
+    }
+    return Math.max(30, giro / VELOCITA_MINIMA_PLAUSIBILE);
+}
+
 for (const { id } of listTracks()) {
     test(`simulateLap: ${id} completa il giro entro il tetto di sicurezza (tuning di default)`, (t) => {
         const track = loadTrack(id);
@@ -24,22 +45,48 @@ for (const { id } of listTracks()) {
             t.skip(`${id}: ha una salita che nessuna auto sale, con la gravità lungo il nastro attiva`);
             return;
         }
-        const result = simulateLap(track, DEFAULT_OPTS);
-        assert.ok(result.finished, `${id}: giro non completato entro ${DEFAULT_OPTS.safetyCapS}s simulati`);
+        const safetyCapS = tettoDiSicurezzaS(track);
+        const result = simulateLap(track, { ...DEFAULT_OPTS, safetyCapS });
+        assert.ok(result.finished, `${id}: giro non completato entro ${safetyCapS.toFixed(0)}s simulati`);
         assert.ok(result.timeMs > 0, `${id}: tempo non valido (${result.timeMs})`);
         assert.ok(result.telemetry.length > 0, `${id}: telemetria vuota`);
     });
 }
 
-test('simulateLap: rispetta un preset di tuning passato in opts.tuning (margini rilassati => non più lento del default)', () => {
-    const track = loadTrack('monza');
-    const base = simulateLap(track, DEFAULT_OPTS);
-    const relaxed = simulateLap(track, {
-        ...DEFAULT_OPTS,
-        tuning: { cornerSpeedMargin: 1.0, apexMaxFraction: 1.0, brakingDistanceMargin: 1.0 }
+test('simulateLap: un preset di tuning passato in opts.tuning arriva davvero alla guida', () => {
+    // ⚠️ DUE cose sbagliate, entrambe invisibili finche' il test moriva prima
+    // di arrivare in fondo.
+    //
+    // 1. La pista era scritta a mano: "monza", rifatta nel frattempo col nome
+    //    "new-monza". Da allora il test moriva di ENOENT invece di provare quel
+    //    che dice il titolo. Le piste le crea e le rinomina l'utente: un test
+    //    sul comportamento del simulatore non deve dipendere dai nomi di oggi.
+    //
+    // 2. Il preset va provato dove si SENTE. Sulle piste che hanno un file
+    //    -raceline.json comanda `track.racingLineTuning` e opts.tuning non
+    //    cambia un millisecondo: misurato 0.00% su prova e su monte-rosso,
+    //    contro il 17.8% di banking-prova, che la racing line non ce l'ha. Un
+    //    test che fosse finito su prova sarebbe passato senza provare niente.
+    //
+    // E si misura un preset TIMIDO (margini stretti => giro piu' lento), non
+    // uno spavaldo: fra il default e i margini al massimo ci sono 50 ms su
+    // 21400, lo 0.23%, cioe' il rumore del banco. Il preset timido costa il
+    // 17.8%, che non e' rumore.
+    const id = listTracks().map(t => t.id).find(t => {
+        const track = loadTrack(t);
+        return pistaPercorribile(track.points) && !track.racingLine;
     });
-    assert.ok(base.finished && relaxed.finished, 'entrambe le simulazioni devono completare il giro');
-    assert.ok(relaxed.timeMs <= base.timeMs, `atteso tempo <= default (${base.timeMs}ms), ottenuto ${relaxed.timeMs}ms`);
+    assert.ok(id, 'nessuna pista percorribile senza racing line su cui provare il preset');
+    const track = loadTrack(id);
+    const opts = { ...DEFAULT_OPTS, safetyCapS: tettoDiSicurezzaS(track) };
+    const base = simulateLap(track, opts);
+    const timido = simulateLap(track, {
+        ...opts,
+        tuning: { cornerSpeedMargin: 0.5, apexMaxFraction: 0.3, brakingDistanceMargin: 2.0 }
+    });
+    assert.ok(base.finished && timido.finished, 'entrambe le simulazioni devono completare il giro');
+    assert.ok(timido.timeMs > base.timeMs * 1.05,
+        `${id}: un preset timido deve costare almeno il 5% (default ${base.timeMs}ms, timido ${timido.timeMs}ms)`);
 });
 
 test('slowestPoints: ritorna al massimo `count` voci, ordinate dalla più lenta', () => {
