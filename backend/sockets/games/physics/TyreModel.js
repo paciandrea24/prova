@@ -42,6 +42,26 @@ const TYRE_COMPOUNDS = {
 };
 const DEFAULT_COMPOUND = 'medium';
 
+// ⚠️ IL TETTO CHE TIENE IN PIEDI LA REGOLA. L'abrasivita' divide la vita, e
+// su una pista dolce (0.5-0.7, valori che lo slider dell'editor permette) la
+// Hard tornerebbe ad arrivare in fondo da sola: 0.70/0.6 = 117% della gara. Si
+// riavrebbe la sosta fatta solo perche' obbligatoria, cioe' il difetto da cui
+// nasce tutto questo lavoro, scelto per sbaglio da chi disegna una pista.
+//
+// Il vincolo sta QUI e non nei limiti dello slider: legato all'interfaccia
+// sarebbe un numero da tenere d'accordo con le frazioni qui sopra, e al primo
+// ritocco divergerebbero in silenzio.
+const VITA_MASSIMA_GARA = 0.85;
+
+// Quanta parte della gara sopravvive un treno di questa mescola su questa
+// pista. ⚠️ UNA SOLA FUNZIONE per la fisica e per il numero mostrato al
+// giocatore: se la schermata dicesse «dura 3 giri» e la pista ne concedesse
+// cinque, il gioco sarebbe ingiusto in silenzio.
+function vitaFrazione(spec, abrasivita) {
+    const s = (typeof spec === 'string' ? TYRE_COMPOUNDS[spec] : spec) || TYRE_COMPOUNDS[DEFAULT_COMPOUND];
+    return Math.min(VITA_MASSIMA_GARA, s.vita / (abrasivita || 1));
+}
+
 // Serve solo alle piste costruite a mano negli strumenti offline e nei test,
 // che non hanno `totalLaps`. ⚠️ Non e' un ripiego silenzioso: su una pista
 // vera totalLaps c'e' sempre (lo calcola trackLoader), e un test lo pretende.
@@ -97,14 +117,16 @@ function applyTyreWear(p, offTrack, track) {
     const dist = Math.hypot(p.vx, p.vz);   // distanza percorsa in questo tick
     // Quanti giri dura questo treno su QUESTA gara, prima dell'abrasivita'.
     const giriGara = track.totalLaps || GIRI_DI_RIFERIMENTO;
-    const wearPerUnitDist = 100 / (tyreOf(p).vita * giriGara * track.lapLength);
+    // L'abrasivita' entra QUI dentro, nella vita, non piu' come fattore a
+    // parte: e' li' che vive il tetto.
+    const vita = vitaFrazione(tyreOf(p), track.abrasivita);
+    const wearPerUnitDist = 100 / (vita * giriGara * track.lapLength);
     // Peso del carburante: l'auto piena carica di piu' le gomme e le consuma
     // di piu'. E' la ragione fisica per cui il primo stint e' il piu' duro.
     // Abrasivita' del circuito: quanto quell'asfalto mangia le gomme. Il
     // valore lo normalizza e lo limita trackLoader; qui `|| 1` copre solo i
     // game costruiti a mano nei test e negli strumenti offline.
-    const abrasivita = track.abrasivita || 1;
-    const wear = dist * wearPerUnitDist * fuelFactorOf(p) * abrasivita;
+    const wear = dist * wearPerUnitDist * fuelFactorOf(p);
     p.tyreWear = Math.min(100, p.tyreWear + wear);
     if (offTrack) p.tyreWear = Math.min(100, p.tyreWear + WEAR_OFFTRACK_EXTRA);
 }
@@ -123,11 +145,11 @@ function giriPerMescola(totalLaps, abrasivita) {
     // Arrotondato SOLO qui: e' il numero che si mostra al giocatore. La fisica
     // usa la frazione esatta, altrimenti due piste vicine di lunghezza
     // darebbero la stessa durata a scatti.
-    const giri = (vita) => Math.max(1, Math.round(vita * giriGara / abr));
+    const giri = (compound) => Math.max(1, Math.round(vitaFrazione(compound, abr) * giriGara));
     return {
-        hard:   giri(TYRE_COMPOUNDS.hard.vita),
-        medium: giri(TYRE_COMPOUNDS.medium.vita),
-        soft:   giri(TYRE_COMPOUNDS.soft.vita),
+        hard:   giri('hard'),
+        medium: giri('medium'),
+        soft:   giri('soft'),
     };
 }
 
@@ -150,5 +172,6 @@ module.exports = {
     TYRE_COMPOUNDS, DEFAULT_COMPOUND,
     GIRI_DI_RIFERIMENTO, WEAR_OFFTRACK_EXTRA, WEAR_SPEED_PENALTY,
     WEAR_CLIFF_THRESHOLD, WEAR_CLIFF_GENTLE_FRACTION,
-    tyreOf, applyTyreWear, suggestStrategy, giriPerMescola, getWearPenaltyFactor
+    tyreOf, applyTyreWear, suggestStrategy, giriPerMescola, getWearPenaltyFactor,
+    vitaFrazione, VITA_MASSIMA_GARA
 };

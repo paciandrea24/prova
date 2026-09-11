@@ -5,7 +5,8 @@ const {
     TYRE_COMPOUNDS, DEFAULT_COMPOUND,
     GIRI_DI_RIFERIMENTO, WEAR_OFFTRACK_EXTRA, WEAR_SPEED_PENALTY,
     WEAR_CLIFF_THRESHOLD, WEAR_CLIFF_GENTLE_FRACTION,
-    tyreOf, applyTyreWear, suggestStrategy, getWearPenaltyFactor, giriPerMescola
+    tyreOf, applyTyreWear, suggestStrategy, getWearPenaltyFactor, giriPerMescola,
+    vitaFrazione, VITA_MASSIMA_GARA
 } = require('./TyreModel.js');
 
 test('getWearPenaltyFactor: zero wear ha fattore zero', () => {
@@ -213,10 +214,26 @@ test('giriPerMescola: NESSUNA mescola arriva in fondo alla gara', () => {
     // Decisione dell'utente: «con la hard non puoi fare tutta la gara, comunque
     // ci deve essere il cambio mescola». Se una ci arrivasse, la sosta si
     // farebbe solo perche' e' obbligatoria, e non sarebbe una scelta.
-    for (const N of [4, 5, 6, 10, 13, 20, 50]) {
-        const g = giriPerMescola(N, 1);
-        assert.ok(g.hard < N, `gara da ${N} giri: la Hard ne dura ${g.hard}`);
+    //
+    // ⚠️ SU TUTTA LA SCALA DELL'ABRASIVITA', non solo a 1. Lo slider
+    // dell'editor scende a 0.5, e li' la Hard senza tetto durerebbe il 140%
+    // della gara: chi disegna una pista dolce si riprenderebbe il difetto
+    // senza sapere di averlo scelto. Provato su 4 lunghezze x 7 abrasivita'.
+    for (const N of [4, 5, 12, 20]) {
+        for (const abr of [0.5, 0.6, 0.8, 1, 1.3, 1.6, 2]) {
+            const g = giriPerMescola(N, abr);
+            assert.ok(g.hard < N,
+                `gara da ${N} giri, abrasivita' ${abr}: la Hard ne dura ${g.hard}`);
+        }
     }
+});
+
+test('vitaFrazione: il tetto morde solo dove serve', () => {
+    // Ad abrasivita' normale il tetto non deve toccare niente, o sarebbe una
+    // seconda manopola nascosta dentro la prima.
+    assert.equal(vitaFrazione('hard', 1), TYRE_COMPOUNDS.hard.vita, 'a 1 nessun tetto');
+    assert.equal(vitaFrazione('soft', 0.5), TYRE_COMPOUNDS.soft.vita / 0.5, 'la Soft non ci arriva mai');
+    assert.equal(vitaFrazione('hard', 0.5), VITA_MASSIMA_GARA, 'la Hard su pista dolce si ferma al tetto');
 });
 
 test("applyTyreWear: percorsa la vita nominale, la gomma e' finita", () => {
