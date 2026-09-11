@@ -22,7 +22,11 @@ function makeSimPlayer(track, opts) {
         finished: false, time: null, lap: 0,
         checkpointA: false, inFinishZone: false,
         trackIndex: 0,
-        compound: 'medium', tyreWear: 0,
+        // ⚠️ La mescola conta SOLO in modalita' gara (`opts.gara`): in
+        // qualifica tyreOf() restituisce lo spec della Soft a tutti, quindi
+        // misurare mescole diverse darebbe tre volte lo stesso numero.
+        compound: opts.mescola || 'medium',
+        tyreWear: opts.usura || 0,
         // Peso del carburante. ASSENTE = serbatoio vuoto, che e' il
         // comportamento storico del banco: si popola solo con --fuel, e serve
         // a misurare quanto costa l'auto piena. simulateLap gira in modalita'
@@ -83,7 +87,13 @@ function simulateLap(track, opts) {
 
     for (let tick = 0; tick < maxTicks; tick++) {
         updateBotInputs(game, deps);
-        physics.updateVelocity(p, true, 1);
+        // ⚠️ `isQuali` era inchiodato a true, ed e' il motivo per cui questo
+        // banco e' stato a lungo CIECO alla taratura delle gomme: in qualifica
+        // la mescola scelta non viene nemmeno guardata. Con `opts.gara` si
+        // misura il passo di gara, che e' l'unico modo di confrontare Soft,
+        // Medium e Hard. Senza l'opzione il comportamento resta quello di
+        // sempre, cosi' le misure vecchie restano confrontabili.
+        physics.updateVelocity(p, !opts.gara, 1);
         // ⚠️ QUESTA E' UNA SECONDA COPIA della catena di f1GameSocket.tickGame,
         // e va tenuta allineata a mano: quando il giro della morte e' arrivato,
         // il simulatore non lo sapeva e l'auto proseguiva dritta in pianta
