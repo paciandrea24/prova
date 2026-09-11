@@ -13,7 +13,7 @@ const TyreModel = require('./physics/TyreModel');
 // divario col bot (F1_TELEMETRIA=1). Rif. backend/tools/f1Telemetria.js.
 const Telemetria = require('../../tools/f1Telemetria.js');
 const {
-    TYRE_COMPOUNDS, DEFAULT_COMPOUND, WEAR_LAPS_AT_MEDIUM,
+    TYRE_COMPOUNDS, DEFAULT_COMPOUND,
     tyreOf, suggestStrategy, giriPerMescola
 } = TyreModel;
 
@@ -2102,7 +2102,12 @@ function tickGame(io, lobbyId, game) {
 
     updateBotInputs(game, {
         effectiveMaxSpeed, handlePitReactionPress, io, lobbyId,
-        wearLapsAtMedium: WEAR_LAPS_AT_MEDIUM,
+        // ⚠️ Quanti giri dura una Medium SU QUESTA GARA, non una costante: da
+        // quando la vita e' una frazione della distanza di gara, «cinque giri»
+        // non vuol piu' dire niente. Il bot la confronta con i giri che
+        // restano per scegliere la mescola dopo la sosta, e con un numero
+        // fisso avrebbe montato le Hard anche a due giri dalla fine.
+        wearLapsAtMedium: giriPerMescola(game.track.totalLaps, game.track.abrasivita).medium,
         accel: ACCEL, brakeMult: BRAKE_MULT, turnRateHigh: TURN_SPEED_HIGH,
         // ⚠️ IL TURN RATE VERO IN CURVA E' DIETRO UN INTERRUTTORE, SPENTO.
         // `cornerTargetSpeed` stima la velocita' di curva col turn rate delle

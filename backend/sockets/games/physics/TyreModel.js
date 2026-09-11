@@ -18,14 +18,34 @@ const { fuelFactorOf } = require('./FuelModel');
 // docs/superpowers/specs/2026-07-27-f1-tyre-force-model-migration-design.md),
 // non più da penalità dirette qui.
 // ====================================================
+// ⚠️ `vita` E' UNA FRAZIONE DELLA GARA, non un numero di giri. Fino al
+// 2026-09-11 una Medium durava 5 giri e basta: identici su una gara da 4 e su
+// una da 13. Su gare cosi' corte voleva dire che la Hard (8 giri) arrivava in
+// fondo da sola e la Soft quasi, quindi la mescola non era una scelta —
+// segnalato dall'utente: «la rossa non puo' durare 4 giri su una gara da 5,
+// devono poter essere utilizzabili tutte e 3».
+//
+// Legandola alla distanza di gara, la taratura vale identica sulle gare corte
+// di prova e su quelle lunghe del gioco finito: non va fatta due volte.
+//
+// ⚠️ E NESSUNA ARRIVA IN FONDO, nemmeno la Hard: se una ci arrivasse, la
+// sosta la faresti solo perche' e' obbligatoria. «Comunque ci deve essere il
+// cambio mescola.»
+//
+// Chi vince dipende poi dall'abrasivita' della pista, che divide questi
+// numeri: misurato sul modello, 0.7 premia la Soft, 0.9 la Medium, da 1.1 in
+// su la Hard, e da 1.8 la gara diventa a due soste.
 const TYRE_COMPOUNDS = {
-    soft:   { label: 'Soft',   color: '#e74c3c', speedMult: 1.05, gripMult: 1.00, wearRate: 1.5 },
-    medium: { label: 'Medium', color: '#f1c40f', speedMult: 1.00, gripMult: 0.95, wearRate: 1.0 },
-    hard:   { label: 'Hard',   color: '#ecf0f1', speedMult: 0.95, gripMult: 0.90, wearRate: 0.6 },
+    soft:   { label: 'Soft',   color: '#e74c3c', speedMult: 1.05, gripMult: 1.00, vita: 0.35 },
+    medium: { label: 'Medium', color: '#f1c40f', speedMult: 1.00, gripMult: 0.95, vita: 0.50 },
+    hard:   { label: 'Hard',   color: '#ecf0f1', speedMult: 0.95, gripMult: 0.90, vita: 0.70 },
 };
 const DEFAULT_COMPOUND = 'medium';
 
-const WEAR_LAPS_AT_MEDIUM = 5;   // quanti giri dura una Medium (wearRate=1) prima del 100% di usura
+// Serve solo alle piste costruite a mano negli strumenti offline e nei test,
+// che non hanno `totalLaps`. ⚠️ Non e' un ripiego silenzioso: su una pista
+// vera totalLaps c'e' sempre (lo calcola trackLoader), e un test lo pretende.
+const GIRI_DI_RIFERIMENTO = 5;
 const WEAR_OFFTRACK_EXTRA = 0.02; // piccolo extra per tick fuori pista (oltre a quello da distanza)
 const WEAR_SPEED_PENALTY  = 0.25; // fino a -25% velocità massima a gomme esaurite
 
@@ -75,14 +95,16 @@ function getWearPenaltyFactor(tyreWear) {
 // nessun caso speciale necessario) + un piccolo extra fisso se fuori pista.
 function applyTyreWear(p, offTrack, track) {
     const dist = Math.hypot(p.vx, p.vz);   // distanza percorsa in questo tick
-    const wearPerUnitDist = 100 / (WEAR_LAPS_AT_MEDIUM * track.lapLength);
+    // Quanti giri dura questo treno su QUESTA gara, prima dell'abrasivita'.
+    const giriGara = track.totalLaps || GIRI_DI_RIFERIMENTO;
+    const wearPerUnitDist = 100 / (tyreOf(p).vita * giriGara * track.lapLength);
     // Peso del carburante: l'auto piena carica di piu' le gomme e le consuma
     // di piu'. E' la ragione fisica per cui il primo stint e' il piu' duro.
     // Abrasivita' del circuito: quanto quell'asfalto mangia le gomme. Il
     // valore lo normalizza e lo limita trackLoader; qui `|| 1` copre solo i
     // game costruiti a mano nei test e negli strumenti offline.
     const abrasivita = track.abrasivita || 1;
-    const wear = dist * wearPerUnitDist * tyreOf(p).wearRate * fuelFactorOf(p) * abrasivita;
+    const wear = dist * wearPerUnitDist * fuelFactorOf(p) * abrasivita;
     p.tyreWear = Math.min(100, p.tyreWear + wear);
     if (offTrack) p.tyreWear = Math.min(100, p.tyreWear + WEAR_OFFTRACK_EXTRA);
 }
@@ -97,11 +119,15 @@ function applyTyreWear(p, offTrack, track) {
 // volte. Rif. docs/superpowers/specs/2026-08-23-f1-economia-della-gara-design.md.
 function giriPerMescola(totalLaps, abrasivita) {
     const abr = abrasivita || 1;
-    const giri = (wearRate) => Math.max(1, Math.round(WEAR_LAPS_AT_MEDIUM / (wearRate * abr)));
+    const giriGara = totalLaps || GIRI_DI_RIFERIMENTO;
+    // Arrotondato SOLO qui: e' il numero che si mostra al giocatore. La fisica
+    // usa la frazione esatta, altrimenti due piste vicine di lunghezza
+    // darebbero la stessa durata a scatti.
+    const giri = (vita) => Math.max(1, Math.round(vita * giriGara / abr));
     return {
-        hard:   giri(TYRE_COMPOUNDS.hard.wearRate),
-        medium: giri(TYRE_COMPOUNDS.medium.wearRate),
-        soft:   giri(TYRE_COMPOUNDS.soft.wearRate),
+        hard:   giri(TYRE_COMPOUNDS.hard.vita),
+        medium: giri(TYRE_COMPOUNDS.medium.vita),
+        soft:   giri(TYRE_COMPOUNDS.soft.vita),
     };
 }
 
@@ -122,7 +148,7 @@ function suggestStrategy(totalLaps, abrasivita) {
 
 module.exports = {
     TYRE_COMPOUNDS, DEFAULT_COMPOUND,
-    WEAR_LAPS_AT_MEDIUM, WEAR_OFFTRACK_EXTRA, WEAR_SPEED_PENALTY,
+    GIRI_DI_RIFERIMENTO, WEAR_OFFTRACK_EXTRA, WEAR_SPEED_PENALTY,
     WEAR_CLIFF_THRESHOLD, WEAR_CLIFF_GENTLE_FRACTION,
     tyreOf, applyTyreWear, suggestStrategy, giriPerMescola, getWearPenaltyFactor
 };

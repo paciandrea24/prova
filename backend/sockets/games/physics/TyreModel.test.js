@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
     TYRE_COMPOUNDS, DEFAULT_COMPOUND,
-    WEAR_LAPS_AT_MEDIUM, WEAR_OFFTRACK_EXTRA, WEAR_SPEED_PENALTY,
+    GIRI_DI_RIFERIMENTO, WEAR_OFFTRACK_EXTRA, WEAR_SPEED_PENALTY,
     WEAR_CLIFF_THRESHOLD, WEAR_CLIFF_GENTLE_FRACTION,
     tyreOf, applyTyreWear, suggestStrategy, getWearPenaltyFactor, giriPerMescola
 } = require('./TyreModel.js');
@@ -136,7 +136,7 @@ test('TYRE_COMPOUNDS: contiene soft, medium, hard con proprietà attese', () => 
         assert.equal(typeof spec.color, 'string', `${name}.color deve essere stringa`);
         assert.equal(typeof spec.speedMult, 'number', `${name}.speedMult deve essere numero`);
         assert.equal(typeof spec.gripMult, 'number', `${name}.gripMult deve essere numero`);
-        assert.equal(typeof spec.wearRate, 'number', `${name}.wearRate deve essere numero`);
+        assert.equal(typeof spec.vita, 'number', `${name}.vita deve essere numero`);
     }
 });
 
@@ -193,8 +193,43 @@ test("applyTyreWear: senza abrasivita' nella pista il consumo e' quello di sempr
     assert.equal(a.tyreWear, b.tyreWear);
 });
 
-test('giriPerMescola: a riferimento la Medium dura WEAR_LAPS_AT_MEDIUM giri', () => {
-    assert.equal(giriPerMescola(20, 1).medium, WEAR_LAPS_AT_MEDIUM);
+test('giriPerMescola: la durata SCALA con la lunghezza della gara', () => {
+    // ⚠️ E' il cuore del rifacimento del 2026-09-11. Prima una Medium durava
+    // cinque giri e basta: identici su una gara da 4 e su una da 13, quindi la
+    // stessa taratura dava una gara senza strategia e una senza soste.
+    const corta = giriPerMescola(10, 1);
+    const lunga = giriPerMescola(20, 1);
+    for (const k of ['soft', 'medium', 'hard']) {
+        // ⚠️ Un giro di tolleranza, e non e' lassismo: questo numero e'
+        // ARROTONDATO perche' si mostra al giocatore (3.5 giri diventano 4),
+        // mentre la fisica usa la frazione esatta. Pretendere il doppio
+        // esatto misurerebbe l'arrotondamento, non il modello.
+        assert.ok(Math.abs(lunga[k] - corta[k] * 2) <= 1,
+            `${k}: su gara doppia dura ${lunga[k]} invece di ~${corta[k] * 2}`);
+    }
+});
+
+test('giriPerMescola: NESSUNA mescola arriva in fondo alla gara', () => {
+    // Decisione dell'utente: «con la hard non puoi fare tutta la gara, comunque
+    // ci deve essere il cambio mescola». Se una ci arrivasse, la sosta si
+    // farebbe solo perche' e' obbligatoria, e non sarebbe una scelta.
+    for (const N of [4, 5, 6, 10, 13, 20, 50]) {
+        const g = giriPerMescola(N, 1);
+        assert.ok(g.hard < N, `gara da ${N} giri: la Hard ne dura ${g.hard}`);
+    }
+});
+
+test("applyTyreWear: percorsa la vita nominale, la gomma e' finita", () => {
+    // Il legame fra il numero MOSTRATO e quello che succede davvero in pista.
+    // Senza, la schermata potrebbe dire «dura 3 giri» mentre la fisica ne
+    // concede cinque, e nessun test se ne accorgerebbe.
+    const track = { lapLength: 5000, totalLaps: 10, abrasivita: 1 };
+    for (const compound of ['soft', 'medium', 'hard']) {
+        const p = { tyreWear: 0, vx: 10, vz: 0, compound };
+        const vita = TYRE_COMPOUNDS[compound].vita * track.totalLaps * track.lapLength;
+        for (let percorso = 0; percorso < vita; percorso += 10) applyTyreWear(p, false, track);
+        assert.ok(p.tyreWear > 99, `${compound}: dopo la vita nominale l'usura e' ${p.tyreWear.toFixed(1)}%`);
+    }
 });
 
 test('giriPerMescola: su pista aggressiva ogni mescola dura meno', () => {

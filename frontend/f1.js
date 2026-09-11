@@ -2638,12 +2638,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             // copia qui.
             card.style.setProperty('--mescola', c.color);
             const segno = (v) => (v >= 1 ? '+' : '') + Math.round((v - 1) * 100) + '%';
-            // "Usura 1.5×" e' un moltiplicatore astratto; "dura ~3 giri" e' la
-            // cosa con cui si decide una strategia. Se il server non ha ancora
-            // mandato i giri (schermata aperta prima del payload) si torna al
-            // moltiplicatore, che e' sempre vero.
+            // "Dura ~3 giri" e' la cosa con cui si decide una strategia.
+            // ⚠️ E non c'e' piu' un ripiego: da quando la vita di una gomma e'
+            // una FRAZIONE della gara, un numero che non sappia quanto e' lunga
+            // la gara non esiste. Il vecchio ripiego mostrava «Usura 1.5×», un
+            // moltiplicatore che adesso non c'e' proprio piu'. Senza il dato
+            // del server si dice che manca, invece di inventarlo.
             const giri = giriPerMescola && giriPerMescola[key];
-            const durata = giri ? `Dura <b>~${giri} giri</b>` : `Usura <b>${c.wearRate}×</b>`;
+            const durata = giri ? `Dura <b>~${giri} giri</b>` : 'Durata <b>—</b>';
             card.innerHTML = F1Pneumatico.svg(key, c.color, { titolo: `Mescola ${c.label}` })
                 + `<div>
                     <div class="tyre-card-label">${c.label.toUpperCase()}</div>
