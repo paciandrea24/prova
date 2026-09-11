@@ -3069,6 +3069,13 @@ function buildPublicState(players, raceStarted, track, game) {
             // uscita. `pitLimiter` qui sopra copre solo l'autopilota e non la
             // sosta, quindi non basta per l'indicatore P in classifica.
             inPit: !!(p.pitting || p.pitAutoState),
+            // Quanta penalita' resta DA SCONTARE, tutta insieme. Il client ne
+            // fa un avviso solo, che mostra i secondi e poi si compatta in un
+            // «!»: senza questo numero dovrebbe rimettere insieme i pezzi da
+            // tre campi diversi e sapere a memoria quanto vale una falsa
+            // partenza. Va a zero quando il debito e' pagato ai box.
+            penaltyPendingMs: ((p.falseStart && !p.falseStartServed) ? FALSE_START_PENALTY_MS : 0)
+                              + (p.collisionPenaltyMs || 0),
             // Chi detiene il giro veloce della gara (vedi checkLap): un
             // booleano per pilota invece del colore, così il client non deve
             // sapere niente dell'altrui stato per disegnare il proprio badge.

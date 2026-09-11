@@ -3306,27 +3306,65 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ordine: basta un sorpasso servito a metà e i badge si trovano di fianco
     // al pilota sbagliato — che è peggio di non averli.
     const standingRailEls = {};    // color -> riga DOM della colonna, gemella di standingRowEls[color]
+    const standingRailParti = {};  // color -> i tre riquadri di quella riga, creati una volta sola
 
     // ⚠️ Disegnato, non l'emoji U+23F1: un'emoji la disegna il sistema con
     // i SUOI colori, quindi su Windows arriverebbe un cronometro colorato
     // dentro il riquadro fucsia invece di un segno bianco. Un SVG eredita
     // currentColor e resta coerente su ogni macchina.
     const CRONOMETRO_SVG =
-        '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor"' +
+        '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor"' +
         ' stroke-width="2.4" stroke-linecap="round" aria-hidden="true">' +
         '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5"/><path d="M9.5 2h5"/></svg>';
 
-    function renderIndicatoriRow(railEl, d) {
-        // UN SOLO "!" per tutte le penalità: l'utente non vuole vederne due a
-        // chi ha sia la falsa partenza sia un contatto. Si spegne quando il
-        // debito è stato scontato ai box — la falsa partenza alla prima sosta
-        // (falseStartServed), i secondi da collisione alla prima sosta utile
-        // (il server azzera collisionPenalty, vedi startPitStop).
-        const penalita = (d.falseStart && !d.falseStartServed) || d.collisionPenalty;
+    // Quanto resta aperto l'avviso di penalita' col numero dentro, prima di
+    // compattarsi nel solo «!». Scelta dell'utente: «quando la penalita' viene
+    // presa vediamo il tempo, dopo un po' si compatta per non occupare troppo
+    // spazio». Tre secondi si leggono anche guidando.
+    const PENALITA_APERTA_MS = 3000;
+    const penalitaFinoA = {};    // color -> istante in cui l'avviso si richiude
+    const penalitaPrec = {};     // color -> ultimo debito visto, per accorgersi che e' salito
+
+    // ⚠️ I tre riquadri si costruiscono UNA VOLTA e poi si accendono e si
+    // spengono. Riscrivere innerHTML ad ogni aggiornamento — cioe' venti volte
+    // al secondo — distruggerebbe l'elemento a meta' della transizione con cui
+    // il numero si compatta, e non si vedrebbe mai.
+    function creaIndicatori(railEl) {
         railEl.innerHTML =
-            (penalita ? '<span class="ind ind-pen" title="Penalità da scontare ai box">!</span>' : '') +
-            (d.inPit ? '<span class="ind ind-pit" title="Ai box">P</span>' : '') +
-            (d.fastestLap ? `<span class="ind ind-fast" title="Giro veloce della gara">${CRONOMETRO_SVG}</span>` : '');
+            '<span class="ind ind-pen" hidden></span>' +
+            '<span class="ind ind-pit" title="Ai box">P</span>' +
+            `<span class="ind ind-fast" title="Giro veloce della gara">${CRONOMETRO_SVG}</span>`;
+        return {
+            pen:  railEl.querySelector('.ind-pen'),
+            pit:  railEl.querySelector('.ind-pit'),
+            fast: railEl.querySelector('.ind-fast'),
+        };
+    }
+
+    function renderIndicatoriRow(parti, color, d) {
+        // UN SOLO avviso per tutte le penalita': l'utente non vuole vederne due
+        // a chi ha sia la falsa partenza sia un contatto. Il server manda gia'
+        // la somma di quel che resta da scontare, e va a zero quando il debito
+        // e' pagato ai box — e' quello che lo spegne.
+        const debito = d.penaltyPendingMs || 0;
+        const prima = penalitaPrec[color] || 0;
+        // Il debito e' SALITO: si e' appena presa una penalita'. Vale sia per
+        // la falsa partenza sia per un contatto, quindi non serve nessun evento
+        // dedicato — e uno stato che converge sopravvive a un messaggio perso,
+        // un evento no.
+        if (debito > prima) penalitaFinoA[color] = performance.now() + PENALITA_APERTA_MS;
+        penalitaPrec[color] = debito;
+
+        parti.pen.hidden = debito <= 0;
+        if (debito > 0) {
+            const aperta = performance.now() < (penalitaFinoA[color] || 0);
+            parti.pen.classList.toggle('aperta', aperta);
+            const testo = aperta ? `+${(debito / 1000).toFixed(1)}` : '!';
+            if (parti.pen.textContent !== testo) parti.pen.textContent = testo;
+            parti.pen.title = `Penalita' da scontare ai box: ${(debito / 1000).toFixed(1)} s`;
+        }
+        parti.pit.hidden = !d.inPit;
+        parti.fast.hidden = !d.fastestLap;
     }
 
     // La colonna è un elemento a sé (il pannello classifica ha overflow:hidden
@@ -3416,6 +3454,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             lastStandingsOrder = [];
             for (const color in standingRowEls) delete standingRowEls[color];
             for (const color in standingRailEls) delete standingRailEls[color];
+            for (const color in standingRailParti) delete standingRailParti[color];
+            for (const color in penalitaFinoA) delete penalitaFinoA[color];
+            for (const color in penalitaPrec) delete penalitaPrec[color];
             return;
         }
 
@@ -3438,6 +3479,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (standingRailEls[color]) {
                     standingRailEls[color].remove();
                     delete standingRailEls[color];
+                    delete standingRailParti[color];
+                    delete penalitaFinoA[color];
+                    delete penalitaPrec[color];
                 }
             }
         }
@@ -3469,8 +3513,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // dopo l'altra. offsetHeight qui è già valido — il pannello è
                 // stato messo a display:flex qualche riga sopra.
                 ind.style.height = `${rowEl.offsetHeight || STANDING_ROW_HEIGHT}px`;
+                standingRailParti[color] = creaIndicatori(ind);
             }
-            renderIndicatoriRow(ind, d);
+            renderIndicatoriRow(standingRailParti[color], color, d);
         }
 
         // Il pannello è appena ricomparso: la prima riga può essere finita a
@@ -3731,26 +3776,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         setLapDisplay(lap, phase);
     });
 
-    // Penalità collisione: il badge "!" (già presente in classifica per chi
-    // ha una collisionPenaltyMs > 0, vedi renderStandingRowContent) si
-    // espande temporaneamente per mostrare i secondi appena aggiunti, poi
-    // si richiude tornando al solo "!" — che resta per tutta la gara.
+    // Penalita' da collisione appena presa. L'AVVISO IN CLASSIFICA NON SI
+    // TOCCA PIU' DA QUI: si disegna da solo leggendo penaltyPendingMs (vedi
+    // renderIndicatoriRow), che si apre col numero e dopo tre secondi si
+    // compatta in un «!». Prima invece era questo evento ad allargare e
+    // restringere il badge con un rimbalzo di scala, bocciato al playtest del
+    // 2026-09-11: «non mi convince il tremolio del ! quando prendo una nuova
+    // penalita'».
+    //
+    // Uno stato che converge batte un evento: un messaggio perso lascerebbe
+    // l'avviso fermo al valore vecchio, mentre lo stato arriva ad ogni tick.
+    // L'evento resta per dire al SOLO interessato cos'e' appena successo, che
+    // dallo stato non si vede: quanto valeva quel singolo contatto.
     socket.on('f1CollisionPenalty', ({ color, penaltyMs }) => {
-        const rowEl = standingRowEls[color];
-        if (!rowEl) return;
-        const el = (standingRailEls[color] || rowEl).querySelector('.ind-pen');
-        if (!el) return;
-        const secs = (penaltyMs / 1000).toFixed(1);
-        anime.timeline({ easing: 'easeOutQuad' })
-            .add({
-                targets: el, scale: [1, 1.3], width: [15, 48], duration: 200,
-                complete: () => { el.textContent = `+${secs}s`; }
-            })
-            .add({ targets: el, duration: 1200 })
-            .add({
-                targets: el, scale: 1, width: 15, duration: 200,
-                complete: () => { el.textContent = '!'; }
-            });
+        if (color !== myColor) return;
+        mostraAvviso(`Penalita': +${(penaltyMs / 1000).toFixed(1)}s`);
     });
 
     // ── SIPARIO DELLA TRANSIZIONE ──────────────────────────────────────

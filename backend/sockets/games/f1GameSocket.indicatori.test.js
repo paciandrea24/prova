@@ -138,6 +138,30 @@ test('inPit copre TUTTA la sosta: manovra, fermo nello stallo e uscita', () => {
     }
 });
 
+// ═══════════ QUANTA PENALITA' RESTA DA SCONTARE ═══════════
+
+test('penaltyPendingMs somma TUTTO quel che resta da scontare', () => {
+    // Un numero solo per un avviso solo: il client mostra «+8.0» e poi lo
+    // compatta in «!», e non deve rimettere insieme i pezzi da tre campi
+    // diversi indovinando quanto vale una falsa partenza.
+    const base = {
+        x: 0, z: 0, angle: 0, trackIndex: 0, speed: 0, inputs: { throttle: 0, brake: 0, steer: 0 },
+        damageParts: { frontWing: 0, floor: 0, engine: 0, suspension: 0 },
+        compound: 'medium', tyreWear: 0, damage: 0, collisionPenaltyMs: 0,
+    };
+    const casi = [
+        ['pulito',                        { ...base },                                                        0],
+        ['falsa partenza da scontare',    { ...base, falseStart: true },                                   5000],
+        ["falsa partenza gia' scontata", { ...base, falseStart: true, falseStartServed: true },              0],
+        ['solo collisioni',               { ...base, collisionPenaltyMs: 3000 },                           3000],
+        ["tutt'e due",                  { ...base, falseStart: true, collisionPenaltyMs: 3000 },          8000],
+    ];
+    for (const [che, p, atteso] of casi) {
+        const out = P.buildPublicState({ red: p }, false, null, { raceTick: 0 });
+        assert.equal(out.red.penaltyPendingMs, atteso, `${che}`);
+    }
+});
+
 // ═══════════ IL GIRO VELOCE ═══════════
 
 function garaConTraguardo() {
