@@ -12,6 +12,7 @@ const fs = require('fs');
 
 const lobbyRoutes = require('./routes/lobbyRoutes');
 const liveryRoutes = require('./routes/livery');
+const preferenzeRoutes = require('./routes/preferenze');
 const { creaRouter: creaRotteStagioni } = require('./routes/f1Stagioni');
 const socketManager = require('./sockets/socketManager');
 const { strumentiDiSviluppoAttivi } = require('./config/ambiente');
@@ -76,6 +77,7 @@ app.use(express.static(path.join(__dirname, '..', 'frontend')));
 // Usa le route modulari
 app.use('/', lobbyRoutes);
 app.use('/', liveryRoutes);
+app.use('/', preferenzeRoutes);
 app.use('/', creaRotteStagioni());
 
 // Socket.IO

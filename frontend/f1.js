@@ -749,6 +749,56 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (gainInterfaccia) gainInterfaccia.gain.value = volumeGioco;
     }
 
+    // ⚠️ IL VALORE SEGUE L'ACCOUNT, ma localStorage resta e non e' un
+    // doppione: e' cio' che fa funzionare la manopola per gli OSPITI, e cio'
+    // che la fa partire subito invece di aspettare una risposta dalla rete.
+    // L'account, quando c'e', vince: e' l'unica copia che ti segue da un
+    // computer all'altro, che e' esattamente quel che e' stato chiesto.
+    //
+    // Si scrive con un ritardo perche' il volume si cambia a raffica: tenendo
+    // premuto `-` dal 100% a zero partirebbero dieci richieste, e conta solo
+    // dove ti sei fermato.
+    let timerSalvaVolume = null;
+    let volumeToccatoDaTe = false;
+
+    function salvaVolumeSullAccount() {
+        if (!user) return;
+        clearTimeout(timerSalvaVolume);
+        timerSalvaVolume = setTimeout(async () => {
+            try {
+                const token = await user.getIdToken();
+                await fetch('/api/preferenze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ volume: volumeGioco }),
+                });
+            } catch (e) {
+                // Rete giu' o archivio non configurato: pazienza, il valore
+                // resta comunque in localStorage su questo computer.
+                console.warn("[F1] volume non salvato sull'account:", e.message);
+            }
+        }, 600);
+    }
+
+    async function caricaVolumeDallAccount() {
+        if (!user) return;
+        try {
+            const token = await user.getIdToken();
+            const res = await fetch('/api/preferenze', { headers: { Authorization: `Bearer ${token}` } });
+            if (!res.ok) return;
+            const pref = await res.json();
+            if (typeof pref.volume !== 'number') return;
+            // ⚠️ Se nel frattempo hai gia' premuto i tasti, la risposta della
+            // rete NON ti scavalca: arriva dopo qualche decimo di secondo, e
+            // vedersi rimettere il volume da solo sarebbe un difetto.
+            if (volumeToccatoDaTe) return;
+            volumeGioco = Math.max(0, Math.min(1, pref.volume));
+            applicaVolume();
+        } catch (e) {
+            console.warn('[F1] preferenze non lette:', e.message);
+        }
+    }
+
     function cambiaVolume(delta) {
         // Si conta a PASSI e non sommando 0.1: in virgola mobile si arriva a
         // 0.30000000000000004, e l'avviso direbbe 30% oggi e 29% domani a
@@ -756,11 +806,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         const passi = Math.round(volumeGioco / VOLUME_PASSO) + delta;
         volumeGioco = Math.max(0, Math.min(1, passi * VOLUME_PASSO));
         try { localStorage.setItem('f1Volume', String(volumeGioco)); } catch (e) { /* pazienza */ }
+        volumeToccatoDaTe = true;
+        salvaVolumeSullAccount();
         applicaVolume();
         mostraAvviso(volumeGioco === 0 ? 'Audio muto' : `Volume ${Math.round(volumeGioco * 100)}%`);
     }
 
     applicaVolume();
+    caricaVolumeDallAccount();
     // In CAMPIONATO il mondo parte muto. La propria auto viene caricata comunque
     // (serve appena si corre) e il suo motore parte con lei, a volume zero ma
     // con un attacco che si sente — segnalato al playtest: "finito il
