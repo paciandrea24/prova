@@ -8,15 +8,15 @@ leggibile: il tutorial non si rompe mentre aspetta le foto.
 
 | file | cosa deve mostrare |
 |---|---|
-| `weekend.jpg` | La griglia di partenza vista da dietro, con le auto schierate. Deve far capire «sono tutti in fila e si parte da fermi». |
-| `partenza.jpg` | Il ponte dei semafori **con le luci accese**, inquadrato come lo vedi dall'abitacolo un attimo prima del via. |
-| `sosta.jpg` | L'arrivo in corsia box con il **muro del conto alla rovescia acceso** (quando diventa azzurro). È il momento che il testo descrive. |
-| `gomme.jpg` | La schermata di scelta mescola, con le tre carte e i giri di durata. |
+| `weekend.png` | ✅ **GIA' FATTA.** Il rettilineo del traguardo con le piazzole dipinte, il ponte dei semafori e i box. Scattata dall'anteprima esplorabile (`track-preview.html`), che costruisce la scena vera con gli asset veri. |
+| `partenza.png` | Il ponte dei semafori **con le luci accese**, inquadrato come lo vedi dall'abitacolo un attimo prima del via. |
+| `sosta.png` | L'arrivo in corsia box con il **muro del conto alla rovescia acceso** (quando diventa azzurro). È il momento che il testo descrive. |
+| `gomme.png` | La schermata di scelta mescola, con le tre carte e i giri di durata. |
 
 ## Come scattarle
 
 - **Formato 16:9**, almeno 960×540. Più grandi va bene, vengono ridotte.
-- `.jpg` per le fotografie di gioco (pesano molto meno del `.png` a parità di
+- `.png` per le fotografie di gioco (pesano molto meno del `.png` a parità di
   resa su un'immagine 3D).
 - ⚠️ **Con la legenda admin spenta** (F10 in gara): quelle scritte non le vede
   nessun altro giocatore, e in un tutorial insegnerebbero tasti che per lui

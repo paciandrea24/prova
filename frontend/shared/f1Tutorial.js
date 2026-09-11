@@ -45,7 +45,7 @@
     const PASSI = [
         {
             titolo: 'Il weekend',
-            foto: 'weekend.jpg',
+            foto: 'weekend.png',
             occhiello: 'Come si svolge',
             corpo: [
                 'Prima la <b>qualifica</b>: un giro secco, da solo in pista. Il tempo che fai decide da dove parti.',
@@ -56,7 +56,7 @@
         },
         {
             titolo: 'La partenza',
-            foto: 'partenza.jpg',
+            foto: 'partenza.png',
             occhiello: 'Cinque luci, poi buio',
             corpo: [
                 'Tieni premuta la <b>frizione</b> mentre i semafori si accendono, e <b>rilasciala</b> quando si spengono: e’ il rilascio che mette in moto l’auto.',
@@ -67,7 +67,7 @@
         },
         {
             titolo: 'La sosta',
-            foto: 'sosta.jpg',
+            foto: 'sosta.png',
             occhiello: 'Almeno una, sempre',
             corpo: [
                 'Ogni gara richiede <b>almeno una sosta</b> ai box. Chi non si ferma si prende <b>30 secondi</b> sul tempo finale.',
@@ -78,7 +78,7 @@
         },
         {
             titolo: 'Le gomme',
-            foto: 'gomme.jpg',
+            foto: 'gomme.png',
             occhiello: 'Tre mescole, tre strategie',
             corpo: [
                 '<b>Nessuna arriva in fondo alla gara</b>: la scelta non e’ quale sia la migliore, ma come dividere la gara fra due treni.',
@@ -162,6 +162,43 @@
                 display: flex; flex-direction: column; gap: 12px;
             }
             #${ID_NODO} .tut-riga { font-size: 15px; line-height: 1.5; }
+
+            /* LA TRANSIZIONE FRA UN PASSO E L'ALTRO. Il riquadro non si
+               ridimensiona piu', ma il contenuto si sostituiva in un fotogramma
+               e si leggeva come uno scatto — segnalato dall'utente. Ora esce
+               nella direzione in cui stai andando ed entra dalla parte opposta,
+               che e' anche cio' che dice da che parte ti sei mosso.
+               ⚠️ Si muovono TESTA e CORPO insieme: animare solo il corpo
+               lascerebbe il titolo a cambiare di scatto, cioe' lo stesso
+               difetto spostato due centimetri piu' su. */
+            #${ID_NODO} .tut-mobile {
+                transition: opacity 130ms ease, transform 130ms ease;
+            }
+            #${ID_NODO} .tut-box.esce-avanti .tut-mobile { opacity: 0; transform: translateX(-14px); }
+            #${ID_NODO} .tut-box.esce-indietro .tut-mobile { opacity: 0; transform: translateX(14px); }
+            /* ⚠️ L'ENTRATA E' UN'ANIMAZIONE, NON UNA CLASSE DA TOGLIERE. La
+               prima stesura posava il contenuto nuovo a opacita' zero e
+               contava su requestAnimationFrame per riaccenderlo: se quello non
+               scatta — scheda in secondo piano, o un browser che lo sospende —
+               il tutorial resta BIANCO, e il difetto e' peggiore di quello che
+               stavo curando. Con un'animazione lo stato finale e' quello
+               naturale: se non parte, si vede lo stesso. */
+            @keyframes tutEntraAvanti {
+                from { opacity: 0; transform: translateX(14px); }
+                to   { opacity: 1; transform: none; }
+            }
+            @keyframes tutEntraIndietro {
+                from { opacity: 0; transform: translateX(-14px); }
+                to   { opacity: 1; transform: none; }
+            }
+            #${ID_NODO} .tut-box.entra-avanti .tut-mobile { animation: tutEntraAvanti 150ms ease; }
+            #${ID_NODO} .tut-box.entra-indietro .tut-mobile { animation: tutEntraIndietro 150ms ease; }
+            /* Chi ha chiesto meno movimento al sistema operativo non lo
+               riceve: resta lo stacco netto, che e' comunque leggibile. */
+            @media (prefers-reduced-motion: reduce) {
+                #${ID_NODO} .tut-mobile { transition: none; animation: none !important; }
+                #${ID_NODO} .tut-box[class*="esce-"] .tut-mobile { opacity: 1; transform: none; }
+            }
             #${ID_NODO} .tut-riga b { font-weight: 700; }
 
             /* La fotografia di cio' che si vedra' in gioco. ⚠️ Se il file non
@@ -359,13 +396,13 @@
         box.id = ID_NODO;
         box.innerHTML = `<div class="tut-box" role="dialog" aria-modal="true" aria-label="Come si gioca">
             <div class="tut-testa">
-                <div>
+                <div class="tut-mobile">
                     <div class="tut-occhiello"></div>
                     <h3 class="tut-titolo"></h3>
                 </div>
                 <div class="tut-conta"></div>
             </div>
-            <div class="tut-corpo"></div>
+            <div class="tut-corpo tut-mobile"></div>
             <div class="tut-piede">
                 <div class="tut-punti"></div>
                 <button type="button" class="tut-salta">Salta</button>
@@ -409,12 +446,36 @@
 
         return new Promise(risolvi => {
             const finisci = () => { chiudi(); if (o.onChiuso) o.onChiuso(); risolvi(); };
+            const scatola = box.querySelector('.tut-box');
+            let inMovimento = false;
+
             vaiA = (d) => {
                 const prossimo = i + d;
                 if (prossimo < 0) return;
                 if (prossimo >= PASSI.length) { finisci(); return; }
-                i = prossimo;
-                disegna();
+                // ⚠️ Una transizione per volta: tenendo premuta la freccia
+                // partirebbero dieci sostituzioni sovrapposte e il contenuto
+                // finirebbe a meta' dissolvenza, fermo li'.
+                if (inMovimento) return;
+                inMovimento = true;
+
+                const verso = d > 0 ? 'avanti' : 'indietro';
+                scatola.classList.add('esce-' + verso);
+                setTimeout(() => {
+                    i = prossimo;
+                    disegna();
+                    scatola.classList.remove('esce-' + verso);
+                    scatola.classList.add('entra-' + verso);
+                    // La classe si toglie per poter riattaccare l'animazione al
+                    // passo dopo. Se questo timer tardasse non succede niente di
+                    // grave: l'animazione e' gia' finita e il contenuto e' a
+                    // posto — e' il motivo per cui l'entrata e' un'animazione e
+                    // non uno stato trasparente da spegnere.
+                    setTimeout(() => {
+                        scatola.classList.remove('entra-' + verso);
+                        inMovimento = false;
+                    }, 160);
+                }, 130);
             };
             el.avanti.addEventListener('click', () => vaiA(+1));
             el.indietro.addEventListener('click', () => vaiA(-1));
