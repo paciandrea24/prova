@@ -6850,14 +6850,29 @@ document.addEventListener('DOMContentLoaded', async () => {
                     //
                     // Solo la propria auto: lo stato della frizione altrui non
                     // viaggia, e i bot una frizione non ce l'hanno proprio.
-                    if (color === myColor && frizioneGiu
-                        && (lightsSequenceActive || target.partenzaSbloccata === false)) {
+                    // La PROPRIA auto la decide il tasto premuto qui, senza
+                    // aspettare il giro di rete; le altre le decide il server,
+                    // che e' l'unico a sapere se un avversario tiene la
+                    // frizione o se un bot sta per scattare (vedi
+                    // motoreInCarica). L'utente le vuole sentire tutte: «che
+                    // siano bot o giocatori reali».
+                    const carica = (color === myColor)
+                        ? (frizioneGiu && (lightsSequenceActive || target.partenzaSbloccata === false))
+                        : !!target.motoreInCarica;
+                    if (carica) {
+                        // ⚠️ Ogni auto il SUO regime. Sei motori sulla stessa nota
+                        // non sono una griglia: sono un motore alzato di
+                        // volume. Lo scarto viene dal colore, quindi e' stabile
+                        // per tutta la gara e non balla da un frame all'altro.
+                        const sua = SemeStabile.hashString(String(color)) % 1000 / 1000;
                         // Un filo di oscillazione, se no sono sette secondi di
-                        // nota fissa: un motore tenuto su di giri respira.
+                        // nota fissa: un motore tenuto su di giri respira. Con
+                        // fasi diverse, i respiri non vanno a tempo.
                         // La salita non si scrive qui — la fa da sola la rampa
                         // di setTargetAtTime qui sotto, che e' anche cio' che
                         // riporta giu' il suono al rilascio.
-                        targetRate = 1.45 + 0.04 * Math.sin(performance.now() / 70);
+                        const base = 1.38 + sua * 0.14;
+                        targetRate = base + 0.04 * Math.sin(performance.now() / 70 + sua * 6.283);
                         targetVolume = 0.28;
                         frac = 0.8;
                     } else if (target.pitLimiter) {

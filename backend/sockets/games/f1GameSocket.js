@@ -3029,6 +3029,27 @@ async function endRace(io, lobbyId, game) {
 // ====================================================
 // HELPERS
 // ====================================================
+// Chi sta tenendo su di giri il motore in griglia. Serve al suono: l'utente
+// vuole sentire caricare anche le ALTRE auto, bot compresi, e lo stato della
+// frizione altrui non viaggia (ne' avrebbe senso per un bot, che una frizione
+// non ce l'ha).
+//
+// ⚠️ Si decide qui e non nel client: il client dovrebbe sapere, per ogni
+// avversario, se il suo cancello di partenza e' chiuso E in che fase siamo. La
+// domanda vera e' una sola — «questa macchina sta rullando?» — e la risposta
+// la sa solo chi ha lo stato completo.
+function motoreInCarica(p, game) {
+    if (!game || game.phase !== 'race') return false;
+    const frizione = !!(p.inputs && p.inputs.frizione);
+    // Semafori accesi: gli umani rullano se tengono la frizione, i bot sempre
+    // — in griglia, prima del via, un motore fermo non esiste.
+    if (game.lightsSequenceActive) return p.isBot ? true : frizione;
+    // Dopo lo spegnimento: l'umano finche' non molla, il bot finche' non
+    // scade la sua reazione al via, che e' la sua «frizione».
+    if (p.isBot) return !!(p.botRaceReactionUntil && Date.now() < p.botRaceReactionUntil);
+    return !p.partenzaSbloccata && frizione;
+}
+
 function buildPublicState(players, raceStarted, track, game) {
     const out = {};
 
@@ -3125,6 +3146,9 @@ function buildPublicState(players, raceStarted, track, game) {
             // ne ricava quando togliere di mezzo il riquadro che spiega la
             // procedura: finito il suo lavoro, sparisce da solo.
             partenzaSbloccata: p.partenzaSbloccata !== false,
+            // Il motore tenuto su di giri in griglia, per il suono delle
+            // altre auto (vedi motoreInCarica).
+            motoreInCarica: motoreInCarica(p, game),
             // Quanta penalita' resta DA SCONTARE, tutta insieme. Il client ne
             // fa un avviso solo, che mostra i secondi e poi si compatta in un
             // «!»: senza questo numero dovrebbe rimettere insieme i pezzi da
@@ -3230,7 +3254,7 @@ module.exports.physics = {
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
     buildPublicState, playersVisibleTo, startPitLaneEntry, inPitEntryZone, checkLap, updateSectorTiming, finalizeSessionFinish, resolvePendingFinish,
     computeSlipstreamMult,
-    aggiornaFrizione,
+    aggiornaFrizione, motoreInCarica,
     updatePitAutopilot, PIT_AUTO_SPEED, PIT_AUTO_ARRIVE_DIST,
     handlePitReactionPress, startPitStop, durataPerEsito, addLaneIndices, pianoIngressoDi,
     PIT_DURATA_PERFETTA, PIT_DURATA_BUONA, PIT_DURATA_LENTA, PIT_LATENZA_MAX_MS

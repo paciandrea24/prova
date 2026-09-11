@@ -130,3 +130,45 @@ test('l\'acceleratore a luci accese resta falsa partenza anche con la frizione g
     assert.equal(game.players.conFrizione.falseStart, true, 'gas a luci accese: falsa partenza');
     assert.equal(!!game.players.pulito.falseStart, false, 'la sola frizione non e\' falsa partenza');
 });
+
+// ═══════════ CHI STA RULLANDO IN GRIGLIA ═══════════
+//
+// L'utente vuole sentire caricare anche le altre auto: «che siano bot o
+// giocatori reali». Lo stato della frizione altrui non viaggia, e un bot una
+// frizione non ce l'ha, quindi la domanda a cui risponde il server e' una
+// sola: questa macchina sta rullando?
+
+test("a semafori accesi rulla l'umano che tiene la frizione, e tutti i bot", () => {
+    const game = { phase: 'race', lightsSequenceActive: true };
+    const conFrizione = pilota({ inputs: { throttle: 0, brake: 0, steer: 0, frizione: true } });
+    const senza = pilota();
+    const bot = pilota({ isBot: true });
+    assert.equal(P.motoreInCarica(conFrizione, game), true);
+    assert.equal(P.motoreInCarica(senza, game), false, 'chi non preme niente resta muto');
+    assert.equal(P.motoreInCarica(bot, game), true, 'in griglia un bot col motore spento non esiste');
+});
+
+test("dopo il verde l'umano rulla finche' non molla", () => {
+    const game = { phase: 'race', lightsSequenceActive: false };
+    const tiene = pilota({ inputs: { throttle: 0, brake: 0, steer: 0, frizione: true }, partenzaSbloccata: false });
+    assert.equal(P.motoreInCarica(tiene, game), true);
+    tiene.partenzaSbloccata = true;      // ha mollato: e' partito
+    assert.equal(P.motoreInCarica(tiene, game), false);
+});
+
+test("dopo il verde il bot rulla finche' non scade la sua reazione", () => {
+    const game = { phase: 'race', lightsSequenceActive: false };
+    const bot = pilota({ isBot: true, partenzaSbloccata: true });
+    bot.botRaceReactionUntil = Date.now() + 5000;
+    assert.equal(P.motoreInCarica(bot, game), true, 'sta ancora per scattare');
+    bot.botRaceReactionUntil = Date.now() - 1;
+    assert.equal(P.motoreInCarica(bot, game), false, "e' partito: suono normale");
+});
+
+test('in qualifica non rulla nessuno', () => {
+    // Non c'e' griglia e non c'e' frizione: un giro secco comincia dai box.
+    const game = { phase: 'qualifying', lightsSequenceActive: true };
+    const p = pilota({ inputs: { throttle: 0, brake: 0, steer: 0, frizione: true } });
+    assert.equal(P.motoreInCarica(p, game), false);
+    assert.equal(P.motoreInCarica(pilota({ isBot: true }), game), false);
+});
