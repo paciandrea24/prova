@@ -44,6 +44,11 @@ const AMMESSE = {
         if (typeof v !== 'number' || !isFinite(v)) return undefined;
         return Math.max(0, Math.min(1, Math.round(v * 10) / 10));
     },
+    // Il riquadro che spiega la procedura di partenza: false una volta che il
+    // giocatore l'ha chiuso. Si salva il «non mostrarmelo piu'», non il
+    // contrario: un account nuovo non ha il campo e quindi lo vede, che e'
+    // esattamente quel che serve.
+    aiutoPartenza: (v) => (typeof v === 'boolean' ? v : undefined),
 };
 
 // Tiene solo i campi ammessi e validi. Esportata perche' e' la regola, e una

@@ -855,6 +855,9 @@ module.exports = function (io, socket) {
             throttle: Math.max(0, Math.min(1, Number(inputs.throttle) || 0)),
             brake: Math.max(0, Math.min(1, Number(inputs.brake) || 0)),
             steer: Math.max(-1, Math.min(1, Number(inputs.steer) || 0)),
+            // La frizione della partenza: tenuta giu' o no, niente di
+            // analogico. Vedi aggiornaFrizione.
+            frizione: !!inputs.frizione,
         };
     });
 
@@ -1012,7 +1015,7 @@ module.exports = function (io, socket) {
         if (!p) return;   // già rimosso definitivamente
 
         p.disconnected = true;
-        p.inputs = { throttle: 0, brake: 0, steer: 0 };
+        p.inputs = { throttle: 0, brake: 0, steer: 0, frizione: false };
 
         if (!game.rejoinTimers) game.rejoinTimers = {};
         if (game.rejoinTimers[color]) clearTimeout(game.rejoinTimers[color]);
@@ -1279,6 +1282,11 @@ function resetStatoAuto(p) {
     p.botUltimoCambioDifesa = 0;
     p.collisionPenaltyMs = 0;
     p.collisionPenaltyTotalMs = 0;
+    // Aperto di default: lo chiude solo il via della GARA. In qualifica non
+    // c'e' frizione, e chi entra a gara in corso non deve trovarsi bloccato.
+    p.partenzaSbloccata = true;
+    p.frizionePrec = false;
+    p.reazionePartenzaMs = null;
     p.bestLapMs = null;
     p.pendingRepair = false;
     if (p.carContacts) p.carContacts.clear();
@@ -1291,7 +1299,7 @@ function resetStatoAuto(p) {
     p.gapToLeaderMs = null;
     p.pitAutoState = null; p.pitPathIndex = 0; p.pitBoxFinalApproach = false;
     p.pitPiano = null; p.pitRimanente = null;
-    p.inputs = { throttle: 0, brake: 0, steer: 0 };
+    p.inputs = { throttle: 0, brake: 0, steer: 0, frizione: false };
     // Stato bot transitorio: un bot ancora diretto ai box (non ancora entrato
     // nel trigger) alla fine della sessione precedente non deve ripartire già
     // puntato alla corsia box con gomme appena montate.
@@ -1450,7 +1458,7 @@ function startRaceCountdown(io, lobbyId, game) {
     // sessione finisce, ma il server non lo sapeva mai azzerare da solo)
     // risultava marcato falsa partenza al via successivo senza aver toccato
     // nulla — bug reale trovato dalla review finale.
-    for (const p of Object.values(game.players)) p.inputs = { throttle: 0, brake: 0, steer: 0 };
+    for (const p of Object.values(game.players)) p.inputs = { throttle: 0, brake: 0, steer: 0, frizione: false };
 
     // holdMs resta SOLO lato server, per il proprio setTimeout: il client
     // non ha bisogno di conoscerlo, gli basta reagire al vero evento
@@ -1476,6 +1484,15 @@ function startRaceCountdown(io, lobbyId, game) {
         // tick, una griglia troppo "meccanica" (vedi BOT_RACE_START_REACTION_*
         // in f1Bot.js).
         for (const p of Object.values(g.players)) {
+            // ⚠️ Il cancello della partenza si chiude QUI, non prima: fino allo
+            // spegnimento la fisica e' congelata comunque, e chiuderlo prima
+            // vorrebbe solo dire un altro stato da ricordarsi di riaprire.
+            // Ai bot resta aperto: la loro reazione al via esiste gia' qui
+            // sotto, e un bot col cancello chiuso resterebbe fermo per sempre
+            // perche' nessuno gli preme un tasto.
+            p.partenzaSbloccata = !!p.isBot;
+            p.frizionePrec = false;
+            p.reazionePartenzaMs = null;
             if (p.isBot) {
                 p.botRaceReactionUntil = g.raceStartTime +
                     BOT_RACE_START_REACTION_MIN_MS + Math.random() * (BOT_RACE_START_REACTION_MAX_MS - BOT_RACE_START_REACTION_MIN_MS);
@@ -2031,6 +2048,34 @@ function aggiornaCarburante(p, isQuali, totalLaps) {
     p.fuelFactor = isQuali ? 1 : fuelFactorFor(p.lap, totalLaps);
 }
 
+// LA FRIZIONE ALLA PARTENZA (richiesta dell'utente, 2026-09-11).
+//
+// Finche' la frizione e' giu' l'acceleratore non arriva alla fisica: e' un
+// CANCELLO, non un modificatore. L'utente e' stato esplicito — «non voglio
+// boost o rallentamenti alle partenze, e' la reazione allo spegnimento del
+// semaforo che stabilisce quanto e' buona la partenza» — quindi qui non c'e'
+// nessun moltiplicatore: chi rilascia tardi parte tardi, e il ritardo e'
+// esattamente quello che si e' preso.
+//
+// ⚠️ Si apre su un RILASCIO, non sullo stato: chi non tocca mai la frizione
+// resta fermo col gas premuto finche' non la preme e la molla. E' la scelta
+// dell'utente fra tre («senza frizione non parti»), e non e' una penalita'
+// aggiunta: e' che la frizione E' il modo di mettersi in moto.
+//
+// ⚠️ E una volta aperto non si richiude piu'. «Se la rilasci e poi la
+// ripremi non succede niente»: a gara in corso quel tasto torna a essere un
+// tasto qualunque, altrimenti basterebbe premerlo per inchiodare.
+function aggiornaFrizione(p, game) {
+    if (p.partenzaSbloccata) return;
+    const giu = !!(p.inputs && p.inputs.frizione);
+    if (p.frizionePrec && !giu) {
+        p.partenzaSbloccata = true;
+        p.reazionePartenzaMs = game.raceTick * PHYSICS_TICK_MS;
+    }
+    p.frizionePrec = giu;
+    if (!p.partenzaSbloccata && p.inputs) p.inputs.throttle = 0;
+}
+
 function tickGame(io, lobbyId, game) {
     if (!game.raceStarted) {
         // Falsa partenza: il client inizia a inviare l'input dell'acceleratore
@@ -2119,6 +2164,9 @@ function tickGame(io, lobbyId, game) {
                 p.inSlipstream = true;   // solo per il badge/effetto visivo lato client, vedi buildPublicState
             }
         }
+        // Prima di updateVelocity, che e' chi legge l'acceleratore: il
+        // cancello della partenza deve poterlo azzerare.
+        if (!isQuali) aggiornaFrizione(p, game);
         aggiornaCarburante(p, isQuali, game.track.totalLaps);
         updateVelocity(p, isQuali, slipstreamMult);
     }
@@ -3072,6 +3120,11 @@ function buildPublicState(players, raceStarted, track, game) {
             // uscita. `pitLimiter` qui sopra copre solo l'autopilota e non la
             // sosta, quindi non basta per l'indicatore P in classifica.
             inPit: !!(p.pitting || p.pitAutoState),
+            // Il cancello della partenza: finche' e' chiuso l'auto non si
+            // muove per quanto gas si dia (vedi aggiornaFrizione). Il client
+            // ne ricava quando togliere di mezzo il riquadro che spiega la
+            // procedura: finito il suo lavoro, sparisce da solo.
+            partenzaSbloccata: p.partenzaSbloccata !== false,
             // Quanta penalita' resta DA SCONTARE, tutta insieme. Il client ne
             // fa un avviso solo, che mostra i secondi e poi si compatta in un
             // «!»: senza questo numero dovrebbe rimettere insieme i pezzi da
@@ -3146,7 +3199,7 @@ function resetPlayers(game) {
         p.lapRecapSectorTimes = null; p.lapRecapExpiresAtMs = null;
         p.pendingFinishTime = null;
         p.trackIndex = 0;
-        p.inputs = { throttle: 0, brake: 0, steer: 0 };
+        p.inputs = { throttle: 0, brake: 0, steer: 0, frizione: false };
         if (p.isBot) { p.botHeadingToPits = false; p.botPitReactionScheduled = false; }
         i++;
     }
@@ -3177,6 +3230,7 @@ module.exports.physics = {
     getEnginePowerPenalty, getFloorGripPenalty, getFrontWingSteerPenalty, getSuspensionNoise,
     buildPublicState, playersVisibleTo, startPitLaneEntry, inPitEntryZone, checkLap, updateSectorTiming, finalizeSessionFinish, resolvePendingFinish,
     computeSlipstreamMult,
+    aggiornaFrizione,
     updatePitAutopilot, PIT_AUTO_SPEED, PIT_AUTO_ARRIVE_DIST,
     handlePitReactionPress, startPitStop, durataPerEsito, addLaneIndices, pianoIngressoDi,
     PIT_DURATA_PERFETTA, PIT_DURATA_BUONA, PIT_DURATA_LENTA, PIT_LATENZA_MAX_MS

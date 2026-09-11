@@ -61,11 +61,11 @@ const F1GamepadInput = (() => {
     function setCallbacks(cb) { cbs = cb; }
 
     function poll() {
-        if (!connected) return { connected: false, throttle: 0, brake: 0, steer: 0, lookBack: false };
+        if (!connected) return { connected: false, throttle: 0, brake: 0, steer: 0, lookBack: false, confirmHeld: false };
 
         const gps = navigator.getGamepads ? navigator.getGamepads() : [];
         const gp  = gps[gpIdx];
-        if (!gp) return { connected: false, throttle: 0, brake: 0, steer: 0, lookBack: false };
+        if (!gp) return { connected: false, throttle: 0, brake: 0, steer: 0, lookBack: false, confirmHeld: false };
 
         // Asse positivo = stick spinto a destra; il segno va invertito
         // perché nella convenzione server "steer" positivo equivale al
@@ -101,7 +101,10 @@ const F1GamepadInput = (() => {
         if (dpadRNow && !prevDpadR && cbs.onNavRight) cbs.onNavRight();
         prevDpadR = dpadRNow;
 
-        return { connected: true, throttle, brake, steer, lookBack };
+        // `confirmHeld` e non solo il fronte di salita: la frizione della
+        // partenza si TIENE premuta, e onConfirm dice solo quando la si
+        // schiaccia. Sono due domande diverse sullo stesso tasto.
+        return { connected: true, throttle, brake, steer, lookBack, confirmHeld: confirmNow };
     }
 
     function isConnected() { return connected; }

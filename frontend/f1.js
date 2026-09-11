@@ -787,6 +787,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const res = await fetch('/api/preferenze', { headers: { Authorization: `Bearer ${token}` } });
             if (!res.ok) return;
             const pref = await res.json();
+            if (pref.aiutoPartenza === false) {
+                aiutoPartenzaSpento = true;
+                mostraAiutoPartenza(false);
+            }
             if (typeof pref.volume !== 'number') return;
             // ⚠️ Se nel frattempo hai gia' premuto i tasti, la risposta della
             // rete NON ti scavalca: arriva dopo qualche decimo di secondo, e
@@ -3315,6 +3319,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 loadPlayerPitBox(color, anchor);
             }
         }
+        // Partito: il riquadro della partenza ha finito il suo lavoro e se ne
+        // va da solo. Il segnale e' il cancello della frizione lato server,
+        // non la velocita': un'auto tamponata in griglia si muove senza
+        // essere partita.
+        if (state[myColor] && state[myColor].partenzaSbloccata) mostraAiutoPartenza(false);
+
         for (const [color, data] of Object.entries(state)) {
             if (color === '__boxLayout') continue;
             serverState[color] = data;
@@ -3838,6 +3848,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             // timer locale che la replica — lo spegnimento è una reazione
             // all'evento, mai un timeout indipendente).
             lightsSequenceActive = true;
+            mostraAiutoPartenza(true);
+            // ⚠️ Lo stato della frizione va detto SUBITO. startRaceCountdown
+            // azzera gli input di tutti prima di aprire la sequenza, e chi
+            // teneva gia' premuto Spazio da prima non genera nessun cambio:
+            // il server lo crederebbe a frizione alzata, non vedrebbe mai il
+            // rilascio, e quel giocatore non partirebbe.
+            sendInputs();
             num.style.display = 'none';
             // Il pilota alza gli occhi al semaforo.
             sguardoObiettivo = 1;
@@ -5778,7 +5795,78 @@ document.addEventListener('DOMContentLoaded', async () => {
     // "throttled" per frame (vedi maybeSendInputs in animate()) copre sia
     // i cambi da tastiera che il flusso continuo del gamepad.
     const keys = { w: false, a: false, s: false, d: false };
-    const inputs = { throttle: 0, brake: 0, steer: 0 };
+    const inputs = { throttle: 0, brake: 0, steer: 0, frizione: false };
+
+    // ── LA FRIZIONE DELLA PARTENZA ──────────────────────────────────────
+    // Spazio da tastiera, X dal controller: gli stessi tasti della reazione ai
+    // box, che sono gia' il gesto «premi al momento giusto» di questo gioco.
+    // Non si accavallano mai nel tempo: la frizione vive al via, la reazione
+    // ai box in corsia.
+    //
+    // ⚠️ Il tasto puo' essere premuto e rilasciato in un lampo, e il flusso
+    // normale degli input parte solo se qualcosa cambia di piu' di un epsilon
+    // e non piu' spesso di 50 ms. Un lampo dentro quella finestra andrebbe
+    // perso, il server non vedrebbe mai il fronte di discesa e l'auto
+    // resterebbe ferma senza motivo: quindi ogni cambio di frizione si manda
+    // SUBITO, fuori dal ritmo.
+    // ⚠️ I due comandi si SOMMANO, non si sovrascrivono. Il frame legge il
+    // pad ad ogni giro: con un controller collegato ma inutilizzato, un
+    // `impostaFrizione(padGiu)` la' dentro rilascerebbe sessanta volte al
+    // secondo la frizione di chi sta giocando da tastiera, e quel giocatore
+    // non partirebbe mai senza capire perche'.
+    let frizioneTastiera = false, frizionePad = false, frizioneGiu = false;
+    function aggiornaFrizione() {
+        const giu = frizioneTastiera || frizionePad;
+        if (frizioneGiu === giu) return;
+        frizioneGiu = giu;
+        inputs.frizione = giu;
+        // Stessa finestra di maybeSendInputs: fuori da li' il server butta
+        // via tutto, e mandare non servirebbe a niente.
+        if (isRacing || lightsSequenceActive) sendInputs();
+    }
+    function frizioneDaTastiera(giu) { frizioneTastiera = giu; aggiornaFrizione(); }
+    function frizioneDaPad(giu)      { frizionePad = giu;      aggiornaFrizione(); }
+
+    // ── IL RIQUADRO CHE SPIEGA LA PARTENZA ──────────────────────────────
+    // Chiesto dall'utente: «un piccolissimo riquadro che si puo' nascondere
+    // che spiega facilmente la procedura». Serve perche' senza frizione non
+    // si parte: chi non conosce il meccanismo resterebbe fermo in griglia col
+    // gas premuto senza un motivo visibile.
+    //
+    // Chiuso una volta, non torna: il «non mostrarmelo piu'» sta in
+    // localStorage e, per chi ha un account, anche nelle preferenze — cosi'
+    // non lo si richiude su ogni computer.
+    let aiutoPartenzaSpento = false;
+    try { aiutoPartenzaSpento = localStorage.getItem('f1AiutoPartenza') === 'no'; } catch (e) { /* pazienza */ }
+
+    function mostraAiutoPartenza(visibile) {
+        const el = document.getElementById('partenza-aiuto');
+        if (!el) return;
+        el.style.display = (visibile && !aiutoPartenzaSpento) ? 'flex' : 'none';
+        if (!visibile) return;
+        // Il tasto giusto per come stai giocando adesso, non per come giocava
+        // qualcun altro: col controller collegato la barra spaziatrice non
+        // c'entra niente.
+        const tasto = document.getElementById('pa-tasto');
+        if (tasto) {
+            const conPad = typeof F1GamepadInput !== 'undefined' && F1GamepadInput.isConnected();
+            tasto.textContent = conPad ? 'X' : 'SPAZIO';
+        }
+    }
+
+    function spegniAiutoPartenza() {
+        aiutoPartenzaSpento = true;
+        mostraAiutoPartenza(false);
+        try { localStorage.setItem('f1AiutoPartenza', 'no'); } catch (e) { /* pazienza */ }
+        if (!user) return;
+        user.getIdToken()
+            .then(token => fetch('/api/preferenze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ aiutoPartenza: false }),
+            }))
+            .catch(e => console.warn('[F1] preferenza non salvata:', e.message));
+    }
 
     function applyKeys() {
         inputs.throttle = keys.w ? 1 : 0;
@@ -5941,7 +6029,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         applyKeys();
     });
 
+    document.addEventListener('keydown', (e) => {
+        // ⚠️ `e.code` e non `e.key`: la barra spaziatrice produce un carattere
+        // spazio, e confrontarlo a occhio in mezzo ad altri tasti e' il modo
+        // di sbagliarsi. `repeat` esclude l'autoripetizione, che qui direbbe
+        // «premuto» mille volte senza mai dire «rilasciato».
+        if (e.code === 'Space' && !e.repeat && !isTypingInField(e)) {
+            // Senza questo, con il fuoco su un pulsante la barra lo attiva.
+            e.preventDefault();
+            frizioneDaTastiera(true);
+        }
+    });
     document.addEventListener('keyup', (e) => {
+        if (e.code === 'Space') frizioneDaTastiera(false);
         const k = e.key.toLowerCase();
         if (k === 'w') keys.w = false;
         if (k === 'a') keys.a = false;
@@ -5956,11 +6056,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.addEventListener('blur', () => {
         keys.w = keys.a = keys.s = keys.d = false;
+        // Come per la camera dietro: senza, chi cambia finestra con la
+        // frizione premuta se la ritrova giu' al ritorno e non parte piu'.
+        frizioneDaTastiera(false);
         // Il keyup non arriva se la finestra perde il fuoco a tasto premuto:
         // senza questo la camera resterebbe girata al ritorno sulla pagina.
         lookBackKey = false;
         applyKeys();
     });
+
+    {
+        const chiudi = document.getElementById('pa-chiudi');
+        if (chiudi) chiudi.addEventListener('click', spegniAiutoPartenza);
+    }
 
     document.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -5973,7 +6081,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // fisico server (50ms) — evita di floodare il socket coi valori analogici
     // del gamepad, che cambiano quasi ogni frame anche per il minimo tremore.
     const SEND_EPS = 0.02, SEND_MIN_MS = 50;
-    let lastSent = { throttle: 0, brake: 0, steer: 0 };
+    let lastSent = { throttle: 0, brake: 0, steer: 0, frizione: false };
     let lastSendTime = 0;
 
     function maybeSendInputs() {
@@ -5985,7 +6093,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const now = performance.now();
         const changed = Math.abs(inputs.throttle - lastSent.throttle) > SEND_EPS ||
             Math.abs(inputs.brake - lastSent.brake) > SEND_EPS ||
-            Math.abs(inputs.steer - lastSent.steer) > SEND_EPS;
+            Math.abs(inputs.steer - lastSent.steer) > SEND_EPS ||
+            // La frizione non e' analogica e non ha epsilon: o e' cambiata o
+            // no. Sta anche qui, come rete, oltre all'invio immediato.
+            inputs.frizione !== lastSent.frizione;
         if (changed && now - lastSendTime >= SEND_MIN_MS) {
             sendInputs();
             lastSent = { ...inputs };
@@ -6553,6 +6664,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 inputs.throttle = gp.throttle;
                 inputs.brake = gp.brake;
                 inputs.steer = gp.steer;
+                // La frizione col controller e' X tenuta premuta. Non
+                // sovrascrive quella da tastiera: si sommano.
+                frizioneDaPad(!!gp.confirmHeld);
             }
         }
         maybeSendInputs();

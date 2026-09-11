@@ -650,6 +650,47 @@ canvas.tyre-preview-canvas {
 /* Giro veloce della gara: cronometro su fucsia, come nella F1 vera. */
 .f1-indicator-row .ind-fast { background: #b8138a; }
 
+/* IL RIQUADRO DELLA PARTENZA — piccolo, in basso al centro, sopra il resto
+   ma sotto le schermate. Sta dove guardi mentre aspetti il verde senza coprire
+   ne' il semaforo (in alto) ne' la classifica (a sinistra). */
+#partenza-aiuto {
+    left: 50%;
+    bottom: 92px;
+    transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 8px 8px 14px;
+    background: var(--f1-panel);
+    border: 1px solid var(--f1-panel-border);
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+    font-family: 'Fredoka', sans-serif;
+    /* ⚠️ `.hud` mette pointer-events:none su tutto: senza questo la X non
+       si potrebbe cliccare, e il riquadro non si chiuderebbe mai. */
+    pointer-events: auto;
+}
+#partenza-aiuto .pa-testo { display: flex; flex-direction: column; gap: 2px; }
+#partenza-aiuto strong {
+    font-size: 10.5px; font-weight: 800; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--f1-text-dim);
+}
+#partenza-aiuto span { font-size: 13px; font-weight: 500; color: var(--f1-text); }
+#partenza-aiuto b {
+    display: inline-block;
+    padding: 1px 6px; margin: 0 1px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.14);
+    border: 1px solid var(--f1-panel-border);
+    font-weight: 700;
+}
+#partenza-aiuto button {
+    flex-shrink: 0;
+    width: 24px; height: 24px;
+    border: 1px solid var(--f1-panel-border); border-radius: 6px;
+    background: transparent; color: var(--f1-text-dim);
+    font-size: 16px; line-height: 1; cursor: pointer;
+}
+#partenza-aiuto button:hover { background: rgba(255,255,255,0.1); color: var(--f1-text); }
+
 /* ---- top-right: tempo + velocità ---- */
 #timer-speed-panel {
     top: 14px; right: 12px;
