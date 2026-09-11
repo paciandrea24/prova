@@ -306,6 +306,10 @@
             // Lampo, poi le bande si riaprono e spazzano via scoprendo la
             // scena. È l'uscita che "consegna" ciò che c'è sotto.
             const inizioUscita = inizioSosta + tSosta;
+            // Da qui a qui lo schermo e' interamente coperto: vedi attivo().
+            const ora = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+            copertoDa = ora + tEntrata;
+            copertoA = ora + inizioUscita;
             linea.add({
                 targets: el.lampo,
                 opacity: [0, 0.45, 0],
@@ -341,10 +345,33 @@
     function stop() {
         const n = document.getElementById(ID_NODO);
         if (n) n.remove();
+        // Tolto lo stacco, dietro si torna a disegnare subito: senza questo,
+        // una gara annullata a meta' stacco lascerebbe lo schermo fermo fino
+        // alla fine della finestra.
+        copertoDa = copertoA = 0;
+    }
+
+    // La finestra in cui lo stacco copre DAVVERO tutto lo schermo. Serve a chi
+    // disegna dietro: la scena 3D continuerebbe a costare ogni frame per
+    // essere poi nascosta, e in un gioco GPU-bound sui pixel quel lavoro
+    // sprecato se lo prende l'animazione, che gira sullo stesso thread e
+    // comincia ad andare a scatti.
+    //
+    // ⚠️ NON basta chiedere se il nodo esiste: le bande in USCITA scoprono lo
+    // schermo mentre il nodo c'e' ancora, e chi saltasse il disegno li'
+    // mostrerebbe un fotogramma congelato al posto della pista. La finestra
+    // va da quando le bande hanno finito di chiudersi a quando ricominciano
+    // ad aprirsi.
+    let copertoDa = 0, copertoA = 0;
+
+    function attivo() {
+        if (!document.getElementById(ID_NODO)) return false;
+        const ora = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        return ora >= copertoDa && ora < copertoA;
     }
 
     return {
-        play, stop,
+        play, stop, attivo,
         DURATA_DEFAULT, DURATA_MINIMA, COPERTURA_MS, BANDE, F_ENTRATA, F_SOSTA,
         BANDA_SX_VW, BANDA_LARG_VW, FUORI_SX, COPERTO, FUORI_DX,
     };

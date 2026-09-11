@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260911p">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260911r">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -153,8 +153,11 @@
         <div class="pa-testo">
             <strong>Partenza</strong>
             <span>Tieni premuto <b id="pa-tasto">SPAZIO</b>, rilascia quando i semafori si spengono.</span>
+            <!-- ⚠️ Un TASTO e non una × da cliccare: si sta per partire, le mani
+                 sono sui comandi e il mouse non c'entra. E si legge, mentre il
+                 titolo di un bottone non lo apre nessuno. -->
+            <em class="pa-chiudi">Premi <b>N</b> per non mostrarlo più</em>
         </div>
-        <button type="button" id="pa-chiudi" title="Non mostrarmelo piu'" aria-label="Nascondi">&times;</button>
     </div>
 
     <!-- HUD: tempo + velocità — top-right, un pannello solo. Visibile in
@@ -954,7 +957,7 @@
          qualifica→gara. Modulo indipendente: solo DOM e anime.js, nessuna
          dipendenza dal gioco — nasce per essere riusato per caricamenti e
          cambi di scena. -->
-    <script src="shared/f1Sting.js?v=20260818d"></script>
+    <script src="shared/f1Sting.js?v=20260911r"></script>
     <script src="shared/f1SensoVelocita.js?v=20260819h"></script>
     <script src="shared/f1Particelle.js?v=20260820b"></script>
     <script src="shared/f1BoxIngresso.js?v=20260911m"></script>
@@ -992,7 +995,7 @@
     <script src="shared/f1SuoniCerimonia.js?v=20260820a"></script>
     <script src="shared/f1Premiazione.js?v=20260820b"></script>
     <script src="shared/f1StagioneSchermate.js?v=20260824a"></script>
-    <script src="f1.js?v=20260911q"></script>
+    <script src="f1.js?v=20260911r"></script>
 </body>
 
 </html>

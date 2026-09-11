@@ -113,6 +113,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     let segnalaAutoPronta, segnalaPrimoFrame;
     const autoPronta = new Promise(r => { segnalaAutoPronta = r; });
     const primoFrame = new Promise(r => { segnalaPrimoFrame = r; });
+    // La stessa cosa come booleano: una promise si aspetta, non si interroga,
+    // e dentro il loop di disegno serve una domanda secca.
+    let primoFrameFatto = false;
+
+    // Qualcosa copre TUTTO lo schermo: lo stacco fra qualifica e gara, o il
+    // sipario della transizione. Sotto non si disegna (vedi il fondo di
+    // animate): in un gioco GPU-bound sui pixel, disegnare per poi essere
+    // nascosti toglie frame all'animazione che sta sopra.
+    function schermoCoperto() {
+        if (window.F1Sting && F1Sting.attivo()) return true;
+        const sip = document.getElementById('transizione-sipario');
+        if (!sip || sip.style.display === 'none') return false;
+        // Solo a sipario PIENO: mentre sale o scende si vede ancora attraverso,
+        // e fermare il disegno a meta' dissolvenza si vedrebbe come uno scatto.
+        return parseFloat(sip.style.opacity || '0') >= 0.99;
+    }
 
     caricamento.passo('Collegamento all\'account…', 0.04);
 
@@ -6083,6 +6099,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             const su  = e.key === '+' || e.key === '=' || e.code === 'NumpadAdd';
             if (giu || su) { e.preventDefault(); cambiaVolume(su ? 1 : -1); }
         }
+        // N: il riquadro della partenza non si vede mai piu'. Vale solo
+        // mentre e' a schermo, cosi' il tasto non fa niente di misterioso nel
+        // resto della gara.
+        if (k === 'n' && !e.repeat && !isTypingInField(e)) {
+            const el = document.getElementById('partenza-aiuto');
+            if (el && el.style.display !== 'none') {
+                spegniAiutoPartenza();
+                mostraAvviso("Non lo mostro piu'");
+            }
+        }
         // M segnala il punto in cui sei, Shift+M annulla l'ultima. `e.repeat`
         // esclude l'autorepeat: tenendo premuto si riempirebbe il file di
         // copie dello stesso punto.
@@ -6128,11 +6154,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         lookBackKey = false;
         applyKeys();
     });
-
-    {
-        const chiudi = document.getElementById('pa-chiudi');
-        if (chiudi) chiudi.addEventListener('click', spegniAiutoPartenza);
-    }
 
     document.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -7113,9 +7134,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         seguiConLeOmbre();
         toonSky.update(camera);
         F1Perf.logica = performance.now() - _tLogica;
+
+        // ⚠️ NON SI DISEGNA SOTTO A QUEL CHE COPRE TUTTO. Lo stacco di fine
+        // qualifica andava a scatti (segnalato al playtest): non per le sue
+        // sette bande, che sono transform e opacity, ma perche' dietro la
+        // scena 3D continuava a disegnarsi a schermo intero per essere poi
+        // nascosta. Questo gioco e' GPU-bound sui pixel — vedi il pannello
+        // F9 — quindi quel lavoro sprecato se lo prendeva l'animazione, che
+        // gira sullo stesso thread.
+        //
+        // La logica qui sopra continua tutta: se saltasse anche quella, al
+        // ritorno dallo stacco camera, effetti e interpolazioni sarebbero da
+        // riprendere da dove non sono mai arrivati.
+        //
+        // ⚠️ Mai prima del primo frame: `segnalaPrimoFrame` e' cio' che toglie
+        // la schermata di caricamento, e senza un disegno resterebbe su.
+        if (primoFrameFatto && schermoCoperto()) return;
         ToonOutline.render(renderer, scene, camera);
         // Un frame è stato disegnato: da qui in poi togliere la schermata di
         // caricamento non scopre un canvas ancora vuoto.
+        primoFrameFatto = true;
         segnalaPrimoFrame();
     }
 
