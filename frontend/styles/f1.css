@@ -654,6 +654,11 @@ canvas.tyre-preview-canvas {
    ma sotto le schermate. Sta dove guardi mentre aspetti il verde senza coprire
    ne' il semaforo (in alto) ne' la classifica (a sinistra). */
 #partenza-aiuto {
+    /* ⚠️ Sopra il conto alla rovescia (z-index 20), che e' un overlay a tutto
+       schermo: in gara e' trasparente e quindi il riquadro si VEDE comunque,
+       ma intercetta i clic, e la × sarebbe stata morta proprio nei secondi in
+       cui il riquadro e' a video. */
+    z-index: 25;
     left: 50%;
     bottom: 92px;
     transform: translateX(-50%);

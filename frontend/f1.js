@@ -3325,7 +3325,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         // va da solo. Il segnale e' il cancello della frizione lato server,
         // non la velocita': un'auto tamponata in griglia si muove senza
         // essere partita.
-        if (state[myColor] && state[myColor].partenzaSbloccata) mostraAiutoPartenza(false);
+        //
+        // ⚠️ MA IL CANCELLO SI CHIUDE SOLO ALLO SPEGNIMENTO DEI SEMAFORI. Per
+        // tutta la sequenza luci il server manda ancora `partenzaSbloccata:
+        // true`, quindi guardarlo e basta spegneva il riquadro al primo
+        // aggiornamento di stato, cinquanta millisecondi dopo averlo acceso:
+        // durava un frame e non lo vedeva nessuno. Segnalato dall'utente
+        // («non ho ancora visto il pannellino»), ed era vero.
+        //
+        // Si aspetta di aver visto il cancello CHIUSO almeno una volta: da li'
+        // in poi, riaperto vuol dire partito. Non dipende dall'ordine in cui
+        // arrivano i messaggi, a differenza di un controllo sulla fase.
+        if (state[myColor]) {
+            if (state[myColor].partenzaSbloccata === false) cancelloPartenzaVisto = true;
+            else if (cancelloPartenzaVisto) mostraAiutoPartenza(false);
+        }
 
         for (const [color, data] of Object.entries(state)) {
             if (color === '__boxLayout') continue;
@@ -3850,6 +3864,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // timer locale che la replica — lo spegnimento è una reazione
             // all'evento, mai un timeout indipendente).
             lightsSequenceActive = true;
+            cancelloPartenzaVisto = false;
             mostraAiutoPartenza(true);
             // ⚠️ Lo stato della frizione va detto SUBITO. startRaceCountdown
             // azzera gli input di tutti prima di aprire la sequenza, e chi
@@ -5839,6 +5854,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // localStorage e, per chi ha un account, anche nelle preferenze — cosi'
     // non lo si richiude su ogni computer.
     let aiutoPartenzaSpento = false;
+    // Il cancello della partenza e' stato chiuso almeno una volta in questa
+    // gara: e' cio' che distingue «non e' ancora partita» da «sei partito».
+    let cancelloPartenzaVisto = false;
     try { aiutoPartenzaSpento = localStorage.getItem('f1AiutoPartenza') === 'no'; } catch (e) { /* pazienza */ }
 
     function mostraAiutoPartenza(visibile) {
