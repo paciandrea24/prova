@@ -110,8 +110,35 @@
     // larga». Un decimo di secondo e mezzo resta sopra la risoluzione del conto
     // alla rovescia (un decimo), che è il vincolo da cui non si può scendere —
     // sotto, si tornerebbe a prenderla per caso.
-    const MURO_PERFETTO = 4.0;
-    const MURO_BUONO = 12;
+    // ⚠️ LA DIFFICOLTA' SI SCRIVE IN TEMPO, e le unita' di pista si ricavano.
+    // Fino al 2026-09-11 erano due distanze scritte a mano (4.0 e 12), con due
+    // guai. Il primo: nessuno poteva dire quanto fossero generose — misurate,
+    // facevano una finestra perfetta larga 258 ms, di cui 129 PRIMA del muro, e
+    // l'utente infatti faceva sempre perfetto («forse si fa perfetto premendo
+    // ancor prima di aver raggiunto il punto»: esatto). Il secondo, peggiore:
+    // una distanza si stringe da sola se la corsia box diventa piu' veloce, in
+    // silenzio, e il minigioco cambierebbe difficolta' senza che nessuno
+    // colleghi le due cose. Sono due numeri tarati l'uno sull'altro, e qui
+    // stanno insieme.
+    //
+    // 80 e non 70 come detto a parole: il limite inferiore non e' la
+    // risoluzione del numero sul muro — il giocatore non mira su quello, mira
+    // sul muro che SI ACCENDE — ma il difetto opposto, «non riesco mai a fare
+    // pit stop perfetto», che e' il playtest da cui vengono le soglie vecchie.
+    // Da 258 a 160 ms e' meta' della tolleranza in meno: si stringe ancora dopo
+    // un playtest, non prima.
+    const MS_PERFETTO = 80;   // per lato: finestra perfetta larga 160 ms
+    const MS_BUONO = 250;     // per lato: finestra buona larga 500 ms
+
+    // Quanto corre l'autopilota in corsia box, in unita' per tick da 50 ms.
+    // ⚠️ Sta QUI e non in f1GameSocket perche' e' il numero che converte i
+    // millisecondi qui sopra in distanze: PIT_AUTO_SPEED la importa da questo
+    // modulo, cosi' i due non possono divergere.
+    const VELOCITA_CORSIA = 1.55;   // 25% della velocita' massima
+    const TICK_MS = 50;
+
+    const MURO_PERFETTO = MS_PERFETTO / TICK_MS * VELOCITA_CORSIA;
+    const MURO_BUONO = MS_BUONO / TICK_MS * VELOCITA_CORSIA;
 
     function clamp01(v) {
         return v < 0 ? 0 : (v > 1 ? 1 : v);
@@ -333,6 +360,7 @@
         RACCORDO_A, RACCORDO_B_MIN, RACCORDO_B_MAX, FASCIA_SICUREZZA,
         lunghezzaSecondoTempo,
         MURO_MARGINE, MURO_PERFETTO, MURO_BUONO, SEMILUNGHEZZA_AUTO,
+        MS_PERFETTO, MS_BUONO, VELOCITA_CORSIA,
     };
 
 });

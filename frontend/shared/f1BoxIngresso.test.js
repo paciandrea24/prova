@@ -344,3 +344,51 @@ test('il conto alla rovescia arriva a zero quando il muso tocca il muro', () => 
     assert.ok(Math.abs(BI.distanzaDalMuro(piano, sopra.x, sopra.z, sopra.angolo)) < 1e-6);
     assert.ok(BI.distanzaDalMuro(piano, dopo.x, dopo.z, dopo.angolo) < 0, 'dopo il muro deve essere negativo');
 });
+
+// ═══════════ LE FINESTRE SI MISURANO IN TEMPO ═══════════
+//
+// Segnalato dall'utente il 2026-09-11: «faccio sempre perfetto, forse la
+// finestra e' tarata male e forse si fa perfetto premendo ancor prima di aver
+// raggiunto il punto». Misurata: era larga 258 ms, di cui 129 PRIMA del muro.
+//
+// La difficolta' di un gioco di tempismo si scrive nell'unita' in cui il
+// giocatore la sente, cioe' in millisecondi. In unita' di pista non si capisce
+// quanto sia generosa, e soprattutto si stringe da sola se un giorno la corsia
+// box diventa piu' veloce — in silenzio, senza che nessuno colleghi le due
+// cose.
+
+test("le soglie in unita' vengono dal tempo, non scritte a mano", () => {
+    const perTick = 50;
+    assert.equal(BI.MURO_PERFETTO, BI.MS_PERFETTO / perTick * BI.VELOCITA_CORSIA,
+        'MURO_PERFETTO deve derivare da MS_PERFETTO');
+    assert.equal(BI.MURO_BUONO, BI.MS_BUONO / perTick * BI.VELOCITA_CORSIA,
+        'MURO_BUONO deve derivare da MS_BUONO');
+});
+
+test("la finestra perfetta e' larga fra 140 e 200 ms in tutto", () => {
+    // ⚠️ Due limiti opposti, e sono entrambi difetti gia' vissuti:
+    // troppo larga e si fa perfetto sempre (la segnalazione di oggi), troppo
+    // stretta e non si fa mai — «non riesco mai a fare pit stop perfetto», il
+    // playtest che ha prodotto le soglie attuali.
+    const larghezza = 2 * BI.MS_PERFETTO;
+    assert.ok(larghezza >= 140 && larghezza <= 200,
+        `la finestra perfetta e' larga ${larghezza} ms`);
+});
+
+test("premere mezzo decimo di secondo in anticipo NON e' piu' perfetto", () => {
+    // Il cuore della segnalazione. Con la finestra vecchia (129 ms per lato)
+    // 50 ms d'anticipo erano comodamente dentro.
+    const perTick = 50;
+    const unitaIn = (ms) => ms / perTick * BI.VELOCITA_CORSIA;
+    assert.equal(BI.esitoDaDistanza(unitaIn(50)), BI.PERFETTA, "50 ms d'anticipo: ancora perfetto");
+    assert.equal(BI.esitoDaDistanza(unitaIn(130)), BI.BUONA, "130 ms d'anticipo: buona, non perfetta");
+    assert.equal(BI.esitoDaDistanza(-unitaIn(130)), BI.BUONA, 'e lo stesso in ritardo');
+});
+
+test('la finestra buona sta DENTRO il margine fra muro e box', () => {
+    // ⚠️ Prima non ci stava: MURO_BUONO era 12 contro un MURO_MARGINE di 10,
+    // quindi la coda della «buona» cadeva oltre l'imbocco del box — si poteva
+    // essere giudicati su un punto che l'auto aveva gia' passato.
+    assert.ok(BI.MURO_BUONO <= BI.MURO_MARGINE,
+        `buona ${BI.MURO_BUONO} contro margine ${BI.MURO_MARGINE}`);
+});

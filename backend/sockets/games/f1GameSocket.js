@@ -211,7 +211,11 @@ const RACE_END_RETURN_MS = CER_STACCO_MS + CER_SCENA_MS;
 // podio.
 const RACE_END_TEARDOWN_MS = 2000;
 
-const PIT_AUTO_SPEED = 1.55;   // unità/tick dell'autopilota lungo il percorso box (25% di MAX_SPEED)
+// ⚠️ Non e' un numero scritto qui: arriva da f1BoxIngresso, che e' anche
+// quello che converte in distanze le finestre del gioco di reazione ai box.
+// Sono due cose tarate l'una sull'altra — accelerare la corsia stringe le
+// finestre — e con due costanti gemelle la seconda cambierebbe in silenzio.
+const PIT_AUTO_SPEED = BoxIngresso.VELOCITA_CORSIA;   // unità/tick, 25% di MAX_SPEED
 const PIT_AUTO_ARRIVE_DIST = 1.0;   // sotto questa distanza dal waypoint, "arrivato"
 // Quanti campioni della corsia avanti al proprio box far rientrare l'auto in
 // uscita dallo stallo (~10 unità con 300 campioni sulle corsie esistenti).
