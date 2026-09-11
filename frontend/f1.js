@@ -194,13 +194,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    {
-        // La legenda degli strumenti di sviluppo: nascosta a tutti, accesa
-        // solo per chi puo' usarli. Senza, resterebbe a video un elenco di
-        // tasti che non fanno piu' niente.
+    // La legenda degli strumenti di sviluppo: nascosta a tutti, e per
+    // l'amministratore un INTERRUTTORE su F10 — sta accanto a F8 e F9, che
+    // sono gli altri due strumenti. Richiesta dell'utente: «se voglio giocare
+    // non voglio vedere quelle scritte, se voglio testare le voglio vedere».
+    //
+    // ⚠️ Interruttore e non un «mai piu'» come il riquadro della partenza: li'
+    // una volta che hai imparato la procedura non serve piu', qui invece si
+    // alterna fra giocare e provare anche dieci volte in una sera.
+    let legendaAdminAccesa = true;
+    try { legendaAdminAccesa = localStorage.getItem('f1LegendaAdmin') !== 'no'; } catch (e) { /* pazienza */ }
+
+    function aggiornaLegendaAdmin() {
         const hint = document.getElementById('camera-hint');
-        if (hint) hint.style.display = sonoAdmin ? 'block' : 'none';
+        if (hint) hint.style.display = (sonoAdmin && legendaAdminAccesa) ? 'block' : 'none';
     }
+    aggiornaLegendaAdmin();
 
     // 3. NESSUN fallback a una fixture JSON condivisa: se non c'è una livrea
     // salvata (ospite, o account senza livrea) loadedLivery resta null e
@@ -824,20 +833,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     function salvaVolumeSullAccount() {
         if (!user) return;
         clearTimeout(timerSalvaVolume);
-        timerSalvaVolume = setTimeout(async () => {
-            try {
-                const token = await user.getIdToken();
-                await fetch('/api/preferenze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                    body: JSON.stringify({ volume: volumeGioco }),
-                });
-            } catch (e) {
-                // Rete giu' o archivio non configurato: pazienza, il valore
-                // resta comunque in localStorage su questo computer.
-                console.warn("[F1] volume non salvato sull'account:", e.message);
-            }
-        }, 600);
+        // Il ritardo resta qui — e' una cosa del volume, che si cambia a
+        // raffica — ma l'invio e' quello condiviso.
+        timerSalvaVolume = setTimeout(() => salvaPreferenza({ volume: volumeGioco }), 600);
     }
 
     async function caricaVolumeDallAccount() {
@@ -850,6 +848,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (pref.aiutoPartenza === false) {
                 aiutoPartenzaSpento = true;
                 mostraAiutoPartenza(false);
+            }
+            if (typeof pref.legendaAdmin === 'boolean') {
+                legendaAdminAccesa = pref.legendaAdmin;
+                aggiornaLegendaAdmin();
             }
             if (typeof pref.volume !== 'number') return;
             // ⚠️ Se nel frattempo hai gia' premuto i tasti, la risposta della
@@ -5934,18 +5936,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    function spegniAiutoPartenza() {
-        aiutoPartenzaSpento = true;
-        mostraAiutoPartenza(false);
-        try { localStorage.setItem('f1AiutoPartenza', 'no'); } catch (e) { /* pazienza */ }
+    // Manda una preferenza all'account, se c'e' un account. ⚠️ Una funzione
+    // sola: erano gia' tre i posti che scrivevano su /api/preferenze, e il
+    // quarto sarebbe stato il momento in cui uno dei quattro smette di
+    // mandare l'intestazione giusta senza che nessuno se ne accorga.
+    function salvaPreferenza(campi) {
         if (!user) return;
         user.getIdToken()
             .then(token => fetch('/api/preferenze', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ aiutoPartenza: false }),
+                body: JSON.stringify(campi),
             }))
             .catch(e => console.warn('[F1] preferenza non salvata:', e.message));
+    }
+
+    function spegniAiutoPartenza() {
+        aiutoPartenzaSpento = true;
+        mostraAiutoPartenza(false);
+        try { localStorage.setItem('f1AiutoPartenza', 'no'); } catch (e) { /* pazienza */ }
+        salvaPreferenza({ aiutoPartenza: false });
     }
 
     function applyKeys() {
@@ -6098,6 +6108,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             const giu = e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract';
             const su  = e.key === '+' || e.key === '=' || e.code === 'NumpadAdd';
             if (giu || su) { e.preventDefault(); cambiaVolume(su ? 1 : -1); }
+        }
+        // F10: accende e spegne la legenda degli strumenti. Solo per chi quegli
+        // strumenti li ha: per tutti gli altri non c'e' niente da alternare.
+        if (sonoAdmin && e.code === 'F10' && !e.repeat && !isTypingInField(e)) {
+            e.preventDefault();
+            legendaAdminAccesa = !legendaAdminAccesa;
+            aggiornaLegendaAdmin();
+            try { localStorage.setItem('f1LegendaAdmin', legendaAdminAccesa ? 'si' : 'no'); } catch (err) { /* pazienza */ }
+            salvaPreferenza({ legendaAdmin: legendaAdminAccesa });
+            mostraAvviso(legendaAdminAccesa ? 'Legenda admin accesa' : 'Legenda admin spenta');
         }
         // N: il riquadro della partenza non si vede mai piu'. Vale solo
         // mentre e' a schermo, cosi' il tasto non fa niente di misterioso nel

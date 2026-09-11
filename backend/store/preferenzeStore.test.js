@@ -64,3 +64,16 @@ test('leggiPreferenze: senza MONGODB_URI risolve null, nessun crash', async () =
     const { leggiPreferenze } = store();
     assert.equal(await leggiPreferenze('uid-test'), null);
 });
+
+test('anche le preferenze booleane passano il filtro, e solo se booleane', () => {
+    const { filtraPreferenze } = store();
+    assert.deepEqual(filtraPreferenze({ aiutoPartenza: false }), { aiutoPartenza: false });
+    assert.deepEqual(filtraPreferenze({ legendaAdmin: true }), { legendaAdmin: true });
+    // ⚠️ `1` e `"true"` sono veri in JavaScript ma non sono booleani: farli
+    // passare vorrebbe dire salvare un tipo diverso da quello che il client
+    // rilegge, e un `=== false` piu' avanti non corrisponderebbe mai.
+    for (const brutto of [1, 0, 'true', 'no', null]) {
+        assert.deepEqual(filtraPreferenze({ legendaAdmin: brutto }), {},
+            `legendaAdmin=${JSON.stringify(brutto)} non doveva passare`);
+    }
+});

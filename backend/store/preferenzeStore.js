@@ -49,6 +49,11 @@ const AMMESSE = {
     // contrario: un account nuovo non ha il campo e quindi lo vede, che e'
     // esattamente quel che serve.
     aiutoPartenza: (v) => (typeof v === 'boolean' ? v : undefined),
+    // La legenda degli strumenti da amministratore, a schermo in gara. E' un
+    // INTERRUTTORE e non un «mai piu'»: si spegne per giocare e si riaccende
+    // per provare. La vede comunque solo chi e' in F1_ADMIN_UIDS — questa
+    // preferenza dice se mostrarla, non chi puo' vederla.
+    legendaAdmin: (v) => (typeof v === 'boolean' ? v : undefined),
 };
 
 // Tiene solo i campi ammessi e validi. Esportata perche' e' la regola, e una
