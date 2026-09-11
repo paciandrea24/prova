@@ -591,21 +591,45 @@ canvas.tyre-preview-canvas {
 #standings-badges {
     left: 220px;          /* 12 del pannello + 200 di larghezza + 8 di respiro */
     flex-direction: column;
+    /* Ogni piastra si stringe sui SUOI badge invece di prendere la larghezza
+       della piu' larga: in colonna, di default, un flex le stirerebbe tutte
+       uguali e un badge solo galleggerebbe in un riquadro mezzo vuoto. */
+    align-items: flex-start;
 }
 .f1-indicator-row {
     display: flex; align-items: center; gap: 4px;
-    /* L'altezza la scrive f1.js copiandola dalla riga gemella: scritta qui a
-       mano si scollerebbe al primo ritocco del font della classifica. */
+    /* ⚠️ border-box perche' l'altezza la scrive f1.js copiandola dalla riga
+       gemella: col bordo della piastra da 1px, in content-box ogni riga con un
+       avviso sarebbe alta 2px in piu' delle altre e la colonna si scollerebbe
+       dalla classifica scendendo. */
+    box-sizing: border-box;
+}
+/* LA PIASTRA. Sui badge nudi sopra il 3D l'utente non li vedeva bene: «forse
+   metterei uno sfondo sotto di essi praticamente trasparente, per dare
+   leggermente un contrasto visivo». E' lo stesso fondo del pannello della
+   classifica, quindi la colonna si legge come una sua appendice invece che
+   come qualcosa che galleggia sull'erba.
+   ⚠️ `:not(:empty)` e non una classe: le righe senza avvisi esistono lo
+   stesso (tengono il posto in colonna) e una piastra vuota accanto a ogni
+   pilota sarebbe peggio del problema di partenza. */
+.f1-indicator-row:not(:empty) {
+    background: var(--f1-panel);
+    border: 1px solid var(--f1-panel-border);
+    border-radius: 5px;
+    padding: 0 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.45);
 }
 .f1-indicator-row .ind {
     display: inline-flex; align-items: center; justify-content: center;
-    height: 15px; min-width: 15px;
+    height: 16px; min-width: 16px;
     padding: 0 3px;
     border-radius: 3px;
     font-family: 'Fredoka', sans-serif;
-    font-size: 10px; font-weight: 900; line-height: 1;
+    font-size: 11px; font-weight: 900; line-height: 1;
     color: #fff;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.45);
+    /* Un filo di luce attorno stacca il badge dalla piastra scura, che
+       altrimenti lo mangia sui bordi. */
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.22), 0 1px 2px rgba(0,0,0,0.5);
 }
 /* Penalita' da scontare: UNA sola, comunque siano state prese (falsa partenza,
    collisione o entrambe) — richiesta dell'utente del 2026-09-11. Si spegne
