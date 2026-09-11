@@ -121,6 +121,94 @@ document.addEventListener('DOMContentLoaded', async () => {
     // sipario della transizione. Sotto non si disegna (vedi il fondo di
     // animate): in un gioco GPU-bound sui pixel, disegnare per poi essere
     // nascosti toglie frame all'animazione che sta sopra.
+    // Salva su disco il fotogramma appena disegnato. Il nome porta la pista e
+    // l'ora: scattandone dieci di fila non si sovrascrivono e si ritrovano in
+    // ordine.
+    // ── CAMERA LIBERA (solo amministratore) ─────────────────────────────
+    // Per stare dentro una gara VERA da spettatore e fotografarla dove serve:
+    // «mi serve essere un giocatore esterno, cosi' mi posso posizionare dentro
+    // una partita di soli bot e scattare dove serve».
+    //
+    // ⚠️ Non e' l'anteprima esplorabile: quella e' costruita senza luci, ombre
+    // e contorni — e' il suo scopo — quindi li' il gioco non somiglia a se
+    // stesso. Qui si vola dentro la scena vera, con la gara in corso.
+    //
+    // ⚠️ E la propria auto resta FERMA: finche' si vola, i comandi non le
+    // arrivano. Altrimenti gli stessi tasti che muovono la camera la
+    // porterebbero a spasso per il circuito, e in una gara con altri sarebbe
+    // un'auto impazzita.
+    let cameraLibera = false;
+    const volo = { avanti: 0, lato: 0, su: 0, velocita: 45, imbardata: 0, beccheggio: 0 };
+
+    function accendiCameraLibera(attiva) {
+        cameraLibera = attiva;
+        volo.avanti = volo.lato = volo.su = 0;
+        // ⚠️ Un tasto tenuto premuto nell'istante in cui si entra resterebbe
+        // premuto per l'auto: il `return` piu' sotto impedisce di ACCENDERLI,
+        // non di spegnere quelli gia' accesi.
+        keys.w = keys.a = keys.s = keys.d = false;
+        applyKeys();
+        if (attiva) {
+            volo.imbardata = camera.rotation.y;
+            volo.beccheggio = camera.rotation.x;
+            renderer.domElement.requestPointerLock?.();
+        } else if (document.pointerLockElement) {
+            document.exitPointerLock();
+        }
+        mostraAvviso(attiva ? 'Camera libera — clic per guardarti intorno' : 'Camera normale');
+    }
+
+    // Il mouse guarda intorno, la rotellina cambia passo. Tutto attivo solo
+    // volando: fuori di li' questi eventi hanno gia' i loro padroni.
+    document.addEventListener('mousemove', (e) => {
+        if (!cameraLibera || document.pointerLockElement !== renderer.domElement) return;
+        volo.imbardata -= e.movementX * 0.0022;
+        volo.beccheggio -= e.movementY * 0.0022;
+        // Non oltre lo zenit e il nadir: superandoli l'immagine si rovescia e
+        // non si capisce piu' da che parte si sta guardando.
+        const limite = Math.PI / 2 - 0.02;
+        volo.beccheggio = Math.max(-limite, Math.min(limite, volo.beccheggio));
+    });
+    renderer.domElement.addEventListener('click', () => {
+        if (cameraLibera && !document.pointerLockElement) renderer.domElement.requestPointerLock?.();
+    });
+    window.addEventListener('wheel', (e) => {
+        if (!cameraLibera) return;
+        volo.velocita = Math.max(4, Math.min(400, volo.velocita * (e.deltaY < 0 ? 1.15 : 0.87)));
+        mostraAvviso(`Velocita' camera ${Math.round(volo.velocita)}`);
+    }, { passive: true });
+
+    function muoviCameraLibera(dt) {
+        const passo = volo.velocita * (dt / 1000);
+        camera.rotation.set(volo.beccheggio, volo.imbardata, 0, 'YXZ');
+        const avanti = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        const lato = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+        camera.position.addScaledVector(avanti, volo.avanti * passo);
+        camera.position.addScaledVector(lato, volo.lato * passo);
+        camera.position.y += volo.su * passo;
+    }
+
+    let scattoRichiesto = false;
+    function salvaScatto() {
+        try {
+            const nome = `f1-${(trackId || 'pista')}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.png`;
+            renderer.domElement.toBlob((blob) => {
+                if (!blob) { mostraAvviso('Scatto non riuscito', true); return; }
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = nome;
+                a.click();
+                // Il blob resta in memoria finche' non lo si libera, e sono
+                // megabyte per scatto.
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
+                mostraAvviso(`Scatto salvato: ${nome}`);
+            }, 'image/png');
+        } catch (err) {
+            mostraAvviso('Scatto non riuscito', true);
+            console.warn('[F1] scatto:', err.message);
+        }
+    }
+
     function schermoCoperto() {
         if (window.F1Sting && F1Sting.attivo()) return true;
         const sip = document.getElementById('transizione-sipario');
@@ -6049,6 +6137,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         // keyup lo spegne comunque.
         if (isTypingInField(e)) return;
         const k = e.key.toLowerCase();
+        // ⚠️ Volando, i tasti muovono la camera e NON arrivano all'auto: il
+        // `return` e' quel che impedisce alla propria vettura di partire per
+        // il circuito mentre si cerca l'inquadratura.
+        if (cameraLibera && !isTypingInField(e)) {
+            if (k === 'w') volo.avanti = 1;
+            else if (k === 's') volo.avanti = -1;
+            else if (k === 'a') volo.lato = -1;
+            else if (k === 'd') volo.lato = 1;
+            else if (e.code === 'Space') { e.preventDefault(); volo.su = 1; }
+            else if (e.key === 'Shift') volo.su = -1;
+            if (['w', 'a', 's', 'd'].includes(k) || e.code === 'Space' || e.key === 'Shift') {
+                applyKeys();
+                return;
+            }
+        }
         if (k === 'w') keys.w = true;
         if (k === 'a') keys.a = true;
         if (k === 's') keys.s = true;
@@ -6109,6 +6212,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             const su  = e.key === '+' || e.key === '=' || e.code === 'NumpadAdd';
             if (giu || su) { e.preventDefault(); cambiaVolume(su ? 1 : -1); }
         }
+        // F6: camera libera. Da qui in poi i tasti di movimento muovono la
+        // CAMERA e non l'auto — vedi sotto, dove si spegne la guida.
+        if (sonoAdmin && e.code === 'F6' && !e.repeat && !isTypingInField(e)) {
+            e.preventDefault();
+            accendiCameraLibera(!cameraLibera);
+        }
+        // F7: salva un fotogramma del gioco. Serve a fare le immagini del
+        // tutorial senza chiederle a nessuno: l'anteprima esplorabile non va
+        // bene perche' e' costruita SENZA luci, ombre e contorni — e' il suo
+        // scopo — quindi quel che si vede li' non somiglia al gioco.
+        if (sonoAdmin && e.code === 'F7' && !e.repeat && !isTypingInField(e)) {
+            e.preventDefault();
+            scattoRichiesto = true;
+        }
         // F10: accende e spegne la legenda degli strumenti. Solo per chi quegli
         // strumenti li ha: per tutti gli altri non c'e' niente da alternare.
         if (sonoAdmin && e.code === 'F10' && !e.repeat && !isTypingInField(e)) {
@@ -6153,6 +6270,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.addEventListener('keyup', (e) => {
         if (e.code === 'Space') frizioneDaTastiera(false);
         const k = e.key.toLowerCase();
+        if (cameraLibera) {
+            if (k === 'w' || k === 's') volo.avanti = 0;
+            if (k === 'a' || k === 'd') volo.lato = 0;
+            if (e.code === 'Space' || e.key === 'Shift') volo.su = 0;
+        }
         if (k === 'w') keys.w = false;
         if (k === 'a') keys.a = false;
         if (k === 's') keys.s = false;
@@ -7150,6 +7272,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         else if (premiazione) aggiornaPremiazione(_dt);
         else if (panoramicaAttiva) aggiornaCameraPanoramica();
         else if (cerimoniaAttiva) aggiornaCameraCerimonia();
+        else if (cameraLibera) muoviCameraLibera(_dt);
         else updateCamera();
         seguiConLeOmbre();
         toonSky.update(camera);
@@ -7173,6 +7296,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         ToonOutline.render(renderer, scene, camera);
         // Un frame è stato disegnato: da qui in poi togliere la schermata di
         // caricamento non scopre un canvas ancora vuoto.
+        // ⚠️ QUI E NON NEL GESTORE DEL TASTO. Il contesto WebGL non conserva
+        // il buffer di disegno fra un frame e l'altro (preserveDrawingBuffer e'
+        // falso, ed e' giusto: tenerlo costa memoria e banda su ogni frame di
+        // ogni partita). Letto da un gestore di tastiera, il canvas
+        // restituirebbe un'immagine NERA. Qui siamo nello stesso giro in cui si
+        // e' appena disegnato, e il buffer c'e' ancora.
+        if (scattoRichiesto) {
+            scattoRichiesto = false;
+            salvaScatto();
+        }
+
         primoFrameFatto = true;
         segnalaPrimoFrame();
     }

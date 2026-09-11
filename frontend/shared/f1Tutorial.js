@@ -27,6 +27,11 @@
     // cosi' il tutorial e' utile da subito e migliora quando le foto
     // arrivano, invece di aspettarle per esistere.
     const CARTELLA_FOTO = 'assets/tutorial/';
+    // Quali foto esistono davvero. ⚠️ Si scopre CARICANDOLE, non con un elenco
+    // scritto a mano: un elenco si scollerebbe dalla cartella al primo file
+    // aggiunto, e il tutorial mostrerebbe un rettangolo vuoto o nasconderebbe
+    // uno schema che invece serviva.
+    const FOTO_PRESENTI = {};
     const ID_STILE = 'f1-tutorial-stile';
 
     // I tre colori delle mescole, gli stessi del gioco (TyreModel.TYRE_COMPOUNDS).
@@ -204,10 +209,16 @@
             /* La fotografia di cio' che si vedra' in gioco. ⚠️ Se il file non
                c'e' si nasconde da sola (onerror), cosi' il tutorial funziona
                anche prima che le immagini siano state scattate. */
+            /* ⚠️ LA FOTO HA UN TETTO DI ALTEZZA, e serve a una cosa sola: NON
+               FAR SCORRERE il tutorial. «Non voglio scroll»: a tutta larghezza
+               una 16:9 alta 320 px lascia meno spazio di quanto ne chiedano tre
+               paragrafi, e il corpo comincia a scorrere. Con 190 px di tetto e
+               object-fit: cover l'immagine si taglia invece di spingere fuori
+               il testo. */
             #${ID_NODO} .tut-foto {
                 width: 100%; display: block; border-radius: 12px;
                 border: 3px solid var(--ink, #16141E);
-                aspect-ratio: 16 / 9; object-fit: cover;
+                aspect-ratio: 16 / 9; max-height: 190px; object-fit: cover;
                 background: var(--surface, #F2F1EF);
             }
             #${ID_NODO} .tut-figura {
@@ -392,6 +403,15 @@
         iniettaStile();
         chiudi();   // mai due copie sovrapposte
 
+        // Chi c'e' e chi no, prima di disegnare: un colpo solo all'apertura.
+        PASSI.forEach(p => {
+            if (!p.foto || p.foto in FOTO_PRESENTI) return;
+            const prova = new Image();
+            prova.onload = () => { FOTO_PRESENTI[p.foto] = true; };
+            prova.onerror = () => { FOTO_PRESENTI[p.foto] = false; };
+            prova.src = CARTELLA_FOTO + p.foto;
+        });
+
         const box = document.createElement('div');
         box.id = ID_NODO;
         box.innerHTML = `<div class="tut-box" role="dialog" aria-modal="true" aria-label="Come si gioca">
@@ -429,10 +449,15 @@
             el.occhiello.textContent = p.occhiello;
             el.titolo.textContent = p.titolo;
             el.conta.textContent = `${i + 1} / ${PASSI.length}`;
+            // ⚠️ O la foto o lo schema, mai tutti e due: dicono la stessa cosa, e
+            // insieme non ci starebbero senza far scorrere il corpo. Lo schema
+            // resta come ripiego finche' la foto non c'e' — e per i comandi,
+            // che una foto non ce l'hanno mai.
+            const haFoto = !!(p.foto && FOTO_PRESENTI[p.foto]);
             el.corpo.innerHTML =
                 (p.foto ? `<img class="tut-foto" alt="" src="${CARTELLA_FOTO}${p.foto}"
-                            onerror="this.style.display='none'">` : '') +
-                (p.figura ? p.figura() : '') +
+                            onerror="this.remove(); this.dispatchEvent(new Event('mancata'))">` : '') +
+                (haFoto ? '' : (p.figura ? p.figura() : '')) +
                 p.corpo.map(t => `<div class="tut-riga">${t}</div>`).join('');
             el.corpo.scrollTop = 0;
             el.punti.innerHTML = PASSI
