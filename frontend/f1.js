@@ -169,7 +169,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const limite = Math.PI / 2 - 0.02;
         volo.beccheggio = Math.max(-limite, Math.min(limite, volo.beccheggio));
     });
-    renderer.domElement.addEventListener('click', () => {
+    // ⚠️ SU `document`, NON su renderer.domElement. Questo blocco gira molto
+    // prima che il renderer esista (nasce duecento righe piu' sotto), e
+    // agganciarsi alla sua tela qui dentro significa leggere una `const` non
+    // ancora inizializzata: ReferenceError, e la pagina si ferma sul
+    // caricamento senza entrare in gara. Dentro il gestore, invece, il momento
+    // e' quello del clic e il renderer c'e' da un pezzo.
+    document.addEventListener('click', () => {
         if (cameraLibera && !document.pointerLockElement) renderer.domElement.requestPointerLock?.();
     });
     window.addEventListener('wheel', (e) => {
