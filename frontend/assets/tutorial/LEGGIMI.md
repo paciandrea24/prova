@@ -45,5 +45,7 @@ scritte non le vede nessun altro giocatore.
 ## Come metterle a posto
 
 Rinominale come da tabella e mettile in questa cartella. Il taglio e il
-ridimensionamento non servono: il tutorial le taglia da solo in 16:9 e le
-tiene sotto i 190 px d'altezza, cosi' non fa mai scorrere la pagina.
+ridimensionamento non servono: il tutorial le mostra in 16:9 e le fa
+accorciare quando lo schermo e' basso, cosi' non fa mai scorrere la pagina.
+Su uno schermo comodo si vedono intere; se lo spazio manca cede la foto
+(tagliata, non deformata) e il testo resta tutto in vista.
