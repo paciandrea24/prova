@@ -171,6 +171,11 @@
             </button>
         </div>
 
+        <!-- ⚠️ Il pulsante e' in inglese come tutta la lobby; il tutorial che
+             apre e' in italiano come tutto il gioco. E' la regola del
+             progetto, non una dimenticanza. -->
+        <button type="button" id="f1-how-to-play" class="f1-how-to-play">How to play</button>
+
         <div class="f1-mode-grid">
             <button class="f1-mode-card" id="f1-mode-quick">
                 <i data-lucide="flag" class="f1-mode-icon"></i>
@@ -225,7 +230,8 @@
 <script src="/socket.io/socket.io.js"></script>
 <script>lucide.createIcons();</script>
 <script src="shared/sessioneGiocatore.js?v=20260818a"></script>
-    <script src="lobby.js?v=20260820a" defer></script>
+<script src="shared/f1Tutorial.js?v=20260911a"></script>
+    <script src="lobby.js?v=20260911a" defer></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
 <script src="shared/firebaseConfig.js" defer></script>

@@ -54,6 +54,11 @@ const AMMESSE = {
     // per provare. La vede comunque solo chi e' in F1_ADMIN_UIDS — questa
     // preferenza dice se mostrarla, non chi puo' vederla.
     legendaAdmin: (v) => (typeof v === 'boolean' ? v : undefined),
+    // Il tutorial e' gia' stato visto: compare da solo solo la prima volta.
+    // ⚠️ Legato all'ACCOUNT e non al computer, che e' la richiesta originale
+    // («solo la prima volta che un utente loggato gioca»): chi cambia macchina
+    // non deve rivederselo, e chi si e' appena registrato deve vederlo.
+    tutorialVisto: (v) => (typeof v === 'boolean' ? v : undefined),
 };
 
 // Tiene solo i campi ammessi e validi. Esportata perche' e' la regola, e una

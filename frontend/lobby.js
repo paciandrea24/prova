@@ -330,6 +330,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // per ora solo l'avviso, la modalita' arriva nel passo successivo
         // (vedi docs/superpowers/specs/2026-08-19-f1-stagioni-design.md).
         const f1ModeModal = document.getElementById('f1-mode-modal');
+        const howToPlayBtn = document.getElementById('f1-how-to-play');
+        if (howToPlayBtn) howToPlayBtn.addEventListener('click', apriTutorialF1);
+
         const closeF1ModeBtn = document.getElementById('close-f1-mode-btn');
         if (closeF1ModeBtn) {
             closeF1ModeBtn.addEventListener('click', () => { f1ModeModal.style.display = 'none'; });
@@ -397,8 +400,65 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // ── COME SI GIOCA ───────────────────────────────────────────────────
+    // Il tutorial dell'F1 compare da solo la PRIMA volta che apri il gioco, e
+    // si richiama col pulsante «How to play». Voce J della roadmap, e il posto
+    // l'aveva scelto l'utente: nella lobby, premendo F1.
+    //
+    // ⚠️ Qui NON blocca niente: la partita la fa partire l'host per tutti, e
+    // un tutorial che ritarda l'ingresso di chi legge disallineerebbe la
+    // stanza. Sta prima, mentre si sceglie la modalita', dove il tempo e' di
+    // chi lo prende.
+    const CHIAVE_TUTORIAL = 'f1TutorialVisto';
+
+    function tutorialGiaVisto() {
+        try { return localStorage.getItem(CHIAVE_TUTORIAL) === 'si'; } catch (e) { return false; }
+    }
+
+    function segnaTutorialVisto() {
+        try { localStorage.setItem(CHIAVE_TUTORIAL, 'si'); } catch (e) { /* pazienza */ }
+        // E sull'account, cosi' chi cambia computer non se lo rivede: e' la
+        // richiesta originale, «solo la prima volta che un utente LOGGATO
+        // gioca». Se non c'e' un account resta il solo localStorage, che per
+        // un ospite e' quanto di meglio si possa fare.
+        const utente = (typeof firebaseAuth !== 'undefined' && firebaseAuth) ? firebaseAuth.currentUser : null;
+        if (!utente) return;
+        utente.getIdToken()
+            .then(token => fetch('/api/preferenze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ tutorialVisto: true }),
+            }))
+            .catch(e => console.warn("[lobby] tutorial non segnato sull'account:", e.message));
+    }
+
+    // L'account puo' dire «l'ho gia' visto» anche se questo computer non lo sa.
+    // Si chiede una volta all'avvio: la risposta arriva molto prima che uno
+    // apra il modale dell'F1.
+    (function leggiTutorialDallAccount() {
+        if (typeof firebaseAuth === 'undefined' || !firebaseAuth) return;
+        firebaseAuth.onAuthStateChanged(async (utente) => {
+            if (!utente || tutorialGiaVisto()) return;
+            try {
+                const token = await utente.getIdToken();
+                const res = await fetch('/api/preferenze', { headers: { Authorization: `Bearer ${token}` } });
+                if (!res.ok) return;
+                const pref = await res.json();
+                if (pref.tutorialVisto === true) {
+                    try { localStorage.setItem(CHIAVE_TUTORIAL, 'si'); } catch (e) { /* pazienza */ }
+                }
+            } catch (e) { /* niente rete: pazienza, al massimo lo rivede */ }
+        });
+    })();
+
+    function apriTutorialF1() {
+        if (!window.F1Tutorial) return;
+        F1Tutorial.apri({ onChiuso: segnaTutorialVisto });
+    }
+
     function showF1ModeChoice() {
         document.getElementById('f1-mode-modal').style.display = 'flex';
+        if (!tutorialGiaVisto()) apriTutorialF1();
     }
 
     function showGameSettings(gameId) {

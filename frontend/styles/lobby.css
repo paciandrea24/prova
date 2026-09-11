@@ -548,6 +548,22 @@ body::before {
 /* ---- F1: scelta fra gara veloce e stagione ----
    Stessa lingua visiva delle tessere dei giochi (bordo spesso, ombra dura):
    e' la stessa scelta, un livello piu' in giu'. */
+/* «How to play»: piccolo e defilato sopra le due modalita'. Non e' una terza
+   scelta al pari di Quick Race e Season — se avesse lo stesso peso visivo
+   sembrerebbe una modalita' di gioco. */
+.f1-how-to-play {
+    align-self: flex-start;
+    margin: 0 0 12px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border, rgba(255,255,255,0.16));
+    background: transparent;
+    color: var(--muted, #8b95a1);
+    font: 600 13px inherit;
+    cursor: pointer;
+}
+.f1-how-to-play:hover { color: var(--text, #e8edf2); background: rgba(255,255,255,0.06); }
+
 .f1-mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .f1-mode-card {
     background: var(--surface);

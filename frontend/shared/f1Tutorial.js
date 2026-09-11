@@ -1,0 +1,375 @@
+// frontend/shared/f1Tutorial.js
+//
+// COME SI GIOCA: le regole dell'F1 in cinque schermate, per chi entra la prima
+// volta. Voce J della roadmap 1.0, chiesta dall'utente il 2026-08-18 e tenuta
+// per ultima di proposito — cambia con ogni cosa che la precede, e da allora
+// sono arrivate la frizione alla partenza, il volume e le tre mescole che ora
+// sono una scelta vera.
+//
+// ⚠️ IN ITALIANO, dentro una lobby che e' in inglese. Non e' una svista: la
+// regola del progetto e' hub in inglese, giochi in italiano, e questo racconta
+// le regole di un gioco che il giocatore vedra' tutto in italiano — dal
+// pannello dei box agli avvisi in pista. Il pulsante che lo richiama, che
+// invece e' parte della lobby, resta in inglese.
+//
+// ⚠️ SI PORTA DIETRO IL PROPRIO STILE. Vive nella lobby ma potrebbe servire
+// anche altrove (dentro il gioco, in una schermata di pausa): dipendere dal
+// CSS della pagina che lo ospita vorrebbe dire che al secondo posto in cui lo
+// metti si vede storto, e nessuno capisce perche'.
+(function (root, factory) {
+    if (typeof module === 'object' && module.exports) module.exports = factory();
+    else root.F1Tutorial = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+
+    const ID_NODO = 'f1-tutorial';
+    const ID_STILE = 'f1-tutorial-stile';
+
+    // I tre colori delle mescole, gli stessi del gioco (TyreModel.TYRE_COMPOUNDS).
+    const MESCOLE = [
+        { k: 'S', nome: 'Soft', colore: '#e74c3c', dice: 'la piu’ veloce, dura poco' },
+        { k: 'M', nome: 'Medium', colore: '#f1c40f', dice: 'la via di mezzo' },
+        { k: 'H', nome: 'Hard', colore: '#ecf0f1', dice: 'la piu’ lenta, dura tanto' },
+    ];
+
+    // ── LE CINQUE SCHERMATE ─────────────────────────────────────────────
+    //
+    // ⚠️ Ogni passo dice UNA cosa e la dice intera. La tentazione e' di
+    // aggiungere il dettaglio interessante in fondo al passo che gli somiglia,
+    // e dopo tre giri di aggiunte il primo passo e' lungo il triplo dell'ultimo
+    // e nessuno arriva in fondo.
+    const PASSI = [
+        {
+            titolo: 'Il weekend',
+            occhiello: 'Come si svolge',
+            corpo: [
+                'Prima la <b>qualifica</b>: un giro secco, da solo in pista. Il tempo che fai decide da dove parti.',
+                'Poi la <b>gara</b>, con tutti in griglia. Vince chi taglia per primo il traguardo all’ultimo giro.',
+                'I danni presi in qualifica non ti seguono in gara: la squadra ripara nella notte.',
+            ],
+            figura: figuraWeekend,
+        },
+        {
+            titolo: 'La partenza',
+            occhiello: 'Cinque luci, poi buio',
+            corpo: [
+                'Tieni premuta la <b>frizione</b> mentre i semafori si accendono, e <b>rilasciala</b> quando si spengono: e’ il rilascio che mette in moto l’auto.',
+                'Finche’ la tieni giu’ il gas non muove nulla, quindi quanto sei pronto decide quanto guadagni — non c’e’ nessun aiuto e nessuna zavorra.',
+                'Toccare il gas <b>prima</b> che si spengano e’ falsa partenza: cinque secondi, che sconti alla prima sosta.',
+            ],
+            figura: figuraSemaforo,
+        },
+        {
+            titolo: 'La sosta',
+            occhiello: 'Almeno una, sempre',
+            corpo: [
+                'Ogni gara richiede <b>almeno una sosta</b> ai box. Chi non si ferma si prende <b>30 secondi</b> sul tempo finale.',
+                'Mentre arrivi vedi un muro che conta alla rovescia e <b>si accende</b>: premi il tasto della sosta nell’istante giusto e la fermata e’ piu’ corta.',
+                'Le penalita’ si pagano qui: si sommano al tempo della sosta, e da li’ in poi sei pulito.',
+            ],
+            figura: figuraBox,
+        },
+        {
+            titolo: 'Le gomme',
+            occhiello: 'Tre mescole, tre strategie',
+            corpo: [
+                '<b>Nessuna arriva in fondo alla gara</b>: la scelta non e’ quale sia la migliore, ma come dividere la gara fra due treni.',
+                'Piu’ la gomma si consuma, piu’ perdi — e oltre una certa soglia il calo <b>accelera</b>. Fermarsi un giro prima di chi ti sta davanti puo’ bastare a passarlo.',
+                'Ogni circuito consuma a modo suo: la schermata di scelta ti dice quanti giri dura ciascuna mescola <b>su quella pista</b>.',
+            ],
+            figura: figuraMescole,
+        },
+        {
+            titolo: 'I comandi',
+            occhiello: 'Tastiera e controller',
+            corpo: [],
+            figura: figuraComandi,
+        },
+    ];
+
+    function iniettaStile() {
+        if (document.getElementById(ID_STILE)) return;
+        const st = document.createElement('style');
+        st.id = ID_STILE;
+        st.textContent = `
+            #${ID_NODO} {
+                position: fixed; inset: 0; z-index: 9000;
+                display: flex; align-items: center; justify-content: center;
+                background: rgba(6, 8, 12, 0.78);
+                padding: 16px;
+                font-family: 'Fredoka', 'Segoe UI', system-ui, sans-serif;
+            }
+            #${ID_NODO} .tut-box {
+                width: min(680px, 100%);
+                max-height: calc(100vh - 32px);
+                display: flex; flex-direction: column;
+                background: #12161c;
+                border: 1px solid rgba(255,255,255,0.14);
+                border-radius: 14px;
+                box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+                overflow: hidden;
+            }
+            #${ID_NODO} .tut-testa {
+                display: flex; align-items: baseline; gap: 12px;
+                padding: 16px 20px 10px;
+            }
+            #${ID_NODO} .tut-occhiello {
+                font-size: 10.5px; font-weight: 800; letter-spacing: 1.6px;
+                text-transform: uppercase; color: #7b8794;
+            }
+            #${ID_NODO} .tut-titolo {
+                font-size: 22px; font-weight: 700; color: #f2f5f8; margin: 0;
+            }
+            #${ID_NODO} .tut-conta { margin-left: auto; font-size: 12px; color: #7b8794; font-variant-numeric: tabular-nums; }
+            #${ID_NODO} .tut-corpo {
+                padding: 4px 20px 18px;
+                overflow-y: auto;
+                display: flex; flex-direction: column; gap: 14px;
+            }
+            #${ID_NODO} .tut-riga { font-size: 14.5px; line-height: 1.5; color: #d6dde4; }
+            #${ID_NODO} .tut-riga b { color: #fff; font-weight: 700; }
+            #${ID_NODO} .tut-figura {
+                display: flex; flex-direction: column; gap: 10px;
+                padding: 14px; border-radius: 10px;
+                background: rgba(255,255,255,0.04);
+                border: 1px solid rgba(255,255,255,0.08);
+            }
+            #${ID_NODO} .tut-mescola { display: flex; align-items: center; gap: 12px; }
+            #${ID_NODO} .tut-pallina {
+                width: 30px; height: 30px; flex-shrink: 0;
+                border-radius: 50%; border: 2.5px solid currentColor;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 13px; font-weight: 800;
+            }
+            #${ID_NODO} .tut-mescola span { font-size: 14px; color: #d6dde4; }
+            #${ID_NODO} .tut-mescola span b { color: #fff; }
+            /* Le colonne dei comandi: due su schermo largo, una in colonna
+               quando non ci stanno — e' l'unica parte con due colonne, quindi
+               basta questa regola. */
+            #${ID_NODO} .tut-comandi {
+                display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px;
+            }
+            #${ID_NODO} .tut-colonna h4 {
+                margin: 0 0 8px; font-size: 10.5px; font-weight: 800;
+                letter-spacing: 1.4px; text-transform: uppercase; color: #7b8794;
+            }
+            #${ID_NODO} .tut-comando {
+                display: flex; align-items: center; gap: 8px;
+                padding: 3px 0; font-size: 13.5px; color: #d6dde4;
+            }
+            #${ID_NODO} kbd {
+                display: inline-flex; align-items: center; justify-content: center;
+                min-width: 26px; height: 24px; padding: 0 7px;
+                border-radius: 5px; background: rgba(255,255,255,0.12);
+                border: 1px solid rgba(255,255,255,0.18);
+                font-family: inherit; font-size: 12px; font-weight: 700; color: #fff;
+            }
+            #${ID_NODO} .tut-piede {
+                display: flex; align-items: center; gap: 10px;
+                padding: 12px 20px; border-top: 1px solid rgba(255,255,255,0.1);
+                background: rgba(255,255,255,0.03);
+            }
+            #${ID_NODO} .tut-punti { display: flex; gap: 6px; margin-right: auto; }
+            #${ID_NODO} .tut-punto {
+                width: 7px; height: 7px; border-radius: 50%;
+                background: rgba(255,255,255,0.22);
+            }
+            #${ID_NODO} .tut-punto.qui { background: #39c7f2; }
+            #${ID_NODO} button {
+                font-family: inherit; font-size: 13.5px; font-weight: 600;
+                padding: 8px 16px; border-radius: 8px; cursor: pointer;
+                border: 1px solid rgba(255,255,255,0.16);
+                background: rgba(255,255,255,0.08); color: #e8edf2;
+            }
+            #${ID_NODO} button:hover { background: rgba(255,255,255,0.15); }
+            #${ID_NODO} button[disabled] { opacity: 0.35; cursor: default; }
+            #${ID_NODO} button.tut-avanti { background: #1d7fd6; border-color: #2a95f0; color: #fff; }
+            #${ID_NODO} button.tut-avanti:hover { background: #2a95f0; }
+            #${ID_NODO} button.tut-salta { background: transparent; border-color: transparent; color: #7b8794; }
+            #${ID_NODO} button.tut-salta:hover { color: #d6dde4; background: rgba(255,255,255,0.06); }
+        `;
+        document.head.appendChild(st);
+    }
+
+    // ── LE FIGURE ───────────────────────────────────────────────────────
+    // Niente illustrazioni nuove: si riusa la grammatica che il gioco ha gia'
+    // (i pallini delle mescole, i tasti disegnati come tasti). Scelta
+    // dell'utente, e ha il vantaggio di non andare fuori sincrono col gioco
+    // ogni volta che cambia una regola.
+
+    function figuraWeekend() {
+        return `<div class="tut-figura">
+            <div class="tut-riga" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <b>Qualifica</b> <span style="color:#7b8794">→</span>
+                <b>Griglia</b> <span style="color:#7b8794">→</span>
+                <b>Gara</b> <span style="color:#7b8794">→</span>
+                <b>Podio</b>
+            </div>
+        </div>`;
+    }
+
+    function figuraSemaforo() {
+        const bulbo = (acceso) => `<span style="width:20px;height:20px;border-radius:50%;
+            background:${acceso ? '#e74c3c' : 'rgba(255,255,255,0.12)'};
+            border:1px solid rgba(0,0,0,0.5); display:inline-block;"></span>`;
+        return `<div class="tut-figura">
+            <div style="display:flex;gap:7px;">${[1,1,1,1,1].map(() => bulbo(true)).join('')}</div>
+            <div class="tut-riga" style="font-size:13px;color:#7b8794;">tutte accese — tieni premuto</div>
+            <div style="display:flex;gap:7px;">${[0,0,0,0,0].map(() => bulbo(false)).join('')}</div>
+            <div class="tut-riga" style="font-size:13px;color:#7b8794;">spente — rilascia e accelera</div>
+        </div>`;
+    }
+
+    function figuraBox() {
+        return `<div class="tut-figura">
+            <div class="tut-riga" style="font-size:13px;">
+                <span style="color:#7b8794">arrivi in corsia</span> →
+                <b style="color:#39c7f2">il muro si accende</b> →
+                <span style="color:#7b8794">premi</span> →
+                <b>sosta piu’ corta</b>
+            </div>
+        </div>`;
+    }
+
+    function figuraMescole() {
+        return `<div class="tut-figura">${MESCOLE.map(m => `
+            <div class="tut-mescola">
+                <span class="tut-pallina" style="color:${m.colore}">${m.k}</span>
+                <span><b>${m.nome}</b> — ${m.dice}</span>
+            </div>`).join('')}</div>`;
+    }
+
+    // ⚠️ QUESTO ELENCO SI CONTROLLA NEL CODICE, NON A MEMORIA. Scrivendolo la
+    // prima volta avevo messo RT/Y/LB per gas, riparazione e specchietto: nel
+    // gioco sono R2, R1 e B (f1Gamepad.js, le costanti BTN_*). Un tutorial che
+    // insegna il tasto sbagliato e' peggio di nessun tutorial — il giocatore
+    // prova, non succede niente, e conclude che e' rotto il gioco.
+    function figuraComandi() {
+        const riga = (tasti, cosa) =>
+            `<div class="tut-comando">${tasti.map(t => `<kbd>${t}</kbd>`).join('')}<span>${cosa}</span></div>`;
+        return `<div class="tut-comandi">
+            <div class="tut-colonna">
+                <h4>Tastiera</h4>
+                ${riga(['W'], 'accelera')}
+                ${riga(['S'], 'frena e retromarcia')}
+                ${riga(['A', 'D'], 'sterza')}
+                ${riga(['Spazio'], 'frizione alla partenza, e la reazione ai box')}
+                ${riga(['R'], 'ripara i danni alla prossima sosta')}
+                ${riga(['T'], 'apri il pannello gomme')}
+                ${riga(['C'], 'cambia visuale')}
+                ${riga(['B', '↓'], 'guarda dietro')}
+                ${riga(['−', '+'], 'volume')}
+            </div>
+            <div class="tut-colonna">
+                <h4>Controller</h4>
+                ${riga(['R2'], 'accelera')}
+                ${riga(['L2'], 'frena e retromarcia')}
+                ${riga(['◄►'], 'sterza, con la levetta sinistra')}
+                ${riga(['X'], 'frizione alla partenza, e la reazione ai box')}
+                ${riga(['R1'], 'ripara i danni alla prossima sosta')}
+                ${riga(['L1'], 'apri il pannello gomme')}
+                ${riga(['Y'], 'cambia visuale')}
+                ${riga(['B'], 'guarda dietro')}
+            </div>
+        </div>`;
+    }
+
+    // ── L'INTERFACCIA ───────────────────────────────────────────────────
+
+    function chiudi() {
+        const n = document.getElementById(ID_NODO);
+        if (n) n.remove();
+        document.removeEventListener('keydown', suTasto);
+    }
+
+    let vaiA = null;   // riempita da apri(), serve a suTasto
+
+    // Le frecce e Esc: chi legge un percorso a passi le prova, e non trovarle
+    // fa sembrare rotto qualcosa che invece funziona.
+    function suTasto(e) {
+        if (e.key === 'Escape') { e.preventDefault(); chiudi(); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); if (vaiA) vaiA(+1); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); if (vaiA) vaiA(-1); }
+    }
+
+    /**
+     * Apre il tutorial. Risolve quando viene chiuso, in qualunque modo.
+     * @param {{onChiuso?: function}} [opz]
+     */
+    function apri(opz) {
+        const o = opz || {};
+        if (typeof document === 'undefined') return Promise.resolve();
+        iniettaStile();
+        chiudi();   // mai due copie sovrapposte
+
+        const box = document.createElement('div');
+        box.id = ID_NODO;
+        box.innerHTML = `<div class="tut-box" role="dialog" aria-modal="true" aria-label="Come si gioca">
+            <div class="tut-testa">
+                <div>
+                    <div class="tut-occhiello"></div>
+                    <h3 class="tut-titolo"></h3>
+                </div>
+                <div class="tut-conta"></div>
+            </div>
+            <div class="tut-corpo"></div>
+            <div class="tut-piede">
+                <div class="tut-punti"></div>
+                <button type="button" class="tut-salta">Salta</button>
+                <button type="button" class="tut-indietro">‹ Indietro</button>
+                <button type="button" class="tut-avanti">Avanti ›</button>
+            </div>
+        </div>`;
+        document.body.appendChild(box);
+
+        const el = {
+            occhiello: box.querySelector('.tut-occhiello'),
+            titolo: box.querySelector('.tut-titolo'),
+            conta: box.querySelector('.tut-conta'),
+            corpo: box.querySelector('.tut-corpo'),
+            punti: box.querySelector('.tut-punti'),
+            salta: box.querySelector('.tut-salta'),
+            indietro: box.querySelector('.tut-indietro'),
+            avanti: box.querySelector('.tut-avanti'),
+        };
+
+        let i = 0;
+        function disegna() {
+            const p = PASSI[i];
+            el.occhiello.textContent = p.occhiello;
+            el.titolo.textContent = p.titolo;
+            el.conta.textContent = `${i + 1} / ${PASSI.length}`;
+            el.corpo.innerHTML =
+                (p.figura ? p.figura() : '') +
+                p.corpo.map(t => `<div class="tut-riga">${t}</div>`).join('');
+            el.corpo.scrollTop = 0;
+            el.punti.innerHTML = PASSI
+                .map((_, k) => `<span class="tut-punto${k === i ? ' qui' : ''}"></span>`).join('');
+            el.indietro.disabled = i === 0;
+            // All'ultimo passo il pulsante chiude, e lo dice: «Avanti» su una
+            // schermata che non ha un dopo e' una promessa non mantenuta.
+            el.avanti.textContent = (i === PASSI.length - 1) ? 'Ho capito' : 'Avanti ›';
+            el.salta.style.visibility = (i === PASSI.length - 1) ? 'hidden' : 'visible';
+        }
+
+        return new Promise(risolvi => {
+            const finisci = () => { chiudi(); if (o.onChiuso) o.onChiuso(); risolvi(); };
+            vaiA = (d) => {
+                const prossimo = i + d;
+                if (prossimo < 0) return;
+                if (prossimo >= PASSI.length) { finisci(); return; }
+                i = prossimo;
+                disegna();
+            };
+            el.avanti.addEventListener('click', () => vaiA(+1));
+            el.indietro.addEventListener('click', () => vaiA(-1));
+            el.salta.addEventListener('click', finisci);
+            // Il velo scuro chiude: e' quel che si prova d'istinto, e non
+            // funzionare sarebbe peggio che non averlo.
+            box.addEventListener('click', (e) => { if (e.target === box) finisci(); });
+            document.addEventListener('keydown', suTasto);
+            disegna();
+        });
+    }
+
+    return { apri, chiudi, PASSI, MESCOLE, ID_NODO };
+});
