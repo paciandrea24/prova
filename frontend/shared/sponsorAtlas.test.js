@@ -29,7 +29,7 @@ function runDi(seq) {
     return out;
 }
 
-const PISTE = ['melbourne', 'suzuka', 'prova', 'citta-prova', 'monte-rosso', 'shanghai'];
+const PISTE = ['new-monza', 'banking-prova', 'prova', 'citta-prova', 'monte-rosso', 'loop-prova'];
 
 test('venti pannelli, ognuno con nome, due tinte e una famiglia di colore', () => {
     assert.equal(SponsorAtlas.PANNELLI.length, 20);
@@ -67,11 +67,11 @@ test('tutte e venti le coppie si leggono a velocita\' di gara', () => {
 });
 
 test('la stessa pista mostra sempre gli stessi cartelloni', () => {
-    const a = SponsorAtlas.sequenza('melbourne', 50);
-    const b = SponsorAtlas.sequenza('melbourne', 50);
+    const a = SponsorAtlas.sequenza('new-monza', 50);
+    const b = SponsorAtlas.sequenza('new-monza', 50);
     assert.deepEqual(a, b);
     // E piste diverse non mostrano la stessa fila.
-    assert.notDeepEqual(a, SponsorAtlas.sequenza('suzuka', 50));
+    assert.notDeepEqual(a, SponsorAtlas.sequenza('banking-prova', 50));
 });
 
 test('lo stesso sponsor tiene una fila di cartelloni, non uno solo', () => {

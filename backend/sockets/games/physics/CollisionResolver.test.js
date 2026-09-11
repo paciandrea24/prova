@@ -46,9 +46,9 @@ function sporgenza(angle, wallNx, wallNz) {
 }
 
 test('sul cuscinetto di gomme l\'auto si ferma prima del muro', () => {
-    const track = loadTrack('melbourne');
+    const track = loadTrack('new-monza');
     const dove = campioneConGomme(track);
-    assert.ok(dove, 'melbourne non ha un solo campione col cuscinetto');
+    assert.ok(dove, 'new-monza non ha un solo campione col cuscinetto');
 
     const muro = TrackGravel.barrierAt(track.barrierProfile, dove.i, dove.side);
     const impatto = TrackGravel.impattoAt(track.barrierProfile, dove.i, dove.side);
@@ -67,7 +67,7 @@ test('sul cuscinetto di gomme l\'auto si ferma prima del muro', () => {
 });
 
 test('dove il cuscinetto non c\'e\' si sbatte sul muro come sempre', () => {
-    const track = loadTrack('melbourne');
+    const track = loadTrack('new-monza');
     // Un campione in rettilineo: nessuna gomma su nessuno dei due lati.
     let scelto = -1;
     for (let i = 0; i < track.points.length; i++) {

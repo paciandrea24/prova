@@ -1296,7 +1296,7 @@ test('lungo il giro passano molti sponsor diversi', () => {
     // ciclico — 1, 2, 3, ... 20, 1, 2, 3 — e la sequenza a sacchetto non
     // servirebbe a niente. Ogni pannello prende il suo pezzo di nastro.
     const c = contenitore();
-    TrackMeshBuilder.buildCartelloni(c, cerchio(), 20, null, null, { trackId: 'melbourne' });
+    TrackMeshBuilder.buildCartelloni(c, cerchio(), 20, null, null, { trackId: 'new-monza' });
     const geo = c.children[0].geometry;
     const quanti = geo.attributes.position.array.length / 3;
     const usati = new Set();

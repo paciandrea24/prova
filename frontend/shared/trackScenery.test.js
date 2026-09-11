@@ -1604,27 +1604,19 @@ test('niente scenografia dentro gli asset che scavalcano la pista', () => {
 // vicini ma non uguali (207 invece di 248 su `prova`). Tarare sulla sonda e
 // non sul test fa nascere un rosso al primo giro.
 //
-// ⚠️ `nuova-pista` (540) e `suzuka` (395) NON hanno una riga di proposito, e
-// restano ROSSE sotto VUOTI_DI_GUARDIA. Il loro difetto non è la densità — su
-// nuova-pista il buco è rimasto identico a prima della cura, 540 unità tonde —
-// ed è un buco di STRUTTURE, che ha una causa sua da riprodurre. Dare loro una
-// riga misurata qui vorrebbe dire far sparire dal radar il difetto invece di
-// curarlo.
-// ⚠️ `test` ha una riga sua dal 2026-08-26, e per un motivo che non è la
-// densità: quella pista sale dell'89% — l'auto non la completa, e i test del
-// simulatore la saltano già per soglia calcolata (GravitaNastro.pistaPercorribile) —
-// quindi il terreno di fianco è una PARETE quasi ovunque. Da quando la porta
-// non posa più oggetti che fluttuano o affondano, 185 oggetti su 1384 non
-// entrano e metà circuito resta spoglio: lì non c'è un modo di posarli bene.
-// Non è un buco da curare, è il prezzo — voluto — di non piantare tribune di
-// traverso dentro un muro. Sulle piste vere lo stesso controllo non toglie
-// niente (0 su melbourne, monte-rosso, new-monza, shanghai) o pochissimo (6 su
-// prova, 5 su suzuka, 5 su banking-prova), e i loro numeri qui sotto non si
-// muovono.
+// ⚠️ `nuova-pista` (540) NON ha una riga di proposito, e resta ROSSA sotto
+// VUOTI_DI_GUARDIA. Il suo difetto non è la densità — il buco è rimasto
+// identico a prima della cura, 540 unità tonde — ed è un buco di STRUTTURE,
+// che ha una causa sua da riprodurre. Darle una riga misurata qui vorrebbe
+// dire far sparire dal radar il difetto invece di curarlo.
+// ⚠️ Le righe di `test`, `melbourne` e `suzuka` sono sparite col 2026-09-11:
+// quelle piste sono state eliminate dal progetto (l'utente tiene solo prova,
+// prova-notturno, new-monza, monte-rosso e le tre di lavoro). Su quelle che
+// restano il controllo «non posare oggetti che fluttuano o affondano» non
+// toglie niente (0 su monte-rosso e new-monza) o pochissimo (6 su prova, 5 su
+// banking-prova), e i numeri qui sotto non si muovono.
 const VUOTI_ATTESI = {
-    'test':        { peggiore: 2700, quota: 0.60 },
     'prova':       { peggiore: 275, quota: 0.11 },
-    'melbourne':   { peggiore: 102, quota: 0.04 },
     'new-monza':   { peggiore:  90, quota: 0.04 },
     'monte-rosso': { peggiore:  10, quota: 0.01 },
 };
@@ -1777,8 +1769,8 @@ test('le schiere di tribune non hanno un tetto: seguono il giro', () => {
 test('il fattore del giro non scende mai sotto 1', () => {
     // Sotto il riferimento non cambia niente: le piste gia' approvate
     // (monte-rosso, melbourne, new-monza) restano identiche, cotture comprese.
-    assert.equal(TrackScenery.fattoreGiro(1177), 1);
-    assert.equal(TrackScenery.fattoreGiro(3182), 1);   // melbourne
+    assert.equal(TrackScenery.fattoreGiro(1177), 1);   // monte-rosso
+    assert.equal(TrackScenery.fattoreGiro(2639), 1);   // citta-prova
     assert.equal(TrackScenery.fattoreGiro(3205), 1);   // new-monza
     assert.equal(TrackScenery.fattoreGiro(3250), 1);
     // Sopra, cresce in proporzione.
@@ -1787,15 +1779,17 @@ test('il fattore del giro non scende mai sotto 1', () => {
 });
 
 test('una pista lunga riceve piu\' verde di una corta', () => {
-    const corta = circuitoVero('melbourne');   // 3182, fattore 1
-    const lunga = circuitoVero('shanghai');    // 7485, fattore 2.34
+    // Erano melbourne (3182) e shanghai (7485), eliminate il 2026-09-11.
+    // Fra quelle che restano il contrasto piu' ampio e' monte-rosso / prova.
+    const corta = circuitoVero('monte-rosso');   // 1177, fattore 1
+    const lunga = circuitoVero('prova');         // 5170, fattore 1.59
     const conta = (l, cat) => l.layout.filter(v => v.category === cat).length;
     // Il tetto degli alberi era 430 su TUTTE le piste: l'uguaglianza esatta
     // era la firma del difetto.
     assert.ok(conta(lunga, 'woods') > conta(corta, 'woods') * 1.5,
-        `alberi: ${conta(corta, 'woods')} su melbourne, ${conta(lunga, 'woods')} su shanghai`);
+        `alberi: ${conta(corta, 'woods')} su monte-rosso, ${conta(lunga, 'woods')} su prova`);
     assert.ok(conta(lunga, 'rock') > conta(corta, 'rock') * 1.5,
-        `rocce: ${conta(corta, 'rock')} su melbourne, ${conta(lunga, 'rock')} su shanghai`);
+        `rocce: ${conta(corta, 'rock')} su monte-rosso, ${conta(lunga, 'rock')} su prova`);
 });
 
 // ---- gli oggetti tolti a mano dall'autore ----
