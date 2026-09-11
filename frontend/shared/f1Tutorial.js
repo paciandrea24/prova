@@ -245,7 +245,21 @@
                 width: 100%; display: block; border-radius: 12px;
                 border: 3px solid var(--ink, #16141E);
                 aspect-ratio: 16 / 9; object-fit: cover;
-                flex: 0 0 auto;
+                /* ⚠️ LA FOTO CEDE, IL TESTO NO. Il riquadro e' alto 690 px ma non
+                   oltre il 92% della finestra: su un portatile la finestra e'
+                   alta 640 e il riquadro si stringe a 589, e a quel punto
+                   qualcosa deve dare. Con una foto rigida cedeva il corpo, che
+                   cominciava a scorrere — segnalato dall'utente sul passo della
+                   partenza, che e' il piu' alto, ma a finestra bassa
+                   scorrevano tutti.
+                   Cosi' invece la foto si accorcia (e object-fit la taglia invece
+                   di deformarla) e il testo resta tutto in vista, che e'
+                   l'ordine di importanza giusto. Cresce anche, dove c'e'
+                   spazio, ma non oltre 340 px: piu' alta di cosi' una 16:9
+                   comincerebbe a perdere i lati. */
+                flex: 1 1 auto;
+                min-height: 130px;
+                max-height: 340px;
                 background: var(--surface, #F2F1EF);
             }
             /* Lo schemetto prende lo spazio che avanza nei passi senza foto,
