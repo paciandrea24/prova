@@ -713,10 +713,12 @@ const PIT_ENTRY_SPEED = 1.9;
 const PIT_ENTRY_BRAKE_M = 70;
 // Quanto dentro il bordo pista tenere il bersaglio dell'avvicinamento.
 const PIT_ENTRY_ASPHALT_MARGIN = 2;
-// Quanto oltre la semilarghezza della corsia si è ancora "sulla corsia": mezza
-// vettura di tolleranza, perché il bersaglio è un centro-corsia e l'auto lo
-// insegue, non ci sta incollata.
-const PIT_LANE_ON_LANE_MARGIN = 3;
+// Quanto oltre la semilarghezza della corsia si è ancora "sulla corsia".
+// Definita in TrackGeometry, che possiede la geometria della corsia box: qui
+// era una copia, e il server ne usava un'altra (nessuna tolleranza). Due
+// misure per la stessa cosa lasciavano un limbo in mezzo — vedi il commento
+// sulla costante.
+const PIT_LANE_ON_LANE_MARGIN = TrackGeometry.PIT_LANE_ON_LANE_MARGIN;
 
 // Il campione dell'IMBOCCO della corsia box più vicino all'auto, e quanto
 // dista. Cercato solo nella prima metà: più avanti c'è l'uscita, che rientra

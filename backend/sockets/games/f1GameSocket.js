@@ -259,7 +259,13 @@ function nellaCorsiaBox(p, track) {
         const d = Math.hypot(p.x - s.x, p.z - s.z);
         if (d < vicino) vicino = d;
     }
-    if (vicino > track.pitRoadHalf) return false;
+    // La tolleranza è la STESSA con cui il bot si considera già sulla corsia
+    // (TrackGeometry.PIT_LANE_ON_LANE_MARGIN): qui c'era pitRoadHalf esatto, e
+    // nel margine di differenza il bot restava in un limbo — credeva di essere
+    // entrato, il server non gli prendeva il volante, e finiva la gara senza
+    // sosta. Chi corre sul nastro resta escluso dalla riga dopo, che non è
+    // cambiata.
+    if (vicino > track.pitRoadHalf + TrackGeometry.PIT_LANE_ON_LANE_MARGIN) return false;
     return TrackGeometry.nearestPoint(track.points, p.x, p.z).dist > track.roadHalf;
 }
 

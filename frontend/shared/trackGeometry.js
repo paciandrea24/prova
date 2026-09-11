@@ -650,6 +650,18 @@
     // "subito davanti" al proprio garage, mai sovrapposto.
     const PIT_STALL_CLEARANCE = 10;
 
+    // Quanto oltre la semilarghezza della corsia (pitRoadHalf) un'auto è
+    // ancora "sulla corsia": mezza vettura di tolleranza, perché il bersaglio
+    // è un centro-corsia e l'auto lo insegue, non ci sta incollata.
+    //
+    // ⚠️ STA QUI PERCHÉ DEVE ESSERE UNA SOLA. Il bot la usava per decidere di
+    // stare seguendo la corsia, il server riconosceva l'ingresso solo entro
+    // pitRoadHalf esatto: nel mezzo c'era un limbo dove il bot credeva di
+    // essere entrato e il server non gli prendeva il volante. Finiva che il
+    // bot percorreva l'imbocco, la corsia gli sfuggiva e tornava in pista —
+    // gara chiusa senza sosta e 30 secondi di penalità.
+    const PIT_LANE_ON_LANE_MARGIN = 3;
+
     // Cammina lungo la spezzata `pitPath` di `distance` metri (con segno) a
     // partire dal punto boxIndex; oltre gli estremi della corsia si ferma
     // (clamp) invece di uscire dall'array.
@@ -1546,6 +1558,7 @@
         tuckPitEndsToTrack,
         pitLeadInPoints,
         PIT_STALL_CLEARANCE,
+        PIT_LANE_ON_LANE_MARGIN,
         // Esportata perche' i test (e chiunque misuri il fronte della corsia)
         // la leggano invece di ricopiarne il valore.
         PIT_BOX_SPACING,

@@ -80,6 +80,42 @@ for (const id of TRACCIATI) {
             `campioni di pista scambiati per corsia box: ${perLaCorsia.join(', ')}`);
     });
 
+    // ⚠️ UNA COSA, UNA MISURA. Il bot si considera "già sull'imbocco" fino a
+    // pitRoadHalf + PIT_LANE_ON_LANE_MARGIN dalla linea della corsia (mezza
+    // vettura di tolleranza: insegue un centro-corsia, non ci sta incollato),
+    // ma il server lo riconosceva solo entro pitRoadHalf esatto. Nel mezzo
+    // c'era un limbo: il bot crede di essere entrato, il server non gli prende
+    // il volante, e la corsia finisce — misurato su prova-notturno, quattro
+    // bot su quindici sfioravano la corsia a 5.5-6.6 unità (tolleranza 5) e
+    // tornavano in pista, chiudendo la gara senza sosta e con 30s di penalità.
+    test(`${id}: quel che il bot considera già sulla corsia, il server lo riconosce come ingresso`, () => {
+        const track = loadTrack(id);
+        const pl = track.pitLanePts;
+        const finestra = Math.min(pl.length - 1, Math.max(2, Math.floor(pl.length * 0.25)));
+
+        // Il primo campione dell'imbocco che ha già lasciato il nastro: prima
+        // di lì la corsia corre ancora dentro la carreggiata (su prova succede
+        // fino al campione 10) e nessuno può essere "fuori dal nastro" lì.
+        let i = -1;
+        for (let k = 1; k <= finestra; k++) {
+            if (TrackGeometry.nearestPoint(track.points, pl[k].x, pl[k].z).dist > track.roadHalf) { i = k; break; }
+        }
+        assert.ok(i > 0, `nessun campione dell'imbocco fuori dal nastro entro il primo quarto della corsia`);
+
+        // Scostato dalla linea della corsia quanto basta a stare nel limbo, e
+        // scostato dalla parte OPPOSTA alla pista, così resta fuori dal nastro.
+        const c = TrackGeometry.nearestPoint(track.points, pl[i].x, pl[i].z);
+        const asse = track.points[c.index];
+        const dx = pl[i].x - asse.x, dz = pl[i].z - asse.z;
+        const n = Math.hypot(dx, dz) || 1;
+        const scarto = track.pitRoadHalf + 2.5;   // oltre pitRoadHalf, dentro la tolleranza del bot
+        const auto = { x: pl[i].x + dx / n * scarto, z: pl[i].z + dz / n * scarto };
+
+        assert.ok(f1.physics.inPitEntryZone(auto, track),
+            `auto a ${scarto} unità dalla linea della corsia (campione ${i}) e fuori dal nastro: ` +
+            `il bot la considera entrata, il server no`);
+    });
+
     test(`${id}: il punto mirato all'ingresso sta AVANTI, non dietro`, () => {
         const track = loadTrack(id);
         const trigger = track.pitEntryTrigger;
