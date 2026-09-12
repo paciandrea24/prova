@@ -748,7 +748,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         gridSize,
         // La textura del bagnato la costruisce chi ha il meteo, cioe' il gioco:
         // l'editor e l'anteprima chiamano la stessa funzione senza passarla.
-        mapBagnato: preparaTexturaBagnato(trackData.points.length),
+        // ⚠️ Si passa la FUNZIONE, non la textura: le righe sono i campioni del
+        // nastro, e quanti sono lo sa solo `costruisciCircuito` dopo aver
+        // campionato la pista. `trackData` qui e' il JSON del circuito — nodi e
+        // segmenti — e `trackData.points` non esiste: a crederlo, il
+        // caricamento moriva con «Cannot read properties of undefined».
+        mapBagnato: (nCampioni) => preparaTexturaBagnato(nCampioni),
         passo: (testo, frazione) => caricamento.passo(testo, frazione),
         respira: () => caricamento.respira(),
     });
@@ -3583,8 +3588,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (toonSky && toonSky.setMeteo) toonSky.setMeteo(ToonPalette.SKY_STOPS);
             }
             meteoPrevisione = state.__meteo.previsione || 'stabile';
-            if (state.__meteo.celle && trackData && trackData.points) {
-                if (!meteoGriglia) meteoGriglia = F1Meteo.nuovaGriglia(trackData.points, 0);
+            // ⚠️ `trackPts` e non `trackData.points`: i campioni li produce
+            // `costruisciCircuito`, il JSON del circuito ha nodi e segmenti. Qui
+            // la svista non dava errore — era una GUARDIA, quindi restava
+            // sempre falsa e la griglia non arrivava mai: asfalto perennemente
+            // asciutto e nessun messaggio in console.
+            if (state.__meteo.celle && trackPts) {
+                if (!meteoGriglia) meteoGriglia = F1Meteo.nuovaGriglia(trackPts, 0);
                 F1Meteo.applicaPacchetto(meteoGriglia, new Uint8Array(state.__meteo.celle));
                 bagnatoDaRidisegnare = true;
             }

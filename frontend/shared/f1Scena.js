@@ -169,6 +169,14 @@
         const primaDelleSuperfici = scene.children.length;
 
         // DoubleSide evita artefatti di culling nelle zone ad alta curvatura.
+        // La textura del bagnato: la chiediamo ADESSO, che i campioni del
+        // nastro ci sono. Chi la costruisce e' il gioco (l'unico che ha il
+        // meteo); l'editor e l'anteprima non passano niente e il nastro nasce
+        // senza. Si accetta anche una textura gia' fatta, per chi la avesse.
+        const mapBagnato = (typeof o.mapBagnato === 'function')
+            ? o.mapBagnato(trackPts.length)
+            : o.mapBagnato;
+
         // L'asfalto bagnato: la textura arriva da fuori (la costruisce chi ha
         // il meteo, cioe' il gioco) e qui si sa solo che se c'e' va montata.
         // ⚠️ `map` e non `roughnessMap`: la stilizzazione cel-shaded sostituisce
@@ -177,7 +185,7 @@
         // bagnato servira' altro, e non e' di questo passo.
         builder.buildRibbon(scene, trackPts, roadHalf, new THREE.MeshStandardMaterial(Object.assign({
             color: ToonPalette.SURFACES.asphalt, roughness: 0.95, side: THREE.DoubleSide,
-        }, o.mapBagnato ? { map: o.mapBagnato } : {})));
+        }, mapBagnato ? { map: mapBagnato } : {})));
         builder.buildCurbs(scene, trackPts, roadHalf, CURB_W, pitMergeSamples);
         // Vie di fuga in ghiaia, dopo il cordolo e prima della barriera:
         // l'ordine delle chiamate riflette la sezione reale della pista. La

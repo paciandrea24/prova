@@ -193,3 +193,35 @@ test('il terrapieno riceve anche i tratti a ponte, non solo quelli a terra', () 
                 `al terrapieno arrivano ${visti.length} punti e nessuno a ponte: la polilinea e' bucata`);
         });
 });
+
+test('la textura del bagnato si chiede quando i campioni ci sono, e solo se la chiedono', async () => {
+    // ⚠️ QUESTO TEST ESISTE PER UN DIFETTO VERO (2026-09-12): il gioco passava
+    // `preparaTexturaBagnato(trackData.points.length)`, ma `trackData` e' il
+    // JSON del circuito — nodi e segmenti — e `points` non c'e'. Il
+    // caricamento moriva con «Cannot read properties of undefined (reading
+    // 'length')» e la pista non compariva: visto dall'utente, non da me.
+    //
+    // Le righe della textura sono i campioni del nastro, e quanti sono lo sa
+    // solo questa funzione dopo aver campionato: percio' `mapBagnato` e' una
+    // FUNZIONE che riceve il conteggio.
+    const registro = [];
+    const scena = scenaFinta();
+    let chiesta = 0, campioniRicevuti = null;
+    const finta = { eLaTextura: true };
+    const circuito = await F1Scena.costruisciCircuito(scena, pista('prova'), {
+        builder: builderChePrendeNota(registro),
+        gridSize: 6,
+        mapBagnato: (n) => { chiesta++; campioniRicevuti = n; return finta; },
+    });
+    assert.equal(chiesta, 1, `la textura del bagnato e stata chiesta ${chiesta} volte, non una`);
+    assert.equal(campioniRicevuti, circuito.trackPts.length,
+        'il conteggio dei campioni non coincide con quello del nastro: la linea asciutta slitterebbe');
+
+    // E senza `mapBagnato` — l'editor, l'anteprima — non si chiede niente e
+    // non si esplode.
+    const registro2 = [];
+    await F1Scena.costruisciCircuito(scenaFinta(), pista('prova'), {
+        builder: builderChePrendeNota(registro2), gridSize: 6,
+    });
+    assert.ok(registro2.some(r => r.startsWith('buildRibbon')), 'il nastro non risulta costruito');
+});
