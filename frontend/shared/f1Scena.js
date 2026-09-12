@@ -169,9 +169,15 @@
         const primaDelleSuperfici = scene.children.length;
 
         // DoubleSide evita artefatti di culling nelle zone ad alta curvatura.
-        builder.buildRibbon(scene, trackPts, roadHalf, new THREE.MeshStandardMaterial({
+        // L'asfalto bagnato: la textura arriva da fuori (la costruisce chi ha
+        // il meteo, cioe' il gioco) e qui si sa solo che se c'e' va montata.
+        // ⚠️ `map` e non `roughnessMap`: la stilizzazione cel-shaded sostituisce
+        // questo materiale con un MeshToonMaterial, che la `map` la porta con se'
+        // (vedi `toonFrom`) ma di ruvidita' non sa niente. Per il lucido del
+        // bagnato servira' altro, e non e' di questo passo.
+        builder.buildRibbon(scene, trackPts, roadHalf, new THREE.MeshStandardMaterial(Object.assign({
             color: ToonPalette.SURFACES.asphalt, roughness: 0.95, side: THREE.DoubleSide,
-        }));
+        }, o.mapBagnato ? { map: o.mapBagnato } : {})));
         builder.buildCurbs(scene, trackPts, roadHalf, CURB_W, pitMergeSamples);
         // Vie di fuga in ghiaia, dopo il cordolo e prima della barriera:
         // l'ordine delle chiamate riflette la sezione reale della pista. La

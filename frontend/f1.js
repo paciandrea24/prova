@@ -674,8 +674,78 @@ document.addEventListener('DOMContentLoaded', async () => {
     // esplorabile costruisce la SUA scena con la stessa funzione invece di
     // ricopiarla, e le due non possono divergere. Rif.
     // docs/superpowers/specs/2026-08-24-f1-anteprima-esplorabile-design.md
+
+    // ── L'ASFALTO CHE SI ASCIUGA ────────────────────────────────────────────
+    //
+    // Il nastro della carreggiata ha gia' le UV giuste: `u` attraversa la pista
+    // e `v` corre lungo il tracciato. Sono gli assi della griglia del bagnato,
+    // quindi la linea asciutta e' una TEXTURA: nessuna modifica alla geometria.
+    //
+    // ⚠️ LE RIGHE SONO I CAMPIONI, NON LE CELLE. Il nastro ha `v = i / (n-1)`,
+    // cioe' e' uniforme nell'INDICE di campione, mentre le celle sono uniformi
+    // nell'ARCO: indicizzando per cella la linea asciutta slitterebbe rispetto
+    // alla pista. La mappa campione -> cella e' la stessa del server.
+    //
+    // ⚠⚠ E LE COLONNE VANNO AL CONTRARIO. Verificato sulla mesh, non dedotto:
+    // `bordiDelNastro` mette il primo bordo — quello con `u = 0` — a
+    // `p + normale * w`, e un'auto da quella parte ha scostamento +1, cioe' la
+    // corsia CORSIE-1. Scrivendo la corsia 0 in `u = 0` la traiettoria asciutta
+    // compariva SPECCHIATA in larghezza: visibile in gioco solo sapendo cosa
+    // cercare, e attribuibile a qualunque cosa.
+    //
+    // Bianco = asciutto, grigio = bagnato: la `map` moltiplica il colore, quindi
+    // la tinta resta quella di ToonPalette e qui si decide solo quanto scurirla.
+    const BAGNATO_SCURO = 0.52;
+    let bagnatoCanvas = null, bagnatoTexture = null;
+
+    function preparaTexturaBagnato(nCampioni) {
+        bagnatoCanvas = document.createElement('canvas');
+        bagnatoCanvas.width = F1Meteo.CORSIE;
+        bagnatoCanvas.height = nCampioni;
+        // ⚠️ f1.css ha una regola globale sui `canvas` (quello del gioco e' a
+        // schermo pieno): questo non entra nel DOM, quindi non la eredita. Se un
+        // giorno ci entrasse, va disdetta esplicitamente.
+        bagnatoTexture = new THREE.CanvasTexture(bagnatoCanvas);
+        bagnatoTexture.wrapS = THREE.ClampToEdgeWrapping;
+        bagnatoTexture.wrapT = THREE.ClampToEdgeWrapping;
+        bagnatoTexture.minFilter = THREE.LinearFilter;
+        bagnatoTexture.generateMipmaps = false;
+        // Una pista asciutta e' bianca: la textura non deve scurire niente
+        // finche' non arriva il primo meteo dal server.
+        const ctx = bagnatoCanvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, bagnatoCanvas.width, bagnatoCanvas.height);
+        bagnatoTexture.needsUpdate = true;
+        return bagnatoTexture;
+    }
+
+    function aggiornaTexturaBagnato() {
+        if (!bagnatoCanvas || !meteoGriglia) return;
+        const ctx = bagnatoCanvas.getContext('2d');
+        const corsie = F1Meteo.CORSIE;
+        const img = ctx.createImageData(corsie, bagnatoCanvas.height);
+        const dati = img.data;
+        for (let riga = 0; riga < bagnatoCanvas.height; riga++) {
+            const cella = meteoGriglia.perCampione[riga] | 0;
+            for (let colonna = 0; colonna < corsie; colonna++) {
+                // La colonna 0 della textura (u = 0) e' il lato a +normale,
+                // cioe' lo scostamento +1: la corsia piu' alta. Vedi sopra.
+                const corsia = corsie - 1 - colonna;
+                const bagnato = meteoGriglia.valori[cella * corsie + corsia];
+                const luce = Math.round(255 * (1 - BAGNATO_SCURO * bagnato));
+                const k = (riga * corsie + colonna) * 4;
+                dati[k] = luce; dati[k + 1] = luce; dati[k + 2] = luce; dati[k + 3] = 255;
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+        bagnatoTexture.needsUpdate = true;
+    }
+
     const circuito = await F1Scena.costruisciCircuito(scene, trackData, {
         gridSize,
+        // La textura del bagnato la costruisce chi ha il meteo, cioe' il gioco:
+        // l'editor e l'anteprima chiamano la stessa funzione senza passarla.
+        mapBagnato: preparaTexturaBagnato(trackData.points.length),
         passo: (testo, frazione) => caricamento.passo(testo, frazione),
         respira: () => caricamento.respira(),
     });
@@ -6936,6 +7006,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function animate() {
         requestAnimationFrame(animate);
+        // L'asfalto si ridipinge solo quando arriva una griglia nuova (una
+        // volta al secondo), non a ogni frame: sono 5000 pixel da riscrivere.
+        if (bagnatoDaRidisegnare) { aggiornaTexturaBagnato(); bagnatoDaRidisegnare = false; }
         // Quanto di un frame è LOGICA e quanto è disegno. Senza questa
         // separazione il pannello dice solo "disegno 11 ms su 20", e gli
         // altri 9 restano un buco nero in cui può esserci di tutto: fisica
