@@ -92,11 +92,27 @@ canvas.tyre-preview-canvas {
 
 #tyre-select-overlay {
     z-index: 40;
+    /* ⚠️ SE NON CI STA, SI SCORRE — NON SI TAGLIA. Questo overlay e' `fixed` e
+       centra il foglio: con cinque mescole, su una finestra bassa il foglio
+       superava l'altezza disponibile e il centraggio mangiava il troppo META'
+       SOPRA E META' SOTTO — la scritta del cielo mozzata in alto, «In pista
+       fra» mozzato in basso, e nessun modo di raggiungerle. Segnalato
+       dall'utente su cinque mescole, ma sarebbe successo lo stesso su un
+       monitor basso con tre.
+       `flex-start` + `margin: auto` sul foglio, e non `align-items: center`:
+       col centraggio del flex la parte che esce sopra non e' raggiungibile
+       nemmeno scorrendo (e' il difetto noto del centraggio in flexbox), col
+       margine automatico si. Finche' c'e' spazio il foglio resta centrato
+       esattamente come prima. */
+    align-items: flex-start;
+    overflow-y: auto;
     background:
         radial-gradient(120% 90% at 22% 15%, var(--sel-fondo-a), var(--sel-fondo-b) 72%);
 }
 
 .mescole-foglio {
+    /* Centrato dal margine, non dal contenitore: vedi #tyre-select-overlay. */
+    margin: auto;
     width: 100%;
     max-width: 1560px;
     display: flex;
@@ -240,6 +256,18 @@ canvas.tyre-preview-canvas {
 }
 .tyre-card:hover { background: var(--sel-rilievo); }
 .tyre-card.selected { border-color: var(--mescola, var(--sel-cordolo)); background: var(--sel-rilievo); }
+/* ⚠️ NELLE RIGHE MESCOLA LO PNEUMATICO SI MISURA ANCHE IN ALTEZZA. Era
+   `5.4vw`, e con cinque mescole invece di tre la colonna sfondava: su uno
+   schermo 1366x768 le righe erano alte 471px in 672 disponibili, il foglio
+   arrivava a 715px e l'overlay — che centra e non scrolla — tagliava 21px
+   sopra e 21 sotto. La larghezza non sa niente di quanto e' alta la finestra:
+   qui comanda il MINORE dei due. Il tetto di 86px resta, cosi' su uno schermo
+   alto la gomma si vede grande come prima.
+   Il selettore e' legato a #tyre-cards: le stesse .tyre-card servono al
+   pannello dei box, dove sono affiancate e il vincolo non esiste. */
+#tyre-cards .tyre-card .pneumatico {
+    height: clamp(30px, min(5.4vw, 7vh), 86px);
+}
 .tyre-card .pneumatico {
     width: clamp(52px, 5.4vw, 86px);
     height: clamp(52px, 5.4vw, 86px);
@@ -2265,11 +2293,19 @@ canvas#pa-mappa {
 /* ── CHE CIELO C'E' ──────────────────────────────────────────────────────────
    Nella testata delle mescole e in gara. Niente emoji (regola del progetto):
    il segno e' il TESTO, dentro una pastiglia disegnata col bordo. */
+/* La fase e il cielo sulla stessa riga: vedi il commento in f1.html, e' il
+   modo di non spendere 25px di altezza per una pastiglia. */
+.mescole-sopratitolo {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    min-width: 0;
+}
 .mescole-meteo {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    margin-left: 14px;
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 2px;

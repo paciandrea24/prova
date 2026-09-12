@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260911r">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260912a">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -394,15 +394,25 @@
         <div class="mescole-foglio">
 
             <header class="mescole-testata">
-                <span class="mescole-eyebrow" id="tyre-eyebrow">Prima della qualifica</span>
-                <!-- CHE CIELO C'E'. Richiesta dell'utente: «non si verificano
-                     scenari dove il gioco non dice niente, selezioni le soft e
-                     poi invece piove a dirotto». Nascosto quando e' asciutto e
-                     stabile: un'etichetta che dice sempre «asciutto» e' rumore. -->
-                <span class="mescole-meteo" id="tyre-meteo" hidden>
-                    <span class="mescole-meteo-cielo" id="tyre-meteo-cielo">Asciutto</span>
-                    <span class="mescole-meteo-prev" id="tyre-meteo-prev"></span>
-                </span>
+                <!-- Sopratitolo: la fase a sinistra, il cielo accanto. ⚠️ SULLA
+                     STESSA RIGA, non una riga per uno: la testata e' in colonna,
+                     e la pastiglia del meteo da sola aggiungeva 25px al foglio.
+                     Con cinque mescole il foglio non ci stava piu' in altezza, e
+                     siccome l'overlay CENTRA (fixed, inset 0, niente scroll) il
+                     troppo veniva tagliato sopra e sotto: la scritta del cielo
+                     mozzata in alto e «In pista fra» mozzato in basso.
+                     Segnalato dall'utente. -->
+                <div class="mescole-sopratitolo">
+                    <span class="mescole-eyebrow" id="tyre-eyebrow">Prima della qualifica</span>
+                    <!-- CHE CIELO C'E'. Richiesta dell'utente: «non si verificano
+                         scenari dove il gioco non dice niente, selezioni le soft e
+                         poi invece piove a dirotto». Nascosto quando e' asciutto e
+                         stabile: un'etichetta che dice sempre «asciutto» e' rumore. -->
+                    <span class="mescole-meteo" id="tyre-meteo" hidden>
+                        <span class="mescole-meteo-cielo" id="tyre-meteo-cielo">Asciutto</span>
+                        <span class="mescole-meteo-prev" id="tyre-meteo-prev"></span>
+                    </span>
+                </div>
                 <h2 class="mescole-titolo">
                     <span id="tyre-track-name">Circuito</span>
                     <span class="mescole-titolo-sep"></span>
