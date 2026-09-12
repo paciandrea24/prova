@@ -432,8 +432,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // LA PIOGGIA CHE CADE. Sta accanto alla cupola perche' e' la stessa
     // famiglia di cose: il tempo che fa, non un oggetto del circuito.
     const pioggia = (typeof F1Pioggia !== 'undefined') ? F1Pioggia.install(scene, THREE) : null;
-    // Le gocce sulla visiera: il velo davanti agli occhi, in prima persona.
-    preparaVisiera();
+
     // Il notturno e' una uniform condivisa da tutti i materiali toon: si
     // accende una volta e vale per la pista generata in JS come per i
     // modelli che arrivano dai GLB. Vedi ToonStyle.impostaNotturno.
@@ -2164,6 +2163,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
     }
+
+    // ⚠️ SI CHIAMA QUI, non su in cima al file. `function` e' hoisted e da lassu'
+    // la chiamata sembrava funzionare, ma le sue variabili sono `let`: non lo
+    // sono, e leggerle prima della dichiarazione e' un ReferenceError. Il gioco
+    // si piantava sul caricamento con «Cannot access 'visieraCanvas' before
+    // initialization» — visto dall'utente, non da me: `node --check` guarda la
+    // sintassi, e questo e' un errore di ESECUZIONE.
+    preparaVisiera();
 
     function aggiornaVisiera(dtMs) {
         if (!visieraCanvas) return;
