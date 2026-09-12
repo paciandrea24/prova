@@ -432,6 +432,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // LA PIOGGIA CHE CADE. Sta accanto alla cupola perche' e' la stessa
     // famiglia di cose: il tempo che fa, non un oggetto del circuito.
     const pioggia = (typeof F1Pioggia !== 'undefined') ? F1Pioggia.install(scene, THREE) : null;
+    // Le gocce sulla visiera: il velo davanti agli occhi, in prima persona.
+    preparaVisiera();
     // Il notturno e' una uniform condivisa da tutti i materiali toon: si
     // accende una volta e vale per la pista generata in JS come per i
     // modelli che arrivano dai GLB. Vedi ToonStyle.impostaNotturno.
@@ -2135,6 +2137,139 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (attiva) aggiornaEffettoParticelle(mesh, dtMs);
     }
 
+    // ── LE GOCCE SULLA VISIERA ──────────────────────────────────────────────
+    //
+    // Solo in PRIMA persona: in terza guardi l'auto da fuori, e una visiera
+    // sporca davanti a quell'inquadratura non vuol dire niente.
+    //
+    // Ogni goccia sta ferma dove si e' posata e ogni tanto cola giu' di scatto,
+    // come fanno davvero: scivolare piano e in continuo e' quel che fa sembrare
+    // finto un effetto pioggia.
+    const VISIERA_GOCCE = 90;
+    let visieraCanvas = null, visieraCtx = null, visieraGocce = null;
+    let visieraUltimoDisegno = 0;
+
+    function preparaVisiera() {
+        visieraCanvas = document.getElementById('visiera');
+        if (!visieraCanvas) return;
+        visieraCtx = visieraCanvas.getContext('2d');
+        visieraGocce = [];
+        for (let i = 0; i < VISIERA_GOCCE; i++) {
+            visieraGocce.push({
+                x: Math.random(), y: Math.random(),
+                r: 1.5 + Math.random() * 4.5,
+                // Quando ricomincia a colare: ogni goccia ha il suo ritmo.
+                attesa: Math.random() * 900,
+                scivolo: 0,
+            });
+        }
+    }
+
+    function aggiornaVisiera(dtMs) {
+        if (!visieraCanvas) return;
+        // In terza persona, a cielo asciutto o in una schermata: niente velo.
+        const serve = cameraMode === 'first' && meteoCielo > 0.08
+            && !tyreSelectActive && !premiazione && !panoramicaAttiva && !cerimoniaAttiva;
+        if (!serve) {
+            if (!visieraCanvas.hidden) visieraCanvas.hidden = true;
+            return;
+        }
+        visieraCanvas.hidden = false;
+        // ⚠️ 20 disegni al secondo, non uno per fotogramma: sono gocce ferme
+        // che ogni tanto colano, e ridisegnarle a 144 Hz sarebbe lavoro buttato
+        // su un gioco che e' GPU-bound sui pixel.
+        const ora = performance.now();
+        if (ora - visieraUltimoDisegno < 50) return;
+        const passo = ora - visieraUltimoDisegno;
+        visieraUltimoDisegno = ora;
+
+        const W = visieraCanvas.width, H = visieraCanvas.height;
+        const ctx = visieraCtx;
+        ctx.clearRect(0, 0, W, H);
+        // Quante gocce ci sono addosso: col diluvio tutte, con la pioviggine
+        // quattro.
+        const quante = Math.round(VISIERA_GOCCE * Math.min(1, meteoCielo * 1.2));
+        ctx.fillStyle = 'rgba(226, 240, 248, 0.30)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+        for (let i = 0; i < quante; i++) {
+            const g = visieraGocce[i];
+            g.attesa -= passo;
+            if (g.attesa <= 0) {
+                // Cola: uno scatto in giu', poi si rimette in attesa.
+                g.y += (0.04 + Math.random() * 0.10);
+                g.attesa = 250 + Math.random() * 1400;
+                if (g.y > 1.05) {
+                    // Uscita dal basso: ne arriva una nuova in alto.
+                    g.y = -0.05; g.x = Math.random();
+                    g.r = 1.5 + Math.random() * 4.5;
+                }
+            }
+            const x = g.x * W, y = g.y * H;
+            // Una LACRIMA, non un pallino: schiacciata in larghezza e tirata in
+            // basso, come sta una goccia su un vetro verticale.
+            ctx.beginPath();
+            ctx.ellipse(x, y, g.r * 0.82, g.r * 1.15, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // La scia che si lascia SOPRA colando: corta, o le gocce sembrano
+            // spilli con la testa.
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x, y - g.r * 1.5);
+            ctx.lineWidth = g.r * 0.55;
+            ctx.stroke();
+        }
+    }
+
+    // ── IL RUMORE DELLA PIOGGIA ─────────────────────────────────────────────
+    //
+    // Sintetizzato, come il bip del semaforo e lo scatto della griglia: rumore
+    // bianco filtrato passa-basso, che e' esattamente quel che e' la pioggia da
+    // dentro un casco. Un file audio sarebbe un asset da caricare e una licenza
+    // da rispettare per un rumore che si fa con sei righe.
+    //
+    // ⚠️ Passa dal listener come il motore, NON dal bus dell'interfaccia: questo
+    // e' un suono del MONDO, e deve tacere quando il mondo tace (le schermate
+    // fra qualifica e gara).
+    let rumoreSorgente = null, rumoreGuadagno = null, rumoreFiltro = null;
+
+    function accendiRumorePioggia() {
+        const ctx = listener.context;
+        if (rumoreSorgente || !ctx || ctx.state !== 'running') return;
+        // Due secondi di rumore in loop: piu' corto si sente il punto di
+        // giunzione, piu' lungo e' memoria sprecata.
+        const durata = 2;
+        const buffer = ctx.createBuffer(1, ctx.sampleRate * durata, ctx.sampleRate);
+        const dati = buffer.getChannelData(0);
+        for (let i = 0; i < dati.length; i++) dati[i] = Math.random() * 2 - 1;
+        rumoreSorgente = ctx.createBufferSource();
+        rumoreSorgente.buffer = buffer;
+        rumoreSorgente.loop = true;
+        rumoreFiltro = ctx.createBiquadFilter();
+        rumoreFiltro.type = 'lowpass';
+        rumoreFiltro.frequency.value = 1400;
+        rumoreGuadagno = ctx.createGain();
+        rumoreGuadagno.gain.value = 0;
+        rumoreSorgente.connect(rumoreFiltro);
+        rumoreFiltro.connect(rumoreGuadagno);
+        rumoreGuadagno.connect(listener.getInput());
+        rumoreSorgente.start(0);
+    }
+
+    const RUMORE_VOLUME_MAX = 0.22;
+    function aggiornaRumorePioggia() {
+        if (meteoCielo > 0.05) accendiRumorePioggia();
+        if (!rumoreGuadagno) return;
+        const ctx = listener.context;
+        // Sale e scende con la pioggia, ma senza scatti: un rumore che cambia
+        // di colpo si sente come un difetto.
+        const voluto = RUMORE_VOLUME_MAX * Math.min(1, meteoCielo * 1.15);
+        rumoreGuadagno.gain.setTargetAtTime(voluto, ctx.currentTime, 0.8);
+        // Piu' forte piove, piu' il rumore si fa acuto: e' lo scroscio.
+        if (rumoreFiltro) {
+            rumoreFiltro.frequency.setTargetAtTime(900 + 2200 * meteoCielo, ctx.currentTime, 0.8);
+        }
+    }
+
     // ── LO SPRAY E LA LUCE ROSSA, sul bagnato ───────────────────────────────
     //
     // Quanta acqua c'e' sotto QUELL'auto: il client ce l'ha senza chiederla al
@@ -2155,7 +2290,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Serve acqua E velocita': un'auto ferma sul bagnato non solleva niente,
         // e sarebbe la prima cosa che si nota in griglia.
         const velocita = stato ? Math.abs(stato.speed || 0) : 0;
-        const attivo = !!carGroup && bagnato > 0.25 && velocita > 8
+        // ⚠️ La soglia era 0.25 e la pista ci mette una ventina di secondi a
+        // bagnarsi dopo F3: chi premeva il tasto e guardava subito non vedeva
+        // niente e pensava che lo spray non ci fosse.
+        const attivo = !!carGroup && bagnato > 0.12 && velocita > 8
             && !tyreSelectActive && !panoramicaAttiva && !cerimoniaAttiva;
         let mesh = sprayPerAuto[color];
         if (!attivo && !mesh) return;
@@ -2175,7 +2313,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Quanto spray: piu' acqua e piu' velocita', piu' nuvola. L'emissione e'
         // un RITMO (nascite al secondo), non un riempimento.
         const emissione = attivo
-            ? Math.min(1, (bagnato - 0.25) / 0.5) * Math.min(1, velocita / 40)
+            ? Math.min(1, (bagnato - 0.12) / 0.35) * Math.min(1, velocita / 32)
             : 0;
         // Nessuna ancora: le particelle vivono nel riferimento dell'auto
         // (ANCORA_LOCALE), esattamente come la scia.
@@ -2203,18 +2341,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         let luce = luciPioggia[color];
         if (!accesa && !luce) return;
         if (!luce) {
-            // Un pannellino piatto sotto l'ala posteriore, non una luce vera:
-            // una PointLight per vettura costerebbe un ricalcolo di shader per
-            // ogni materiale illuminato, e qui serve qualcosa che SI VEDA da
-            // dietro, non che illumini.
-            const geo = new THREE.PlaneGeometry(0.34, 0.34);
+            // Un pannellino piatto dietro l'ala, non una luce vera: una
+            // PointLight per vettura costerebbe un ricalcolo di shader per ogni
+            // materiale illuminato, e qui serve qualcosa che SI VEDA da dietro,
+            // non che illumini.
+            const geo = new THREE.PlaneGeometry(0.55, 0.42);
             const mat = new THREE.MeshBasicMaterial({
-                color: 0xff2d2d, transparent: true, opacity: 1,
+                color: 0xff2418, transparent: true, opacity: 1,
                 side: THREE.DoubleSide, fog: false, depthWrite: false,
+                // Additiva: una luce accesa SOMMA la sua luce a quel che c'e'
+                // dietro, e su un'auto scura sotto un cielo di piombo e' la
+                // differenza fra «un quadratino rosso» e «una luce».
+                blending: THREE.AdditiveBlending,
             });
             luce = luciPioggia[color] = new THREE.Mesh(geo, mat);
-            // Dietro, in basso, al centro: dove sta sulle vetture vere.
-            luce.position.set(0, 0.42, -2.35);
+            // ⚠️ DIETRO L'AUTO, NON DENTRO. Misurato il modello con Blender:
+            // il Chassis arriva a z = -2.80 e l'ala posteriore a -3.58, quindi
+            // la prima posizione che avevo dato (z = -2.35) stava INFILATA nella
+            // carrozzeria — la luce c'era e non si vedeva, come ha notato
+            // l'utente. A -3.7 sporge appena oltre l'ala: da dietro si vede
+            // sempre, da davanti la copre l'auto.
+            luce.position.set(0, 0.30, -3.7);
             luce.renderOrder = 4;
             carGroup.add(luce);
         }
@@ -3827,6 +3974,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 meteoCieloDipinto = meteoCielo;
                 ToonPalette.applicaMeteo(meteoCielo);
                 if (toonSky && toonSky.setMeteo) toonSky.setMeteo(ToonPalette.SKY_STOPS);
+                // Le stelle spariscono sotto le nuvole. E' il segnale che dice
+                // «sta piovendo» in una gara notturna, dove il cielo non puo'
+                // schiarire per dirlo: un cielo coperto non ha stelle.
+                if (toonSky && toonSky.setStelle) toonSky.setStelle(NOTTURNO && meteoCielo < 0.3);
                 // ⚠️ Quante gocce cadono lo dice lo STESSO numero che bagna la
                 // pista e fa scivolare l'auto: se la pioggia a schermo avesse
                 // una sua intensita', si vedrebbe diluviare su una pista che il
@@ -7711,6 +7862,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         // com'e' il clamp interno lo avrebbe letto come un decimo di secondo e
         // le gocce sarebbero cadute dieci volte piu' veloci.
         if (pioggia) pioggia.update(camera, _dt / 1000);
+        aggiornaVisiera(_dt);
+        aggiornaRumorePioggia();
         F1Perf.logica = performance.now() - _tLogica;
 
         // ⚠️ NON SI DISEGNA SOTTO A QUEL CHE COPRE TUTTO. Lo stacco di fine

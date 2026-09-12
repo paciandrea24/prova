@@ -2460,3 +2460,18 @@ canvas#pa-mappa {
     from { opacity: 1; transform: translateX(0); }
     to   { opacity: 0; transform: translateX(-18px); }
 }
+
+/* ── LE GOCCE SULLA VISIERA ──────────────────────────────────────────────────
+   Sopra la scena, sotto l'HUD: la pioggia sta davanti agli occhi, non davanti
+   ai cronometri. Il canvas e' a mezza risoluzione e lo stira il CSS — le gocce
+   sono macchie sfocate, nessuno ci legge dentro, e a schermo intero costerebbe
+   quattro volte i pixel per niente. */
+#visiera {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 5;
+    pointer-events: none;
+}
+#visiera[hidden] { display: none; }

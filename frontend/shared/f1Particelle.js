@@ -106,9 +106,13 @@
     // Tante e piccole: con particelle grosse si vede la particella, non la
     // nebbia (secondo tentativo: sembravano scatoloni appoggiati sul cofano).
     const SPRAY = {
-        numero: 150,
-        dimensione: 0.5,
-        vitaMs: 620,
+    // ⚠️ Alzate da 150 a 260 dopo il playtest: «gli spruzzi dietro le macchine
+    // praticamente non si vedono, sono pochissime». Una nebbia di cubetti ha
+    // bisogno di GRANA, e la grana si fa col numero — ingrandirli li trasforma
+    // in scatoloni (gia' provato).
+        numero: 260,
+        dimensione: 0.55,
+        vitaMs: 700,
         // Dietro le ruote posteriori, largo come la vettura, basso: l'acqua
         // parte da terra.
         nascita: {
@@ -118,8 +122,8 @@
         },
         // Scorre all'indietro nel riferimento dell'auto e SALE: è la scia
         // aerodinamica che se la porta su.
-        velocita: { avanti: -6.5, lato: 0, quota: 1.9 },
-        velocitaCasuale: { avanti: 2.4, lato: 2.2, quota: 1.5 },
+        velocita: { avanti: -6.5, lato: 0, quota: 2.1 },
+        velocitaCasuale: { avanti: 2.6, lato: 2.6, quota: 1.6 },
         turbolenza: 0.8,
         vitaVariazione: [0.7, 1.3],
         // Quasi zero: è nebbia, resta sospesa e svanisce dov'è.

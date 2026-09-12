@@ -121,6 +121,47 @@ test('temporale: la luce non cala, cambiano cielo e nebbia', () => {
         `il cielo del temporale ha una dominante: ${JSON.stringify(c)}`);
 });
 
+test('temporale: di notte resta NOTTE, di giorno diventa grigio', () => {
+    // ⚠️ Due difetti opposti, presi uno dopo l'altro.
+    //
+    // Il primo: il temporale aveva quattro tinte fisse di grigio, e di notte
+    // portava il cielo dal nero-blu (luminanza 0.009) al piombo del giorno
+    // (0.355) — quaranta volte piu' chiaro. Su una pista notturna la pioggia
+    // faceva l'alba.
+    //
+    // Il secondo, correggendo il primo: il cielo coperto scendeva a 0.004, cioe'
+    // piu' scuro della notte serena, e il temporale spariva. Ma un cielo coperto
+    // non e' mai nero — le nuvole basse rimandano giu' la luce che trovano, e in
+    // un circuito illuminato ce n'e' parecchia. L'utente l'ha detto guardandolo:
+    // «un po' piu' scuro rispetto alle gare di giorno, che fa diventare il cielo
+    // semplicemente grigio».
+    //
+    // Quindi il criterio non e' «la notte non cambia», e' «la notte resta
+    // notte»: piu' chiara di com'era serena, molto piu' scura del giorno.
+    const luminanza = (hex) => { const c = P.hexToRgb(hex); return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; };
+    const cielo = (orario, pioggia) => { P.impostaOrario(orario); P.applicaMeteo(pioggia); return luminanza(P.skyColorAt(1)); };
+
+    const giornoSereno = cielo('giorno', 0);
+    const giornoPiovoso = cielo('giorno', 1);
+    const notteSerena = cielo('notte', 0);
+    const nottePiovosa = cielo('notte', 1);
+
+    assert.ok(giornoPiovoso < giornoSereno * 0.8,
+        `di giorno il temporale non scurisce abbastanza: da ${giornoSereno.toFixed(3)} a ${giornoPiovoso.toFixed(3)}`);
+    assert.ok(nottePiovosa < giornoPiovoso / 3,
+        `la notte piovosa (${nottePiovosa.toFixed(3)}) non e' molto piu' scura del giorno piovoso (${giornoPiovoso.toFixed(3)}): sembrerebbe l'alba`);
+    assert.ok(nottePiovosa > notteSerena,
+        `la notte piovosa (${nottePiovosa.toFixed(3)}) e' scura quanto quella serena (${notteSerena.toFixed(3)}): il temporale non si vede`);
+    // E il grigio deve essere grigio a ogni ora: nessuna dominante, perche'
+    // l'orizzonte e' anche il colore della nebbia.
+    for (const orario of ['giorno', 'notte']) {
+        P.impostaOrario(orario); P.applicaMeteo(1);
+        const c = P.hexToRgb(P.skyColorAt(0.5));
+        assert.ok(Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b) < 0.12,
+            `il cielo del temporale ha una dominante a ${orario}: ${JSON.stringify(c)}`);
+    }
+});
+
 test('temporale: quattro tappe di cielo, sempre — la cupola compila su quel numero', () => {
     P.impostaOrario('notte');
     P.applicaMeteo(0.7);

@@ -314,21 +314,50 @@
     // piatta. Quindi qui si muovono DUE cose sole, il colore del cielo e la
     // densita' della nebbia, e nessuna luce.
     //
-    // Quattro tappe come gli orari: la cupola compila lo shader su quel numero.
-    // Grigio e non azzurro: l'orizzonte E' ANCHE il colore della nebbia (vedi
-    // fogColor), e una dominante fredda tingerebbe tutto cio' che e' lontano —
-    // lo stesso difetto costato due tarature al notturno.
-    const TEMPORALE_STOPS = [
-        { t: 0.00, color: 0x9aa0a8 },
-        { t: 0.06, color: 0x868c95 },
-        { t: 0.30, color: 0x6d737c },
-        { t: 1.00, color: 0x565b63 },
-    ];
+    // ⚠️ IL TEMPORALE NON HA UN COLORE SUO: SCOLORA E SCURISCE QUELLO CHE C'E'.
+    //
+    // Prima erano quattro tinte fisse di grigio, e di giorno andavano bene. Di
+    // NOTTE il risultato era che la pioggia ACCENDEVA il cielo: dal nero-blu
+    // (luminosita' 0.009) si passava al piombo del temporale diurno (0.355),
+    // quaranta volte piu' chiaro. Su monte-rosso, che e' notturna, un temporale
+    // faceva l'alba. Segnalato dall'utente come domanda — «in monte-rosso che e'
+    // notturno non puo' mai piovere?» — e la risposta era: puo', ma veniva una
+    // cosa sbagliata.
+    //
+    // Un cielo coperto e' il cielo di prima con due cose in meno: il COLORE (le
+    // nuvole sono grigie) e un po' di LUCE. Fatto cosi' vale a qualunque ora,
+    // anche a quelle che non esistono ancora.
+    const TEMPORALE_SCOLORA = 0.88;   // quanto va verso il grigio del suo stesso valore
+    const TEMPORALE_SCURISCE = 0.62;  // quanta luce toglie il coperto
+    // ⚠️ E UN PAVIMENTO, perche' un cielo coperto non e' mai nero: le nuvole
+    // basse rimandano giu' la luce che trovano, e di notte in un circuito
+    // illuminato ce n'e' parecchia. Senza, correggendo il difetto del cielo
+    // notturno (la pioggia lo SCHIARIVA fino al piombo del giorno) si finiva
+    // nell'eccesso opposto: temporale invisibile, notte identica a com'era.
+    // L'utente ha chiesto la via di mezzo: «un po' piu' scuro rispetto alle
+    // gare di giorno, che fa diventare il cielo semplicemente grigio».
+    const TEMPORALE_MINIMO = 0.075;
     // Piu' densa del giorno ma meno della notte: il temporale accorcia la
     // vista, non la chiude.
     const TEMPORALE_FOG = 0.0026;
     let pioggiaCorrente = 0;
     let orarioCorrente = 'giorno';
+
+    // Il colore di quella tappa sotto il temporale: grigio del suo stesso
+    // valore, e piu' scuro. ⚠️ Il grigio si prende dalla LUMINANZA e non dalla
+    // media dei tre canali: l'occhio pesa il verde sei volte il blu, e una
+    // media farebbe di un azzurro un grigio troppo chiaro.
+    function coperto(hex) {
+        const c = hexToRgb(hex);
+        const luce = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+        const k = TEMPORALE_SCOLORA;
+        const scala = Math.max(TEMPORALE_SCURISCE, luce > 0.0001 ? TEMPORALE_MINIMO / luce : 0);
+        return rgbToHex({
+            r: Math.min(1, (c.r + (luce - c.r) * k) * scala) + (luce < 0.0001 ? TEMPORALE_MINIMO : 0),
+            g: Math.min(1, (c.g + (luce - c.g) * k) * scala) + (luce < 0.0001 ? TEMPORALE_MINIMO : 0),
+            b: Math.min(1, (c.b + (luce - c.b) * k) * scala) + (luce < 0.0001 ? TEMPORALE_MINIMO : 0),
+        });
+    }
 
     function mescolaHex(a, b, k) {
         const ca = hexToRgb(a), cb = hexToRgb(b);
@@ -347,7 +376,7 @@
         const base = ORARI[orarioCorrente].skyStops;
         SKY_STOPS.length = 0;
         for (let i = 0; i < base.length; i++) {
-            SKY_STOPS.push({ t: base[i].t, color: mescolaHex(base[i].color, TEMPORALE_STOPS[i].color, pioggiaCorrente) });
+            SKY_STOPS.push({ t: base[i].t, color: mescolaHex(base[i].color, coperto(base[i].color), pioggiaCorrente) });
         }
         return pioggiaCorrente;
     }
@@ -446,6 +475,6 @@
         SURFACES, CITTA_FACCIATE, SKY_STOPS, FOG_DENSITY, SHADOW_TINT, BANDS, SATURATION,
         ORARI, impostaOrario, orario, eNotte, fogDensity,
         skyColorAt, fogColor, saturate, hexToRgb, rgbToHex,
-        applicaMeteo, TEMPORALE_STOPS, TEMPORALE_FOG,
+        applicaMeteo, coperto, TEMPORALE_SCOLORA, TEMPORALE_SCURISCE, TEMPORALE_MINIMO, TEMPORALE_FOG,
     };
 });
