@@ -82,7 +82,11 @@ const FINESTRE_BAGNATO = {
 const ADERENZA_FUORI_FINESTRA = 0.55;
 // Quanto costa il bagnato ANCHE con la gomma giusta. E' il numero che porta il
 // giro al +10%: e' qui che si tara, non nelle finestre.
-const ADERENZA_PERSA_SUL_BAGNATO = 0.22;
+// Tarato al banco il 2026-09-12 (node backend/tools/f1MeteoBanco.js), tre semi
+// appaiati su `prova`: 0.04 dava +9.2%, 0.08 +9.7%, 0.12 +10.3%, 0.16 +13.9%.
+// Il valore di partenza era 0.22, che dava +15.4%: la pioggia costava mezzo
+// secondo e mezzo di troppo al giro.
+const ADERENZA_PERSA_SUL_BAGNATO = 0.12;
 
 function aderenzaBagnato(compound, bagnato) {
     const f = FINESTRE_BAGNATO[compound] || FINESTRE_BAGNATO[DEFAULT_COMPOUND];

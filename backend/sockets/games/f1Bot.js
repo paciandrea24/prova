@@ -1395,6 +1395,11 @@ function updateBotInputs(game, deps) {
         accel, brakeMult, turnRateHigh, turnRateLow = 0, tuning: tuningOverrides, slipstreamMaxBoost,
         effectiveBrakeMult, corneringCapacity
     } = deps;
+    // IL DADO. In gioco e' Math.random; i banchi passano il proprio, seminato,
+    // perche' un banco che non si puo' ripetere non misura, stima. ⚠️ Sono i
+    // due punti che rendevano il simulatore rumoroso a gara: la ripesca del
+    // ritmo (quattro volte a giro) e il rumore sullo sterzo.
+    const caso = (deps && deps.rng) || Math.random;
     const tuning = { ...DEFAULT_TUNING, ...(tuningOverrides || {}) };
     // Quanto sono aggressivi, secondo il livello scelto in lobby: con quanto
     // margine tentano un sorpasso e quanto restano attaccati a chi precede.
@@ -1477,7 +1482,7 @@ function updateBotInputs(game, deps) {
             const paceSegment = p.lap * BOT_LAP_PACE_SEGMENTS + Math.floor((p.trackIndex || 0) / paceSegmentSamples);
             if (paceSegment !== p.botLapSeen) {
                 p.botLapSeen = paceSegment;
-                p.botLapPaceMult = 1 + (Math.random() * 2 - 1) * BOT_LAP_PACE_VARIANCE;
+                p.botLapPaceMult = 1 + (caso() * 2 - 1) * BOT_LAP_PACE_VARIANCE;
             }
         }
 
@@ -1998,7 +2003,7 @@ function updateBotInputs(game, deps) {
             // Solo dove si vedrebbe: se il bot non sta sterzando, un errore
             // di guida non ha niente da rovinare.
             const dovePesa = Math.abs(steer) > BOT_ERRORE_SOGLIA_STERZO;
-            aggiornaErroreConIlCielo(p, aggro.erroriPerGiro, 50, giroMs, undefined, dovePesa);
+            aggiornaErroreConIlCielo(p, aggro.erroriPerGiro, 50, giroMs, deps && deps.rng, dovePesa);
             if (p.botErroreFinoMs >= (p.botOrologioMs || 0)) {
                 if (p.botErroreTipo === 'allarga') steer *= 1 - BOT_ERRORE_STERZO;
                 else brake *= 1 - BOT_ERRORE_FRENO;
@@ -2007,7 +2012,7 @@ function updateBotInputs(game, deps) {
         }
 
         const noiseScale = nearPitEntry ? BOT_PIT_APPROACH_NOISE_SCALE : 1;
-        steer += (Math.random() * 2 - 1) * p.botPrecisionNoise * noiseScale;
+        steer += (caso() * 2 - 1) * p.botPrecisionNoise * noiseScale;
         steer = Math.max(-1, Math.min(1, steer));
 
         p.inputs = { throttle, brake, steer };

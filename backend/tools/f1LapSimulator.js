@@ -7,6 +7,7 @@
 // misurare il tempo sul giro di un bot su qualunque pista senza bisogno di
 // un browser.
 const path = require('path');
+const F1Meteo = require('../../frontend/shared/f1Meteo.js');
 const fs = require('fs');
 const { physics } = require('../sockets/games/f1GameSocket.js');
 const TrattoAcrobatico = require('../sockets/games/physics/TrattoAcrobatico.js');
@@ -59,7 +60,33 @@ function makeSimPlayer(track, opts) {
 // che si otterrebbe in partita vera.
 function simulateLap(track, opts) {
     const p = makeSimPlayer(track, opts);
-    const game = { track, phase: 'qualifying', players: { SIM: p } };
+    // ⚠️ LA FASE SEGUE `opts.gara`, e non e' un dettaglio. Il cervello del bot
+    // legge `isQuali = game.phase === 'qualifying'` (f1Bot.js), e da quando la
+    // pioggia esiste in qualifica la mescola la decide il CIELO
+    // (TyreModel.nomeMescola): con la fase inchiodata a 'qualifying', la fisica
+    // avrebbe usato la gomma scelta e la FRENATA DEL BOT quella del cielo —
+    // due misure diverse per la stessa cosa nello stesso giro, e un banco che
+    // non distingue una mescola dall'altra.
+    // ⚠️ IL LIVELLO DEL PILOTA E' UN'IMPOSTAZIONE DI PARTITA, e da qui passa
+    // anche il numero di ERRORI a giro: il bot ne pesca da `Math.random`, e a
+    // livello predefinito sono abbastanza da coprire quello che si misura.
+    // Misurato su `prova`: sei run identici davano 0.75 s di escursione a secco
+    // e 1.85 s sul bagnato (dove gli errori crescono) — piu' della differenza
+    // che si stava tarando. Chi tara l'ADERENZA passa 'difficile', che sbaglia
+    // 0.05 volte a giro invece di 0.4: un pilota pulito, che e' la condizione
+    // giusta per misurare la gomma e non la mano.
+    const game = {
+        track, phase: opts.gara ? 'race' : 'qualifying', players: { SIM: p },
+        settings: { botDifficolta: opts.difficolta },
+    };
+
+    // IL METEO DEL GIRO. Una griglia UNIFORME: il banco non fa avanzare il
+    // meteo, quindi il bagnato resta costante per tutto il giro — che e'
+    // esattamente quel che serve a una taratura (una condizione ferma, non una
+    // che si asciuga sotto la misura).
+    const meteo = opts.bagnato
+        ? { pioggia: opts.bagnato, griglia: F1Meteo.nuovaGriglia(track.points, opts.bagnato) }
+        : null;
     const deps = {
         effectiveMaxSpeed: physics.effectiveMaxSpeed,
         handlePitReactionPress: () => {},
@@ -76,7 +103,22 @@ function simulateLap(track, opts) {
         // due dipendenze non sono più opzionali, servono sempre.
         effectiveBrakeMult: physics.effectiveBrakeMult,
         corneringCapacity: physics.corneringCapacity,
-        tuning: opts.tuning
+        tuning: opts.tuning,
+        // ⚠️ IL DADO DEL BANCO, seminato. A gara il bot ripesca il ritmo quattro
+        // volte a giro e sporca lo sterzo, e con Math.random sei run identici
+        // davano 0.70 s di escursione a secco e 1.80 s sul bagnato: piu' della
+        // differenza che si stava tarando. Con un seme, due run a parametri
+        // uguali danno lo stesso numero al millesimo, e una differenza misurata
+        // e' una differenza vera. `opts.seme` per cambiare il campione.
+        rng: (() => {
+            let s = (opts.seme === undefined ? 20260912 : opts.seme) | 0 || 1;
+            return () => {
+                s ^= s << 13; s |= 0;
+                s ^= s >>> 17;
+                s ^= s << 5;  s |= 0;
+                return ((s >>> 0) % 100000) / 100000;
+            };
+        })(),
     };
 
     const n = track.points.length;
@@ -108,7 +150,9 @@ function simulateLap(track, opts) {
         }
         if (!p.acrobatico) {
             physics.applyOffTrackDrag(p, track);
-            physics.updateTrackIndex(p, track);
+            // ⚠️ Il meteo va PASSATO: `updateTrackIndex` riscrive `p.bagnato` a
+            // ogni tick, quindi impostarlo sul player non servirebbe a niente.
+            physics.updateTrackIndex(p, track, meteo);
         }
 
         const idx = p.trackIndex || 0;
