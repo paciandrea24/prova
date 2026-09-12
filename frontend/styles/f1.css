@@ -241,7 +241,10 @@ canvas.tyre-preview-canvas {
 .mescole-tacca.accesa { background: var(--sel-cordolo); }
 
 /* Le mescole: lo pneumatico grande, l'etichetta e i numeri accanto. */
-#tyre-cards { display: flex; flex-direction: column; gap: clamp(5px, 1vh, 12px); }
+/* Gap e padding delle righe: stretti quel tanto che basta perche' cinque
+   mescole stiano in 720 px di schermo senza far comparire lo scroll. */
+#tyre-cards { display: flex; flex-direction: column; gap: clamp(4px, 0.8vh, 12px); }
+#tyre-cards .tyre-card { padding: clamp(4px, 0.75vh, 11px) clamp(8px, 1vw, 14px); }
 .tyre-card {
     display: grid;
     grid-template-columns: auto 1fr;
@@ -1838,13 +1841,43 @@ body.in-cerimonia .hud { display: none !important; }
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: clamp(12px, 3vw, 40px);
+    gap: clamp(10px, 1.6vw, 40px);
+    /* Rete: se le tre zone non ci stanno in riga, le schede vanno a capo
+       invece di spingere fuori schermo cio' che hanno accanto. La fascia e' in
+       basso e ha spazio per crescere di una riga; uscire dallo schermo no. */
+    flex-wrap: wrap;
 }
-.ps-testi { min-width: 0; flex: 1 1 0; }
+/* ⚠️ UN MINIMO A CIASCUNA ZONA. Con `flex: 1 1 0` e le schede diventate
+   cinque, «AI BOX» e le istruzioni si comprimevano fino a larghezza ZERO — le
+   parole andavano a capo lettera per lettera. Una zona di testo senza minimo
+   non e' una zona di testo: e' quello che avanza. */
+.ps-testi { min-width: 108px; flex: 1 1 150px; }
 #pitstop-status { font-size: 16px; font-weight: 900; letter-spacing: 1px; }
 #pitstop-instructions { font-size: 12px; color: #b9c7d2; margin-top: 2px; }
-#pitstop-cards { display: flex; justify-content: center; gap: 10px; flex: 0 0 auto; }
-.ps-coda { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: 1 1 0; }
+/* ⚠️ LE SCHEDE QUI SONO AFFIANCATE, e da tre sono diventate cinque: la
+   fascia non le contiene piu' alla taglia della schermata di prima. Misurato a
+   1366x768 con `flex: 0 0 auto` (non si comprime): 124 px fuori a destra,
+   «AI BOX» schiacciato a larghezza zero, l'esito della sosta 232 px fuori.
+   Ora possono restringersi (`0 1 auto` + `min-width: 0`) e il contenuto e'
+   compatto — nome e durata, niente velocita'/aderenza: ai box si decide in tre
+   secondi. */
+#pitstop-cards {
+    display: flex;
+    justify-content: center;
+    gap: clamp(5px, 0.6vw, 10px);
+    flex: 0 1 auto;
+    min-width: 0;
+}
+#pitstop-cards .tyre-card {
+    gap: clamp(5px, 0.6vw, 10px);
+    padding: clamp(4px, 0.6vh, 8px) clamp(6px, 0.7vw, 11px);
+    min-width: 0;
+}
+#pitstop-cards .tyre-card .pneumatico { height: clamp(26px, min(2.8vw, 4.4vh), 42px); }
+#pitstop-cards .tyre-card-label { font-size: clamp(11px, 0.92vw, 14px); white-space: nowrap; }
+#pitstop-cards .tyre-card-stats { font-size: 10px; white-space: nowrap; }
+.ps-coda { display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+           flex: 0 1 auto; min-width: 92px; }
 #pitstop-result { font-size: 17px; font-weight: 900; color: #f1c40f; text-align: right; }
 #pitstop-repair-toggle { display: flex; align-items: center; gap: 8px; }
 #pitstop-react-prompt {
@@ -2337,3 +2370,22 @@ canvas#pa-mappa {
 /* Pioggia in arrivo: la stessa tinta d'allerta della previsione in testata,
    cosi' le due schermate parlano la stessa lingua. */
 .hud-meteo.in-arrivo { color: #ffd166; }
+
+/* Il numero della scorciatoia nella scheda mescola: premendo 1-5 si scegle.
+   Tenue e in coda al nome — deve dire «c'e' un tasto» senza rubare la scena al
+   nome della gomma, che resta la cosa da leggere. */
+.tyre-card-tasto {
+    display: inline-block;
+    margin-left: 8px;
+    border: 1px solid var(--sel-filo);
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    /* line-height 1: il badge non deve ALZARE la riga del nome. Con 1.5
+       aggiungeva qualche pixel per scheda, e su cinque schede bastavano a far
+       comparire lo scroll a 1280x720. */
+    line-height: 1;
+    padding: 2px 5px;
+    vertical-align: middle;
+    color: var(--sel-tenue);
+}

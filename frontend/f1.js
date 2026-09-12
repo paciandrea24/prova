@@ -2931,7 +2931,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Riusata sia per la selezione mescola pre-qualifica sia per il cambio
     // gomme ai box (containerId/eventName diversi, stessa presentazione).
-    function renderTyreCards(compounds, myCompound, containerId, eventName, giriPerMescola) {
+    // `compatta`: la variante per la fascia dei box, dove le schede stanno
+    // AFFIANCATE e non incolonnate. ⚠️ Con cinque mescole la versione larga
+    // sfondava: misurato a 1366x768, le schede uscivano di 124 px, «AI BOX» era
+    // schiacciato a larghezza ZERO e l'esito della sosta finiva 232 px fuori
+    // schermo. Segnalato dall'utente («tutte le scritte mal formattate»), e la
+    // mia sonda non l'aveva visto perche' guardava solo la schermata prima
+    // della qualifica.
+    //
+    // Ai box si decide in tre secondi: il nome e quanto dura bastano. La
+    // velocita' e l'aderenza restano nella schermata di prima, dove c'e' tempo
+    // per leggerle.
+    function renderTyreCards(compounds, myCompound, containerId, eventName, giriPerMescola, opzioni) {
+        const compatta = !!(opzioni && opzioni.compatta);
         const container = document.getElementById(containerId);
         container.innerHTML = '';
         let myIndex = 0, i = 0;
@@ -2973,12 +2985,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             // invece la cosa che serve per scegliere: per che cielo e' fatta.
             const finestra = finestreBagnatoInfo && finestreBagnatoInfo[key];
             const perBagnato = finestra && finestra.centro > 0.05;
-            const riga = perBagnato
-                ? `Per <b>${finestra.centro < 0.6 ? 'pista umida' : 'pioggia forte'}</b><br>${durata}`
-                : `Velocità <b>${segno(c.speedMult)}</b> · Aderenza <b>${segno(c.gripMult)}</b><br>${durata}`;
+            const riga = compatta
+                ? durata
+                : (perBagnato
+                    ? `Per <b>${finestra.centro < 0.6 ? 'pista umida' : 'pioggia forte'}</b><br>${durata}`
+                    : `Velocità <b>${segno(c.speedMult)}</b> · Aderenza <b>${segno(c.gripMult)}</b><br>${durata}`);
             card.innerHTML = F1Pneumatico.svg(key, c.color, { titolo: `Mescola ${c.label}` })
                 + `<div>
-                    <div class="tyre-card-label">${c.label.toUpperCase()}</div>
+                    <div class="tyre-card-label">${c.label.toUpperCase()}<span class="tyre-card-tasto">${i + 1}</span></div>
                     <div class="tyre-card-stats">${riga}</div>
                 </div>`;
             card.onclick = () => {
@@ -3313,7 +3327,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             'Scegli la mescola, poi premi SPAZIO quando passi sulla banda verde in corsia.';
         document.getElementById('pitstop-react-prompt').style.display = 'none';
         document.getElementById('pitstop-result').textContent = '';
-        if (tyreCompoundsInfo) renderTyreCards(tyreCompoundsInfo, null, 'pitstop-cards', 'f1PitCompoundChoice', giriMescolaPista);
+        if (tyreCompoundsInfo) renderTyreCards(tyreCompoundsInfo, null, 'pitstop-cards', 'f1PitCompoundChoice', giriMescolaPista, { compatta: true });
 
         const myDamage = (serverState[myColor] && serverState[myColor].damage) || 0;
         const repairToggle = document.getElementById('pitstop-repair-toggle');
@@ -3933,8 +3947,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const STANDING_LIFT_PX = 16;   // quanto la riga di chi sorpassa si "alza" oltre lo slot di arrivo, a metà animazione
 
     function renderStandingRowContent(rowEl, color, d) {
-        const compoundLetter = { soft: 'S', medium: 'M', hard: 'H' }[d.compound] || '';
-        const compoundColor = (tyreCompoundsInfo && tyreCompoundsInfo[d.compound] && tyreCompoundsInfo[d.compound].color) || '#888';
+        // ⚠️ La sigla dalla tabella del SERVER, non da una copia qui: quella
+        // copia aveva tre mescole e da quando sono cinque lasciava il badge
+        // VUOTO per intermedie e full wet — in classifica non si vedeva chi
+        // aveva cambiato gomma per la pioggia.
+        const info = (tyreCompoundsInfo && tyreCompoundsInfo[d.compound]) || null;
+        const compoundLetter = (info && info.sigla) || '';
+        const compoundColor = (info && info.color) || '#888';
         rowEl.innerHTML = `
             <span class="pos">${d.position}</span>
             <span class="dot" style="background:${color};"></span>
@@ -6437,6 +6456,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             const giu = e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract';
             const su  = e.key === '+' || e.key === '=' || e.code === 'NumpadAdd';
             if (giu || su) { e.preventDefault(); cambiaVolume(su ? 1 : -1); }
+        }
+        // 1-5: SCEGLIE LA MESCOLA. Vale dove un elenco di gomme e' aperto —
+        // la schermata prima della qualifica e il pannello ai box — e per
+        // saperlo si guarda lo stesso `activeTyreContainerId` che serve al
+        // gamepad, invece di indovinare la fase: le due schermate sono due, la
+        // domanda «c'e' un elenco davanti?» e' una.
+        // Il numero e' scritto nella scheda, o sarebbe una scorciatoia segreta.
+        if (activeTyreContainerId && !e.repeat && !isTypingInField(e)
+            && !e.ctrlKey && !e.altKey && !e.metaKey && e.key >= '1' && e.key <= '9') {
+            const schede = document.querySelectorAll('#' + activeTyreContainerId + ' .tyre-card');
+            const scelta = schede[Number(e.key) - 1];
+            if (scelta) { e.preventDefault(); scelta.click(); }
         }
         // F3: il cielo. Cicla i quattro gradini di pioggia e li manda al
         // SERVER, che e' l'unico proprietario del meteo: qui non si simula
