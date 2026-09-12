@@ -2,6 +2,7 @@ const { activeGames } = require('../../store/activeGames');
 const { lobbies, verificaGettone } = require('../../store/lobbies');
 const { loadTrack } = require('./trackLoader');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
+const F1Meteo = require('../../../frontend/shared/f1Meteo.js');
 const BoxIngresso = require('../../../frontend/shared/f1BoxIngresso.js');
 // Il campionato: il ponte fra una partita e la stagione a cui appartiene.
 const Stagione = require('./f1Stagione.server.js');
@@ -1226,6 +1227,11 @@ function assegnaBoxProvvisori(game) {
 
 function startTyreSelect(io, lobbyId, game) {
     game.phase = 'tyre_select';
+    // IL METEO NASCE QUI, prima che si scelgano le gomme: la pagina delle
+    // mescole deve poter dire che cielo c'e' e cosa sta per cambiare. Un
+    // profilo per EVENTO, mai rigenerato all'inizio della gara — la' si
+    // azzererebbe anche l'acqua della qualifica.
+    assicuraMeteo(game, { archetipo: game.settings && game.settings.meteo });
     game.tyreConfirmed.clear();
     // I bot si auto-confermano già alla creazione (vedi createBots, chiamata
     // prima di questa funzione nello stesso joinF1Game): il clear() sopra
@@ -2228,7 +2234,7 @@ function tickGame(io, lobbyId, game) {
         const { offTrack, profondita } = p.acrobatico
             ? { offTrack: false, profondita: 0 }
             : applyOffTrackDrag(p, game.track);
-        if (!p.acrobatico) updateTrackIndex(p, game.track);
+        if (!p.acrobatico) updateTrackIndex(p, game.track, game.meteo);
         // L'usura conta solo in GARA: in qualifica le gomme restano quelle
         // scelte ma "fresche" fino al via vero (resettate in assignGridSpawns).
         // Usura e cronometraggio si fermano al traguardo: il giro di
@@ -2254,11 +2260,17 @@ function tickGame(io, lobbyId, game) {
         }
     }
 
+    // UN TICK DI METEO: la pioggia (o l'evaporazione) su tutta la pista, poi
+    // l'acqua che le auto portano via dalla cella dove sono passate. Dopo il
+    // ciclo qui sopra, perche' `updateTrackIndex` ha appena aggiornato dove
+    // sono: asciugare prima vorrebbe dire asciugare la cella del tick scorso.
+    avanzaMeteo(game, PHYSICS_TICK_MS, racing);
+
     // Autopilota ingresso/uscita corsia box: movimento dedicato, non passa
     // per updateVelocity/integratePosition (niente input del giocatore).
     for (const p of autoPiloted) {
         updatePitAutopilot(io, lobbyId, game, p);
-        updateTrackIndex(p, game.track);
+        updateTrackIndex(p, game.track, game.meteo);
         // checkLap MANCAVA qui (girava solo per `racing`): il tracciato del
         // traguardo può passare vicino/attraverso la corsia box, quindi un
         // giro completato mentre l'autopilota guida verso/fuori dai box non
@@ -2442,7 +2454,92 @@ const FINISH_WINDOW_M = 6;
 // gara non dipende da questo: viene da checkLap/p.time, non da position.
 const RANK_SWAP_HYSTERESIS_M = 2.5;
 
-function updateTrackIndex(p, track) {
+// ── IL METEO DELLA GARA ─────────────────────────────────────────────────────
+//
+// Nasce PRIMA della scelta gomme, perche' la pagina delle mescole deve poter
+// dire che cielo c'e' e cosa sta per cambiare: «non si verificano scenari dove
+// il gioco non dice niente, selezioni le soft e poi invece piove a dirotto».
+// Rif. docs/superpowers/specs/2026-09-12-f1-pioggia-design.md.
+//
+// Un profilo per EVENTO: la qualifica ne consuma la prima parte e la griglia
+// attraversa le due sessioni, quindi una gara puo' cominciare su una pista che
+// si sta ancora asciugando dalla qualifica.
+function creaMeteo(game, opzioni) {
+    const o = opzioni || {};
+    const durata = Math.max(60000, (game.track.totalLaps || 5) * 60000);
+    const seme = (o.seme !== undefined) ? o.seme : (Date.now() % 100000);
+    const profilo = F1Meteo.generaProfilo(seme, durata, { archetipo: o.archetipo });
+    const pioggia = F1Meteo.pioggiaA(profilo, 0);
+    game.meteo = {
+        profilo, seme, durata,
+        tMs: 0,
+        pioggia,
+        previsione: F1Meteo.previsione(profilo, 0),
+        // La pista parte bagnata quanto dice il cielo a t=0: se si parte sotto
+        // la pioggia non deve bagnarsi nei primi venti secondi.
+        griglia: F1Meteo.nuovaGriglia(game.track.points, pioggia),
+        scavalco: null,      // F3: quando c'e', comanda lui e il profilo tace
+    };
+    // ⚠️ LA GRIGLIA NON SI APPENDE ALLA PISTA. Il disegno lo prevedeva, per non
+    // toccare la firma di `updateTrackIndex` — che ha due chiamanti, non sei
+    // come credevo. Ed e' un bene averlo verificato: `trackLoader` CACHEA le
+    // piste per id, quindi l'oggetto `track` e' lo stesso per tutte le partite
+    // che corrono su quel circuito. L'acqua di una gara sarebbe finita in
+    // quella dopo, e due lobby sullo stesso tracciato si sarebbero scambiate il
+    // meteo in diretta. Il meteo appartiene alla PARTITA e viaggia come
+    // parametro.
+    return game.meteo;
+}
+
+// ⚠️ UN PROFILO PER EVENTO, non per sessione: `creaMeteo` si chiama UNA volta,
+// entrando in `tyre_select`, e la gara NON lo rigenera. La qualifica consuma la
+// prima parte del profilo e la griglia attraversa le due sessioni, quindi una
+// gara puo' cominciare su una pista che si sta ancora asciugando. Chi ricrea il
+// meteo all'inizio della gara azzera anche l'acqua della qualifica.
+function assicuraMeteo(game, opzioni) {
+    return game.meteo || creaMeteo(game, opzioni);
+}
+
+// Un tick di meteo. `players` sono le auto che hanno percorso strada in questo
+// tick: ognuna asciuga la cella dove sta, in proporzione a quanta ne ha fatta.
+function avanzaMeteo(game, dtMs, players) {
+    const m = game.meteo;
+    if (!m) return;
+    m.tMs += dtMs;
+    m.pioggia = (m.scavalco !== null && m.scavalco !== undefined)
+        ? Math.max(0, Math.min(1, m.scavalco))
+        : F1Meteo.pioggiaA(m.profilo, m.tMs);
+    m.previsione = (m.scavalco !== null && m.scavalco !== undefined)
+        ? 'stabile'
+        : F1Meteo.previsione(m.profilo, m.tMs);
+    const passaggi = [];
+    for (const p of (players || [])) {
+        if (p.acrobatico) continue;   // nel tubo non piove: non c'e' cielo sopra
+        passaggi.push({
+            campione: p.trackIndex || 0,
+            scostamentoNorm: scostamentoNormalizzato(p, game.track),
+            distanza: Math.hypot(p.vx || 0, p.vz || 0),
+        });
+    }
+    F1Meteo.avanza(m.griglia, dtMs, m.pioggia, passaggi);
+}
+
+// Dove sta l'auto in larghezza, da -1 (bordo destro) a +1 (sinistro).
+// Normalizzato QUI sulla mezza carreggiata di questo campione, che cambia per
+// tratto: passare a valle uno scostamento in unita' vorrebbe dire passare anche
+// la larghezza, e un giorno passarla sbagliata.
+function scostamentoNormalizzato(p, track) {
+    const i = p.trackIndex || 0;
+    const punto = track.points[i];
+    if (!punto) return 0;
+    const { nx, nz } = TrackGeometry.normalAt(track.points, i, true);
+    const scostamento = (p.x - punto.x) * nx + (p.z - punto.z) * nz;
+    const mezza = (typeof punto.halfWidth === 'number' && punto.halfWidth > 0)
+        ? punto.halfWidth : track.roadHalf;
+    return Math.max(-1, Math.min(1, scostamento / mezza));
+}
+
+function updateTrackIndex(p, track, meteo) {
     p.trackIndex = TrackGeometry.nearestIndexNear(track.points, p.trackIndex || 0, p.x, p.z, TRACK_INDEX_WINDOW);
     // La pendenza sotto l'auto viaggia su `p` accanto all'indice, scritta da un
     // posto solo: è lo stesso schema con cui arriverà il rollio nella fase 1b.
@@ -2458,6 +2555,19 @@ function updateTrackIndex(p, track) {
     // posizione la comanda il nastro. Stesso schema degli altri due campi —
     // scritto qui, letto da chi serve, mai ricalcolato a valle.
     p.acrobatico = !!track.points[p.trackIndex].acrobatico;
+
+    // E il bagnato sotto le ruote. Stesso schema degli altri tre campi: scritto
+    // da un posto solo, letto da chi serve, mai ricalcolato a valle. Senza
+    // meteo il campo resta 0, che e' esattamente «asciutto».
+    //
+    // ⚠️ NELLA CORSIA BOX vale il bagnato del CIELO, non la griglia: la'
+    // `p.trackIndex` e' quello della pista accanto, quindi leggere la griglia
+    // darebbe l'acqua di un pezzo di asfalto dove l'auto non e'. In corsia box
+    // non corre nessuno: un valore uniforme e' la misura giusta, non un ripiego.
+    p.bagnato = !meteo ? 0
+        : (p.pitting || p.pitAutoState)
+            ? (meteo.pioggia || 0)
+            : F1Meteo.bagnatoIn(meteo.griglia, p.trackIndex, scostamentoNormalizzato(p, track));
 }
 
 function checkpointWindowFor(track) {
@@ -3277,8 +3387,16 @@ module.exports.physics = {
 
 module.exports.tickGame = tickGame;
 module.exports.TYRE_COMPOUNDS = TYRE_COMPOUNDS;
+module.exports.creaMeteo = creaMeteo;
+module.exports.assicuraMeteo = assicuraMeteo;
+module.exports.avanzaMeteo = avanzaMeteo;
+module.exports.scostamentoNormalizzato = scostamentoNormalizzato;
 // Ciclo di vita della partita, esposto ai test del rientro in lobby.
 module.exports.endRace = endRace;
 module.exports.endQualifying = endQualifying;
 module.exports.chiudiPartita = chiudiPartita;
 module.exports.RACE_END_RETURN_MS = RACE_END_RETURN_MS;
+// `updateTrackIndex` esce solo per i test: e' la funzione che scrive pendenza,
+// rollio, acrobatico e bagnato sotto l'auto, e verificarne il contenuto senza
+// far girare una partita intera vale l'export.
+module.exports.updateTrackIndex = updateTrackIndex;

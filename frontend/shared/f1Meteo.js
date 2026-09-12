@@ -191,6 +191,12 @@
     const CORSIE = 5;
 
     // Quanto bagna un diluvio: da asciutta a satura in venti secondi.
+    // ⚠️ Il cielo dice il livello di EQUILIBRIO, non una spinta verso il
+    // diluvio: con pioggia a 0.5 la pista si ferma a meta' bagnata e ci resta.
+    // Spingendo sempre verso 1, una pioviggine residua da 0.02 teneva il bordo
+    // pista saturo per SEMPRE, perche' l'evaporazione partiva solo a cielo
+    // esattamente asciutto (trovato simulando una gara intera). Cosi' invece i
+    // gradini di F3 si leggono direttamente come acqua sull'asfalto.
     const BAGNATURA_AL_SECONDO = 1 / 20;
     // L'evaporazione naturale: cinque minuti per asciugare da sola. Lavora
     // sempre, ma e' lenta quanto basta per non contare finche' piove.
@@ -255,11 +261,18 @@
     function avanza(griglia, dtMs, pioggia, passaggi) {
         const dt = Math.max(0, dtMs || 0) / 1000;
         const p = limita(pioggia);
-        const delta = p > 0
-            ? p * BAGNATURA_AL_SECONDO * dt
-            : -EVAPORAZIONE_AL_SECONDO * dt;
+        // Quanto ci si puo' muovere verso l'equilibrio in questo tick: bagnarsi
+        // e' rapido (un diluvio satura in venti secondi), asciugarsi da soli e'
+        // lento (cinque minuti). Sono due velocita' diverse, non due segni
+        // della stessa.
+        const suGiu = p * BAGNATURA_AL_SECONDO * dt;
+        const giu = EVAPORAZIONE_AL_SECONDO * dt;
         const valori = griglia.valori;
-        for (let i = 0; i < valori.length; i++) valori[i] = limita(valori[i] + delta);
+        for (let i = 0; i < valori.length; i++) {
+            const v = valori[i];
+            if (v < p) valori[i] = limita(Math.min(p, v + suGiu));
+            else if (v > p) valori[i] = limita(Math.max(p, v - giu));
+        }
 
         for (const auto of (passaggi || [])) {
             const c = griglia.perCampione[Math.max(0, Math.min(griglia.perCampione.length - 1, auto.campione | 0))] | 0;

@@ -1068,19 +1068,18 @@ git commit -m "Sul bagnato l'auto scivola, il bot frena prima e l'erba frena di 
 
 ### Task 6: Il server possiede il meteo
 
-> ⚠️ **DA DECIDERE CON L'UTENTE, arrivati qui: quanto spesso piove.** I cinque
-> archetipi sono equiprobabili, e misurando 200 semi vengono **161 gare bagnate
-> su 200** (l'80%): solo `asciutto` e' secco. Con il meteo dinamico nel passo 1
-> quella e' la realta' del gioco, non un caso di prova. La probabilita' per
-> pista sta nel passo 3, ma un peso sugli archetipi qui costa una riga in
-> `generaProfilo`. Chiedere: che percentuale di gare deve essere asciutta?
+> ✅ **DECISO (2026-09-12): asciutto nel 60% delle gare.** I cinque archetipi
+> erano equiprobabili e facevano l'80% di gare bagnate. Pesi in
+> `PESI_ARCHETIPI` dentro `f1Meteo.js`: asciutto 60%, temporale 12%, bagnato
+> che scampa 10%, rovescio 10%, intermittente 8% — misurati su 4000 semi,
+> 41.3% di gare con pioggia vera.
 
-> ⚠️ **E UN DIFETTO DA CORREGGERE QUI SOTTO: `distanza` e' una VELOCITA'.** Lo
-> Step 3 costruisce il passaggio con `distanza: Math.hypot(p.vx, p.vz)`, che e'
-> unita' al SECONDO, mentre `avanza` la vuole in unita' PERCORSE nel tick
-> (`quota = distanza / PASSO_CELLA`). Con un tick da 20 ms si asciuga 50 volte
-> troppo, e il test del task 6 non lo vede perche' passa ugualmente. Va
-> moltiplicata per `dtMs / 1000`. Stessa forma di [[feedback_una_cosa_una_misura]].
+> ✅ **Falso allarme, verificato: `distanza` va bene com'e'.** Avevo annotato
+> qui che `Math.hypot(p.vx, p.vz)` fosse una velocita' e asciugasse 50 volte
+> troppo. Non lo e': in questo progetto `vx`/`vz` sono unita' per TICK, non al
+> secondo — `integratePosition(p, 1/COLLISION_SUBSTEPS)` sommato sui sotto-passi
+> fa `p.x += p.vx` per tick, ed e' la stessa grandezza che `applyTyreWear` chiama
+> «distanza percorsa in questo tick». Nessuna moltiplicazione per `dtMs/1000`.
 
 **Files:**
 - Modify: `backend/sockets/games/f1GameSocket.js`
@@ -1264,7 +1263,13 @@ In `updateTrackIndex`, in coda, accanto a pendenza/rollio/acrobatico:
             : F1Meteo.bagnatoIn(track.meteoGriglia, p.trackIndex, scostamentoNormalizzato(p, track));
 ```
 
-⚠️ `updateTrackIndex` riceve `track`, non `game`: appendi la griglia alla pista quando crei il meteo (`game.track.meteoGriglia = game.meteo.griglia`) e toglila a fine gara. È l'unico modo di non cambiare la firma di una funzione chiamata da sei punti.
+⚠️ **CORRETTO IN CORSO D'OPERA: la griglia NON si appende alla pista.** Il
+disegno lo prevedeva per non toccare la firma di `updateTrackIndex`, che ha
+**due** chiamanti e non sei. Ed è un bene averlo verificato: `trackLoader`
+**cachea le piste per id**, quindi l'oggetto `track` è lo stesso per ogni
+partita su quel circuito — l'acqua di una gara sarebbe finita in quella dopo, e
+due lobby sullo stesso tracciato si sarebbero scambiate il meteo in diretta. Il
+meteo appartiene alla partita: `updateTrackIndex(p, track, meteo)`.
 
 Nel tick, subito dopo il ciclo `for (const p of racing)` che fa usura e giri, chiama:
 

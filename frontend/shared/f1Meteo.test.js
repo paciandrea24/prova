@@ -217,3 +217,31 @@ test('profilo: il cielo e asciutto in circa sei gare su dieci', () => {
         assert.ok(quota(nome) > 0.02, `l'archetipo ${nome} non esce quasi mai: ${(quota(nome) * 100).toFixed(1)}%`);
     }
 });
+
+test('griglia: il cielo dice il livello di EQUILIBRIO, non spinge sempre verso il diluvio', () => {
+    // ⚠️ Scoperto simulando una gara intera: con la pioggia che spinge sempre
+    // verso 1, una pioviggine residua di 0.02 teneva il bordo pista saturo al
+    // 100% per sempre, perche' l'evaporazione partiva solo a cielo ESATTAMENTE
+    // asciutto. Adesso il bagnato tende al livello che quel cielo mantiene: e'
+    // anche il modo di leggere i gradini di F3 (pioviggine 0.35, pioggia 0.7,
+    // diluvio 1) direttamente come quanta acqua c'e' sull'asfalto.
+    const pts = pistaFinta(200, 1000, 11);
+
+    // Da bagnata, con una pioviggine appena percettibile: deve asciugarsi
+    // quasi tutta, non restare al massimo.
+    const g = M.nuovaGriglia(pts, 1);
+    for (let i = 0; i < 600; i++) M.avanza(g, 1000, 0.02, []);
+    assert.ok(M.bagnatoIn(g, 0, 0) < 0.1,
+        `una pioviggine da 0.02 tiene la pista a ${M.bagnatoIn(g, 0, 0).toFixed(2)}`);
+
+    // Da asciutta, con pioggia a meta': deve salire fino a meta' e fermarsi.
+    const h = M.nuovaGriglia(pts, 0);
+    for (let i = 0; i < 600; i++) M.avanza(h, 1000, 0.5, []);
+    const v = M.bagnatoIn(h, 0, 0);
+    assert.ok(Math.abs(v - 0.5) < 0.05, `con pioggia 0.5 la pista si e' fermata a ${v.toFixed(2)}`);
+
+    // E il diluvio satura comunque.
+    const k = M.nuovaGriglia(pts, 0);
+    for (let i = 0; i < 25; i++) M.avanza(k, 1000, 1, []);
+    assert.ok(M.bagnatoIn(k, 0, 0) > 0.95, 'il diluvio non satura la pista');
+});
