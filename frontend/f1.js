@@ -2262,14 +2262,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         rumoreSorgente.start(0);
     }
 
-    const RUMORE_VOLUME_MAX = 0.22;
+    // ⚠️ Abbassato da 0.22 a 0.085 dopo il playtest: «il rumore di pioggia e
+    // diluvio mi sembrano troppo forti». Un rumore di fondo continuo si sente
+    // molto piu' forte di quanto dica il suo numero — sta sempre li', mentre i
+    // suoni del gioco vanno e vengono.
+    const RUMORE_VOLUME_MAX = 0.085;
     function aggiornaRumorePioggia() {
         if (meteoCielo > 0.05) accendiRumorePioggia();
         if (!rumoreGuadagno) return;
         const ctx = listener.context;
         // Sale e scende con la pioggia, ma senza scatti: un rumore che cambia
         // di colpo si sente come un difetto.
-        const voluto = RUMORE_VOLUME_MAX * Math.min(1, meteoCielo * 1.15);
+        // E la curva non e' piu' lineare: la pioviggine si deve sentire appena,
+        // il diluvio deve avere corpo senza coprire i motori.
+        const voluto = RUMORE_VOLUME_MAX * Math.pow(Math.min(1, meteoCielo * 1.1), 1.6);
         rumoreGuadagno.gain.setTargetAtTime(voluto, ctx.currentTime, 0.8);
         // Piu' forte piove, piu' il rumore si fa acuto: e' lo scroscio.
         if (rumoreFiltro) {
@@ -2296,11 +2302,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         const bagnato = bagnatoSotto(stato);
         // Serve acqua E velocita': un'auto ferma sul bagnato non solleva niente,
         // e sarebbe la prima cosa che si nota in griglia.
+        //
+        // ⚠️⚠️ `speed` NON E' IN KM/H: i km/h sono `speed * 55` (vedi il tachimetro
+        // e la telemetria). Avevo scritto la soglia a 8, convinto di leggere
+        // qualcosa come «8 all'ora»: sono 440 km/h, e infatti lo spray non e'
+        // uscito NEMMENO UNA VOLTA — «le particelle di acqua dietro le macchine
+        // non si vedono», due playtest di fila, e io intanto aumentavo il
+        // numero di particelle. Il difetto non era la densita': era che non ne
+        // nasceva una.
         const velocita = stato ? Math.abs(stato.speed || 0) : 0;
         // ⚠️ La soglia era 0.25 e la pista ci mette una ventina di secondi a
         // bagnarsi dopo F3: chi premeva il tasto e guardava subito non vedeva
         // niente e pensava che lo spray non ci fosse.
-        const attivo = !!carGroup && bagnato > 0.12 && velocita > 8
+        const attivo = !!carGroup && bagnato > 0.12 && velocita > 0.65   // ~35 km/h
             && !tyreSelectActive && !panoramicaAttiva && !cerimoniaAttiva;
         let mesh = sprayPerAuto[color];
         if (!attivo && !mesh) return;
@@ -2319,8 +2333,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!mesh.visible) return;
         // Quanto spray: piu' acqua e piu' velocita', piu' nuvola. L'emissione e'
         // un RITMO (nascite al secondo), non un riempimento.
+        // A 175 km/h (speed 3.2) lo spray e' al massimo.
         const emissione = attivo
-            ? Math.min(1, (bagnato - 0.12) / 0.35) * Math.min(1, velocita / 32)
+            ? Math.min(1, (bagnato - 0.12) / 0.35) * Math.min(1, velocita / 3.2)
             : 0;
         // Nessuna ancora: le particelle vivono nel riferimento dell'auto
         // (ANCORA_LOCALE), esattamente come la scia.
@@ -2353,13 +2368,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             // materiale illuminato, e qui serve qualcosa che SI VEDA da dietro,
             // non che illumini.
             const geo = new THREE.PlaneGeometry(0.55, 0.42);
+            // ⚠️ NIENTE ADDITIVA: e' quella che la faceva ROSA. Sommare rosso
+            // pieno a un fondo grigio da' rosa — piu' chiaro e' quel che c'e'
+            // dietro, piu' sbiadisce — e sotto un cielo di piombo il fondo e'
+            // sempre grigio. Un rosso pieno e opaco resta rosso su qualunque
+            // cosa capiti dietro.
             const mat = new THREE.MeshBasicMaterial({
-                color: 0xff2418, transparent: true, opacity: 1,
-                side: THREE.DoubleSide, fog: false, depthWrite: false,
-                // Additiva: una luce accesa SOMMA la sua luce a quel che c'e'
-                // dietro, e su un'auto scura sotto un cielo di piombo e' la
-                // differenza fra «un quadratino rosso» e «una luce».
-                blending: THREE.AdditiveBlending,
+                color: 0xe00c00, transparent: false, opacity: 1,
+                side: THREE.DoubleSide, fog: false,
             });
             luce = luciPioggia[color] = new THREE.Mesh(geo, mat);
             // ⚠️ DIETRO L'AUTO, NON DENTRO. Misurato il modello con Blender:
@@ -2372,12 +2388,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             luce.renderOrder = 4;
             carGroup.add(luce);
         }
-        luce.visible = accesa;
-        if (!accesa) return;
-        // Lampeggio a onda quadra: una sinusoide fa una luce che «respira», e
-        // quella non si legge come un avviso.
+        // ⚠️ Il lampeggio si fa con `visible`, non con l'opacita': il materiale
+        // ora e' OPACO (l'opacita' su un materiale non trasparente non fa
+        // niente, e la luce sarebbe rimasta accesa fissa). Ed e' anche piu'
+        // giusto: acceso o spento, come una luce vera.
+        if (!accesa) { luce.visible = false; return; }
         const fase = (performance.now() / 1000 * LAMPEGGIO_HZ) % 1;
-        luce.material.opacity = fase < 0.45 ? 1 : 0.06;
+        luce.visible = fase < 0.45;
     }
 
     // Tutte le vetture in scena, non solo la propria: chi guarda una gara vede
