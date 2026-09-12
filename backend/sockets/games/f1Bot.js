@@ -10,6 +10,7 @@ const BoxIngresso = require('../../../frontend/shared/f1BoxIngresso.js');
 const Stagione = require('./f1Stagione.server.js');
 const F1Difficolta = require('../../../frontend/shared/f1Difficolta.js');
 const F1Duelli = require('../../../frontend/shared/f1Duelli.js');
+const { MESCOLE_ASCIUTTO } = require('./physics/TyreModel.js');
 
 // Palette colori — DEVE restare in sync con frontend/index.js →
 // availableColors: i colori sono l'identità del giocatore su tutta la
@@ -827,7 +828,12 @@ function createBots(game, lobby, TYRE_COMPOUNDS, rng = Math.random) {
     // gara non sarebbe quello della prima.
     const daStagione = Array.isArray(game.botStagione) ? game.botStagione.slice(0, botsNeeded) : null;
     const colors = daStagione ? daStagione.map(b => b.colore) : pickBotColors(humanColors, botsNeeded, rng);
-    const compoundKeys = Object.keys(TYRE_COMPOUNDS);
+    // ⚠️ SOLO LE TRE DA ASCIUTTO. Da quando le mescole sono cinque,
+    // `Object.keys(TYRE_COMPOUNDS)` comprende intermedie e pioggia, e i bot
+    // partivano con le gomme da bagnato sotto il sole: gomme che fuori dalla
+    // loro finestra si distruggono in un giro. Quale mescola vuole il cielo lo
+    // decide il codice del meteo, non questo sorteggio.
+    const compoundKeys = MESCOLE_ASCIUTTO.filter(c => TYRE_COMPOUNDS[c]);
 
     for (const color of colors) {
         game.players[color] = {

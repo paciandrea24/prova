@@ -39,8 +39,83 @@ const TYRE_COMPOUNDS = {
     soft:   { label: 'Soft',   color: '#e74c3c', speedMult: 1.05, gripMult: 1.00, vita: 0.35 },
     medium: { label: 'Medium', color: '#f1c40f', speedMult: 1.00, gripMult: 0.95, vita: 0.50 },
     hard:   { label: 'Hard',   color: '#ecf0f1', speedMult: 0.95, gripMult: 0.90, vita: 0.70 },
+// ── LE DUE DA BAGNATO ───────────────────────────────────────────────────
+    // `speedMult` e' COSTANTE anche per queste, non funzione del bagnato: la
+    // velocita' di punta passa da PowertrainModel, che e' un terzo consumatore
+    // e non guadagnerebbe niente in sensazione. Il cielo entra nell'ADERENZA e
+    // nella VITA, e li' entra da un posto solo (vedi aderenzaBagnato).
+    // `gripMult` segue la convenzione (rovesciata) di questa tabella, dove piu'
+    // alto = piu' scivolata: vedi il FIX SEGNO in AerodynamicsModel.
+    intermedie: { label: 'Intermedie', color: '#2ecc71', speedMult: 0.95, gripMult: 0.95, vita: 0.45 },
+    pioggia:    { label: 'Pioggia',    color: '#3498db', speedMult: 0.90, gripMult: 0.97, vita: 0.55 },
 };
 const DEFAULT_COMPOUND = 'medium';
+
+// Le tre da asciutto, in ordine di durata. Esiste perche' mezzo gioco deve
+// parlare solo di quelle — il suggerimento di strategia, la previsione dei giri
+// in pagina mescole, la tabella dell'editor — e `Object.keys(TYRE_COMPOUNDS)`
+// da oggi ne restituisce cinque.
+const MESCOLE_ASCIUTTO = ['soft', 'medium', 'hard'];
+
+// ── IL BAGNATO DENTRO LA MESCOLA ────────────────────────────────────────────
+//
+// Ogni mescola ha una FINESTRA di bagnato dove da' il meglio, e una larghezza
+// oltre la quale non lavora piu'. Il fattore che ne esce e' l'ADERENZA
+// DISPONIBILE (1 = piena), e viene consultato da DUE consumatori indipendenti:
+// AerodynamicsModel.effectiveGrip (come l'auto scivola) e
+// CorneringGripModel.corneringCapacity (quanto il bot frena).
+//
+// ⚠️ DEVONO AVERLO ENTRAMBI. corneringCapacity non legge la mescola: se il
+// bagnato entrasse solo nella prima, il bot entrerebbe in curva alla velocita'
+// dell'asciutto convinto di avere aderenza che la fisica non gli da'. E' scritto
+// nero su bianco in CorneringGripModel per il banking: col fattore da un lato
+// solo si e' misurato un giro piu' LENTO del 12%.
+const FINESTRE_BAGNATO = {
+    soft:       { centro: 0.00, larghezza: 0.20 },
+    medium:     { centro: 0.00, larghezza: 0.22 },
+    hard:       { centro: 0.00, larghezza: 0.24 },
+    intermedie: { centro: 0.45, larghezza: 0.38 },
+    pioggia:    { centro: 0.90, larghezza: 0.45 },
+};
+// Quanto resta con la gomma COMPLETAMENTE sbagliata. Non zero: e' un simcade,
+// si deve poter rientrare ai box guidando, non scivolando.
+const ADERENZA_FUORI_FINESTRA = 0.55;
+// Quanto costa il bagnato ANCHE con la gomma giusta. E' il numero che porta il
+// giro al +10%: e' qui che si tara, non nelle finestre.
+const ADERENZA_PERSA_SUL_BAGNATO = 0.22;
+
+function aderenzaBagnato(compound, bagnato) {
+    const f = FINESTRE_BAGNATO[compound] || FINESTRE_BAGNATO[DEFAULT_COMPOUND];
+    const b = Math.max(0, Math.min(1, bagnato || 0));
+    const d = Math.abs(b - f.centro) / f.larghezza;
+    const perdita = Math.min(1, d * d);       // dentro la finestra si perde poco, fuori crolla
+    const finestra = 1 - (1 - ADERENZA_FUORI_FINESTRA) * perdita;
+    const assoluto = 1 - ADERENZA_PERSA_SUL_BAGNATO * b;
+    return finestra * assoluto;
+}
+
+// Quanto piu' in fretta si consuma la gomma sbagliata. ⚠️ Solo in UN verso:
+// una gomma da bagnato su una pista asciutta si distrugge (non ha acqua da
+// raffreddarla), una slick sul bagnato non si brucia — semplicemente non
+// aderisce, che e' gia' punito da aderenzaBagnato.
+const VITA_PENALITA_SU_ASCIUTTO = 3;
+
+function fattoreVitaBagnato(compound, bagnato) {
+    const f = FINESTRE_BAGNATO[compound] || FINESTRE_BAGNATO[DEFAULT_COMPOUND];
+    const b = Math.max(0, Math.min(1, bagnato || 0));
+    const troppoAsciutto = Math.max(0, f.centro - b) / f.larghezza;
+    return 1 + VITA_PENALITA_SU_ASCIUTTO * Math.min(1, troppoAsciutto);
+}
+
+// In qualifica la mescola non la scegle il giocatore: la scegle il gioco, e
+// deve scegliere quella giusta per il cielo di ADESSO. Prima era la Soft fissa,
+// e sul bagnato voleva dire qualificarsi con le slick.
+function mescolaPerCielo(bagnato) {
+    const b = bagnato || 0;
+    if (b >= 0.65) return 'pioggia';
+    if (b >= 0.25) return 'intermedie';
+    return 'soft';
+}
 
 // ⚠️ IL TETTO CHE TIENE IN PIEDI LA REGOLA. L'abrasivita' divide la vita, e
 // su una pista dolce (0.5-0.7, valori che lo slider dell'editor permette) la
@@ -72,9 +147,18 @@ const WEAR_SPEED_PENALTY  = 0.25; // fino a -25% velocità massima a gomme esaur
 // In qualifica TUTTI usano lo spec della Soft (gomma da qualifica, come in F1
 // vera), gomme fresche, a prescindere dalla mescola scelta per la gara — la
 // scelta conta solo una volta iniziata la gara vera.
+// Il NOME della mescola che sta davvero sull'auto adesso. Esiste perche'
+// `tyreOf` restituisce lo spec (tre numeri) e chi deve chiedere la finestra di
+// bagnato ha bisogno della chiave. ⚠️ Senza questa funzione, in qualifica la
+// fisica userebbe la finestra della mescola scelta PER LA GARA mentre le gomme
+// montate sono quelle del cielo: due misure per la stessa cosa.
+function nomeMescola(p, isQuali) {
+    if (isQuali) return mescolaPerCielo(p && p.bagnato);
+    return TYRE_COMPOUNDS[p && p.compound] ? p.compound : DEFAULT_COMPOUND;
+}
+
 function tyreOf(p, isQuali) {
-    if (isQuali) return TYRE_COMPOUNDS.soft;
-    return TYRE_COMPOUNDS[p.compound] || TYRE_COMPOUNDS[DEFAULT_COMPOUND];
+    return TYRE_COMPOUNDS[nomeMescola(p, isQuali)];
 }
 
 // ====================================================
@@ -126,7 +210,12 @@ function applyTyreWear(p, offTrack, track) {
     // Abrasivita' del circuito: quanto quell'asfalto mangia le gomme. Il
     // valore lo normalizza e lo limita trackLoader; qui `|| 1` copre solo i
     // game costruiti a mano nei test e negli strumenti offline.
-    const wear = dist * wearPerUnitDist * fuelFactorOf(p);
+    // La gomma sbagliata per il cielo si consuma piu' in fretta: una da
+    // bagnato su una pista asciutta si distrugge. ⚠️ Qui `p.compound` va bene
+    // senza `nomeMescola`: questa funzione la chiama solo la gara (in
+    // qualifica l'usura non si applica affatto), quindi la mescola scelta e
+    // quella montata sono la stessa cosa.
+    const wear = dist * wearPerUnitDist * fuelFactorOf(p) * fattoreVitaBagnato(p.compound, p.bagnato);
     p.tyreWear = Math.min(100, p.tyreWear + wear);
     if (offTrack) p.tyreWear = Math.min(100, p.tyreWear + WEAR_OFFTRACK_EXTRA);
 }
@@ -173,5 +262,7 @@ module.exports = {
     GIRI_DI_RIFERIMENTO, WEAR_OFFTRACK_EXTRA, WEAR_SPEED_PENALTY,
     WEAR_CLIFF_THRESHOLD, WEAR_CLIFF_GENTLE_FRACTION,
     tyreOf, applyTyreWear, suggestStrategy, giriPerMescola, getWearPenaltyFactor,
-    vitaFrazione, VITA_MASSIMA_GARA
+    vitaFrazione, VITA_MASSIMA_GARA,
+    MESCOLE_ASCIUTTO, FINESTRE_BAGNATO, aderenzaBagnato, fattoreVitaBagnato,
+    mescolaPerCielo, nomeMescola, ADERENZA_PERSA_SUL_BAGNATO
 };
