@@ -52,6 +52,13 @@ function garaDiBot(trackId, opzioni) {
         p.angle = Math.atan2(track.points[(idx + 1) % track.points.length].x - punto.x,
                              track.points[(idx + 1) % track.points.length].z - punto.z);
         p.speed = 0; p.vx = 0; p.vz = 0; p.lap = 0;
+        // ⚠️ LA FRIZIONE. Dal 2026-09-11 l'acceleratore non arriva alla fisica
+        // finche' la partenza non e' sbloccata, e per i bot lo fa il server
+        // quando schiera la griglia (`p.partenzaSbloccata = !!p.isBot`): un punto
+        // che questo banco non attraversa. Senza questa riga i bot restavano col
+        // gas a zero per tutta la gara — 21600 tick, zero giri, "CRUISE 100%" —
+        // e i numeri sembravano credibili: nessun sorpasso, nessuna difesa.
+        p.partenzaSbloccata = true;
     });
 
     // La classifica di un istante: chi ha percorso piu' strada.

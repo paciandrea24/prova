@@ -10,7 +10,7 @@ const BoxIngresso = require('../../../frontend/shared/f1BoxIngresso.js');
 const Stagione = require('./f1Stagione.server.js');
 const F1Difficolta = require('../../../frontend/shared/f1Difficolta.js');
 const F1Duelli = require('../../../frontend/shared/f1Duelli.js');
-const { MESCOLE_ASCIUTTO } = require('./physics/TyreModel.js');
+const { MESCOLE_ASCIUTTO, TYRE_COMPOUNDS, aderenzaBagnato } = require('./physics/TyreModel.js');
 
 // Palette colori — DEVE restare in sync con frontend/index.js →
 // availableColors: i colori sono l'identità del giocatore su tutta la
@@ -1302,6 +1302,93 @@ function aggiornaErrore(p, erroriPerGiro, tickMs, giroMs, rng, puoIniziare = tru
     return true;
 }
 
+
+// ═══════════ I BOT E IL CIELO ═══════════
+//
+// Tre cose: quale gomma vogliono col cielo di adesso, quanto tardano a
+// reagire, e quanto sbagliano di piu' sul bagnato.
+
+// La gomma che rende di piu' ADESSO. ⚠️ Nessuna soglia scritta qui: la tabella
+// delle finestre in TyreModel e' gia' la verita', e una soglia in questo file
+// divergerebbe alla prima ritaratura — la lezione delle due manopole tarate
+// l'una sull'altra.
+//
+// ⚠️ SI PARTE DALLA GOMMA MONTATA, e serve un miglioramento STRETTO per
+// cambiare: sull'asciutto le tre slick rendono esattamente uguale (aderenza
+// 1.00 per tutte), quindi «la migliore» non e' definita e un ciclo che prende
+// la prima a pari merito farebbe rientrare ai box, al primo tick di gara, ogni
+// bot che non ha le soft. Fra slick si scegle per usura, e non e' affare di
+// questa funzione.
+function mescolaVolutaDalBot(p, bagnato) {
+    const montata = (p && p.compound) || 'medium';
+    let migliore = montata;
+    let resa = aderenzaBagnato(montata, bagnato);
+    for (const nome of Object.keys(TYRE_COMPOUNDS)) {
+        const r = aderenzaBagnato(nome, bagnato);
+        if (r > resa) { resa = r; migliore = nome; }
+    }
+    return migliore;
+}
+
+// Quanti giri tarda a reagire. ⚠️ Deterministico e derivato dal COLORE: venti
+// bot che rientrano tutti nello stesso giro trasformano la corsia box in una
+// sala d'attesa, e un ritardo casuale non si potrebbe riprodurre in un test ne'
+// in una gara.
+const RITARDO_METEO_GIRI = 3;
+// ⚠️ IL LIVELLO SI PASSA, non sta sul bot. Sui player non esiste nessun campo
+// della difficolta': il livello vive in `game.settings.botDifficolta` e lo
+// leggono `intervalliDi` e `soglieDi` al momento del bisogno. Cercandolo su `p`
+// trovavo `undefined`, e i bot forti reagivano al cielo come quelli facili —
+// senza che niente lo dicesse.
+function ritardoRientroMeteo(p, livello) {
+    let somma = 0;
+    for (const ch of String((p && (p.color || p.colore)) || '')) somma += ch.charCodeAt(0);
+    const base = somma % RITARDO_METEO_GIRI;               // 0..2 giri
+    // Chi e' piu' forte se ne accorge prima. Mai dopo.
+    const fretta = F1Difficolta.normalizza(livello) === 'difficile' ? 1 : 0;
+    return Math.max(0, base - fretta);
+}
+
+// Quanto deve rendere di piu' la gomma voluta prima di spendere una sosta.
+// Senza margine il bot rientrerebbe per un guadagno che la sosta si mangia:
+// venti secondi di corsia non si ripagano con due centesimi di aderenza.
+const GUADAGNO_MINIMO_PER_RIENTRARE = 0.12;
+
+function vuoleRientrarePerIlMeteo(p, livello) {
+    const bagnato = (p && p.bagnato) || 0;
+    const voluta = mescolaVolutaDalBot(p, bagnato);
+    if (voluta === p.compound) {
+        // La gomma addosso e' quella giusta: si dimentica il giro in cui si era
+        // visto il disaccordo. ⚠️ Senza, dopo una sosta il contatore resterebbe
+        // indietro di giri e al PROSSIMO cambio di cielo il bot rientrerebbe
+        // all'istante, saltando il ritardo di reazione: tutti ai box insieme,
+        // che e' esattamente quel che il ritardo evita.
+        p.botMeteoGiroVisto = null;
+        return false;
+    }
+    const guadagno = aderenzaBagnato(voluta, bagnato) - aderenzaBagnato(p.compound, bagnato);
+    if (guadagno < GUADAGNO_MINIMO_PER_RIENTRARE) return false;
+    // Da quale giro ha visto che la sua gomma non va piu' bene: serve a
+    // misurare il ritardo di reazione. ⚠️ Va azzerato dopo la sosta, o il bot
+    // si ricorderebbe per sempre di una decisione gia' presa.
+    if (p.botMeteoGiroVisto === undefined || p.botMeteoGiroVisto === null) p.botMeteoGiroVisto = p.lap;
+    return (p.lap - p.botMeteoGiroVisto) >= ritardoRientroMeteo(p, livello);
+}
+
+// Quanto crescono gli errori sul bagnato. Il numero e' piccolo per scelta:
+// l'auto sul bagnato e' GIA' piu' difficile da guidare per via dell'aderenza,
+// e questo aggiunge solo il fatto che anche i bot ci si trovano peggio.
+const ERRORI_BAGNATO_EXTRA = 0.5;
+
+// L'errore col cielo di adesso: gli errori per giro crescono col bagnato sotto
+// le ruote di QUEL bot — non col cielo, perche' chi passa sulla traiettoria
+// asciutta ha meno da temere di chi e' fuori linea.
+function aggiornaErroreConIlCielo(p, erroriPerGiro, tickMs, giroMs, rng, puoIniziare) {
+    const bagnato = (p && p.bagnato) || 0;
+    return aggiornaErrore(p, (erroriPerGiro || 0) * (1 + ERRORI_BAGNATO_EXTRA * bagnato),
+                          tickMs, giroMs, rng, puoIniziare);
+}
+
 function updateBotInputs(game, deps) {
     const {
         effectiveMaxSpeed, handlePitReactionPress, io, lobbyId, wearLapsAtMedium,
@@ -1434,7 +1521,13 @@ function updateBotInputs(game, deps) {
         // alla linea principale — appena entra nel trigger d'ingresso
         // (inPitEntryZone, già controllato per tutti in tickGame), il
         // server prende il volante come farebbe con un umano.
-        if (game.phase === 'race' && !p.botHeadingToPits && !p.hasPitted) {
+        // ⚠️ `!p.hasPitted` VALE PER LA SOSTA DELL'USURA, NON PER IL METEO. La
+        // sosta obbligatoria si fa una volta, e quel vincolo e' giusto; ma se
+        // il cielo cambia dopo, un bot che ha gia' sostato resterebbe con le
+        // slick sotto il diluvio per tutta la gara. Misurato: con la condizione
+        // sull'intero ramo, nessun bot cambiava gomma mai.
+        const giaSostato = !!p.hasPitted;
+        if (game.phase === 'race' && !p.botHeadingToPits) {
             const remainingLaps = Math.max(0, track.totalLaps - p.lap);
             const wearThresholdHit = p.tyreWear >= p.botPitThreshold;
             const mustPitNow = remainingLaps <= BOT_FORCE_PIT_LAPS_REMAINING;
@@ -1444,9 +1537,27 @@ function updateBotInputs(game, deps) {
             // solo non esiste un penultimo: li' il vincolo non si puo'
             // rispettare e non si applica, o il bot non sosterebbe mai.
             const ultimoGiro = track.totalLaps > 1 && remainingLaps <= 1;
-            if ((wearThresholdHit || mustPitNow) && !ultimoGiro) {
+            // IL CIELO E' CAMBIATO e la gomma addosso non va piu' bene: si
+            // rientra anche con le gomme nuove. ⚠️ La mescola da montare la
+            // decide il meteo e non `pickPostPitCompound`, che ragiona di giri
+            // rimasti e usura: con la pista allagata sceglierebbe una slick.
+            const perIlMeteo = vuoleRientrarePerIlMeteo(p, game.settings && game.settings.botDifficolta);
+            const perUsura = (wearThresholdHit || mustPitNow) && !giaSostato;
+            if ((perUsura || perIlMeteo) && !ultimoGiro) {
                 p.botHeadingToPits = true;
-                p.pendingCompound = pickPostPitCompound(remainingLaps, wearLapsAtMedium);
+                // Quale gomma montare. Se il cielo chiede una gomma da bagnato,
+                // la decide il meteo; se chiede una SLICK — la pista si e'
+                // asciugata — la scelta fra soft, medium e hard non e' affare
+                // del meteo ma della strategia, e la sa gia'
+                // `pickPostPitCompound`. ⚠️ Senza questa distinzione il bot che
+                // rientrava su pista asciutta montava sempre le soft, perche' a
+                // secco le tre slick rendono uguale e la prima della tabella
+                // vince a pari merito: una gomma da quattro giri a gara quasi
+                // finita, scelta per un motivo che non c'entra.
+                const volutaDalCielo = perIlMeteo ? mescolaVolutaDalBot(p, p.bagnato) : null;
+                p.pendingCompound = (volutaDalCielo && !MESCOLE_ASCIUTTO.includes(volutaDalCielo))
+                    ? volutaDalCielo
+                    : pickPostPitCompound(remainingLaps, wearLapsAtMedium);
                 p.pendingRepair = shouldBotRepair(p.damage, BOT_REPAIR_DAMAGE_THRESHOLD);
             }
         }
@@ -1887,7 +1998,7 @@ function updateBotInputs(game, deps) {
             // Solo dove si vedrebbe: se il bot non sta sterzando, un errore
             // di guida non ha niente da rovinare.
             const dovePesa = Math.abs(steer) > BOT_ERRORE_SOGLIA_STERZO;
-            aggiornaErrore(p, aggro.erroriPerGiro, 50, giroMs, undefined, dovePesa);
+            aggiornaErroreConIlCielo(p, aggro.erroriPerGiro, 50, giroMs, undefined, dovePesa);
             if (p.botErroreFinoMs >= (p.botOrologioMs || 0)) {
                 if (p.botErroreTipo === 'allarga') steer *= 1 - BOT_ERRORE_STERZO;
                 else brake *= 1 - BOT_ERRORE_FRENO;
@@ -1920,6 +2031,9 @@ function updateBotInputs(game, deps) {
 }
 
 module.exports = {
+    // I bot e il cielo (Task 12 della pioggia).
+    mescolaVolutaDalBot, ritardoRientroMeteo, vuoleRientrarePerIlMeteo,
+    aggiornaErroreConIlCielo, ERRORI_BAGNATO_EXTRA, GUADAGNO_MINIMO_PER_RIENTRARE,
     PALETTE, PALETTE_BOT_EXTRA, MAX_GRID_SIZE, GRID_SIZE_DEFAULT, DEFAULT_TUNING,
     BOT_RACE_START_REACTION_MIN_MS, BOT_RACE_START_REACTION_MAX_MS,
     normalizeAngle, steerToward, lookaheadIndex, mirinoPrimaDelTubo, apexOffset, windowRadius, cornerApexNear, cornerTargetSpeed, overtakeOffset,
