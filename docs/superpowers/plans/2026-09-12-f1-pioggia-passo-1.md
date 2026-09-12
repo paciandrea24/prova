@@ -1059,6 +1059,13 @@ git commit -m "Sul bagnato l'auto scivola, il bot frena prima e l'erba frena di 
 > pista sta nel passo 3, ma un peso sugli archetipi qui costa una riga in
 > `generaProfilo`. Chiedere: che percentuale di gare deve essere asciutta?
 
+> ⚠️ **E UN DIFETTO DA CORREGGERE QUI SOTTO: `distanza` e' una VELOCITA'.** Lo
+> Step 3 costruisce il passaggio con `distanza: Math.hypot(p.vx, p.vz)`, che e'
+> unita' al SECONDO, mentre `avanza` la vuole in unita' PERCORSE nel tick
+> (`quota = distanza / PASSO_CELLA`). Con un tick da 20 ms si asciuga 50 volte
+> troppo, e il test del task 6 non lo vede perche' passa ugualmente. Va
+> moltiplicata per `dtMs / 1000`. Stessa forma di [[feedback_una_cosa_una_misura]].
+
 **Files:**
 - Modify: `backend/sockets/games/f1GameSocket.js`
 - Test: `backend/sockets/games/f1GameSocket.meteo.test.js` (nuovo)

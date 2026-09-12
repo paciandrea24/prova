@@ -97,3 +97,77 @@ test('previsione: un rovescio in mezzo non si nasconde dietro gli estremi', () =
     assert.equal(M.previsione(prof, DURATA * 0.5), 'variabile', 'sotto il diluvio deve annunciare che schiarisce');
     assert.equal(M.previsione(prof, DURATA), 'stabile');
 });
+
+// Un anello di raggio R campionato N volte: l'unica pista di cui si conosce a
+// mano la lunghezza, quindi l'unica su cui si possono verificare le celle.
+function pistaFinta(raggio, campioni, mezza) {
+    const pts = [];
+    for (let i = 0; i < campioni; i++) {
+        const a = (i / campioni) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * raggio, z: Math.sin(a) * raggio, y: 0, halfWidth: mezza });
+    }
+    return pts;
+}
+
+test('celle: il passo si misura sull\'arco, non in campioni', () => {
+    const raggio = 200;
+    const pts = pistaFinta(raggio, 1000, 11);
+    const { nCelle, perCampione } = M.celleDeiCampioni(pts);
+    const lunghezza = 2 * Math.PI * raggio;
+    const attese = Math.round(lunghezza / M.PASSO_CELLA);
+    assert.ok(Math.abs(nCelle - attese) <= 1, `celle ${nCelle}, attese ~${attese}`);
+    assert.equal(perCampione.length, pts.length);
+    assert.equal(perCampione[0], 0);
+    // Due piste con la stessa lunghezza ma un numero di campioni diverso
+    // devono avere lo STESSO numero di celle: e' il senso di misurare sull'arco.
+    const rade = M.celleDeiCampioni(pistaFinta(raggio, 300, 11));
+    assert.ok(Math.abs(rade.nCelle - nCelle) <= 1, 'il numero di celle dipende dai campioni, non dalla lunghezza');
+});
+
+test('griglia: la pioggia bagna tutto, il passaggio asciuga solo la sua corsia', () => {
+    const pts = pistaFinta(200, 1000, 11);
+    const g = M.nuovaGriglia(pts, 0);
+    assert.equal(M.bagnatoIn(g, 0, 0), 0, 'una pista nuova deve nascere asciutta');
+
+    // Venti secondi di diluvio: satura.
+    for (let i = 0; i < 20; i++) M.avanza(g, 1000, 1, []);
+    assert.ok(M.bagnatoIn(g, 0, 0) > 0.95, 'venti secondi di diluvio devono saturare la pista');
+
+    // Smette di piovere e un'auto passa in mezzo, cinquanta volte, mentre al
+    // bordo non passa nessuno.
+    const prima = M.bagnatoIn(g, 500, 0);
+    for (let i = 0; i < 50; i++) {
+        M.avanza(g, 20, 0, [{ campione: 500, scostamentoNorm: 0, distanza: M.PASSO_CELLA }]);
+    }
+    assert.ok(M.bagnatoIn(g, 500, 0) < prima - 0.3, 'i passaggi non asciugano');
+    assert.ok(M.bagnatoIn(g, 500, 1) > M.bagnatoIn(g, 500, 0) + 0.2,
+        'il bordo si e\' asciugato come la traiettoria: la linea asciutta non si forma');
+    assert.ok(M.bagnatoIn(g, 200, 0) > M.bagnatoIn(g, 500, 0) + 0.2,
+        'si e\' asciugata anche una cella dove non e\' passato nessuno');
+});
+
+test('griglia: la lettura e interpolata, senza scalini fra corsie', () => {
+    const pts = pistaFinta(200, 1000, 11);
+    const g = M.nuovaGriglia(pts, 1);
+    for (let i = 0; i < 40; i++) {
+        M.avanza(g, 20, 0, [{ campione: 500, scostamentoNorm: -1, distanza: M.PASSO_CELLA }]);
+    }
+    // Camminando da un bordo all'altro il valore non deve saltare.
+    let precedente = M.bagnatoIn(g, 500, -1);
+    for (let t = -1; t <= 1; t += 0.05) {
+        const v = M.bagnatoIn(g, 500, t);
+        assert.ok(Math.abs(v - precedente) < 0.2, `scalino fra corsie a t=${t.toFixed(2)}`);
+        precedente = v;
+    }
+});
+
+test('griglia: niente valori fuori scala, nemmeno insistendo', () => {
+    const pts = pistaFinta(200, 1000, 11);
+    const g = M.nuovaGriglia(pts, 0.5);
+    for (let i = 0; i < 500; i++) {
+        M.avanza(g, 50, 1, [{ campione: 10, scostamentoNorm: 0, distanza: 50 }]);
+    }
+    for (let i = 0; i < g.valori.length; i++) {
+        assert.ok(g.valori[i] >= 0 && g.valori[i] <= 1, `valore fuori scala in cella ${i}: ${g.valori[i]}`);
+    }
+});

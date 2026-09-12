@@ -148,5 +148,111 @@
         return 'stabile';
     }
 
-    return { LIVELLI, ARCHETIPI, SOGLIA_CAMBIO, generaProfilo, pioggiaA, previsione };
+
+    // ── LA GRIGLIA ──────────────────────────────────────────────────────────
+    //
+    // Una cella ogni PASSO_CELLA unita' di pista misurate SULL'ARCO (non ogni
+    // N campioni: il campione vale 1.18 unita' su monte-rosso e 5.17 su prova,
+    // e a campioni fissi la stessa taratura darebbe due cose diverse), per
+    // CORSIE fasce in larghezza.
+    //
+    // Cinque corsie: due per la traiettoria larga, due per i bordi, una in
+    // mezzo. Con tre la linea asciutta sarebbe larga mezza pista, con nove i
+    // byte da mandare triplicherebbero senza che si veda la differenza.
+    const PASSO_CELLA = 10;
+    const CORSIE = 5;
+
+    // Quanto bagna un diluvio: da asciutta a satura in venti secondi.
+    const BAGNATURA_AL_SECONDO = 1 / 20;
+    // L'evaporazione naturale: cinque minuti per asciugare da sola. Lavora
+    // sempre, ma e' lenta quanto basta per non contare finche' piove.
+    const EVAPORAZIONE_AL_SECONDO = 1 / 300;
+    // Quanto porta via un'auto che attraversa UNA cella intera. Misurato per
+    // DISTANZA e non per tempo: e' la gomma che spreme l'acqua, non il tempo
+    // che passa — cosi' il risultato non dipende dal ritmo del tick.
+    const ASCIUGATURA_PER_CELLA = 0.08;
+    // Un'auto e' larga circa mezza corsia: bagna anche le vicine, o la linea
+    // asciutta avrebbe un bordo a scalino invece di una sfumatura.
+    const ASCIUGATURA_CORSIE_VICINE = 0.25;
+
+    // Per ogni campione, in quale cella cade. Calcolato una volta per pista e
+    // usato IDENTICO da server e client: e' la funzione che tiene allineata la
+    // fisica col disegno.
+    function celleDeiCampioni(points) {
+        const n = points.length;
+        const perCampione = new Int32Array(n);
+        let arco = 0;
+        for (let i = 0; i < n; i++) {
+            perCampione[i] = Math.floor(arco / PASSO_CELLA);
+            const b = points[(i + 1) % n];
+            const a = points[i];
+            arco += Math.hypot(b.x - a.x, b.z - a.z);
+        }
+        const nCelle = Math.max(1, Math.floor(arco / PASSO_CELLA) + 1);
+        // L'ultima cella puo' essere piu' corta: i campioni che ci cadono
+        // dentro vanno riportati nell'intervallo, o si leggerebbe fuori array.
+        for (let i = 0; i < n; i++) if (perCampione[i] >= nCelle) perCampione[i] = nCelle - 1;
+        return { nCelle, perCampione };
+    }
+
+    function nuovaGriglia(points, bagnatoIniziale) {
+        const { nCelle, perCampione } = celleDeiCampioni(points);
+        const valori = new Float32Array(nCelle * CORSIE);
+        const v = Math.max(0, Math.min(1, bagnatoIniziale || 0));
+        valori.fill(v);
+        return { nCelle, perCampione, valori };
+    }
+
+    // Lo scostamento arriva NORMALIZZATO (-1 bordo destro, +1 sinistro) perche'
+    // la mezza carreggiata cambia per tratto: normalizzare a valle vorrebbe
+    // dire passare qui anche la larghezza, e prima o poi passarla sbagliata.
+    function corsiaDi(scostamentoNorm) {
+        const t = Math.max(-1, Math.min(1, scostamentoNorm || 0));
+        return ((t + 1) / 2) * (CORSIE - 1);
+    }
+
+    function bagnatoIn(griglia, campione, scostamentoNorm) {
+        const c = griglia.perCampione[Math.max(0, Math.min(griglia.perCampione.length - 1, campione | 0))] | 0;
+        const f = corsiaDi(scostamentoNorm);
+        const i0 = Math.floor(f), i1 = Math.min(CORSIE - 1, i0 + 1), k = f - i0;
+        const base = c * CORSIE;
+        return griglia.valori[base + i0] * (1 - k) + griglia.valori[base + i1] * k;
+    }
+
+    function limita(v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
+
+    // Un tick di meteo: prima la pioggia (o l'evaporazione) su tutta la pista,
+    // poi i passaggi delle auto. In quest'ordine, o un'auto asciugherebbe acqua
+    // che in questo tick non e' ancora caduta.
+    function avanza(griglia, dtMs, pioggia, passaggi) {
+        const dt = Math.max(0, dtMs || 0) / 1000;
+        const p = limita(pioggia);
+        const delta = p > 0
+            ? p * BAGNATURA_AL_SECONDO * dt
+            : -EVAPORAZIONE_AL_SECONDO * dt;
+        const valori = griglia.valori;
+        for (let i = 0; i < valori.length; i++) valori[i] = limita(valori[i] + delta);
+
+        for (const auto of (passaggi || [])) {
+            const c = griglia.perCampione[Math.max(0, Math.min(griglia.perCampione.length - 1, auto.campione | 0))] | 0;
+            const quota = Math.min(1, Math.abs(auto.distanza || 0) / PASSO_CELLA);
+            if (quota <= 0) continue;
+            const f = corsiaDi(auto.scostamentoNorm);
+            const centro = Math.round(f);
+            const base = c * CORSIE;
+            for (let d = -1; d <= 1; d++) {
+                const corsia = centro + d;
+                if (corsia < 0 || corsia >= CORSIE) continue;
+                const peso = d === 0 ? 1 : ASCIUGATURA_CORSIE_VICINE;
+                const via = ASCIUGATURA_PER_CELLA * quota * peso;
+                valori[base + corsia] = limita(valori[base + corsia] * (1 - via));
+            }
+        }
+    }
+
+    return {
+        LIVELLI, ARCHETIPI, SOGLIA_CAMBIO, generaProfilo, pioggiaA, previsione,
+        PASSO_CELLA, CORSIE, BAGNATURA_AL_SECONDO, EVAPORAZIONE_AL_SECONDO, ASCIUGATURA_PER_CELLA,
+        celleDeiCampioni, nuovaGriglia, corsiaDi, bagnatoIn, avanza,
+    };
 });
