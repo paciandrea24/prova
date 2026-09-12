@@ -132,9 +132,29 @@ funzione:
 
 - l'auto scivola di più (`AerodynamicsModel.effectiveGrip` → `applyGripBlend`);
 - i bot rallentano nelle curve **da soli**, perché scalano le velocità
-  obiettivo su `corneringCapacity`, che nasce dagli stessi numeri. **Nessun
-  cervello nuovo da scrivere**;
+  obiettivo su `corneringCapacity`. **Nessun cervello nuovo da scrivere**;
 - la gomma si consuma secondo la sua finestra.
+
+⚠️ **VERIFICATO NEL CODICE, e smentisce la prima stesura di questo disegno**:
+`corneringCapacity` **non legge la mescola**. Dentro ci sono usura
+(`corneringGripFactor`), deportanza, carburante e sopraelevazione — di
+`tyreOf().gripMult` nessuna traccia. Quindi il bagnato messo solo nella mescola
+farebbe scivolare l'auto **senza che i bot rallentino**: entrerebbero in curva
+alla velocità dell'asciutto e finirebbero contro le barriere.
+
+Il bagnato è quindi **un fattore solo, consultato da due consumatori
+indipendenti**: `effectiveGrip` (come l'auto scivola) e `corneringCapacity`
+(quanto il bot frena, e la perdita di capacità laterale). È lo stesso schema che
+il codice già documenta per la deportanza e per la sopraelevazione, con
+l'avvertimento scritto nero su bianco in `CorneringGripModel`: col fattore da un
+lato solo «il bot entra in curva credendo di avere un'aderenza che la fisica non
+gli dà, va lungo, ed è stato misurato un giro più LENTO del 12%». Un test deve
+pretendere che **entrambi** lo consultino.
+
+Per la stessa ragione il `speedMult` delle due mescole nuove è **costante**, non
+funzione del bagnato: la velocità di punta è l'unico canale che passa da
+`PowertrainModel`, e farla variare col cielo aggiungerebbe un terzo consumatore
+da tenere d'accordo senza guadagnare niente in sensazione.
 
 ⚠️ **Il verso lo dice la funzione, non il nome.** In `applyGripBlend` un `grip`
 più ALTO significa che la velocità conserva la direzione vecchia, cioè
