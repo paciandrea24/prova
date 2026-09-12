@@ -62,3 +62,38 @@ test('previsione: dice che cambiera senza dire quando', () => {
     // A gara quasi finita non c'e' piu' niente da prevedere.
     assert.equal(M.previsione(arriva, DURATA * 0.99), 'stabile');
 });
+
+test('previsione: al via ogni archetipo dice la verita, e non e una finestra corta', () => {
+    // ⚠️ Questo test esiste per un errore vero: la previsione guardava avanti
+    // di 90 secondi fissi, gli orologi della F1 vera, e al via di una gara da
+    // cinque minuti diceva «stabile» davanti a un temporale che arrivava a
+    // meta'. La domanda «che gomme metto» riguarda TUTTA la gara.
+    const atteso = {
+        asciutto: 'stabile',
+        bagnatoCheScampa: 'variabile',   // parte bagnato e schiarisce: cambia
+        temporaleCheArriva: 'arrivo',
+        rovescioBreve: 'arrivo',         // adesso e' asciutto e sta per piovere
+        intermittente: 'arrivo',
+    };
+    for (const archetipo of M.ARCHETIPI) {
+        for (let s = 0; s < 40; s++) {
+            const prof = M.generaProfilo(s, DURATA, { archetipo });
+            assert.equal(M.previsione(prof, 0), atteso[archetipo],
+                `${archetipo} col seme ${s} annuncia il cielo sbagliato`);
+        }
+    }
+});
+
+test('previsione: un rovescio in mezzo non si nasconde dietro gli estremi', () => {
+    // Un profilo costruito a mano: comincia e finisce asciutto, diluvia in
+    // mezzo. Guardando solo il valore finale si direbbe «stabile» proprio a chi
+    // sta per prenderselo in faccia.
+    const prof = { archetipo: 'aMano', punti: [
+        { t: 0, pioggia: 0 },
+        { t: DURATA * 0.5, pioggia: 1 },
+        { t: DURATA, pioggia: 0 },
+    ] };
+    assert.equal(M.previsione(prof, 0), 'arrivo', 'la pioggia in mezzo alla gara e\' passata inosservata');
+    assert.equal(M.previsione(prof, DURATA * 0.5), 'variabile', 'sotto il diluvio deve annunciare che schiarisce');
+    assert.equal(M.previsione(prof, DURATA), 'stabile');
+});

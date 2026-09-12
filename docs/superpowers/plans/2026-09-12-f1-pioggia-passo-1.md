@@ -84,10 +84,20 @@ test('profilo: ogni archetipo ha la forma che promette', () => {
 
     const arriva = di('temporaleCheArriva');
     assert.equal(p(arriva, 0), 0, 'temporaleCheArriva deve partire asciutto');
-    assert.ok(p(arriva, 0.9) > 0.5, 'temporaleCheArriva deve finire sotto la pioggia');
+    assert.ok(p(arriva, 1) > 0.5, 'temporaleCheArriva deve finire sotto la pioggia');
+    assert.ok(p(arriva, 0.9) > p(arriva, 0.5), 'temporaleCheArriva deve crescere');
 
+    // ⚠️ Il picco NON si cerca a meta' esatta: `quando` e' pescato fra 0.35 e
+    // 0.65, quindi a 0.5 il rovescio puo' essere gia' finito. Si cerca dove
+    // cade davvero — e' la forma che conta, non l'istante.
     const rovescio = di('rovescioBreve');
-    assert.ok(p(rovescio, 0.5) > 0.4, 'rovescioBreve deve avere un picco in mezzo');
+    let picco = 0, dove = 0;
+    for (let f = 0; f <= 1; f += 0.01) {
+        const v = p(rovescio, f);
+        if (v > picco) { picco = v; dove = f; }
+    }
+    assert.ok(picco > 0.4, `rovescioBreve non ha un picco: ${picco}`);
+    assert.ok(dove > 0.2 && dove < 0.85, `il picco del rovescio cade a ${dove}, non in mezzo alla gara`);
     assert.ok(p(rovescio, 0) < 0.1 && p(rovescio, 1) < 0.2, 'rovescioBreve deve cominciare e finire asciutto');
 });
 
@@ -110,6 +120,41 @@ test('previsione: dice che cambiera senza dire quando', () => {
 
     // A gara quasi finita non c'e' piu' niente da prevedere.
     assert.equal(M.previsione(arriva, DURATA * 0.99), 'stabile');
+});
+
+test('previsione: al via ogni archetipo dice la verita, e non e una finestra corta', () => {
+    // ⚠️ Questo test esiste per un errore vero: la previsione guardava avanti
+    // di 90 secondi fissi, gli orologi della F1 vera, e al via di una gara da
+    // cinque minuti diceva «stabile» davanti a un temporale che arrivava a
+    // meta'. La domanda «che gomme metto» riguarda TUTTA la gara.
+    const atteso = {
+        asciutto: 'stabile',
+        bagnatoCheScampa: 'variabile',   // parte bagnato e schiarisce: cambia
+        temporaleCheArriva: 'arrivo',
+        rovescioBreve: 'arrivo',         // adesso e' asciutto e sta per piovere
+        intermittente: 'arrivo',
+    };
+    for (const archetipo of M.ARCHETIPI) {
+        for (let s = 0; s < 40; s++) {
+            const prof = M.generaProfilo(s, DURATA, { archetipo });
+            assert.equal(M.previsione(prof, 0), atteso[archetipo],
+                `${archetipo} col seme ${s} annuncia il cielo sbagliato`);
+        }
+    }
+});
+
+test('previsione: un rovescio in mezzo non si nasconde dietro gli estremi', () => {
+    // Un profilo costruito a mano: comincia e finisce asciutto, diluvia in
+    // mezzo. Guardando solo il valore finale si direbbe «stabile» proprio a chi
+    // sta per prenderselo in faccia.
+    const prof = { archetipo: 'aMano', punti: [
+        { t: 0, pioggia: 0 },
+        { t: DURATA * 0.5, pioggia: 1 },
+        { t: DURATA, pioggia: 0 },
+    ] };
+    assert.equal(M.previsione(prof, 0), 'arrivo', 'la pioggia in mezzo alla gara e\' passata inosservata');
+    assert.equal(M.previsione(prof, DURATA * 0.5), 'variabile', 'sotto il diluvio deve annunciare che schiarisce');
+    assert.equal(M.previsione(prof, DURATA), 'stabile');
 });
 ```
 
@@ -218,30 +263,64 @@ Crea `frontend/shared/f1Meteo.js`:
         return ultimo.pioggia;
     }
 
-    // Quanto il gioco puo' dire senza mentire. Guarda avanti di una finestra
-    // fissa e confronta: cambia poco -> stabile, cresce -> arrivo, cambia molto
-    // in qualunque verso -> variabile. NON dice a quale giro: la scelta delle
-    // gomme deve restare una scommessa informata, non un calcolo.
-    const FINESTRA_PREVISIONE_MS = 90 * 1000;
+    // LA PREVISIONE RISPONDE A «CHE GOMME METTO», NON A «CHE TEMPO FA FRA UN
+    // MINUTO»: percio' guarda TUTTO IL RESTO DELLA SESSIONE, non una finestra.
+    //
+    // ⚠️ Qui c'era una finestra fissa di 90 secondi, come negli orologi della F1
+    // vera, e a inizio gara diceva «stabile» davanti a un temporale: una gara
+    // dura cinque minuti e il rovescio arriva fra il 35% e il 65%, cioe' sempre
+    // FUORI da qualunque finestra abbastanza corta da chiamarsi finestra.
+    // Allargarla al 70% della gara la faceva sconfinare oltre il traguardo, e
+    // allora non era piu' una finestra: era il residuo. Quindi: il residuo.
+    // La richiesta dell'utente era esattamente questa — «non si verificano
+    // scenari dove il gioco non dice niente, selezioni le soft e poi invece
+    // piove a dirotto».
+    //
+    // Si guardano il MASSIMO e il MINIMO del residuo, non il valore finale: un
+    // rovescio che comincia e finisce nel mezzo della gara torna al punto di
+    // partenza, e confrontando solo gli estremi si direbbe «stabile» proprio a
+    // chi sta per prenderselo in faccia.
+    //
+    // NON dice a quale giro: la scelta delle gomme resta una scommessa, ma
+    // informata.
     const SOGLIA_CAMBIO = 0.18;
 
-    function previsione(profilo, tMs) {
+    // Massimo e minimo della pioggia da tMs alla fine del profilo. Basta
+    // guardare i VERTICI della polilinea piu' il valore di adesso: fra due
+    // vertici la pioggia e' interpolata, quindi non puo' scavalcarli.
+    function estremiResidui(profilo, tMs) {
+        const punti = (profilo && profilo.punti) || [];
         const ora = pioggiaA(profilo, tMs);
-        const poi = pioggiaA(profilo, (tMs || 0) + FINESTRA_PREVISIONE_MS);
-        const delta = poi - ora;
-        if (delta > SOGLIA_CAMBIO) return 'arrivo';
-        if (Math.abs(delta) > SOGLIA_CAMBIO) return 'variabile';
+        let max = ora, min = ora;
+        const t = tMs || 0;
+        for (let i = 0; i < punti.length; i++) {
+            if (punti[i].t < t) continue;
+            if (punti[i].pioggia > max) max = punti[i].pioggia;
+            if (punti[i].pioggia < min) min = punti[i].pioggia;
+        }
+        return { ora, max, min };
+    }
+
+    function previsione(profilo, tMs) {
+        const { ora, max, min } = estremiResidui(profilo, tMs);
+        const sale = (max - ora) > SOGLIA_CAMBIO;
+        const scende = (ora - min) > SOGLIA_CAMBIO;
+        // Se sale e scende, il cielo e' solo «variabile»: dire «pioggia in
+        // arrivo» a chi vedra' anche schiarire sarebbe meta' della verita'.
+        if (sale && scende) return 'variabile';
+        if (sale) return 'arrivo';
+        if (scende) return 'variabile';
         return 'stabile';
     }
 
-    return { LIVELLI, ARCHETIPI, generaProfilo, pioggiaA, previsione };
+    return { LIVELLI, ARCHETIPI, SOGLIA_CAMBIO, generaProfilo, pioggiaA, previsione };
 });
 ```
 
 - [ ] **Step 4: Esegui il test e verifica che passa**
 
 Run: `node --test frontend/shared/f1Meteo.test.js`
-Expected: PASS, 5 test.
+Expected: PASS, 6 test.
 
 - [ ] **Step 5: Commit**
 
@@ -972,6 +1051,13 @@ git commit -m "Sul bagnato l'auto scivola, il bot frena prima e l'erba frena di 
 ---
 
 ### Task 6: Il server possiede il meteo
+
+> ⚠️ **DA DECIDERE CON L'UTENTE, arrivati qui: quanto spesso piove.** I cinque
+> archetipi sono equiprobabili, e misurando 200 semi vengono **161 gare bagnate
+> su 200** (l'80%): solo `asciutto` e' secco. Con il meteo dinamico nel passo 1
+> quella e' la realta' del gioco, non un caso di prova. La probabilita' per
+> pista sta nel passo 3, ma un peso sugli archetipi qui costa una riga in
+> `generaProfilo`. Chiedere: che percentuale di gare deve essere asciutta?
 
 **Files:**
 - Modify: `backend/sockets/games/f1GameSocket.js`

@@ -98,21 +98,55 @@
         return ultimo.pioggia;
     }
 
-    // Quanto il gioco puo' dire senza mentire. Guarda avanti di una finestra
-    // fissa e confronta: cambia poco -> stabile, cresce -> arrivo, cambia molto
-    // in qualunque verso -> variabile. NON dice a quale giro: la scelta delle
-    // gomme deve restare una scommessa informata, non un calcolo.
-    const FINESTRA_PREVISIONE_MS = 90 * 1000;
+    // LA PREVISIONE RISPONDE A «CHE GOMME METTO», NON A «CHE TEMPO FA FRA UN
+    // MINUTO»: percio' guarda TUTTO IL RESTO DELLA SESSIONE, non una finestra.
+    //
+    // ⚠️ Qui c'era una finestra fissa di 90 secondi, come negli orologi della F1
+    // vera, e a inizio gara diceva «stabile» davanti a un temporale: una gara
+    // dura cinque minuti e il rovescio arriva fra il 35% e il 65%, cioe' sempre
+    // FUORI da qualunque finestra abbastanza corta da chiamarsi finestra.
+    // Allargarla al 70% della gara la faceva sconfinare oltre il traguardo, e
+    // allora non era piu' una finestra: era il residuo. Quindi: il residuo.
+    // La richiesta dell'utente era esattamente questa — «non si verificano
+    // scenari dove il gioco non dice niente, selezioni le soft e poi invece
+    // piove a dirotto».
+    //
+    // Si guardano il MASSIMO e il MINIMO del residuo, non il valore finale: un
+    // rovescio che comincia e finisce nel mezzo della gara torna al punto di
+    // partenza, e confrontando solo gli estremi si direbbe «stabile» proprio a
+    // chi sta per prenderselo in faccia.
+    //
+    // NON dice a quale giro: la scelta delle gomme resta una scommessa, ma
+    // informata.
     const SOGLIA_CAMBIO = 0.18;
 
-    function previsione(profilo, tMs) {
+    // Massimo e minimo della pioggia da tMs alla fine del profilo. Basta
+    // guardare i VERTICI della polilinea piu' il valore di adesso: fra due
+    // vertici la pioggia e' interpolata, quindi non puo' scavalcarli.
+    function estremiResidui(profilo, tMs) {
+        const punti = (profilo && profilo.punti) || [];
         const ora = pioggiaA(profilo, tMs);
-        const poi = pioggiaA(profilo, (tMs || 0) + FINESTRA_PREVISIONE_MS);
-        const delta = poi - ora;
-        if (delta > SOGLIA_CAMBIO) return 'arrivo';
-        if (Math.abs(delta) > SOGLIA_CAMBIO) return 'variabile';
+        let max = ora, min = ora;
+        const t = tMs || 0;
+        for (let i = 0; i < punti.length; i++) {
+            if (punti[i].t < t) continue;
+            if (punti[i].pioggia > max) max = punti[i].pioggia;
+            if (punti[i].pioggia < min) min = punti[i].pioggia;
+        }
+        return { ora, max, min };
+    }
+
+    function previsione(profilo, tMs) {
+        const { ora, max, min } = estremiResidui(profilo, tMs);
+        const sale = (max - ora) > SOGLIA_CAMBIO;
+        const scende = (ora - min) > SOGLIA_CAMBIO;
+        // Se sale e scende, il cielo e' solo «variabile»: dire «pioggia in
+        // arrivo» a chi vedra' anche schiarire sarebbe meta' della verita'.
+        if (sale && scende) return 'variabile';
+        if (sale) return 'arrivo';
+        if (scende) return 'variabile';
         return 'stabile';
     }
 
-    return { LIVELLI, ARCHETIPI, FINESTRA_PREVISIONE_MS, generaProfilo, pioggiaA, previsione };
+    return { LIVELLI, ARCHETIPI, SOGLIA_CAMBIO, generaProfilo, pioggiaA, previsione };
 });
