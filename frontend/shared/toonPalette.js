@@ -306,7 +306,51 @@
         },
     };
 
+// ── IL TEMPORALE ──────────────────────────────────────────────────
+    //
+    // Si fa come la notte, e per la stessa ragione: il cel shading aggancia la
+    // luce a tre fasce fisse e la somma delle intensita' deve restare intorno a
+    // 1 — sotto, le fasce si schiacciano e ogni superficie diventa una macchia
+    // piatta. Quindi qui si muovono DUE cose sole, il colore del cielo e la
+    // densita' della nebbia, e nessuna luce.
+    //
+    // Quattro tappe come gli orari: la cupola compila lo shader su quel numero.
+    // Grigio e non azzurro: l'orizzonte E' ANCHE il colore della nebbia (vedi
+    // fogColor), e una dominante fredda tingerebbe tutto cio' che e' lontano —
+    // lo stesso difetto costato due tarature al notturno.
+    const TEMPORALE_STOPS = [
+        { t: 0.00, color: 0x9aa0a8 },
+        { t: 0.06, color: 0x868c95 },
+        { t: 0.30, color: 0x6d737c },
+        { t: 1.00, color: 0x565b63 },
+    ];
+    // Piu' densa del giorno ma meno della notte: il temporale accorcia la
+    // vista, non la chiude.
+    const TEMPORALE_FOG = 0.0026;
+    let pioggiaCorrente = 0;
     let orarioCorrente = 'giorno';
+
+    function mescolaHex(a, b, k) {
+        const ca = hexToRgb(a), cb = hexToRgb(b);
+        return rgbToHex({
+            r: ca.r + (cb.r - ca.r) * k,
+            g: ca.g + (cb.g - ca.g) * k,
+            b: ca.b + (cb.b - ca.b) * k,
+        });
+    }
+
+    // `pioggia` 0..1. Si puo' chiamare a ogni tick: non alloca nulla di nuovo e
+    // riscrive SKY_STOPS in posto, come impostaOrario, perche' chi lo ha già in
+    // mano (la cupola del cielo) deve vedere il cambio.
+    function applicaMeteo(pioggia) {
+        pioggiaCorrente = Math.max(0, Math.min(1, pioggia || 0));
+        const base = ORARI[orarioCorrente].skyStops;
+        SKY_STOPS.length = 0;
+        for (let i = 0; i < base.length; i++) {
+            SKY_STOPS.push({ t: base[i].t, color: mescolaHex(base[i].color, TEMPORALE_STOPS[i].color, pioggiaCorrente) });
+        }
+        return pioggiaCorrente;
+    }
 
     // Cambia l'ora del giorno. Va chiamata PRIMA di costruire la scena:
     // cielo e luci leggono questi valori una volta sola, quando nascono.
@@ -318,12 +362,20 @@
         // sostituisce.
         SKY_STOPS.length = 0;
         for (const s of ORARI[nome].skyStops) SKY_STOPS.push(s);
+        // ⚠️ La pioggia si riapplica: senza questa riga, cambiare orario
+        // asciugherebbe il cielo di colpo mentre sta diluviando.
+        applicaMeteo(pioggiaCorrente);
         return ORARI[nome];
     }
 
     function orario() { return ORARI[orarioCorrente]; }
     function eNotte() { return orarioCorrente === 'notte'; }
-    function fogDensity() { return orario().fogDensity; }
+    // La nebbia del temporale: piu' densa del giorno, meno della notte. Il
+    // temporale accorcia la vista, non la chiude.
+    function fogDensity() {
+        const base = orario().fogDensity;
+        return base + (TEMPORALE_FOG - base) * pioggiaCorrente;
+    }
 
     function skyColorAt(t) {
         const x = Math.max(0, Math.min(1, t));
@@ -394,5 +446,6 @@
         SURFACES, CITTA_FACCIATE, SKY_STOPS, FOG_DENSITY, SHADOW_TINT, BANDS, SATURATION,
         ORARI, impostaOrario, orario, eNotte, fogDensity,
         skyColorAt, fogColor, saturate, hexToRgb, rgbToHex,
+        applicaMeteo, TEMPORALE_STOPS, TEMPORALE_FOG,
     };
 });

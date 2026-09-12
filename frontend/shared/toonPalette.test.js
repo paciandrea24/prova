@@ -94,3 +94,45 @@ test('andata e ritorno fra hex e rgb', () => {
         assert.equal(ToonPalette.rgbToHex(ToonPalette.hexToRgb(hex)), hex);
     }
 });
+
+
+// I test del temporale sono scritti con `P`, come nel piano.
+const P = ToonPalette;
+
+test('temporale: la luce non cala, cambiano cielo e nebbia', () => {
+    P.impostaOrario('giorno');
+    P.applicaMeteo(0);
+    const soleAsciutto = P.orario().sole.intensita;
+    const hemiAsciutto = P.orario().hemi.intensita;
+    const cieloAsciutto = P.skyColorAt(0.5);
+    const nebbiaAsciutto = P.fogDensity();
+
+    P.applicaMeteo(1);
+    assert.equal(P.orario().sole.intensita, soleAsciutto,
+        'la pioggia ha abbassato il sole: il cel shading si spegne, le fasce si schiacciano');
+    assert.equal(P.orario().hemi.intensita, hemiAsciutto, 'la pioggia ha toccato la luce d\'ambiente');
+    assert.notEqual(P.skyColorAt(0.5), cieloAsciutto, 'il cielo non e\' cambiato');
+    assert.ok(P.fogDensity() > nebbiaAsciutto * 1.5, 'la nebbia non si e\' avvicinata');
+
+    // Il cielo del temporale deve essere GRIGIO, non azzurro sporco: le tre
+    // componenti stanno vicine fra loro.
+    const c = P.hexToRgb(P.skyColorAt(0.5));
+    assert.ok(Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b) < 0.12,
+        `il cielo del temporale ha una dominante: ${JSON.stringify(c)}`);
+});
+
+test('temporale: quattro tappe di cielo, sempre — la cupola compila su quel numero', () => {
+    P.impostaOrario('notte');
+    P.applicaMeteo(0.7);
+    assert.equal(P.SKY_STOPS.length, 4);
+    P.impostaOrario('giorno');
+    assert.equal(P.SKY_STOPS.length, 4);
+});
+
+test('temporale: cambiare orario non dimentica la pioggia', () => {
+    P.impostaOrario('giorno');
+    P.applicaMeteo(1);
+    const sottoLaPioggia = P.skyColorAt(0.5);
+    P.impostaOrario('giorno');   // riapplicare l'orario non deve asciugare il cielo
+    assert.equal(P.skyColorAt(0.5), sottoLaPioggia);
+});

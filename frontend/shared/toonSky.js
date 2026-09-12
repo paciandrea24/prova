@@ -143,6 +143,23 @@
             // (caldo come la banda). LA NEBBIA SEGUE: è la stessa tinta, per
             // costruzione, quindi il terreno lontano continua a sfumare
             // esattamente nel cielo che ha sopra, senza linea di stacco.
+            // IL METEO. Si riscrivono le UNIFORM, non si ricostruisce la
+            // cupola: le tappe restano quattro, quindi lo shader non si
+            // ricompila e questo si puo' chiamare a gara in corso.
+            // ⚠️ La nebbia segue il cielo, colore E densita': l'orizzonte e' la
+            // stessa tinta della nebbia per costruzione, e un temporale che
+            // scurisce il cielo lasciando l'aria del giorno si vede subito.
+            setMeteo(stops) {
+                const n = Math.min(uniforms.uColors.value.length, stops.length);
+                for (let i = 0; i < n; i++) {
+                    uniforms.uColors.value[i].set(stops[i].color);
+                    uniforms.uStops.value[i] = stops[i].t;
+                }
+                orizzonteFreddo.set(stops[0].color);
+                caldo.set(stops[1].color);
+                scene.fog.color.set(ToonPalette.fogColor());
+                scene.fog.density = ToonPalette.fogDensity();
+            },
             setHorizonWarmth(k) {
                 uniforms.uColors.value[0].copy(orizzonteFreddo).lerp(caldo, k);
                 scene.fog.color.copy(uniforms.uColors.value[0]);
@@ -162,6 +179,10 @@
             uniforms: {},
             update() {},
             setEnabled() {},
+            // Il cielo piatto non ha tappe da riscrivere, ma la nebbia del
+            // temporale la vuole anche lui: e' il confronto A/B, e senza
+            // questo con ?toon=off la pioggia sarebbe invisibile.
+            setMeteo() { scene.fog.density = ToonPalette.fogDensity(); },
         };
     }
 

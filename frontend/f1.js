@@ -322,6 +322,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // mai: lo riceve. Il proprietario e' uno solo, o l'asfalto che si vede non
     // sarebbe quello su cui si guida.
     let meteoCielo = 0;
+    // Quanta pioggia e' gia' DIPINTA nel cielo: diverso da quanta ne cade, o si
+    // ridipingerebbe la cupola a ogni stato che arriva.
+    let meteoCieloDipinto = 0;
     let meteoPrevisione = 'stabile';
     let meteoGriglia = null;
     let bagnatoDaRidisegnare = false;
@@ -3571,6 +3574,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         // far scivolare l'auto.
         if (state.__meteo) {
             meteoCielo = state.__meteo.pioggia || 0;
+            // Il cielo si ridipinge quando la pioggia cambia DAVVERO: sotto due
+            // centesimi non si vede, e riscrivere le uniform a ogni stato
+            // sarebbe lavoro per niente. La pioggia si muove piano.
+            if (Math.abs(meteoCielo - meteoCieloDipinto) > 0.02) {
+                meteoCieloDipinto = meteoCielo;
+                ToonPalette.applicaMeteo(meteoCielo);
+                if (toonSky && toonSky.setMeteo) toonSky.setMeteo(ToonPalette.SKY_STOPS);
+            }
             meteoPrevisione = state.__meteo.previsione || 'stabile';
             if (state.__meteo.celle && trackData && trackData.points) {
                 if (!meteoGriglia) meteoGriglia = F1Meteo.nuovaGriglia(trackData.points, 0);
