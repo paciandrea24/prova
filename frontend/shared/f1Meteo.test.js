@@ -197,3 +197,23 @@ test('rete: applicaPacchetto non tocca la mappa dei campioni', () => {
     assert.ok(M.bagnatoIn(client, 500, 0) > 0.9, 'il client non ha ricevuto il bagnato');
     assert.equal(client.perCampione.length, pts.length, 'la mappa dei campioni e\' stata sovrascritta');
 });
+
+test('profilo: il cielo e asciutto in circa sei gare su dieci', () => {
+    // I cinque archetipi NON sono equiprobabili: scelta dell'utente il
+    // 2026-09-12, «asciutto nel 60% delle gare». Equiprobabili facevano l'80%
+    // di gare bagnate — la pioggia diventava la norma invece di un evento.
+    const conteggio = {};
+    const N = 4000;
+    for (let s = 0; s < N; s++) {
+        const a = M.generaProfilo(s, DURATA).archetipo;
+        conteggio[a] = (conteggio[a] || 0) + 1;
+    }
+    const quota = (nome) => (conteggio[nome] || 0) / N;
+    assert.ok(Math.abs(quota('asciutto') - 0.60) < 0.04,
+        `asciutto al ${(quota('asciutto') * 100).toFixed(0)}%, atteso il 60%`);
+    // E gli altri quattro escono tutti: un peso a zero per sbaglio
+    // spegnerebbe un archetipo in silenzio.
+    for (const nome of M.ARCHETIPI) {
+        assert.ok(quota(nome) > 0.02, `l'archetipo ${nome} non esce quasi mai: ${(quota(nome) * 100).toFixed(1)}%`);
+    }
+});

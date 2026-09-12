@@ -23,6 +23,34 @@
 
     const ARCHETIPI = ['asciutto', 'bagnatoCheScampa', 'temporaleCheArriva', 'rovescioBreve', 'intermittente'];
 
+    // Quanto spesso esce ognuno. NON equiprobabili: a pari peso venivano
+    // quattro gare bagnate su cinque, e la pioggia diventava la norma invece di
+    // un evento. Scelta dell'utente il 2026-09-12: asciutto nel 60% delle gare.
+    // I pesi stanno qui e non in chi chiama perche' il meteo di una gara lo
+    // decide questo modulo: al passo 3 diventeranno una probabilita' per pista,
+    // e allora questa tabella sara' il valore di partenza da cui si scosta.
+    const PESI_ARCHETIPI = {
+        asciutto:           0.60,
+        bagnatoCheScampa:   0.10,
+        temporaleCheArriva: 0.12,
+        rovescioBreve:      0.10,
+        intermittente:      0.08,
+    };
+
+    // Pesca un archetipo secondo i pesi. ⚠️ Consuma UN solo numero del dado,
+    // come la scelta uniforme che ha sostituito: cambiare quanti ne consuma
+    // cambierebbe `forza` e `quando` di ogni gara gia' generata da un seme.
+    function archetipoPesato(sorte) {
+        let somma = 0;
+        for (const nome of ARCHETIPI) somma += PESI_ARCHETIPI[nome] || 0;
+        let soglia = (sorte || 0) * somma;
+        for (const nome of ARCHETIPI) {
+            soglia -= PESI_ARCHETIPI[nome] || 0;
+            if (soglia < 0) return nome;
+        }
+        return ARCHETIPI[0];
+    }
+
     // Generatore deterministico (xorshift32). Serve che lo stesso seme dia lo
     // stesso meteo: e' l'unico modo di avere un test che verifica una STORIA
     // invece di sperare che il caso la produca.
@@ -49,7 +77,7 @@
         // scelto a mano non avrebbe la stessa forma di quella vera con lo stesso
         // seme. Un banco che misura una cosa diversa da quella che gira e' la
         // trappola piu' costosa di questo progetto.
-        const pescato = ARCHETIPI[Math.floor(r() * ARCHETIPI.length)];
+        const pescato = archetipoPesato(r());
         const archetipo = o.archetipo || pescato;
         const D = Math.max(1, durataMs || 0);
         const forza = 0.65 + r() * 0.35;        // 0.65..1
@@ -292,7 +320,7 @@
     }
 
     return {
-        LIVELLI, ARCHETIPI, SOGLIA_CAMBIO, generaProfilo, pioggiaA, previsione,
+        LIVELLI, ARCHETIPI, PESI_ARCHETIPI, SOGLIA_CAMBIO, generaProfilo, pioggiaA, previsione,
         PASSO_CELLA, CORSIE, BAGNATURA_AL_SECONDO, EVAPORAZIONE_AL_SECONDO, ASCIUGATURA_PER_CELLA,
         celleDeiCampioni, nuovaGriglia, corsiaDi, bagnatoIn, avanza,
         LIVELLI_RETE, impacchetta, spacchetta, applicaPacchetto,
