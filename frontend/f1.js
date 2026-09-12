@@ -429,6 +429,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // domanda senza risposta.
     const TOON_ON = urlParams.get('toon') !== 'off';
     const toonSky = TOON_ON ? ToonSky.install(scene) : ToonSky.installFlat(scene);
+    // LA PIOGGIA CHE CADE. Sta accanto alla cupola perche' e' la stessa
+    // famiglia di cose: il tempo che fa, non un oggetto del circuito.
+    const pioggia = (typeof F1Pioggia !== 'undefined') ? F1Pioggia.install(scene, THREE) : null;
     // Il notturno e' una uniform condivisa da tutti i materiali toon: si
     // accende una volta e vale per la pista generata in JS come per i
     // modelli che arrivano dai GLB. Vedi ToonStyle.impostaNotturno.
@@ -3729,6 +3732,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 meteoCieloDipinto = meteoCielo;
                 ToonPalette.applicaMeteo(meteoCielo);
                 if (toonSky && toonSky.setMeteo) toonSky.setMeteo(ToonPalette.SKY_STOPS);
+                // ⚠️ Quante gocce cadono lo dice lo STESSO numero che bagna la
+                // pista e fa scivolare l'auto: se la pioggia a schermo avesse
+                // una sua intensita', si vedrebbe diluviare su una pista che il
+                // server considera umida.
+                if (pioggia) pioggia.setIntensita(meteoCielo);
             }
             meteoPrevisione = state.__meteo.previsione || 'stabile';
             // ⚠️ `trackPts` e non `trackData.points`: i campioni li produce
@@ -7603,6 +7611,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         else updateCamera();
         seguiConLeOmbre();
         toonSky.update(camera);
+        // ⚠️ `_dt` in questo ciclo e' in MILLISECONDI (vedi dove nasce, col
+        // tetto di 100 ms), e la pioggia ragiona in secondi: passandolo cosi'
+        // com'e' il clamp interno lo avrebbe letto come un decimo di secondo e
+        // le gocce sarebbero cadute dieci volte piu' veloci.
+        if (pioggia) pioggia.update(camera, _dt / 1000);
         F1Perf.logica = performance.now() - _tLogica;
 
         // ⚠️ NON SI DISEGNA SOTTO A QUEL CHE COPRE TUTTO. Lo stacco di fine
