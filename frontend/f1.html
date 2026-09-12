@@ -288,6 +288,10 @@
             <g class="v-quadranti" id="hud-quadranti"></g>
         </svg>
 
+        <!-- Il cielo, in gara: chi guida non puo' aprire la pagina delle
+             gomme. Compare solo quando c'e' qualcosa da dire. -->
+        <div class="hud hud-meteo f1-panel" id="hud-meteo" hidden></div>
+
         <div class="hud-gomme">
             <span class="hud-gomme-disegno" id="tyre-drawing"></span>
             <span class="hud-gomme-mescola" id="tyre-compound-label">&mdash;</span>
@@ -391,6 +395,14 @@
 
             <header class="mescole-testata">
                 <span class="mescole-eyebrow" id="tyre-eyebrow">Prima della qualifica</span>
+                <!-- CHE CIELO C'E'. Richiesta dell'utente: «non si verificano
+                     scenari dove il gioco non dice niente, selezioni le soft e
+                     poi invece piove a dirotto». Nascosto quando e' asciutto e
+                     stabile: un'etichetta che dice sempre «asciutto» e' rumore. -->
+                <span class="mescole-meteo" id="tyre-meteo" hidden>
+                    <span class="mescole-meteo-cielo" id="tyre-meteo-cielo">Asciutto</span>
+                    <span class="mescole-meteo-prev" id="tyre-meteo-prev"></span>
+                </span>
                 <h2 class="mescole-titolo">
                     <span id="tyre-track-name">Circuito</span>
                     <span class="mescole-titolo-sep"></span>
@@ -999,7 +1011,7 @@
     <script src="shared/f1SuoniCerimonia.js?v=20260820a"></script>
     <script src="shared/f1Premiazione.js?v=20260820b"></script>
     <script src="shared/f1StagioneSchermate.js?v=20260824a"></script>
-    <script src="f1.js?v=20260912v"></script>
+    <script src="f1.js?v=20260912w"></script>
 </body>
 
 </html>

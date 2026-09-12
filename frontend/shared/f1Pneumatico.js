@@ -40,7 +40,13 @@
     // fitto e compatto, una morbida più aperto. È l'unico modo per distinguerle
     // a colpo d'occhio anche a colori spenti — e in una schermata dove il
     // giocatore sceglie in fretta, il colore da solo non basta.
-    const TACCHE_PER_MESCOLA = { hard: 1, medium: 0.75, soft: 0.5 };
+    // Le slick: piu' morbida = meno scanalature (la soft e' quasi liscia).
+    // Le due da bagnato vanno nell'altro verso, e per una ragione: il
+    // battistrada SCOLPITO e' quello che le rende riconoscibili a colpo
+    // d'occhio anche a chi non ha in mente i colori. E' l'unico segno che
+    // resta quando il verde e il blu non si distinguono — su uno schermo
+    // scuro, o a chi non vede bene i colori.
+    const TACCHE_PER_MESCOLA = { hard: 1, medium: 0.75, soft: 0.5, intermedie: 1.4, pioggia: 1.8 };
 
     function polare(angoloRad, raggio) {
         return {

@@ -15,7 +15,7 @@ const TyreModel = require('./physics/TyreModel');
 // divario col bot (F1_TELEMETRIA=1). Rif. backend/tools/f1Telemetria.js.
 const Telemetria = require('../../tools/f1Telemetria.js');
 const {
-    TYRE_COMPOUNDS, DEFAULT_COMPOUND,
+    TYRE_COMPOUNDS, DEFAULT_COMPOUND, FINESTRE_BAGNATO,
     tyreOf, suggestStrategy, giriPerMescola
 } = TyreModel;
 
@@ -699,6 +699,11 @@ module.exports = function (io, socket) {
             elapsed: game.raceStarted ? (game.raceTick * PHYSICS_TICK_MS) : 0,
             players: buildPublicState(playersVisibleTo(game, playerColor), game.raceStarted, game.track, game),
             compounds: TYRE_COMPOUNDS,
+            // Le finestre di bagnato: servono alla pagina delle gomme per dire
+            // PER CHE CIELO e' fatta ogni mescola. Vanno mandate e non
+            // ricostruite nel client, perche' sono la stessa tabella che la
+            // fisica usa per l'aderenza: una cosa, una misura.
+            finestreBagnato: FINESTRE_BAGNATO,
             strategy: suggestStrategy(totalLaps, game.track.abrasivita),
             // I giri VERI di questa pista, non quelli nominali: e' cio' con
             // cui il giocatore calcola se fermarsi una volta o due. Rif.

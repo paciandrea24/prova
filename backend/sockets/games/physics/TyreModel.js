@@ -239,6 +239,15 @@ function giriPerMescola(totalLaps, abrasivita) {
         hard:   giri('hard'),
         medium: giri('medium'),
         soft:   giri('soft'),
+        // ⚠️ Anche le due da bagnato, da quando la pagina delle gomme ne mostra
+        // cinque: senza, la scheda dell'intermedia diceva «Durata —» e sembrava
+        // un dato mancante. Questo e' il numero IN FINESTRA, cioe' con la gomma
+        // giusta per il cielo che c'e'; fuori finestra si brucia, e quello lo
+        // dice il fattore di vita alla fisica. Una cosa, una misura: qui si
+        // mostra la stessa vita che la fisica usa quando il cielo e' quello
+        // giusto.
+        intermedie: giri('intermedie'),
+        pioggia:    giri('pioggia'),
     };
 }
 

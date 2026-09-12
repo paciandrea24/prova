@@ -318,6 +318,67 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // I quattro gradini che cicla F3, nell'ordine in cui li cicla. Gli stessi
     // nomi di F1Meteo.LIVELLI: il server valida la chiave e rifiuta le altre.
+    // Le finestre di bagnato, come le manda il server: la pagina delle gomme
+    // le legge per dire per che cielo e' fatta ogni mescola.
+    let finestreBagnatoInfo = null;
+
+    // I nomi del cielo, sugli stessi gradini di F1Meteo.LIVELLI. Niente
+    // emoji nell'interfaccia: e' una regola del progetto.
+    function testoCielo(pioggia) {
+        if (pioggia >= 0.85) return 'Diluvio';
+        if (pioggia >= 0.55) return 'Pioggia';
+        if (pioggia >= 0.15) return 'Pioviggine';
+        return 'Asciutto';
+    }
+    function testoPrevisione(previsione) {
+        if (previsione === 'arrivo') return 'Pioggia in arrivo';
+        if (previsione === 'variabile') return 'Il cielo sta cambiando';
+        return '';
+    }
+
+    // CHE CIELO C'E', nella pagina delle gomme e in gara. Le due leggono lo
+    // STESSO stato: se dicessero cose diverse, scegliere la gomma diventerebbe
+    // una scommessa contro il gioco invece che contro il meteo.
+    function aggiornaIndicatoriMeteo() {
+        const dice = meteoCielo > 0.05 || meteoPrevisione !== 'stabile';
+
+        const box = document.getElementById('tyre-meteo');
+        if (box) {
+            box.hidden = !dice;
+            const cielo = document.getElementById('tyre-meteo-cielo');
+            const prev = document.getElementById('tyre-meteo-prev');
+            if (cielo) cielo.textContent = testoCielo(meteoCielo);
+            if (prev) prev.textContent = testoPrevisione(meteoPrevisione);
+        }
+
+        const hud = document.getElementById('hud-meteo');
+        if (hud) {
+            hud.hidden = !dice;
+            const prev = testoPrevisione(meteoPrevisione);
+            hud.textContent = prev ? (testoCielo(meteoCielo) + ' · ' + prev) : testoCielo(meteoCielo);
+            hud.classList.toggle('in-arrivo', meteoPrevisione === 'arrivo');
+        }
+    }
+
+    // L'AVVISO DAL MURETTO: una riga sola, quando la previsione CAMBIA. Non
+    // dice a quale giro — la scelta resta una scommessa, ma informata. Passa
+    // dal pannello che il gioco usa gia' per i messaggi di gara, cosi' non
+    // nasce un secondo sistema di avvisi.
+    //
+    // ⚠️ Parte da null e non da 'stabile': al primo stato che arriva non e'
+    // «il cielo e' cambiato», e' «sono appena entrato in pista». Con 'stabile'
+    // come valore iniziale, entrare in una gara che piove gia' faceva comparire
+    // l'avviso del muretto a freddo.
+    let previsioneVista = null;
+    function avvisaSeIlCieloCambia() {
+        if (meteoPrevisione === previsioneVista) return;
+        const prima = previsioneVista;
+        previsioneVista = meteoPrevisione;
+        if (prima === null) return;
+        if (meteoPrevisione === 'arrivo') mostraAvviso('Muretto: pioggia in arrivo');
+        else if (meteoPrevisione === 'variabile') mostraAvviso('Muretto: il cielo sta cambiando');
+    }
+
     // Lo stato del meteo che arriva dal server. ⚠️ Il client non lo calcola
     // mai: lo riceve. Il proprietario e' uno solo, o l'asfalto che si vede non
     // sarebbe quello su cui si guida.
@@ -2874,7 +2935,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const container = document.getElementById(containerId);
         container.innerHTML = '';
         let myIndex = 0, i = 0;
-        for (const key of ['hard', 'medium', 'soft']) {
+        // ⚠️ Le cinque mescole, nell'ordine in cui si sceglie: le tre da
+        // asciutto dalla piu' dura alla piu' morbida, poi le due da bagnato.
+        // Non `Object.keys(compounds)`: l'ordine di una tabella del server non
+        // e' una scelta di interfaccia.
+        for (const key of ['hard', 'medium', 'soft', 'intermedie', 'pioggia']) {
             const c = compounds[key];
             if (!c) continue;
             const card = document.createElement('div');
@@ -2900,13 +2965,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             // del server si dice che manca, invece di inventarlo.
             const giri = giriPerMescola && giriPerMescola[key];
             const durata = giri ? `Dura <b>~${giri} giri</b>` : 'Durata <b>—</b>';
+            // ⚠️ PER LE DUE DA BAGNATO, «Aderenza -5%» SAREBBE UNA BUGIA.
+            // `gripMult` e' il loro coefficiente di base, ma l'aderenza vera la
+            // decide la FINESTRA: la full wet sull'asciutto sta a 0.55, non a
+            // -3%. Un numero che il giocatore legge e il server non usa e' il
+            // difetto della sosta perfetta irraggiungibile — qui la scheda dice
+            // invece la cosa che serve per scegliere: per che cielo e' fatta.
+            const finestra = finestreBagnatoInfo && finestreBagnatoInfo[key];
+            const perBagnato = finestra && finestra.centro > 0.05;
+            const riga = perBagnato
+                ? `Per <b>${finestra.centro < 0.6 ? 'pista umida' : 'pioggia forte'}</b><br>${durata}`
+                : `Velocità <b>${segno(c.speedMult)}</b> · Aderenza <b>${segno(c.gripMult)}</b><br>${durata}`;
             card.innerHTML = F1Pneumatico.svg(key, c.color, { titolo: `Mescola ${c.label}` })
                 + `<div>
                     <div class="tyre-card-label">${c.label.toUpperCase()}</div>
-                    <div class="tyre-card-stats">
-                        Velocità <b>${segno(c.speedMult)}</b> · Aderenza <b>${segno(c.gripMult)}</b><br>
-                        ${durata}
-                    </div>
+                    <div class="tyre-card-stats">${riga}</div>
                 </div>`;
             card.onclick = () => {
                 if (eventName === 'f1TyreChoice') myCompoundChoice = key;
@@ -3493,8 +3566,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     socket.on('f1Setup', ({ players, trackName, hostColor: hc, totalLaps, phase, raceStarted, elapsed,
         compounds, strategy, myCompound, tyreConfirmed, tyreTotal, abrasivita, giriPerMescola,
+        finestreBagnato,
         tyreAttesi, tyreArrivati, tyreConfermati, tyreRestaMs, formato, stagioneId }) => {
         if (compounds) tyreCompoundsInfo = compounds;
+        if (finestreBagnato) finestreBagnatoInfo = finestreBagnato;
         // `?meteo=pioggia`: si manda da qui, non all'apertura della pagina,
         // perche' il meteo nasce sul server entrando nella scelta gomme — prima
         // non c'e' niente a cui applicare lo scavalco. Si rimanda anche al via
@@ -3565,6 +3640,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 'Consigliata: ' +
                 (strategy || []).map(c => (compounds[c]?.label || c).toLowerCase()).join(' → ');
             renderTyreCards(compounds, myCompoundChoice, 'tyre-cards', 'f1TyreChoice', giriMescolaPista);
+            // Il meteo puo' essere arrivato prima che questa pagina si aprisse.
+            aggiornaIndicatoriMeteo();
             renderAttesaMescole({
                 attesi: tyreAttesi, arrivati: tyreArrivati, confermati: tyreConfermati,
                 count: tyreConfirmed, total: tyreTotal, restaMs: tyreRestaMs,
@@ -3582,6 +3659,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Il cielo si ridipinge quando la pioggia cambia DAVVERO: sotto due
             // centesimi non si vede, e riscrivere le uniform a ogni stato
             // sarebbe lavoro per niente. La pioggia si muove piano.
+            aggiornaIndicatoriMeteo();
+            avvisaSeIlCieloCambia();
             if (Math.abs(meteoCielo - meteoCieloDipinto) > 0.02) {
                 meteoCieloDipinto = meteoCielo;
                 ToonPalette.applicaMeteo(meteoCielo);
