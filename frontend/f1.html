@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260912c">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260912d">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -349,13 +349,11 @@
          salvato, col numero assegnato dal server. -->
     <div class="hud f1-panel hud-segnalazione" id="segnalazione-avviso" style="display:none;"></div>
 
-    <!-- IL CIELO, in gara: chi guida non puo' aprire la pagina delle gomme.
-         Compare solo quando c'e' qualcosa da dire.
-         ⚠️ STA QUI, NON DENTRO #tyre-open: ce l'avevo messo dentro, e il
-         risultato era che scriveva sopra «STATO VETTURA» e spariva col tasto T
-         insieme al pannello dei guasti — segnalato dall'utente. Un pannello
-         dell'HUD sta al livello dell'HUD. -->
-    <div class="hud hud-meteo f1-panel" id="hud-meteo" hidden></div>
+    <!-- ⚠️ QUI C'ERA UN'ETICHETTA FISSA COL CIELO, in alto al centro
+         («Asciutto · Pioggia in arrivo»). Tolta su richiesta dell'utente: se la
+         pioggia sta arrivando lo dice il MURETTO, una volta, e poi sparisce.
+         Due modi di dire la stessa cosa, di cui uno sempre a schermo, sono uno
+         di troppo. -->
 
     <!-- IL MURETTO CHE CHIAMA. Un messaggio che arriva, suona e se ne va: la
          pioggia in arrivo non e' un'etichetta da tenere a schermo, e' una
@@ -1041,7 +1039,7 @@
     <script src="shared/f1SuoniCerimonia.js?v=20260820a"></script>
     <script src="shared/f1Premiazione.js?v=20260820b"></script>
     <script src="shared/f1StagioneSchermate.js?v=20260824a"></script>
-    <script src="f1.js?v=20260912y"></script>
+    <script src="f1.js?v=20260912z"></script>
 </body>
 
 </html>

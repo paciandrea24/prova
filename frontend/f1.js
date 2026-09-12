@@ -350,14 +350,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (cielo) cielo.textContent = testoCielo(meteoCielo);
             if (prev) prev.textContent = testoPrevisione(meteoPrevisione);
         }
-
-        const hud = document.getElementById('hud-meteo');
-        if (hud) {
-            hud.hidden = !dice;
-            const prev = testoPrevisione(meteoPrevisione);
-            hud.textContent = prev ? (testoCielo(meteoCielo) + ' · ' + prev) : testoCielo(meteoCielo);
-            hud.classList.toggle('in-arrivo', meteoPrevisione === 'arrivo');
-        }
     }
 
     // L'AVVISO DAL MURETTO: una riga sola, quando la previsione CAMBIA. Non
@@ -370,11 +362,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     // come valore iniziale, entrare in una gara che piove gia' faceva comparire
     // l'avviso del muretto a freddo.
     let previsioneVista = null;
+    // ⚠️ Da quando è arrivato il primo meteo. Il muretto NON chiama nei primi
+    // secondi in pista: entrando si riceve lo stato del cielo, e annunciarlo
+    // come se fosse appena cambiato è un falso allarme — «ho iniziato una gara
+    // che dice pioggia in arrivo e ho già sentito il suono del team radio»
+    // (utente). Quel che c'era già quando sei entrato non è una notizia.
+    let primoMeteoA = null;
+    const RADIO_SILENZIO_INIZIALE_MS = 6000;
     function avvisaSeIlCieloCambia() {
+        if (primoMeteoA === null) primoMeteoA = performance.now();
         if (meteoPrevisione === previsioneVista) return;
         const prima = previsioneVista;
         previsioneVista = meteoPrevisione;
         if (prima === null) return;
+        if (performance.now() - primoMeteoA < RADIO_SILENZIO_INIZIALE_MS) return;
         if (meteoPrevisione === 'arrivo') chiamataDalMuretto('Pioggia in arrivo, preparati a cambiare gomme');
         else if (meteoPrevisione === 'variabile') chiamataDalMuretto('Il cielo sta cambiando, occhio alla pista');
     }

@@ -2390,21 +2390,7 @@ canvas#pa-mappa {
 .mescole-meteo-prev { color: #ffd166; }
 .mescole-meteo-prev:empty { display: none; }
 
-.hud-meteo {
-    position: absolute;
-    top: 14px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 6px 14px;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    white-space: nowrap;
-}
-/* Pioggia in arrivo: la stessa tinta d'allerta della previsione in testata,
-   cosi' le due schermate parlano la stessa lingua. */
-.hud-meteo.in-arrivo { color: #ffd166; }
+/* (L'etichetta fissa del cielo in gara non c'e' piu': lo dice il muretto.) */
 
 /* Il numero della scorciatoia nella scheda mescola: premendo 1-5 si scegle.
    Tenue e in coda al nome — deve dire «c'e' un tasto» senza rubare la scena al
@@ -2437,17 +2423,27 @@ canvas#pa-mappa {
     flex-direction: column;
     gap: 3px;
     padding: 10px 16px;
-    border-left: 3px solid #4fc3f7;
     animation: radio-entra 0.32s ease-out;
 }
+/* ⚠️ SENZA QUESTA RIGA IL PANNELLINO NON SPARISCE MAI. `display: flex` qui
+   sopra batte il `[hidden] { display: none }` del browser, e «MURETTO» restava
+   fisso in basso a sinistra per tutta la qualifica e tutta la gara — visto
+   dall'utente. E' lo stesso tranello gia' documentato per i riquadri degli
+   indicatori, poche centinaia di righe piu' su. */
+.hud-radio[hidden] { display: none; }
 .hud-radio.in-uscita { animation: radio-esce 0.4s ease-in forwards; }
+/* Niente tinta propria: «stessa tinta dello sfondo di gioco, niente bordo,
+   letto solo dalla coppia di ombre — mai da un bordo colorato, il colore resta
+   riservato ai contenuti». E' la regola dei pannelli di questo gioco, scritta
+   sopra .hud-panel-neu, e questo pannellino la violava con un filo azzurro a
+   sinistra e l'etichetta colorata. */
 .hud-radio-chi {
     font-family: 'Fredoka', sans-serif;
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 3px;
     text-transform: uppercase;
-    color: #4fc3f7;
+    color: var(--hud-text-dim, #8CAEB6);
 }
 .hud-radio-testo {
     font-family: 'Fredoka', sans-serif;
