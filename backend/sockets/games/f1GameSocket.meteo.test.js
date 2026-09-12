@@ -84,3 +84,18 @@ test('F3: solo un amministratore puo cambiare il cielo', () => {
     assert.equal(F1.applicaScavalcoMeteo(g, 'uid-capo', 'grandine'), false);
     delete process.env.F1_ADMIN_UIDS;
 });
+
+test('rete: la griglia viaggia una volta al secondo, il cielo a ogni stato', () => {
+    const g = partita();
+    F1.creaMeteo(g, { seme: 7, archetipo: 'rovescioBreve' });
+    const primo = F1.statoMeteoPerRete(g, { forza: true });
+    assert.ok(primo.celle && primo.celle.length > 100, 'il primo stato deve portare la griglia intera');
+    assert.equal(typeof primo.pioggia, 'number');
+    assert.equal(typeof primo.previsione, 'string');
+
+    const subito = F1.statoMeteoPerRete(g, {});
+    assert.equal(subito.celle, undefined, 'la griglia e\' stata rimandata dopo pochi ms');
+    g.meteo.tMs += 1100;
+    const dopo = F1.statoMeteoPerRete(g, {});
+    assert.ok(dopo.celle, 'dopo un secondo la griglia deve ripartire');
+});

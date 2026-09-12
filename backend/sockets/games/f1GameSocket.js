@@ -3200,8 +3200,39 @@ function motoreInCarica(p, game) {
     return !p.partenzaSbloccata && frizione;
 }
 
+// Ogni quanto la griglia intera riparte verso i client. Una volta al secondo:
+// 1873 byte nel caso peggiore, meno del 3% di quel che il gioco manda gia' per
+// le posizioni. L'asciugatura e' lenta, un secondo di ritardo non si vede.
+const METEO_GRIGLIA_OGNI_MS = 1000;
+
+function statoMeteoPerRete(game, opzioni) {
+    const m = game.meteo;
+    if (!m) return null;
+    const out = { pioggia: m.pioggia, previsione: m.previsione, nCelle: m.griglia.nCelle };
+    const forza = !!(opzioni && opzioni.forza);
+    // ⚠️ `=== undefined` e non `|| -Infinity`: al primo invio `ultimoInvio`
+    // vale ZERO, che e' falsy, e col `||` la griglia ripartiva a ogni stato
+    // invece che una volta al secondo. Preso da un test, non da un playtest.
+    const ultimo = (m.ultimoInvio === undefined || m.ultimoInvio === null) ? -Infinity : m.ultimoInvio;
+    if (forza || m.tMs - ultimo >= METEO_GRIGLIA_OGNI_MS) {
+        m.ultimoInvio = m.tMs;
+        out.celle = F1Meteo.impacchetta(m.griglia);
+    }
+    return out;
+}
+
 function buildPublicState(players, raceStarted, track, game) {
     const out = {};
+
+    // IL METEO. ⚠️ Con due trattini davanti come `__boxLayout`: questo oggetto e'
+    // una mappa COLORE -> stato, e il client la percorre tutta. Una chiave
+    // `meteo` senza prefisso diventerebbe un pilota di nome «meteo», con un
+    // pallino sulla minimappa a coordinate indefinite.
+    //
+    // Chi si aggancia a meta' gara aspetta al massimo un secondo prima di
+    // ricevere la griglia intera, e non si vede: l'asciugatura ci mette minuti.
+    const meteo = statoMeteoPerRete(game, {});
+    if (meteo) out.__meteo = meteo;
 
     // Classifica: calcolata solo a gara avviata (prima non ha senso, tutti fermi
     // allo spawn). ranked.indexOf è O(M) per giocatore ma M è al più 8 → irrilevante.
@@ -3426,3 +3457,4 @@ module.exports.RACE_END_RETURN_MS = RACE_END_RETURN_MS;
 // far girare una partita intera vale l'export.
 module.exports.updateTrackIndex = updateTrackIndex;
 module.exports.applicaScavalcoMeteo = applicaScavalcoMeteo;
+module.exports.statoMeteoPerRete = statoMeteoPerRete;

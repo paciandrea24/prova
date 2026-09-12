@@ -318,6 +318,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // I quattro gradini che cicla F3, nell'ordine in cui li cicla. Gli stessi
     // nomi di F1Meteo.LIVELLI: il server valida la chiave e rifiuta le altre.
+    // Lo stato del meteo che arriva dal server. ⚠️ Il client non lo calcola
+    // mai: lo riceve. Il proprietario e' uno solo, o l'asfalto che si vede non
+    // sarebbe quello su cui si guida.
+    let meteoCielo = 0;
+    let meteoPrevisione = 'stabile';
+    let meteoGriglia = null;
+    let bagnatoDaRidisegnare = false;
+
     const CIELI_F3 = ['asciutto', 'pioviggine', 'pioggia', 'diluvio'];
     let cieloF3 = 0;
     // `?meteo=pioggia` nell'indirizzo, come `?notte=on`: comodo per riaprire
@@ -3487,6 +3495,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     socket.on('f1StateUpdate', (state) => {
+        // IL METEO. La griglia arriva impacchettata e si applica a quella
+        // locale, costruita dagli STESSI punti pista con la STESSA funzione:
+        // cosi' la cella che il client colora e' la cella che il server usa per
+        // far scivolare l'auto.
+        if (state.__meteo) {
+            meteoCielo = state.__meteo.pioggia || 0;
+            meteoPrevisione = state.__meteo.previsione || 'stabile';
+            if (state.__meteo.celle && trackData && trackData.points) {
+                if (!meteoGriglia) meteoGriglia = F1Meteo.nuovaGriglia(trackData.points, 0);
+                F1Meteo.applicaPacchetto(meteoGriglia, new Uint8Array(state.__meteo.celle));
+                bagnatoDaRidisegnare = true;
+            }
+        }
         // Layout box in qualifica (Rif. richiesta utente 2026-08-07):
         // chiave speciale FUORI dallo stato per-colore isolato — vedi
         // broadcastState in f1GameSocket.js. Renderizza i box di TUTTI i
@@ -3518,7 +3539,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         for (const [color, data] of Object.entries(state)) {
-            if (color === '__boxLayout') continue;
+            // ⚠️ TUTTE le chiavi con due trattini, non solo __boxLayout: sono i
+            // campi che viaggiano FUORI dallo stato per-colore (vedi
+            // broadcastState). Una sola esclusione per nome bastava finche' il
+            // campo speciale era uno; con il meteo sono due, e il prossimo non
+            // deve ripetere il difetto — un pilota di nome «__meteo» con un
+            // pallino sulla minimappa a coordinate indefinite.
+            if (color.startsWith('__')) continue;
             serverState[color] = data;
             updateMinimapDot(color, data.x, data.z);
             if (data.pitBoxAnchor) loadPlayerPitBox(color, data.pitBoxAnchor);
