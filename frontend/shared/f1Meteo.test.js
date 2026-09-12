@@ -171,3 +171,29 @@ test('griglia: niente valori fuori scala, nemmeno insistendo', () => {
         assert.ok(g.valori[i] >= 0 && g.valori[i] <= 1, `valore fuori scala in cella ${i}: ${g.valori[i]}`);
     }
 });
+
+test('rete: il pacchetto e piccolo e l\'errore di quantizzazione e sotto un sedicesimo', () => {
+    const pts = pistaFinta(1200, 1000, 11);   // ~7540 unita': la pista piu' lunga che esista
+    const g = M.nuovaGriglia(pts, 0);
+    for (let i = 0; i < 12; i++) M.avanza(g, 1000, 1, [{ campione: i * 50, scostamentoNorm: 0, distanza: 6 }]);
+
+    const pacchetto = M.impacchetta(g);
+    assert.equal(pacchetto.length, Math.ceil(g.nCelle * M.CORSIE / 2), 'non sono due celle per byte');
+    assert.ok(pacchetto.length < 2100, `pacchetto troppo grosso: ${pacchetto.length} byte`);
+
+    const riletti = M.spacchetta(pacchetto, g.nCelle);
+    assert.equal(riletti.length, g.valori.length);
+    for (let i = 0; i < g.valori.length; i++) {
+        assert.ok(Math.abs(riletti[i] - g.valori[i]) <= 1 / 15,
+            `cella ${i}: ${g.valori[i]} riletta come ${riletti[i]}`);
+    }
+});
+
+test('rete: applicaPacchetto non tocca la mappa dei campioni', () => {
+    const pts = pistaFinta(200, 1000, 11);
+    const server = M.nuovaGriglia(pts, 1);
+    const client = M.nuovaGriglia(pts, 0);
+    M.applicaPacchetto(client, M.impacchetta(server));
+    assert.ok(M.bagnatoIn(client, 500, 0) > 0.9, 'il client non ha ricevuto il bagnato');
+    assert.equal(client.perCampione.length, pts.length, 'la mappa dei campioni e\' stata sovrascritta');
+});

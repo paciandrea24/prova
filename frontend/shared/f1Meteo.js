@@ -250,9 +250,51 @@
         }
     }
 
+    // ── LA RETE ─────────────────────────────────────────────────────────────
+    //
+    // Sedici livelli, due celle per byte. Nel caso peggiore (la pista piu'
+    // lunga che esista, 7485 unita') sono 3745 celle in 1873 byte, mandati una
+    // volta al secondo: meno del 3% di quel che il gioco manda gia' per le
+    // posizioni a 20 Hz.
+    //
+    // ⚠️ Griglia INTERA e non differenze, per scelta: una differenza va
+    // riapplicata nell'ordine giusto o il client divergerebbe in silenzio, e un
+    // client che si aggancia a meta' gara dovrebbe comunque ricevere tutto.
+    // Sedici livelli bastano: l'occhio non distingue un sedicesimo di lucido, e
+    // la fisica legge la griglia del SERVER, non questa.
+    const LIVELLI_RETE = 16;
+
+    function impacchetta(griglia) {
+        const v = griglia.valori;
+        const out = new Uint8Array(Math.ceil(v.length / 2));
+        for (let i = 0; i < v.length; i += 2) {
+            const a = Math.round(limita(v[i]) * (LIVELLI_RETE - 1));
+            const b = i + 1 < v.length ? Math.round(limita(v[i + 1]) * (LIVELLI_RETE - 1)) : 0;
+            out[i >> 1] = (a << 4) | b;
+        }
+        return out;
+    }
+
+    function spacchetta(bytes, nCelle) {
+        const totale = nCelle * CORSIE;
+        const out = new Float32Array(totale);
+        for (let i = 0; i < totale; i++) {
+            const byte = bytes[i >> 1] || 0;
+            const nibble = (i % 2 === 0) ? (byte >> 4) : (byte & 0x0f);
+            out[i] = nibble / (LIVELLI_RETE - 1);
+        }
+        return out;
+    }
+
+    function applicaPacchetto(griglia, bytes) {
+        const letti = spacchetta(bytes, griglia.nCelle);
+        griglia.valori.set(letti.subarray(0, griglia.valori.length));
+    }
+
     return {
         LIVELLI, ARCHETIPI, SOGLIA_CAMBIO, generaProfilo, pioggiaA, previsione,
         PASSO_CELLA, CORSIE, BAGNATURA_AL_SECONDO, EVAPORAZIONE_AL_SECONDO, ASCIUGATURA_PER_CELLA,
         celleDeiCampioni, nuovaGriglia, corsiaDi, bagnatoIn, avanza,
+        LIVELLI_RETE, impacchetta, spacchetta, applicaPacchetto,
     };
 });
