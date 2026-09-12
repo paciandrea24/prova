@@ -66,3 +66,21 @@ test('meteo: due partite sulla stessa pista non si scambiano l acqua', () => {
     assert.ok(p1.bagnato > 0.5, 'l auto della gara bagnata non trova acqua');
     assert.equal(p2.bagnato, 0, 'l auto della gara asciutta ha trovato l acqua dell altra partita');
 });
+
+test('F3: solo un amministratore puo cambiare il cielo', () => {
+    const g = partita();
+    F1.creaMeteo(g, { seme: 7, archetipo: 'asciutto' });
+    // Nessun uid amministratore configurato: la richiesta non deve passare.
+    delete process.env.F1_ADMIN_UIDS;
+    assert.equal(F1.applicaScavalcoMeteo(g, 'nessuno', 'diluvio'), false);
+    assert.equal(g.meteo.scavalco, null);
+
+    process.env.F1_ADMIN_UIDS = 'uid-capo';
+    assert.equal(F1.applicaScavalcoMeteo(g, 'uid-capo', 'diluvio'), true);
+    assert.equal(g.meteo.scavalco, 1);
+    assert.equal(F1.applicaScavalcoMeteo(g, 'uid-capo', null), true);
+    assert.equal(g.meteo.scavalco, null);
+    // Un livello inventato non deve diventare NaN nella fisica.
+    assert.equal(F1.applicaScavalcoMeteo(g, 'uid-capo', 'grandine'), false);
+    delete process.env.F1_ADMIN_UIDS;
+});

@@ -3,6 +3,7 @@ const { lobbies, verificaGettone } = require('../../store/lobbies');
 const { loadTrack } = require('./trackLoader');
 const TrackGeometry = require('../../../frontend/shared/trackGeometry.js');
 const F1Meteo = require('../../../frontend/shared/f1Meteo.js');
+const { eAdmin } = require('../../routes/admin');
 const BoxIngresso = require('../../../frontend/shared/f1BoxIngresso.js');
 // Il campionato: il ponte fra una partita e la stagione a cui appartiene.
 const Stagione = require('./f1Stagione.server.js');
@@ -827,6 +828,16 @@ module.exports = function (io, socket) {
         const p = game.players[playerColor];
         if (!p || (!p.pitting && !p.pitAutoState)) return;
         p.pendingRepair = !!repair;
+    });
+
+    // F3 dal client: cambia il cielo. Il colore non arriva dal messaggio, e'
+    // quello che il server ha gia' verificato col gettone di sessione in
+    // joinLobby — come per la scelta gomme.
+    socket.on('f1MeteoScavalco', ({ lobbyId, livello }) => {
+        const game = activeGames.get(lobbyId);
+        const p = game && game.players[socket.color];
+        if (!game || !p) return;
+        applicaScavalcoMeteo(game, p.uid, livello);
     });
 
     socket.on('f1Input', ({ lobbyId, inputs }) => {
@@ -2539,6 +2550,20 @@ function scostamentoNormalizzato(p, track) {
     return Math.max(-1, Math.min(1, scostamento / mezza));
 }
 
+// F3 in gara. ⚠️ Non e' una barriera di sicurezza e non pretende di esserlo
+// (vedi il commento in cima a routes/admin.js): serve a non mettere il meteo in
+// mano a chi sta giocando una gara vera. Il livello si valida qui perche' un
+// valore inventato diventerebbe NaN dentro la fisica.
+function applicaScavalcoMeteo(game, uid, livello) {
+    if (!game || !game.meteo) return false;
+    if (!eAdmin(uid)) return false;
+    if (livello === null || livello === undefined) { game.meteo.scavalco = null; return true; }
+    const v = F1Meteo.LIVELLI[livello];
+    if (typeof v !== 'number') return false;
+    game.meteo.scavalco = v;
+    return true;
+}
+
 function updateTrackIndex(p, track, meteo) {
     p.trackIndex = TrackGeometry.nearestIndexNear(track.points, p.trackIndex || 0, p.x, p.z, TRACK_INDEX_WINDOW);
     // La pendenza sotto l'auto viaggia su `p` accanto all'indice, scritta da un
@@ -3400,3 +3425,4 @@ module.exports.RACE_END_RETURN_MS = RACE_END_RETURN_MS;
 // rollio, acrobatico e bagnato sotto l'auto, e verificarne il contenuto senza
 // far girare una partita intera vale l'export.
 module.exports.updateTrackIndex = updateTrackIndex;
+module.exports.applicaScavalcoMeteo = applicaScavalcoMeteo;

@@ -316,6 +316,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const TEST_LIVERY_COLORS = loadedLivery;
     // --- FINE GESTIONE LIVREA ---
 
+    // I quattro gradini che cicla F3, nell'ordine in cui li cicla. Gli stessi
+    // nomi di F1Meteo.LIVELLI: il server valida la chiave e rifiuta le altre.
+    const CIELI_F3 = ['asciutto', 'pioviggine', 'pioggia', 'diluvio'];
+    let cieloF3 = 0;
+    // `?meteo=pioggia` nell'indirizzo, come `?notte=on`: comodo per riaprire
+    // dieci volte la stessa condizione senza premere F3 a ogni giro. ⚠️ Lo manda
+    // come SCAVALCO e non lo simula: il meteo ha un proprietario solo, e una
+    // gara aperta in due schede con due indirizzi diversi non puo' avere due
+    // cieli. Va emesso a partita avviata, non qui (vedi f1GameStart).
+    const meteoUrl = new URLSearchParams(location.search).get('meteo');
+    const meteoDaUrl = CIELI_F3.includes(meteoUrl) ? meteoUrl : null;
+
     const socket = io({ transports: ['websocket'], upgrade: false });
 
     // Riconnessione
@@ -3397,6 +3409,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         compounds, strategy, myCompound, tyreConfirmed, tyreTotal, abrasivita, giriPerMescola,
         tyreAttesi, tyreArrivati, tyreConfermati, tyreRestaMs, formato, stagioneId }) => {
         if (compounds) tyreCompoundsInfo = compounds;
+        // `?meteo=pioggia`: si manda da qui, non all'apertura della pagina,
+        // perche' il meteo nasce sul server entrando nella scelta gomme — prima
+        // non c'e' niente a cui applicare lo scavalco. Si rimanda anche al via
+        // della gara, per il caso in cui si arrivi qui prima che esista.
+        if (meteoDaUrl) {
+            cieloF3 = CIELI_F3.indexOf(meteoDaUrl);
+            socket.emit('f1MeteoScavalco', { lobbyId, livello: meteoDaUrl });
+        }
         if (phase) currentPhase = phase;
         // Rientro a metà qualifica (reconnect): senza questo qualiSessionOpen
         // resterebbe false (valore iniziale), e l'overlay "in attesa" non
@@ -4063,6 +4083,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     socket.on('f1RaceStarted', (data) => {
+        // Vedi f1Setup: lo scavalco dell'indirizzo si rimanda al via, cosi'
+        // vale anche se la pagina e' arrivata prima che il meteo esistesse.
+        if (meteoDaUrl) socket.emit('f1MeteoScavalco', { lobbyId, livello: meteoDaUrl });
         // SOLO se questo è il via della GARA: questo evento scatta anche al
         // via della qualifica stessa (data.phase==='qualifying', il momento
         // esatto in cui il pannello deve poter comparire) — un reset
@@ -6217,6 +6240,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             const giu = e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract';
             const su  = e.key === '+' || e.key === '=' || e.code === 'NumpadAdd';
             if (giu || su) { e.preventDefault(); cambiaVolume(su ? 1 : -1); }
+        }
+        // F3: il cielo. Cicla i quattro gradini di pioggia e li manda al
+        // SERVER, che e' l'unico proprietario del meteo: qui non si simula
+        // niente, o il client vedrebbe un bagnato che la fisica non ha.
+        if (sonoAdmin && e.code === 'F3' && !e.repeat && !isTypingInField(e)) {
+            e.preventDefault();
+            cieloF3 = (cieloF3 + 1) % CIELI_F3.length;
+            const livello = CIELI_F3[cieloF3];
+            // 'asciutto' come scavalco vale «asciutto per davvero», non «torna
+            // al profilo»: per tornare al profilo c'e' il giro completo dei
+            // gradini, e comunque a fine gara il meteo si ricrea.
+            socket.emit('f1MeteoScavalco', { lobbyId, livello });
+            mostraAvviso('Cielo: ' + livello);
         }
         // F6: camera libera. Da qui in poi i tasti di movimento muovono la
         // CAMERA e non l'auto — vedi sotto, dove si spegne la guida.
