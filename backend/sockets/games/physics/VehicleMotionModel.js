@@ -34,6 +34,12 @@ function nearestTrackDist(track, x, z) {
 // da questa funzione — vedi il filtro "racing" in tickGame — quindi non
 // serve un'esenzione qui: la zona di trigger d'ingresso e' comunque abbastanza
 // vicina al bordo pista normale da non scattare mai.)
+// Fuori pista bagnato: l'erba e la ghiaia costano di piu' quando sono
+    // piene d'acqua. Il numero e' volutamente piccolo — il fuoripista e' gia'
+    // una penalita' forte, qui si aggiunge solo il fatto che sul bagnato ci si
+    // rientra peggio. `p.bagnato` assente = asciutto.
+const FUORIPISTA_BAGNATO_EXTRA = 0.35;
+
 function applyOffTrackDrag(p, track) {
     // ⚠️ UNA sola ricerca del campione piu' vicino, non due: gira per ogni
     // auto a ogni tick (50/s) ed e' O(1000) sui punti della pista. Serve sia
@@ -60,7 +66,7 @@ function applyOffTrackDrag(p, track) {
     const offTrack = dist > mezza + 2;
     if (!offTrack) return { offTrack: false, profondita: 0 };
     const k = Math.min(1, (dist - mezza - 2) / 8);   // 0..1 in funzione della profondità
-    const drag = 0.04 + k * 0.08;
+    const drag = (0.04 + k * 0.08) * (1 + FUORIPISTA_BAGNATO_EXTRA * (p.bagnato || 0));
     p.speed *= (1 - drag);
     p.vx   *= (1 - drag);
     p.vz   *= (1 - drag);

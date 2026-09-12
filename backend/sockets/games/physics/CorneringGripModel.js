@@ -25,6 +25,7 @@ const { corneringExcess } = require('./TyreSlipModel');
 const AerodynamicsModel = require('./AerodynamicsModel');
 const { fuelCorneringFactor } = require('./FuelModel');
 const { fattoreBanking, BANKING_GUADAGNO_MAX } = require('./Sopraelevazione');
+const { aderenzaBagnato, nomeMescola } = require('./TyreModel');
 
 // Contributo relativo alla capacità laterale (moltiplicatore adimensionale
 // ~1 = nominale, <1 = usura, fino a +15% con downforce ad alta velocità,
@@ -59,6 +60,13 @@ function corneringCapacity(p, isQuali, maxSpeed) {
     // credendo di avere un'aderenza che la fisica non gli dà, va lungo, ed è
     // stato misurato un giro più LENTO del 12% col banking acceso.
     capacity *= fattoreBanking(p.rollio);
+
+    // IL BAGNATO. Qui il bot DECIDE quanto frenare per la curva, in
+    // effectiveGrip la scivolata si ESEGUE: stessa separazione del banking e
+    // della downforce. ⚠️ Senza questa riga i bot girerebbero sul bagnato coi
+    // riferimenti dell'asciutto — il difetto che per il banking e' costato un
+    // giro piu' lento del 12%.
+    capacity *= aderenzaBagnato(nomeMescola(p, isQuali), p.bagnato);
     return capacity;
 }
 

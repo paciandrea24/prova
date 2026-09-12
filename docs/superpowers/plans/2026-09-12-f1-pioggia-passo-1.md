@@ -957,29 +957,45 @@ Expected: FAIL sul primo test, entrambe le assert.
 Aggiungi `aderenzaBagnato, nomeMescola` all'import da `./TyreModel` e, dentro `effectiveGrip`, dopo la riga della downforce:
 
 ```js
-    // IL BAGNATO. Si DIVIDE, come la downforce qui sopra e per la stessa
-    // ragione documentata nel FIX SEGNO: in questa funzione un valore piu' alto
-    // vuol dire piu' ancoraggio alla direzione vecchia, cioe' piu' scivolata.
-    // Meno aderenza disponibile deve alzare il coefficiente, non abbassarlo.
+    // IL BAGNATO. Meno aderenza disponibile = piu' ancoraggio alla direzione
+    // vecchia = convergenza piu' lenta verso il muso = piu' scivolata (vedi il
+    // FIX SEGNO qui sopra): il bagnato deve ALZARE questo coefficiente.
     // Consumatore INDIPENDENTE dello stesso fatto letto da
-    // CorneringGripModel.corneringCapacity: nessun doppio conteggio, e
+    // CorneringGripModel.corneringCapacity: nessun doppio conteggio, ed e'
     // obbligatorio che ci siano entrambi.
     // ⚠️ `nomeMescola` e non `p.compound`: in qualifica sull'auto ci sono le
     // gomme del cielo, non quelle scelte per la gara.
-    grip /= aderenzaBagnato(nomeMescola(p, isQuali), p.bagnato);
-    // ⚠️⚠️ IL TETTO, E NON E' PRUDENZA: sopra 1 questo coefficiente non smorza
-    // piu', AMPLIFICA. In applyGripBlend `vx*grip + fx*(1-grip)` con grip > 1 ha
-    // il secondo peso NEGATIVO: la velocita' viene spinta via dalla direzione del
-    // muso invece di convergerci, e l'auto parte per la tangente. Con le slick
-    // sotto il diluvio (aderenza 0.43) la divisione arriva a 1.73 da sola: la
-    // pioggia e' la PRIMA cosa in questo gioco che alza questo numero, quindi il
-    // tetto non e' mai servito prima e non c'era.
-    grip = Math.min(GRIP_MAX, grip);
+    //
+    // ⚠⚠ NON SI DIVIDE PER L'ADERENZA, SI INTERPOLA. Il disegno diceva
+    // «dividi come la downforce, poi taglia al tetto», e misurandolo il tetto
+    // cancellava proprio l'informazione che serve: con GRIP a 0.78 la divisione
+    // supera 0.95 gia' con aderenza 0.82, quindi le slick nell'umido e le slick
+    // nel diluvio finivano ENTRAMBE al tetto — identiche — e la gomma giusta nel
+    // diluvio (0.941) era indistinguibile da quella sbagliata (0.950). Il
+    // giocatore non avrebbe sentito ne' il cielo che peggiora ne' di aver
+    // montato la gomma giusta.
+    //
+    // Interpolando verso il massimo guidabile l'escursione si usa tutta, il
+    // valore resta monotono e non puo' per costruzione superare il tetto — che
+    // e' un vincolo duro, non prudenza: sopra 1 questo coefficiente non smorza,
+    // AMPLIFICA. In applyGripBlend `vx*grip + fx*(1-grip)` con grip > 1 ha il
+    // secondo peso NEGATIVO e la velocita' viene spinta VIA dal muso: l'auto
+    // parte per la tangente. La pioggia e' la prima cosa in questo gioco che
+    // alza questo numero, percio' il tetto non e' mai servito prima.
+    //
+    // Con aderenza piena il risultato e' `grip` esatto: l'asciutto non cambia di
+    // un bit.
+    const aderenza = aderenzaBagnato(nomeMescola(p, isQuali), p.bagnato);
+    grip = Math.min(GRIP_MAX, grip + (GRIP_MAX - grip) * (1 - aderenza));
 ```
 
 E, accanto a `const GRIP = 0.78`:
 
 ```js
+// ⚠️ RIVISTO IN CORSO D'OPERA: il tetto resta, ma non e' piu' la via
+// principale — si interpola verso di lui invece di dividere e tagliare (vedi il
+// commento in effectiveGrip: tagliando, slick nell'umido e slick nel diluvio
+// risultavano identiche).
 // Il massimo che il coefficiente di miscela puo' raggiungere. Oltre 1 la
 // miscela diverge (vedi effectiveGrip); 0.95 lascia un'auto pesantissima da
 // girare ma ancora guidabile, che e' il punto: con la gomma sbagliata sotto la
