@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F1 Racing 3D</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles/f1.css?v=20260912b">
+    <link rel="stylesheet" href="./styles/f1.css?v=20260912c">
 
     <!-- ═══════════ SCHERMATA DI CARICAMENTO ═══════════
          Lo stile sta QUI in linea, e non in f1.css, per un motivo preciso: il
@@ -288,10 +288,6 @@
             <g class="v-quadranti" id="hud-quadranti"></g>
         </svg>
 
-        <!-- Il cielo, in gara: chi guida non puo' aprire la pagina delle
-             gomme. Compare solo quando c'e' qualcosa da dire. -->
-        <div class="hud hud-meteo f1-panel" id="hud-meteo" hidden></div>
-
         <div class="hud-gomme">
             <span class="hud-gomme-disegno" id="tyre-drawing"></span>
             <span class="hud-gomme-mescola" id="tyre-compound-label">&mdash;</span>
@@ -352,6 +348,23 @@
     <!-- Segnalazioni in gioco (M / Shift+M): conferma che il punto è stato
          salvato, col numero assegnato dal server. -->
     <div class="hud f1-panel hud-segnalazione" id="segnalazione-avviso" style="display:none;"></div>
+
+    <!-- IL CIELO, in gara: chi guida non puo' aprire la pagina delle gomme.
+         Compare solo quando c'e' qualcosa da dire.
+         ⚠️ STA QUI, NON DENTRO #tyre-open: ce l'avevo messo dentro, e il
+         risultato era che scriveva sopra «STATO VETTURA» e spariva col tasto T
+         insieme al pannello dei guasti — segnalato dall'utente. Un pannello
+         dell'HUD sta al livello dell'HUD. -->
+    <div class="hud hud-meteo f1-panel" id="hud-meteo" hidden></div>
+
+    <!-- IL MURETTO CHE CHIAMA. Un messaggio che arriva, suona e se ne va: la
+         pioggia in arrivo non e' un'etichetta da tenere a schermo, e' una
+         NOTIZIA. Richiesta dell'utente: «suono tipo team radio e poi un piccolo
+         pannellino che dura qualche secondo». -->
+    <div class="hud f1-panel hud-radio" id="hud-radio" hidden>
+        <span class="hud-radio-chi">Muretto</span>
+        <span class="hud-radio-testo" id="hud-radio-testo"></span>
+    </div>
 
     <!-- Suggerimento camera -->
     <!-- ⚠️ SOLO PER L'AMMINISTRATORE, e nascosta di default: la vede solo chi
@@ -798,13 +811,20 @@
                 <div id="pitstop-status">AI BOX</div>
                 <div id="pitstop-instructions"></div>
             </div>
-            <div id="pitstop-cards"></div>
-            <div class="ps-coda">
-                <div id="pitstop-result"></div>
+            <!-- LE DUE SCELTE DEI BOX, in un gruppo solo: che gomma monto e se
+                 faccio riparare. Stanno insieme perche' si decidono insieme —
+                 e perche' quando lo schermo e' stretto il tasto di riparazione
+                 deve andare a capo SOTTO LE GOMME, non sotto «AI BOX»
+                 dall'altra parte della fascia. -->
+            <div class="ps-scelte">
+                <div id="pitstop-cards"></div>
                 <div id="pitstop-repair-toggle" style="display:none;">
                     <div id="pitstop-repair-btn" class="repair-btn"></div>
                     <span class="hud-key-hint">R</span>
                 </div>
+            </div>
+            <div class="ps-coda">
+                <div id="pitstop-result"></div>
             </div>
         </div>
         <div id="pitstop-react-prompt" style="display:none;">PREMI SPAZIO!</div>
@@ -1021,7 +1041,7 @@
     <script src="shared/f1SuoniCerimonia.js?v=20260820a"></script>
     <script src="shared/f1Premiazione.js?v=20260820b"></script>
     <script src="shared/f1StagioneSchermate.js?v=20260824a"></script>
-    <script src="f1.js?v=20260912x"></script>
+    <script src="f1.js?v=20260912y"></script>
 </body>
 
 </html>

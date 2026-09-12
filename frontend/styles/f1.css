@@ -1861,9 +1861,21 @@ body.in-cerimonia .hud { display: none !important; }
    Ora possono restringersi (`0 1 auto` + `min-width: 0`) e il contenuto e'
    compatto — nome e durata, niente velocita'/aderenza: ai box si decide in tre
    secondi. */
+/* Le due scelte, insieme e centrate. Va a capo QUI dentro, cosi' la
+   riparazione finisce sotto le gomme e non dall'altra parte della fascia. */
+.ps-scelte {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: clamp(8px, 1vw, 18px);
+    flex: 1 1 auto;
+    min-width: 0;
+}
 #pitstop-cards {
     display: flex;
     justify-content: center;
+    flex-wrap: wrap;
     gap: clamp(5px, 0.6vw, 10px);
     flex: 0 1 auto;
     min-width: 0;
@@ -1873,11 +1885,34 @@ body.in-cerimonia .hud { display: none !important; }
     padding: clamp(4px, 0.6vh, 8px) clamp(6px, 0.7vw, 11px);
     min-width: 0;
 }
-#pitstop-cards .tyre-card .pneumatico { height: clamp(26px, min(2.8vw, 4.4vh), 42px); }
-#pitstop-cards .tyre-card-label { font-size: clamp(11px, 0.92vw, 14px); white-space: nowrap; }
-#pitstop-cards .tyre-card-stats { font-size: 10px; white-space: nowrap; }
-.ps-coda { display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
-           flex: 0 1 auto; min-width: 92px; }
+/* ⚠️ LE GOMME SI DEVONO VEDERE. Le avevo strette fino a 26 px per farle
+   stare in riga con tutto il resto, e la fascia e' rimasta mezza vuota sotto:
+   «le mescole sembrano troppo piccole, c'e' spazio subito sotto di esse»
+   (utente). Lo spazio in quella fascia e' VERTICALE, non orizzontale — quindi
+   le gomme crescono e, se la riga non basta, si va a capo. */
+#pitstop-cards .tyre-card .pneumatico { height: clamp(34px, min(3.1vw, 7.5vh), 62px); }
+#pitstop-cards .tyre-card-label { font-size: clamp(12px, 1vw, 16px); white-space: nowrap; }
+#pitstop-cards .tyre-card-stats { font-size: 11px; white-space: nowrap; }
+
+/* La riparazione: stessa altezza delle schede, separata da un filo — e' l'altra
+   scelta, non un dettaglio in fondo. */
+#pitstop-repair-toggle {
+    display: none;              /* lo accende il JS quando c'e' danno */
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding-left: clamp(10px, 1.2vw, 20px);
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+    flex: 0 0 auto;
+}
+#pitstop-repair-toggle .repair-btn {
+    padding: clamp(6px, 0.9vh, 12px) clamp(10px, 1.1vw, 20px);
+    font-size: clamp(12px, 1vw, 15px);
+    text-align: center;
+}
+.ps-coda { display: flex; flex-direction: column; align-items: flex-end; justify-content: center;
+           gap: 8px; flex: 0 1 auto; min-width: 92px; }
 #pitstop-result { font-size: 17px; font-weight: 900; color: #f1c40f; text-align: right; }
 #pitstop-repair-toggle { display: flex; align-items: center; gap: 8px; }
 #pitstop-react-prompt {
@@ -2388,4 +2423,44 @@ canvas#pa-mappa {
     padding: 2px 5px;
     vertical-align: middle;
     color: var(--sel-tenue);
+}
+
+/* ── IL MURETTO CHE CHIAMA ───────────────────────────────────────────────────
+   Un messaggio che arriva, suona e se ne va. In basso a sinistra: la parte di
+   schermo piu' libera mentre si guida — in alto c'e' il cielo e la classifica,
+   a destra lo stato vettura, al centro la pista. */
+.hud-radio {
+    left: 24px;
+    bottom: 24px;
+    max-width: min(420px, 38vw);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px 16px;
+    border-left: 3px solid #4fc3f7;
+    animation: radio-entra 0.32s ease-out;
+}
+.hud-radio.in-uscita { animation: radio-esce 0.4s ease-in forwards; }
+.hud-radio-chi {
+    font-family: 'Fredoka', sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #4fc3f7;
+}
+.hud-radio-testo {
+    font-family: 'Fredoka', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--f1-text);
+}
+@keyframes radio-entra {
+    from { opacity: 0; transform: translateX(-18px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes radio-esce {
+    from { opacity: 1; transform: translateX(0); }
+    to   { opacity: 0; transform: translateX(-18px); }
 }

@@ -44,9 +44,13 @@ const { fuelFactorOf } = require('./FuelModel');
 // non cambiava. Una cosa, una misura: la sigla viaggia con label e colore.
 // I e W sono le lettere della F1 vera, e vanno coi colori verde e blu.
 const TYRE_COMPOUNDS = {
-    soft:   { label: 'Soft',   sigla: 'S', color: '#e74c3c', speedMult: 1.05, gripMult: 1.00, vita: 0.35 },
-    medium: { label: 'Medium', sigla: 'M', color: '#f1c40f', speedMult: 1.00, gripMult: 0.95, vita: 0.50 },
-    hard:   { label: 'Hard',   sigla: 'H', color: '#ecf0f1', speedMult: 0.95, gripMult: 0.90, vita: 0.70 },
+// ⚠️ `breve` e' il nome per gli spazi STRETTI (il pannello dello stato
+// vettura, largo quanto una colonna): «Intermedie» per esteso spingeva la
+// percentuale di usura FUORI dal pannello — segnalato dall'utente. INTER e WET
+// non sono abbreviazioni inventate: sono come le chiamano i piloti.
+    soft:   { label: 'Soft',   breve: 'Soft',   sigla: 'S', color: '#e74c3c', speedMult: 1.05, gripMult: 1.00, vita: 0.35 },
+    medium: { label: 'Medium', breve: 'Medium', sigla: 'M', color: '#f1c40f', speedMult: 1.00, gripMult: 0.95, vita: 0.50 },
+    hard:   { label: 'Hard',   breve: 'Hard',   sigla: 'H', color: '#ecf0f1', speedMult: 0.95, gripMult: 0.90, vita: 0.70 },
 // ── LE DUE DA BAGNATO ───────────────────────────────────────────────────
     // `speedMult` e' COSTANTE anche per queste, non funzione del bagnato: la
     // velocita' di punta passa da PowertrainModel, che e' un terzo consumatore
@@ -54,8 +58,8 @@ const TYRE_COMPOUNDS = {
     // nella VITA, e li' entra da un posto solo (vedi aderenzaBagnato).
     // `gripMult` segue la convenzione (rovesciata) di questa tabella, dove piu'
     // alto = piu' scivolata: vedi il FIX SEGNO in AerodynamicsModel.
-    intermedie: { label: 'Intermedie', sigla: 'I', color: '#2ecc71', speedMult: 0.95, gripMult: 0.95, vita: 0.45 },
-    pioggia:    { label: 'Pioggia',    sigla: 'W', color: '#3498db', speedMult: 0.90, gripMult: 0.97, vita: 0.55 },
+    intermedie: { label: 'Intermedie', breve: 'Inter', sigla: 'I', color: '#2ecc71', speedMult: 0.95, gripMult: 0.95, vita: 0.45 },
+    pioggia:    { label: 'Pioggia',    breve: 'Wet',   sigla: 'W', color: '#3498db', speedMult: 0.90, gripMult: 0.97, vita: 0.55 },
 };
 const DEFAULT_COMPOUND = 'medium';
 

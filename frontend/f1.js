@@ -375,8 +375,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const prima = previsioneVista;
         previsioneVista = meteoPrevisione;
         if (prima === null) return;
-        if (meteoPrevisione === 'arrivo') mostraAvviso('Muretto: pioggia in arrivo');
-        else if (meteoPrevisione === 'variabile') mostraAvviso('Muretto: il cielo sta cambiando');
+        if (meteoPrevisione === 'arrivo') chiamataDalMuretto('Pioggia in arrivo, preparati a cambiare gomme');
+        else if (meteoPrevisione === 'variabile') chiamataDalMuretto('Il cielo sta cambiando, occhio alla pista');
     }
 
     // Lo stato del meteo che arriva dal server. ⚠️ Il client non lo calcola
@@ -1742,6 +1742,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         osc.stop(t0 + durata + 0.03);
     }
 
+    // ═══════════ IL MURETTO CHE CHIAMA ═══════════
+    //
+    // Un messaggio dal muretto: il gracchio della radio e un pannellino che
+    // dura qualche secondo, poi sparisce. Richiesta dell'utente, e non e' solo
+    // estetica: la pioggia in arrivo e' una NOTIZIA, non uno stato da tenere a
+    // schermo — prima passava dall'avviso delle segnalazioni, che vive dentro
+    // il pannello dello stato vettura e spariva col tasto T.
+    //
+    // ⚠️ Il suono passa dal bus dell'INTERFACCIA, come gli scatti della
+    // griglia: segue la manopola del volume ma non lo zittisce lo stacco fra
+    // qualifica e gara. Un messaggio del muretto non e' un suono del mondo.
+    let bufferRadio = null;
+    new THREE.AudioLoader().load('/assets/audio/team-radio.mp3',
+        (buf) => { bufferRadio = buf; },
+        undefined,
+        () => { /* senza file niente gracchio: il pannellino compare lo stesso */ });
+
+    function suonaRadio() {
+        const ctx = listener.context;
+        if (!bufferRadio || !ctx || ctx.state !== 'running') return;
+        const src = ctx.createBufferSource();
+        src.buffer = bufferRadio;
+        src.connect(gainInterfaccia || listener.getInput());
+        src.start(ctx.currentTime);
+    }
+
+    const RADIO_DURATA_MS = 5200;
+    let timerRadio = null;
+    function chiamataDalMuretto(testo) {
+        const el = document.getElementById('hud-radio');
+        const dove = document.getElementById('hud-radio-testo');
+        if (!el || !dove) return;
+        dove.textContent = testo;
+        el.hidden = false;
+        el.classList.remove('in-uscita');
+        suonaRadio();
+        clearTimeout(timerRadio);
+        timerRadio = setTimeout(() => {
+            el.classList.add('in-uscita');
+            // Si nasconde a dissolvenza finita, non prima: `hidden` taglierebbe
+            // l'animazione a meta'.
+            setTimeout(() => { el.hidden = true; el.classList.remove('in-uscita'); }, 420);
+        }, RADIO_DURATA_MS);
+    }
+
     // Scatto del conteggio delle posizioni in griglia: il "clic" secco di un
     // display che cambia cifra. Sintetizzato come il bip del semaforo, per lo
     // stesso motivo (mezzo secondo di suono non vale un asset e una licenza).
@@ -2985,14 +3030,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             // invece la cosa che serve per scegliere: per che cielo e' fatta.
             const finestra = finestreBagnatoInfo && finestreBagnatoInfo[key];
             const perBagnato = finestra && finestra.centro > 0.05;
+            // Nella fascia dei box il nome e' quello BREVE e la durata senza
+            // «Dura»: le schede sono affiancate e ogni parola in piu' le allarga
+            // tutte e cinque. INTER e WET sono anche come le chiamano i piloti.
             const riga = compatta
-                ? durata
+                ? (giri ? `~${giri} giri` : '—')
                 : (perBagnato
                     ? `Per <b>${finestra.centro < 0.6 ? 'pista umida' : 'pioggia forte'}</b><br>${durata}`
                     : `Velocità <b>${segno(c.speedMult)}</b> · Aderenza <b>${segno(c.gripMult)}</b><br>${durata}`);
+            const nome = (compatta && c.breve ? c.breve : c.label).toUpperCase();
             card.innerHTML = F1Pneumatico.svg(key, c.color, { titolo: `Mescola ${c.label}` })
                 + `<div>
-                    <div class="tyre-card-label">${c.label.toUpperCase()}<span class="tyre-card-tasto">${i + 1}</span></div>
+                    <div class="tyre-card-label">${nome}<span class="tyre-card-tasto">${i + 1}</span></div>
                     <div class="tyre-card-stats">${riga}</div>
                 </div>`;
             card.onclick = () => {
@@ -3762,7 +3811,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         mescolaDisegnata = data.compound;
                         document.getElementById('tyre-drawing').innerHTML =
                             F1Pneumatico.svg(data.compound, info.color, { titolo: 'Mescola ' + info.label });
-                        document.getElementById('tyre-compound-label').textContent = info.label.toUpperCase();
+                        // ⚠️ Il nome BREVE: qui lo spazio e' una colonna stretta, e
+                        // «INTERMEDIE» per esteso spingeva la percentuale di usura
+                        // fuori dal pannello (segnalato dall'utente).
+                        document.getElementById('tyre-compound-label').textContent =
+                            (info.breve || info.label).toUpperCase();
                         document.getElementById('tyre-open').style.setProperty('--mescola', info.color);
                     }
                     aggiornaStatoVettura(data);
