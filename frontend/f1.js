@@ -2135,16 +2135,111 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (attiva) aggiornaEffettoParticelle(mesh, dtMs);
     }
 
+    // ── LO SPRAY E LA LUCE ROSSA, sul bagnato ───────────────────────────────
+    //
+    // Quanta acqua c'e' sotto QUELL'auto: il client ce l'ha senza chiederla al
+    // server, perche' ha la griglia del bagnato e l'indice di pista di ognuno.
+    // ⚠️ Si legge in traiettoria (scostamento 0) e non dove sta davvero: per
+    // decidere quanto spray fare, la differenza fra il centro della corsia e
+    // mezzo metro piu' in la' non si vede, e costerebbe una proiezione per auto
+    // per fotogramma.
+    function bagnatoSotto(stato) {
+        if (!meteoGriglia || !stato) return 0;
+        return F1Meteo.bagnatoIn(meteoGriglia, stato.trackIndex || 0, 0);
+    }
+
+    const sprayPerAuto = {};
+    function aggiornaSprayDi(color, carGroup, dtMs) {
+        const stato = serverState[color];
+        const bagnato = bagnatoSotto(stato);
+        // Serve acqua E velocita': un'auto ferma sul bagnato non solleva niente,
+        // e sarebbe la prima cosa che si nota in griglia.
+        const velocita = stato ? Math.abs(stato.speed || 0) : 0;
+        const attivo = !!carGroup && bagnato > 0.25 && velocita > 8
+            && !tyreSelectActive && !panoramicaAttiva && !cerimoniaAttiva;
+        let mesh = sprayPerAuto[color];
+        if (!attivo && !mesh) return;
+        if (!mesh) {
+            // ⚠️ APPESO ALL'AUTO come la scia, non alla scena come i detriti:
+            // l'acqua è trascinata dalla scia aerodinamica e resta con la
+            // vettura per qualche metro. Nel mondo si spalmava sul rettilineo.
+            // Pool VUOTO: chi non ha mai corso sul bagnato non ha particelle
+            // ferme in attesa dietro di sé.
+            mesh = sprayPerAuto[color] = costruisciEffettoParticelle(
+                F1Particelle.SPRAY, 0xe8f1f6, 0.4, { partiPieno: false });
+            mesh.frustumCulled = false;
+            carGroup.add(mesh);
+        }
+        mesh.visible = attivo || _particelleVive(mesh);
+        if (!mesh.visible) return;
+        // Quanto spray: piu' acqua e piu' velocita', piu' nuvola. L'emissione e'
+        // un RITMO (nascite al secondo), non un riempimento.
+        const emissione = attivo
+            ? Math.min(1, (bagnato - 0.25) / 0.5) * Math.min(1, velocita / 40)
+            : 0;
+        // Nessuna ancora: le particelle vivono nel riferimento dell'auto
+        // (ANCORA_LOCALE), esattamente come la scia.
+        aggiornaEffettoParticelle(mesh, dtMs, { emissione });
+    }
+
+    // Restano particelle ancora vive? Serve a non spegnere la nuvola nel tick in
+    // cui l'auto rallenta: svanirebbe di colpo invece di dissolversi.
+    function _particelleVive(mesh) {
+        const stato = mesh.userData.particelle;
+        const config = mesh.userData.configParticelle;
+        for (let i = 0; i < config.numero; i++) {
+            if (F1Particelle.scalaDi(stato, i, config) > 0) return true;
+        }
+        return false;
+    }
+
+    // LA LUCE ROSSA DI PIOGGIA. Idea dell'utente, e non e' decorazione: dentro
+    // lo spray la vettura davanti sparisce, e quella luce e' l'unica cosa che
+    // dice «c'e' qualcuno». In F1 vera si accende quando piove, e lampeggia.
+    const luciPioggia = {};
+    const LAMPEGGIO_HZ = 2.6;
+    function aggiornaLucePioggiaDi(color, carGroup) {
+        const accesa = !!carGroup && meteoCielo > 0.12;
+        let luce = luciPioggia[color];
+        if (!accesa && !luce) return;
+        if (!luce) {
+            // Un pannellino piatto sotto l'ala posteriore, non una luce vera:
+            // una PointLight per vettura costerebbe un ricalcolo di shader per
+            // ogni materiale illuminato, e qui serve qualcosa che SI VEDA da
+            // dietro, non che illumini.
+            const geo = new THREE.PlaneGeometry(0.34, 0.34);
+            const mat = new THREE.MeshBasicMaterial({
+                color: 0xff2d2d, transparent: true, opacity: 1,
+                side: THREE.DoubleSide, fog: false, depthWrite: false,
+            });
+            luce = luciPioggia[color] = new THREE.Mesh(geo, mat);
+            // Dietro, in basso, al centro: dove sta sulle vetture vere.
+            luce.position.set(0, 0.42, -2.35);
+            luce.renderOrder = 4;
+            carGroup.add(luce);
+        }
+        luce.visible = accesa;
+        if (!accesa) return;
+        // Lampeggio a onda quadra: una sinusoide fa una luce che «respira», e
+        // quella non si legge come un avviso.
+        const fase = (performance.now() / 1000 * LAMPEGGIO_HZ) % 1;
+        luce.material.opacity = fase < 0.45 ? 1 : 0.06;
+    }
+
     // Tutte le vetture in scena, non solo la propria: chi guarda una gara vede
     // la scia e gli errori degli altri, ed è metà del senso di avere gli effetti.
     // Un giro solo per entrambi, così non possono divergere su chi è in pista.
     function aggiornaEffettiVetture(dtMs, misuraMia) {
         aggiornaDetritiDi(myColor, myCarGroup, dtMs, misuraMia);
         aggiornaSciaDi(myColor, myCarGroup, dtMs);
+        aggiornaSprayDi(myColor, myCarGroup, dtMs);
+        aggiornaLucePioggiaDi(myColor, myCarGroup);
         for (const color of Object.keys(otherCars)) {
             const carGroup = otherCars[color];
             aggiornaDetritiDi(color, carGroup, dtMs);
             aggiornaSciaDi(color, carGroup, dtMs);
+            aggiornaSprayDi(color, carGroup, dtMs);
+            aggiornaLucePioggiaDi(color, carGroup);
         }
     }
 

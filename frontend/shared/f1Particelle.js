@@ -91,6 +91,45 @@
         pavimento: 0,
     };
 
+    // ── Lo spray delle gomme sul bagnato ────────────────────────────────────
+    // L'acqua che le posteriori sollevano: è quello che rende una gara sul
+    // bagnato quella cosa in cui non vedi chi ti precede.
+    //
+    // ⚠️ È PARENTE DELLA SCIA, NON DEI DETRITI, e ci sono volute tre prove per
+    // capirlo. Le particelle dei detriti vivono nel MONDO: giuste per una zolla,
+    // che resta dov'è mentre l'auto se ne va. Ma l'acqua nebulizzata è
+    // trascinata dalla scia aerodinamica e resta ATTACCATA alla vettura per
+    // qualche metro — messa nel mondo, a 55 unità al secondo si spalmava su
+    // mezzo rettilineo: due quadratini sperduti invece di una nuvola. Quindi
+    // vive nel riferimento dell'auto, come la scia, e scorre all'indietro.
+    //
+    // Tante e piccole: con particelle grosse si vede la particella, non la
+    // nebbia (secondo tentativo: sembravano scatoloni appoggiati sul cofano).
+    const SPRAY = {
+        numero: 150,
+        dimensione: 0.5,
+        vitaMs: 620,
+        // Dietro le ruote posteriori, largo come la vettura, basso: l'acqua
+        // parte da terra.
+        nascita: {
+            avanti: [-3.2, -1.9],
+            lato: [-1.6, 1.6],
+            quota: [0.08, 0.55],
+        },
+        // Scorre all'indietro nel riferimento dell'auto e SALE: è la scia
+        // aerodinamica che se la porta su.
+        velocita: { avanti: -6.5, lato: 0, quota: 1.9 },
+        velocitaCasuale: { avanti: 2.4, lato: 2.2, quota: 1.5 },
+        turbolenza: 0.8,
+        vitaVariazione: [0.7, 1.3],
+        // Quasi zero: è nebbia, resta sospesa e svanisce dov'è.
+        gravita: -0.6,
+        // Nasce piccola e si gonfia: la nuvola si apre allontanandosi.
+        scalaBase: [0.55, 1.5],
+        crescita: 0.25,
+        pavimento: null,
+    };
+
     // ── I coriandoli della premiazione ──────────────────────────────────────
     // Il terzo uso dello stesso sistema. Sono l'opposto dei detriti: non
     // schizzano, PIOVONO — nascono in alto sopra il podio, scendono piano e si
@@ -301,7 +340,7 @@
     }
 
     return {
-        SCIA, DETRITI, CORIANDOLI, SCOPPIO, SCIA_AEREO,
+        SCIA, DETRITI, SPRAY, CORIANDOLI, SCOPPIO, SCIA_AEREO,
         creaStato, riempi, rinasci, avanza, scalaDi,
         ANCORA_LOCALE,
     };
